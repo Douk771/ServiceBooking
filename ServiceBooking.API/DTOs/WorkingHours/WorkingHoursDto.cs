@@ -4,7 +4,7 @@ public record WorkingHoursDto(
     Guid Id,
     string MasterId,
     Guid CompanyId,
-    DayOfWeek DayOfWeek,
+    DateOnly Date,
     TimeOnly StartTime,
     TimeOnly EndTime,
     bool IsWorking,
@@ -16,7 +16,7 @@ public record BreakDto(Guid Id, TimeOnly StartTime, TimeOnly EndTime);
 public record UpsertWorkingHoursDto(
     string MasterId,
     Guid CompanyId,
-    DayOfWeek DayOfWeek,
+    DateOnly Date,
     bool IsWorking,
     TimeOnly StartTime,
     TimeOnly EndTime,

@@ -14,15 +14,19 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class WorkingHoursController(AppDbContext db) : ControllerBase
 {
+    // GET /api/workinghours?masterId=&companyId=&from=2024-01-01&to=2024-01-31
     [HttpGet]
     public async Task<ActionResult<List<WorkingHoursDto>>> Get(
         [FromQuery] string masterId,
-        [FromQuery] Guid companyId)
+        [FromQuery] Guid companyId,
+        [FromQuery] DateOnly from,
+        [FromQuery] DateOnly to)
     {
         var hours = await db.WorkingHours
             .Include(wh => wh.Breaks)
-            .Where(wh => wh.MasterId == masterId && wh.CompanyId == companyId)
-            .OrderBy(wh => wh.DayOfWeek)
+            .Where(wh => wh.MasterId == masterId && wh.CompanyId == companyId
+                      && wh.Date >= from && wh.Date <= to)
+            .OrderBy(wh => wh.Date)
             .ToListAsync();
 
         return Ok(hours.Select(ToDto).ToList());
@@ -32,16 +36,14 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
     public async Task<ActionResult<WorkingHoursDto>> Upsert(UpsertWorkingHoursDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
-        if (!await CanManage(dto.MasterId, dto.CompanyId, userId))
-            return Forbid();
+        if (!await CanManage(dto.MasterId, dto.CompanyId, userId)) return Forbid();
 
         var existing = await db.WorkingHours
             .Include(wh => wh.Breaks)
             .FirstOrDefaultAsync(wh =>
                 wh.MasterId == dto.MasterId &&
                 wh.CompanyId == dto.CompanyId &&
-                wh.DayOfWeek == dto.DayOfWeek);
+                wh.Date == dto.Date);
 
         if (existing is null)
         {
@@ -50,7 +52,7 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
                 Id = Guid.NewGuid(),
                 MasterId = dto.MasterId,
                 CompanyId = dto.CompanyId,
-                DayOfWeek = dto.DayOfWeek,
+                Date = dto.Date,
                 StartTime = dto.StartTime,
                 EndTime = dto.EndTime,
                 IsWorking = dto.IsWorking
@@ -67,18 +69,36 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
         }
 
         foreach (var b in dto.Breaks)
-            existing.Breaks.Add(new ScheduleBreak { Id = Guid.NewGuid(), WorkingHoursId = existing.Id, StartTime = b.StartTime, EndTime = b.EndTime });
+            existing.Breaks.Add(new ScheduleBreak
+            {
+                Id = Guid.NewGuid(),
+                WorkingHoursId = existing.Id,
+                StartTime = b.StartTime,
+                EndTime = b.EndTime
+            });
 
         await db.SaveChangesAsync();
         return Ok(ToDto(existing));
     }
 
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var entry = await db.WorkingHours.FindAsync(id);
+        if (entry is null) return NotFound();
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        if (!await CanManage(entry.MasterId, entry.CompanyId, userId)) return Forbid();
+
+        db.WorkingHours.Remove(entry);
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     private async Task<bool> CanManage(string masterId, Guid companyId, string requesterId)
     {
         if (User.IsInRole("SuperAdmin")) return true;
-        // Master can edit own schedule
         if (requesterId == masterId) return true;
-        // Owner can edit any master's schedule in their company
         return await db.CompanyMembers.AnyAsync(cm =>
             cm.CompanyId == companyId &&
             cm.UserId == requesterId &&
@@ -86,6 +106,6 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
     }
 
     private static WorkingHoursDto ToDto(WorkingHours wh) =>
-        new(wh.Id, wh.MasterId, wh.CompanyId, wh.DayOfWeek, wh.StartTime, wh.EndTime, wh.IsWorking,
+        new(wh.Id, wh.MasterId, wh.CompanyId, wh.Date, wh.StartTime, wh.EndTime, wh.IsWorking,
             wh.Breaks.Select(b => new BreakDto(b.Id, b.StartTime, b.EndTime)).ToList());
 }

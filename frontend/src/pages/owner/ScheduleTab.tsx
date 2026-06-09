@@ -1,139 +1,241 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isToday, isPast, startOfDay } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import { workingHoursApi, type WorkingHoursDto } from '../../api/workingHours'
-import { companiesApi, type MemberDto } from '../../api/companies'
+import { companiesApi } from '../../api/companies'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
+import { Modal } from '../../components/ui/Modal'
 
-const DAYS: { value: number; label: string; short: string }[] = [
-  { value: 1, label: 'Понедельник', short: 'Пн' },
-  { value: 2, label: 'Вторник',     short: 'Вт' },
-  { value: 3, label: 'Среда',       short: 'Ср' },
-  { value: 4, label: 'Четверг',     short: 'Чт' },
-  { value: 5, label: 'Пятница',     short: 'Пт' },
-  { value: 6, label: 'Суббота',     short: 'Сб' },
-  { value: 0, label: 'Воскресенье', short: 'Вс' },
-]
+// ── helpers ───────────────────────────────────────────────────────────────────
 
-const DEFAULT_START = '09:00'
-const DEFAULT_END   = '18:00'
+const toDateStr = (d: Date) => format(d, 'yyyy-MM-dd')
+const toTimeStr = (t: string) => t.slice(0, 5)          // 'HH:mm:ss' → 'HH:mm'
+const toApiTime = (t: string) => t.length === 5 ? t + ':00' : t  // 'HH:mm' → 'HH:mm:ss'
 
-function timeToStr(t: string) {
-  return t.slice(0, 5)
+const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
+// isoWeekday: Mon=1 … Sun=7 (date-fns getDay gives Sun=0)
+function isoWeekday(d: Date) {
+  const d0 = getDay(d)
+  return d0 === 0 ? 7 : d0
 }
 
-interface DayRowProps {
-  day: { value: number; label: string }
+// ── Day editor modal ──────────────────────────────────────────────────────────
+
+interface DayEditorProps {
+  date: Date
   entry: WorkingHoursDto | undefined
   masterId: string
   companyId: string
+  onClose: () => void
   onSaved: () => void
 }
 
-function DayRow({ day, entry, masterId, companyId, onSaved }: DayRowProps) {
-  const [isWorking, setIsWorking] = useState(entry?.isWorking ?? false)
-  const [start, setStart]         = useState(entry ? timeToStr(entry.startTime) : DEFAULT_START)
-  const [end, setEnd]             = useState(entry ? timeToStr(entry.endTime)   : DEFAULT_END)
-  const [breaks, setBreaks]       = useState<{ startTime: string; endTime: string }[]>(
-    entry?.breaks.map(b => ({ startTime: timeToStr(b.startTime), endTime: timeToStr(b.endTime) })) ?? []
+function DayEditor({ date, entry, masterId, companyId, onClose, onSaved }: DayEditorProps) {
+  const [isWorking, setIsWorking] = useState(entry?.isWorking ?? true)
+  const [start, setStart] = useState(entry ? toTimeStr(entry.startTime) : '09:00')
+  const [end, setEnd]     = useState(entry ? toTimeStr(entry.endTime)   : '18:00')
+  const [breaks, setBreaks] = useState<{ startTime: string; endTime: string }[]>(
+    entry?.breaks.map(b => ({ startTime: toTimeStr(b.startTime), endTime: toTimeStr(b.endTime) })) ?? []
   )
-  const [dirty, setDirty] = useState(false)
 
-  const mark = () => setDirty(true)
+  const qc = useQueryClient()
 
-  const upsert = useMutation({
+  const upsertMut = useMutation({
     mutationFn: () =>
-      workingHoursApi.upsert({ masterId, companyId, dayOfWeek: day.value, isWorking, startTime: start + ':00', endTime: end + ':00', breaks: breaks.map(b => ({ startTime: b.startTime + ':00', endTime: b.endTime + ':00' })) }),
-    onSuccess: () => { setDirty(false); onSaved() },
+      workingHoursApi.upsert({
+        masterId, companyId,
+        date: toDateStr(date),
+        isWorking,
+        startTime: toApiTime(start),
+        endTime: toApiTime(end),
+        breaks: breaks.map(b => ({ startTime: toApiTime(b.startTime), endTime: toApiTime(b.endTime) })),
+      }),
+    onSuccess: () => { onSaved(); onClose() },
   })
 
-  const addBreak = () => { setBreaks([...breaks, { startTime: '13:00', endTime: '14:00' }]); mark() }
-  const removeBreak = (i: number) => { setBreaks(breaks.filter((_, idx) => idx !== i)); mark() }
-  const updateBreak = (i: number, field: 'startTime' | 'endTime', val: string) => {
+  const deleteMut = useMutation({
+    mutationFn: () => workingHoursApi.delete(entry!.id),
+    onSuccess: () => { qc.invalidateQueries(); onClose() },
+  })
+
+  const addBreak    = () => setBreaks([...breaks, { startTime: '13:00', endTime: '14:00' }])
+  const removeBreak = (i: number) => setBreaks(breaks.filter((_, idx) => idx !== i))
+  const updateBreak = (i: number, field: 'startTime' | 'endTime', val: string) =>
     setBreaks(breaks.map((b, idx) => idx === i ? { ...b, [field]: val } : b))
-    mark()
-  }
+
+  const title = format(date, 'd MMMM yyyy', { locale: ru })
 
   return (
-    <Card className={`p-4 transition-all ${isWorking ? '' : 'opacity-60'}`}>
-      <div className="flex items-center gap-4 flex-wrap">
-        {/* Toggle */}
-        <label className="flex items-center gap-2 cursor-pointer min-w-[130px]">
+    <Modal title={title} onClose={onClose}>
+      <div className="flex flex-col gap-5">
+        {/* Working toggle */}
+        <label className="flex items-center gap-3 cursor-pointer select-none">
           <div
-            onClick={() => { setIsWorking(!isWorking); mark() }}
-            className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer ${isWorking ? 'bg-primary-500' : 'bg-gray-200'}`}
+            onClick={() => setIsWorking(w => !w)}
+            className={`relative w-11 h-6 rounded-full transition-colors cursor-pointer ${isWorking ? 'bg-primary-500' : 'bg-gray-200'}`}
           >
-            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${isWorking ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${isWorking ? 'translate-x-6' : 'translate-x-1'}`} />
           </div>
-          <span className="font-medium text-gray-800 text-sm">{day.label}</span>
+          <span className={`text-sm font-medium ${isWorking ? 'text-gray-900' : 'text-gray-400'}`}>
+            {isWorking ? 'Рабочий день' : 'Выходной'}
+          </span>
         </label>
 
-        {/* Time range */}
         {isWorking && (
           <>
-            <div className="flex items-center gap-2 text-sm">
-              <input
-                type="time"
-                value={start}
-                onChange={e => { setStart(e.target.value); mark() }}
-                className="rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-              />
-              <span className="text-gray-400">—</span>
-              <input
-                type="time"
-                value={end}
-                onChange={e => { setEnd(e.target.value); mark() }}
-                className="rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-              />
+            {/* Time range */}
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Рабочее время</p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="time"
+                  value={start}
+                  onChange={e => setStart(e.target.value)}
+                  className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                />
+                <span className="text-gray-400 text-sm">—</span>
+                <input
+                  type="time"
+                  value={end}
+                  onChange={e => setEnd(e.target.value)}
+                  className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                />
+              </div>
             </div>
 
             {/* Breaks */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {breaks.map((b, i) => (
-                <div key={i} className="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                  <span className="text-xs text-amber-600 font-medium">Перерыв</span>
-                  <input
-                    type="time"
-                    value={b.startTime}
-                    onChange={e => updateBreak(i, 'startTime', e.target.value)}
-                    className="text-xs bg-transparent outline-none w-16"
-                  />
-                  <span className="text-amber-400 text-xs">—</span>
-                  <input
-                    type="time"
-                    value={b.endTime}
-                    onChange={e => updateBreak(i, 'endTime', e.target.value)}
-                    className="text-xs bg-transparent outline-none w-16"
-                  />
-                  <button onClick={() => removeBreak(i)} className="text-amber-400 hover:text-red-500 text-xs ml-1">✕</button>
-                </div>
-              ))}
-              <button
-                onClick={addBreak}
-                className="text-xs text-gray-400 hover:text-primary-600 border border-dashed border-gray-200 hover:border-primary-300 rounded-lg px-2 py-1 transition-colors"
-              >
-                + перерыв
-              </button>
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Перерывы</p>
+              <div className="flex flex-col gap-2">
+                {breaks.map((b, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                    <span className="text-xs text-amber-700 font-medium w-16 shrink-0">Перерыв {i + 1}</span>
+                    <input
+                      type="time"
+                      value={b.startTime}
+                      onChange={e => updateBreak(i, 'startTime', e.target.value)}
+                      className="flex-1 text-sm bg-transparent outline-none"
+                    />
+                    <span className="text-amber-400 text-xs">—</span>
+                    <input
+                      type="time"
+                      value={b.endTime}
+                      onChange={e => updateBreak(i, 'endTime', e.target.value)}
+                      className="flex-1 text-sm bg-transparent outline-none"
+                    />
+                    <button onClick={() => removeBreak(i)} className="text-amber-400 hover:text-red-500 text-sm ml-1">✕</button>
+                  </div>
+                ))}
+                <button
+                  onClick={addBreak}
+                  className="text-sm text-gray-400 hover:text-primary-600 border border-dashed border-gray-200 hover:border-primary-300 rounded-xl px-3 py-2 transition-colors text-left"
+                >
+                  + Добавить перерыв
+                </button>
+              </div>
             </div>
           </>
         )}
 
-        {/* Save button */}
-        <div className="ml-auto">
-          {dirty ? (
-            <Button size="sm" loading={upsert.isPending} onClick={() => upsert.mutate()}>
-              Сохранить
+        {/* Actions */}
+        <div className="flex gap-3 pt-1">
+          {entry && (
+            <Button variant="danger" size="sm" loading={deleteMut.isPending} onClick={() => deleteMut.mutate()}>
+              Удалить
             </Button>
-          ) : upsert.isSuccess ? (
-            <span className="text-xs text-green-600 font-medium">✓ Сохранено</span>
-          ) : (
-            <span className="text-xs text-gray-300">{isWorking ? 'Рабочий день' : 'Выходной'}</span>
           )}
+          <Button variant="secondary" className="flex-1" onClick={onClose}>Отмена</Button>
+          <Button className="flex-1" loading={upsertMut.isPending} onClick={() => upsertMut.mutate()}>
+            Сохранить
+          </Button>
         </div>
+
+        {upsertMut.isError && (
+          <p className="text-sm text-red-500 text-center">Ошибка сохранения</p>
+        )}
       </div>
-    </Card>
+    </Modal>
   )
 }
+
+// ── Mini calendar ─────────────────────────────────────────────────────────────
+
+interface CalendarProps {
+  month: Date
+  hoursMap: Map<string, WorkingHoursDto>
+  onDayClick: (d: Date) => void
+}
+
+function Calendar({ month, hoursMap, onDayClick }: CalendarProps) {
+  const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
+  const startPad = isoWeekday(startOfMonth(month)) - 1  // Mon-based padding
+
+  return (
+    <div>
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {WEEK_DAYS.map(d => (
+          <div key={d} className="text-center text-xs font-medium text-gray-400 py-1">{d}</div>
+        ))}
+      </div>
+
+      {/* Day cells */}
+      <div className="grid grid-cols-7 gap-1">
+        {/* Empty leading cells */}
+        {Array.from({ length: startPad }).map((_, i) => <div key={`pad-${i}`} />)}
+
+        {days.map(day => {
+          const key = toDateStr(day)
+          const entry = hoursMap.get(key)
+          const past  = isPast(startOfDay(day)) && !isToday(day)
+          const today = isToday(day)
+
+          let cellClass = 'relative flex flex-col items-center justify-start pt-1 pb-1 rounded-xl h-14 text-sm cursor-pointer transition-all select-none border '
+
+          if (entry?.isWorking) {
+            cellClass += 'bg-primary-50 border-primary-200 hover:bg-primary-100 text-primary-800'
+          } else if (entry && !entry.isWorking) {
+            cellClass += 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-400'
+          } else if (past) {
+            cellClass += 'border-transparent text-gray-300 hover:bg-gray-50 cursor-default'
+          } else {
+            cellClass += 'border-transparent hover:border-gray-200 hover:bg-gray-50 text-gray-700'
+          }
+
+          if (today) cellClass += ' ring-2 ring-primary-400 ring-offset-1'
+
+          return (
+            <div
+              key={key}
+              className={cellClass}
+              onClick={() => !past && onDayClick(day)}
+            >
+              <span className={`font-medium text-xs ${today ? 'text-primary-600' : ''}`}>
+                {format(day, 'd')}
+              </span>
+              {entry?.isWorking && (
+                <span className="text-[10px] text-primary-500 leading-tight text-center px-1">
+                  {toTimeStr(entry.startTime)}–{toTimeStr(entry.endTime)}
+                </span>
+              )}
+              {entry?.isWorking && entry.breaks.length > 0 && (
+                <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-400" title="Есть перерывы" />
+              )}
+              {entry && !entry.isWorking && (
+                <span className="text-[10px] text-gray-400">выходной</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 interface Props {
   companyId: string
@@ -141,6 +243,8 @@ interface Props {
 
 export function ScheduleTab({ companyId }: Props) {
   const qc = useQueryClient()
+  const [month, setMonth]     = useState(() => new Date())
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [selectedMasterId, setSelectedMasterId] = useState<string>('')
 
   const { data: members } = useQuery({
@@ -151,13 +255,22 @@ export function ScheduleTab({ companyId }: Props) {
   const masters = members?.filter(m => m.role === 'Master' || m.role === 'CompanyOwner') ?? []
   const masterId = selectedMasterId || masters[0]?.userId || ''
 
+  const from = toDateStr(startOfMonth(month))
+  const to   = toDateStr(endOfMonth(month))
+
   const { data: hours, isLoading } = useQuery({
-    queryKey: ['working-hours', masterId, companyId],
-    queryFn: () => workingHoursApi.get(masterId, companyId),
+    queryKey: ['working-hours', masterId, companyId, from, to],
+    queryFn: () => workingHoursApi.get(masterId, companyId, from, to),
     enabled: !!masterId,
   })
 
-  const onSaved = () => qc.invalidateQueries({ queryKey: ['working-hours', masterId, companyId] })
+  const hoursMap = useMemo(() => {
+    const map = new Map<string, WorkingHoursDto>()
+    hours?.forEach(h => map.set(h.date, h))
+    return map
+  }, [hours])
+
+  const onSaved = () => qc.invalidateQueries({ queryKey: ['working-hours', masterId, companyId, from, to] })
 
   if (masters.length === 0) {
     return (
@@ -168,8 +281,11 @@ export function ScheduleTab({ companyId }: Props) {
     )
   }
 
+  const selectedMaster = masters.find(m => m.userId === masterId) ?? masters[0]
+
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-gray-900">Расписание</h2>
         {masters.length > 1 && (
@@ -187,32 +303,75 @@ export function ScheduleTab({ companyId }: Props) {
         )}
       </div>
 
-      {masters.length === 1 && (
-        <div className="flex items-center gap-2 mb-4 bg-orange-50 rounded-xl px-4 py-2">
-          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm">
-            {masters[0].firstName[0]}{masters[0].lastName[0]}
+      {/* Master badge (single master) */}
+      {masters.length === 1 && selectedMaster && (
+        <div className="flex items-center gap-2 mb-4 bg-orange-50 rounded-xl px-4 py-2 w-fit">
+          <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-xs shrink-0">
+            {selectedMaster.firstName[0]}{selectedMaster.lastName[0]}
           </div>
-          <span className="text-sm font-medium text-gray-700">{masters[0].firstName} {masters[0].lastName}</span>
+          <span className="text-sm font-medium text-gray-700">{selectedMaster.firstName} {selectedMaster.lastName}</span>
         </div>
       )}
 
-      {isLoading ? (
-        <div className="grid gap-3">
-          {Array.from({ length: 7 }).map((_, i) => <div key={i} className="h-14 bg-gray-100 rounded-2xl animate-pulse" />)}
+      <Card className="p-5">
+        {/* Month navigation */}
+        <div className="flex items-center justify-between mb-4">
+          <button
+            onClick={() => setMonth(m => subMonths(m, 1))}
+            className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-lg transition-colors"
+          >
+            ‹
+          </button>
+          <h3 className="text-base font-semibold text-gray-900 capitalize">
+            {format(month, 'LLLL yyyy', { locale: ru })}
+          </h3>
+          <button
+            onClick={() => setMonth(m => addMonths(m, 1))}
+            className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-lg transition-colors"
+          >
+            ›
+          </button>
         </div>
-      ) : (
-        <div className="grid gap-3">
-          {DAYS.map(day => (
-            <DayRow
-              key={day.value}
-              day={day}
-              entry={hours?.find(h => h.dayOfWeek === day.value)}
-              masterId={masterId}
-              companyId={companyId}
-              onSaved={onSaved}
-            />
-          ))}
+
+        {isLoading ? (
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: 35 }).map((_, i) => (
+              <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <Calendar month={month} hoursMap={hoursMap} onDayClick={setSelectedDay} />
+        )}
+
+        {/* Legend */}
+        <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded bg-primary-100 border border-primary-200" />
+            <span className="text-xs text-gray-500">Рабочий день</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded bg-gray-100 border border-gray-200" />
+            <span className="text-xs text-gray-500">Выходной</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span className="text-xs text-gray-500">Есть перерывы</span>
+          </div>
         </div>
+
+        <p className="text-xs text-gray-400 mt-2">Кликните на дату чтобы настроить расписание</p>
+      </Card>
+
+      {/* Day editor modal */}
+      {selectedDay && (
+        <DayEditor
+          date={selectedDay}
+          entry={hoursMap.get(toDateStr(selectedDay))}
+          masterId={masterId}
+          companyId={companyId}
+          onClose={() => setSelectedDay(null)}
+          onSaved={onSaved}
+        />
       )}
     </div>
   )

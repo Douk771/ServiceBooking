@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -12,16 +11,14 @@ public class SlotService(AppDbContext db)
         var service = await db.Services.FindAsync(serviceId);
         if (service is null) return [];
 
-        var dayOfWeek = date.DayOfWeek;
         var workingHours = await db.WorkingHours
             .Include(wh => wh.Breaks)
-            .FirstOrDefaultAsync(wh => wh.MasterId == masterId && wh.DayOfWeek == dayOfWeek && wh.IsWorking);
+            .FirstOrDefaultAsync(wh => wh.MasterId == masterId && wh.Date == date && wh.IsWorking);
 
         if (workingHours is null) return [];
 
         var existingBookings = await db.Bookings
-            .Where(b => b.MasterId == masterId && b.Date == date &&
-                        b.Status != BookingStatus.Cancelled)
+            .Where(b => b.MasterId == masterId && b.Date == date && b.Status != BookingStatus.Cancelled)
             .Select(b => new { b.StartTime, b.EndTime })
             .ToListAsync();
 
@@ -33,15 +30,15 @@ public class SlotService(AppDbContext db)
         while (current + duration <= end)
         {
             var slotStart = TimeOnly.FromTimeSpan(current);
-            var slotEnd = TimeOnly.FromTimeSpan(current + duration);
+            var slotEnd   = TimeOnly.FromTimeSpan(current + duration);
 
-            var isBreak = workingHours.Breaks.Any(b => b.StartTime < slotEnd && b.EndTime > slotStart);
+            var isBreak  = workingHours.Breaks.Any(b => b.StartTime < slotEnd && b.EndTime > slotStart);
             var isBooked = existingBookings.Any(b => b.StartTime < slotEnd && b.EndTime > slotStart);
 
             if (!isBreak && !isBooked)
                 slots.Add(new TimeSlotResult(slotStart, slotEnd));
 
-            current += TimeSpan.FromMinutes(30); // 30-minute step
+            current += TimeSpan.FromMinutes(30);
         }
 
         return slots;

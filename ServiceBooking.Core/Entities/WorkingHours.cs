@@ -5,7 +5,7 @@ public class WorkingHours
     public Guid Id { get; set; }
     public string MasterId { get; set; } = string.Empty;
     public Guid CompanyId { get; set; }
-    public DayOfWeek DayOfWeek { get; set; }
+    public DateOnly Date { get; set; }
     public TimeOnly StartTime { get; set; }
     public TimeOnly EndTime { get; set; }
     public bool IsWorking { get; set; } = true;
