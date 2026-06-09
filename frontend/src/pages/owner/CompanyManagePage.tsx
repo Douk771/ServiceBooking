@@ -151,6 +151,109 @@ function ServicesTab({ companyId }: { companyId: string }) {
 
 // ── Members tab ───────────────────────────────────────────────────────────────
 
+const roleLabel: Record<string, string> = { Master: 'Мастер', CompanyOwner: 'Владелец' }
+
+interface MemberCardProps {
+  member: import('../../api/companies').MemberDto
+  companyId: string
+  services: Service[]
+  onRemove: (id: string) => void
+  removeLoading: boolean
+}
+
+function MemberCard({ member: m, companyId, services, onRemove, removeLoading }: MemberCardProps) {
+  const qc = useQueryClient()
+  const [expanded, setExpanded] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set(m.serviceIds))
+  const [dirty, setDirty] = useState(false)
+
+  const toggle = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+    setDirty(true)
+  }
+
+  const saveMut = useMutation({
+    mutationFn: () => companiesApi.updateMemberServices(companyId, m.id, [...selected]),
+    onSuccess: () => { setDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+  })
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="p-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm shrink-0">
+            {m.firstName[0]}{m.lastName[0]}
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium text-gray-900">{m.firstName} {m.lastName}</p>
+            <p className="text-sm text-gray-400 truncate">{m.email} · {roleLabel[m.role] ?? m.role}</p>
+            {m.bio && <p className="text-xs text-gray-400 mt-0.5 truncate">{m.bio}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {services.length > 0 && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="text-xs text-gray-500 hover:text-primary-600 border border-gray-200 hover:border-primary-300 rounded-lg px-2 py-1 transition-colors"
+            >
+              Услуги {selected.size > 0 ? `(${selected.size})` : ''} {expanded ? '▲' : '▼'}
+            </button>
+          )}
+          <Button variant="danger" size="sm" loading={removeLoading} onClick={() => onRemove(m.id)}>
+            Удалить
+          </Button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Услуги сотрудника</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {services.map(s => {
+              const checked = selected.has(s.id)
+              return (
+                <label
+                  key={s.id}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-sm cursor-pointer select-none transition-all ${
+                    checked
+                      ? 'bg-primary-50 border-primary-300 text-primary-800'
+                      : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={checked}
+                    onChange={() => toggle(s.id)}
+                  />
+                  <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-primary-500 border-primary-500' : 'border-gray-300'}`}>
+                    {checked && <span className="text-white text-[9px] leading-none">✓</span>}
+                  </span>
+                  {s.name}
+                </label>
+              )
+            })}
+          </div>
+          <div className="flex items-center gap-3">
+            {dirty && (
+              <Button size="sm" loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
+                Сохранить
+              </Button>
+            )}
+            {saveMut.isSuccess && !dirty && (
+              <span className="text-xs text-green-600 font-medium">✓ Сохранено</span>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function MembersTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
@@ -163,6 +266,11 @@ function MembersTab({ companyId }: { companyId: string }) {
     queryFn: () => companiesApi.getMembers(companyId),
   })
 
+  const { data: services } = useQuery({
+    queryKey: ['services', companyId],
+    queryFn: () => servicesApi.getByCompany(companyId),
+  })
+
   const addMut = useMutation({
     mutationFn: (d: { email: string; firstName: string; lastName: string; role: string; bio: string }) =>
       companiesApi.addMember(companyId, d.email, d.firstName, d.lastName, d.role, d.bio || undefined),
@@ -173,8 +281,6 @@ function MembersTab({ companyId }: { companyId: string }) {
     mutationFn: (memberId: string) => companiesApi.removeMember(companyId, memberId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['company-members', companyId] }),
   })
-
-  const roleLabel: Record<string, string> = { Master: 'Мастер', CompanyOwner: 'Владелец' }
 
   return (
     <div>
@@ -190,21 +296,14 @@ function MembersTab({ companyId }: { companyId: string }) {
       ) : members && members.length > 0 ? (
         <div className="grid gap-3">
           {members.map((m) => (
-            <Card key={m.id} className="p-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm shrink-0">
-                  {m.firstName[0]}{m.lastName[0]}
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">{m.firstName} {m.lastName}</p>
-                  <p className="text-sm text-gray-400">{m.email} · {roleLabel[m.role] ?? m.role}</p>
-                  {m.bio && <p className="text-xs text-gray-400 mt-0.5">{m.bio}</p>}
-                </div>
-              </div>
-              <Button variant="danger" size="sm" loading={removeMut.isPending} onClick={() => removeMut.mutate(m.id)}>
-                Удалить
-              </Button>
-            </Card>
+            <MemberCard
+              key={m.id}
+              member={m}
+              companyId={companyId}
+              services={services ?? []}
+              onRemove={(id) => removeMut.mutate(id)}
+              removeLoading={removeMut.isPending}
+            />
           ))}
         </div>
       ) : (
@@ -219,7 +318,7 @@ function MembersTab({ companyId }: { companyId: string }) {
           <form onSubmit={handleSubmit((d) => addMut.mutate(d))} className="flex flex-col gap-4">
             <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
               Если пользователь ещё не зарегистрирован — аккаунт будет создан автоматически.<br />
-              Временный пароль: <strong>логин (до @) + 123</strong>
+              Временный пароль: <strong>Логин с заглавной + 123</strong> (например, email <em>anna@…</em> → <em>Anna123</em>)
             </p>
             <Input label="Email *" type="email" placeholder="master@example.com" {...register('email', { required: true })} />
             <div className="grid grid-cols-2 gap-3">

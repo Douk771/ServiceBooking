@@ -57,11 +57,48 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         var members = await db.CompanyMembers
             .Include(cm => cm.User)
             .Where(cm => cm.CompanyId == id)
-            .Select(cm => new MemberDto(cm.Id, cm.UserId, cm.User.FirstName, cm.User.LastName,
-                cm.User.Email!, cm.User.AvatarUrl, cm.Role.ToString(), cm.Bio))
             .ToListAsync();
 
-        return Ok(members);
+        var userIds = members.Select(m => m.UserId).ToList();
+        var masterServices = await db.MasterServices
+            .Where(ms => userIds.Contains(ms.MasterId))
+            .ToListAsync();
+
+        var result = members.Select(cm => new MemberDto(
+            cm.Id, cm.UserId, cm.User.FirstName, cm.User.LastName,
+            cm.User.Email!, cm.User.AvatarUrl, cm.Role.ToString(), cm.Bio,
+            masterServices.Where(ms => ms.MasterId == cm.UserId).Select(ms => ms.ServiceId).ToList()
+        )).ToList();
+
+        return Ok(result);
+    }
+
+    [HttpPut("{id:guid}/members/{memberId:guid}/services")]
+    [Authorize]
+    public async Task<IActionResult> UpdateMemberServices(Guid id, Guid memberId, [FromBody] List<Guid> serviceIds)
+    {
+        if (!await CanManageCompany(id)) return Forbid();
+
+        var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
+        if (member is null) return NotFound();
+
+        // Remove existing services for this master that belong to this company
+        var companyServiceIds = await db.Services
+            .Where(s => s.CompanyId == id)
+            .Select(s => s.Id)
+            .ToListAsync();
+
+        var existing = await db.MasterServices
+            .Where(ms => ms.MasterId == member.UserId && companyServiceIds.Contains(ms.ServiceId))
+            .ToListAsync();
+
+        db.MasterServices.RemoveRange(existing);
+
+        foreach (var sid in serviceIds.Distinct())
+            db.MasterServices.Add(new MasterService { Id = Guid.NewGuid(), MasterId = member.UserId, ServiceId = sid });
+
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpPost]
@@ -141,8 +178,9 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
 
         if (user is null)
         {
-            // Auto-create user: password = <login-before-@>123
+            // Auto-create: password = capitalized login + "123", padded to 8 chars minimum
             var login = dto.Email.Split('@')[0];
+            var pwd = (char.ToUpper(login[0]) + (login.Length > 1 ? login[1..] : "") + "123").PadRight(8, '0');
             user = new AppUser
             {
                 UserName = dto.Email,
@@ -151,7 +189,7 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
                 LastName = dto.LastName,
                 EmailConfirmed = true,
             };
-            var createResult = await userManager.CreateAsync(user, login + "123");
+            var createResult = await userManager.CreateAsync(user, pwd);
             if (!createResult.Succeeded)
                 return BadRequest(createResult.Errors.Select(e => e.Description));
         }
@@ -177,7 +215,7 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         await db.SaveChangesAsync();
 
         return Ok(new MemberDto(member.Id, user.Id, user.FirstName, user.LastName,
-            user.Email!, user.AvatarUrl, dto.Role, dto.Bio));
+            user.Email!, user.AvatarUrl, dto.Role, dto.Bio, []));
     }
 
     [HttpDelete("{id:guid}/members/{memberId:guid}")]

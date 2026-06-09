@@ -8,7 +8,8 @@ public record MemberDto(
     string Email,
     string? AvatarUrl,
     string Role,
-    string? Bio
+    string? Bio,
+    List<Guid> ServiceIds
 );
 
 public record AddMemberDto(

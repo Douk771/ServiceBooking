@@ -10,6 +10,7 @@ export interface MemberDto {
   avatarUrl?: string
   role: string
   bio?: string
+  serviceIds: string[]
 }
 
 export interface CreateCompanyPayload {
@@ -42,4 +43,6 @@ export const companiesApi = {
     api.post<MemberDto>(`/companies/${id}/members`, { email, firstName, lastName, role, bio }).then((r) => r.data),
   removeMember: (companyId: string, memberId: string) =>
     api.delete(`/companies/${companyId}/members/${memberId}`),
+  updateMemberServices: (companyId: string, memberId: string, serviceIds: string[]) =>
+    api.put(`/companies/${companyId}/members/${memberId}/services`, serviceIds),
 }
