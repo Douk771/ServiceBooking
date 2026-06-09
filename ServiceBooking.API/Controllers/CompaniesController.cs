@@ -134,8 +134,27 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
     {
         if (!await CanManageCompany(id)) return Forbid();
 
+        // Validate that the caller is allowed to assign the requested role
+        if (!await CanAssignRole(dto.Role)) return Forbid();
+
         var user = await userManager.FindByEmailAsync(dto.Email);
-        if (user is null) return NotFound("User not found");
+
+        if (user is null)
+        {
+            // Auto-create user: password = <login-before-@>123
+            var login = dto.Email.Split('@')[0];
+            user = new AppUser
+            {
+                UserName = dto.Email,
+                Email = dto.Email,
+                FirstName = dto.FirstName,
+                LastName = dto.LastName,
+                EmailConfirmed = true,
+            };
+            var createResult = await userManager.CreateAsync(user, login + "123");
+            if (!createResult.Succeeded)
+                return BadRequest(createResult.Errors.Select(e => e.Description));
+        }
 
         var exists = await db.CompanyMembers.AnyAsync(cm => cm.CompanyId == id && cm.UserId == user.Id);
         if (exists) return Conflict("User is already a member");
@@ -185,5 +204,13 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
             cm.CompanyId == companyId &&
             cm.UserId == userId &&
             cm.Role == UserRole.CompanyOwner);
+    }
+
+    // SuperAdmin can assign any role; CompanyOwner can assign Master or CompanyOwner only.
+    private Task<bool> CanAssignRole(string role)
+    {
+        if (User.IsInRole("SuperAdmin")) return Task.FromResult(true);
+        var allowed = new[] { "Master", "CompanyOwner" };
+        return Task.FromResult(allowed.Contains(role));
     }
 }

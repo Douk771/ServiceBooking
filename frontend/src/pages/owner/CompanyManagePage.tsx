@@ -154,7 +154,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
 function MembersTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
-  const { register, handleSubmit, reset } = useForm<{ email: string; role: string; bio: string }>({
+  const { register, handleSubmit, reset } = useForm<{ email: string; firstName: string; lastName: string; role: string; bio: string }>({
     defaultValues: { role: 'Master' }
   })
 
@@ -164,8 +164,8 @@ function MembersTab({ companyId }: { companyId: string }) {
   })
 
   const addMut = useMutation({
-    mutationFn: (d: { email: string; role: string; bio: string }) =>
-      companiesApi.addMember(companyId, d.email, d.role, d.bio || undefined),
+    mutationFn: (d: { email: string; firstName: string; lastName: string; role: string; bio: string }) =>
+      companiesApi.addMember(companyId, d.email, d.firstName, d.lastName, d.role, d.bio || undefined),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['company-members', companyId] }); setShowAdd(false); reset() },
   })
 
@@ -217,7 +217,15 @@ function MembersTab({ companyId }: { companyId: string }) {
       {showAdd && (
         <Modal title="Добавить сотрудника" onClose={() => { setShowAdd(false); reset() }}>
           <form onSubmit={handleSubmit((d) => addMut.mutate(d))} className="flex flex-col gap-4">
-            <Input label="Email пользователя *" type="email" placeholder="master@example.com" {...register('email', { required: true })} />
+            <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              Если пользователь ещё не зарегистрирован — аккаунт будет создан автоматически.<br />
+              Временный пароль: <strong>логин (до @) + 123</strong>
+            </p>
+            <Input label="Email *" type="email" placeholder="master@example.com" {...register('email', { required: true })} />
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Имя *" placeholder="Иван" {...register('firstName', { required: true })} />
+              <Input label="Фамилия *" placeholder="Иванов" {...register('lastName', { required: true })} />
+            </div>
             <div className="flex flex-col gap-1">
               <label className="text-sm font-medium text-gray-700">Роль</label>
               <select
@@ -228,8 +236,8 @@ function MembersTab({ companyId }: { companyId: string }) {
                 <option value="CompanyOwner">Совладелец</option>
               </select>
             </div>
-            <Input label="О мастере" placeholder="Специализация, опыт..." {...register('bio')} />
-            {addMut.isError && <p className="text-sm text-red-500">Пользователь не найден или уже является сотрудником</p>}
+            <Input label="О сотруднике" placeholder="Специализация, опыт..." {...register('bio')} />
+            {addMut.isError && <p className="text-sm text-red-500">Пользователь уже является сотрудником или данные некорректны</p>}
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" className="flex-1" onClick={() => { setShowAdd(false); reset() }}>Отмена</Button>
               <Button type="submit" className="flex-1" loading={addMut.isPending}>Добавить</Button>

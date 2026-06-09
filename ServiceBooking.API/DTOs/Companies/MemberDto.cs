@@ -13,6 +13,8 @@ public record MemberDto(
 
 public record AddMemberDto(
     string Email,
+    string FirstName,
+    string LastName,
     string Role,
     string? Bio
 );

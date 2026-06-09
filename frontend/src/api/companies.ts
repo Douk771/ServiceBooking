@@ -38,8 +38,8 @@ export const companiesApi = {
   create: (data: CreateCompanyPayload) => api.post<Company>('/companies', data).then((r) => r.data),
   update: (id: string, data: UpdateCompanyPayload) => api.put<Company>(`/companies/${id}`, data).then((r) => r.data),
   getMembers: (id: string) => api.get<MemberDto[]>(`/companies/${id}/members`).then((r) => r.data),
-  addMember: (id: string, email: string, role: string, bio?: string) =>
-    api.post<MemberDto>(`/companies/${id}/members`, { email, role, bio }).then((r) => r.data),
+  addMember: (id: string, email: string, firstName: string, lastName: string, role: string, bio?: string) =>
+    api.post<MemberDto>(`/companies/${id}/members`, { email, firstName, lastName, role, bio }).then((r) => r.data),
   removeMember: (companyId: string, memberId: string) =>
     api.delete(`/companies/${companyId}/members/${memberId}`),
 }
