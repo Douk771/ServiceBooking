@@ -8,6 +8,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
+import { ScheduleTab } from './ScheduleTab'
 import type { Service } from '../../types'
 
 // ── Services tab ──────────────────────────────────────────────────────────────
@@ -296,7 +297,7 @@ function SettingsTab({ companyId }: { companyId: string }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'services' | 'members' | 'settings'
+type Tab = 'services' | 'schedule' | 'members' | 'settings'
 
 export function CompanyManagePage() {
   const { id } = useParams<{ id: string }>()
@@ -306,9 +307,10 @@ export function CompanyManagePage() {
   const company = companies?.find((c) => c.id === id)
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'services', label: '🛠 Услуги' },
-    { key: 'members', label: '👥 Сотрудники' },
-    { key: 'settings', label: '⚙️ Настройки' },
+    { key: 'services',  label: '🛠 Услуги' },
+    { key: 'schedule',  label: '📅 Расписание' },
+    { key: 'members',   label: '👥 Сотрудники' },
+    { key: 'settings',  label: '⚙️ Настройки' },
   ]
 
   return (
@@ -333,9 +335,10 @@ export function CompanyManagePage() {
         ))}
       </div>
 
-      {id && tab === 'services' && <ServicesTab companyId={id} />}
-      {id && tab === 'members' && <MembersTab companyId={id} />}
-      {id && tab === 'settings' && <SettingsTab companyId={id} />}
+      {id && tab === 'services'  && <ServicesTab  companyId={id} />}
+      {id && tab === 'schedule'  && <ScheduleTab  companyId={id} />}
+      {id && tab === 'members'   && <MembersTab   companyId={id} />}
+      {id && tab === 'settings'  && <SettingsTab  companyId={id} />}
     </div>
   )
 }
