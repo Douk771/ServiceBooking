@@ -11,7 +11,16 @@
       "Bash(ls /usr/local/bin/ /opt/homebrew/bin/ 2>/dev/null | grep -i node)",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(brew list *)",
+      "Bash(dotnet run *)",
+      "Bash(curl -s http://localhost:5000/api/companies)",
+      "Bash(curl -s http://localhost:5291/api/companies)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(pkill -f \"ServiceBooking.API\")",
+      "Bash(curl -s http://localhost:5291/api/companies/my -H \"Authorization: Bearer test\")"
     ]
   }
 }

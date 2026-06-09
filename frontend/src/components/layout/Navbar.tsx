@@ -11,6 +11,8 @@ export function Navbar() {
     navigate('/')
   }
 
+  const isMaster = hasRole('Master') || hasRole('CompanyOwner') || hasRole('SuperAdmin')
+
   return (
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-orange-100">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -22,15 +24,18 @@ export function Navbar() {
         <div className="flex items-center gap-3">
           {isAuthenticated() ? (
             <>
-              {(hasRole('Master') || hasRole('CompanyOwner')) && (
+              {isMaster && (
                 <Link to="/dashboard" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
-                  Кабинет мастера
+                  Расписание
                 </Link>
               )}
+              <Link to="/owner" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
+                Кабинет
+              </Link>
               <Link to="/my-bookings" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
                 Мои записи
               </Link>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 ml-1">
                 <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm">
                   {user?.firstName[0]}{user?.lastName[0]}
                 </div>

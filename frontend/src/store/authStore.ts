@@ -16,14 +16,8 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
-      setAuth: (user, token) => {
-        localStorage.setItem('token', token)
-        set({ user, token })
-      },
-      logout: () => {
-        localStorage.removeItem('token')
-        set({ user: null, token: null })
-      },
+      setAuth: (user, token) => set({ user, token }),
+      logout: () => set({ user: null, token: null }),
       isAuthenticated: () => get().token !== null,
       hasRole: (role) => get().user?.roles.includes(role) ?? false,
     }),

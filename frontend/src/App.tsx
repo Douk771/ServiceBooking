@@ -7,6 +7,8 @@ import { RegisterPage } from './pages/RegisterPage'
 import { CompanyPage } from './pages/CompanyPage'
 import { MyBookingsPage } from './pages/MyBookingsPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { OwnerPage } from './pages/owner/OwnerPage'
+import { CompanyManagePage } from './pages/owner/CompanyManagePage'
 import { useAuthStore } from './store/authStore'
 
 const queryClient = new QueryClient({
@@ -38,6 +40,12 @@ export default function App() {
               <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
                 <DashboardPage />
               </ProtectedRoute>
+            } />
+            <Route path="/owner" element={
+              <ProtectedRoute><OwnerPage /></ProtectedRoute>
+            } />
+            <Route path="/owner/company/:id" element={
+              <ProtectedRoute><CompanyManagePage /></ProtectedRoute>
             } />
           </Routes>
         </div>

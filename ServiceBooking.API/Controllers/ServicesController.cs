@@ -25,7 +25,7 @@ public class ServicesController(AppDbContext db) : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "CompanyOwner,SuperAdmin")]
+    [Authorize]
     public async Task<ActionResult<ServiceDto>> Create(CreateServiceDto dto)
     {
         if (!await CanManageCompany(dto.CompanyId)) return Forbid();
@@ -44,11 +44,30 @@ public class ServicesController(AppDbContext db) : ControllerBase
         db.Services.Add(service);
         await db.SaveChangesAsync();
 
-        return CreatedAtAction(null, new ServiceDto(service.Id, service.CompanyId, service.Name, service.Description, service.DurationMinutes, service.Price, service.ImageUrl));
+        return Ok(new ServiceDto(service.Id, service.CompanyId, service.Name, service.Description, service.DurationMinutes, service.Price, service.ImageUrl));
+    }
+
+    [HttpPut("{id:guid}")]
+    [Authorize]
+    public async Task<ActionResult<ServiceDto>> Update(Guid id, CreateServiceDto dto)
+    {
+        var service = await db.Services.FindAsync(id);
+        if (service is null) return NotFound();
+        if (!await CanManageCompany(service.CompanyId)) return Forbid();
+
+        service.Name = dto.Name;
+        service.Description = dto.Description;
+        service.DurationMinutes = dto.DurationMinutes;
+        service.Price = dto.Price;
+        if (dto.ImageUrl is not null) service.ImageUrl = dto.ImageUrl;
+
+        await db.SaveChangesAsync();
+
+        return Ok(new ServiceDto(service.Id, service.CompanyId, service.Name, service.Description, service.DurationMinutes, service.Price, service.ImageUrl));
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "CompanyOwner,SuperAdmin")]
+    [Authorize]
     public async Task<IActionResult> Delete(Guid id)
     {
         var service = await db.Services.FindAsync(id);
