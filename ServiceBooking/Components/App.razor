@@ -1,0 +1,45 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <base href="/"/>
+    <link rel="stylesheet" href="app.css"/>
+    <link rel="stylesheet" href="ServiceBooking.styles.css"/>
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css" rel="stylesheet" />
+    <HeadOutlet/>
+</head>
+
+<body>
+<Routes/>
+<app>
+    <!-- Важно: render-mode="ServerPrerendered" -->
+    <component type="typeof(App)" render-mode="ServerPrerendered" />
+</app>
+<script src="_framework/blazor.server.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+
+<script>
+    window.calendarInterop = {
+        init: function (elementId, eventsJson) {
+            var calendarEl = document.getElementById(elementId);
+            if (!calendarEl) return;
+
+            var events = JSON.parse(eventsJson);
+
+            var calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                events: events,
+                eventClick: function(info) {
+                    DotNet.invokeMethodAsync('ServiceBooking', 'OnEventClick', info.event.id);
+                }
+            });
+            calendar.render();
+        }
+    };
+</script>
+
+</body>
+
+</html>

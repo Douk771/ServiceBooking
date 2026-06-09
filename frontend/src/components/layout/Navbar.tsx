@@ -1,0 +1,56 @@
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuthStore } from '../../store/authStore'
+import { Button } from '../ui/Button'
+
+export function Navbar() {
+  const { user, logout, isAuthenticated, hasRole } = useAuthStore()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/')
+  }
+
+  return (
+    <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-orange-100">
+      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+        <Link to="/" className="flex items-center gap-2 font-bold text-xl text-primary-600">
+          <span className="text-2xl">📅</span>
+          <span>ServiceBooking</span>
+        </Link>
+
+        <div className="flex items-center gap-3">
+          {isAuthenticated() ? (
+            <>
+              {(hasRole('Master') || hasRole('CompanyOwner')) && (
+                <Link to="/dashboard" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
+                  Кабинет мастера
+                </Link>
+              )}
+              <Link to="/my-bookings" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
+                Мои записи
+              </Link>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm">
+                  {user?.firstName[0]}{user?.lastName[0]}
+                </div>
+                <Button variant="ghost" size="sm" onClick={handleLogout}>
+                  Выйти
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <Link to="/login">
+                <Button variant="ghost" size="sm">Войти</Button>
+              </Link>
+              <Link to="/register">
+                <Button size="sm">Регистрация</Button>
+              </Link>
+            </>
+          )}
+        </div>
+      </div>
+    </nav>
+  )
+}
