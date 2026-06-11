@@ -12,7 +12,7 @@ namespace ServiceBooking.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class BookingsController(AppDbContext db, SlotService slotService, CaptchaService captchaService) : ControllerBase
+public class BookingsController(AppDbContext db, SlotService slotService, CaptchaService captchaService, IConfiguration config) : ControllerBase
 {
     [HttpGet("slots")]
     public async Task<ActionResult<List<TimeSlotResult>>> GetSlots(
@@ -37,10 +37,12 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             if (company is null) return NotFound("Company not found");
             if (!company.AllowSelfBooking) return Forbid();
 
-            if (string.IsNullOrEmpty(dto.CaptchaToken))
+            // Require captcha token only when a secret key is actually configured (skip in dev)
+            var captchaConfigured = !string.IsNullOrEmpty(config["Recaptcha:SecretKey"]);
+            if (captchaConfigured && string.IsNullOrEmpty(dto.CaptchaToken))
                 return BadRequest("Captcha required for guest booking");
 
-            if (!await captchaService.ValidateAsync(dto.CaptchaToken))
+            if (!string.IsNullOrEmpty(dto.CaptchaToken) && !await captchaService.ValidateAsync(dto.CaptchaToken))
                 return BadRequest("Invalid captcha");
 
             if (string.IsNullOrEmpty(dto.GuestName) || string.IsNullOrEmpty(dto.GuestPhone))

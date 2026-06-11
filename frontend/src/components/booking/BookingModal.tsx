@@ -44,6 +44,7 @@ export function BookingModal({ service, company, onClose }: Props) {
     queryKey: ['slots', selectedMasterId, service.id, selectedDate],
     queryFn: () => bookingsApi.getSlots(selectedMasterId, service.id, selectedDate),
     enabled: !!selectedMasterId && !!selectedDate,
+    staleTime: 0, // always fetch fresh — bookings made by others should be reflected immediately
   })
 
   const mutation = useMutation({
