@@ -1,22 +1,32 @@
-import { useState } from 'react'
+import { useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format } from 'date-fns'
+import { format, addDays, parseISO, isToday, isTomorrow } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../api/bookings'
 import { companiesApi } from '../api/companies'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
 import { ScheduleTab } from './owner/ScheduleTab'
+import type { Booking } from '../types'
+
+function dayLabel(dateStr: string) {
+  const d = parseISO(dateStr)
+  if (isToday(d)) return 'Сегодня'
+  if (isTomorrow(d)) return 'Завтра'
+  return format(d, 'd MMMM, EEE', { locale: ru })
+}
 
 // ── Bookings tab ──────────────────────────────────────────────────────────────
 
 function BookingsTab() {
-  const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const weekEnd = format(addDays(new Date(), 6), 'yyyy-MM-dd')
   const qc = useQueryClient()
 
   const { data: bookings, isLoading } = useQuery({
-    queryKey: ['master-bookings', date],
-    queryFn: () => bookingsApi.getMasterBookings(date),
+    queryKey: ['master-bookings', today, weekEnd],
+    queryFn: () => bookingsApi.getMasterBookings(today, weekEnd),
   })
 
   const cancel = useMutation({
@@ -24,55 +34,68 @@ function BookingsTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['master-bookings'] }),
   })
 
+  // Group bookings by date
+  const grouped = useMemo(() => {
+    if (!bookings) return []
+    const map = new Map<string, Booking[]>()
+    for (const b of bookings) {
+      const arr = map.get(b.date) ?? []
+      arr.push(b)
+      map.set(b.date, arr)
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
+  }, [bookings])
+
   return (
     <div>
-      <Card className="p-6 mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Выберите дату</label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-        />
-      </Card>
-
-      <h2 className="text-lg font-semibold text-gray-700 mb-4">
-        Записи на {date} {bookings && `(${bookings.length})`}
-      </h2>
+      <div className="flex items-center justify-between mb-5">
+        <p className="text-sm text-gray-500">
+          {today} — {weekEnd} · {bookings ? `${bookings.length} записей` : ''}
+        </p>
+      </div>
 
       {isLoading ? (
         <div className="grid gap-4">
           {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-2xl animate-pulse" />)}
         </div>
-      ) : bookings && bookings.length > 0 ? (
-        <div className="grid gap-3">
-          {bookings.map((b) => (
-            <Card key={b.id} className="p-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="text-center bg-orange-50 rounded-xl px-3 py-2 min-w-[60px]">
-                  <div className="text-lg font-bold text-primary-600">{b.startTime.slice(0, 5)}</div>
-                  <div className="text-xs text-gray-400">{b.endTime.slice(0, 5)}</div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900">{b.clientName}</span>
-                    <StatusBadge status={b.status} />
-                  </div>
-                  <p className="text-sm text-gray-500">{b.serviceName}</p>
-                  {b.clientPhone && <p className="text-xs text-gray-400 mt-0.5">📞 {b.clientPhone}</p>}
-                </div>
+      ) : grouped.length > 0 ? (
+        <div className="grid gap-6">
+          {grouped.map(([date, dayBookings]) => (
+            <div key={date}>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                {dayLabel(date)}
+              </h3>
+              <div className="grid gap-2">
+                {dayBookings.map((b) => (
+                  <Card key={b.id} className="p-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="text-center bg-orange-50 rounded-xl px-3 py-2 min-w-[60px]">
+                        <div className="text-lg font-bold text-primary-600">{b.startTime.slice(0, 5)}</div>
+                        <div className="text-xs text-gray-400">{b.endTime.slice(0, 5)}</div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">{b.clientName}</span>
+                          <StatusBadge status={b.status} />
+                        </div>
+                        <p className="text-sm text-gray-500">{b.serviceName}</p>
+                        {b.clientPhone && <p className="text-xs text-gray-400 mt-0.5">📞 {b.clientPhone}</p>}
+                      </div>
+                    </div>
+                    {(b.status === 'Pending' || b.status === 'Confirmed') && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={cancel.isPending}
+                        onClick={() => cancel.mutate(b.id)}
+                      >
+                        Отменить
+                      </Button>
+                    )}
+                  </Card>
+                ))}
               </div>
-              {(b.status === 'Pending' || b.status === 'Confirmed') && (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  loading={cancel.isPending}
-                  onClick={() => cancel.mutate(b.id)}
-                >
-                  Отменить
-                </Button>
-              )}
-            </Card>
+            </div>
           ))}
         </div>
       ) : (

@@ -25,8 +25,8 @@ export const bookingsApi = {
 
   getMyBookings: () => api.get<Booking[]>('/bookings/my').then((r) => r.data),
 
-  getMasterBookings: (date?: string) =>
-    api.get<Booking[]>('/bookings/master', { params: { date } }).then((r) => r.data),
+  getMasterBookings: (date?: string, to?: string) =>
+    api.get<Booking[]>('/bookings/master', { params: { date, to } }).then((r) => r.data),
 
   cancel: (id: string, reason?: string) =>
     api.patch(`/bookings/${id}/cancel`, reason ? JSON.stringify(reason) : null),

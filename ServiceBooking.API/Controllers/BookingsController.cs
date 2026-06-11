@@ -150,7 +150,7 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
 
     [HttpGet("master")]
     [Authorize(Roles = "Master,CompanyOwner")]
-    public async Task<ActionResult<List<BookingDto>>> GetMasterBookings([FromQuery] DateOnly? date)
+    public async Task<ActionResult<List<BookingDto>>> GetMasterBookings([FromQuery] DateOnly? date, [FromQuery] DateOnly? to)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var query = db.Bookings
@@ -160,7 +160,9 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             .Where(b => b.MasterId == userId);
 
         if (date.HasValue)
-            query = query.Where(b => b.Date == date.Value);
+            query = query.Where(b => b.Date >= date.Value);
+        if (to.HasValue)
+            query = query.Where(b => b.Date <= to.Value);
 
         var bookings = await query
             .OrderBy(b => b.Date)
