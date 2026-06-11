@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { format, parseISO } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../api/bookings'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -21,7 +23,7 @@ function BookingCard({ booking }: { booking: Booking }) {
             <StatusBadge status={booking.status} />
           </div>
           <p className="text-sm text-gray-500">
-            👤 {booking.masterName} · 📅 {booking.date} · ⏰ {booking.startTime.slice(0, 5)}–{booking.endTime.slice(0, 5)}
+            👤 {booking.masterName} · 📅 {format(parseISO(booking.date), 'd MMM yyyy, EEE', { locale: ru })} · ⏰ {booking.startTime.slice(0, 5)}–{booking.endTime.slice(0, 5)}
           </p>
         </div>
         {(booking.status === 'Pending' || booking.status === 'Confirmed') && (
