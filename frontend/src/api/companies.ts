@@ -44,6 +44,7 @@ export const companiesApi = {
   getAll: () => api.get<Company[]>('/companies').then((r) => r.data),
   getBySlug: (slug: string) => api.get<Company>(`/companies/${slug}`).then((r) => r.data),
   getMy: () => api.get<Company[]>('/companies/my').then((r) => r.data),
+  getMemberOf: () => api.get<Company[]>('/companies/member').then((r) => r.data),
   create: (data: CreateCompanyPayload) => api.post<Company>('/companies', data).then((r) => r.data),
   update: (id: string, data: UpdateCompanyPayload) => api.put<Company>(`/companies/${id}`, data).then((r) => r.data),
   getMasters: (id: string, serviceId?: string) =>

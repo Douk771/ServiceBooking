@@ -39,6 +39,21 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         return Ok(companies);
     }
 
+    // Returns all companies where the current user is a member (any role)
+    [HttpGet("member")]
+    [Authorize]
+    public async Task<ActionResult<List<CompanyDto>>> GetMemberOf()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var companies = await db.CompanyMembers
+            .Where(cm => cm.UserId == userId && cm.Company.IsActive)
+            .Select(cm => new CompanyDto(cm.Company.Id, cm.Company.Name, cm.Company.Slug, cm.Company.Description,
+                cm.Company.LogoUrl, cm.Company.Address, cm.Company.Phone, cm.Company.Email, cm.Company.AllowSelfBooking))
+            .ToListAsync();
+
+        return Ok(companies);
+    }
+
     [HttpGet("{slug}")]
     public async Task<ActionResult<CompanyDto>> GetBySlug(string slug)
     {
