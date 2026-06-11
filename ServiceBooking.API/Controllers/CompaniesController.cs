@@ -48,6 +48,33 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         return Ok(new CompanyDto(c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email, c.AllowSelfBooking));
     }
 
+    // Public: list masters for a company, optionally filtered by serviceId
+    [HttpGet("{id:guid}/masters")]
+    public async Task<ActionResult<List<MasterPublicDto>>> GetMasters(Guid id, [FromQuery] Guid? serviceId)
+    {
+        var memberQuery = db.CompanyMembers
+            .Include(cm => cm.User)
+            .Where(cm => cm.CompanyId == id && cm.Company.IsActive);
+
+        if (serviceId.HasValue)
+        {
+            var masterIdsForService = await db.MasterServices
+                .Where(ms => ms.ServiceId == serviceId.Value)
+                .Select(ms => ms.MasterId)
+                .ToListAsync();
+
+            // If no service assignments exist for anyone, show all masters (fallback)
+            if (masterIdsForService.Count > 0)
+                memberQuery = memberQuery.Where(cm => masterIdsForService.Contains(cm.UserId));
+        }
+
+        var members = await memberQuery.ToListAsync();
+
+        return Ok(members.Select(cm => new MasterPublicDto(
+            cm.UserId, cm.User.FirstName, cm.User.LastName, cm.User.AvatarUrl, cm.Bio
+        )).ToList());
+    }
+
     [HttpGet("{id:guid}/members")]
     [Authorize]
     public async Task<ActionResult<List<MemberDto>>> GetMembers(Guid id)

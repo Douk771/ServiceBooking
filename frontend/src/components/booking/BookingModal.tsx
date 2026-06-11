@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { format, addDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../../api/bookings'
+import { companiesApi } from '../../api/companies'
 import { useAuthStore } from '../../store/authStore'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
@@ -14,17 +15,24 @@ interface Props {
   onClose: () => void
 }
 
-const DEMO_MASTER_ID = 'demo-master'
+type Step = 'master' | 'date' | 'slot' | 'info' | 'done'
 
 export function BookingModal({ service, company, onClose }: Props) {
-  const { user, isAuthenticated } = useAuthStore()
-  const [step, setStep] = useState<'date' | 'slot' | 'info' | 'done'>('date')
-  const [selectedDate, setSelectedDate] = useState('')
-  const [selectedSlot, setSelectedSlot] = useState('')
-  const [guestName, setGuestName] = useState('')
-  const [guestPhone, setGuestPhone] = useState('')
-  const [guestEmail, setGuestEmail] = useState('')
-  const [notes, setNotes] = useState('')
+  const { isAuthenticated } = useAuthStore()
+  const [step, setStep]               = useState<Step>('master')
+  const [selectedMasterId, setSelectedMasterId] = useState('')
+  const [selectedDate, setSelectedDate]         = useState('')
+  const [selectedSlot, setSelectedSlot]         = useState('')
+  const [guestName, setGuestName]     = useState('')
+  const [guestPhone, setGuestPhone]   = useState('')
+  const [guestEmail, setGuestEmail]   = useState('')
+  const [notes, setNotes]             = useState('')
+
+  // Load masters that can perform this service
+  const { data: masters, isLoading: mastersLoading } = useQuery({
+    queryKey: ['company-masters', company.id, service.id],
+    queryFn: () => companiesApi.getMasters(company.id, service.id),
+  })
 
   // Next 14 days
   const days = Array.from({ length: 14 }, (_, i) => {
@@ -33,9 +41,9 @@ export function BookingModal({ service, company, onClose }: Props) {
   })
 
   const { data: slots, isLoading: slotsLoading } = useQuery({
-    queryKey: ['slots', DEMO_MASTER_ID, service.id, selectedDate],
-    queryFn: () => bookingsApi.getSlots(DEMO_MASTER_ID, service.id, selectedDate),
-    enabled: !!selectedDate,
+    queryKey: ['slots', selectedMasterId, service.id, selectedDate],
+    queryFn: () => bookingsApi.getSlots(selectedMasterId, service.id, selectedDate),
+    enabled: !!selectedMasterId && !!selectedDate,
   })
 
   const mutation = useMutation({
@@ -43,19 +51,34 @@ export function BookingModal({ service, company, onClose }: Props) {
       bookingsApi.create({
         companyId: company.id,
         serviceId: service.id,
-        masterId: DEMO_MASTER_ID,
+        masterId: selectedMasterId,
         date: selectedDate,
         startTime: selectedSlot,
         notes,
-        guestName: isAuthenticated() ? undefined : guestName,
+        guestName:  isAuthenticated() ? undefined : guestName,
         guestPhone: isAuthenticated() ? undefined : guestPhone,
         guestEmail: isAuthenticated() ? undefined : guestEmail,
       }),
     onSuccess: () => setStep('done'),
   })
 
+  // Auto-advance past master step if only one master
+  const pickMaster = (id: string) => {
+    setSelectedMasterId(id)
+    setStep('date')
+  }
+
+  const selectedMaster = masters?.find(m => m.userId === selectedMasterId)
+
+  // Progress bar steps (exclude 'done', map 'master' only if >1 master)
+  const progressSteps: Step[] = ['master', 'date', 'slot', 'info']
+  const currentIdx = progressSteps.indexOf(step)
+
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
       <div
         className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
@@ -65,25 +88,73 @@ export function BookingModal({ service, company, onClose }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-bold text-gray-900 text-lg">Запись на услугу</h2>
-              <p className="text-sm text-gray-500 mt-0.5">{service.name} · {service.durationMinutes} мин · {service.price.toLocaleString('ru-RU')} ₽</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {service.name} · {service.durationMinutes} мин · {service.price.toLocaleString('ru-RU')} ₽
+              </p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
           </div>
 
-          {/* Steps */}
-          <div className="flex gap-1 mt-4">
-            {['date', 'slot', 'info'].map((s, i) => (
-              <div key={s} className={`h-1 flex-1 rounded-full transition-colors ${
-                ['date', 'slot', 'info'].indexOf(step) >= i ? 'bg-primary-500' : 'bg-gray-100'
-              }`} />
-            ))}
-          </div>
+          {/* Progress bar */}
+          {step !== 'done' && (
+            <div className="flex gap-1 mt-4">
+              {progressSteps.map((s, i) => (
+                <div
+                  key={s}
+                  className={`h-1 flex-1 rounded-full transition-colors ${
+                    currentIdx >= i ? 'bg-primary-500' : 'bg-gray-100'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="p-6">
-          {/* Step: Date */}
+
+          {/* ── Step: Master ── */}
+          {step === 'master' && (
+            <div>
+              <h3 className="font-semibold text-gray-700 mb-4">Выберите мастера</h3>
+              {mastersLoading ? (
+                <div className="flex flex-col gap-3">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="h-16 bg-gray-100 rounded-2xl animate-pulse" />
+                  ))}
+                </div>
+              ) : masters && masters.length > 0 ? (
+                <div className="flex flex-col gap-3">
+                  {masters.map((m) => (
+                    <button
+                      key={m.userId}
+                      onClick={() => pickMaster(m.userId)}
+                      className="flex items-center gap-4 p-4 rounded-2xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-all text-left"
+                    >
+                      <div className="w-11 h-11 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-sm shrink-0">
+                        {m.firstName[0]}{m.lastName[0]}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-900">{m.firstName} {m.lastName}</p>
+                        {m.bio && <p className="text-xs text-gray-400 mt-0.5">{m.bio}</p>}
+                      </div>
+                      <span className="ml-auto text-gray-300 text-lg">›</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-400 py-8">
+                  Нет доступных мастеров для этой услуги
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Step: Date ── */}
           {step === 'date' && (
             <div>
+              <button onClick={() => setStep('master')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">
+                ← {selectedMaster ? `${selectedMaster.firstName} ${selectedMaster.lastName}` : 'Мастер'}
+              </button>
               <h3 className="font-semibold text-gray-700 mb-4">Выберите дату</h3>
               <div className="grid grid-cols-2 gap-2">
                 {days.map((d) => (
@@ -99,7 +170,7 @@ export function BookingModal({ service, company, onClose }: Props) {
             </div>
           )}
 
-          {/* Step: Slot */}
+          {/* ── Step: Slot ── */}
           {step === 'slot' && (
             <div>
               <button onClick={() => setStep('date')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">
@@ -108,7 +179,9 @@ export function BookingModal({ service, company, onClose }: Props) {
               <h3 className="font-semibold text-gray-700 mb-4">Выберите время</h3>
               {slotsLoading ? (
                 <div className="grid grid-cols-3 gap-2">
-                  {Array.from({ length: 9 }).map((_, i) => <div key={i} className="h-10 bg-gray-100 rounded-xl animate-pulse" />)}
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <div key={i} className="h-10 bg-gray-100 rounded-xl animate-pulse" />
+                  ))}
                 </div>
               ) : slots && slots.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
@@ -132,7 +205,7 @@ export function BookingModal({ service, company, onClose }: Props) {
             </div>
           )}
 
-          {/* Step: Info */}
+          {/* ── Step: Info ── */}
           {step === 'info' && (
             <div className="flex flex-col gap-4">
               <button onClick={() => setStep('slot')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
@@ -140,7 +213,12 @@ export function BookingModal({ service, company, onClose }: Props) {
               </button>
 
               <div className="bg-orange-50 rounded-2xl p-4 text-sm text-gray-700">
-                <div className="font-medium">{service.name}</div>
+                <div className="font-semibold">{service.name}</div>
+                {selectedMaster && (
+                  <div className="text-gray-500 mt-0.5">
+                    {selectedMaster.firstName} {selectedMaster.lastName}
+                  </div>
+                )}
                 <div className="text-gray-500 mt-1">
                   {days.find(d => d.value === selectedDate)?.label} · {selectedSlot.slice(0, 5)}
                 </div>
@@ -148,9 +226,26 @@ export function BookingModal({ service, company, onClose }: Props) {
 
               {!isAuthenticated() && (
                 <>
-                  <Input label="Ваше имя *" placeholder="Иван Иванов" value={guestName} onChange={e => setGuestName(e.target.value)} />
-                  <Input label="Телефон *" type="tel" placeholder="+7 999 000 00 00" value={guestPhone} onChange={e => setGuestPhone(e.target.value)} />
-                  <Input label="Email" type="email" placeholder="your@email.com" value={guestEmail} onChange={e => setGuestEmail(e.target.value)} />
+                  <Input
+                    label="Ваше имя *"
+                    placeholder="Иван Иванов"
+                    value={guestName}
+                    onChange={e => setGuestName(e.target.value)}
+                  />
+                  <Input
+                    label="Телефон *"
+                    type="tel"
+                    placeholder="+7 999 000 00 00"
+                    value={guestPhone}
+                    onChange={e => setGuestPhone(e.target.value)}
+                  />
+                  <Input
+                    label="Email"
+                    type="email"
+                    placeholder="your@email.com"
+                    value={guestEmail}
+                    onChange={e => setGuestEmail(e.target.value)}
+                  />
                 </>
               )}
 
@@ -186,7 +281,7 @@ export function BookingModal({ service, company, onClose }: Props) {
             </div>
           )}
 
-          {/* Done */}
+          {/* ── Done ── */}
           {step === 'done' && (
             <div className="text-center py-6">
               <div className="text-5xl mb-4">🎉</div>
@@ -199,6 +294,7 @@ export function BookingModal({ service, company, onClose }: Props) {
               </Button>
             </div>
           )}
+
         </div>
       </div>
     </div>

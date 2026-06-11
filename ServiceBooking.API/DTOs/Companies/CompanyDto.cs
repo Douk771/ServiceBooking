@@ -22,6 +22,15 @@ public record CreateCompanyDto(
     bool AllowSelfBooking = true
 );
 
+// Public-facing master info for the booking flow
+public record MasterPublicDto(
+    string UserId,
+    string FirstName,
+    string LastName,
+    string? AvatarUrl,
+    string? Bio
+);
+
 public record UpdateCompanyDto(
     string? Name,
     string? Description,

@@ -1,6 +1,14 @@
 import { api } from './client'
 import type { Company } from '../types'
 
+export interface MasterPublicDto {
+  userId: string
+  firstName: string
+  lastName: string
+  avatarUrl?: string
+  bio?: string
+}
+
 export interface MemberDto {
   id: string
   userId: string
@@ -38,6 +46,8 @@ export const companiesApi = {
   getMy: () => api.get<Company[]>('/companies/my').then((r) => r.data),
   create: (data: CreateCompanyPayload) => api.post<Company>('/companies', data).then((r) => r.data),
   update: (id: string, data: UpdateCompanyPayload) => api.put<Company>(`/companies/${id}`, data).then((r) => r.data),
+  getMasters: (id: string, serviceId?: string) =>
+    api.get<MasterPublicDto[]>(`/companies/${id}/masters`, { params: serviceId ? { serviceId } : {} }).then((r) => r.data),
   getMembers: (id: string) => api.get<MemberDto[]>(`/companies/${id}/members`).then((r) => r.data),
   addMember: (id: string, email: string, firstName: string, lastName: string, role: string, bio?: string) =>
     api.post<MemberDto>(`/companies/${id}/members`, { email, firstName, lastName, role, bio }).then((r) => r.data),
