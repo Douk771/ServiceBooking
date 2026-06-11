@@ -252,7 +252,13 @@ export function ScheduleTab({ companyId }: Props) {
     queryFn: () => companiesApi.getMembers(companyId),
   })
 
-  const masters = members?.filter(m => m.role === 'Master' || m.role === 'CompanyOwner') ?? []
+  const masters = (members?.filter(m => m.role === 'Master' || m.role === 'CompanyOwner') ?? [])
+    .sort((a, b) => {
+      // CompanyOwner first, then Masters alphabetically
+      if (a.role === 'CompanyOwner' && b.role !== 'CompanyOwner') return -1
+      if (a.role !== 'CompanyOwner' && b.role === 'CompanyOwner') return 1
+      return a.firstName.localeCompare(b.firstName)
+    })
   const masterId = selectedMasterId || masters[0]?.userId || ''
 
   const from = toDateStr(startOfMonth(month))
