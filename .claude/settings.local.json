@@ -20,7 +20,30 @@
       "Bash(curl -s http://localhost:5291/api/companies)",
       "mcp__Claude_Preview__preview_start",
       "Bash(pkill -f \"ServiceBooking.API\")",
-      "Bash(curl -s http://localhost:5291/api/companies/my -H \"Authorization: Bearer test\")"
+      "Bash(curl -s http://localhost:5291/api/companies/my -H \"Authorization: Bearer test\")",
+      "Bash(npx tsc *)",
+      "Bash(python3 -c \"import sys,json; print\\('OK' if json.load\\(sys.stdin\\) else 'empty'\\)\")",
+      "Bash(curl -s -X POST http://localhost:5291/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"ivan@test.com\",\"password\":\"Test12345\"}')",
+      "Bash(curl -s \"http://localhost:5291/api/companies/10e7c31f-21fd-40b9-8303-7d8578b748c1/masters\")",
+      "Bash(curl -s http://localhost:5291/api/bookings/my -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(python3 -c \"import sys,json; bks=json.load\\(sys.stdin\\); [print\\(b['date'], b['startTime'], b['status']\\) for b in bks]\")",
+      "Bash(pkill -f \"dotnet.*ServiceBooking.API\")",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}' -X POST http://localhost:5291/api/bookings -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(pkill -9 -f \"dotnet\")",
+      "Bash(curl -s -w '\\\\nHTTP %{http_code}' -X POST http://localhost:5291/api/bookings -H 'Content-Type: application/json' -d '{\"companyId\":\"10e7c31f-21fd-40b9-8303-7d8578b748c1\",\"serviceId\":\"c79457fc-42d6-45c9-a11b-b28272cbfa3f\",\"masterId\":\"2e1fe312-c2c9-4399-bc34-cbf3b1fbb329\",\"date\":\"2026-06-15\",\"startTime\":\"09:00:00\",\"notes\":\"\",\"guestName\":\"Илик улик\",\"guestPhone\":\"+79132258915\",\"guestEmail\":\"douk@gmail.com\"}')",
+      "Bash(kill -9 21889)",
+      "Bash(pkill -9 -f \"ServiceBooking.API\")",
+      "Bash(curl -s \"http://localhost:5291/api/workinghours?masterId=2e1fe312-c2c9-4399-bc34-cbf3b1fbb329&companyId=10e7c31f-21fd-40b9-8303-7d8578b748c1&from=2026-06-01&to=2026-06-30\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -sv \"http://localhost:5291/api/workinghours?masterId=2e1fe312-c2c9-4399-bc34-cbf3b1fbb329&companyId=10e7c31f-21fd-40b9-8303-7d8578b748c1&from=2026-06-01&to=2026-06-30\")",
+      "Bash(xargs cat)",
+      "Bash(curl -s -X POST http://localhost:5291/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@servicebooking.com\",\"password\":\"Admin12345\"}')",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(curl -s \"http://localhost:5173/src/pages/DashboardPage.tsx\")",
+      "Bash(curl -s \"http://localhost:5173/src/pages/owner/ScheduleTab.tsx\")",
+      "Bash(npx --prefix frontend tsc --noEmit)",
+      "Bash(git commit -m 'Fix missing useState import in DashboardPage *)"
     ]
   }
 }
