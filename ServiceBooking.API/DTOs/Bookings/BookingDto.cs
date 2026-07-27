@@ -5,6 +5,7 @@ namespace ServiceBooking.API.DTOs.Bookings;
 public record BookingDto(
     Guid Id,
     Guid CompanyId,
+    string CompanyName,
     Guid ServiceId,
     string ServiceName,
     string MasterId,
@@ -17,9 +18,14 @@ public record BookingDto(
     TimeOnly StartTime,
     TimeOnly EndTime,
     BookingStatus Status,
+    PaymentStatus PaymentStatus,
     string? Notes,
     DateTime CreatedAt
 );
+
+public record OccupiedRangeDto(TimeOnly Start, TimeOnly End);
+
+public record RescheduleDto(DateOnly Date, TimeOnly StartTime);
 
 public record CreateBookingDto(
     Guid CompanyId,

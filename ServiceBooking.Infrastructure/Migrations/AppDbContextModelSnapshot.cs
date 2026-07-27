@@ -154,6 +154,41 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.AccountSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("PaidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PlanConfigId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId")
+                        .IsUnique();
+
+                    b.HasIndex("PlanConfigId");
+
+                    b.ToTable("AccountSubscriptions");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.AppUser", b =>
                 {
                     b.Property<string>("Id")
@@ -164,6 +199,9 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<string>("AvatarUrl")
                         .HasColumnType("text");
+
+                    b.Property<decimal>("CommissionPercent")
+                        .HasColumnType("numeric");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
@@ -272,6 +310,12 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
+                    b.Property<int>("PaymentStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("decimal(10,2)");
+
                     b.Property<Guid>("ServiceId")
                         .HasColumnType("uuid");
 
@@ -295,6 +339,45 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("ServiceId");
 
                     b.ToTable("Bookings");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ClientNote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ClientId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GuestPhone")
+                        .HasColumnType("text");
+
+                    b.Property<string>("MasterId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("MasterId");
+
+                    b.HasIndex("CompanyId", "ClientId");
+
+                    b.HasIndex("CompanyId", "GuestPhone");
+
+                    b.ToTable("ClientNotes");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Company", b =>
@@ -328,14 +411,26 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Phone")
                         .HasColumnType("text");
+
+                    b.Property<bool>("RequirePrepayment")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ShowInPublicListing")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
 
                     b.HasIndex("Slug")
                         .IsUnique();
@@ -374,6 +469,42 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("CompanyMembers");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.MailLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("RecipientCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SentById")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("SentById");
+
+                    b.ToTable("MailLogs");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.MasterService", b =>
                 {
                     b.Property<Guid>("Id")
@@ -394,6 +525,51 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("ServiceId");
 
                     b.ToTable("MasterServices");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.Review", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ClientId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MasterId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReviewerName")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId")
+                        .IsUnique();
+
+                    b.HasIndex("ClientId");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("MasterId");
+
+                    b.ToTable("Reviews");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ScheduleBreak", b =>
@@ -454,6 +630,136 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("CompanyId");
 
                     b.ToTable("Services");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionChangeLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ChangedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("NewIsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("NewPaidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("NewPlanConfigId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("OldIsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("OldPaidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("OldPlanConfigId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.ToTable("SubscriptionChangeLogs");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionPlanConfig", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("AllowAnalytics")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowMailing")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowOnlineBooking")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowOnlinePayment")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowPublicListing")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("MaxCompanies")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxEmployees")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("NotifyDaysBefore")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("PricePerMonth")
+                        .HasColumnType("numeric");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SubscriptionPlanConfigs");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.WeeklyScheduleTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DayOfWeek")
+                        .HasColumnType("integer");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<bool>("IsWorking")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MasterId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time without time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("MasterId", "CompanyId");
+
+                    b.ToTable("WeeklyScheduleTemplates");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.WorkingHours", b =>
@@ -541,6 +847,24 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.AccountSubscription", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.SubscriptionPlanConfig", "PlanConfig")
+                        .WithMany()
+                        .HasForeignKey("PlanConfigId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("PlanConfig");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.Booking", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.AppUser", "Client")
@@ -575,6 +899,43 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Service");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ClientNote", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "Master")
+                        .WithMany()
+                        .HasForeignKey("MasterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Company");
+
+                    b.Navigation("Master");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.Company", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyMember", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
@@ -594,6 +955,25 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.MailLog", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "SentBy")
+                        .WithMany()
+                        .HasForeignKey("SentById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+
+                    b.Navigation("SentBy");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.MasterService", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.AppUser", "Master")
@@ -611,6 +991,40 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Master");
 
                     b.Navigation("Service");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.Review", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Booking", "Booking")
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "Client")
+                        .WithMany()
+                        .HasForeignKey("ClientId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "Master")
+                        .WithMany()
+                        .HasForeignKey("MasterId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Booking");
+
+                    b.Navigation("Client");
+
+                    b.Navigation("Company");
+
+                    b.Navigation("Master");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ScheduleBreak", b =>
@@ -633,6 +1047,25 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.WeeklyScheduleTemplate", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "Master")
+                        .WithMany()
+                        .HasForeignKey("MasterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+
+                    b.Navigation("Master");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.WorkingHours", b =>

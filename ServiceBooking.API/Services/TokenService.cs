@@ -16,11 +16,14 @@ public class TokenService(IConfiguration config)
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id),
-            new(JwtRegisteredClaimNames.Email, user.Email!),
+            // Phone is the account identifier; email is optional so it's only added when present.
+            new("phone", user.PhoneNumber ?? ""),
             new(JwtRegisteredClaimNames.GivenName, user.FirstName),
             new(JwtRegisteredClaimNames.FamilyName, user.LastName),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+        if (!string.IsNullOrEmpty(user.Email))
+            claims.Add(new Claim(JwtRegisteredClaimNames.Email, user.Email));
 
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 

@@ -21,6 +21,10 @@ frontend/.env.local
 .DS_Store
 Thumbs.db
 
+# Uploaded files (local disk storage — not committed)
+ServiceBooking.API/wwwroot/uploads/**
+!ServiceBooking.API/wwwroot/uploads/**/.gitkeep
+
 # Secrets
 **/appsettings.*.json
 !**/appsettings.json

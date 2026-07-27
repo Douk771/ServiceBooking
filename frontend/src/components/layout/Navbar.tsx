@@ -6,12 +6,11 @@ export function Navbar() {
   const { user, logout, isAuthenticated, hasRole } = useAuthStore()
   const navigate = useNavigate()
 
-  const handleLogout = () => {
-    logout()
-    navigate('/')
-  }
+  const handleLogout = () => { logout(); navigate('/') }
 
-  const isMaster = hasRole('Master') || hasRole('CompanyOwner') || hasRole('SuperAdmin')
+  const isMasterOrOwner = hasRole('Master') || hasRole('CompanyOwner') || hasRole('SuperAdmin')
+  const isAdmin = hasRole('SuperAdmin')
+  const isClient = !isMasterOrOwner && isAuthenticated()
 
   return (
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-orange-100">
@@ -24,34 +23,37 @@ export function Navbar() {
         <div className="flex items-center gap-3">
           {isAuthenticated() ? (
             <>
-              {isMaster && (
-                <Link to="/dashboard" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
-                  Расписание
+              {isClient && (
+                <Link to="/my-visits" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
+                  Мои визиты
                 </Link>
               )}
-              <Link to="/owner" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
-                Кабинет
-              </Link>
-              <Link to="/my-bookings" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
-                Мои записи
-              </Link>
+              {isMasterOrOwner && (
+                <Link to="/my-bookings" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
+                  Мои записи
+                </Link>
+              )}
+              {isMasterOrOwner && (
+                <Link to="/cabinet" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
+                  Кабинет
+                </Link>
+              )}
+              {isAdmin && (
+                <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
+                  Админ
+                </Link>
+              )}
               <div className="flex items-center gap-2 ml-1">
-                <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm">
+                <Link to="/profile" className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm hover:bg-primary-200 transition-colors">
                   {user?.firstName[0]}{user?.lastName[0]}
-                </div>
-                <Button variant="ghost" size="sm" onClick={handleLogout}>
-                  Выйти
-                </Button>
+                </Link>
+                <Button variant="ghost" size="sm" onClick={handleLogout}>Выйти</Button>
               </div>
             </>
           ) : (
             <>
-              <Link to="/login">
-                <Button variant="ghost" size="sm">Войти</Button>
-              </Link>
-              <Link to="/register">
-                <Button size="sm">Регистрация</Button>
-              </Link>
+              <Link to="/login"><Button variant="ghost" size="sm">Войти</Button></Link>
+              <Link to="/register"><Button size="sm">Регистрация</Button></Link>
             </>
           )}
         </div>

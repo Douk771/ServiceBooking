@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; }
+  a { color: #A9835A; text-decoration: none; }
+  a:hover { color: #8F6C46; }
+  input:focus { border-color: #A9835A !important; box-shadow: 0 0 0 3px #F1E9DC; }
+</style>
+</helmet>
+
+<div style="font-family: 'Inter', sans-serif; background: #FAF6F0; color: #2B2420; min-height: 100vh;">
+
+  <nav style="position: sticky; top: 0; z-index: 40; background: rgba(250,246,240,0.86); backdrop-filter: blur(10px); border-bottom: 1px solid #E6DCCB;">
+    <div style="max-width: 1180px; margin: 0 auto; padding: 0 32px; height: 76px; display: flex; align-items: center; justify-content: space-between;">
+      <a href="Home.dc.html" style="display: flex; align-items: center; gap: 12px;">
+        <span style="width: 38px; height: 38px; border-radius: 50%; background: #2B2420; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FAF6F0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"></circle><circle cx="6" cy="18" r="2.2"></circle><path d="M8 7.5L20 19M8 16.5L20 5"></path></svg>
+        </span>
+        <span style="font-family: 'Newsreader', serif; font-size: 21px; color: #2B2420;">ServiceBooking</span>
+      </a>
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <a href="Cabinet.dc.html" style="font-size: 14px; font-weight: 500; color: #6B5F52;">Кабинет</a>
+        <a href="Profile.dc.html" style="width: 36px; height: 36px; border-radius: 50%; background: #F1E9DC; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #8F6C46;">ИИ</a>
+      </div>
+    </div>
+  </nav>
+
+  <div style="max-width: 1080px; margin: 0 auto; padding: 44px 32px 100px;">
+    <h1 style="font-family: 'Newsreader', serif; font-size: 30px; font-weight: 500; margin: 0 0 24px;">Суперадминка</h1>
+
+    <div style="display: flex; gap: 4px; background: #F1E9DC; padding: 4px; border-radius: 100px; margin-bottom: 32px; width: fit-content; flex-wrap: wrap;">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+        <button onclick="{{ setTab }}" data-tab="{{ t.key }}" style="padding: 9px 16px; border-radius: 100px; border: none; font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; background: {{ t.bg }}; color: {{ t.color }};">{{ t.label }}</button>
+      </sc-for>
+    </div>
+
+    <!-- Stats -->
+    <sc-if value="{{ tabIsStats }}" hint-placeholder-val="{{ true }}">
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+        <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 24px; text-align: center;">
+            <p style="font-size: 26px; font-weight: 700; margin: 0 0 6px;">{{ s.value }}</p>
+            <p style="font-size: 13px; color: #6B5F52; margin: 0;">{{ s.label }}</p>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- Companies -->
+    <sc-if value="{{ tabIsCompanies }}" hint-placeholder-val="{{ false }}">
+      <input placeholder="Поиск по названию или email…" style="width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 100px; border: 1px solid #E6DCCB; font-size: 14px; font-family: inherit; outline: none; margin-bottom: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <sc-for list="{{ adminCompanies }}" as="c" hint-placeholder-count="4">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 16px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 38px; height: 38px; border-radius: 12px; background: #F1E9DC; color: #8F6C46; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;">НК</span>
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <span style="font-weight: 600; font-size: 14px;">{{ c.name }}</span>
+                  <span style="font-size: 11.5px; font-weight: 600; background: #E9EEF3; color: #52667A; padding: 3px 9px; border-radius: 100px;">{{ c.plan }}</span>
+                </div>
+                <p style="font-size: 12.5px; color: #A69A88; margin: 3px 0 0;">{{ c.owner }} · {{ c.members }} сотр. · {{ c.bookings }} записей</p>
+              </div>
+            </div>
+            <button style="padding: 9px 16px; border-radius: 100px; border: 1px solid #E6DCCB; background: #fff; font-size: 12.5px; font-weight: 600; font-family: inherit; cursor: pointer;">Сменить владельца</button>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- Users -->
+    <sc-if value="{{ tabIsUsers }}" hint-placeholder-val="{{ false }}">
+      <input placeholder="Поиск по email, имени…" style="width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 100px; border: 1px solid #E6DCCB; font-size: 14px; font-family: inherit; outline: none; margin-bottom: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <sc-for list="{{ adminUsers }}" as="u" hint-placeholder-count="5">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 14px; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="width: 32px; height: 32px; border-radius: 50%; background: #F1E9DC; color: #8F6C46; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;">{{ u.initials }}</span>
+              <div>
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <span style="font-weight: 600; font-size: 13.5px;">{{ u.name }}</span>
+                  <span style="font-size: 11px; background: #F1E9DC; color: #6B5F52; padding: 2px 7px; border-radius: 6px;">{{ u.role }}</span>
+                </div>
+                <p style="font-size: 12px; color: #A69A88; margin: 2px 0 0;">{{ u.contact }}</p>
+              </div>
+            </div>
+            <button style="padding: 8px 14px; border-radius: 100px; border: 1px solid #E6DCCB; background: #fff; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;">Роли</button>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- Bookings -->
+    <sc-if value="{{ tabIsBookings }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; align-items: flex-end;">
+        <div>
+          <label style="display: block; font-size: 12px; color: #A69A88; margin-bottom: 5px;">С</label>
+          <input type="date" value="2026-07-27" style="padding: 10px 14px; border-radius: 12px; border: 1px solid #E6DCCB; font-size: 13.5px; font-family: inherit;">
+        </div>
+        <div>
+          <label style="display: block; font-size: 12px; color: #A69A88; margin-bottom: 5px;">По</label>
+          <input type="date" value="2026-07-27" style="padding: 10px 14px; border-radius: 12px; border: 1px solid #E6DCCB; font-size: 13.5px; font-family: inherit;">
+        </div>
+        <button style="padding: 11px 20px; border-radius: 100px; border: none; background: #2B2420; color: #FAF6F0; font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer;">Найти</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <sc-for list="{{ adminBookings }}" as="b" hint-placeholder-count="4">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 14px; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span style="font-weight: 600; font-size: 13.5px;">{{ b.client }}</span>
+                <span style="font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 100px; background: {{ b.statusBg }}; color: {{ b.statusColor }};">{{ b.statusLabel }}</span>
+              </div>
+              <p style="font-size: 12px; color: #A69A88; margin: 2px 0 0;">{{ b.service }} · {{ b.master }} · {{ b.date }}</p>
+            </div>
+            <span style="font-weight: 600; font-size: 13.5px; color: #8F6C46;">{{ b.price }} ₽</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- Plans -->
+    <sc-if value="{{ tabIsPlans }}" hint-placeholder-val="{{ false }}">
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
+        <sc-for list="{{ plans }}" as="p" hint-placeholder-count="3">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 22px;">
+            <p style="font-size: 16px; font-weight: 700; margin: 0 0 6px;">{{ p.name }}</p>
+            <p style="font-size: 20px; font-weight: 700; color: #8F6C46; margin: 0 0 14px;">{{ p.price }}</p>
+            <p style="font-size: 12.5px; color: #6B5F52; margin: 0;">{{ p.subscribers }} подписчиков</p>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { tab: 'stats' };
+  setTab(e) { this.setState({ tab: e.currentTarget.getAttribute('data-tab') }); }
+
+  renderVals() {
+    const tab = this.state.tab;
+    const tabDefs = [
+      { key: 'stats', label: 'Дашборд' },
+      { key: 'companies', label: 'Компании' },
+      { key: 'users', label: 'Пользователи' },
+      { key: 'bookings', label: 'Записи' },
+      { key: 'plans', label: 'Тарифы' },
+    ];
+    const tabs = tabDefs.map(t => ({ ...t, bg: t.key === tab ? '#fff' : 'transparent', color: t.key === tab ? '#2B2420' : '#8F6C46' }));
+
+    const statusMeta = {
+      Confirmed: { label: 'Подтверждено', bg: '#E9F1E6', color: '#4B6B4B' },
+      Completed: { label: 'Выполнено', bg: '#E9EEF3', color: '#52667A' },
+      Cancelled: { label: 'Отменено', bg: '#FBEAE4', color: '#A6503A' },
+    };
+
+    return {
+      tabs,
+      tabIsStats: tab === 'stats',
+      tabIsCompanies: tab === 'companies',
+      tabIsUsers: tab === 'users',
+      tabIsBookings: tab === 'bookings',
+      tabIsPlans: tab === 'plans',
+      setTab: (e) => this.setTab(e),
+
+      stats: [
+        { label: 'Компаний', value: '84' },
+        { label: 'Пользователей', value: '1 240' },
+        { label: 'Записей всего', value: '9 830' },
+        { label: 'Выручка (завершённые)', value: '4 210 000 ₽' },
+      ],
+
+      adminCompanies: [
+        { name: 'Название компании', plan: 'Профессиональный', owner: 'owner@example.com', members: 4, bookings: 312 },
+        { name: 'Название компании', plan: 'Базовый', owner: 'owner@example.com', members: 2, bookings: 98 },
+        { name: 'Название компании', plan: 'Free', owner: 'owner@example.com', members: 1, bookings: 12 },
+        { name: 'Название компании', plan: 'Профессиональный', owner: 'owner@example.com', members: 6, bookings: 540 },
+      ],
+
+      adminUsers: [
+        { initials: 'ИФ', name: 'Имя Фамилия', role: 'Client', contact: '+7 999 000-00-00' },
+        { initials: 'ИФ', name: 'Имя Фамилия', role: 'Master', contact: '+7 999 000-00-01' },
+        { initials: 'ИФ', name: 'Имя Фамилия', role: 'CompanyOwner', contact: 'owner@example.com' },
+        { initials: 'ИФ', name: 'Имя Фамилия', role: 'Client', contact: '+7 999 000-00-02' },
+        { initials: 'ИФ', name: 'Имя Фамилия', role: 'SuperAdmin', contact: 'admin@example.com' },
+      ],
+
+      adminBookings: [
+        { client: 'Имя клиента', service: 'Название услуги', master: 'Имя мастера', date: '27 июл 14:00', price: '2 500', status: 'Confirmed' },
+        { client: 'Имя клиента', service: 'Название услуги', master: 'Имя мастера', date: '27 июл 11:00', price: '1 900', status: 'Completed' },
+        { client: 'Имя клиента', service: 'Название услуги', master: 'Имя мастера', date: '26 июл 16:30', price: '3 800', status: 'Cancelled' },
+        { client: 'Имя клиента', service: 'Название услуги', master: 'Имя мастера', date: '26 июл 09:00', price: '1 200', status: 'Completed' },
+      ].map(b => ({ ...b, statusLabel: statusMeta[b.status].label, statusBg: statusMeta[b.status].bg, statusColor: statusMeta[b.status].color })),
+
+      plans: [
+        { name: 'Free', price: '0 ₽', subscribers: 640 },
+        { name: 'Базовый', price: '990 ₽/мес', subscribers: 312 },
+        { name: 'Профессиональный', price: '2 990 ₽/мес', subscribers: 128 },
+      ],
+    };
+  }
+}
+
+</script>
+</body>
+</html>

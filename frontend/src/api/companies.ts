@@ -14,11 +14,13 @@ export interface MemberDto {
   userId: string
   firstName: string
   lastName: string
-  email: string
+  phone: string
+  email?: string | null
   avatarUrl?: string
   role: string
   bio?: string
   serviceIds: string[]
+  commissionPercent: number
 }
 
 export interface CreateCompanyPayload {
@@ -29,6 +31,7 @@ export interface CreateCompanyPayload {
   phone?: string
   email?: string
   allowSelfBooking: boolean
+  showInPublicListing?: boolean
 }
 
 export interface UpdateCompanyPayload {
@@ -38,6 +41,8 @@ export interface UpdateCompanyPayload {
   phone?: string
   email?: string
   allowSelfBooking?: boolean
+  requirePrepayment?: boolean
+  showInPublicListing?: boolean
 }
 
 export const companiesApi = {
@@ -50,10 +55,19 @@ export const companiesApi = {
   getMasters: (id: string, serviceId?: string) =>
     api.get<MasterPublicDto[]>(`/companies/${id}/masters`, { params: serviceId ? { serviceId } : {} }).then((r) => r.data),
   getMembers: (id: string) => api.get<MemberDto[]>(`/companies/${id}/members`).then((r) => r.data),
-  addMember: (id: string, email: string, firstName: string, lastName: string, role: string, bio?: string) =>
-    api.post<MemberDto>(`/companies/${id}/members`, { email, firstName, lastName, role, bio }).then((r) => r.data),
+  addMember: (id: string, phone: string, firstName: string, lastName: string, role: string, bio?: string, email?: string) =>
+    api.post<MemberDto>(`/companies/${id}/members`, { phone, firstName, lastName, role, bio, email }).then((r) => r.data),
   removeMember: (companyId: string, memberId: string) =>
     api.delete(`/companies/${companyId}/members/${memberId}`),
   updateMemberServices: (companyId: string, memberId: string, serviceIds: string[]) =>
     api.put(`/companies/${companyId}/members/${memberId}/services`, serviceIds),
+  updateMemberCommission: (companyId: string, memberId: string, commissionPercent: number) =>
+    api.put(`/companies/${companyId}/members/${memberId}/commission`, { commissionPercent }),
+  uploadLogo: (id: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<Company>(`/companies/${id}/logo`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data)
+  },
 }

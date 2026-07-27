@@ -7,6 +7,7 @@ import { companiesApi } from '../../api/companies'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
+import { WeeklyTemplateModal } from '../../components/schedule/WeeklyTemplateModal'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -239,9 +240,11 @@ function Calendar({ month, hoursMap, onDayClick }: CalendarProps) {
 
 interface Props {
   companyId: string
+  /** When provided, shows only this master's own schedule without member picker */
+  selfMasterId?: string
 }
 
-export function ScheduleTab({ companyId }: Props) {
+export function ScheduleTab({ companyId, selfMasterId }: Props) {
   const qc = useQueryClient()
   const [month, setMonth]     = useState(() => new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
@@ -250,16 +253,19 @@ export function ScheduleTab({ companyId }: Props) {
   const { data: members } = useQuery({
     queryKey: ['company-members', companyId],
     queryFn: () => companiesApi.getMembers(companyId),
+    enabled: !selfMasterId,
   })
 
-  const masters = (members?.filter(m => m.role === 'Master' || m.role === 'CompanyOwner') ?? [])
-    .sort((a, b) => {
-      // CompanyOwner first, then Masters alphabetically
-      if (a.role === 'CompanyOwner' && b.role !== 'CompanyOwner') return -1
-      if (a.role !== 'CompanyOwner' && b.role === 'CompanyOwner') return 1
-      return a.firstName.localeCompare(b.firstName)
-    })
-  const masterId = selectedMasterId || masters[0]?.userId || ''
+  const masters = selfMasterId
+    ? []
+    : (members?.filter(m => m.role === 'Master' || m.role === 'CompanyOwner') ?? [])
+        .sort((a, b) => {
+          if (a.role === 'CompanyOwner' && b.role !== 'CompanyOwner') return -1
+          if (a.role !== 'CompanyOwner' && b.role === 'CompanyOwner') return 1
+          return a.firstName.localeCompare(b.firstName)
+        })
+
+  const masterId = selfMasterId || selectedMasterId || masters[0]?.userId || ''
 
   const from = toDateStr(startOfMonth(month))
   const to   = toDateStr(endOfMonth(month))
@@ -278,7 +284,7 @@ export function ScheduleTab({ companyId }: Props) {
 
   const onSaved = () => qc.invalidateQueries({ queryKey: ['working-hours', masterId, companyId, from, to] })
 
-  if (masters.length === 0) {
+  if (!selfMasterId && masters.length === 0 && members !== undefined) {
     return (
       <Card className="p-12 text-center text-gray-400">
         <p className="text-3xl mb-2">👤</p>
@@ -288,15 +294,30 @@ export function ScheduleTab({ companyId }: Props) {
   }
 
   const selectedMaster = masters.find(m => m.userId === masterId) ?? masters[0]
+  const [showTemplate, setShowTemplate] = useState(false)
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-gray-900">Расписание</h2>
+        {masterId && (
+          <Button variant="secondary" size="sm" onClick={() => setShowTemplate(true)}>
+            📋 Шаблон
+          </Button>
+        )}
       </div>
 
-      {/* Master avatars — always shown, click to select */}
+      {showTemplate && masterId && (
+        <WeeklyTemplateModal
+          masterId={masterId}
+          companyId={companyId}
+          onClose={() => setShowTemplate(false)}
+        />
+      )}
+
+      {/* Master avatars — shown only in owner mode */}
+      {!selfMasterId && (
       <div className="flex flex-wrap gap-2 mb-4">
         {masters.map(m => {
           const active = m.userId === masterId
@@ -320,6 +341,7 @@ export function ScheduleTab({ companyId }: Props) {
           )
         })}
       </div>
+      )}
 
       <Card className="p-5">
         {/* Month navigation */}

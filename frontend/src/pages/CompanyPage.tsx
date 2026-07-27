@@ -1,14 +1,25 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { format, parseISO } from 'date-fns'
+import { ru } from 'date-fns/locale'
 import { companiesApi } from '../api/companies'
 import { servicesApi } from '../api/services'
+import { reviewsApi } from '../api/reviews'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { BookingModal } from '../components/booking/BookingModal'
 import type { Service } from '../types'
 
-function ServiceCard({ service, companySlug, onBook }: { service: Service; companySlug: string; onBook: (s: Service) => void }) {
+function ServiceCard({
+  service,
+  canBook,
+  onBook,
+}: {
+  service: Service
+  canBook: boolean
+  onBook: (s: Service) => void
+}) {
   return (
     <Card className="p-5 flex items-start justify-between gap-4 hover:shadow-md transition-shadow">
       <div className="flex items-start gap-4">
@@ -30,9 +41,11 @@ function ServiceCard({ service, companySlug, onBook }: { service: Service; compa
           </div>
         </div>
       </div>
-      <Button onClick={() => onBook(service)} className="shrink-0">
-        Записаться
-      </Button>
+      {canBook && (
+        <Button onClick={() => onBook(service)} className="shrink-0">
+          Записаться
+        </Button>
+      )}
     </Card>
   )
 }
@@ -53,6 +66,16 @@ export function CompanyPage() {
     enabled: !!company,
   })
 
+  const { data: reviews } = useQuery({
+    queryKey: ['company-reviews', company?.id],
+    queryFn: () => reviewsApi.getForCompany(company!.id),
+    enabled: !!company,
+  })
+
+  const avgRating = reviews && reviews.length > 0
+    ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+    : null
+
   if (companyLoading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-12">
@@ -65,6 +88,14 @@ export function CompanyPage() {
   }
 
   if (!company) return <div className="text-center py-24 text-gray-400">Компания не найдена</div>
+
+  // Online self-service booking (this page's flow) requires an active paid plan — on the Free plan
+  // it's blocked for guests AND authenticated clients alike (only staff manual bookings work there).
+  // So the "Записаться" button shows exactly when online booking is enabled, regardless of who's viewing.
+  const canBook = !!company.onlineBookingEnabled
+  // The company wants online booking (allowSelfBooking) but its plan doesn't allow it yet: online
+  // booking is simply unavailable here — logging in won't help, so point the client to the company instead.
+  const onlineUnavailable = company.allowSelfBooking && !company.onlineBookingEnabled
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -97,6 +128,14 @@ export function CompanyPage() {
 
       {/* Services */}
       <h2 className="text-xl font-bold text-gray-900 mb-4">Услуги</h2>
+      {onlineUnavailable && (
+        <Card className="p-4 mb-4 bg-amber-50 border border-amber-200">
+          <p className="text-sm text-amber-800">
+            Онлайн-запись в этой компании сейчас недоступна.
+            {company.phone ? ` Для записи позвоните: ${company.phone}.` : ' Обратитесь к мастеру для записи.'}
+          </p>
+        </Card>
+      )}
       {servicesLoading ? (
         <div className="grid gap-4">
           {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-2xl animate-pulse" />)}
@@ -107,7 +146,7 @@ export function CompanyPage() {
             <ServiceCard
               key={s.id}
               service={s}
-              companySlug={slug!}
+              canBook={canBook}
               onBook={setSelectedService}
             />
           ))}
@@ -118,6 +157,52 @@ export function CompanyPage() {
           <p>Услуги ещё не добавлены</p>
         </div>
       )}
+
+      {/* Reviews */}
+      <div className="mt-10">
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="text-xl font-bold text-gray-900">Отзывы</h2>
+          {avgRating !== null && (
+            <div className="flex items-center gap-1.5 bg-yellow-50 px-3 py-1 rounded-full">
+              <span className="text-yellow-400 font-bold">{avgRating.toFixed(1)}</span>
+              <span className="text-yellow-400">★</span>
+              <span className="text-gray-400 text-sm">· {reviews!.length}</span>
+            </div>
+          )}
+        </div>
+
+        {reviews && reviews.length > 0 ? (
+          <div className="grid gap-4">
+            {reviews.map((r, i) => (
+              <Card key={i} className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-gray-900">{r.reviewerName}</span>
+                      <span className="text-gray-400 text-sm">·</span>
+                      <span className="text-sm text-gray-500">{r.serviceName} у {r.masterName}</span>
+                    </div>
+                    <div className="flex mb-2">
+                      {[1, 2, 3, 4, 5].map(s => (
+                        <span key={s} className={s <= r.rating ? 'text-yellow-400' : 'text-gray-200'}>★</span>
+                      ))}
+                    </div>
+                    {r.comment && <p className="text-sm text-gray-600">{r.comment}</p>}
+                  </div>
+                  <span className="text-xs text-gray-400 shrink-0">
+                    {format(parseISO(r.createdAt), 'd MMM yyyy', { locale: ru })}
+                  </span>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-400">
+            <p className="text-2xl mb-2">💬</p>
+            <p>Пока нет отзывов</p>
+          </div>
+        )}
+      </div>
 
       {/* Booking Modal */}
       {selectedService && company && (

@@ -16,12 +16,14 @@ public class AuthController(
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
     {
+        // Phone is the account identifier: it goes into UserName (which has Identity's unique index),
+        // giving phone uniqueness for free. Email is optional.
         var user = new AppUser
         {
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             Email = dto.Email,
-            UserName = dto.Email,
+            UserName = dto.Phone,
             PhoneNumber = dto.Phone
         };
 
@@ -33,13 +35,14 @@ public class AuthController(
         var roles = await userManager.GetRolesAsync(user);
         var token = tokenService.GenerateToken(user, roles);
 
-        return Ok(new AuthResponseDto(token, user.Id, user.Email!, user.FirstName, user.LastName, roles));
+        return Ok(new AuthResponseDto(token, user.Id, user.PhoneNumber!, user.Email, user.FirstName, user.LastName, roles));
     }
 
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponseDto>> Login(LoginDto dto)
     {
-        var user = await userManager.FindByEmailAsync(dto.Email);
+        // UserName == phone, so look the account up by name (uses the normalized-username index).
+        var user = await userManager.FindByNameAsync(dto.Phone);
         if (user is null)
             return Unauthorized("Invalid credentials");
 
@@ -50,6 +53,6 @@ public class AuthController(
         var roles = await userManager.GetRolesAsync(user);
         var token = tokenService.GenerateToken(user, roles);
 
-        return Ok(new AuthResponseDto(token, user.Id, user.Email!, user.FirstName, user.LastName, roles));
+        return Ok(new AuthResponseDto(token, user.Id, user.PhoneNumber!, user.Email, user.FirstName, user.LastName, roles));
     }
 }

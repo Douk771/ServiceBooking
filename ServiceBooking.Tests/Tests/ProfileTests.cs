@@ -1,0 +1,179 @@
+using System.Net;
+using System.Net.Http.Json;
+using FluentAssertions;
+using ServiceBooking.API.Controllers;
+using ServiceBooking.Tests.Infrastructure;
+
+namespace ServiceBooking.Tests.Tests;
+
+public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+{
+    // ── GET /api/profile ─────────────────────────────────────────────────────────────────
+
+    [Fact, TestCase("PROF-001")]
+    public async Task GetProfile_AsAuthenticatedUser_ReturnsOwnProfile()
+    {
+        var user = await RegisterAsync(firstName: "Alice", lastName: "Anderson");
+
+        var response = await AuthedClient(user.Token).GetAsync("/api/profile");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var profile = await response.Content.ReadFromJsonAsync<ProfileDto>();
+        profile!.Id.Should().Be(user.UserId);
+        profile.Phone.Should().Be(user.Phone);
+        profile.FirstName.Should().Be("Alice");
+        profile.LastName.Should().Be("Anderson");
+        profile.Roles.Should().Contain("Client");
+    }
+
+    [Fact, TestCase("PROF-002")]
+    public async Task GetProfile_Anonymous_ReturnsUnauthorized()
+    {
+        var response = await AnonymousClient().GetAsync("/api/profile");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // ── PUT /api/profile ─────────────────────────────────────────────────────────────────
+
+    [Fact, TestCase("PROF-003")]
+    public async Task UpdateProfile_ChangesFirstAndLastName()
+    {
+        var user = await RegisterAsync(firstName: "Old", lastName: "Name");
+        var client = AuthedClient(user.Token);
+
+        var response = await client.PutAsJsonAsync("/api/profile", new UpdateProfileDto("New", "Name2"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await response.Content.ReadFromJsonAsync<ProfileDto>();
+        updated!.FirstName.Should().Be("New");
+        updated.LastName.Should().Be("Name2");
+
+        // Persisted, not just returned once.
+        var reGet = await client.GetAsync("/api/profile");
+        var reGetDto = await reGet.Content.ReadFromJsonAsync<ProfileDto>();
+        reGetDto!.FirstName.Should().Be("New");
+        reGetDto.LastName.Should().Be("Name2");
+    }
+
+    [Fact, TestCase("PROF-004")]
+    public async Task UpdateProfile_Anonymous_ReturnsUnauthorized()
+    {
+        var response = await AnonymousClient().PutAsJsonAsync("/api/profile", new UpdateProfileDto("A", "B"));
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact, TestCase("PROF-005")]
+    public async Task UpdateProfile_CannotSetOwnCommissionPercent_FieldIsNotOnTheDto()
+    {
+        // UpdateProfileDto intentionally no longer has a CommissionPercent field — commission is
+        // set exclusively by the company owner via PUT /api/companies/{id}/members/{memberId}/commission
+        // (see CompaniesTests.cs). A user updating their own name cannot change their own commission
+        // through this endpoint at all; the value is simply untouched by this call.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id, commissionPercent: 30);
+
+        var response = await AuthedClient(master.Token).PutAsJsonAsync("/api/profile", new UpdateProfileDto("New", "Name"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await response.Content.ReadFromJsonAsync<ProfileDto>();
+        updated!.CommissionPercent.Should().Be(30);
+    }
+
+    // ── POST /api/profile/change-password ───────────────────────────────────────────────
+
+    [Fact, TestCase("PROF-006")]
+    public async Task ChangePassword_WithCorrectCurrentPassword_SucceedsAndNewPasswordLogsIn()
+    {
+        var phone = UniquePhone();
+        await RegisterAsync(phone, "OldPassword123!");
+        var user = await LoginAsync(phone, "OldPassword123!");
+        var client = AuthedClient(user.Token);
+
+        var response = await client.PostAsJsonAsync("/api/profile/change-password",
+            new ChangePasswordDto("OldPassword123!", "NewPassword456!"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var loginWithNew = await LoginRawAsync(phone, "NewPassword456!");
+        loginWithNew.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var loginWithOld = await LoginRawAsync(phone, "OldPassword123!");
+        loginWithOld.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact, TestCase("PROF-007")]
+    public async Task ChangePassword_WithWrongCurrentPassword_ReturnsBadRequest()
+    {
+        var phone = UniquePhone();
+        await RegisterAsync(phone, "CorrectPassword123!");
+        var user = await LoginAsync(phone, "CorrectPassword123!");
+        var client = AuthedClient(user.Token);
+
+        var response = await client.PostAsJsonAsync("/api/profile/change-password",
+            new ChangePasswordDto("TotallyWrongPassword!", "NewPassword456!"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Old password must still work — the change was rejected.
+        var loginWithOld = await LoginRawAsync(phone, "CorrectPassword123!");
+        loginWithOld.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact, TestCase("PROF-008")]
+    public async Task ChangePassword_Anonymous_ReturnsUnauthorized()
+    {
+        var response = await AnonymousClient().PostAsJsonAsync("/api/profile/change-password",
+            new ChangePasswordDto("Whatever123!", "NewPassword456!"));
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // ── Plan info block ──────────────────────────────────────────────────────────────────
+
+    [Fact, TestCase("PROF-009")]
+    public async Task GetProfile_AsPlainClient_HasNoPlanInfo()
+    {
+        // Subscriptions only apply to company owners — a user who never created a company shouldn't
+        // get a fabricated Free plan block.
+        var user = await RegisterAsync();
+
+        var response = await AuthedClient(user.Token).GetAsync("/api/profile");
+        var profile = await response.Content.ReadJsonAsync<ProfileDto>();
+
+        profile!.Plan.Should().BeNull();
+    }
+
+    [Fact, TestCase("PROF-010")]
+    public async Task GetProfile_AsOwnerWithoutSubscription_ShowsFreePlanBaseline()
+    {
+        var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+
+        var response = await AuthedClient(owner.Token).GetAsync("/api/profile");
+        var profile = await response.Content.ReadJsonAsync<ProfileDto>();
+
+        profile!.Plan.Should().NotBeNull();
+        profile.Plan!.PlanName.Should().Be("Free");
+        profile.Plan.IsActive.Should().BeTrue();
+        profile.Plan.PaidUntil.Should().BeNull();
+        profile.Plan.AllowOnlineBooking.Should().BeFalse();
+        profile.Plan.MaxEmployees.Should().Be(1);
+        profile.Plan.MaxCompanies.Should().Be(1);
+    }
+
+    [Fact, TestCase("PROF-011")]
+    public async Task GetProfile_AsOwnerWithActiveSubscription_ReflectsPlanConfigDetails()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await SetSubscriptionAsync(company.Id);
+
+        var response = await AuthedClient(owner.Token).GetAsync("/api/profile");
+        var profile = await response.Content.ReadJsonAsync<ProfileDto>();
+
+        profile!.Plan.Should().NotBeNull();
+        profile.Plan!.PlanName.Should().Be("QA Full Access");
+        profile.Plan.IsActive.Should().BeTrue();
+        profile.Plan.IsExpired.Should().BeFalse();
+        profile.Plan.PaidUntil.Should().NotBeNull();
+        profile.Plan.AllowOnlineBooking.Should().BeTrue();
+        profile.Plan.AllowAnalytics.Should().BeTrue();
+    }
+}

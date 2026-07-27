@@ -8,7 +8,7 @@ import { Card } from '../components/ui/Card'
 import { useState } from 'react'
 
 interface FormData {
-  email: string
+  phone: string
   password: string
 }
 
@@ -23,11 +23,11 @@ export function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await authApi.login(data.email, data.password)
-      setAuth({ id: res.userId, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
+      const res = await authApi.login(data.phone, data.password)
+      setAuth({ id: res.userId, phone: res.phone, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
       navigate('/')
     } catch {
-      setError('Неверный email или пароль')
+      setError('Неверный телефон или пароль')
     } finally {
       setLoading(false)
     }
@@ -44,11 +44,11 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
           <Input
-            label="Email"
-            type="email"
-            placeholder="your@email.com"
-            error={errors.email?.message}
-            {...register('email', { required: 'Введите email' })}
+            label="Телефон"
+            type="tel"
+            placeholder="+7 999 000 00 00"
+            error={errors.phone?.message}
+            {...register('phone', { required: 'Введите телефон' })}
           />
           <Input
             label="Пароль"

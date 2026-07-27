@@ -5,17 +5,22 @@ public record MemberDto(
     string UserId,
     string FirstName,
     string LastName,
-    string Email,
+    string Phone,
+    string? Email,
     string? AvatarUrl,
     string Role,
     string? Bio,
-    List<Guid> ServiceIds
+    List<Guid> ServiceIds,
+    decimal CommissionPercent
 );
 
 public record AddMemberDto(
-    string Email,
+    string Phone,
     string FirstName,
     string LastName,
     string Role,
-    string? Bio
+    string? Bio,
+    string? Email
 );
+
+public record UpdateMemberCommissionDto(decimal CommissionPercent);

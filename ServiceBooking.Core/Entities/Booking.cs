@@ -18,7 +18,12 @@ public class Booking
     public DateOnly Date { get; set; }
     public TimeOnly StartTime { get; set; }
     public TimeOnly EndTime { get; set; }
+
+    // Snapshot of Service.Price at the moment the booking was created, so that later price changes
+    // on the service don't retroactively change historical revenue/commission figures.
+    public decimal Price { get; set; }
     public BookingStatus Status { get; set; } = BookingStatus.Pending;
+    public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.NotRequired;
     public string? Notes { get; set; }
     public string? CancellationReason { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

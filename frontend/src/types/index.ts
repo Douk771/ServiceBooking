@@ -8,6 +8,23 @@ export interface Company {
   phone?: string
   email?: string
   allowSelfBooking: boolean
+  requirePrepayment?: boolean
+  /**
+   * Whether online self-service booking is available (requires a paid, active subscription).
+   * On the Free plan online booking is blocked for both guests and authenticated clients —
+   * only staff manual bookings work.
+   */
+  onlineBookingEnabled?: boolean
+  /** Whether the owner's effective tariff plan includes analytics (gates GET /api/reports/masters). */
+  allowAnalytics?: boolean
+  /** Whether the owner's effective tariff plan includes mailing (gates POST /api/companies/{id}/mail). */
+  allowMailing?: boolean
+  /** Owner's own opt-in to the public directory (independent of the tariff gate). */
+  showInPublicListing?: boolean
+  /** Computed: listed in the public directory (owner opt-in AND tariff allows it). */
+  publicListingEnabled?: boolean
+  /** Computed: prepayment actually enforced (owner toggle AND tariff allows online payment). */
+  prepaymentEnabled?: boolean
 }
 
 export interface Service {
@@ -37,6 +54,8 @@ export interface TimeSlot {
 export interface Booking {
   id: string
   companyId: string
+  companyName?: string
+  companySlug?: string
   serviceId: string
   serviceName: string
   masterId: string
@@ -49,16 +68,20 @@ export interface Booking {
   startTime: string
   endTime: string
   status: BookingStatus
+  paymentStatus?: PaymentStatus
+  price?: number
   notes?: string
   createdAt: string
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'
+export type PaymentStatus = 'NotRequired' | 'Pending' | 'Paid'
 
 export interface AuthResponse {
   token: string
   userId: string
-  email: string
+  phone: string
+  email?: string | null
   firstName: string
   lastName: string
   roles: string[]
@@ -66,7 +89,8 @@ export interface AuthResponse {
 
 export interface User {
   id: string
-  email: string
+  phone: string
+  email?: string | null
   firstName: string
   lastName: string
   roles: string[]

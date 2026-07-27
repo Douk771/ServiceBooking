@@ -1,9 +1,12 @@
+using System.IO;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
+using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -12,17 +15,21 @@ namespace ServiceBooking.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class CompaniesController(AppDbContext db, UserManager<AppUser> userManager) : ControllerBase
+public class CompaniesController(
+    AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver, IWebHostEnvironment env) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<CompanyDto>>> GetAll()
     {
-        var companies = await db.Companies
-            .Where(c => c.IsActive)
-            .Select(c => new CompanyDto(c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email, c.AllowSelfBooking))
-            .ToListAsync();
+        var companies = await db.Companies.Where(c => c.IsActive).ToListAsync();
+        var plans = await subscriptionResolver.GetEffectivePlansAsync(companies.Select(c => c.Id));
 
-        return Ok(companies);
+        // The public directory additionally requires both the owner's own opt-in (ShowInPublicListing)
+        // and the tariff's AllowPublicListing — unlike GetMy/GetMemberOf/GetBySlug, which show the
+        // company to people who already know about it regardless of directory placement.
+        return Ok(companies
+            .Where(c => c.ShowInPublicListing && plans[c.Id].AllowPublicListing)
+            .Select(c => MapToDto(c, plans[c.Id])));
     }
 
     [HttpGet("my")]
@@ -30,13 +37,13 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
     public async Task<ActionResult<List<CompanyDto>>> GetMy()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var companies = await db.CompanyMembers
+        var memberships = await db.CompanyMembers
+            .Include(cm => cm.Company)
             .Where(cm => cm.UserId == userId && cm.Role == UserRole.CompanyOwner && cm.Company.IsActive)
-            .Select(cm => new CompanyDto(cm.Company.Id, cm.Company.Name, cm.Company.Slug, cm.Company.Description,
-                cm.Company.LogoUrl, cm.Company.Address, cm.Company.Phone, cm.Company.Email, cm.Company.AllowSelfBooking))
             .ToListAsync();
+        var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
 
-        return Ok(companies);
+        return Ok(memberships.Select(cm => MapToDto(cm.Company, plans[cm.CompanyId])));
     }
 
     // Returns all companies where the current user is a member (any role)
@@ -45,13 +52,13 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
     public async Task<ActionResult<List<CompanyDto>>> GetMemberOf()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var companies = await db.CompanyMembers
+        var memberships = await db.CompanyMembers
+            .Include(cm => cm.Company)
             .Where(cm => cm.UserId == userId && cm.Company.IsActive)
-            .Select(cm => new CompanyDto(cm.Company.Id, cm.Company.Name, cm.Company.Slug, cm.Company.Description,
-                cm.Company.LogoUrl, cm.Company.Address, cm.Company.Phone, cm.Company.Email, cm.Company.AllowSelfBooking))
             .ToListAsync();
+        var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
 
-        return Ok(companies);
+        return Ok(memberships.Select(cm => MapToDto(cm.Company, plans[cm.CompanyId])));
     }
 
     [HttpGet("{slug}")]
@@ -60,7 +67,8 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         var c = await db.Companies.FirstOrDefaultAsync(c => c.Slug == slug && c.IsActive);
         if (c is null) return NotFound();
 
-        return Ok(new CompanyDto(c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email, c.AllowSelfBooking));
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(c.Id);
+        return Ok(MapToDto(c, plan));
     }
 
     // Public: list masters for a company, optionally filtered by serviceId
@@ -108,8 +116,9 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
 
         var result = members.Select(cm => new MemberDto(
             cm.Id, cm.UserId, cm.User.FirstName, cm.User.LastName,
-            cm.User.Email!, cm.User.AvatarUrl, cm.Role.ToString(), cm.Bio,
-            masterServices.Where(ms => ms.MasterId == cm.UserId).Select(ms => ms.ServiceId).ToList()
+            cm.User.PhoneNumber ?? "", cm.User.Email, cm.User.AvatarUrl, cm.Role.ToString(), cm.Bio,
+            masterServices.Where(ms => ms.MasterId == cm.UserId).Select(ms => ms.ServiceId).ToList(),
+            cm.User.CommissionPercent
         )).ToList();
 
         return Ok(result);
@@ -151,6 +160,25 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
             return Conflict("Slug already taken");
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+        // Branch limit: the account plan caps how many companies this owner may create. Without a plan
+        // (Free) that's 1 — so a brand-new owner can open their first company, but a second branch needs
+        // a paid plan with MaxCompanies >= 2. Existing companies over a since-lowered limit are untouched.
+        //
+        // Serialize concurrent creates for this owner: without a lock, two simultaneous requests could
+        // both count the same (pre-insert) number of companies, both pass the check, and both insert —
+        // letting the owner end up over the limit the plan was supposed to enforce.
+        await using var limitTransaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"owner-companies:{userId}");
+
+        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(userId);
+        if (plan.MaxCompanies.HasValue)
+        {
+            var ownedCount = await db.Companies.CountAsync(c => c.OwnerUserId == userId);
+            if (ownedCount >= plan.MaxCompanies.Value)
+                return StatusCode(402, "Company limit reached for the current tariff plan.");
+        }
+
         var company = new Company
         {
             Id = Guid.NewGuid(),
@@ -160,7 +188,9 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
             Address = dto.Address,
             Phone = dto.Phone,
             Email = dto.Email,
-            AllowSelfBooking = dto.AllowSelfBooking
+            AllowSelfBooking = dto.AllowSelfBooking,
+            ShowInPublicListing = dto.ShowInPublicListing,
+            OwnerUserId = userId
         };
 
         var member = new CompanyMember
@@ -180,10 +210,12 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
             await userManager.AddToRoleAsync(user, "CompanyOwner");
 
         await db.SaveChangesAsync();
+        await limitTransaction.CommitAsync();
 
-        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug },
-            new CompanyDto(company.Id, company.Name, company.Slug, company.Description, company.LogoUrl,
-                company.Address, company.Phone, company.Email, company.AllowSelfBooking));
+        // `plan` was already resolved above for the MaxCompanies check — reuse it so the response
+        // reflects the owner's real plan (e.g. their existing paid plan when opening a 2nd+ branch),
+        // instead of assuming Free.
+        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, MapToDto(company, plan));
     }
 
     [HttpPut("{id:guid}")]
@@ -200,11 +232,61 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         if (dto.Phone is not null) company.Phone = dto.Phone;
         if (dto.Email is not null) company.Email = dto.Email;
         if (dto.AllowSelfBooking is not null) company.AllowSelfBooking = dto.AllowSelfBooking.Value;
+        if (dto.RequirePrepayment is not null) company.RequirePrepayment = dto.RequirePrepayment.Value;
+        if (dto.ShowInPublicListing is not null) company.ShowInPublicListing = dto.ShowInPublicListing.Value;
 
         await db.SaveChangesAsync();
 
-        return Ok(new CompanyDto(company.Id, company.Name, company.Slug, company.Description,
-            company.LogoUrl, company.Address, company.Phone, company.Email, company.AllowSelfBooking));
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
+        return Ok(MapToDto(company, plan));
+    }
+
+    // Uploads/replaces the company's logo image. Stored on local disk under wwwroot/uploads/companies
+    // and served back via static files (see Program.cs UseStaticFiles) — there's no cloud storage
+    // configured in this project. The extension is derived from the validated Content-Type, never from
+    // the client-supplied filename, so this can't be used for path traversal or to serve an arbitrary
+    // extension.
+    [HttpPost("{id:guid}/logo")]
+    [Authorize]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<ActionResult<CompanyDto>> UploadLogo(Guid id, IFormFile file)
+    {
+        var company = await db.Companies.FindAsync(id);
+        if (company is null) return NotFound();
+        if (!await CanManageCompany(id)) return Forbid();
+
+        if (file is null || file.Length == 0) return BadRequest("No file uploaded");
+        if (file.Length > 5 * 1024 * 1024) return BadRequest("File too large (max 5MB)");
+
+        var extension = file.ContentType switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            _ => null
+        };
+        if (extension is null) return BadRequest("Unsupported image type — use JPEG, PNG or WEBP");
+
+        var uploadsDir = Path.Combine(env.ContentRootPath, "wwwroot", "uploads", "companies");
+        Directory.CreateDirectory(uploadsDir);
+
+        var fileName = $"{Guid.NewGuid()}{extension}";
+        var filePath = Path.Combine(uploadsDir, fileName);
+        await using (var stream = new FileStream(filePath, FileMode.Create))
+            await file.CopyToAsync(stream);
+
+        // Clean up the previous logo file if it's one we stored ourselves (skip external URLs).
+        if (company.LogoUrl is { } oldUrl && oldUrl.StartsWith("/uploads/companies/"))
+        {
+            var oldPath = Path.Combine(env.ContentRootPath, "wwwroot", oldUrl.TrimStart('/'));
+            if (System.IO.File.Exists(oldPath)) System.IO.File.Delete(oldPath);
+        }
+
+        company.LogoUrl = $"/uploads/companies/{fileName}";
+        await db.SaveChangesAsync();
+
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
+        return Ok(MapToDto(company, plan));
     }
 
     [HttpPost("{id:guid}/members")]
@@ -216,20 +298,43 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         // Validate that the caller is allowed to assign the requested role
         if (!await CanAssignRole(dto.Role)) return Forbid();
 
-        var user = await userManager.FindByEmailAsync(dto.Email);
+        // Tariff seat limit: counts ALL members (the owner already occupies one seat), so a Free plan
+        // (MaxEmployees = 1) leaves room for the owner only — no staff can be added until upgraded.
+        // Only blocks adding NEW members once at/over the cap; existing members are never removed.
+        //
+        // Serialize concurrent adds for this company: without a lock, two simultaneous requests could
+        // both count the same (pre-insert) number of members, both pass the check, and both insert —
+        // letting the company end up over the seat limit the plan was supposed to enforce.
+        await using var limitTransaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
+
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
+        if (plan.MaxEmployees.HasValue)
+        {
+            var currentCount = await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id);
+            if (currentCount >= plan.MaxEmployees.Value)
+                return StatusCode(402, "Employee limit reached for the current tariff plan.");
+        }
+
+        // Accounts are identified by phone (UserName == phone), so look the member up by phone.
+        var user = await userManager.FindByNameAsync(dto.Phone);
 
         if (user is null)
         {
-            // Auto-create: password = capitalized login + "123", padded to 8 chars minimum
-            var login = dto.Email.Split('@')[0];
-            var pwd = (char.ToUpper(login[0]) + (login.Length > 1 ? login[1..] : "") + "123").PadRight(8, '0');
+            // Auto-create by phone. Derived temporary password: "Sb" + last 6 digits of the phone,
+            // right-padded to at least 8 chars — always contains an upper ('S'), a lower ('b') and
+            // digits, satisfying the password policy. The owner must pass this on to the new master.
+            var digits = new string(dto.Phone.Where(char.IsDigit).ToArray());
+            var tail = digits.Length >= 6 ? digits[^6..] : digits;
+            var pwd = $"Sb{tail}".PadRight(8, '0');
             user = new AppUser
             {
-                UserName = dto.Email,
+                UserName = dto.Phone,
+                PhoneNumber = dto.Phone,
+                PhoneNumberConfirmed = true, // added by the owner → treated as a verified number
                 Email = dto.Email,
                 FirstName = dto.FirstName,
                 LastName = dto.LastName,
-                EmailConfirmed = true,
             };
             var createResult = await userManager.CreateAsync(user, pwd);
             if (!createResult.Succeeded)
@@ -255,9 +360,25 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
             await userManager.AddToRoleAsync(user, dto.Role);
 
         await db.SaveChangesAsync();
+        await limitTransaction.CommitAsync();
 
         return Ok(new MemberDto(member.Id, user.Id, user.FirstName, user.LastName,
-            user.Email!, user.AvatarUrl, dto.Role, dto.Bio, []));
+            user.PhoneNumber ?? "", user.Email, user.AvatarUrl, dto.Role, dto.Bio, [], user.CommissionPercent));
+    }
+
+    [HttpPut("{id:guid}/members/{memberId:guid}/commission")]
+    [Authorize]
+    public async Task<IActionResult> UpdateMemberCommission(Guid id, Guid memberId, [FromBody] UpdateMemberCommissionDto dto)
+    {
+        if (!await CanManageCompany(id)) return Forbid();
+
+        var member = await db.CompanyMembers.Include(cm => cm.User).FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
+        if (member is null) return NotFound();
+
+        member.User.CommissionPercent = Math.Clamp(dto.CommissionPercent, 0, 100);
+        await db.SaveChangesAsync();
+
+        return Ok(new { member.UserId, member.User.CommissionPercent });
     }
 
     [HttpDelete("{id:guid}/members/{memberId:guid}")]
@@ -272,6 +393,87 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         db.CompanyMembers.Remove(member);
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    [HttpGet("{id:guid}/stats")]
+    [Authorize]
+    public async Task<IActionResult> GetStats(Guid id, [FromQuery] DateTime from, [FromQuery] DateTime to)
+    {
+        if (!await CanManageCompany(id)) return Forbid();
+
+        from = DateTime.SpecifyKind(from, DateTimeKind.Utc);
+        to = DateTime.SpecifyKind(to, DateTimeKind.Utc);
+
+        var bookings = await db.Bookings
+            .Include(b => b.Service)
+            .Include(b => b.Master)
+            .Where(b => b.CompanyId == id && b.CreatedAt >= from && b.CreatedAt <= to)
+            .ToListAsync();
+
+        var completed = bookings.Where(b => b.Status == BookingStatus.Completed).ToList();
+        var cancelled = bookings.Where(b => b.Status == BookingStatus.Cancelled).ToList();
+
+        var totalRevenue = completed.Sum(b => b.Price);
+
+        // New clients: first booking in this company falls in [from, to]
+        var allCompanyBookings = await db.Bookings
+            .Where(b => b.CompanyId == id && b.ClientId != null)
+            .GroupBy(b => b.ClientId!)
+            .Select(g => new { ClientId = g.Key, FirstDate = g.Min(b => b.CreatedAt) })
+            .ToListAsync();
+
+        var newClientsCount = allCompanyBookings.Count(c => c.FirstDate >= from && c.FirstDate <= to);
+
+        var masterStats = completed
+            .GroupBy(b => b.MasterId)
+            .Select(g =>
+            {
+                var master = g.First().Master;
+                return new
+                {
+                    masterId = g.Key,
+                    masterName = master != null ? $"{master.FirstName} {master.LastName}".Trim() : g.Key,
+                    bookingsCount = g.Count(),
+                    revenue = g.Sum(b => b.Price)
+                };
+            }).ToList();
+
+        var popularServices = bookings
+            .GroupBy(b => b.ServiceId)
+            .Select(g =>
+            {
+                var svc = g.First().Service;
+                return new
+                {
+                    serviceId = g.Key,
+                    serviceName = svc?.Name ?? g.Key.ToString(),
+                    count = g.Count()
+                };
+            })
+            .OrderByDescending(s => s.count)
+            .ToList();
+
+        var dailyRevenue = completed
+            .GroupBy(b => b.Date)
+            .Select(g => new
+            {
+                date = g.Key,
+                revenue = g.Sum(b => b.Price)
+            })
+            .OrderBy(d => d.date)
+            .ToList();
+
+        return Ok(new
+        {
+            totalRevenue,
+            bookingsCount = bookings.Count,
+            completedCount = completed.Count,
+            cancelledCount = cancelled.Count,
+            newClientsCount,
+            masterStats,
+            popularServices,
+            dailyRevenue
+        });
     }
 
     private async Task<bool> CanManageCompany(Guid companyId)
@@ -293,4 +495,17 @@ public class CompaniesController(AppDbContext db, UserManager<AppUser> userManag
         var allowed = new[] { "Master", "CompanyOwner" };
         return Task.FromResult(allowed.Contains(role));
     }
+
+    // Single source of truth for building a CompanyDto from an entity + its resolved plan, so the
+    // combined flags (OnlineBookingEnabled, PublicListingEnabled, PrepaymentEnabled) can't drift between
+    // the five endpoints that return a CompanyDto.
+    private static CompanyDto MapToDto(Company c, EffectivePlan plan) => new(
+        c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email,
+        c.AllowSelfBooking, c.RequirePrepayment,
+        c.AllowSelfBooking && plan.AllowOnlineBooking,
+        plan.AllowAnalytics,
+        plan.AllowMailing,
+        c.ShowInPublicListing,
+        c.ShowInPublicListing && plan.AllowPublicListing,
+        c.RequirePrepayment && plan.AllowOnlinePayment);
 }

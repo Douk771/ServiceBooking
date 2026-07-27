@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; }
+  a { color: #A9835A; text-decoration: none; }
+  a:hover { color: #8F6C46; }
+  input:focus, textarea:focus { border-color: #A9835A !important; box-shadow: 0 0 0 3px #F1E9DC; }
+</style>
+</helmet>
+
+<div style="font-family: 'Inter', sans-serif; background: #FAF6F0; color: #2B2420; min-height: 100vh;">
+
+  <nav style="position: sticky; top: 0; z-index: 40; background: rgba(250,246,240,0.86); backdrop-filter: blur(10px); border-bottom: 1px solid #E6DCCB;">
+    <div style="max-width: 1180px; margin: 0 auto; padding: 0 32px; height: 76px; display: flex; align-items: center; justify-content: space-between;">
+      <a href="Home.dc.html" style="display: flex; align-items: center; gap: 12px;">
+        <span style="width: 38px; height: 38px; border-radius: 50%; background: #2B2420; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FAF6F0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"></circle><circle cx="6" cy="18" r="2.2"></circle><path d="M8 7.5L20 19M8 16.5L20 5"></path></svg>
+        </span>
+        <span style="font-family: 'Newsreader', serif; font-size: 21px; color: #2B2420;">ServiceBooking</span>
+      </a>
+      <div style="display: flex; align-items: center; gap: 28px;">
+        <a href="Admin.dc.html" style="font-size: 14px; font-weight: 500; color: #6B5F52;">Админ</a>
+        <a href="Profile.dc.html" style="width: 36px; height: 36px; border-radius: 50%; background: #F1E9DC; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #8F6C46;">ИИ</a>
+      </div>
+    </div>
+  </nav>
+
+  <div style="max-width: 1080px; margin: 0 auto; padding: 44px 32px 100px;">
+    <h1 style="font-family: 'Newsreader', serif; font-size: 30px; font-weight: 500; margin: 0 0 24px;">Кабинет</h1>
+
+    <div style="display: flex; gap: 4px; background: #F1E9DC; padding: 4px; border-radius: 100px; margin-bottom: 32px; width: fit-content; flex-wrap: wrap;">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="6">
+        <button onclick="{{ setTab }}" data-tab="{{ t.key }}" style="padding: 9px 16px; border-radius: 100px; border: none; font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; background: {{ t.bg }}; color: {{ t.color }}; box-shadow: {{ t.shadow }};">{{ t.label }}</button>
+      </sc-for>
+    </div>
+
+    <!-- Dashboard -->
+    <sc-if value="{{ tabIsDashboard }}" hint-placeholder-val="{{ true }}">
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px;">
+        <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 20px;">
+            <p style="font-size: 12.5px; color: #A69A88; margin: 0 0 8px;">{{ s.label }}</p>
+            <p style="font-size: 22px; font-weight: 700; margin: 0;">{{ s.value }}</p>
+          </div>
+        </sc-for>
+      </div>
+      <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 22px; margin-bottom: 24px;">
+        <p style="font-size: 14px; font-weight: 600; margin: 0 0 16px;">Выручка по дням</p>
+        <div style="display: flex; align-items: flex-end; gap: 8px; height: 110px;">
+          <sc-for list="{{ chartBars }}" as="b" hint-placeholder-count="7">
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <div style="width: 100%; background: #C9A877; border-radius: 6px 6px 0 0; height: {{ b.height }};"></div>
+              <span style="font-size: 10.5px; color: #A69A88;">{{ b.label }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 22px;">
+          <p style="font-size: 14px; font-weight: 600; margin: 0 0 14px;">Загрузка мастеров</p>
+          <sc-for list="{{ masterLoad }}" as="m" hint-placeholder-count="3">
+            <div style="display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #F1E9DC; font-size: 13.5px;">
+              <span>{{ m.name }}</span>
+              <span style="color: #8F6C46; font-weight: 600;">{{ m.revenue }} ₽</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 22px;">
+          <p style="font-size: 14px; font-weight: 600; margin: 0 0 14px;">Популярные услуги</p>
+          <sc-for list="{{ popularServices }}" as="p" hint-placeholder-count="3">
+            <div style="display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #F1E9DC; font-size: 13.5px;">
+              <span>{{ p.name }}</span>
+              <span style="color: #A69A88;">{{ p.count }}×</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Companies -->
+    <sc-if value="{{ tabIsCompanies }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+        <p style="font-size: 14px; color: #6B5F52; margin: 0;">Компании, которыми вы владеете</p>
+        <button style="padding: 10px 18px; border-radius: 100px; border: none; background: #2B2420; color: #FAF6F0; font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer;">+ Создать компанию</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <sc-for list="{{ myCompanies }}" as="c" hint-placeholder-count="2">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <div style="width: 46px; height: 46px; border-radius: 14px; background: #F1E9DC; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8F6C46" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7.5" width="18" height="12" rx="2.5"></rect><path d="M8 7.5v-2a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              </div>
+              <div>
+                <p style="font-weight: 600; font-size: 14.5px; margin: 0 0 2px;">{{ c.name }}</p>
+                <p style="font-size: 12.5px; color: #A69A88; margin: 0;">/{{ c.slug }}</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button style="padding: 9px 16px; border-radius: 100px; border: 1px solid #E6DCCB; background: #fff; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;">Управление</button>
+              <a href="Company.dc.html" style="padding: 9px 16px; border-radius: 100px; font-size: 13px; font-weight: 600; color: #6B5F52;">Открыть →</a>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- Schedule -->
+    <sc-if value="{{ tabIsSchedule }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap;">
+        <sc-for list="{{ scheduleMasters }}" as="m" hint-placeholder-count="3">
+          <button onclick="{{ pickScheduleMaster }}" data-mid="{{ m.id }}" style="display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 100px; border: 1px solid {{ m.border }}; background: {{ m.bg }}; font-size: 13px; font-family: inherit; cursor: pointer;">
+            <span style="width: 24px; height: 24px; border-radius: 50%; background: {{ m.avatarBg }}; color: {{ m.avatarColor }}; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700;">{{ m.initials }}</span>
+            {{ m.name }}
+          </button>
+        </sc-for>
+      </div>
+      <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 22px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+          <button style="width: 30px; height: 30px; border-radius: 50%; border: none; background: #F1E9DC; color: #6B5F52; cursor: pointer;">‹</button>
+          <h3 style="font-size: 15px; font-weight: 600; margin: 0;">{{ monthLabel }}</h3>
+          <button style="width: 30px; height: 30px; border-radius: 50%; border: none; background: #F1E9DC; color: #6B5F52; cursor: pointer;">›</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px;">
+          <sc-for list="{{ weekDays }}" as="wd" hint-placeholder-count="7">
+            <div style="text-align: center; font-size: 11.5px; color: #A69A88; padding: 4px 0;">{{ wd }}</div>
+          </sc-for>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;">
+          <sc-for list="{{ calendarCells }}" as="cell" hint-placeholder-count="35">
+            <div style="height: 52px; border-radius: 10px; background: {{ cell.bg }}; border: 1px solid {{ cell.border }}; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; color: {{ cell.color }};">
+              {{ cell.day }}
+              <sc-if value="{{ cell.hasHours }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 9px; color: #8F6C46;">{{ cell.hours }}</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display: flex; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #F1E9DC; font-size: 12px; color: #6B5F52;">
+          <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 11px; height: 11px; border-radius: 3px; background: #F1E9DC; border: 1px solid #D8C9AE;"></span>Рабочий день</span>
+          <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 11px; height: 11px; border-radius: 3px; background: #F5F2EC; border: 1px solid #E6DCCB;"></span>Выходной</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Clients -->
+    <sc-if value="{{ tabIsClients }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="font-size: 16px; font-weight: 600; margin: 0;">Мои клиенты</h2>
+        <span style="font-size: 13px; color: #A69A88;">{{ clients.length }} клиентов</span>
+      </div>
+      <input placeholder="Поиск по имени…" style="width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 100px; border: 1px solid #E6DCCB; font-size: 14px; font-family: inherit; outline: none; margin-bottom: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <sc-for list="{{ clients }}" as="cl" hint-placeholder-count="4">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 16px; padding: 16px 20px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="width: 40px; height: 40px; border-radius: 50%; background: #F1E9DC; color: #8F6C46; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;">{{ cl.initials }}</span>
+                <div>
+                  <p style="font-weight: 600; font-size: 14px; margin: 0;">{{ cl.name }}</p>
+                  <p style="font-size: 12px; color: #A69A88; margin: 2px 0 0;">Последний визит: {{ cl.lastVisit }} · {{ cl.visits }} визитов</p>
+                </div>
+              </div>
+              <span style="font-size: 13px; color: #8F6C46;">{{ cl.phone }}</span>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- Reports -->
+    <sc-if value="{{ tabIsReports }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: flex-end;">
+        <div>
+          <label style="display: block; font-size: 12px; color: #A69A88; margin-bottom: 5px;">С</label>
+          <input type="date" value="2026-07-01" style="padding: 10px 14px; border-radius: 12px; border: 1px solid #E6DCCB; font-size: 13.5px; font-family: inherit;">
+        </div>
+        <div>
+          <label style="display: block; font-size: 12px; color: #A69A88; margin-bottom: 5px;">По</label>
+          <input type="date" value="2026-07-27" style="padding: 10px 14px; border-radius: 12px; border: 1px solid #E6DCCB; font-size: 13.5px; font-family: inherit;">
+        </div>
+        <button style="padding: 11px 20px; border-radius: 100px; border: none; background: #2B2420; color: #FAF6F0; font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer;">Построить отчёт</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
+        <sc-for list="{{ reportRows }}" as="r" hint-placeholder-count="3">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 16px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <p style="font-weight: 600; font-size: 14px; margin: 0;">{{ r.name }}</p>
+              <p style="font-size: 12.5px; color: #A69A88; margin: 3px 0 0;">{{ r.count }} услуг · комиссия {{ r.commission }}%</p>
+            </div>
+            <div style="text-align: right; font-size: 13px;">
+              <p style="margin: 0; color: #6B5F52;">Итого: <strong style="color: #2B2420;">{{ r.total }} ₽</strong></p>
+              <p style="margin: 2px 0 0; color: #4B6B4B;">Мастеру: {{ r.masterShare }} ₽</p>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="background: #F1E9DC; border-radius: 16px; padding: 16px 20px; display: flex; justify-content: space-between; font-weight: 600; font-size: 14px;">
+        <span>Итого за период</span>
+        <span>228 400 ₽</span>
+      </div>
+    </sc-if>
+
+    <!-- Mailing -->
+    <sc-if value="{{ tabIsMailing }}" hint-placeholder-val="{{ false }}">
+      <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 18px; padding: 24px; margin-bottom: 24px;">
+        <h2 style="font-size: 15px; font-weight: 600; margin: 0 0 16px;">Новая рассылка</h2>
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <input placeholder="Тема — например, «Акция на июль»" style="width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 12px; border: 1px solid #E6DCCB; font-size: 14px; font-family: inherit; outline: none;">
+          <textarea rows="4" placeholder="Текст сообщения для клиентов…" style="width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 12px; border: 1px solid #E6DCCB; font-size: 14px; font-family: inherit; outline: none; resize: none;"></textarea>
+          <button style="align-self: flex-start; padding: 12px 22px; border-radius: 100px; border: none; background: #2B2420; color: #FAF6F0; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;">Отправить рассылку</button>
+        </div>
+      </div>
+      <h2 style="font-size: 15px; font-weight: 600; margin: 0 0 14px;">История рассылок</h2>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <sc-for list="{{ mailings }}" as="ml" hint-placeholder-count="2">
+          <div style="background: #fff; border: 1px solid #E6DCCB; border-radius: 16px; padding: 16px 20px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <p style="font-weight: 600; font-size: 14px; margin: 0 0 3px;">{{ ml.subject }}</p>
+              <p style="font-size: 13px; color: #6B5F52; margin: 0;">{{ ml.message }}</p>
+            </div>
+            <div style="text-align: right; font-size: 12.5px; color: #A69A88; flex-shrink: 0;">
+              <p style="margin: 0;">{{ ml.recipients }} получателей</p>
+              <p style="margin: 2px 0 0;">{{ ml.date }}</p>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { tab: 'dashboard', scheduleMasterId: 'm1' };
+
+  tabDefs = [
+    { key: 'dashboard', label: 'Дашборд' },
+    { key: 'companies', label: 'Мои компании' },
+    { key: 'schedule', label: 'Расписание' },
+    { key: 'clients', label: 'Клиенты' },
+    { key: 'reports', label: 'Отчёты' },
+    { key: 'mailing', label: 'Рассылка' },
+  ];
+
+  setTab(e) { this.setState({ tab: e.currentTarget.getAttribute('data-tab') }); }
+  pickScheduleMaster(e) { this.setState({ scheduleMasterId: e.currentTarget.getAttribute('data-mid') }); }
+
+  buildCalendar() {
+    const now = new Date(2026, 6, 1); // July 2026
+    const year = now.getFullYear(), month = now.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    let startPad = firstDay.getDay() - 1; if (startPad < 0) startPad = 6;
+    const cells = [];
+    for (let i = 0; i < startPad; i++) cells.push({ day: '', bg: 'transparent', border: 'transparent', color: '#fff', hasHours: false });
+    for (let d = 1; d <= daysInMonth; d++) {
+      const isOff = d % 7 === 0 || d % 7 === 1;
+      const isToday = d === 27;
+      cells.push({
+        day: d,
+        bg: isOff ? '#F5F2EC' : '#F1E9DC',
+        border: isToday ? '#8F6C46' : (isOff ? '#E6DCCB' : '#D8C9AE'),
+        color: isOff ? '#B3A695' : '#2B2420',
+        hasHours: !isOff,
+        hours: '9–18',
+      });
+    }
+    return cells;
+  }
+
+  renderVals() {
+    const tab = this.state.tab;
+    const tabs = this.tabDefs.map(t => ({ ...t, bg: t.key === tab ? '#fff' : 'transparent', color: t.key === tab ? '#2B2420' : '#8F6C46', shadow: t.key === tab ? '0 2px 6px rgba(43,36,32,0.08)' : 'none' }));
+
+    const scheduleMasters = [
+      { id: 'm1', name: 'Имя мастера', initials: 'ИМ' },
+      { id: 'm2', name: 'Имя мастера', initials: 'ИМ' },
+      { id: 'm3', name: 'Имя мастера', initials: 'ИМ' },
+    ].map(m => {
+      const active = m.id === this.state.scheduleMasterId;
+      return { ...m, bg: active ? '#F1E9DC' : '#fff', border: active ? '#D8C9AE' : '#E6DCCB', avatarBg: active ? '#8F6C46' : '#F1E9DC', avatarColor: active ? '#FAF6F0' : '#8F6C46' };
+    });
+
+    return {
+      tabs,
+      tabIsDashboard: tab === 'dashboard',
+      tabIsCompanies: tab === 'companies',
+      tabIsSchedule: tab === 'schedule',
+      tabIsClients: tab === 'clients',
+      tabIsReports: tab === 'reports',
+      tabIsMailing: tab === 'mailing',
+      setTab: (e) => this.setTab(e),
+      pickScheduleMaster: (e) => this.pickScheduleMaster(e),
+
+      stats: [
+        { label: 'Выручка', value: '84 200 ₽' },
+        { label: 'Записей', value: '46' },
+        { label: 'Выполнено', value: '39' },
+        { label: 'Новых клиентов', value: '8' },
+      ],
+      chartBars: [40,65,50,80,55,90,70].map((v, i) => ({ height: v + '%', label: ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'][i] })),
+      masterLoad: [
+        { name: 'Имя мастера', revenue: '32 000' },
+        { name: 'Имя мастера', revenue: '27 400' },
+        { name: 'Имя мастера', revenue: '24 800' },
+      ],
+      popularServices: [
+        { name: 'Название услуги', count: 18 },
+        { name: 'Название услуги', count: 14 },
+        { name: 'Название услуги', count: 9 },
+      ],
+
+      myCompanies: [
+        { name: 'Название компании', slug: 'company-slug-1' },
+        { name: 'Название компании', slug: 'company-slug-2' },
+      ],
+
+      scheduleMasters,
+      monthLabel: 'Июль 2026',
+      weekDays: ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'],
+      calendarCells: this.buildCalendar(),
+
+      clients: [
+        { initials: 'ИК', name: 'Имя клиента', lastVisit: '20 июл', visits: 5, phone: '+7 999 000-00-00' },
+        { initials: 'ИК', name: 'Имя клиента', lastVisit: '14 июл', visits: 2, phone: '+7 999 000-00-01' },
+        { initials: 'ИК', name: 'Имя клиента', lastVisit: '2 июл', visits: 11, phone: '+7 999 000-00-02' },
+        { initials: 'ИК', name: 'Имя клиента', lastVisit: '28 июн', visits: 1, phone: '+7 999 000-00-03' },
+      ],
+
+      reportRows: [
+        { name: 'Имя мастера', count: 22, commission: 40, total: '78 000', masterShare: '31 200' },
+        { name: 'Имя мастера', count: 17, commission: 35, total: '64 500', masterShare: '22 575' },
+        { name: 'Имя мастера', count: 15, commission: 40, total: '85 900', masterShare: '34 360' },
+      ],
+
+      mailings: [
+        { subject: 'Тема рассылки', message: 'Краткий текст сообщения, отправленного клиентам компании.', recipients: 132, date: '15 июл 2026, 10:20' },
+        { subject: 'Тема рассылки', message: 'Краткий текст сообщения, отправленного клиентам компании.', recipients: 98, date: '2 июн 2026, 09:05' },
+      ],
+    };
+  }
+}
+
+</script>
+</body>
+</html>

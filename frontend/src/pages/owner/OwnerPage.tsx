@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
+import { getCreateCompanyErrorMessage } from '../../utils/companyError'
 
 function slugify(str: string) {
   return str
@@ -24,6 +25,7 @@ interface FormData {
   phone: string
   email: string
   allowSelfBooking: boolean
+  showInPublicListing: boolean
 }
 
 export function OwnerPage() {
@@ -36,7 +38,7 @@ export function OwnerPage() {
   })
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
-    defaultValues: { allowSelfBooking: true }
+    defaultValues: { allowSelfBooking: true, showInPublicListing: true }
   })
 
   const nameValue = watch('name')
@@ -59,6 +61,7 @@ export function OwnerPage() {
       phone: data.phone || undefined,
       email: data.email || undefined,
       allowSelfBooking: data.allowSelfBooking,
+      showInPublicListing: data.showInPublicListing,
     })
   }
 
@@ -157,9 +160,17 @@ export function OwnerPage() {
               />
               <span className="text-sm text-gray-700">Разрешить клиентам записываться самостоятельно</span>
             </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded accent-orange-500"
+                {...register('showInPublicListing')}
+              />
+              <span className="text-sm text-gray-700">Показывать компанию в общем списке</span>
+            </label>
 
             {create.isError && (
-              <p className="text-sm text-red-500">Ошибка создания. Возможно, такой slug уже занят.</p>
+              <p className="text-sm text-red-500">{getCreateCompanyErrorMessage(create.error)}</p>
             )}
 
             <div className="flex gap-3 pt-2">

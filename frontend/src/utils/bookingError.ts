@@ -1,0 +1,36 @@
+import { AxiosError } from 'axios'
+
+/**
+ * Maps a failed booking request to a clear, actionable Russian message.
+ *
+ * The booking endpoint can fail for reasons a bare "try again" hides — most notably the
+ * Free-plan guest gate (HTTP 402), where retrying never helps. We surface the real cause so
+ * the user knows what to do next (e.g. log in, pick another slot).
+ */
+export function getBookingErrorMessage(error: unknown): string {
+  const ax = error as AxiosError
+  const status = ax?.response?.status
+  const serverMsg = typeof ax?.response?.data === 'string' ? ax.response.data : ''
+  const lower = serverMsg.toLowerCase()
+
+  switch (status) {
+    case 402:
+      if (lower.includes('expired'))
+        return 'Подписка компании истекла — запись временно недоступна.'
+      return 'Онлайн-запись в этой компании сейчас недоступна.'
+    case 403:
+      return 'Онлайн-запись недоступна — запись только через мастера.'
+    case 409:
+      return 'Это время уже занято. Выберите другой слот.'
+    case 404:
+      return 'Услуга или компания не найдена.'
+    case 400:
+      if (lower.includes('captcha'))
+        return 'Не удалось пройти проверку. Обновите страницу и попробуйте снова.'
+      if (lower.includes('name') || lower.includes('phone'))
+        return 'Укажите имя и телефон.'
+      return serverMsg || 'Проверьте введённые данные.'
+    default:
+      return 'Произошла ошибка. Попробуйте снова.'
+  }
+}

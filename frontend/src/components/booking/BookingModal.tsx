@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { format, addDays } from 'date-fns'
+import { format, addDays, isTomorrow } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../../api/bookings'
 import { companiesApi } from '../../api/companies'
 import { useAuthStore } from '../../store/authStore'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
+import { getBookingErrorMessage } from '../../utils/bookingError'
+import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
 import type { Company, Service } from '../../types'
 
 interface Props {
@@ -27,6 +30,7 @@ export function BookingModal({ service, company, onClose }: Props) {
   const [guestPhone, setGuestPhone]   = useState('')
   const [guestEmail, setGuestEmail]   = useState('')
   const [notes, setNotes]             = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
 
   // Load masters that can perform this service
   const { data: masters, isLoading: mastersLoading } = useQuery({
@@ -34,18 +38,39 @@ export function BookingModal({ service, company, onClose }: Props) {
     queryFn: () => companiesApi.getMasters(company.id, service.id),
   })
 
-  // Next 14 days
-  const days = Array.from({ length: 14 }, (_, i) => {
-    const d = addDays(new Date(), i + 1)
-    return { value: format(d, 'yyyy-MM-dd'), label: format(d, 'd MMM, EEE', { locale: ru }) }
-  })
+  const now = new Date()
+  const todayStr = format(now, 'yyyy-MM-dd')
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const timeToMinutes = (t: string) => {
+    const [h, m] = t.slice(0, 5).split(':').map(Number)
+    return h * 60 + m
+  }
 
-  const { data: slots, isLoading: slotsLoading } = useQuery({
+  // Today is only offered as a booking date if the master still has at least one slot today
+  // that both isn't already taken and hasn't passed yet — otherwise there's nothing left to pick.
+  const { data: slotsToday = [] } = useQuery({
+    queryKey: ['slots', selectedMasterId, service.id, todayStr],
+    queryFn: () => bookingsApi.getSlots(selectedMasterId, service.id, todayStr),
+    enabled: !!selectedMasterId,
+    staleTime: 0,
+  })
+  const hasAvailableSlotToday = slotsToday.some((s) => timeToMinutes(s.start) > nowMinutes)
+
+  const days = [
+    ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
+    ...Array.from({ length: 14 }, (_, i) => {
+      const d = addDays(now, i + 1)
+      return { value: format(d, 'yyyy-MM-dd'), label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }) }
+    }),
+  ]
+
+  const { data: rawSlots, isLoading: slotsLoading } = useQuery({
     queryKey: ['slots', selectedMasterId, service.id, selectedDate],
     queryFn: () => bookingsApi.getSlots(selectedMasterId, service.id, selectedDate),
     enabled: !!selectedMasterId && !!selectedDate,
     staleTime: 0, // always fetch fresh — bookings made by others should be reflected immediately
   })
+  const slots = rawSlots?.filter((s) => selectedDate !== todayStr || timeToMinutes(s.start) > nowMinutes)
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -59,6 +84,7 @@ export function BookingModal({ service, company, onClose }: Props) {
         guestName:  isAuthenticated() ? undefined : guestName,
         guestPhone: isAuthenticated() ? undefined : guestPhone,
         guestEmail: isAuthenticated() ? undefined : guestEmail,
+        captchaToken: isAuthenticated() ? undefined : (captchaToken || undefined),
       }),
     onSuccess: () => setStep('done'),
   })
@@ -75,15 +101,14 @@ export function BookingModal({ service, company, onClose }: Props) {
   const progressSteps: Step[] = ['master', 'date', 'slot', 'info']
   const currentIdx = progressSteps.indexOf(step)
 
+  const dismiss = useOverlayDismiss(onClose)
+
   return (
     <div
       className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      {...dismiss}
     >
-      <div
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
@@ -261,23 +286,27 @@ export function BookingModal({ service, company, onClose }: Props) {
                 />
               </div>
 
-              {!isAuthenticated() && (
-                <p className="text-xs text-gray-400">
-                  Продолжая, вы подтверждаете, что не являетесь роботом (защита reCAPTCHA)
-                </p>
+              {!isAuthenticated() && smartCaptchaEnabled && (
+                <div className="flex flex-col gap-1">
+                  <SmartCaptcha onToken={setCaptchaToken} />
+                  <p className="text-xs text-gray-400">Подтвердите, что вы не робот (Yandex SmartCaptcha)</p>
+                </div>
               )}
 
               <Button
                 size="lg"
                 loading={mutation.isPending}
                 onClick={() => mutation.mutate()}
-                disabled={!isAuthenticated() && (!guestName || !guestPhone)}
+                disabled={
+                  (!isAuthenticated() && (!guestName || !guestPhone)) ||
+                  (!isAuthenticated() && smartCaptchaEnabled && !captchaToken)
+                }
               >
                 Подтвердить запись
               </Button>
 
               {mutation.isError && (
-                <p className="text-sm text-red-500 text-center">Произошла ошибка. Попробуйте снова.</p>
+                <p className="text-sm text-red-500 text-center">{getBookingErrorMessage(mutation.error)}</p>
               )}
             </div>
           )}

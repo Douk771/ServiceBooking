@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { ScheduleTab } from './ScheduleTab'
+import { getAddMemberErrorMessage } from '../../utils/memberError'
 import type { Service } from '../../types'
 
 // ── Services tab ──────────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
             <Input
               label="Название *"
-              placeholder="Стрижка мужская"
+              placeholder="Название услуги..."
               error={errors.name?.message}
               {...register('name', { required: 'Введите название' })}
             />
@@ -166,6 +167,8 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
   const [expanded, setExpanded] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set(m.serviceIds))
   const [dirty, setDirty] = useState(false)
+  const [commission, setCommission] = useState(m.commissionPercent)
+  const [commissionDirty, setCommissionDirty] = useState(false)
 
   const toggle = (id: string) => {
     setSelected(prev => {
@@ -181,6 +184,11 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
     onSuccess: () => { setDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
   })
 
+  const commissionMut = useMutation({
+    mutationFn: () => companiesApi.updateMemberCommission(companyId, m.id, commission),
+    onSuccess: () => { setCommissionDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+  })
+
   return (
     <Card className="overflow-hidden">
       <div className="p-4 flex items-center justify-between gap-4">
@@ -190,11 +198,29 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
           </div>
           <div className="min-w-0">
             <p className="font-medium text-gray-900">{m.firstName} {m.lastName}</p>
-            <p className="text-sm text-gray-400 truncate">{m.email} · {roleLabel[m.role] ?? m.role}</p>
+            <p className="text-sm text-gray-400 truncate">{m.phone || m.email} · {roleLabel[m.role] ?? m.role}</p>
             {m.bio && <p className="text-xs text-gray-400 mt-0.5 truncate">{m.bio}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-gray-400 whitespace-nowrap">Комиссия:</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={commission}
+              onChange={(e) => { setCommission(Number(e.target.value)); setCommissionDirty(true) }}
+              className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary-400"
+            />
+            <span className="text-xs text-gray-400">%</span>
+            {commissionDirty && (
+              <Button size="sm" loading={commissionMut.isPending} onClick={() => commissionMut.mutate()}>
+                ✓
+              </Button>
+            )}
+          </div>
           {services.length > 0 && (
             <button
               onClick={() => setExpanded(e => !e)}
@@ -257,7 +283,7 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
 function MembersTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
-  const { register, handleSubmit, reset } = useForm<{ email: string; firstName: string; lastName: string; role: string; bio: string }>({
+  const { register, handleSubmit, reset } = useForm<{ phone: string; firstName: string; lastName: string; role: string; bio: string; email: string }>({
     defaultValues: { role: 'Master' }
   })
 
@@ -272,8 +298,8 @@ function MembersTab({ companyId }: { companyId: string }) {
   })
 
   const addMut = useMutation({
-    mutationFn: (d: { email: string; firstName: string; lastName: string; role: string; bio: string }) =>
-      companiesApi.addMember(companyId, d.email, d.firstName, d.lastName, d.role, d.bio || undefined),
+    mutationFn: (d: { phone: string; firstName: string; lastName: string; role: string; bio: string; email: string }) =>
+      companiesApi.addMember(companyId, d.phone, d.firstName, d.lastName, d.role, d.bio || undefined, d.email || undefined),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['company-members', companyId] }); setShowAdd(false); reset() },
   })
 
@@ -318,9 +344,9 @@ function MembersTab({ companyId }: { companyId: string }) {
           <form onSubmit={handleSubmit((d) => addMut.mutate(d))} className="flex flex-col gap-4">
             <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
               Если пользователь ещё не зарегистрирован — аккаунт будет создан автоматически.<br />
-              Временный пароль: <strong>Логин с заглавной + 123</strong> (например, email <em>anna@…</em> → <em>Anna123</em>)
+              Временный пароль: <strong>Sb + последние 6 цифр телефона</strong> (например, <em>+7 999 123‑45‑67</em> → <em>Sb234567</em>)
             </p>
-            <Input label="Email *" type="email" placeholder="master@example.com" {...register('email', { required: true })} />
+            <Input label="Телефон *" type="tel" placeholder="+7 999 000 00 00" {...register('phone', { required: true })} />
             <div className="grid grid-cols-2 gap-3">
               <Input label="Имя *" placeholder="Иван" {...register('firstName', { required: true })} />
               <Input label="Фамилия *" placeholder="Иванов" {...register('lastName', { required: true })} />
@@ -335,8 +361,9 @@ function MembersTab({ companyId }: { companyId: string }) {
                 <option value="CompanyOwner">Совладелец</option>
               </select>
             </div>
+            <Input label="Email (необязательно)" type="email" placeholder="master@example.com" {...register('email')} />
             <Input label="О сотруднике" placeholder="Специализация, опыт..." {...register('bio')} />
-            {addMut.isError && <p className="text-sm text-red-500">Пользователь уже является сотрудником или данные некорректны</p>}
+            {addMut.isError && <p className="text-sm text-red-500">{getAddMemberErrorMessage(addMut.error)}</p>}
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" className="flex-1" onClick={() => { setShowAdd(false); reset() }}>Отмена</Button>
               <Button type="submit" className="flex-1" loading={addMut.isPending}>Добавить</Button>
@@ -354,6 +381,7 @@ function SettingsTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const { data: companies } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
   const company = companies?.find((c) => c.id === companyId)
+  const logoInputRef = useRef<HTMLInputElement>(null)
 
   const { register, handleSubmit, formState: { isDirty } } = useForm({
     values: company ? {
@@ -363,6 +391,8 @@ function SettingsTab({ companyId }: { companyId: string }) {
       phone: company.phone ?? '',
       email: company.email ?? '',
       allowSelfBooking: company.allowSelfBooking,
+      requirePrepayment: company.requirePrepayment ?? false,
+      showInPublicListing: company.showInPublicListing ?? true,
     } : undefined,
   })
 
@@ -371,10 +401,40 @@ function SettingsTab({ companyId }: { companyId: string }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-companies'] }),
   })
 
+  const logoMut = useMutation({
+    mutationFn: (file: File) => companiesApi.uploadLogo(companyId, file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-companies'] }),
+  })
+
   return (
     <div>
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Настройки компании</h2>
       <Card className="p-6">
+        {/* Logo */}
+        <div className="flex items-center gap-4 mb-6">
+          {company?.logoUrl ? (
+            <img src={company.logoUrl} alt="Логотип" className="w-16 h-16 rounded-2xl object-cover border border-gray-200" />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-xl">
+              {company?.name?.[0] ?? '?'}
+            </div>
+          )}
+          <div>
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) logoMut.mutate(f); e.target.value = '' }}
+            />
+            <Button size="sm" variant="secondary" loading={logoMut.isPending} onClick={() => logoInputRef.current?.click()}>
+              {company?.logoUrl ? 'Заменить логотип' : 'Загрузить логотип'}
+            </Button>
+            <p className="text-xs text-gray-400 mt-1">JPEG, PNG или WEBP, до 5 МБ</p>
+            {logoMut.isError && <p className="text-xs text-red-500 mt-1">Не удалось загрузить изображение</p>}
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit((d) => updateMut.mutate(d))} className="flex flex-col gap-4">
           <Input label="Название" {...register('name')} />
           <div className="flex flex-col gap-1">
@@ -394,6 +454,24 @@ function SettingsTab({ companyId }: { companyId: string }) {
             <input type="checkbox" className="w-4 h-4 rounded accent-orange-500" {...register('allowSelfBooking')} />
             <span className="text-sm text-gray-700">Разрешить клиентам записываться самостоятельно</span>
           </label>
+          <div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" className="w-4 h-4 rounded accent-orange-500" {...register('requirePrepayment')} />
+              <span className="text-sm text-gray-700">Требовать предоплату при онлайн-записи</span>
+            </label>
+            {company && company.requirePrepayment && !company.prepaymentEnabled && (
+              <p className="text-xs text-amber-600 mt-1 ml-7">Онлайн-оплата не входит в текущий тариф — предоплата не будет запрашиваться, пока тариф не будет повышен</p>
+            )}
+          </div>
+          <div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" className="w-4 h-4 rounded accent-orange-500" {...register('showInPublicListing')} />
+              <span className="text-sm text-gray-700">Показывать компанию в общем списке</span>
+            </label>
+            {company && (company.showInPublicListing ?? true) && !company.publicListingEnabled && (
+              <p className="text-xs text-amber-600 mt-1 ml-7">Отображение в общем списке не входит в текущий тариф — компания не будет видна в списке, пока тариф не будет повышен</p>
+            )}
+          </div>
           {updateMut.isSuccess && <p className="text-sm text-green-600">✓ Сохранено</p>}
           <Button type="submit" loading={updateMut.isPending} disabled={!isDirty}>Сохранить изменения</Button>
         </form>

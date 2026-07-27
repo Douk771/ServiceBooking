@@ -14,6 +14,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceBooking.Infrastructu
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceBooking.API", "ServiceBooking.API\ServiceBooking.API.csproj", "{122E65AB-98D6-4E27-BD90-60C798AF36C9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceBooking.Tests", "ServiceBooking.Tests\ServiceBooking.Tests.csproj", "{28F532A3-C538-4922-A119-56802FA6A685}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -36,5 +38,9 @@ Global
 		{122E65AB-98D6-4E27-BD90-60C798AF36C9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{122E65AB-98D6-4E27-BD90-60C798AF36C9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{122E65AB-98D6-4E27-BD90-60C798AF36C9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{28F532A3-C538-4922-A119-56802FA6A685}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{28F532A3-C538-4922-A119-56802FA6A685}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{28F532A3-C538-4922-A119-56802FA6A685}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{28F532A3-C538-4922-A119-56802FA6A685}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

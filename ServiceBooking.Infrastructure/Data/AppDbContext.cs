@@ -15,6 +15,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<WorkingHours> WorkingHours => Set<WorkingHours>();
     public DbSet<ScheduleBreak> ScheduleBreaks => Set<ScheduleBreak>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<AccountSubscription> AccountSubscriptions => Set<AccountSubscription>();
+    public DbSet<WeeklyScheduleTemplate> WeeklyScheduleTemplates => Set<WeeklyScheduleTemplate>();
+    public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<ClientNote> ClientNotes => Set<ClientNote>();
+    public DbSet<MailLog> MailLogs => Set<MailLog>();
+    public DbSet<SubscriptionPlanConfig> SubscriptionPlanConfigs => Set<SubscriptionPlanConfig>();
+    public DbSet<SubscriptionChangeLog> SubscriptionChangeLogs => Set<SubscriptionChangeLog>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -23,6 +30,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Company>(e =>
         {
             e.HasIndex(c => c.Slug).IsUnique();
+            e.HasOne(c => c.Owner).WithMany().HasForeignKey(c => c.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Service>(e =>
@@ -48,12 +56,55 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(wh => wh.Company).WithMany().HasForeignKey(wh => wh.CompanyId);
         });
 
+        builder.Entity<AccountSubscription>(e =>
+        {
+            e.HasOne(s => s.Owner).WithMany().HasForeignKey(s => s.OwnerUserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => s.OwnerUserId).IsUnique();
+            e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<SubscriptionChangeLog>(e =>
+        {
+            e.HasIndex(l => l.OwnerUserId);
+        });
+
         builder.Entity<Booking>(e =>
         {
+            e.Property(b => b.Price).HasColumnType("decimal(10,2)");
             e.HasOne(b => b.Company).WithMany(c => c.Bookings).HasForeignKey(b => b.CompanyId);
             e.HasOne(b => b.Service).WithMany(s => s.Bookings).HasForeignKey(b => b.ServiceId);
             e.HasOne(b => b.Master).WithMany(u => u.MasterBookings).HasForeignKey(b => b.MasterId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(b => b.Client).WithMany(u => u.ClientBookings).HasForeignKey(b => b.ClientId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<Review>(e =>
+        {
+            e.HasIndex(r => r.BookingId).IsUnique();
+            e.HasOne(r => r.Booking).WithMany().HasForeignKey(r => r.BookingId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(r => r.Company).WithMany().HasForeignKey(r => r.CompanyId);
+            e.HasOne(r => r.Master).WithMany().HasForeignKey(r => r.MasterId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(r => r.Client).WithMany().HasForeignKey(r => r.ClientId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<WeeklyScheduleTemplate>(e =>
+        {
+            e.HasIndex(t => new { t.MasterId, t.CompanyId });
+            e.HasOne(t => t.Master).WithMany().HasForeignKey(t => t.MasterId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(t => t.Company).WithMany().HasForeignKey(t => t.CompanyId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ClientNote>(e =>
+        {
+            e.HasIndex(n => new { n.CompanyId, n.ClientId });
+            e.HasIndex(n => new { n.CompanyId, n.GuestPhone });
+            e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(n => n.Master).WithMany().HasForeignKey(n => n.MasterId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(n => n.Client).WithMany().HasForeignKey(n => n.ClientId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<MailLog>(e => {
+            e.HasOne(m => m.Company).WithMany().HasForeignKey(m => m.CompanyId);
+            e.HasOne(m => m.SentBy).WithMany().HasForeignKey(m => m.SentById).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

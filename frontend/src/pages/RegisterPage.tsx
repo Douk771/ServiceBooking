@@ -10,9 +10,9 @@ import { useState } from 'react'
 interface FormData {
   firstName: string
   lastName: string
-  email: string
+  phone: string
   password: string
-  phone?: string
+  email?: string
 }
 
 export function RegisterPage() {
@@ -26,8 +26,8 @@ export function RegisterPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await authApi.register(data)
-      setAuth({ id: res.userId, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
+      const res = await authApi.register({ ...data, email: data.email || undefined })
+      setAuth({ id: res.userId, phone: res.phone, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
       navigate('/')
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: string } })?.response?.data
@@ -62,17 +62,17 @@ export function RegisterPage() {
             />
           </div>
           <Input
-            label="Email"
-            type="email"
-            placeholder="your@email.com"
-            error={errors.email?.message}
-            {...register('email', { required: 'Введите email' })}
-          />
-          <Input
-            label="Телефон (необязательно)"
+            label="Телефон"
             type="tel"
             placeholder="+7 999 000 00 00"
-            {...register('phone')}
+            error={errors.phone?.message}
+            {...register('phone', { required: 'Введите телефон' })}
+          />
+          <Input
+            label="Email (необязательно)"
+            type="email"
+            placeholder="your@email.com"
+            {...register('email')}
           />
           <Input
             label="Пароль"
