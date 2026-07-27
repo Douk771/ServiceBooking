@@ -4,6 +4,7 @@ import { format, addDays, isTomorrow } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../../api/bookings'
 import { Button } from '../ui/Button'
+import { Icon } from '../ui/Icon'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import type { Booking } from '../../types'
 
@@ -95,32 +96,34 @@ export function RescheduleModal({ booking, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5"
       {...dismiss}
     >
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+      <div className="bg-cream rounded-[26px] shadow-modal w-full max-w-[440px] max-h-[88vh] overflow-y-auto">
+        <div className="p-6 pb-[22px] border-b border-line flex items-center justify-between">
           <div>
-            <h2 className="font-bold text-gray-900 text-lg">Перенести запись</h2>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Перенести запись</h2>
+            <p className="text-[13px] text-ink-soft">
               {booking.clientName} · {booking.serviceName}
             </p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+          <button onClick={onClose} className="text-muted hover:text-ink shrink-0">
+            <Icon name="x" size={18} strokeWidth={1.8} />
+          </button>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 pt-[22px]">
           {/* Date grid */}
-          <h3 className="font-semibold text-gray-700 mb-3">Новая дата</h3>
+          <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-3">Новая дата</h3>
           <div className="grid grid-cols-2 gap-2 mb-6">
             {days.map((d) => (
               <button
                 key={d.value}
                 onClick={() => { setSelectedDate(d.value); setSelectedTime('') }}
-                className={`px-4 py-3 rounded-xl border text-sm transition-all text-left ${
+                className={`px-3.5 py-3 rounded-xl border text-[13.5px] transition-all text-left ${
                   selectedDate === d.value
-                    ? 'bg-primary-500 text-white border-primary-500'
-                    : 'border-gray-200 hover:border-primary-400 hover:bg-primary-50'
+                    ? 'bg-ink text-cream border-ink'
+                    : 'border-line bg-white hover:border-line-strong'
                 }`}
               >
                 {d.label}
@@ -131,7 +134,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
           {/* Time grid */}
           {selectedDate && (
             <>
-              <h3 className="font-semibold text-gray-700 mb-3">Новое время</h3>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-3">Новое время</h3>
               <div className="grid grid-cols-4 gap-2 mb-6">
                 {TIME_GRID.filter((time) =>
                   !isTimeOccupied(time, duration, occupied, booking.startTime) &&
@@ -142,10 +145,10 @@ export function RescheduleModal({ booking, onClose }: Props) {
                     <button
                       key={time}
                       onClick={() => setSelectedTime(isSelected ? '' : time)}
-                      className={`py-2 rounded-xl text-sm font-medium border transition-all ${
+                      className={`py-2 rounded-xl text-[13.5px] font-medium border transition-all ${
                         isSelected
-                          ? 'bg-primary-500 text-white border-primary-500'
-                          : 'border-gray-200 hover:border-primary-400 hover:bg-primary-50'
+                          ? 'bg-ink text-cream border-ink'
+                          : 'border-line bg-white hover:border-line-strong'
                       }`}
                     >
                       {time}
@@ -167,7 +170,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
           </Button>
 
           {mutation.isError && (
-            <p className="text-sm text-red-500 text-center mt-3">Время уже занято. Выберите другое.</p>
+            <p className="text-sm text-danger text-center mt-3">Время уже занято. Выберите другое.</p>
           )}
         </div>
       </div>

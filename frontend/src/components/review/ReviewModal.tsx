@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { reviewsApi } from '../../api/reviews'
 import { Button } from '../ui/Button'
+import { Icon } from '../ui/Icon'
 
 interface ReviewModalProps {
   bookingId: string
@@ -29,10 +30,10 @@ export function ReviewModal({ bookingId, serviceName, masterName, companyId, onC
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-1">Оставить отзыв</h2>
-        <p className="text-sm text-gray-500 mb-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 backdrop-blur-sm px-4">
+      <div className="bg-cream rounded-3xl shadow-modal w-full max-w-md p-7">
+        <h2 className="font-serif text-xl font-medium text-ink mb-1">Оставить отзыв</h2>
+        <p className="text-sm text-ink-soft mb-5">
           {serviceName} у мастера {masterName}
         </p>
 
@@ -42,21 +43,23 @@ export function ReviewModal({ bookingId, serviceName, masterName, companyId, onC
             <button
               key={star}
               type="button"
-              className="text-3xl transition-transform hover:scale-110"
+              className="transition-transform hover:scale-110"
               onMouseEnter={() => setHovered(star)}
               onMouseLeave={() => setHovered(0)}
               onClick={() => setRating(star)}
             >
-              <span className={(hovered || rating) >= star ? 'text-yellow-400' : 'text-gray-300'}>
-                ★
-              </span>
+              <Icon
+                name="star"
+                size={30}
+                className={(hovered || rating) >= star ? 'text-[#B08A3E]' : 'text-line'}
+              />
             </button>
           ))}
         </div>
 
         {/* Comment */}
         <textarea
-          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-300 mb-5"
+          className="w-full border border-line bg-white rounded-xl px-4 py-3 text-sm text-ink resize-none outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep mb-5"
           rows={4}
           placeholder="Расскажите о своём опыте (необязательно)"
           value={comment}
@@ -64,7 +67,7 @@ export function ReviewModal({ bookingId, serviceName, masterName, companyId, onC
         />
 
         {submit.isError && (
-          <p className="text-sm text-red-500 mb-3">Не удалось отправить отзыв. Попробуйте снова.</p>
+          <p className="text-sm text-danger mb-3">Не удалось отправить отзыв. Попробуйте снова.</p>
         )}
 
         <div className="flex gap-3">

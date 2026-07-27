@@ -5,6 +5,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
+import { Icon } from '../../components/ui/Icon'
 
 interface PlanForm {
   name: string
@@ -41,7 +42,7 @@ function featureIcon(enabled: boolean) {
 function FeatureBadge({ label, enabled }: { label: string; enabled: boolean }) {
   return (
     <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
-      enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-400'
+      enabled ? 'bg-success-bg text-success' : 'bg-cream-deep text-muted'
     }`}>
       {featureIcon(enabled)} {label}
     </span>
@@ -128,14 +129,16 @@ export function PlansTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <p className="text-sm text-gray-500">Тарифные планы подписки</p>
-        <Button onClick={openCreate}>+ Создать тариф</Button>
+        <p className="text-sm text-muted">Тарифные планы подписки</p>
+        <Button onClick={openCreate}>
+          <Icon name="plus" size={15} strokeWidth={2} /> Создать тариф
+        </Button>
       </div>
 
       {isLoading ? (
         <div className="grid gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 bg-gray-100 rounded-2xl animate-pulse" />
+            <div key={i} className="h-24 bg-cream-deep rounded-2xl animate-pulse" />
           ))}
         </div>
       ) : (
@@ -147,14 +150,14 @@ export function PlansTab() {
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2 flex-wrap">
-                        <h3 className="font-semibold text-gray-900 text-lg">{plan.name}</h3>
-                        <span className="text-sm font-medium text-primary-700">
+                        <h3 className="font-semibold text-ink text-lg">{plan.name}</h3>
+                        <span className="text-sm font-medium text-gold-dark">
                           {plan.pricePerMonth > 0 ? `${plan.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : 'Бесплатно'}
                         </span>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-muted">
                           Сотрудников: {plan.maxEmployees !== null ? `до ${plan.maxEmployees}` : '∞'}
                         </span>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-muted">
                           Компаний: {plan.maxCompanies !== null ? `до ${plan.maxCompanies}` : '∞'}
                         </span>
                       </div>
@@ -166,9 +169,9 @@ export function PlansTab() {
                         <FeatureBadge label="Онлайн-оплата" enabled={plan.allowOnlinePayment} />
                       </div>
                       {plan.description && (
-                        <p className="text-sm text-gray-500">{plan.description}</p>
+                        <p className="text-sm text-muted">{plan.description}</p>
                       )}
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-muted mt-1">
                         Уведомление за {plan.notifyDaysBefore} дн. до деактивации
                       </p>
                     </div>
@@ -193,12 +196,12 @@ export function PlansTab() {
 
           {inactive.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Неактивные</p>
+              <p className="text-xs font-medium text-muted uppercase tracking-wide mb-2">Неактивные</p>
               <div className="grid gap-2">
                 {inactive.map(plan => (
-                  <div key={plan.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-50 opacity-60">
-                    <span className="font-medium text-gray-500 line-through">{plan.name}</span>
-                    <span className="text-xs text-gray-400">
+                  <div key={plan.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-cream-deep opacity-60">
+                    <span className="font-medium text-muted line-through">{plan.name}</span>
+                    <span className="text-xs text-muted">
                       {plan.pricePerMonth > 0 ? `${plan.pricePerMonth} ₽/мес` : 'Бесплатно'}
                     </span>
                   </div>
@@ -208,8 +211,8 @@ export function PlansTab() {
           )}
 
           {plans?.length === 0 && (
-            <Card className="p-12 text-center text-gray-400">
-              <p className="text-3xl mb-2">📋</p>
+            <Card className="p-12 text-center text-muted">
+              <Icon name="settings" size={32} strokeWidth={1.4} className="mx-auto mb-2" />
               <p>Тарифов ещё нет</p>
             </Card>
           )}
@@ -252,7 +255,7 @@ export function PlansTab() {
             </div>
 
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Функции</p>
+              <p className="text-sm font-medium text-ink-soft mb-2">Функции</p>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { key: 'allowOnlineBooking' as const, label: 'Онлайн-запись' },
@@ -266,22 +269,22 @@ export function PlansTab() {
                       type="checkbox"
                       checked={form[key]}
                       onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))}
-                      className="w-4 h-4 accent-orange-500"
+                      className="w-4 h-4 accent-gold"
                     />
-                    <span className="text-sm text-gray-700">{label}</span>
+                    <span className="text-sm text-ink-soft">{label}</span>
                   </label>
                 ))}
               </div>
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">Описание</label>
+              <label className="text-sm font-medium text-ink-soft">Описание</label>
               <textarea
                 rows={2}
                 value={form.description}
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 placeholder="Для малого бизнеса"
-                className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 resize-none"
+                className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold focus:ring-2 focus:ring-cream-deep resize-none"
               />
             </div>
 
@@ -294,7 +297,7 @@ export function PlansTab() {
             />
 
             {(createMut.isError || updateMut.isError) && (
-              <p className="text-sm text-red-500">{editingPlan ? 'Ошибка при сохранении тарифа' : 'Ошибка при создании тарифа'}</p>
+              <p className="text-sm text-danger">{editingPlan ? 'Ошибка при сохранении тарифа' : 'Ошибка при создании тарифа'}</p>
             )}
 
             <div className="flex gap-3 pt-1">

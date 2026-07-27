@@ -6,6 +6,7 @@ import { mailingApi } from '../../api/mailing'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { Icon } from '../../components/ui/Icon'
 
 export function MailingTab({ companyId }: { companyId: string }) {
   const [subject, setSubject] = useState('')
@@ -33,7 +34,7 @@ export function MailingTab({ companyId }: { companyId: string }) {
   return (
     <div>
       <Card className="p-6 mb-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">Новая рассылка</h2>
+        <h2 className="text-base font-semibold text-ink mb-4">Новая рассылка</h2>
         <div className="flex flex-col gap-4">
           <Input
             label="Тема"
@@ -42,23 +43,23 @@ export function MailingTab({ companyId }: { companyId: string }) {
             onChange={e => { setSubject(e.target.value); setSuccessMsg('') }}
           />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-gray-700">Сообщение</label>
+            <label className="text-sm font-medium text-[#4A4038]">Сообщение</label>
             <textarea
               rows={4}
               value={message}
               onChange={e => { setMessage(e.target.value); setSuccessMsg('') }}
               placeholder="Уважаемые клиенты! Рады сообщить..."
-              className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 resize-none"
+              className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep resize-none bg-white text-ink"
             />
           </div>
           {successMsg && (
-            <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
-              <span>✓</span>
+            <div className="flex items-center gap-2 text-sm text-success bg-success-bg border border-[#CFE0C9] rounded-xl px-3 py-2">
+              <Icon name="check" size={14} strokeWidth={2} />
               <span>{successMsg}</span>
             </div>
           )}
           {sendMut.isError && (
-            <p className="text-sm text-red-500">Ошибка при отправке рассылки</p>
+            <p className="text-sm text-danger">Ошибка при отправке рассылки</p>
           )}
           <Button
             loading={sendMut.isPending}
@@ -71,11 +72,11 @@ export function MailingTab({ companyId }: { companyId: string }) {
       </Card>
 
       <div>
-        <h2 className="text-base font-semibold text-gray-900 mb-3">История рассылок</h2>
+        <h2 className="text-base font-semibold text-ink mb-3">История рассылок</h2>
         {isLoading ? (
           <div className="grid gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-14 bg-gray-100 rounded-2xl animate-pulse" />
+              <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />
             ))}
           </div>
         ) : history && history.length > 0 ? (
@@ -84,12 +85,12 @@ export function MailingTab({ companyId }: { companyId: string }) {
               <Card key={log.id} className="p-4">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
-                    <p className="font-medium text-gray-900">{log.subject}</p>
-                    <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{log.message}</p>
+                    <p className="font-medium text-ink">{log.subject}</p>
+                    <p className="text-sm text-muted mt-0.5 line-clamp-2">{log.message}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm text-gray-500">{log.recipientCount} получателей</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-sm text-muted">{log.recipientCount} получателей</p>
+                    <p className="text-xs text-muted mt-0.5">
                       {format(parseISO(log.sentAt), 'd MMM yyyy, HH:mm', { locale: ru })}
                     </p>
                   </div>
@@ -98,8 +99,8 @@ export function MailingTab({ companyId }: { companyId: string }) {
             ))}
           </div>
         ) : (
-          <Card className="p-10 text-center text-gray-400">
-            <p className="text-3xl mb-2">📣</p>
+          <Card className="p-10 text-center text-muted">
+            <Icon name="megaphone" size={32} strokeWidth={1.4} className="mx-auto mb-2" />
             <p>Рассылок ещё не было</p>
           </Card>
         )}

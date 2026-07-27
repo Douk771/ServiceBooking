@@ -8,6 +8,7 @@ import { mastersApi, type MasterClient } from '../api/masters'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
+import { Icon } from '../components/ui/Icon'
 import { ManualBookingModal } from '../components/booking/ManualBookingModal'
 import { RescheduleModal } from '../components/booking/RescheduleModal'
 import { ReviewModal } from '../components/review/ReviewModal'
@@ -59,21 +60,21 @@ function ClientHistoryPanel({ booking, client }: ClientHistoryPanelProps) {
   const notes = client?.notes ?? []
 
   return (
-    <div className="mt-4 border-t border-gray-100 pt-4 flex flex-col gap-4">
+    <div className="mt-4 border-t border-line pt-4 flex flex-col gap-4">
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">История визитов</p>
+        <p className="text-sm font-semibold text-ink-soft mb-2">История визитов</p>
         {summaries.length === 0 ? (
-          <p className="text-sm text-gray-400">Нет записей</p>
+          <p className="text-sm text-muted">Нет записей</p>
         ) : (
           <div className="flex flex-col gap-1.5">
             {summaries.map((b, i) => (
               <div key={i} className="flex items-center gap-3 text-sm">
-                <span className="text-gray-500 shrink-0">{b.date}</span>
-                <span className="text-gray-800 flex-1">{b.serviceName}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
-                  b.status === 'Completed' ? 'bg-green-100 text-green-700'
-                  : b.status === 'Cancelled' ? 'bg-red-100 text-red-600'
-                  : 'bg-gray-100 text-gray-600'
+                <span className="text-muted shrink-0">{b.date}</span>
+                <span className="text-ink flex-1">{b.serviceName}</span>
+                <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium shrink-0 ${
+                  b.status === 'Completed' ? 'bg-success-bg text-success'
+                  : b.status === 'Cancelled' ? 'bg-danger-bg text-danger'
+                  : 'bg-cream-deep text-ink-soft'
                 }`}>{STATUS_LABELS[b.status] ?? b.status}</span>
               </div>
             ))}
@@ -82,13 +83,13 @@ function ClientHistoryPanel({ booking, client }: ClientHistoryPanelProps) {
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">Заметки о клиенте</p>
+        <p className="text-sm font-semibold text-ink-soft mb-2">Заметки о клиенте</p>
         {notes.length === 0 ? (
-          <p className="text-sm text-gray-400 mb-2">Нет заметок</p>
+          <p className="text-sm text-muted mb-2">Нет заметок</p>
         ) : (
           <ul className="flex flex-col gap-1 mb-2">
             {notes.map((n, i) => (
-              <li key={i} className="text-sm text-gray-700 bg-gray-50 rounded-xl px-3 py-2">
+              <li key={i} className="text-sm text-ink-soft bg-cream-deep rounded-xl px-3 py-2">
                 {n}
               </li>
             ))}
@@ -100,7 +101,7 @@ function ClientHistoryPanel({ booking, client }: ClientHistoryPanelProps) {
             value={newNote}
             onChange={e => setNewNote(e.target.value)}
             placeholder="Оставить отзыв о клиенте…"
-            className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400"
+            className="flex-1 rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold"
             onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate() }}
           />
           <Button
@@ -139,32 +140,36 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
     <Card className="p-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="text-center bg-orange-50 rounded-xl px-3 py-2 min-w-[60px] shrink-0">
-            <div className="text-lg font-bold text-primary-600">{b.startTime.slice(0, 5)}</div>
-            <div className="text-xs text-gray-400">{b.endTime.slice(0, 5)}</div>
+          <div className="text-center bg-cream-deep rounded-xl px-3 py-2 min-w-[60px] shrink-0">
+            <div className="text-lg font-bold text-gold-dark">{b.startTime.slice(0, 5)}</div>
+            <div className="text-xs text-muted">{b.endTime.slice(0, 5)}</div>
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-gray-900">{b.serviceName}</span>
+              <span className="font-medium text-ink">{b.serviceName}</span>
               <StatusBadge status={b.status} />
               {b.paymentStatus === 'Pending' && (
-                <span className="text-xs font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+                <span className="text-xs font-medium bg-warning-bg text-warning px-2.5 py-0.5 rounded-full">
                   Ожидает оплаты
                 </span>
               )}
               {b.paymentStatus === 'Paid' && (
-                <span className="text-xs font-medium bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
-                  ✓ Оплачено
+                <span className="text-xs font-medium bg-success-bg text-success px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                  <Icon name="check" size={11} strokeWidth={2} /> Оплачено
                 </span>
               )}
             </div>
-            <p className="text-sm text-gray-500 mt-0.5">👤 {b.clientName}</p>
+            <p className="text-sm text-muted mt-0.5 flex items-center gap-1">
+              <Icon name="user" size={12} strokeWidth={1.8} /> {b.clientName}
+            </p>
             {b.clientPhone && (
-              <p className="text-xs text-gray-400 mt-0.5">📞 {b.clientPhone}</p>
+              <p className="text-xs text-muted mt-0.5 flex items-center gap-1">
+                <Icon name="phone" size={11} strokeWidth={1.8} /> {b.clientPhone}
+              </p>
             )}
             {b.notes && (
-              <p className="text-xs text-gray-500 mt-1 bg-gray-50 rounded-lg px-2 py-1">
-                💬 {b.notes}
+              <p className="text-xs text-ink-soft mt-1 bg-cream-deep rounded-lg px-2 py-1">
+                {b.notes}
               </p>
             )}
           </div>
@@ -173,24 +178,28 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
           {(b.status === 'Pending' || b.status === 'Confirmed') && (<>
             {b.paymentStatus === 'Pending' && (
               <Button size="sm" variant="secondary" loading={markPaid.isPending} onClick={() => markPaid.mutate(b.id)}>
-                💳 Отметить оплату
+                <Icon name="credit-card" size={13} strokeWidth={1.8} /> Отметить оплату
               </Button>
             )}
             <Button size="sm" variant="secondary" onClick={() => onReschedule(b)}>Перенести</Button>
-            <Button size="sm" loading={complete.isPending} onClick={() => complete.mutate(b.id)}>✓ Выполнено</Button>
+            <Button size="sm" loading={complete.isPending} onClick={() => complete.mutate(b.id)}>Выполнено</Button>
             <Button size="sm" variant="secondary" loading={noShow.isPending} onClick={() => noShow.mutate(b.id)}>Не пришёл</Button>
             <Button size="sm" variant="danger" loading={cancel.isPending} onClick={() => cancel.mutate(b.id)}>Отменить</Button>
           </>)}
           {b.status === 'Completed' && canReview && (
-            <Button size="sm" variant="secondary" onClick={() => onReview(b)}>⭐ Отзыв об услуге</Button>
+            <Button size="sm" variant="secondary" onClick={() => onReview(b)}>
+              <Icon name="star" size={13} strokeWidth={1.8} /> Отзыв об услуге
+            </Button>
           )}
           {isFinalized ? (
             <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(v => !v)}>
-              ⭐ Отзыв о клиенте {historyOpen ? '▲' : '▼'}
+              <Icon name="star" size={13} strokeWidth={1.8} /> Отзыв о клиенте
+              <Icon name="chevron-down" size={13} strokeWidth={1.8} className={`transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
             </Button>
           ) : (
             <Button size="sm" variant="ghost" onClick={() => setHistoryOpen(v => !v)}>
-              📋 История клиента {historyOpen ? '▲' : '▼'}
+              История клиента
+              <Icon name="chevron-down" size={13} strokeWidth={1.8} className={`transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
             </Button>
           )}
         </div>
@@ -276,10 +285,12 @@ export function MyBookingsPage() {
   }, [bookings])
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Мои записи</h1>
-        <Button onClick={() => setShowCreateModal(true)}>+ Добавить запись</Button>
+    <div className="max-w-3xl mx-auto px-8 pt-11 pb-24">
+      <div className="flex items-center justify-between mb-7">
+        <h1 className="font-serif text-[30px] font-medium text-ink">Мои записи</h1>
+        <Button onClick={() => setShowCreateModal(true)}>
+          <Icon name="plus" size={15} strokeWidth={2} /> Добавить запись
+        </Button>
       </div>
 
       {showCreateModal && <ManualBookingModal onClose={() => setShowCreateModal(false)} />}
@@ -298,14 +309,14 @@ export function MyBookingsPage() {
       {isLoading ? (
         <div className="grid gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 bg-gray-100 rounded-2xl animate-pulse" />
+            <div key={i} className="h-20 bg-cream-deep rounded-2xl animate-pulse" />
           ))}
         </div>
       ) : grouped.length > 0 ? (
         <div className="grid gap-6">
           {grouped.map(([date, dayBookings]) => (
             <div key={date}>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              <h3 className="text-sm font-semibold text-muted uppercase tracking-wide mb-2">
                 {dayLabel(date)}
               </h3>
               <div className="grid gap-2">
@@ -328,8 +339,8 @@ export function MyBookingsPage() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-12 text-gray-400">
-          <p className="text-3xl mb-2">📅</p>
+        <div className="text-center py-12 text-muted">
+          <Icon name="calendar" size={32} strokeWidth={1.4} className="mx-auto mb-2" />
           <p>Записей на ближайшую неделю нет</p>
         </div>
       )}

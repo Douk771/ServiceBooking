@@ -5,6 +5,7 @@ import { ru } from 'date-fns/locale'
 import { mastersApi, type MasterClient } from '../api/masters'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
+import { Icon } from '../components/ui/Icon'
 
 const STATUS_LABELS: Record<string, string> = {
   Pending: 'Ожидает',
@@ -12,6 +13,14 @@ const STATUS_LABELS: Record<string, string> = {
   Completed: 'Выполнена',
   Cancelled: 'Отменена',
   NoShow: 'Не пришёл',
+}
+
+const STATUS_CLASSES: Record<string, string> = {
+  Completed: 'bg-success-bg text-success',
+  Cancelled: 'bg-danger-bg text-danger',
+  NoShow: 'bg-danger-bg text-danger',
+  Pending: 'bg-warning-bg text-warning',
+  Confirmed: 'bg-info-bg text-info',
 }
 
 interface ClientCardProps {
@@ -53,43 +62,43 @@ function ClientCard({ client, companyId }: ClientCardProps) {
         className="w-full text-left flex items-center justify-between gap-4"
       >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-accent-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+          <div className="w-10 h-10 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-sm shrink-0">
             {client.name[0]?.toUpperCase() ?? '?'}
           </div>
           <div>
-            <p className="font-semibold text-gray-900">{client.name}</p>
-            <p className="text-xs text-gray-400">Последний визит: {lastVisit} · {client.totalVisits} {client.totalVisits === 1 ? 'визит' : client.totalVisits < 5 ? 'визита' : 'визитов'}</p>
+            <p className="font-semibold text-ink">{client.name}</p>
+            <p className="text-xs text-muted">Последний визит: {lastVisit} · {client.totalVisits} {client.totalVisits === 1 ? 'визит' : client.totalVisits < 5 ? 'визита' : 'визитов'}</p>
           </div>
         </div>
         <div className="text-right shrink-0">
           {client.phone ? (
-            <a href={`tel:${client.phone}`} onClick={e => e.stopPropagation()} className="text-sm text-primary-600 hover:underline">{client.phone}</a>
+            <a href={`tel:${client.phone}`} onClick={e => e.stopPropagation()} className="text-sm text-gold hover:text-gold-dark">{client.phone}</a>
           ) : (
-            <span className="text-xs text-gray-400">📵 Доступен 24 ч после визита</span>
+            <span className="text-xs text-muted flex items-center gap-1 justify-end">
+              <Icon name="phone" size={12} strokeWidth={1.7} /> Доступен 24 ч после визита
+            </span>
           )}
-          {client.email && <p className="text-xs text-gray-400">{client.email}</p>}
+          {client.email && <p className="text-xs text-muted">{client.email}</p>}
         </div>
-        <span className="text-gray-400 text-sm shrink-0">{expanded ? '▲' : '▼'}</span>
+        <Icon name="chevron-down" size={16} strokeWidth={1.8} className={`text-muted shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
       </button>
 
       {expanded && (
-        <div className="mt-4 border-t border-gray-100 pt-4 flex flex-col gap-4">
+        <div className="mt-4 border-t border-line pt-4 flex flex-col gap-4">
           {/* Visit history */}
           <div>
-            <p className="text-sm font-semibold text-gray-700 mb-2">История визитов</p>
+            <p className="text-sm font-semibold text-ink mb-2">История визитов</p>
             {(client.bookingSummaries ?? []).length === 0 ? (
-              <p className="text-sm text-gray-400">Нет записей</p>
+              <p className="text-sm text-muted">Нет записей</p>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {(client.bookingSummaries ?? []).map((b, i) => (
                   <div key={i} className="flex items-center gap-3 text-sm">
-                    <span className="text-gray-500 shrink-0">{b.date}</span>
-                    <span className="text-gray-800 flex-1">{b.serviceName}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
-                      b.status === 'Completed' ? 'bg-green-100 text-green-700'
-                      : b.status === 'Cancelled' ? 'bg-red-100 text-red-600'
-                      : 'bg-gray-100 text-gray-600'
-                    }`}>{STATUS_LABELS[b.status] ?? b.status}</span>
+                    <span className="text-muted shrink-0">{b.date}</span>
+                    <span className="text-ink flex-1">{b.serviceName}</span>
+                    <span className={`text-xs px-2.5 py-0.5 rounded-full shrink-0 font-medium ${STATUS_CLASSES[b.status] ?? 'bg-cream-deep text-ink-soft'}`}>
+                      {STATUS_LABELS[b.status] ?? b.status}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -98,13 +107,13 @@ function ClientCard({ client, companyId }: ClientCardProps) {
 
           {/* Notes */}
           <div>
-            <p className="text-sm font-semibold text-gray-700 mb-2">Заметки</p>
+            <p className="text-sm font-semibold text-ink mb-2">Заметки</p>
             {client.notes.length === 0 ? (
-              <p className="text-sm text-gray-400 mb-2">Нет заметок</p>
+              <p className="text-sm text-muted mb-2">Нет заметок</p>
             ) : (
               <ul className="flex flex-col gap-1 mb-2">
                 {client.notes.map((n, i) => (
-                  <li key={i} className="text-sm text-gray-700 bg-gray-50 rounded-xl px-3 py-2">
+                  <li key={i} className="text-sm text-ink-soft bg-cream-deep rounded-xl px-3 py-2">
                     {n}
                   </li>
                 ))}
@@ -116,7 +125,7 @@ function ClientCard({ client, companyId }: ClientCardProps) {
                 value={newNote}
                 onChange={e => setNewNote(e.target.value)}
                 placeholder="Добавить заметку…"
-                className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400"
+                className="flex-1 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
                 onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate() }}
               />
               <Button
@@ -156,7 +165,7 @@ export function MasterClientsPage({ companyId }: Props) {
     return (
       <div className="flex flex-col gap-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-20 bg-gray-100 rounded-2xl animate-pulse" />
+          <div key={i} className="h-20 bg-cream-deep rounded-2xl animate-pulse" />
         ))}
       </div>
     )
@@ -164,8 +173,8 @@ export function MasterClientsPage({ companyId }: Props) {
 
   if (isError) {
     return (
-      <Card className="p-12 text-center text-gray-400">
-        <p className="text-3xl mb-2">⚠️</p>
+      <Card className="p-12 text-center text-muted">
+        <Icon name="alert-circle" size={32} strokeWidth={1.4} className="mx-auto mb-2" />
         <p>Не удалось загрузить клиентов</p>
       </Card>
     )
@@ -174,24 +183,25 @@ export function MasterClientsPage({ companyId }: Props) {
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <h2 className="text-lg font-semibold text-gray-900">Мои клиенты</h2>
-        <span className="text-sm text-gray-400">{filtered.length} клиентов</span>
+        <h2 className="text-lg font-semibold text-ink">Мои клиенты</h2>
+        <span className="text-sm text-muted">{filtered.length} клиентов</span>
       </div>
 
-      <div className="mb-4">
+      <div className="mb-4 relative">
+        <Icon name="search" size={16} strokeWidth={1.8} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="🔍 Поиск по имени…"
-          className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary-400"
+          placeholder="Поиск по имени…"
+          className="w-full rounded-full border border-line pl-10 pr-4 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
         />
       </div>
 
       {filtered.length === 0 ? (
-        <Card className="p-12 text-center text-gray-400">
-          <p className="text-4xl mb-3">👥</p>
-          <p className="text-lg font-medium text-gray-600">
+        <Card className="p-12 text-center text-muted">
+          <Icon name="users" size={32} strokeWidth={1.4} className="mx-auto mb-3" />
+          <p className="text-lg font-medium text-ink-soft">
             {search ? 'Клиентов не найдено' : 'У вас пока нет клиентов'}
           </p>
           {!search && <p className="text-sm mt-1">Здесь появятся клиенты после первых записей</p>}

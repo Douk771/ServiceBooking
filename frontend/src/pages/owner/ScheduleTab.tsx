@@ -7,6 +7,7 @@ import { companiesApi } from '../../api/companies'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
+import { Icon } from '../../components/ui/Icon'
 import { WeeklyTemplateModal } from '../../components/schedule/WeeklyTemplateModal'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -76,11 +77,11 @@ function DayEditor({ date, entry, masterId, companyId, onClose, onSaved }: DayEd
         <label className="flex items-center gap-3 cursor-pointer select-none">
           <div
             onClick={() => setIsWorking(w => !w)}
-            className={`relative w-11 h-6 rounded-full transition-colors cursor-pointer ${isWorking ? 'bg-primary-500' : 'bg-gray-200'}`}
+            className={`relative w-11 h-6 rounded-full transition-colors cursor-pointer ${isWorking ? 'bg-gold' : 'bg-line'}`}
           >
             <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${isWorking ? 'translate-x-6' : 'translate-x-1'}`} />
           </div>
-          <span className={`text-sm font-medium ${isWorking ? 'text-gray-900' : 'text-gray-400'}`}>
+          <span className={`text-sm font-medium ${isWorking ? 'text-ink' : 'text-muted'}`}>
             {isWorking ? 'Рабочий день' : 'Выходной'}
           </span>
         </label>
@@ -89,50 +90,52 @@ function DayEditor({ date, entry, masterId, companyId, onClose, onSaved }: DayEd
           <>
             {/* Time range */}
             <div>
-              <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Рабочее время</p>
+              <p className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">Рабочее время</p>
               <div className="flex items-center gap-3">
                 <input
                   type="time"
                   value={start}
                   onChange={e => setStart(e.target.value)}
-                  className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                  className="flex-1 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
                 />
-                <span className="text-gray-400 text-sm">—</span>
+                <span className="text-muted text-sm">—</span>
                 <input
                   type="time"
                   value={end}
                   onChange={e => setEnd(e.target.value)}
-                  className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                  className="flex-1 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
                 />
               </div>
             </div>
 
             {/* Breaks */}
             <div>
-              <p className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Перерывы</p>
+              <p className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">Перерывы</p>
               <div className="flex flex-col gap-2">
                 {breaks.map((b, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                    <span className="text-xs text-amber-700 font-medium w-16 shrink-0">Перерыв {i + 1}</span>
+                  <div key={i} className="flex items-center gap-2 bg-warning-bg border border-[#EAD9AC] rounded-xl px-3 py-2">
+                    <span className="text-xs text-warning font-medium w-16 shrink-0">Перерыв {i + 1}</span>
                     <input
                       type="time"
                       value={b.startTime}
                       onChange={e => updateBreak(i, 'startTime', e.target.value)}
-                      className="flex-1 text-sm bg-transparent outline-none"
+                      className="flex-1 text-sm bg-transparent outline-none text-ink"
                     />
-                    <span className="text-amber-400 text-xs">—</span>
+                    <span className="text-warning text-xs">—</span>
                     <input
                       type="time"
                       value={b.endTime}
                       onChange={e => updateBreak(i, 'endTime', e.target.value)}
-                      className="flex-1 text-sm bg-transparent outline-none"
+                      className="flex-1 text-sm bg-transparent outline-none text-ink"
                     />
-                    <button onClick={() => removeBreak(i)} className="text-amber-400 hover:text-red-500 text-sm ml-1">✕</button>
+                    <button onClick={() => removeBreak(i)} className="text-warning hover:text-danger ml-1">
+                      <Icon name="x" size={13} strokeWidth={1.8} />
+                    </button>
                   </div>
                 ))}
                 <button
                   onClick={addBreak}
-                  className="text-sm text-gray-400 hover:text-primary-600 border border-dashed border-gray-200 hover:border-primary-300 rounded-xl px-3 py-2 transition-colors text-left"
+                  className="text-sm text-muted hover:text-gold-dark border border-dashed border-line hover:border-line-strong rounded-xl px-3 py-2 transition-colors text-left"
                 >
                   + Добавить перерыв
                 </button>
@@ -155,7 +158,7 @@ function DayEditor({ date, entry, masterId, companyId, onClose, onSaved }: DayEd
         </div>
 
         {upsertMut.isError && (
-          <p className="text-sm text-red-500 text-center">Ошибка сохранения</p>
+          <p className="text-sm text-danger text-center">Ошибка сохранения</p>
         )}
       </div>
     </Modal>
@@ -179,7 +182,7 @@ function Calendar({ month, hoursMap, onDayClick }: CalendarProps) {
       {/* Weekday headers */}
       <div className="grid grid-cols-7 mb-1">
         {WEEK_DAYS.map(d => (
-          <div key={d} className="text-center text-xs font-medium text-gray-400 py-1">{d}</div>
+          <div key={d} className="text-center text-[11.5px] font-medium text-muted py-1">{d}</div>
         ))}
       </div>
 
@@ -194,19 +197,19 @@ function Calendar({ month, hoursMap, onDayClick }: CalendarProps) {
           const past  = isPast(startOfDay(day)) && !isToday(day)
           const today = isToday(day)
 
-          let cellClass = 'relative flex flex-col items-center justify-start pt-1 pb-1 rounded-xl h-14 text-sm cursor-pointer transition-all select-none border '
+          let cellClass = 'relative flex flex-col items-center justify-start pt-1.5 pb-1 rounded-[10px] h-[52px] text-sm cursor-pointer transition-all select-none border '
 
           if (entry?.isWorking) {
-            cellClass += 'bg-primary-50 border-primary-200 hover:bg-primary-100 text-primary-800'
+            cellClass += 'bg-cream-deep border-line-strong hover:bg-line text-ink'
           } else if (entry && !entry.isWorking) {
-            cellClass += 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-400'
+            cellClass += 'bg-[#F5F2EC] border-line text-muted'
           } else if (past) {
-            cellClass += 'border-transparent text-gray-300 hover:bg-gray-50 cursor-default'
+            cellClass += 'border-transparent text-line-strong hover:bg-cream-deep cursor-default'
           } else {
-            cellClass += 'border-transparent hover:border-gray-200 hover:bg-gray-50 text-gray-700'
+            cellClass += 'border-transparent hover:border-line hover:bg-cream-deep text-ink'
           }
 
-          if (today) cellClass += ' ring-2 ring-primary-400 ring-offset-1'
+          if (today) cellClass += ' ring-2 ring-gold-dark ring-offset-1'
 
           return (
             <div
@@ -214,19 +217,19 @@ function Calendar({ month, hoursMap, onDayClick }: CalendarProps) {
               className={cellClass}
               onClick={() => !past && onDayClick(day)}
             >
-              <span className={`font-medium text-xs ${today ? 'text-primary-600' : ''}`}>
+              <span className="font-medium text-xs">
                 {format(day, 'd')}
               </span>
               {entry?.isWorking && (
-                <span className="text-[10px] text-primary-500 leading-tight text-center px-1">
+                <span className="text-[9px] text-gold-dark leading-tight text-center px-1">
                   {toTimeStr(entry.startTime)}–{toTimeStr(entry.endTime)}
                 </span>
               )}
               {entry?.isWorking && entry.breaks.length > 0 && (
-                <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-400" title="Есть перерывы" />
+                <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-warning" title="Есть перерывы" />
               )}
               {entry && !entry.isWorking && (
-                <span className="text-[10px] text-gray-400">выходной</span>
+                <span className="text-[9px] text-muted">выходной</span>
               )}
             </div>
           )
@@ -286,24 +289,23 @@ export function ScheduleTab({ companyId, selfMasterId }: Props) {
 
   if (!selfMasterId && masters.length === 0 && members !== undefined) {
     return (
-      <Card className="p-12 text-center text-gray-400">
-        <p className="text-3xl mb-2">👤</p>
+      <Card className="p-12 text-center text-muted">
+        <Icon name="users" size={32} strokeWidth={1.4} className="mx-auto mb-2" />
         <p>Сначала добавьте сотрудников на вкладке «Сотрудники»</p>
       </Card>
     )
   }
 
-  const selectedMaster = masters.find(m => m.userId === masterId) ?? masters[0]
   const [showTemplate, setShowTemplate] = useState(false)
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Расписание</h2>
+        <h2 className="text-lg font-semibold text-ink">Расписание</h2>
         {masterId && (
           <Button variant="secondary" size="sm" onClick={() => setShowTemplate(true)}>
-            📋 Шаблон
+            Шаблон
           </Button>
         )}
       </div>
@@ -325,14 +327,14 @@ export function ScheduleTab({ companyId, selfMasterId }: Props) {
             <button
               key={m.userId}
               onClick={() => setSelectedMasterId(m.userId)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-full border text-sm transition-all ${
                 active
-                  ? 'bg-orange-50 border-primary-300 text-gray-900 shadow-sm'
-                  : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  ? 'bg-cream-deep border-line-strong text-ink'
+                  : 'bg-white border-line text-ink-soft hover:border-line-strong'
               }`}
             >
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center font-semibold text-xs shrink-0 ${
-                active ? 'bg-primary-500 text-white' : 'bg-primary-100 text-primary-700'
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center font-semibold text-[10.5px] shrink-0 ${
+                active ? 'bg-gold-dark text-cream' : 'bg-cream-deep text-gold-dark'
               }`}>
                 {m.firstName[0]}{m.lastName[0]}
               </div>
@@ -343,30 +345,30 @@ export function ScheduleTab({ companyId, selfMasterId }: Props) {
       </div>
       )}
 
-      <Card className="p-5">
+      <Card className="p-[22px]">
         {/* Month navigation */}
         <div className="flex items-center justify-between mb-4">
           <button
             onClick={() => setMonth(m => subMonths(m, 1))}
-            className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-lg transition-colors"
+            className="w-[30px] h-[30px] rounded-full bg-cream-deep hover:bg-line flex items-center justify-center text-ink-soft transition-colors"
           >
-            ‹
+            <Icon name="chevron-left" size={14} strokeWidth={1.8} />
           </button>
-          <h3 className="text-base font-semibold text-gray-900 capitalize">
+          <h3 className="text-[15px] font-semibold text-ink capitalize">
             {format(month, 'LLLL yyyy', { locale: ru })}
           </h3>
           <button
             onClick={() => setMonth(m => addMonths(m, 1))}
-            className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-lg transition-colors"
+            className="w-[30px] h-[30px] rounded-full bg-cream-deep hover:bg-line flex items-center justify-center text-ink-soft transition-colors"
           >
-            ›
+            <Icon name="chevron-right" size={14} strokeWidth={1.8} />
           </button>
         </div>
 
         {isLoading ? (
           <div className="grid grid-cols-7 gap-1">
             {Array.from({ length: 35 }).map((_, i) => (
-              <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />
+              <div key={i} className="h-[52px] bg-cream-deep rounded-[10px] animate-pulse" />
             ))}
           </div>
         ) : (
@@ -374,22 +376,22 @@ export function ScheduleTab({ companyId, selfMasterId }: Props) {
         )}
 
         {/* Legend */}
-        <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-4 mt-4 pt-4 border-t border-cream-deep">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded bg-primary-100 border border-primary-200" />
-            <span className="text-xs text-gray-500">Рабочий день</span>
+            <div className="w-[11px] h-[11px] rounded-[3px] bg-cream-deep border border-line-strong" />
+            <span className="text-xs text-ink-soft">Рабочий день</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded bg-gray-100 border border-gray-200" />
-            <span className="text-xs text-gray-500">Выходной</span>
+            <div className="w-[11px] h-[11px] rounded-[3px] bg-[#F5F2EC] border border-line" />
+            <span className="text-xs text-ink-soft">Выходной</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            <span className="text-xs text-gray-500">Есть перерывы</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-warning" />
+            <span className="text-xs text-ink-soft">Есть перерывы</span>
           </div>
         </div>
 
-        <p className="text-xs text-gray-400 mt-2">Кликните на дату чтобы настроить расписание</p>
+        <p className="text-xs text-muted mt-2">Кликните на дату чтобы настроить расписание</p>
       </Card>
 
       {/* Day editor modal */}

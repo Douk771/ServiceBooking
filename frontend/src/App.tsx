@@ -39,7 +39,7 @@ export default function App() {
 
           {/* All other routes with Navbar */}
           <Route path="*" element={
-            <div className="min-h-screen bg-gray-50 font-sans">
+            <div className="min-h-screen bg-cream font-sans text-ink">
               <Navbar />
               <Routes>
                 <Route path="/" element={<HomePage />} />

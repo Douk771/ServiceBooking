@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
-import { Button } from '../ui/Button'
+import { Icon } from '../ui/Icon'
 
 export function Navbar() {
   const { user, logout, isAuthenticated, hasRole } = useAuthStore()
@@ -12,48 +12,50 @@ export function Navbar() {
   const isAdmin = hasRole('SuperAdmin')
   const isClient = !isMasterOrOwner && isAuthenticated()
 
+  const navLinkClass = 'text-sm font-medium text-ink-soft hover:text-gold-dark transition-colors'
+
   return (
-    <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-orange-100">
-      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 font-bold text-xl text-primary-600">
-          <span className="text-2xl">📅</span>
-          <span>ServiceBooking</span>
+    <nav className="sticky top-0 z-50 bg-cream/86 backdrop-blur-md border-b border-line">
+      <div className="max-w-[1180px] mx-auto px-8 h-[76px] flex items-center justify-between">
+        <Link to="/" className="flex items-center gap-3">
+          <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
+            <Icon name="scissors" size={18} className="text-cream" strokeWidth={1.6} />
+          </span>
+          <span className="font-serif text-xl text-ink">EZBOOK</span>
         </Link>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-7">
           {isAuthenticated() ? (
             <>
               {isClient && (
-                <Link to="/my-visits" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
-                  Мои визиты
-                </Link>
+                <Link to="/my-visits" className={navLinkClass}>Мои визиты</Link>
               )}
               {isMasterOrOwner && (
-                <Link to="/my-bookings" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
-                  Мои записи
-                </Link>
+                <Link to="/my-bookings" className={navLinkClass}>Мои записи</Link>
               )}
               {isMasterOrOwner && (
-                <Link to="/cabinet" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
-                  Кабинет
-                </Link>
+                <Link to="/cabinet" className={navLinkClass}>Кабинет</Link>
               )}
               {isAdmin && (
-                <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors">
-                  Админ
-                </Link>
+                <Link to="/admin" className={navLinkClass}>Админ</Link>
               )}
-              <div className="flex items-center gap-2 ml-1">
-                <Link to="/profile" className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm hover:bg-primary-200 transition-colors">
-                  {user?.firstName[0]}{user?.lastName[0]}
-                </Link>
-                <Button variant="ghost" size="sm" onClick={handleLogout}>Выйти</Button>
-              </div>
+              <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm font-medium text-ink-soft hover:text-gold-dark transition-colors">
+                <Icon name="log-out" size={15} strokeWidth={1.7} />
+                Выйти
+              </button>
+              <Link to="/profile" className="w-9 h-9 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-xs hover:bg-line transition-colors shrink-0">
+                {user?.firstName[0]}{user?.lastName[0]}
+              </Link>
             </>
           ) : (
             <>
-              <Link to="/login"><Button variant="ghost" size="sm">Войти</Button></Link>
-              <Link to="/register"><Button size="sm">Регистрация</Button></Link>
+              <Link to="/login" className={navLinkClass}>Войти</Link>
+              <Link
+                to="/register"
+                className="inline-flex items-center bg-ink hover:bg-ink/90 text-cream text-sm font-semibold px-[22px] py-2.5 rounded-full transition-colors"
+              >
+                Регистрация
+              </Link>
             </>
           )}
         </div>

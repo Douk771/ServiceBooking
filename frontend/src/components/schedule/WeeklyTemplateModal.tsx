@@ -71,15 +71,15 @@ export function WeeklyTemplateModal({ masterId, companyId, onClose }: Props) {
       <div className="flex flex-col gap-3">
         {days.map((day, idx) => (
           <div key={day.dayOfWeek} className="flex items-center gap-3 flex-wrap">
-            <span className="w-7 text-sm font-medium text-gray-700 shrink-0">{DAY_NAMES[day.dayOfWeek]}</span>
+            <span className="w-7 text-sm font-medium text-ink shrink-0">{DAY_NAMES[day.dayOfWeek]}</span>
             <label className="flex items-center gap-2 cursor-pointer shrink-0">
               <input
                 type="checkbox"
                 checked={day.isWorking}
                 onChange={e => updateDay(idx, { isWorking: e.target.checked })}
-                className="w-4 h-4 accent-orange-500"
+                className="w-4 h-4 accent-gold"
               />
-              <span className="text-sm text-gray-600">Рабочий</span>
+              <span className="text-sm text-ink-soft">Рабочий</span>
             </label>
             {day.isWorking && (
               <div className="flex items-center gap-2 ml-auto">
@@ -87,28 +87,28 @@ export function WeeklyTemplateModal({ masterId, companyId, onClose }: Props) {
                   type="time"
                   value={day.startTime}
                   onChange={e => updateDay(idx, { startTime: e.target.value })}
-                  className="rounded-xl border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-primary-400"
+                  className="rounded-xl border border-line px-2 py-1.5 text-sm outline-none focus:border-gold bg-white text-ink"
                 />
-                <span className="text-gray-400 text-sm">—</span>
+                <span className="text-muted text-sm">—</span>
                 <input
                   type="time"
                   value={day.endTime}
                   onChange={e => updateDay(idx, { endTime: e.target.value })}
-                  className="rounded-xl border border-gray-200 px-2 py-1.5 text-sm outline-none focus:border-primary-400"
+                  className="rounded-xl border border-line px-2 py-1.5 text-sm outline-none focus:border-gold bg-white text-ink"
                 />
               </div>
             )}
             {!day.isWorking && (
-              <span className="ml-auto text-sm text-gray-400">Выходной</span>
+              <span className="ml-auto text-sm text-muted">Выходной</span>
             )}
           </div>
         ))}
 
         {(saveMut.isError || applyMut.isError) && (
-          <p className="text-sm text-red-500">Произошла ошибка. Попробуйте снова.</p>
+          <p className="text-sm text-danger">Произошла ошибка. Попробуйте снова.</p>
         )}
 
-        <div className="flex flex-col gap-2 pt-2 border-t border-gray-100 mt-1">
+        <div className="flex flex-col gap-2 pt-2 border-t border-line mt-1">
           <Button
             onClick={() => saveMut.mutate()}
             loading={saveMut.isPending}

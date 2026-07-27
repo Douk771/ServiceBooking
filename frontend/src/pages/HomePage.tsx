@@ -1,83 +1,159 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { companiesApi } from '../api/companies'
-import { Card } from '../components/ui/Card'
+import { Icon } from '../components/ui/Icon'
 import type { Company } from '../types'
 
 function CompanyCard({ company }: { company: Company }) {
   return (
-    <Link to={`/company/${company.slug}`}>
-      <Card className="p-6 hover:shadow-md hover:-translate-y-1 transition-all duration-200 cursor-pointer group">
-        <div className="flex items-start gap-4">
-          {company.logoUrl ? (
-            <img src={company.logoUrl} alt={company.name} className="w-14 h-14 rounded-2xl object-cover" />
-          ) : (
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-400 to-accent-500 flex items-center justify-center text-white text-xl font-bold">
-              {company.name[0]}
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
-              {company.name}
-            </h3>
-            {company.description && (
-              <p className="text-sm text-gray-500 mt-1 line-clamp-2">{company.description}</p>
-            )}
-            <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-              {company.address && <span>📍 {company.address}</span>}
-              {company.allowSelfBooking && (
-                <span className="text-green-600 font-medium">✓ Онлайн запись</span>
-              )}
-            </div>
+    <Link
+      to={`/company/${company.slug}`}
+      className="block bg-white border border-line rounded-[20px] p-[26px] transition-all duration-200 hover:shadow-card hover:-translate-y-[3px] hover:border-line-strong"
+    >
+      <div className="flex items-start gap-4 mb-4">
+        {company.logoUrl ? (
+          <img src={company.logoUrl} alt={company.name} className="w-14 h-14 rounded-2xl object-cover shrink-0" />
+        ) : (
+          <div className="w-14 h-14 rounded-2xl bg-cream-deep flex items-center justify-center shrink-0">
+            <Icon name="store" size={24} className="text-gold-dark" />
           </div>
+        )}
+        <div className="min-w-0">
+          <h3 className="font-serif text-[19px] font-medium text-ink truncate">{company.name}</h3>
         </div>
-      </Card>
+      </div>
+      {company.description && (
+        <p className="text-sm leading-[1.55] text-ink-soft mb-4 line-clamp-2">{company.description}</p>
+      )}
+      <div className="flex items-center justify-between gap-3 pt-3.5 border-t border-cream-deep">
+        <div className="flex items-center gap-1.5 text-[13px] text-ink-soft min-w-0">
+          {company.address && (
+            <>
+              <Icon name="map-pin" size={14} strokeWidth={1.6} className="shrink-0" />
+              <span className="truncate">{company.address}</span>
+            </>
+          )}
+        </div>
+        {company.onlineBookingEnabled && (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-success bg-success-bg px-2.5 py-1 rounded-full shrink-0">
+            <Icon name="check" size={11} strokeWidth={2.2} />
+            Онлайн-запись
+          </span>
+        )}
+      </div>
     </Link>
   )
 }
+
+const howItWorks = [
+  { icon: 'user', title: 'Выберите специалиста', text: 'Смотрите профили мастеров, их специализацию и отзывы клиентов.' },
+  { icon: 'calendar', title: 'Выберите удобное время', text: 'Актуальные свободные слоты — записывайтесь на сегодня или на неделю вперёд.' },
+  { icon: 'check-circle', title: 'Получите подтверждение', text: 'Мгновенное подтверждение записи и напоминание накануне визита.' },
+] as const
 
 export function HomePage() {
   const { data: companies, isLoading } = useQuery({
     queryKey: ['companies'],
     queryFn: companiesApi.getAll,
   })
+  const [search, setSearch] = useState('')
+
+  const filtered = companies?.filter(c => {
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return c.name.toLowerCase().includes(q) || (c.address ?? '').toLowerCase().includes(q)
+  })
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
+    <div>
       {/* Hero */}
-      <section className="max-w-6xl mx-auto px-4 pt-20 pb-16 text-center">
-        <div className="inline-flex items-center gap-2 bg-primary-100 text-primary-700 px-4 py-1.5 rounded-full text-sm font-medium mb-6">
-          <span>✨</span> Запись онлайн — быстро и удобно
+      <section className="max-w-[1180px] mx-auto px-8 pt-[88px] pb-24 grid md:grid-cols-[1.05fr_0.95fr] gap-16 items-center">
+        <div>
+          <div className="inline-flex items-center gap-2 border border-line-strong text-gold-dark px-4 py-[7px] rounded-full text-[13px] font-semibold mb-7">
+            <Icon name="check-circle" size={14} strokeWidth={1.8} />
+            Онлайн-запись за пару минут
+          </div>
+          <h1 className="font-serif text-[44px] md:text-[60px] leading-[1.08] font-medium mb-6 -tracking-[0.01em] text-ink">
+            Красота и уход,<br /><em className="text-gold-dark not-italic italic">подобранные под вас</em>
+          </h1>
+          <p className="text-lg leading-[1.6] text-ink-soft max-w-[460px] mb-9">
+            Найдите проверенного мастера, выберите удобное время и получите подтверждение записи мгновенно — без звонков и ожидания.
+          </p>
+          <div className="flex items-center gap-7 flex-wrap">
+            <a
+              href="#companies"
+              className="inline-flex items-center gap-2.5 bg-ink hover:bg-ink/90 text-cream px-7 py-[15px] rounded-full text-[15px] font-semibold transition-colors"
+            >
+              Найти специалиста
+              <Icon name="arrow-right" size={16} strokeWidth={1.8} />
+            </a>
+            <a href="#how" className="text-[15px] font-medium text-ink border-b border-ink">Как это работает</a>
+          </div>
         </div>
-        <h1 className="text-5xl font-bold text-gray-900 leading-tight mb-4">
-          Запишитесь на услугу<br />
-          <span className="text-primary-500">в несколько кликов</span>
-        </h1>
-        <p className="text-xl text-gray-500 max-w-xl mx-auto mb-8">
-          Найдите специалиста, выберите удобное время и получите подтверждение мгновенно.
-        </p>
+        <div className="hidden md:flex w-full aspect-[4/5] rounded-[28px] bg-cream-deep border border-line items-center justify-center text-center px-6">
+          <span className="text-xs font-mono text-muted">Фото: интерьер салона</span>
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section id="how" className="bg-cream-deep py-[72px] px-8">
+        <div className="max-w-[1180px] mx-auto grid md:grid-cols-3 gap-10">
+          {howItWorks.map((item) => (
+            <div key={item.title}>
+              <div className="w-[46px] h-[46px] rounded-full bg-cream border border-line-strong flex items-center justify-center mb-5">
+                <Icon name={item.icon} size={20} strokeWidth={1.6} className="text-gold-dark" />
+              </div>
+              <h3 className="font-serif text-[21px] font-medium mb-2.5 text-ink">{item.title}</h3>
+              <p className="text-[15px] leading-[1.6] text-ink-soft">{item.text}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       {/* Companies */}
-      <section className="max-w-6xl mx-auto px-4 pb-24">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Компании и салоны</h2>
+      <section id="companies" className="max-w-[1180px] mx-auto px-8 pt-[88px] pb-[100px]">
+        <div className="flex items-baseline justify-between mb-10 flex-wrap gap-3">
+          <div>
+            <h2 className="font-serif text-[32px] font-medium mb-2 text-ink">Компании и салоны</h2>
+            <p className="text-[15px] text-ink-soft">Проверенные специалисты на платформе</p>
+          </div>
+          <div className="relative">
+            <Icon name="search" size={17} strokeWidth={1.8} className="absolute left-4 top-1/2 -translate-y-1/2 text-gold-dark" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Поиск по названию или адресу"
+              className="w-[280px] pl-[42px] pr-4 py-3 rounded-full border border-line bg-white text-sm outline-none text-ink focus:border-gold focus:ring-[3px] focus:ring-cream-deep"
+            />
+          </div>
+        </div>
+
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-28 bg-gray-100 rounded-2xl animate-pulse" />
+              <div key={i} className="h-40 bg-cream-deep rounded-[20px] animate-pulse" />
             ))}
           </div>
-        ) : companies && companies.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {companies.map((c) => <CompanyCard key={c.id} company={c} />)}
+        ) : filtered && filtered.length > 0 ? (
+          <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+            {filtered.map((c) => <CompanyCard key={c.id} company={c} />)}
           </div>
         ) : (
-          <div className="text-center py-16 text-gray-400">
-            <p className="text-4xl mb-3">🏪</p>
+          <div className="text-center py-16 text-muted">
+            <Icon name="store" size={36} strokeWidth={1.4} className="mx-auto mb-3" />
             <p className="text-lg">Компании пока не добавлены</p>
           </div>
         )}
       </section>
+
+      {/* Footer */}
+      <footer className="bg-cream-deep border-t border-line">
+        <div className="max-w-[1180px] mx-auto px-8 py-10 flex items-center justify-between flex-wrap gap-4">
+          <span className="font-serif text-[17px] text-ink">EZBOOK</span>
+          <span className="text-[13px] text-muted">© 2026 EZBOOK. Все права защищены.</span>
+        </div>
+      </footer>
     </div>
   )
 }

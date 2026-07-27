@@ -16,6 +16,17 @@
     margin: 0;
     padding: 0;
   }
+
+  a {
+    color: #A9835A;
+  }
+  a:hover {
+    color: #8F6C46;
+  }
+
+  ::selection {
+    background: #E6DCCB;
+  }
 }
 
 @layer utilities {

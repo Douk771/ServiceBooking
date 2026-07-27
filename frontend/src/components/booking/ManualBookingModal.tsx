@@ -7,6 +7,7 @@ import { companiesApi } from '../../api/companies'
 import { servicesApi } from '../../api/services'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { Icon } from '../ui/Icon'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { getBookingErrorMessage } from '../../utils/bookingError'
 import type { Company, Service } from '../../types'
@@ -20,6 +21,15 @@ type Step = 'company' | 'service' | 'master' | 'datetime' | 'client' | 'done'
 function timeToMinutes(t: string): number {
   const [h, m] = t.slice(0, 5).split(':').map(Number)
   return h * 60 + m
+}
+
+function BackLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-1.5 text-[13px] text-ink-soft hover:text-ink mb-4">
+      <Icon name="chevron-left" size={13} strokeWidth={1.8} />
+      {children}
+    </button>
+  )
 }
 
 export function ManualBookingModal({ onClose }: Props) {
@@ -128,31 +138,33 @@ export function ManualBookingModal({ onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5"
       {...dismiss}
     >
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-cream rounded-[26px] shadow-modal w-full max-w-[440px] max-h-[88vh] overflow-y-auto">
         {/* Header */}
-        <div className="p-6 border-b border-gray-100">
+        <div className="p-6 pb-[22px] border-b border-line">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-bold text-gray-900 text-lg">Записать клиента</h2>
+              <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Записать клиента</h2>
               {selectedService && (
-                <p className="text-sm text-gray-500 mt-0.5">
+                <p className="text-[13px] text-ink-soft">
                   {selectedService.name} · {selectedService.durationMinutes} мин · {selectedService.price.toLocaleString('ru-RU')} ₽
                 </p>
               )}
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            <button onClick={onClose} className="text-muted hover:text-ink shrink-0">
+              <Icon name="x" size={18} strokeWidth={1.8} />
+            </button>
           </div>
 
           {step !== 'done' && (
-            <div className="flex gap-1 mt-4">
+            <div className="flex gap-1.5 mt-4">
               {progressSteps.map((s, i) => (
                 <div
                   key={s}
                   className={`h-1 flex-1 rounded-full transition-colors ${
-                    currentIdx >= i ? 'bg-primary-500' : 'bg-gray-100'
+                    currentIdx >= i ? 'bg-ink' : 'bg-line'
                   }`}
                 />
               ))}
@@ -160,37 +172,37 @@ export function ManualBookingModal({ onClose }: Props) {
           )}
         </div>
 
-        <div className="p-6">
+        <div className="p-6 pt-[22px]">
 
           {/* ── Company ── */}
           {step === 'company' && (
             <div>
-              <h3 className="font-semibold text-gray-700 mb-4">Выберите компанию</h3>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите компанию</h3>
               {companiesLoading ? (
-                <div className="flex flex-col gap-3">
-                  {[1, 2].map((i) => <div key={i} className="h-14 bg-gray-100 rounded-2xl animate-pulse" />)}
+                <div className="flex flex-col gap-2.5">
+                  {[1, 2].map((i) => <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />)}
                 </div>
               ) : companies && companies.length > 0 ? (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2.5">
                   {companies.map((c) => (
                     <button
                       key={c.id}
                       onClick={() => { setSelectedCompany(c); setStep('service') }}
-                      className="flex items-center gap-3 p-4 rounded-2xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-all text-left"
+                      className="flex items-center gap-3 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
-                      <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-sm shrink-0">
+                      <div className="w-10 h-10 rounded-xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-sm shrink-0">
                         {c.name[0]}
                       </div>
                       <div>
-                        <p className="font-semibold text-gray-900">{c.name}</p>
-                        {c.address && <p className="text-xs text-gray-400">{c.address}</p>}
+                        <p className="font-semibold text-sm text-ink">{c.name}</p>
+                        {c.address && <p className="text-xs text-muted">{c.address}</p>}
                       </div>
-                      <span className="ml-auto text-gray-300 text-lg">›</span>
+                      <Icon name="chevron-right" size={16} strokeWidth={1.8} className="ml-auto text-line-strong shrink-0" />
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-400 py-8">Вы не состоите ни в одной компании</p>
+                <p className="text-center text-muted py-8">Вы не состоите ни в одной компании</p>
               )}
             </div>
           )}
@@ -199,33 +211,31 @@ export function ManualBookingModal({ onClose }: Props) {
           {step === 'service' && (
             <div>
               {companies && companies.length > 1 && (
-                <button onClick={() => setStep('company')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">
-                  ← {selectedCompany?.name}
-                </button>
+                <BackLink onClick={() => setStep('company')}>{selectedCompany?.name}</BackLink>
               )}
-              <h3 className="font-semibold text-gray-700 mb-4">Выберите услугу</h3>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите услугу</h3>
               {servicesLoading ? (
-                <div className="flex flex-col gap-3">
-                  {[1, 2, 3].map((i) => <div key={i} className="h-14 bg-gray-100 rounded-2xl animate-pulse" />)}
+                <div className="flex flex-col gap-2.5">
+                  {[1, 2, 3].map((i) => <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />)}
                 </div>
               ) : services && services.length > 0 ? (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2.5">
                   {services.map((s) => (
                     <button
                       key={s.id}
                       onClick={() => { setSelectedService(s); setStep('master') }}
-                      className="flex items-center justify-between p-4 rounded-2xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-all text-left"
+                      className="flex items-center justify-between p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
                       <div>
-                        <p className="font-semibold text-gray-900">{s.name}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽</p>
+                        <p className="font-semibold text-sm text-ink">{s.name}</p>
+                        <p className="text-xs text-muted mt-0.5">{s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽</p>
                       </div>
-                      <span className="text-gray-300 text-lg">›</span>
+                      <Icon name="chevron-right" size={16} strokeWidth={1.8} className="text-line-strong shrink-0" />
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-400 py-8">Нет доступных услуг</p>
+                <p className="text-center text-muted py-8">Нет доступных услуг</p>
               )}
             </div>
           )}
@@ -233,35 +243,33 @@ export function ManualBookingModal({ onClose }: Props) {
           {/* ── Master ── */}
           {step === 'master' && (
             <div>
-              <button onClick={() => setStep('service')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">
-                ← {selectedService?.name}
-              </button>
-              <h3 className="font-semibold text-gray-700 mb-4">Выберите мастера</h3>
+              <BackLink onClick={() => setStep('service')}>{selectedService?.name}</BackLink>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите мастера</h3>
               {mastersLoading ? (
-                <div className="flex flex-col gap-3">
-                  {[1, 2].map((i) => <div key={i} className="h-16 bg-gray-100 rounded-2xl animate-pulse" />)}
+                <div className="flex flex-col gap-2.5">
+                  {[1, 2].map((i) => <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />)}
                 </div>
               ) : masters && masters.length > 0 ? (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2.5">
                   {masters.map((m) => (
                     <button
                       key={m.userId}
                       onClick={() => { setSelectedMasterId(m.userId); setStep('datetime') }}
-                      className="flex items-center gap-4 p-4 rounded-2xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-all text-left"
+                      className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
-                      <div className="w-11 h-11 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-sm shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-[13px] shrink-0">
                         {m.firstName[0]}{m.lastName[0]}
                       </div>
                       <div>
-                        <p className="font-semibold text-gray-900">{m.firstName} {m.lastName}</p>
-                        {m.bio && <p className="text-xs text-gray-400 mt-0.5">{m.bio}</p>}
+                        <p className="font-semibold text-sm text-ink">{m.firstName} {m.lastName}</p>
+                        {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
                       </div>
-                      <span className="ml-auto text-gray-300 text-lg">›</span>
+                      <Icon name="chevron-right" size={16} strokeWidth={1.8} className="ml-auto text-line-strong shrink-0" />
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-400 py-8">Нет доступных мастеров для этой услуги</p>
+                <p className="text-center text-muted py-8">Нет доступных мастеров для этой услуги</p>
               )}
             </div>
           )}
@@ -269,21 +277,21 @@ export function ManualBookingModal({ onClose }: Props) {
           {/* ── DateTime ── */}
           {step === 'datetime' && (
             <div>
-              <button onClick={() => setStep('master')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">
-                ← {selectedMaster ? `${selectedMaster.firstName} ${selectedMaster.lastName}` : 'Мастер'}
-              </button>
+              <BackLink onClick={() => setStep('master')}>
+                {selectedMaster ? `${selectedMaster.firstName} ${selectedMaster.lastName}` : 'Мастер'}
+              </BackLink>
 
               {/* Date grid */}
-              <h3 className="font-semibold text-gray-700 mb-3">Дата</h3>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-3">Дата</h3>
               <div className="grid grid-cols-2 gap-2 mb-5">
                 {days.map((d) => (
                   <button
                     key={d.value}
                     onClick={() => { setSelectedDate(d.value); setSelectedTime('') }}
-                    className={`px-4 py-3 rounded-xl border text-sm transition-all text-left ${
+                    className={`px-3.5 py-3 rounded-xl border text-[13.5px] transition-all text-left ${
                       selectedDate === d.value
-                        ? 'bg-primary-500 text-white border-primary-500'
-                        : 'border-gray-200 hover:border-primary-400 hover:bg-primary-50'
+                        ? 'bg-ink text-cream border-ink'
+                        : 'border-line bg-white hover:border-line-strong'
                     }`}
                   >
                     {d.label}
@@ -294,11 +302,11 @@ export function ManualBookingModal({ onClose }: Props) {
               {/* Time grid — shown only after date selected */}
               {selectedDate && (
                 <>
-                  <h3 className="font-semibold text-gray-700 mb-3">Время</h3>
+                  <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-3">Время</h3>
                   {slotsLoading ? (
                     <div className="grid grid-cols-4 gap-2">
                       {Array.from({ length: 8 }).map((_, i) => (
-                        <div key={i} className="h-9 bg-gray-100 rounded-xl animate-pulse" />
+                        <div key={i} className="h-9 bg-cream-deep rounded-xl animate-pulse" />
                       ))}
                     </div>
                   ) : slots.length > 0 ? (
@@ -310,10 +318,10 @@ export function ManualBookingModal({ onClose }: Props) {
                           <button
                             key={time}
                             onClick={() => setSelectedTime(isSelected ? '' : time)}
-                            className={`py-2 rounded-xl text-sm font-medium border transition-all ${
+                            className={`py-2 rounded-xl text-[13.5px] font-medium border transition-all ${
                               isSelected
-                                ? 'bg-primary-500 text-white border-primary-500'
-                                : 'border-gray-200 hover:border-primary-400 hover:bg-primary-50'
+                                ? 'bg-ink text-cream border-ink'
+                                : 'border-line bg-white hover:border-line-strong'
                             }`}
                           >
                             {time}
@@ -322,7 +330,7 @@ export function ManualBookingModal({ onClose }: Props) {
                       })}
                     </div>
                   ) : (
-                    <p className="text-center text-gray-400 py-4 text-sm">Нет доступных слотов на этот день</p>
+                    <p className="text-center text-muted py-4 text-sm">Нет доступных слотов на этот день</p>
                   )}
                 </>
               )}
@@ -339,24 +347,22 @@ export function ManualBookingModal({ onClose }: Props) {
 
           {/* ── Client info ── */}
           {step === 'client' && (
-            <div className="flex flex-col gap-4">
-              <button onClick={() => setStep('datetime')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
-                ← Изменить дату / время
-              </button>
+            <div className="flex flex-col gap-3.5">
+              <BackLink onClick={() => setStep('datetime')}>Изменить дату / время</BackLink>
 
-              <div className="bg-orange-50 rounded-2xl p-4 text-sm text-gray-700">
+              <div className="bg-cream-deep rounded-2xl p-4 text-[13.5px] text-ink">
                 <div className="font-semibold">{selectedService?.name}</div>
                 {selectedMaster && (
-                  <div className="text-gray-500 mt-0.5">
+                  <div className="text-ink-soft mt-0.5">
                     {selectedMaster.firstName} {selectedMaster.lastName}
                   </div>
                 )}
-                <div className="text-gray-500 mt-1">
+                <div className="text-ink-soft mt-0.5">
                   {formattedDate} · {selectedTime}
                 </div>
               </div>
 
-              <h3 className="font-semibold text-gray-700">Данные клиента</h3>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038]">Данные клиента</h3>
 
               <Input
                 label="Имя клиента *"
@@ -379,10 +385,10 @@ export function ManualBookingModal({ onClose }: Props) {
                 onChange={(e) => setClientEmail(e.target.value)}
               />
 
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-gray-700">Комментарий</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-medium text-[#4A4038]">Комментарий</label>
                 <textarea
-                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 resize-none"
+                  className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep resize-none bg-white text-ink"
                   rows={3}
                   placeholder="Пожелания или заметки..."
                   value={notes}
@@ -395,25 +401,28 @@ export function ManualBookingModal({ onClose }: Props) {
                 loading={mutation.isPending}
                 onClick={() => mutation.mutate()}
                 disabled={!clientName || !clientPhone}
+                className="w-full"
               >
                 Записать клиента
               </Button>
 
               {mutation.isError && (
-                <p className="text-sm text-red-500 text-center">{getBookingErrorMessage(mutation.error)}</p>
+                <p className="text-sm text-danger text-center">{getBookingErrorMessage(mutation.error)}</p>
               )}
             </div>
           )}
 
           {/* ── Done ── */}
           {step === 'done' && (
-            <div className="text-center py-6">
-              <div className="text-5xl mb-4">✅</div>
-              <h3 className="text-xl font-bold text-gray-900">Клиент записан!</h3>
-              <p className="text-gray-500 mt-2">
+            <div className="text-center py-5">
+              <div className="w-14 h-14 rounded-full bg-success-bg flex items-center justify-center mx-auto mb-[18px]">
+                <Icon name="check" size={26} strokeWidth={1.8} className="text-success" />
+              </div>
+              <h3 className="font-serif text-xl font-medium text-ink mb-2">Клиент записан!</h3>
+              <p className="text-sm text-ink-soft mb-6">
                 {clientName} · {formattedDate} в {selectedTime}
               </p>
-              <Button onClick={onClose} variant="secondary" size="lg" className="mt-6">
+              <Button onClick={onClose} variant="secondary" size="lg">
                 Закрыть
               </Button>
             </div>

@@ -5,9 +5,9 @@ import { format, parseISO, differenceInHours } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../api/bookings'
 import { reviewsApi } from '../api/reviews'
-import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
+import { Icon } from '../components/ui/Icon'
 import { ReviewModal } from '../components/review/ReviewModal'
 import type { Booking } from '../types'
 
@@ -70,19 +70,19 @@ export function ClientBookingsPage() {
   }, [bookings])
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Мои визиты</h1>
+    <div className="max-w-[760px] mx-auto px-8 pt-12 pb-24">
+      <h1 className="font-serif text-[30px] font-medium text-ink mb-7">Мои визиты</h1>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
+      <div className="inline-flex gap-1 bg-cream-deep p-1 rounded-full mb-8">
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-[18px] py-[9px] rounded-full text-[13.5px] font-semibold transition-colors ${
               tab === t.key
-                ? 'bg-white text-primary-600 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-white text-ink shadow-sm'
+                : 'text-gold-dark hover:text-ink'
             }`}
           >
             {t.label}
@@ -93,86 +93,84 @@ export function ClientBookingsPage() {
       {isLoading ? (
         <div className="grid gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 bg-gray-100 rounded-2xl animate-pulse" />
+            <div key={i} className="h-24 bg-cream-deep rounded-2xl animate-pulse" />
           ))}
         </div>
       ) : grouped.length > 0 ? (
-        <div className="grid gap-8">
+        <div className="flex flex-col gap-7">
           {grouped.map(group => (
             <div key={group.label}>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 capitalize">
+              <h3 className="text-[12.5px] font-bold tracking-[0.05em] uppercase text-muted mb-3 capitalize">
                 {group.label}
               </h3>
-              <div className="grid gap-3">
+              <div className="flex flex-col gap-2.5">
                 {group.items.map(b => (
-                  <Card key={b.id} className="p-4">
-                    <div className="flex items-start gap-4">
-                      {/* Date/time block */}
-                      <div className="text-center bg-orange-50 rounded-xl px-3 py-2 min-w-[64px] shrink-0">
-                        <div className="text-xs text-gray-500">
-                          {format(parseISO(b.date), 'd MMM', { locale: ru })}
-                        </div>
-                        <div className="text-lg font-bold text-primary-600">{b.startTime.slice(0, 5)}</div>
+                  <div key={b.id} className="bg-white border border-line rounded-[18px] px-5 py-[18px] flex items-center gap-4 flex-wrap">
+                    {/* Date/time block */}
+                    <div className="text-center bg-cream-deep rounded-[14px] px-3.5 py-2.5 min-w-[66px] shrink-0">
+                      <div className="text-[11.5px] text-gold-dark">
+                        {format(parseISO(b.date), 'd MMM', { locale: ru })}
                       </div>
-
-                      {/* Main info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-gray-900">{b.serviceName}</span>
-                          <StatusBadge status={b.status} />
-                        </div>
-                        {b.companyName && (
-                          <p className="text-sm text-gray-500 mt-0.5">🏢 {b.companyName}</p>
-                        )}
-                        <p className="text-sm text-gray-500">👤 {b.masterName}</p>
-                        {b.price != null && (
-                          <p className="text-sm font-medium text-primary-600 mt-1">
-                            {b.price.toLocaleString('ru-RU')} ₽
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Action buttons */}
-                      <div className="flex flex-col gap-2 shrink-0 items-end">
-                        {canCancelBooking(b) && (
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            loading={cancel.isPending}
-                            onClick={() => cancel.mutate(b.id)}
-                          >
-                            Отменить
-                          </Button>
-                        )}
-                        {b.status === 'Completed' && canReviewSet.has(b.id) && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => setReviewBooking(b)}
-                          >
-                            ⭐ Оставить отзыв
-                          </Button>
-                        )}
-                        {b.companySlug && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => navigate(`/company/${b.companySlug}`)}
-                          >
-                            Записаться снова
-                          </Button>
-                        )}
-                      </div>
+                      <div className="text-[17px] font-bold text-ink">{b.startTime.slice(0, 5)}</div>
                     </div>
-                  </Card>
+
+                    {/* Main info */}
+                    <div className="flex-1 min-w-[180px]">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-[14.5px] text-ink">{b.serviceName}</span>
+                        <StatusBadge status={b.status} />
+                      </div>
+                      {b.companyName && (
+                        <p className="text-[13px] text-ink-soft mt-1">{b.companyName} · {b.masterName}</p>
+                      )}
+                      {b.price != null && (
+                        <p className="text-[13px] font-semibold text-gold-dark mt-0.5">
+                          {b.price.toLocaleString('ru-RU')} ₽
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex flex-col gap-2 shrink-0 items-end">
+                      {canCancelBooking(b) && (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          loading={cancel.isPending}
+                          onClick={() => cancel.mutate(b.id)}
+                        >
+                          Отменить
+                        </Button>
+                      )}
+                      {b.status === 'Completed' && canReviewSet.has(b.id) && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => setReviewBooking(b)}
+                        >
+                          <Icon name="star" size={12} className="text-gold-dark" />
+                          Оставить отзыв
+                        </Button>
+                      )}
+                      {b.companySlug && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => navigate(`/company/${b.companySlug}`)}
+                        >
+                          Записаться снова
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-4xl mb-3">📋</p>
+        <div className="text-center py-16 text-muted">
+          <Icon name="calendar" size={36} strokeWidth={1.4} className="mx-auto mb-3" />
           <p className="text-lg mb-4">Записей пока нет</p>
           <Button onClick={() => navigate('/')}>Найти мастера</Button>
         </div>

@@ -7,6 +7,7 @@ import { useAuthStore } from '../store/authStore'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
+import { Icon } from '../components/ui/Icon'
 
 const roleLabel: Record<string, string> = {
   Client: 'Клиент', Master: 'Мастер', CompanyOwner: 'Владелец', SuperAdmin: 'Супер-администратор',
@@ -14,8 +15,8 @@ const roleLabel: Record<string, string> = {
 
 function PlanFeature({ label, enabled }: { label: string; enabled: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
-      enabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-400'
+    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
+      enabled ? 'bg-success-bg text-success' : 'bg-[#F5F2EC] text-muted'
     }`}>
       {enabled ? '✓' : '✗'} {label}
     </span>
@@ -24,38 +25,38 @@ function PlanFeature({ label, enabled }: { label: string; enabled: boolean }) {
 
 function PlanSection({ plan }: { plan: ProfilePlanDto }) {
   const statusLabel = !plan.isActive
-    ? { text: 'Отключена', className: 'bg-gray-100 text-gray-500' }
+    ? { text: 'Отключена', className: 'bg-[#F5F2EC] text-muted' }
     : plan.isExpired
-      ? { text: 'Истекла', className: 'bg-red-50 text-red-600' }
-      : { text: 'Активна', className: 'bg-green-50 text-green-700' }
+      ? { text: 'Истекла', className: 'bg-danger-bg text-danger' }
+      : { text: 'Активна', className: 'bg-success-bg text-success' }
 
   return (
-    <Card className="p-6 mb-5">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 className="font-semibold text-gray-900">Тарифный план</h2>
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusLabel.className}`}>{statusLabel.text}</span>
+    <Card className="p-[26px] mb-[18px]">
+      <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
+        <h2 className="text-[15.5px] font-semibold text-ink">Тарифный план</h2>
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusLabel.className}`}>{statusLabel.text}</span>
       </div>
-      <div className="flex items-center gap-3 mb-3 flex-wrap">
-        <span className="text-lg font-bold text-gray-900">{plan.planName}</span>
-        <span className="text-sm font-medium text-primary-700">
+      <div className="flex items-center gap-3.5 mb-3.5 flex-wrap">
+        <span className="text-lg font-bold text-ink">{plan.planName}</span>
+        <span className="text-sm font-semibold text-gold-dark">
           {plan.pricePerMonth > 0 ? `${plan.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : 'Бесплатно'}
         </span>
         {plan.paidUntil && (
-          <span className="text-xs text-gray-400">
+          <span className="text-[12.5px] text-muted">
             {plan.isExpired ? 'Истёк' : 'Оплачен до'} {format(new Date(plan.paidUntil), 'd MMM yyyy')}
           </span>
         )}
       </div>
-      <div className="flex flex-wrap gap-1.5 mb-3">
+      <div className="flex flex-wrap gap-2 mb-3">
         <PlanFeature label="Онлайн-запись" enabled={plan.allowOnlineBooking} />
         <PlanFeature label="Рассылка" enabled={plan.allowMailing} />
         <PlanFeature label="Аналитика" enabled={plan.allowAnalytics} />
       </div>
-      <div className="flex gap-4 text-xs text-gray-400">
+      <div className="flex gap-4 text-xs text-muted">
         <span>Сотрудников: {plan.maxEmployees !== null ? `до ${plan.maxEmployees}` : '∞'}</span>
         <span>Компаний: {plan.maxCompanies !== null ? `до ${plan.maxCompanies}` : '∞'}</span>
       </div>
-      <p className="text-xs text-gray-400 mt-3">Изменение тарифа и оплата скоро будут доступны здесь же.</p>
+      <p className="text-xs text-muted mt-3">Изменение тарифа и оплата скоро будут доступны здесь же.</p>
     </Card>
   )
 }
@@ -105,27 +106,27 @@ export function ProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        <div className="h-48 bg-gray-100 rounded-3xl animate-pulse" />
+      <div className="max-w-[640px] mx-auto px-8 py-11">
+        <div className="h-48 bg-cream-deep rounded-3xl animate-pulse" />
       </div>
     )
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Профиль</h1>
+    <div className="max-w-[640px] mx-auto px-8 pt-11 pb-24">
+      <h1 className="font-serif text-[30px] font-medium text-ink mb-7">Профиль</h1>
 
       {/* Avatar + roles */}
-      <Card className="p-6 mb-5 flex items-center gap-5">
-        <div className="w-20 h-20 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-2xl shrink-0">
+      <Card className="p-[26px] mb-[18px] flex items-center gap-5">
+        <div className="w-[72px] h-[72px] rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-2xl shrink-0">
           {profile?.firstName[0]}{profile?.lastName[0]}
         </div>
         <div>
-          <p className="text-xl font-semibold text-gray-900">{profile?.firstName} {profile?.lastName}</p>
-          <p className="text-sm text-gray-500 mt-0.5">{profile?.phone}{profile?.email ? ` · ${profile.email}` : ''}</p>
-          <div className="flex flex-wrap gap-1.5 mt-2">
+          <p className="text-[19px] font-semibold text-ink">{profile?.firstName} {profile?.lastName}</p>
+          <p className="text-[13.5px] text-ink-soft mt-1">{profile?.phone}{profile?.email ? ` · ${profile.email}` : ''}</p>
+          <div className="flex flex-wrap gap-1.5 mt-2.5">
             {profile?.roles.map(r => (
-              <span key={r} className="text-xs bg-primary-50 text-primary-700 px-2 py-0.5 rounded-full font-medium">
+              <span key={r} className="text-xs font-semibold bg-cream-deep text-gold-dark px-2.5 py-1 rounded-full">
                 {roleLabel[r] ?? r}
               </span>
             ))}
@@ -134,23 +135,27 @@ export function ProfilePage() {
       </Card>
 
       {/* Profile data */}
-      <Card className="p-6 mb-5">
-        <h2 className="font-semibold text-gray-900 mb-4">Личные данные</h2>
+      <Card className="p-[26px] mb-[18px]">
+        <h2 className="text-[15.5px] font-semibold text-ink mb-[18px]">Личные данные</h2>
         <form onSubmit={hsProfile((d) => updateMut.mutate(d))} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3.5">
             <Input label="Имя" {...regProfile('firstName', { required: true })} />
             <Input label="Фамилия" {...regProfile('lastName', { required: true })} />
           </div>
           {isMasterOrOwner && (
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">Процент от услуги (%)</label>
-              <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[13px] font-medium text-[#4A4038]">Процент от услуги (%)</label>
+              <div className="rounded-xl border border-line bg-cream-deep px-3.5 py-2.5 text-sm text-ink-soft">
                 {profile?.commissionPercent}%
               </div>
-              <p className="text-xs text-gray-400">Устанавливается владельцем компании, самостоятельно изменить нельзя</p>
+              <p className="text-xs text-muted">Устанавливается владельцем компании, самостоятельно изменить нельзя</p>
             </div>
           )}
-          {updateMut.isSuccess && <p className="text-sm text-green-600">✓ Данные сохранены</p>}
+          {updateMut.isSuccess && (
+            <p className="text-sm text-success flex items-center gap-1.5">
+              <Icon name="check" size={14} strokeWidth={2} /> Данные сохранены
+            </p>
+          )}
           <Button type="submit" loading={updateMut.isPending} disabled={!pDirty}>
             Сохранить изменения
           </Button>
@@ -160,8 +165,8 @@ export function ProfilePage() {
       {profile?.plan && <PlanSection plan={profile.plan} />}
 
       {/* Password */}
-      <Card className="p-6">
-        <h2 className="font-semibold text-gray-900 mb-4">Смена пароля</h2>
+      <Card className="p-[26px]">
+        <h2 className="text-[15.5px] font-semibold text-ink mb-[18px]">Смена пароля</h2>
         <form onSubmit={hsPwd((d) => {
           if (d.newPassword !== d.confirmPassword) {
             setPwdError('confirmPassword', { message: 'Пароли не совпадают' })
@@ -186,8 +191,12 @@ export function ProfilePage() {
             error={pwdErrors.confirmPassword?.message}
             {...regPwd('confirmPassword', { required: true })}
           />
-          {pwdSuccess && <p className="text-sm text-green-600">✓ Пароль изменён</p>}
-          <Button type="submit" loading={pwdMut.isPending}>Изменить пароль</Button>
+          {pwdSuccess && (
+            <p className="text-sm text-success flex items-center gap-1.5">
+              <Icon name="check" size={14} strokeWidth={2} /> Пароль изменён
+            </p>
+          )}
+          <Button type="submit" variant="secondary" loading={pwdMut.isPending}>Изменить пароль</Button>
         </form>
       </Card>
     </div>

@@ -7,6 +7,7 @@ import { companiesApi } from '../../api/companies'
 import { useAuthStore } from '../../store/authStore'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { Icon } from '../ui/Icon'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { getBookingErrorMessage } from '../../utils/bookingError'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
@@ -19,6 +20,15 @@ interface Props {
 }
 
 type Step = 'master' | 'date' | 'slot' | 'info' | 'done'
+
+function BackLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-1.5 text-[13px] text-ink-soft hover:text-ink mb-4">
+      <Icon name="chevron-left" size={13} strokeWidth={1.8} />
+      {children}
+    </button>
+  )
+}
 
 export function BookingModal({ service, company, onClose }: Props) {
   const { isAuthenticated } = useAuthStore()
@@ -105,30 +115,32 @@ export function BookingModal({ service, company, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5"
       {...dismiss}
     >
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-cream rounded-[26px] shadow-modal w-full max-w-[440px] max-h-[88vh] overflow-y-auto">
         {/* Header */}
-        <div className="p-6 border-b border-gray-100">
+        <div className="p-6 pb-[22px] border-b border-line">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-bold text-gray-900 text-lg">Запись на услугу</h2>
-              <p className="text-sm text-gray-500 mt-0.5">
+              <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Запись на услугу</h2>
+              <p className="text-[13px] text-ink-soft">
                 {service.name} · {service.durationMinutes} мин · {service.price.toLocaleString('ru-RU')} ₽
               </p>
             </div>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            <button onClick={onClose} className="text-muted hover:text-ink shrink-0">
+              <Icon name="x" size={18} strokeWidth={1.8} />
+            </button>
           </div>
 
           {/* Progress bar */}
           {step !== 'done' && (
-            <div className="flex gap-1 mt-4">
+            <div className="flex gap-1.5 mt-4">
               {progressSteps.map((s, i) => (
                 <div
                   key={s}
                   className={`h-1 flex-1 rounded-full transition-colors ${
-                    currentIdx >= i ? 'bg-primary-500' : 'bg-gray-100'
+                    currentIdx >= i ? 'bg-ink' : 'bg-line'
                   }`}
                 />
               ))}
@@ -136,39 +148,39 @@ export function BookingModal({ service, company, onClose }: Props) {
           )}
         </div>
 
-        <div className="p-6">
+        <div className="p-6 pt-[22px]">
 
           {/* ── Step: Master ── */}
           {step === 'master' && (
             <div>
-              <h3 className="font-semibold text-gray-700 mb-4">Выберите мастера</h3>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите мастера</h3>
               {mastersLoading ? (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2.5">
                   {Array.from({ length: 2 }).map((_, i) => (
-                    <div key={i} className="h-16 bg-gray-100 rounded-2xl animate-pulse" />
+                    <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
                   ))}
                 </div>
               ) : masters && masters.length > 0 ? (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2.5">
                   {masters.map((m) => (
                     <button
                       key={m.userId}
                       onClick={() => pickMaster(m.userId)}
-                      className="flex items-center gap-4 p-4 rounded-2xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-all text-left"
+                      className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
-                      <div className="w-11 h-11 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-sm shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-[13px] shrink-0">
                         {m.firstName[0]}{m.lastName[0]}
                       </div>
                       <div>
-                        <p className="font-semibold text-gray-900">{m.firstName} {m.lastName}</p>
-                        {m.bio && <p className="text-xs text-gray-400 mt-0.5">{m.bio}</p>}
+                        <p className="font-semibold text-sm text-ink">{m.firstName} {m.lastName}</p>
+                        {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
                       </div>
-                      <span className="ml-auto text-gray-300 text-lg">›</span>
+                      <Icon name="chevron-right" size={16} strokeWidth={1.8} className="ml-auto text-line-strong shrink-0" />
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-400 py-8">
+                <p className="text-center text-muted py-8">
                   Нет доступных мастеров для этой услуги
                 </p>
               )}
@@ -178,16 +190,16 @@ export function BookingModal({ service, company, onClose }: Props) {
           {/* ── Step: Date ── */}
           {step === 'date' && (
             <div>
-              <button onClick={() => setStep('master')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">
-                ← {selectedMaster ? `${selectedMaster.firstName} ${selectedMaster.lastName}` : 'Мастер'}
-              </button>
-              <h3 className="font-semibold text-gray-700 mb-4">Выберите дату</h3>
+              <BackLink onClick={() => setStep('master')}>
+                {selectedMaster ? `${selectedMaster.firstName} ${selectedMaster.lastName}` : 'Мастер'}
+              </BackLink>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите дату</h3>
               <div className="grid grid-cols-2 gap-2">
                 {days.map((d) => (
                   <button
                     key={d.value}
                     onClick={() => { setSelectedDate(d.value); setStep('slot') }}
-                    className="px-4 py-3 rounded-xl border border-gray-200 text-sm hover:border-primary-400 hover:bg-primary-50 transition-all text-left"
+                    className="px-3.5 py-3 rounded-xl border border-line bg-white text-[13.5px] hover:border-line-strong transition-all text-left"
                   >
                     {d.label}
                   </button>
@@ -199,14 +211,12 @@ export function BookingModal({ service, company, onClose }: Props) {
           {/* ── Step: Slot ── */}
           {step === 'slot' && (
             <div>
-              <button onClick={() => setStep('date')} className="text-sm text-gray-500 hover:text-gray-700 mb-4 flex items-center gap-1">
-                ← Изменить дату
-              </button>
-              <h3 className="font-semibold text-gray-700 mb-4">Выберите время</h3>
+              <BackLink onClick={() => setStep('date')}>Изменить дату</BackLink>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите время</h3>
               {slotsLoading ? (
                 <div className="grid grid-cols-3 gap-2">
                   {Array.from({ length: 9 }).map((_, i) => (
-                    <div key={i} className="h-10 bg-gray-100 rounded-xl animate-pulse" />
+                    <div key={i} className="h-10 bg-cream-deep rounded-xl animate-pulse" />
                   ))}
                 </div>
               ) : slots && slots.length > 0 ? (
@@ -215,10 +225,10 @@ export function BookingModal({ service, company, onClose }: Props) {
                     <button
                       key={s.start}
                       onClick={() => { setSelectedSlot(s.start); setStep('info') }}
-                      className={`py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                      className={`py-[11px] rounded-xl text-[13.5px] font-medium border transition-all ${
                         selectedSlot === s.start
-                          ? 'bg-primary-500 text-white border-primary-500'
-                          : 'border-gray-200 hover:border-primary-400 hover:bg-primary-50'
+                          ? 'bg-ink text-cream border-ink'
+                          : 'border-line bg-white hover:border-line-strong'
                       }`}
                     >
                       {s.start.slice(0, 5)}
@@ -226,26 +236,24 @@ export function BookingModal({ service, company, onClose }: Props) {
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-400 py-8">Нет доступных слотов на этот день</p>
+                <p className="text-center text-muted py-8">Нет доступных слотов на этот день</p>
               )}
             </div>
           )}
 
           {/* ── Step: Info ── */}
           {step === 'info' && (
-            <div className="flex flex-col gap-4">
-              <button onClick={() => setStep('slot')} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
-                ← Изменить время
-              </button>
+            <div className="flex flex-col gap-3.5">
+              <BackLink onClick={() => setStep('slot')}>Изменить время</BackLink>
 
-              <div className="bg-orange-50 rounded-2xl p-4 text-sm text-gray-700">
+              <div className="bg-cream-deep rounded-2xl p-4 text-[13.5px] text-ink">
                 <div className="font-semibold">{service.name}</div>
                 {selectedMaster && (
-                  <div className="text-gray-500 mt-0.5">
+                  <div className="text-ink-soft mt-0.5">
                     {selectedMaster.firstName} {selectedMaster.lastName}
                   </div>
                 )}
-                <div className="text-gray-500 mt-1">
+                <div className="text-ink-soft mt-0.5">
                   {days.find(d => d.value === selectedDate)?.label} · {selectedSlot.slice(0, 5)}
                 </div>
               </div>
@@ -275,10 +283,10 @@ export function BookingModal({ service, company, onClose }: Props) {
                 </>
               )}
 
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-medium text-gray-700">Комментарий (необязательно)</label>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-medium text-[#4A4038]">Комментарий (необязательно)</label>
                 <textarea
-                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 resize-none"
+                  className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep resize-none bg-white text-ink"
                   rows={3}
                   placeholder="Пожелания или вопросы..."
                   value={notes}
@@ -289,7 +297,7 @@ export function BookingModal({ service, company, onClose }: Props) {
               {!isAuthenticated() && smartCaptchaEnabled && (
                 <div className="flex flex-col gap-1">
                   <SmartCaptcha onToken={setCaptchaToken} />
-                  <p className="text-xs text-gray-400">Подтвердите, что вы не робот (Yandex SmartCaptcha)</p>
+                  <p className="text-xs text-muted">Подтвердите, что вы не робот (Yandex SmartCaptcha)</p>
                 </div>
               )}
 
@@ -301,25 +309,28 @@ export function BookingModal({ service, company, onClose }: Props) {
                   (!isAuthenticated() && (!guestName || !guestPhone)) ||
                   (!isAuthenticated() && smartCaptchaEnabled && !captchaToken)
                 }
+                className="w-full"
               >
                 Подтвердить запись
               </Button>
 
               {mutation.isError && (
-                <p className="text-sm text-red-500 text-center">{getBookingErrorMessage(mutation.error)}</p>
+                <p className="text-sm text-danger text-center">{getBookingErrorMessage(mutation.error)}</p>
               )}
             </div>
           )}
 
           {/* ── Done ── */}
           {step === 'done' && (
-            <div className="text-center py-6">
-              <div className="text-5xl mb-4">🎉</div>
-              <h3 className="text-xl font-bold text-gray-900">Запись подтверждена!</h3>
-              <p className="text-gray-500 mt-2">
+            <div className="text-center py-5">
+              <div className="w-14 h-14 rounded-full bg-success-bg flex items-center justify-center mx-auto mb-[18px]">
+                <Icon name="check" size={26} strokeWidth={1.8} className="text-success" />
+              </div>
+              <h3 className="font-serif text-xl font-medium text-ink mb-2">Запись подтверждена!</h3>
+              <p className="text-sm text-ink-soft mb-6">
                 Ждём вас {days.find(d => d.value === selectedDate)?.label} в {selectedSlot.slice(0, 5)}
               </p>
-              <Button onClick={onClose} variant="secondary" size="lg" className="mt-6">
+              <Button onClick={onClose} variant="secondary" size="lg">
                 Закрыть
               </Button>
             </div>

@@ -4,7 +4,7 @@ import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
-import { Card } from '../components/ui/Card'
+import { Icon } from '../components/ui/Icon'
 import { useState } from 'react'
 
 interface FormData {
@@ -38,66 +38,74 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white flex items-center justify-center px-4">
-      <Card className="w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <div className="text-4xl mb-3">🎉</div>
-          <h1 className="text-2xl font-bold text-gray-900">Создать аккаунт</h1>
-          <p className="text-gray-500 mt-1">Присоединитесь — это бесплатно</p>
-        </div>
+    <div className="min-h-[calc(100vh-76px)] flex items-center justify-center px-4 py-16">
+      <div className="w-full max-w-[440px]">
+        <Link to="/" className="flex items-center justify-center gap-3 mb-10">
+          <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
+            <Icon name="scissors" size={18} className="text-cream" strokeWidth={1.6} />
+          </span>
+          <span className="font-serif text-xl text-ink">EZBOOK</span>
+        </Link>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Input
-              label="Имя"
-              placeholder="Иван"
-              error={errors.firstName?.message}
-              {...register('firstName', { required: 'Введите имя' })}
-            />
-            <Input
-              label="Фамилия"
-              placeholder="Иванов"
-              error={errors.lastName?.message}
-              {...register('lastName', { required: 'Введите фамилию' })}
-            />
+        <div className="bg-white border border-line rounded-3xl p-11 shadow-soft">
+          <div className="text-center mb-8">
+            <h1 className="font-serif text-[28px] font-medium text-ink mb-2">Создать аккаунт</h1>
+            <p className="text-sm text-ink-soft">Присоединяйтесь — это бесплатно</p>
           </div>
-          <Input
-            label="Телефон"
-            type="tel"
-            placeholder="+7 999 000 00 00"
-            error={errors.phone?.message}
-            {...register('phone', { required: 'Введите телефон' })}
-          />
-          <Input
-            label="Email (необязательно)"
-            type="email"
-            placeholder="your@email.com"
-            {...register('email')}
-          />
-          <Input
-            label="Пароль"
-            type="password"
-            placeholder="Минимум 8 символов"
-            error={errors.password?.message}
-            {...register('password', { required: 'Введите пароль', minLength: { value: 8, message: 'Минимум 8 символов' } })}
-          />
 
-          {error && (
-            <div className="bg-red-50 text-red-600 text-sm px-4 py-2 rounded-xl">{error}</div>
-          )}
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-[18px]">
+            <div className="grid grid-cols-2 gap-3.5">
+              <Input
+                label="Имя"
+                placeholder="Иван"
+                error={errors.firstName?.message}
+                {...register('firstName', { required: 'Введите имя' })}
+              />
+              <Input
+                label="Фамилия"
+                placeholder="Иванов"
+                error={errors.lastName?.message}
+                {...register('lastName', { required: 'Введите фамилию' })}
+              />
+            </div>
+            <Input
+              label="Телефон"
+              type="tel"
+              placeholder="+7 999 000 00 00"
+              error={errors.phone?.message}
+              {...register('phone', { required: 'Введите телефон' })}
+            />
+            <Input
+              label="Email (необязательно)"
+              type="email"
+              placeholder="your@email.com"
+              {...register('email')}
+            />
+            <Input
+              label="Пароль"
+              type="password"
+              placeholder="Минимум 8 символов"
+              error={errors.password?.message}
+              {...register('password', { required: 'Введите пароль', minLength: { value: 8, message: 'Минимум 8 символов' } })}
+            />
 
-          <Button type="submit" size="lg" loading={loading} className="mt-2">
-            Зарегистрироваться
-          </Button>
-        </form>
+            {error && (
+              <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>
+            )}
 
-        <p className="text-center text-sm text-gray-500 mt-6">
-          Уже есть аккаунт?{' '}
-          <Link to="/login" className="text-primary-600 font-medium hover:underline">
-            Войти
-          </Link>
-        </p>
-      </Card>
+            <Button type="submit" size="lg" loading={loading} className="mt-1 w-full">
+              Зарегистрироваться
+            </Button>
+          </form>
+
+          <p className="text-center text-sm text-ink-soft mt-7">
+            Уже есть аккаунт?{' '}
+            <Link to="/login" className="text-gold font-semibold hover:text-gold-dark">
+              Войти
+            </Link>
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

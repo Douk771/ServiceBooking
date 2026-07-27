@@ -3,11 +3,12 @@ import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { companiesApi } from '../../api/companies'
-import { servicesApi, type CreateServicePayload } from '../../api/services'
+import { servicesApi } from '../../api/services'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
+import { Icon } from '../../components/ui/Icon'
 import { ScheduleTab } from './ScheduleTab'
 import { getAddMemberErrorMessage } from '../../utils/memberError'
 import type { Service } from '../../types'
@@ -66,22 +67,26 @@ function ServicesTab({ companyId }: { companyId: string }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Услуги</h2>
-        <Button size="sm" onClick={() => setShowAdd(true)}>+ Добавить</Button>
+        <h2 className="text-lg font-semibold text-ink">Услуги</h2>
+        <Button size="sm" onClick={() => setShowAdd(true)}>
+          <Icon name="plus" size={14} strokeWidth={2} /> Добавить
+        </Button>
       </div>
 
       {isLoading ? (
         <div className="grid gap-3">
-          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-2xl animate-pulse" />)}
+          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />)}
         </div>
       ) : services && services.length > 0 ? (
         <div className="grid gap-3">
           {services.map((s) => (
             <Card key={s.id} className="p-4 flex items-center justify-between gap-4">
               <div>
-                <p className="font-medium text-gray-900">{s.name}</p>
-                <p className="text-sm text-gray-400">⏱ {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽</p>
-                {s.description && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{s.description}</p>}
+                <p className="font-medium text-ink">{s.name}</p>
+                <p className="text-sm text-muted flex items-center gap-1">
+                  <Icon name="clock" size={13} strokeWidth={1.7} /> {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                </p>
+                {s.description && <p className="text-xs text-muted mt-0.5 line-clamp-1">{s.description}</p>}
               </div>
               <div className="flex gap-2 shrink-0">
                 <Button variant="secondary" size="sm" onClick={() => openEdit(s)}>Изменить</Button>
@@ -93,8 +98,8 @@ function ServicesTab({ companyId }: { companyId: string }) {
           ))}
         </div>
       ) : (
-        <Card className="p-12 text-center text-gray-400">
-          <p className="text-3xl mb-2">🛠️</p>
+        <Card className="p-12 text-center text-muted">
+          <Icon name="settings" size={32} strokeWidth={1.4} className="mx-auto mb-2" />
           <p>Услуги ещё не добавлены</p>
         </Card>
       )}
@@ -109,9 +114,9 @@ function ServicesTab({ companyId }: { companyId: string }) {
               {...register('name', { required: 'Введите название' })}
             />
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">Описание</label>
+              <label className="text-sm font-medium text-ink-soft">Описание</label>
               <textarea
-                className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 resize-none"
+                className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold focus:ring-2 focus:ring-cream-deep resize-none"
                 rows={2}
                 placeholder="Описание услуги..."
                 {...register('description')}
@@ -193,18 +198,18 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
     <Card className="overflow-hidden">
       <div className="p-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm shrink-0">
+          <div className="w-10 h-10 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-semibold text-sm shrink-0">
             {m.firstName[0]}{m.lastName[0]}
           </div>
           <div className="min-w-0">
-            <p className="font-medium text-gray-900">{m.firstName} {m.lastName}</p>
-            <p className="text-sm text-gray-400 truncate">{m.phone || m.email} · {roleLabel[m.role] ?? m.role}</p>
-            {m.bio && <p className="text-xs text-gray-400 mt-0.5 truncate">{m.bio}</p>}
+            <p className="font-medium text-ink">{m.firstName} {m.lastName}</p>
+            <p className="text-sm text-muted truncate">{m.phone || m.email} · {roleLabel[m.role] ?? m.role}</p>
+            {m.bio && <p className="text-xs text-muted mt-0.5 truncate">{m.bio}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <div className="flex items-center gap-1.5">
-            <label className="text-xs text-gray-400 whitespace-nowrap">Комиссия:</label>
+            <label className="text-xs text-muted whitespace-nowrap">Комиссия:</label>
             <input
               type="number"
               min={0}
@@ -212,21 +217,22 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
               step={1}
               value={commission}
               onChange={(e) => { setCommission(Number(e.target.value)); setCommissionDirty(true) }}
-              className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-sm outline-none focus:border-primary-400"
+              className="w-16 rounded-lg border border-line px-2 py-1 text-sm outline-none focus:border-gold"
             />
-            <span className="text-xs text-gray-400">%</span>
+            <span className="text-xs text-muted">%</span>
             {commissionDirty && (
               <Button size="sm" loading={commissionMut.isPending} onClick={() => commissionMut.mutate()}>
-                ✓
+                <Icon name="check" size={13} strokeWidth={2} />
               </Button>
             )}
           </div>
           {services.length > 0 && (
             <button
               onClick={() => setExpanded(e => !e)}
-              className="text-xs text-gray-500 hover:text-primary-600 border border-gray-200 hover:border-primary-300 rounded-lg px-2 py-1 transition-colors"
+              className="flex items-center gap-1 text-xs text-muted hover:text-gold-dark border border-line hover:border-line-strong rounded-lg px-2 py-1 transition-colors"
             >
-              Услуги {selected.size > 0 ? `(${selected.size})` : ''} {expanded ? '▲' : '▼'}
+              Услуги {selected.size > 0 ? `(${selected.size})` : ''}
+              <Icon name="chevron-down" size={12} strokeWidth={1.8} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
             </button>
           )}
           <Button variant="danger" size="sm" loading={removeLoading} onClick={() => onRemove(m.id)}>
@@ -236,8 +242,8 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Услуги сотрудника</p>
+        <div className="border-t border-line px-4 py-3 bg-cream-deep">
+          <p className="text-xs font-medium text-muted uppercase tracking-wide mb-2">Услуги сотрудника</p>
           <div className="flex flex-wrap gap-2 mb-3">
             {services.map(s => {
               const checked = selected.has(s.id)
@@ -246,8 +252,8 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
                   key={s.id}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-sm cursor-pointer select-none transition-all ${
                     checked
-                      ? 'bg-primary-50 border-primary-300 text-primary-800'
-                      : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                      ? 'bg-cream-deep border-line-strong text-gold-dark'
+                      : 'bg-white border-line text-ink-soft hover:border-line-strong'
                   }`}
                 >
                   <input
@@ -256,8 +262,8 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
                     checked={checked}
                     onChange={() => toggle(s.id)}
                   />
-                  <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-primary-500 border-primary-500' : 'border-gray-300'}`}>
-                    {checked && <span className="text-white text-[9px] leading-none">✓</span>}
+                  <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-gold-dark border-gold-dark' : 'border-line-strong'}`}>
+                    {checked && <Icon name="check" size={9} strokeWidth={2.5} className="text-cream" />}
                   </span>
                   {s.name}
                 </label>
@@ -271,7 +277,9 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
               </Button>
             )}
             {saveMut.isSuccess && !dirty && (
-              <span className="text-xs text-green-600 font-medium">✓ Сохранено</span>
+              <span className="text-xs text-success font-medium flex items-center gap-1">
+                <Icon name="check" size={12} strokeWidth={2} /> Сохранено
+              </span>
             )}
           </div>
         </div>
@@ -311,13 +319,15 @@ function MembersTab({ companyId }: { companyId: string }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900">Сотрудники</h2>
-        <Button size="sm" onClick={() => setShowAdd(true)}>+ Добавить</Button>
+        <h2 className="text-lg font-semibold text-ink">Сотрудники</h2>
+        <Button size="sm" onClick={() => setShowAdd(true)}>
+          <Icon name="plus" size={14} strokeWidth={2} /> Добавить
+        </Button>
       </div>
 
       {isLoading ? (
         <div className="grid gap-3">
-          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-2xl animate-pulse" />)}
+          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />)}
         </div>
       ) : members && members.length > 0 ? (
         <div className="grid gap-3">
@@ -333,8 +343,8 @@ function MembersTab({ companyId }: { companyId: string }) {
           ))}
         </div>
       ) : (
-        <Card className="p-12 text-center text-gray-400">
-          <p className="text-3xl mb-2">👥</p>
+        <Card className="p-12 text-center text-muted">
+          <Icon name="users" size={32} strokeWidth={1.4} className="mx-auto mb-2" />
           <p>Сотрудники ещё не добавлены</p>
         </Card>
       )}
@@ -342,7 +352,7 @@ function MembersTab({ companyId }: { companyId: string }) {
       {showAdd && (
         <Modal title="Добавить сотрудника" onClose={() => { setShowAdd(false); reset() }}>
           <form onSubmit={handleSubmit((d) => addMut.mutate(d))} className="flex flex-col gap-4">
-            <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            <p className="text-xs text-muted bg-warning-bg border border-[#EAD9AC] rounded-xl px-3 py-2">
               Если пользователь ещё не зарегистрирован — аккаунт будет создан автоматически.<br />
               Временный пароль: <strong>Sb + последние 6 цифр телефона</strong> (например, <em>+7 999 123‑45‑67</em> → <em>Sb234567</em>)
             </p>
@@ -352,9 +362,9 @@ function MembersTab({ companyId }: { companyId: string }) {
               <Input label="Фамилия *" placeholder="Иванов" {...register('lastName', { required: true })} />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">Роль</label>
+              <label className="text-sm font-medium text-ink-soft">Роль</label>
               <select
-                className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold focus:ring-2 focus:ring-cream-deep"
                 {...register('role')}
               >
                 <option value="Master">Мастер</option>
@@ -363,7 +373,7 @@ function MembersTab({ companyId }: { companyId: string }) {
             </div>
             <Input label="Email (необязательно)" type="email" placeholder="master@example.com" {...register('email')} />
             <Input label="О сотруднике" placeholder="Специализация, опыт..." {...register('bio')} />
-            {addMut.isError && <p className="text-sm text-red-500">{getAddMemberErrorMessage(addMut.error)}</p>}
+            {addMut.isError && <p className="text-sm text-danger">{getAddMemberErrorMessage(addMut.error)}</p>}
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" className="flex-1" onClick={() => { setShowAdd(false); reset() }}>Отмена</Button>
               <Button type="submit" className="flex-1" loading={addMut.isPending}>Добавить</Button>
@@ -408,14 +418,14 @@ function SettingsTab({ companyId }: { companyId: string }) {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Настройки компании</h2>
+      <h2 className="text-lg font-semibold text-ink mb-4">Настройки компании</h2>
       <Card className="p-6">
         {/* Logo */}
         <div className="flex items-center gap-4 mb-6">
           {company?.logoUrl ? (
-            <img src={company.logoUrl} alt="Логотип" className="w-16 h-16 rounded-2xl object-cover border border-gray-200" />
+            <img src={company.logoUrl} alt="Логотип" className="w-16 h-16 rounded-2xl object-cover border border-line" />
           ) : (
-            <div className="w-16 h-16 rounded-2xl bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-xl">
+            <div className="w-16 h-16 rounded-2xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-xl">
               {company?.name?.[0] ?? '?'}
             </div>
           )}
@@ -430,17 +440,17 @@ function SettingsTab({ companyId }: { companyId: string }) {
             <Button size="sm" variant="secondary" loading={logoMut.isPending} onClick={() => logoInputRef.current?.click()}>
               {company?.logoUrl ? 'Заменить логотип' : 'Загрузить логотип'}
             </Button>
-            <p className="text-xs text-gray-400 mt-1">JPEG, PNG или WEBP, до 5 МБ</p>
-            {logoMut.isError && <p className="text-xs text-red-500 mt-1">Не удалось загрузить изображение</p>}
+            <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ</p>
+            {logoMut.isError && <p className="text-xs text-danger mt-1">Не удалось загрузить изображение</p>}
           </div>
         </div>
 
         <form onSubmit={handleSubmit((d) => updateMut.mutate(d))} className="flex flex-col gap-4">
           <Input label="Название" {...register('name')} />
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-gray-700">Описание</label>
+            <label className="text-sm font-medium text-ink-soft">Описание</label>
             <textarea
-              className="rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 resize-none"
+              className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold focus:ring-2 focus:ring-cream-deep resize-none"
               rows={3}
               {...register('description')}
             />
@@ -451,28 +461,32 @@ function SettingsTab({ companyId }: { companyId: string }) {
             <Input label="Email" type="email" {...register('email')} />
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" className="w-4 h-4 rounded accent-orange-500" {...register('allowSelfBooking')} />
-            <span className="text-sm text-gray-700">Разрешить клиентам записываться самостоятельно</span>
+            <input type="checkbox" className="w-4 h-4 rounded accent-gold" {...register('allowSelfBooking')} />
+            <span className="text-sm text-ink-soft">Разрешить клиентам записываться самостоятельно</span>
           </label>
           <div>
             <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 rounded accent-orange-500" {...register('requirePrepayment')} />
-              <span className="text-sm text-gray-700">Требовать предоплату при онлайн-записи</span>
+              <input type="checkbox" className="w-4 h-4 rounded accent-gold" {...register('requirePrepayment')} />
+              <span className="text-sm text-ink-soft">Требовать предоплату при онлайн-записи</span>
             </label>
             {company && company.requirePrepayment && !company.prepaymentEnabled && (
-              <p className="text-xs text-amber-600 mt-1 ml-7">Онлайн-оплата не входит в текущий тариф — предоплата не будет запрашиваться, пока тариф не будет повышен</p>
+              <p className="text-xs text-warning mt-1 ml-7">Онлайн-оплата не входит в текущий тариф — предоплата не будет запрашиваться, пока тариф не будет повышен</p>
             )}
           </div>
           <div>
             <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 rounded accent-orange-500" {...register('showInPublicListing')} />
-              <span className="text-sm text-gray-700">Показывать компанию в общем списке</span>
+              <input type="checkbox" className="w-4 h-4 rounded accent-gold" {...register('showInPublicListing')} />
+              <span className="text-sm text-ink-soft">Показывать компанию в общем списке</span>
             </label>
             {company && (company.showInPublicListing ?? true) && !company.publicListingEnabled && (
-              <p className="text-xs text-amber-600 mt-1 ml-7">Отображение в общем списке не входит в текущий тариф — компания не будет видна в списке, пока тариф не будет повышен</p>
+              <p className="text-xs text-warning mt-1 ml-7">Отображение в общем списке не входит в текущий тариф — компания не будет видна в списке, пока тариф не будет повышен</p>
             )}
           </div>
-          {updateMut.isSuccess && <p className="text-sm text-green-600">✓ Сохранено</p>}
+          {updateMut.isSuccess && (
+            <p className="text-sm text-success flex items-center gap-1.5">
+              <Icon name="check" size={14} strokeWidth={2} /> Сохранено
+            </p>
+          )}
           <Button type="submit" loading={updateMut.isPending} disabled={!isDirty}>Сохранить изменения</Button>
         </form>
       </Card>
@@ -492,27 +506,29 @@ export function CompanyManagePage() {
   const company = companies?.find((c) => c.id === id)
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'services',  label: '🛠 Услуги' },
-    { key: 'schedule',  label: '📅 Расписание' },
-    { key: 'members',   label: '👥 Сотрудники' },
-    { key: 'settings',  label: '⚙️ Настройки' },
+    { key: 'services',  label: 'Услуги' },
+    { key: 'schedule',  label: 'Расписание' },
+    { key: 'members',   label: 'Сотрудники' },
+    { key: 'settings',  label: 'Настройки' },
   ]
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl mx-auto px-8 pt-11 pb-24">
       <div className="mb-6">
-        <Link to="/owner" className="text-sm text-gray-500 hover:text-gray-700">← Мои компании</Link>
-        <h1 className="text-2xl font-bold text-gray-900 mt-1">{company?.name ?? '...'}</h1>
+        <Link to="/owner" className="text-sm text-muted hover:text-gold-dark inline-flex items-center gap-1">
+          <Icon name="chevron-left" size={14} strokeWidth={1.8} /> Мои компании
+        </Link>
+        <h1 className="font-serif text-[26px] font-medium text-ink mt-1.5">{company?.name ?? '...'}</h1>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-2xl mb-6 w-fit">
+      <div className="flex gap-1 bg-cream-deep p-1 rounded-full mb-6 w-fit flex-wrap">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-              tab === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            className={`px-4 py-[9px] rounded-full text-sm font-semibold transition-all whitespace-nowrap ${
+              tab === t.key ? 'bg-white text-ink' : 'text-gold-dark hover:text-ink'
             }`}
           >
             {t.label}

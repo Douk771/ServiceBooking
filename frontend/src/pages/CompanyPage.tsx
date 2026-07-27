@@ -6,8 +6,8 @@ import { ru } from 'date-fns/locale'
 import { companiesApi } from '../api/companies'
 import { servicesApi } from '../api/services'
 import { reviewsApi } from '../api/reviews'
-import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
+import { Icon } from '../components/ui/Icon'
 import { BookingModal } from '../components/booking/BookingModal'
 import type { Service } from '../types'
 
@@ -21,23 +21,26 @@ function ServiceCard({
   onBook: (s: Service) => void
 }) {
   return (
-    <Card className="p-5 flex items-start justify-between gap-4 hover:shadow-md transition-shadow">
-      <div className="flex items-start gap-4">
+    <div className="bg-white border border-line rounded-[18px] p-[22px] flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center gap-4">
         {service.imageUrl ? (
-          <img src={service.imageUrl} alt={service.name} className="w-16 h-16 rounded-xl object-cover" />
+          <img src={service.imageUrl} alt={service.name} className="w-[52px] h-[52px] rounded-[14px] object-cover shrink-0" />
         ) : (
-          <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary-100 to-accent-400/20 flex items-center justify-center text-2xl">
-            ✂️
+          <div className="w-[52px] h-[52px] rounded-[14px] bg-cream-deep flex items-center justify-center shrink-0">
+            <Icon name="scissors" size={22} strokeWidth={1.6} className="text-gold-dark" />
           </div>
         )}
         <div>
-          <h3 className="font-semibold text-gray-900">{service.name}</h3>
+          <h3 className="text-base font-semibold text-ink mb-1">{service.name}</h3>
           {service.description && (
-            <p className="text-sm text-gray-500 mt-0.5 max-w-sm">{service.description}</p>
+            <p className="text-[13.5px] text-ink-soft mb-1.5 max-w-sm">{service.description}</p>
           )}
-          <div className="flex items-center gap-3 mt-2 text-sm">
-            <span className="text-gray-400">⏱ {service.durationMinutes} мин</span>
-            <span className="font-semibold text-primary-600">{service.price.toLocaleString('ru-RU')} ₽</span>
+          <div className="flex items-center gap-3.5 text-[13px]">
+            <span className="text-muted flex items-center gap-1">
+              <Icon name="clock" size={13} strokeWidth={1.6} />
+              {service.durationMinutes} мин
+            </span>
+            <span className="font-semibold text-gold-dark">{service.price.toLocaleString('ru-RU')} ₽</span>
           </div>
         </div>
       </div>
@@ -46,7 +49,7 @@ function ServiceCard({
           Записаться
         </Button>
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -78,16 +81,16 @@ export function CompanyPage() {
 
   if (companyLoading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-12">
-        <div className="h-40 bg-gray-100 rounded-3xl animate-pulse mb-6" />
-        <div className="grid gap-4">
-          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-2xl animate-pulse" />)}
+      <div className="max-w-[900px] mx-auto px-8 py-10">
+        <div className="h-[280px] bg-cream-deep rounded-3xl animate-pulse mb-10" />
+        <div className="grid gap-3.5">
+          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 bg-cream-deep rounded-2xl animate-pulse" />)}
         </div>
       </div>
     )
   }
 
-  if (!company) return <div className="text-center py-24 text-gray-400">Компания не найдена</div>
+  if (!company) return <div className="text-center py-24 text-muted">Компания не найдена</div>
 
   // Online self-service booking (this page's flow) requires an active paid plan — on the Free plan
   // it's blocked for guests AND authenticated clients alike (only staff manual bookings work there).
@@ -98,50 +101,69 @@ export function CompanyPage() {
   const onlineUnavailable = company.allowSelfBooking && !company.onlineBookingEnabled
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-[900px] mx-auto px-8 pt-10 pb-24">
       {/* Company Header */}
-      <Card className="p-8 mb-8 bg-gradient-to-br from-orange-50 to-white">
-        <div className="flex items-start gap-6">
+      <div className="bg-white border border-line rounded-3xl p-2 mb-10 overflow-hidden">
+        <div className="w-full h-[220px] rounded-[18px] bg-cream-deep flex items-center justify-center">
+          <span className="text-xs font-mono text-muted">Фото: компания</span>
+        </div>
+        <div className="px-6 pb-6 pt-7 flex items-start gap-5">
           {company.logoUrl ? (
-            <img src={company.logoUrl} alt={company.name} className="w-20 h-20 rounded-2xl object-cover" />
+            <img src={company.logoUrl} alt={company.name} className="w-16 h-16 rounded-[18px] object-cover -mt-[52px] border-4 border-white shrink-0" />
           ) : (
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-400 to-accent-500 flex items-center justify-center text-white text-3xl font-bold">
-              {company.name[0]}
+            <div className="w-16 h-16 rounded-[18px] bg-cream-deep flex items-center justify-center shrink-0 -mt-[52px] border-4 border-white">
+              <Icon name="store" size={28} strokeWidth={1.6} className="text-gold-dark" />
             </div>
           )}
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">{company.name}</h1>
-            {company.description && <p className="text-gray-600 mt-2 max-w-lg">{company.description}</p>}
-            <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-500">
-              {company.address && <span>📍 {company.address}</span>}
-              {company.phone && <span>📞 {company.phone}</span>}
-              {company.email && <span>✉️ {company.email}</span>}
+          <div className="flex-1 min-w-0">
+            <h1 className="font-serif text-[30px] font-medium text-ink mb-1.5">{company.name}</h1>
+            {company.description && <p className="text-[15px] leading-[1.55] text-ink-soft mb-3.5 max-w-[520px]">{company.description}</p>}
+            <div className="flex gap-5 flex-wrap text-[13.5px] text-gold-dark">
+              {company.address && (
+                <span className="flex items-center gap-1.5">
+                  <Icon name="map-pin" size={15} strokeWidth={1.6} />
+                  {company.address}
+                </span>
+              )}
+              {company.phone && (
+                <span className="flex items-center gap-1.5">
+                  <Icon name="phone" size={15} strokeWidth={1.6} />
+                  {company.phone}
+                </span>
+              )}
+              {company.email && (
+                <span className="flex items-center gap-1.5">
+                  <Icon name="mail" size={15} strokeWidth={1.6} />
+                  {company.email}
+                </span>
+              )}
             </div>
             {!company.allowSelfBooking && (
-              <div className="mt-3 inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 text-xs px-3 py-1 rounded-full">
-                ℹ️ Запись только через мастера
+              <div className="mt-3.5 inline-flex items-center gap-1.5 bg-warning-bg text-warning text-xs px-3 py-1 rounded-full">
+                <Icon name="alert-circle" size={12} strokeWidth={1.8} />
+                Запись только через мастера
               </div>
             )}
           </div>
         </div>
-      </Card>
+      </div>
 
       {/* Services */}
-      <h2 className="text-xl font-bold text-gray-900 mb-4">Услуги</h2>
+      <h2 className="font-serif text-2xl font-medium text-ink mb-5">Услуги</h2>
       {onlineUnavailable && (
-        <Card className="p-4 mb-4 bg-amber-50 border border-amber-200">
-          <p className="text-sm text-amber-800">
+        <div className="p-4 mb-4 rounded-2xl bg-warning-bg border border-[#EAD9AC]">
+          <p className="text-sm text-warning">
             Онлайн-запись в этой компании сейчас недоступна.
             {company.phone ? ` Для записи позвоните: ${company.phone}.` : ' Обратитесь к мастеру для записи.'}
           </p>
-        </Card>
+        </div>
       )}
       {servicesLoading ? (
-        <div className="grid gap-4">
-          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 bg-gray-100 rounded-2xl animate-pulse" />)}
+        <div className="grid gap-3.5 mb-[52px]">
+          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 bg-cream-deep rounded-2xl animate-pulse" />)}
         </div>
       ) : services && services.length > 0 ? (
-        <div className="grid gap-4">
+        <div className="grid gap-3.5 mb-[52px]">
           {services.map((s) => (
             <ServiceCard
               key={s.id}
@@ -152,57 +174,50 @@ export function CompanyPage() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-12 text-gray-400">
-          <p className="text-3xl mb-2">🛠️</p>
+        <div className="text-center py-12 text-muted mb-[52px]">
           <p>Услуги ещё не добавлены</p>
         </div>
       )}
 
       {/* Reviews */}
-      <div className="mt-10">
-        <div className="flex items-center gap-3 mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Отзывы</h2>
-          {avgRating !== null && (
-            <div className="flex items-center gap-1.5 bg-yellow-50 px-3 py-1 rounded-full">
-              <span className="text-yellow-400 font-bold">{avgRating.toFixed(1)}</span>
-              <span className="text-yellow-400">★</span>
-              <span className="text-gray-400 text-sm">· {reviews!.length}</span>
-            </div>
-          )}
-        </div>
-
-        {reviews && reviews.length > 0 ? (
-          <div className="grid gap-4">
-            {reviews.map((r, i) => (
-              <Card key={i} className="p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-gray-900">{r.reviewerName}</span>
-                      <span className="text-gray-400 text-sm">·</span>
-                      <span className="text-sm text-gray-500">{r.serviceName} у {r.masterName}</span>
-                    </div>
-                    <div className="flex mb-2">
-                      {[1, 2, 3, 4, 5].map(s => (
-                        <span key={s} className={s <= r.rating ? 'text-yellow-400' : 'text-gray-200'}>★</span>
-                      ))}
-                    </div>
-                    {r.comment && <p className="text-sm text-gray-600">{r.comment}</p>}
-                  </div>
-                  <span className="text-xs text-gray-400 shrink-0">
-                    {format(parseISO(r.createdAt), 'd MMM yyyy', { locale: ru })}
-                  </span>
-                </div>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-gray-400">
-            <p className="text-2xl mb-2">💬</p>
-            <p>Пока нет отзывов</p>
+      <div className="flex items-center gap-3 mb-5">
+        <h2 className="font-serif text-2xl font-medium text-ink">Отзывы</h2>
+        {avgRating !== null && (
+          <div className="flex items-center gap-1.5 bg-warning-bg px-3 py-1 rounded-full text-[13px]">
+            <Icon name="star" size={12} className="text-[#B08A3E]" />
+            <span className="font-bold text-warning">{avgRating.toFixed(1)}</span>
+            <span className="text-muted">· {reviews!.length} отзывов</span>
           </div>
         )}
       </div>
+
+      {reviews && reviews.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          {reviews.map((r, i) => (
+            <div key={i} className="bg-white border border-line rounded-2xl px-5 py-[18px]">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div>
+                  <span className="font-semibold text-sm text-ink">{r.reviewerName}</span>
+                  <span className="text-muted text-[13px]"> · {r.serviceName} у {r.masterName}</span>
+                </div>
+                <span className="text-[12.5px] text-muted shrink-0">
+                  {format(parseISO(r.createdAt), 'd MMM yyyy', { locale: ru })}
+                </span>
+              </div>
+              <div className="flex gap-0.5 mb-2">
+                {[1, 2, 3, 4, 5].map(s => (
+                  <Icon key={s} name="star" size={13} className={s <= r.rating ? 'text-[#B08A3E]' : 'text-line'} />
+                ))}
+              </div>
+              {r.comment && <p className="text-sm text-ink-soft leading-[1.55]">{r.comment}</p>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-8 text-muted">
+          <p>Пока нет отзывов</p>
+        </div>
+      )}
 
       {/* Booking Modal */}
       {selectedService && company && (
