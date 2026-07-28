@@ -8,11 +8,17 @@ obj/
 *.userprefs
 appsettings.Development.json
 
+# Deployment secrets
+.env
+.env.production
+.deploy.env
+
 # Node / Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.env
 frontend/.env.local
+frontend/.env.production
 
 # Docker
 .dockerignore

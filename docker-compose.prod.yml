@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: servicebooking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # No host port published — only the api container can reach it, over the compose network.
+
+  api:
+    build:
+      context: .
+      dockerfile: ServiceBooking.API/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:8080"   # bound to localhost only; nginx on the host proxies to it
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=servicebooking;Username=postgres;Password=${POSTGRES_PASSWORD}
+      - Jwt__Key=${JWT_KEY}
+      - Jwt__Issuer=ServiceBooking
+      - Jwt__Audience=ServiceBookingClient
+      - AllowedOrigins=https://${DOMAIN},https://www.${DOMAIN}
+      - SuperAdmin__Phone=${SUPERADMIN_PHONE}
+      - SmartCaptcha__SecretKey=${SMARTCAPTCHA_SECRET_KEY}
+      - SmartCaptcha__SiteKey=${SMARTCAPTCHA_SITE_KEY}
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - api_uploads:/app/wwwroot/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  api_uploads:

@@ -1,0 +1,18 @@
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Database=servicebooking;Username=postgres;Password=CHANGE_ME"
+  },
+  "Jwt": {
+    "Key": "CHANGE_ME_TO_A_LONG_SECRET_KEY_AT_LEAST_32_CHARS",
+    "Issuer": "ServiceBooking",
+    "Audience": "ServiceBookingClient"
+  },
+  "AllowedOrigins": "https://ezbook.ru,https://www.ezbook.ru",
+  "SuperAdmin": {
+    "Phone": "+70000000000"
+  },
+  "SmartCaptcha": {
+    "SecretKey": "",
+    "SiteKey": ""
+  }
+}
