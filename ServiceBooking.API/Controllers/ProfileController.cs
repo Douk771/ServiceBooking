@@ -49,6 +49,36 @@ public class ProfileController(UserManager<AppUser> userManager, AppDbContext db
         return NoContent();
     }
 
+    // Phone doubles as the Identity UserName (see AuthController), so changing it goes through
+    // SetUserNameAsync — that's what actually enforces the uniqueness check and persists both
+    // PhoneNumber and UserName/NormalizedUserName in one write. Requires the current password,
+    // same as changing the password, since it's effectively changing the login identifier.
+    [HttpPost("change-phone")]
+    public async Task<ActionResult<ProfileDto>> ChangePhone([FromBody] ChangePhoneDto dto)
+    {
+        var user = await userManager.FindByIdAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        if (user is null) return NotFound();
+
+        if (!await userManager.CheckPasswordAsync(user, dto.CurrentPassword))
+            return BadRequest("Неверный текущий пароль");
+
+        if (user.PhoneNumber != dto.NewPhone)
+        {
+            user.PhoneNumber = dto.NewPhone;
+            var result = await userManager.SetUserNameAsync(user, dto.NewPhone);
+            if (!result.Succeeded)
+            {
+                var isDuplicate = result.Errors.Any(e => e.Code == nameof(IdentityErrorDescriber.DuplicateUserName));
+                return BadRequest(isDuplicate
+                    ? "Этот номер телефона уже используется другим аккаунтом"
+                    : result.Errors.FirstOrDefault()?.Description ?? "Не удалось изменить номер телефона");
+            }
+        }
+
+        var roles = await userManager.GetRolesAsync(user);
+        return Ok(await MapToDtoAsync(user, roles));
+    }
+
     // Plan info is only meaningful for company owners — subscriptions are bound to the owner account
     // (see SubscriptionResolver). Shows the actual subscription row (including an expired/inactive one)
     // rather than the normalized "Free" fallback, so the owner can see WHY they're on the Free baseline.
@@ -83,3 +113,4 @@ public record ProfilePlanDto(
 
 public record UpdateProfileDto(string FirstName, string LastName);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
+public record ChangePhoneDto(string CurrentPassword, string NewPhone);

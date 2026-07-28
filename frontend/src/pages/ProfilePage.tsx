@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
+import { AxiosError } from 'axios'
 import { format } from 'date-fns'
 import { profileApi, type ProfilePlanDto } from '../api/profile'
 import { useAuthStore } from '../store/authStore'
@@ -65,6 +66,7 @@ export function ProfilePage() {
   const { user, setAuth, token } = useAuthStore()
   const qc = useQueryClient()
   const [pwdSuccess, setPwdSuccess] = useState(false)
+  const [phoneSuccess, setPhoneSuccess] = useState(false)
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['profile'],
@@ -102,6 +104,29 @@ export function ProfilePage() {
       profileApi.changePassword(d.currentPassword, d.newPassword),
     onSuccess: () => { resetPwd(); setPwdSuccess(true); setTimeout(() => setPwdSuccess(false), 3000) },
     onError: () => setPwdError('currentPassword', { message: 'Неверный текущий пароль' }),
+  })
+
+  // ── Phone form ────────────────────────────────────────────────────────────
+  const { register: regPhone, handleSubmit: hsPhone, reset: resetPhone, setError: setPhoneError, formState: { errors: phoneErrors } } = useForm<{
+    currentPassword: string; newPhone: string
+  }>()
+
+  const phoneMut = useMutation({
+    mutationFn: (d: { currentPassword: string; newPhone: string }) =>
+      profileApi.changePhone(d.currentPassword, d.newPhone),
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ['profile'] })
+      if (user && token) setAuth({ ...user, phone: updated.phone }, token)
+      resetPhone()
+      setPhoneSuccess(true)
+      setTimeout(() => setPhoneSuccess(false), 3000)
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof AxiosError && typeof err.response?.data === 'string'
+        ? err.response.data
+        : 'Не удалось изменить номер телефона'
+      setPhoneError('currentPassword', { message })
+    },
   })
 
   if (isLoading) {
@@ -197,6 +222,32 @@ export function ProfilePage() {
             </p>
           )}
           <Button type="submit" variant="secondary" loading={pwdMut.isPending}>Изменить пароль</Button>
+        </form>
+      </Card>
+
+      {/* Phone */}
+      <Card className="p-[26px] mt-[18px]">
+        <h2 className="text-[15.5px] font-semibold text-ink mb-[18px]">Смена телефона</h2>
+        <form onSubmit={hsPhone((d) => phoneMut.mutate(d))} className="flex flex-col gap-4">
+          <Input
+            label="Новый телефон"
+            type="tel"
+            placeholder="+7 999 000 00 00"
+            error={phoneErrors.newPhone?.message}
+            {...regPhone('newPhone', { required: 'Введите телефон' })}
+          />
+          <Input
+            label="Текущий пароль"
+            type="password"
+            error={phoneErrors.currentPassword?.message}
+            {...regPhone('currentPassword', { required: true })}
+          />
+          {phoneSuccess && (
+            <p className="text-sm text-success flex items-center gap-1.5">
+              <Icon name="check" size={14} strokeWidth={2} /> Телефон изменён
+            </p>
+          )}
+          <Button type="submit" variant="secondary" loading={phoneMut.isPending}>Изменить телефон</Button>
         </form>
       </Card>
     </div>

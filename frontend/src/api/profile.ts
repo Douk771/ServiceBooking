@@ -36,4 +36,6 @@ export const profileApi = {
   update: (data: UpdateProfilePayload) => api.put<ProfileDto>('/profile', data).then(r => r.data),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post('/profile/change-password', { currentPassword, newPassword }),
+  changePhone: (currentPassword: string, newPhone: string) =>
+    api.post<ProfileDto>('/profile/change-phone', { currentPassword, newPhone }).then(r => r.data),
 }
