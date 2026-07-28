@@ -35,7 +35,10 @@ public record CompanyDto(
     // at all, regardless of whether the owner currently has it on or off.
     bool PlanAllowsOnlineBooking,
     bool PlanAllowsOnlinePayment,
-    bool PlanAllowsPublicListing
+    bool PlanAllowsPublicListing,
+    // Seat cap for CompanyMembers rows (owner included — see CompaniesController.AddMember's seat-limit
+    // check, which counts ALL members the same way). Null means unlimited.
+    int? MaxEmployees
 );
 
 public record CreateCompanyDto(

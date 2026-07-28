@@ -305,6 +305,14 @@ function MembersTab({ companyId }: { companyId: string }) {
     queryFn: () => servicesApi.getByCompany(companyId),
   })
 
+  // Same query as SettingsTab — React Query dedupes by key, so this doesn't add a request.
+  const { data: companies } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
+  const company = companies?.find((c) => c.id === companyId)
+
+  // Mirrors the seat-limit check in CompaniesController.AddMember (counts ALL members, owner
+  // included) — checked on click, before the owner spends time filling out the add-member form.
+  const atMemberLimit = !!company?.maxEmployees && (members?.length ?? 0) >= company.maxEmployees
+
   const addMut = useMutation({
     mutationFn: (d: { phone: string; firstName: string; lastName: string; role: string; bio: string; email: string }) =>
       companiesApi.addMember(companyId, d.phone, d.firstName, d.lastName, d.role, d.bio || undefined, d.email || undefined),
@@ -318,12 +326,22 @@ function MembersTab({ companyId }: { companyId: string }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-start justify-between mb-4">
         <h2 className="text-lg font-semibold text-ink">Сотрудники</h2>
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Icon name="plus" size={14} strokeWidth={2} /> Добавить
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button size="sm" onClick={() => setShowAdd(true)} disabled={atMemberLimit}>
+            <Icon name="plus" size={14} strokeWidth={2} /> Добавить
+          </Button>
+          {company?.maxEmployees != null && (
+            <p className="text-xs text-muted">{members?.length ?? 0} / {company.maxEmployees} сотрудников</p>
+          )}
+        </div>
       </div>
+      {atMemberLimit && (
+        <p className="text-xs text-warning mb-4 -mt-2">
+          Достигнут лимит сотрудников по текущему тарифу — повысьте тариф, чтобы добавить ещё
+        </p>
+      )}
 
       {isLoading ? (
         <div className="grid gap-3">

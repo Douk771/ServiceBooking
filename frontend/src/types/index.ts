@@ -29,6 +29,8 @@ export interface Company {
   planAllowsOnlineBooking?: boolean
   planAllowsOnlinePayment?: boolean
   planAllowsPublicListing?: boolean
+  /** Seat cap for company members (owner included). Null/undefined means unlimited. */
+  maxEmployees?: number | null
 }
 
 export interface Service {

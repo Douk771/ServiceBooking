@@ -510,5 +510,6 @@ public class CompaniesController(
         c.RequirePrepayment && plan.AllowOnlinePayment,
         plan.AllowOnlineBooking,
         plan.AllowOnlinePayment,
-        plan.AllowPublicListing);
+        plan.AllowPublicListing,
+        plan.MaxEmployees);
 }
