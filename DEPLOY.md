@@ -75,9 +75,13 @@ setsebool -P httpd_can_network_connect 1
 ```bash
 mkdir -p /opt/ezbook
 cd /opt/ezbook
-git clone <URL_ВАШЕГО_РЕПОЗИТОРИЯ> app
+git clone https://github.com/Douk771/ServiceBooking.git app
 cd app
+git checkout feature/deployfirst
 ```
+
+(`feature/deployfirst` — рабочая ветка с редизайном, деплой-тулингом и последними правками;
+`master` их ещё не содержит.)
 
 Если репозиторий приватный — заведите на GitHub/GitLab deploy-key или используйте
 HTTPS-токен; это разовая настройка доступа, которую тоже нужно сделать вам самим.

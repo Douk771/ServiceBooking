@@ -32,12 +32,22 @@ URL Rewrite + Application Request Routing (ARR) — это Windows-аналог 
 ## 1. Базовые компоненты
 
 ```powershell
-# Git, Node.js, .NET 8 Runtime — через winget (уже есть в Windows 10/11)
+# Git, Node.js, .NET 8 SDK — через winget (уже есть в Windows 10/11)
+# Ставим именно SDK, а не только ASP.NET Core Runtime: `dotnet publish` собирает
+# проект (MSBuild), а не просто запускает готовую сборку — SDK уже включает нужный
+# рантайм, отдельно его ставить не нужно.
 winget install --id Git.Git -e --silent
 winget install --id OpenJS.NodeJS.LTS -e --silent
-winget install --id Microsoft.DotNet.AspNetCore.8 -e --silent
+winget install --id Microsoft.DotNet.SDK.8 -e --silent
 
-# Перезапустите PowerShell после этого блока, чтобы PATH подхватил новые программы
+# Закройте это окно PowerShell и откройте новое (от имени администратора) —
+# иначе PATH не подхватит новые программы в текущей сессии
+```
+
+```powershell
+# По умолчанию PowerShell блокирует запуск скриптов — npm сам является .ps1-обёрткой,
+# без этого `npm ci` / `npm run build` упадут с PSSecurityException
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force
 ```
 
 ```powershell
@@ -95,9 +105,13 @@ New-NetFirewallRule -DisplayName "HTTPS" -Direction Inbound -Protocol TCP -Local
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\ezbook | Out-Null
 cd C:\ezbook
-git clone <URL_ВАШЕГО_РЕПОЗИТОРИЯ> app
+git clone https://github.com/Douk771/ServiceBooking.git app
 cd app
+git checkout feature/deployfirst
 ```
+
+(`feature/deployfirst` — рабочая ветка с редизайном, деплой-тулингом и последними правками;
+`master` их ещё не содержит.)
 
 ---
 
@@ -181,6 +195,8 @@ Copy-Item -Recurse -Force dist\* C:\inetpub\wwwroot\ezbook\
 
 ## 6. Сайт в IIS
 
+Сначала — общая часть, одинаковая в обоих случаях:
+
 ```powershell
 Import-Module WebAdministration
 
@@ -192,8 +208,43 @@ New-Website -Name "ezbook" -PhysicalPath "C:\inetpub\wwwroot\ezbook" -Port 80 -H
 New-WebBinding -Name "ezbook" -Protocol http -Port 80 -HostHeader "www.ezbook.ru"
 ```
 
-Проверка (пока без HTTPS): откройте `http://ezbook.ru` в браузере — должна открыться
-главная страница сайта.
+Биндинги сделаны через `HostHeader` — сайт откликается только на запросы с заголовком
+`Host: ezbook.ru` (или `www.ezbook.ru`), а не на любой запрос к этому IP. Дальше — как
+проверить сайт, в зависимости от того, готов ли уже DNS.
+
+### Вариант А — A-записи `ezbook.ru`/`www.ezbook.ru` уже указывают на IP этой ВМ
+
+Проверить с любого компьютера: `dig +short ezbook.ru @8.8.8.8` должен вернуть IP ВМ.
+
+Если да — просто откройте `http://ezbook.ru` в браузере, должна открыться главная
+страница. Ничего дополнительно настраивать не нужно, переходите к разделу 7 (HTTPS).
+
+### Вариант Б — DNS ещё не настроен (или настроен, но не успел распространиться)
+
+`HostHeader`-биндинг не даст зайти на сайт по голому IP — заголовок `Host` не совпадёт.
+Тестируем через `hosts`-файл **на компьютере, с которого браузите** (не на самой ВМ!):
+
+- Windows: `C:\Windows\System32\drivers\etc\hosts`
+- macOS/Linux: `/etc/hosts`
+
+Добавьте туда (нужны права администратора на редактирование файла):
+
+```
+<IP_ВМ>    ezbook.ru
+<IP_ВМ>    www.ezbook.ru
+```
+
+Теперь браузер отправит правильный заголовок `Host: ezbook.ru`, а соединение уйдёт на
+реальный IP ВМ — полноценный тест того же пути, что будет работать и после DNS.
+Откройте `http://ezbook.ru` — должна открыться главная страница.
+
+После того как пропишете настоящие A-записи в панели reg.ru, эти строчки из `hosts` можно
+убрать (они нужны были только для теста в обход DNS).
+
+**Важно:** этот трюк с `hosts` работает только для вашего собственного теста в браузере.
+Раздел 7 (HTTPS через win-acme) он не заменяет — Let's Encrypt проверяет домен со своих
+серверов через настоящий интернет, а не с вашего компьютера, так что настоящие A-записи
+на IP этой ВМ всё равно понадобятся до выпуска сертификата.
 
 ---
 

@@ -37,11 +37,9 @@ export function OwnerPage() {
     queryFn: companiesApi.getMy,
   })
 
-  const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<FormData>({
     defaultValues: { allowSelfBooking: true, showInPublicListing: true }
   })
-
-  const nameValue = watch('name')
 
   const create = useMutation({
     mutationFn: (data: CreateCompanyPayload) => companiesApi.create(data),
