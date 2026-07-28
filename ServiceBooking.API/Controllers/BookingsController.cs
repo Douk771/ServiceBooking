@@ -31,9 +31,14 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
     public async Task<ActionResult<List<TimeSlotResult>>> GetSlots(
         [FromQuery] string masterId,
         [FromQuery] Guid serviceId,
-        [FromQuery] DateOnly date)
+        [FromQuery] DateOnly date,
+        [FromQuery] bool manual = false)
     {
-        var slots = await slotService.GetAvailableSlotsAsync(masterId, serviceId, date);
+        // `manual` is client-supplied, so only honor it once we've independently verified the caller
+        // is actually logged in — same trust bar BookingsController.Create already uses for
+        // isStaffManualBooking.
+        var allowWithoutSchedule = manual && User.Identity?.IsAuthenticated == true;
+        var slots = await slotService.GetAvailableSlotsAsync(masterId, serviceId, date, allowWithoutSchedule);
         return Ok(slots);
     }
 

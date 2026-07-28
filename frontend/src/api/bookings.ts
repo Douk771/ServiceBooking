@@ -15,9 +15,9 @@ export interface CreateBookingPayload {
 }
 
 export const bookingsApi = {
-  getSlots: (masterId: string, serviceId: string, date: string) =>
+  getSlots: (masterId: string, serviceId: string, date: string, manual = false) =>
     api
-      .get<TimeSlot[]>('/bookings/slots', { params: { masterId, serviceId, date } })
+      .get<TimeSlot[]>('/bookings/slots', { params: { masterId, serviceId, date, manual: manual || undefined } })
       .then((r) => r.data),
 
   create: (data: CreateBookingPayload) =>

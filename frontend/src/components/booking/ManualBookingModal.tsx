@@ -84,16 +84,16 @@ export function ManualBookingModal({ onClose }: Props) {
   // Today is only offered as a booking date if the master still has at least one slot today
   // that both respects working hours/breaks and hasn't passed yet.
   const { data: slotsToday = [] } = useQuery({
-    queryKey: ['slots', selectedMasterId, selectedService?.id, todayStr],
-    queryFn: () => bookingsApi.getSlots(selectedMasterId, selectedService!.id, todayStr),
+    queryKey: ['slots', selectedMasterId, selectedService?.id, todayStr, 'manual'],
+    queryFn: () => bookingsApi.getSlots(selectedMasterId, selectedService!.id, todayStr, true),
     enabled: !!selectedMasterId && !!selectedService,
     staleTime: 0,
   })
   const hasAvailableSlotToday = slotsToday.some((s) => timeToMinutes(s.start) > nowMinutes)
 
   const { data: rawSlots, isLoading: slotsLoading } = useQuery({
-    queryKey: ['slots', selectedMasterId, selectedService?.id, selectedDate],
-    queryFn: () => bookingsApi.getSlots(selectedMasterId, selectedService!.id, selectedDate),
+    queryKey: ['slots', selectedMasterId, selectedService?.id, selectedDate, 'manual'],
+    queryFn: () => bookingsApi.getSlots(selectedMasterId, selectedService!.id, selectedDate, true),
     enabled: !!selectedMasterId && !!selectedService && !!selectedDate,
     staleTime: 0,
   })
