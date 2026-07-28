@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { companiesApi } from '../api/companies'
 import { Icon } from '../components/ui/Icon'
 import type { Company } from '../types'
+import salonHero from '../assets/salon-hero.jpg'
 
 function CompanyCard({ company }: { company: Company }) {
   return (
@@ -91,8 +92,8 @@ export function HomePage() {
             <a href="#how" className="text-[15px] font-medium text-ink border-b border-ink">Как это работает</a>
           </div>
         </div>
-        <div className="hidden md:flex w-full aspect-[4/5] rounded-[28px] bg-cream-deep border border-line items-center justify-center text-center px-6">
-          <span className="text-xs font-mono text-muted">Фото: интерьер салона</span>
+        <div className="hidden md:block w-full aspect-[4/5] rounded-[28px] border border-line overflow-hidden">
+          <img src={salonHero} alt="Интерьер салона" className="w-full h-full object-cover" />
         </div>
       </section>
 
