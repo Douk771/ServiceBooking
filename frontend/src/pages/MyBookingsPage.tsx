@@ -138,8 +138,8 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
 
   return (
     <Card className="p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
           <div className="text-center bg-cream-deep rounded-xl px-3 py-2 min-w-[60px] shrink-0">
             <div className="text-lg font-bold text-gold-dark">{b.startTime.slice(0, 5)}</div>
             <div className="text-xs text-muted">{b.endTime.slice(0, 5)}</div>
@@ -174,7 +174,7 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
             )}
           </div>
         </div>
-        <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+        <div className="flex gap-2 flex-wrap sm:justify-end">
           {(b.status === 'Pending' || b.status === 'Confirmed') && (<>
             {b.paymentStatus === 'Pending' && (
               <Button size="sm" variant="secondary" loading={markPaid.isPending} onClick={() => markPaid.mutate(b.id)}>
