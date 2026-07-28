@@ -540,4 +540,75 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         slots.Should().NotContain(s => s.Start == new TimeOnly(11, 30));
         slots.Should().NotContain(s => s.End > new TimeOnly(12, 0));
     }
+
+    // ── GET /api/bookings/slots?manual=true ──────────────────────────────────
+    //
+    // Regression coverage: ManualBookingModal.tsx (staff booking a client in on the master's behalf)
+    // used this same endpoint as guest self-booking, so a master who hadn't set a schedule for a future
+    // date yet couldn't be booked manually either — even though staff creating the booking should be
+    // trusted to pick any free time. The `manual` flag opens up a full-day range when no WorkingHours
+    // row exists, but only for an authenticated caller; guest self-booking never sends it.
+
+    [Fact, TestCase("BK-024")]
+    public async Task GetSlots_WithManualFlag_ReturnsFullDayRange_WhenNoWorkingHoursSetForThatDate()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        // Deliberately not calling SetWorkingDayAsync — no WorkingHours row exists for this date.
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
+        slots.Should().Contain(s => s.Start == new TimeOnly(0, 0));
+        // 60-minute service: the last slot that fits before midnight starts at 22:30 (ends 23:30) — a
+        // 23:00 start would need to end exactly at 24:00, which TimeOnly can't represent, so it's
+        // correctly excluded rather than throwing.
+        slots.Should().Contain(s => s.Start == new TimeOnly(22, 30));
+        slots.Should().NotContain(s => s.Start == new TimeOnly(23, 0));
+        slots.Should().NotContain(s => s.End > new TimeOnly(23, 59, 59));
+    }
+
+    [Fact, TestCase("BK-025")]
+    public async Task GetSlots_WithManualFlag_StillExcludesAlreadyBookedTimes()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var bookingResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null, null, null, null, null));
+        bookingResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+
+        var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
+        slots.Should().NotContain(s => s.Start == new TimeOnly(11, 0));
+        slots.Should().Contain(s => s.Start == new TimeOnly(9, 0));
+    }
+
+    [Fact, TestCase("BK-026")]
+    public async Task GetSlots_WithManualFlag_ButAnonymousCaller_StillReturnsEmptyList()
+    {
+        // `manual` is client-supplied, so it must only take effect for an authenticated caller — a
+        // guest can't bypass the working-hours gate by just appending the query param themselves.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+
+        var response = await AnonymousClient().GetAsync(
+            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var slots = await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>();
+        slots.Should().BeEmpty();
+    }
 }

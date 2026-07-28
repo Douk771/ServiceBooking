@@ -995,6 +995,62 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         responses.Count(r => r.StatusCode == (HttpStatusCode)402).Should().Be(4);
     }
 
+    // ── Raw tariff capability flags (PlanAllows*, MaxEmployees) ──────────────
+    //
+    // Unlike OnlineBookingEnabled/PrepaymentEnabled/PublicListingEnabled (which fold in the owner's own
+    // toggle), these fields must reflect the tariff alone — the owner-facing settings UI greys out a
+    // checkbox the tariff blocks entirely, which requires knowing that independent of whatever the
+    // owner's stored toggle currently is.
+
+    [Fact, TestCase("CO-063")]
+    public async Task GetMy_OnFreeBaseline_ExposesRestrictivePlanCapabilityFlags()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+
+        var response = await AuthedClient(owner.Token).GetAsync("/api/companies/my");
+        var companies = (await response.Content.ReadFromJsonAsync<List<CompanyDto>>())!;
+        var dto = companies.Single(c => c.Id == company.Id);
+
+        dto.PlanAllowsOnlineBooking.Should().BeFalse();
+        dto.PlanAllowsOnlinePayment.Should().BeFalse();
+        dto.PlanAllowsPublicListing.Should().BeTrue();
+        dto.MaxEmployees.Should().Be(1);
+    }
+
+    [Fact, TestCase("CO-064")]
+    public async Task GetMy_WithFullFeaturePlan_ExposesPermissivePlanCapabilityFlags()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await SetSubscriptionAsync(company.Id);
+
+        var response = await AuthedClient(owner.Token).GetAsync("/api/companies/my");
+        var companies = (await response.Content.ReadFromJsonAsync<List<CompanyDto>>())!;
+        var dto = companies.Single(c => c.Id == company.Id);
+
+        dto.PlanAllowsOnlineBooking.Should().BeTrue();
+        dto.PlanAllowsOnlinePayment.Should().BeTrue();
+        dto.PlanAllowsPublicListing.Should().BeTrue();
+        dto.MaxEmployees.Should().BeNull();
+    }
+
+    [Fact, TestCase("CO-065")]
+    public async Task GetMy_PlanAllowsOnlinePayment_StaysTrue_EvenWhileOwnersOwnToggleIsOff()
+    {
+        // The whole point of this field: PlanAllowsOnlinePayment describes what the tariff permits,
+        // not the AND'd effective state — it must stay true here even though RequirePrepayment (and
+        // therefore PrepaymentEnabled) is false.
+        var (owner, company) = await CreateOwnerWithCompanyAsync(requirePrepayment: false);
+        await SetSubscriptionAsync(company.Id);
+
+        var response = await AuthedClient(owner.Token).GetAsync("/api/companies/my");
+        var companies = (await response.Content.ReadFromJsonAsync<List<CompanyDto>>())!;
+        var dto = companies.Single(c => c.Id == company.Id);
+
+        dto.RequirePrepayment.Should().BeFalse();
+        dto.PrepaymentEnabled.Should().BeFalse();
+        dto.PlanAllowsOnlinePayment.Should().BeTrue();
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private async Task<MemberDto> GetMemberAsync(string ownerToken, Guid companyId, string userId)

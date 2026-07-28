@@ -176,4 +176,70 @@ public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         profile.Plan.AllowOnlineBooking.Should().BeTrue();
         profile.Plan.AllowAnalytics.Should().BeTrue();
     }
+
+    // ── POST /api/profile/change-phone ──────────────────────────────────────────────────
+    //
+    // Phone doubles as the Identity UserName (see AuthController), so this endpoint goes through
+    // SetUserNameAsync behind a current-password check — same trust bar as change-password, since it's
+    // effectively changing the account's login identifier.
+
+    [Fact, TestCase("PROF-012")]
+    public async Task ChangePhone_WithCorrectPassword_SucceedsAndNewPhoneLogsIn()
+    {
+        var oldPhone = UniquePhone();
+        var newPhone = UniquePhone();
+        await RegisterAsync(oldPhone, "Password123!");
+        var user = await LoginAsync(oldPhone, "Password123!");
+
+        var response = await AuthedClient(user.Token).PostAsJsonAsync("/api/profile/change-phone",
+            new ChangePhoneDto("Password123!", newPhone));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await response.Content.ReadJsonAsync<ProfileDto>();
+        updated!.Phone.Should().Be(newPhone);
+
+        var loginWithNew = await LoginRawAsync(newPhone, "Password123!");
+        loginWithNew.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var loginWithOld = await LoginRawAsync(oldPhone, "Password123!");
+        loginWithOld.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact, TestCase("PROF-013")]
+    public async Task ChangePhone_WithWrongPassword_ReturnsBadRequest_AndPhoneUnchanged()
+    {
+        var phone = UniquePhone();
+        await RegisterAsync(phone, "CorrectPassword123!");
+        var user = await LoginAsync(phone, "CorrectPassword123!");
+
+        var response = await AuthedClient(user.Token).PostAsJsonAsync("/api/profile/change-phone",
+            new ChangePhoneDto("TotallyWrongPassword!", UniquePhone()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var loginWithOld = await LoginRawAsync(phone, "CorrectPassword123!");
+        loginWithOld.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact, TestCase("PROF-014")]
+    public async Task ChangePhone_ToAnAlreadyRegisteredPhone_ReturnsBadRequest()
+    {
+        var takenPhone = UniquePhone();
+        await RegisterAsync(takenPhone, "Password123!");
+
+        var user = await RegisterAsync(password: "Password123!");
+
+        var response = await AuthedClient(user.Token).PostAsJsonAsync("/api/profile/change-phone",
+            new ChangePhoneDto("Password123!", takenPhone));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("PROF-015")]
+    public async Task ChangePhone_Anonymous_ReturnsUnauthorized()
+    {
+        var response = await AnonymousClient().PostAsJsonAsync("/api/profile/change-phone",
+            new ChangePhoneDto("Whatever123!", UniquePhone()));
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }
