@@ -9,7 +9,8 @@
   },
   "AllowedOrigins": "https://ezbook.ru,https://www.ezbook.ru",
   "SuperAdmin": {
-    "Phone": "+70000000000"
+    "Phone": "+70000000000",
+    "Password": "CHANGE_ME_MIN_8_CHARS"
   },
   "SmartCaptcha": {
     "SecretKey": "",

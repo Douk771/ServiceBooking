@@ -144,6 +144,12 @@ notepad C:\ezbook\publish\api\appsettings.Production.json
 - `ConnectionStrings:DefaultConnection` — пароль от `postgres` из шага 3
 - `Jwt:Key` — длинная случайная строка (сгенерировать: `[Convert]::ToBase64String((1..48|%{Get-Random -Max 256}))`)
 - `SuperAdmin:Phone` — ваш номер, станет суперадмином при первом запуске
+- `SuperAdmin:Password` — пароль для входа под этим номером (мин. 8 символов, минимум
+  одна цифра, одна строчная и одна заглавная буква — это требования Identity в этом
+  проекте). **Оба поля, `Phone` и `Password`, обязательны** — аккаунт создаётся при
+  первом старте, только если заполнены сразу оба; если аккаунт с этим номером уже
+  зарегистрирован вручную через сайт, автосоздание его не тронет и роль SuperAdmin
+  само по себе не добавит.
 - `SmartCaptcha:SecretKey` / `SiteKey` — из кабинета Yandex Cloud SmartCaptcha
 
 Сохраните и закройте notepad, затем регистрируем и запускаем службу:
