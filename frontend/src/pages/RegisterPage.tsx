@@ -42,7 +42,7 @@ export function RegisterPage() {
       <div className="w-full max-w-[440px]">
         <Link to="/" className="flex items-center justify-center gap-3 mb-10">
           <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
-            <Icon name="scissors" size={18} className="text-cream" strokeWidth={1.6} />
+            <Icon name="calendar" size={18} className="text-cream" strokeWidth={1.6} />
           </span>
           <span className="font-serif text-xl text-ink">EZBOOK</span>
         </Link>

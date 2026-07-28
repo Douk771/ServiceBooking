@@ -23,7 +23,7 @@ export function Navbar() {
       <div className="max-w-[1180px] mx-auto px-4 sm:px-8 h-[76px] flex items-center justify-between">
         <Link to="/" className="flex items-center gap-3 shrink-0" onClick={closeMenu}>
           <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">
-            <Icon name="scissors" size={18} className="text-cream" strokeWidth={1.6} />
+            <Icon name="calendar" size={18} className="text-cream" strokeWidth={1.6} />
           </span>
           <span className="font-serif text-xl text-ink">EZBOOK</span>
         </Link>
