@@ -10,6 +10,13 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
+      // Company logos and other files served by the API's static file middleware
+      // (see Program.cs UseStaticFiles) — without this, uploaded images 404 in dev
+      // and Vite's SPA history fallback serves index.html instead.
+      '/uploads': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
     },
   },
 })

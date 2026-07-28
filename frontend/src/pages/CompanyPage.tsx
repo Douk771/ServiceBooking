@@ -27,7 +27,7 @@ function ServiceCard({
           <img src={service.imageUrl} alt={service.name} className="w-[52px] h-[52px] rounded-[14px] object-cover shrink-0" />
         ) : (
           <div className="w-[52px] h-[52px] rounded-[14px] bg-cream-deep flex items-center justify-center shrink-0">
-            <Icon name="scissors" size={22} strokeWidth={1.6} className="text-gold-dark" />
+            <span className="text-lg font-bold text-gold-dark">{service.name[0]?.toUpperCase() ?? '?'}</span>
           </div>
         )}
         <div>
