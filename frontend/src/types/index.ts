@@ -25,6 +25,10 @@ export interface Company {
   publicListingEnabled?: boolean
   /** Computed: prepayment actually enforced (owner toggle AND tariff allows online payment). */
   prepaymentEnabled?: boolean
+  /** Raw tariff capability — independent of the owner's own toggle, unlike the *Enabled fields above. */
+  planAllowsOnlineBooking?: boolean
+  planAllowsOnlinePayment?: boolean
+  planAllowsPublicListing?: boolean
 }
 
 export interface Service {

@@ -507,5 +507,8 @@ public class CompaniesController(
         plan.AllowMailing,
         c.ShowInPublicListing,
         c.ShowInPublicListing && plan.AllowPublicListing,
-        c.RequirePrepayment && plan.AllowOnlinePayment);
+        c.RequirePrepayment && plan.AllowOnlinePayment,
+        plan.AllowOnlineBooking,
+        plan.AllowOnlinePayment,
+        plan.AllowPublicListing);
 }

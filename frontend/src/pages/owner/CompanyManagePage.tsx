@@ -460,26 +460,46 @@ function SettingsTab({ companyId }: { companyId: string }) {
             <Input label="Телефон" {...register('phone')} />
             <Input label="Email" type="email" {...register('email')} />
           </div>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" className="w-4 h-4 rounded accent-gold" {...register('allowSelfBooking')} />
-            <span className="text-sm text-ink-soft">Разрешить клиентам записываться самостоятельно</span>
-          </label>
           <div>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 rounded accent-gold" {...register('requirePrepayment')} />
-              <span className="text-sm text-ink-soft">Требовать предоплату при онлайн-записи</span>
+            <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded accent-gold"
+                disabled={company ? !company.planAllowsOnlineBooking : false}
+                {...register('allowSelfBooking')}
+              />
+              <span className="text-sm text-ink-soft">Разрешить клиентам записываться самостоятельно</span>
             </label>
-            {company && company.requirePrepayment && !company.prepaymentEnabled && (
-              <p className="text-xs text-warning mt-1 ml-7">Онлайн-оплата не входит в текущий тариф — предоплата не будет запрашиваться, пока тариф не будет повышен</p>
+            {company && !company.planAllowsOnlineBooking && (
+              <p className="text-xs text-warning mt-1 ml-7">Онлайн-запись не входит в текущий тариф — повысьте тариф, чтобы включить</p>
             )}
           </div>
           <div>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="w-4 h-4 rounded accent-gold" {...register('showInPublicListing')} />
+            <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded accent-gold"
+                disabled={company ? !company.planAllowsOnlinePayment : false}
+                {...register('requirePrepayment')}
+              />
+              <span className="text-sm text-ink-soft">Требовать предоплату при онлайн-записи</span>
+            </label>
+            {company && !company.planAllowsOnlinePayment && (
+              <p className="text-xs text-warning mt-1 ml-7">Онлайн-оплата не входит в текущий тариф — повысьте тариф, чтобы включить</p>
+            )}
+          </div>
+          <div>
+            <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded accent-gold"
+                disabled={company ? !company.planAllowsPublicListing : false}
+                {...register('showInPublicListing')}
+              />
               <span className="text-sm text-ink-soft">Показывать компанию в общем списке</span>
             </label>
-            {company && (company.showInPublicListing ?? true) && !company.publicListingEnabled && (
-              <p className="text-xs text-warning mt-1 ml-7">Отображение в общем списке не входит в текущий тариф — компания не будет видна в списке, пока тариф не будет повышен</p>
+            {company && !company.planAllowsPublicListing && (
+              <p className="text-xs text-warning mt-1 ml-7">Отображение в общем списке не входит в текущий тариф — повысьте тариф, чтобы включить</p>
             )}
           </div>
           {updateMut.isSuccess && (

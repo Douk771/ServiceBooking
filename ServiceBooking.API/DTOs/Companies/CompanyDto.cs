@@ -29,7 +29,13 @@ public record CompanyDto(
     bool PublicListingEnabled,
     // Computed: true only when the owner turned on RequirePrepayment AND the tariff allows online
     // payment — see BookingsController.Create, which uses this exact combination.
-    bool PrepaymentEnabled
+    bool PrepaymentEnabled,
+    // Raw tariff capability flags (unlike the *Enabled fields above, NOT combined with the owner's own
+    // toggle) — the owner-facing settings UI needs these to grey out a toggle the tariff doesn't support
+    // at all, regardless of whether the owner currently has it on or off.
+    bool PlanAllowsOnlineBooking,
+    bool PlanAllowsOnlinePayment,
+    bool PlanAllowsPublicListing
 );
 
 public record CreateCompanyDto(
