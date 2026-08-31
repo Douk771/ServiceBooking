@@ -42,6 +42,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasOne(cm => cm.Company).WithMany(c => c.Members).HasForeignKey(cm => cm.CompanyId);
             e.HasOne(cm => cm.User).WithMany(u => u.CompanyMemberships).HasForeignKey(cm => cm.UserId);
+            e.Property(cm => cm.CommissionPercent).HasColumnType("decimal(18,2)");
         });
 
         builder.Entity<MasterService>(e =>
@@ -54,6 +55,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasOne(wh => wh.Master).WithMany(u => u.WorkingHours).HasForeignKey(wh => wh.MasterId);
             e.HasOne(wh => wh.Company).WithMany().HasForeignKey(wh => wh.CompanyId);
+            // Makes "one row per master+company+date" a hard DB guarantee, not just an application-level
+            // find-or-create — without it, ScheduleTemplateController.Apply's
+            // existing.ToDictionary(wh => wh.Date) throws ArgumentException on any duplicate (audit B3).
+            e.HasIndex(wh => new { wh.MasterId, wh.CompanyId, wh.Date }).IsUnique();
         });
 
         builder.Entity<AccountSubscription>(e =>

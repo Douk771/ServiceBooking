@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.Tests.Infrastructure;
@@ -56,9 +57,8 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         entry.Name.Should().Be($"{clientUser.FirstName} {clientUser.LastName}");
         entry.GuestPhone.Should().BeNull();
 
-        // The booking's end datetime is in the future (well within the 24h contact-visibility
-        // window from MastersController.GetClients: `lastVisitEnd >= DateTime.UtcNow.AddHours(-24)`),
-        // so contact info must be shown.
+        // Contact info is always shown to a master who serves the client (US-22, decision Q10 — the
+        // "hidden until 24h after visit" rule is removed entirely, see MC-012 below).
         entry.Phone.Should().Be(clientUser.Phone);
         entry.Email.Should().Be(clientUser.Email);
 
@@ -68,14 +68,6 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         // (React unmounts on an uncaught render error) because the field was `undefined`.
         entry.BookingSummaries.Should().HaveCount(2);
         entry.BookingSummaries.Should().OnlyContain(b => b.ServiceName == service.Name && b.Status == "Confirmed" && b.Date == date);
-
-        // NOTE: the "hidden after 24h" branch of this same cutoff check is intentionally not covered
-        // here. It requires a booking whose Date+EndTime lie more than 24 hours in the past, but the
-        // public booking-creation flow only accepts future dates (see BookingsController.Create — no
-        // explicit past-date rejection, but NextWeekday()/normal flows never produce one, and there is
-        // no endpoint to backdate a booking's Date/EndTime after creation). Fabricating that state would
-        // require reaching into the database directly, which this HTTP-level test suite deliberately
-        // avoids, so that branch is left unexercised rather than tested via a fragile workaround.
     }
 
     [Fact, TestCase("MC-003")]
@@ -332,5 +324,39 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             new AddNoteRequest(company.Id, null, "+79990009988", "should be rejected"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("MC-012")]
+    public async Task GetClients_VisitMoreThan24HoursAgo_StillShowsContact()
+    {
+        // US-22 (decision Q10): the old rule hid phone/email once the visit was more than 24h in the
+        // past. It's removed with no replacement — contact stays visible regardless of how long ago the
+        // client visited. Backdating the booking directly through the DB is the only way to reach this
+        // state: the API never accepts a past date, and there's no endpoint to age one after creation.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var bookingResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+        var booking = (await bookingResponse.Content.ReadJsonAsync<BookingDto>())!;
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+            var row = await db.Bookings.FindAsync(booking.Id);
+            row!.Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-10));
+            await db.SaveChangesAsync();
+        }
+
+        var response = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
+        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientEntry>>();
+
+        var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
+        entry.Phone.Should().Be(clientUser.Phone);
+        entry.Email.Should().Be(clientUser.Email);
     }
 }

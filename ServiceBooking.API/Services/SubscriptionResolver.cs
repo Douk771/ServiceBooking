@@ -33,6 +33,18 @@ public record EffectivePlan(
 /// </summary>
 public class SubscriptionResolver(AppDbContext db)
 {
+    /// <summary>Pure plan-resolution rule: no DB access, "now" is passed in so it can be unit-tested.</summary>
+    public static EffectivePlan Resolve(AccountSubscription? sub, DateTime nowUtc)
+    {
+        var usable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= nowUtc);
+        // A plan an admin has deactivated (SubscriptionPlanConfig.IsActive == false, e.g. discontinued)
+        // must fall back to Free even for an owner who is still actively subscribed to it — otherwise a
+        // deleted plan keeps granting its features forever to whoever was on it when it was retired.
+        return usable && sub!.PlanConfig is { IsActive: true }
+            ? EffectivePlan.FromConfig(sub.PlanConfig)
+            : EffectivePlan.Free;
+    }
+
     public async Task<EffectivePlan> GetEffectivePlanForOwnerAsync(string ownerUserId)
     {
         var plans = await GetEffectivePlansForOwnersAsync([ownerUserId]);
@@ -83,10 +95,7 @@ public class SubscriptionResolver(AppDbContext db)
         foreach (var id in ids)
         {
             var sub = subs.FirstOrDefault(s => s.OwnerUserId == id);
-            var usable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
-            result[id] = usable && sub!.PlanConfig is not null
-                ? EffectivePlan.FromConfig(sub.PlanConfig)
-                : EffectivePlan.Free;
+            result[id] = Resolve(sub, now);
         }
         return result;
     }

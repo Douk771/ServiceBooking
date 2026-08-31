@@ -67,8 +67,10 @@ public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         // UpdateProfileDto intentionally no longer has a CommissionPercent field — commission is
         // set exclusively by the company owner via PUT /api/companies/{id}/members/{memberId}/commission
-        // (see CompaniesTests.cs). A user updating their own name cannot change their own commission
-        // through this endpoint at all; the value is simply untouched by this call.
+        // (see CompaniesTests.cs). Since US-15 (B1) that value lives on CompanyMember, not AppUser, so
+        // ProfileDto.CommissionPercent (still sourced from the legacy AppUser field, kept only because
+        // DTOs don't change mid-cycle — ARCHITECTURE.md §14.2) never reflects it and reads 0 regardless
+        // of what the owner set. ProfilePage.tsx stops displaying this field (T-F4).
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id, commissionPercent: 30);
 
@@ -76,7 +78,7 @@ public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await response.Content.ReadFromJsonAsync<ProfileDto>();
-        updated!.CommissionPercent.Should().Be(30);
+        updated!.CommissionPercent.Should().Be(0);
     }
 
     // ── POST /api/profile/change-password ───────────────────────────────────────────────

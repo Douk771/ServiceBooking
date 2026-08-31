@@ -26,7 +26,12 @@ public class ReviewsController(AppDbContext db) : ControllerBase
 
         if (booking == null) return NotFound("Booking not found.");
         if (booking.Status != BookingStatus.Completed) return BadRequest("Booking is not completed.");
-        if (booking.ClientId != null && booking.ClientId != userId) return Forbid();
+        // Guest bookings carry no client identity (ClientId is null for the offline/walk-in/manual-booking
+        // flow), so nobody can prove they were the one who actually visited — the old
+        // `booking.ClientId != null && ...` check skipped this comparison entirely for every guest
+        // booking, letting anyone who learned the bookingId (it's returned to the guest by
+        // POST /api/bookings) post a review to a stranger's business in their own name (audit A6).
+        if (booking.ClientId != userId) return Forbid();
 
         var alreadyReviewed = await db.Reviews.AnyAsync(r => r.BookingId == request.BookingId);
         if (alreadyReviewed) return Conflict("Review already exists for this booking.");

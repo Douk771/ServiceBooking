@@ -85,9 +85,11 @@ public class ServicesController(AppDbContext db) : ControllerBase
         if (userId is null) return false;
         if (User.IsInRole("SuperAdmin")) return true;
 
+        // Only the CompanyOwner may create/edit/delete services now (US-09, decision Q1) — a Master
+        // reads services (GET stays public) but no longer manages the catalog.
         return await db.CompanyMembers.AnyAsync(cm =>
             cm.CompanyId == companyId &&
             cm.UserId == userId &&
-            (cm.Role == UserRole.CompanyOwner || cm.Role == UserRole.Master));
+            cm.Role == UserRole.CompanyOwner);
     }
 }

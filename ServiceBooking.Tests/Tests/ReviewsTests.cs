@@ -258,4 +258,35 @@ public class ReviewsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         reviews![0].Comment.Should().Be("Review for company B");
         reviews.Should().NotContain(r => r.Comment == "Review for company A");
     }
+
+    // ── Guest bookings never accept a review (audit A6) ──────────────────────
+
+    [Fact, TestCase("RV-013")]
+    public async Task Create_ForCompletedGuestBooking_ReturnsForbidden_ByAnyone()
+    {
+        // Guest bookings carry no client identity (ClientId is null), so nobody can prove they were
+        // the visitor. Before the fix, `ClientId != null && ClientId != userId` skipped the ownership
+        // check entirely for guest bookings, letting anyone who knew the bookingId (returned to the
+        // guest by POST /api/bookings) post a review to a stranger's business in their own name.
+        var (owner, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        await SetSubscriptionAsync(company.Id);
+
+        var createResponse = await AnonymousClient().PostAsJsonAsync("/api/bookings", new CreateBookingDto(
+            company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, "Guest Name", "+79990001122", null, null));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var booking = (await createResponse.Content.ReadJsonAsync<BookingDto>())!;
+
+        var completeResponse = await AuthedClient(master.Token).PatchAsync($"/api/bookings/{booking.Id}/complete", null);
+        completeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var someUser = await RegisterAsync();
+        var response = await AuthedClient(someUser.Token).PostAsJsonAsync("/api/reviews",
+            new CreateReviewRequest(booking.Id, 5, "I was not even there"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 }

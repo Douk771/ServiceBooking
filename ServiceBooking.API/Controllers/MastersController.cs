@@ -23,8 +23,6 @@ public class MastersController(AppDbContext db) : ControllerBase
             .AnyAsync(cm => cm.UserId == userId && cm.CompanyId == companyId);
         if (!isMember) return Forbid();
 
-        var cutoff = DateTime.UtcNow.AddHours(-24);
-
         // Get all bookings for this master in this company
         var bookings = await db.Bookings
             .Include(b => b.Client)
@@ -46,8 +44,6 @@ public class MastersController(AppDbContext db) : ControllerBase
             .Select(g =>
             {
                 var lastBooking = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.EndTime).First();
-                var lastVisitEnd = lastBooking.Date.ToDateTime(lastBooking.EndTime);
-                var showContact = lastVisitEnd.ToUniversalTime() >= cutoff;
                 var client = lastBooking.Client;
                 var clientNotes = notes.Where(n => n.ClientId == g.Key).Select(n => n.Note).ToList();
                 return new
@@ -55,8 +51,11 @@ public class MastersController(AppDbContext db) : ControllerBase
                     clientId = g.Key,
                     guestPhone = (string?)null,
                     name = client != null ? $"{client.FirstName} {client.LastName}".Trim() : "Unknown",
-                    phone = showContact ? client?.PhoneNumber : null,
-                    email = showContact ? client?.Email : null,
+                    // The "contact visible only 24h after visit" rule (decision Q10) is removed: it was
+                    // half-implemented (no re-hide, no UI to unlock early) and served no protection —
+                    // a master who serves a client already has their phone/notes from the booking flow.
+                    phone = client?.PhoneNumber,
+                    email = client?.Email,
                     lastVisitDate = lastBooking.Date,
                     totalVisits = g.Count(),
                     notes = clientNotes,
@@ -73,16 +72,14 @@ public class MastersController(AppDbContext db) : ControllerBase
             .Select(g =>
             {
                 var lastBooking = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.EndTime).First();
-                var lastVisitEnd = lastBooking.Date.ToDateTime(lastBooking.EndTime);
-                var showContact = lastVisitEnd.ToUniversalTime() >= cutoff;
                 var clientNotes = notes.Where(n => n.GuestPhone == g.Key).Select(n => n.Note).ToList();
                 return new
                 {
                     clientId = (string?)null,
                     guestPhone = g.Key,
                     name = lastBooking.GuestName ?? "Guest",
-                    phone = showContact ? g.Key : null,
-                    email = showContact ? lastBooking.GuestEmail : null,
+                    phone = g.Key,
+                    email = lastBooking.GuestEmail,
                     lastVisitDate = lastBooking.Date,
                     totalVisits = g.Count(),
                     notes = clientNotes,

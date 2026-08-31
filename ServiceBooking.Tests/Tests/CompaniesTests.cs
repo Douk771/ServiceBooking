@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Companies;
@@ -420,6 +421,34 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         masters.Should().Contain(m => m.UserId == master.UserId);
     }
 
+    [Fact, TestCase("CO-067")]
+    public async Task GetMasters_ExcludesClientRoleMembers_KeepsMasterAndOwner()
+    {
+        // A Client-role CompanyMember row exists for a company's own customers, never for staff — it
+        // must never surface in the public "book a master" picker (US-12, decision Q6).
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var clientUser = await RegisterAsync();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+            db.CompanyMembers.Add(new ServiceBooking.Core.Entities.CompanyMember
+            {
+                Id = Guid.NewGuid(), CompanyId = company.Id, UserId = clientUser.UserId, Role = UserRole.Client
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await AnonymousClient().GetAsync($"/api/companies/{company.Id}/masters");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var masters = await response.Content.ReadFromJsonAsync<List<MasterPublicDto>>();
+        masters.Should().Contain(m => m.UserId == master.UserId);
+        masters.Should().Contain(m => m.UserId == owner.UserId);
+        masters.Should().NotContain(m => m.UserId == clientUser.UserId);
+    }
+
     // ── GET /api/companies/{id}/members ──────────────────────────────────────
 
     [Fact, TestCase("CO-015")]
@@ -505,8 +534,12 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // ── PUT /api/companies/{id}/members/{memberId}/commission ────────────────
 
     [Fact, TestCase("CO-021")]
-    public async Task UpdateMemberCommission_ByOwner_PersistsAndVisibleInMembersAndProfile()
+    public async Task UpdateMemberCommission_ByOwner_PersistsInMembers_ButNoLongerInProfile()
     {
+        // US-15 (B1): commission moved from AppUser to CompanyMember, so it's per-membership now.
+        // GET /api/profile reads the legacy AppUser.CommissionPercent field, which this endpoint no
+        // longer writes — it's kept in the DTO (rule "DTOs don't change") but permanently reads 0,
+        // and ProfilePage.tsx stops displaying it (T-F4, ARCHITECTURE.md §14.2).
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
         var member = await GetMemberAsync(owner.Token, company.Id, master.UserId);
@@ -518,10 +551,9 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var updatedMember = await GetMemberAsync(owner.Token, company.Id, master.UserId);
         updatedMember.CommissionPercent.Should().Be(35);
 
-        // The master sees the owner-set value on their own profile too (read-only from their side).
         var profileResponse = await AuthedClient(master.Token).GetAsync("/api/profile");
         var profile = await profileResponse.Content.ReadFromJsonAsync<ProfileDto>();
-        profile!.CommissionPercent.Should().Be(35);
+        profile!.CommissionPercent.Should().Be(0);
     }
 
     [Fact, TestCase("CO-022")]
@@ -595,6 +627,31 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var updatedMember = await GetMemberAsync(owner.Token, company.Id, master.UserId);
         updatedMember.CommissionPercent.Should().Be(expected);
+    }
+
+    [Fact, TestCase("CO-068")]
+    public async Task UpdateMemberCommission_ForMoonlightingMaster_DoesNotLeakIntoOtherCompany()
+    {
+        // US-15 (B1): commission is per-membership now — a master working at two companies can have a
+        // different rate at each, and setting it in company A must not change what company B sees.
+        var (ownerA, companyA) = await CreateOwnerWithCompanyAsync();
+        var (ownerB, companyB) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(ownerA.Token, companyA.Id);
+        await AddMasterAsync(ownerB.Token, companyB.Id); // registers a different master by default...
+
+        // ...so explicitly add the SAME master (by phone) to company B as well.
+        var addToB = await AuthedClient(ownerB.Token).PostAsJsonAsync($"/api/companies/{companyB.Id}/members",
+            new { phone = master.Phone, firstName = master.FirstName, lastName = master.LastName,
+                  role = "Master", bio = (string?)null, email = (string?)null });
+        addToB.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var memberInA = await GetMemberAsync(ownerA.Token, companyA.Id, master.UserId);
+        var setCommission = await AuthedClient(ownerA.Token).PutAsJsonAsync(
+            $"/api/companies/{companyA.Id}/members/{memberInA.Id}/commission", new { commissionPercent = 40 });
+        setCommission.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var memberInB = await GetMemberAsync(ownerB.Token, companyB.Id, master.UserId);
+        memberInB.CommissionPercent.Should().Be(0);
     }
 
     // ── POST /api/companies ───────────────────────────────────────────────────

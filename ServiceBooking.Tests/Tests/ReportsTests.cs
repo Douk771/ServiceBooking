@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
+using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.DTOs.Services;
 using ServiceBooking.Tests.Infrastructure;
 
@@ -223,6 +224,40 @@ public class ReportsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var entry = report.Should().ContainSingle(r => r.MasterId == master.UserId).Subject;
         entry.TotalAmount.Should().Be(1000); // the price at the time the booking was made, not 5000
         entry.MasterEarnings.Should().Be(100);
+    }
+
+    [Fact, TestCase("RPT-012")]
+    public async Task GetMastersReport_ForMoonlightingMaster_UsesThisCompanysOwnCommission()
+    {
+        // US-15 (B1): commission is per-membership. A master moonlighting at two companies must be
+        // reported using company B's own commission rate, not whatever rate company A set.
+        var (ownerA, companyA) = await CreateOwnerWithCompanyAsync();
+        var (ownerB, companyB) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(ownerA.Token, companyA.Id, commissionPercent: 50);
+
+        var addToB = await AuthedClient(ownerB.Token).PostAsJsonAsync($"/api/companies/{companyB.Id}/members",
+            new { phone = master.Phone, firstName = master.FirstName, lastName = master.LastName,
+                  role = "Master", bio = (string?)null, email = (string?)null });
+        addToB.StatusCode.Should().Be(HttpStatusCode.OK);
+        var memberInB = (await addToB.Content.ReadJsonAsync<MemberDto>())!;
+        await AuthedClient(ownerB.Token).PutAsJsonAsync(
+            $"/api/companies/{companyB.Id}/members/{memberInB.Id}/commission", new { commissionPercent = 15 });
+
+        var serviceB = await CreateServiceAsync(ownerB.Token, companyB.Id, price: 1000);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(ownerB.Token, master.UserId, companyB.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var booking = await CreateBookingAsync(clientUser.Token, companyB.Id, serviceB.Id, master.UserId, date, new TimeOnly(9, 0));
+        await CompleteBookingAsync(master.Token, booking.Id);
+
+        var response = await AuthedClient(ownerB.Token).GetAsync(
+            $"/api/reports/masters?companyId={companyB.Id}&from={date:yyyy-MM-dd}&to={date:yyyy-MM-dd}");
+        var report = await response.Content.ReadJsonAsync<List<MasterReportDto>>();
+
+        var entry = report.Should().ContainSingle(r => r.MasterId == master.UserId).Subject;
+        entry.CommissionPercent.Should().Be(15);
+        entry.MasterEarnings.Should().Be(150);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────

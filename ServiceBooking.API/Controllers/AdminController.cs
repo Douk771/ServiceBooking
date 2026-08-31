@@ -138,6 +138,19 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
     [HttpPut("owners/{ownerUserId}/subscription")]
     public async Task<IActionResult> UpdateSubscription(string ownerUserId, [FromBody] UpdateSubscriptionDto dto)
     {
+        // Both existence checks happen BEFORE any write: previously a typo'd ownerUserId or planConfigId
+        // sailed through to SaveChangesAsync and failed on the FK constraint with an unhandled 500
+        // (audit D2) instead of a clean 404.
+        var ownerExists = await db.Users.AnyAsync(u => u.Id == ownerUserId);
+        if (!ownerExists) return NotFound("Owner not found");
+
+        if (dto.PlanConfigId.HasValue)
+        {
+            var plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanConfigId.Value);
+            if (plan is null) return NotFound("Plan not found");
+            if (!plan.IsActive) return BadRequest("Plan is not active");
+        }
+
         // PaidUntil arrives from a plain <input type="date"> as a bare "2026-08-01" string, which
         // System.Text.Json deserializes into a DateTime with Kind=Unspecified. Npgsql requires
         // Kind=Utc for a "timestamp with time zone" column, so write it explicitly as UTC.
@@ -323,6 +336,14 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
     {
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
+
+        // Deactivating a plan that still has active subscribers would silently strip their features on
+        // their very next request (SubscriptionResolver.Resolve treats PlanConfig.IsActive == false as
+        // Free) — the admin must move them off the plan first (see UpdateSubscription).
+        var subscriberCount = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
+        if (subscriberCount > 0)
+            return Conflict($"Cannot delete a plan with {subscriberCount} active subscriber(s). Move them to another plan first.");
+
         plan.IsActive = false;
         await db.SaveChangesAsync();
         return NoContent();

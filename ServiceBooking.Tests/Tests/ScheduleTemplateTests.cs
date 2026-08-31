@@ -233,5 +233,86 @@ public class ScheduleTemplateTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         whList[0].EndTime.Should().Be(new TimeOnly(20, 0));
     }
 
+    // ── Predicate fix (US-04, audit A5) ────────────────────────────────────────
+
+    [Fact, TestCase("ST-012")]
+    public async Task Get_ByUnrelatedAuthenticatedUser_InAnotherMastersCompany_ReturnsForbidden()
+    {
+        // requesterId == masterId alone used to be enough regardless of companyId (audit A5) — pass
+        // your OWN id as masterId against a company you have nothing to do with.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var (_, otherCompany) = await CreateOwnerWithCompanyAsync();
+
+        var response = await AuthedClient(master.Token).GetAsync(
+            $"/api/schedule-template?masterId={master.UserId}&companyId={otherCompany.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("ST-013")]
+    public async Task Apply_ByFormerMemberAfterRemoval_ReturnsForbidden()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var days = new List<DayTemplate> { new(1, true, new TimeOnly(9, 0), new TimeOnly(18, 0)) };
+        (await AuthedClient(master.Token).PutAsJsonAsync("/api/schedule-template",
+            new PutTemplateRequest(master.UserId, company.Id, days))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var membersResponse = await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/members");
+        var members = await membersResponse.Content.ReadFromJsonAsync<List<ServiceBooking.API.DTOs.Companies.MemberDto>>();
+        var memberId = members!.Single(m => m.UserId == master.UserId).Id;
+        (await AuthedClient(owner.Token).DeleteAsync($"/api/companies/{company.Id}/members/{memberId}"))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var from = NextWeekday();
+        var to = from.AddDays(6);
+        var response = await AuthedClient(master.Token).PostAsync(
+            $"/api/schedule-template/apply?masterId={master.UserId}&companyId={company.Id}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}",
+            null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    // ── Range cap on Apply (audit B4) ────────────────────────────────────────
+
+    [Fact, TestCase("ST-014")]
+    public async Task Apply_DateRangeOver366Days_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var days = new List<DayTemplate> { new(1, true, new TimeOnly(9, 0), new TimeOnly(18, 0)) };
+        (await AuthedClient(owner.Token).PutAsJsonAsync("/api/schedule-template",
+            new PutTemplateRequest(master.UserId, company.Id, days))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var from = NextWeekday();
+        var to = from.AddDays(1000);
+
+        var response = await AuthedClient(owner.Token).PostAsync(
+            $"/api/schedule-template/apply?masterId={master.UserId}&companyId={company.Id}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}",
+            null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("ST-015")]
+    public async Task Apply_ToBeforeFrom_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var days = new List<DayTemplate> { new(1, true, new TimeOnly(9, 0), new TimeOnly(18, 0)) };
+        (await AuthedClient(owner.Token).PutAsJsonAsync("/api/schedule-template",
+            new PutTemplateRequest(master.UserId, company.Id, days))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var from = NextWeekday();
+        var to = from.AddDays(-1);
+
+        var response = await AuthedClient(owner.Token).PostAsync(
+            $"/api/schedule-template/apply?masterId={master.UserId}&companyId={company.Id}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}",
+            null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private record TemplateItemDto(Guid Id, int DayOfWeek, bool IsWorking, TimeOnly StartTime, TimeOnly EndTime);
 }

@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.WorkingHours;
+using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
@@ -22,6 +22,9 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
         [FromQuery] DateOnly from,
         [FromQuery] DateOnly to)
     {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        if (!await CanManage(masterId, companyId, userId)) return Forbid();
+
         var hours = await db.WorkingHours
             .Include(wh => wh.Breaks)
             .Where(wh => wh.MasterId == masterId && wh.CompanyId == companyId
@@ -37,6 +40,12 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(dto.MasterId, dto.CompanyId, userId)) return Forbid();
+
+        // Serialize concurrent Upsert calls for the same master+company+date so the find-or-create
+        // below is atomic — otherwise two simultaneous requests could both miss the existing row and
+        // both insert, leaving two WorkingHours rows for the same day (CURRENT_STATE §6, audit B3).
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"working-hours:{dto.MasterId}:{dto.CompanyId}:{dto.Date:O}");
 
         var existing = await db.WorkingHours
             .Include(wh => wh.Breaks)
@@ -78,6 +87,7 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
             });
 
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
         return Ok(ToDto(existing));
     }
 
@@ -98,11 +108,12 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
     private async Task<bool> CanManage(string masterId, Guid companyId, string requesterId)
     {
         if (User.IsInRole("SuperAdmin")) return true;
-        if (requesterId == masterId) return true;
-        return await db.CompanyMembers.AnyAsync(cm =>
-            cm.CompanyId == companyId &&
-            cm.UserId == requesterId &&
-            cm.Role == UserRole.CompanyOwner);
+        // Being the master is not enough on its own: without the membership check any authenticated user
+        // could pass their own id with an arbitrary companyId and write themselves working hours inside a
+        // company they have nothing to do with (audit A5). It also revokes access as soon as a master is
+        // removed from the company.
+        if (requesterId == masterId) return await CompanyMembership.IsStaffAsync(db, companyId, requesterId);
+        return await CompanyMembership.IsOwnerAsync(db, companyId, requesterId);
     }
 
     private static WorkingHoursDto ToDto(WorkingHours wh) =>

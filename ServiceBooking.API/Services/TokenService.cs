@@ -20,7 +20,11 @@ public class TokenService(IConfiguration config)
             new("phone", user.PhoneNumber ?? ""),
             new(JwtRegisteredClaimNames.GivenName, user.FirstName),
             new(JwtRegisteredClaimNames.FamilyName, user.LastName),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            // Baked-in copy of the user's current SecurityStamp, compared against the live value on every
+            // request in Program.cs's OnTokenValidated — lets a stamp rotation (password/phone change)
+            // revoke every token issued before it, even though a JWT itself lives up to 7 days.
+            new("sstamp", user.SecurityStamp ?? "")
         };
         if (!string.IsNullOrEmpty(user.Email))
             claims.Add(new Claim(JwtRegisteredClaimNames.Email, user.Email));

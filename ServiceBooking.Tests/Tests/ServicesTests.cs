@@ -47,17 +47,17 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     [Fact, TestCase("SVC-003")]
-    public async Task Create_ByMaster_Succeeds()
+    public async Task Create_ByMaster_ReturnsForbidden()
     {
+        // US-09 (decision Q1): only the CompanyOwner manages the service catalog now — a Master reads
+        // services (GetByCompany stays public/unrestricted, see SVC-014) but no longer edits them.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
 
         var response = await AuthedClient(master.Token).PostAsJsonAsync("/api/services",
             new CreateServiceDto(company.Id, "Manicure", null, 30, 500, null));
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var created = await response.Content.ReadFromJsonAsync<ServiceDto>();
-        created!.Name.Should().Be("Manicure");
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact, TestCase("SVC-004")]
@@ -103,18 +103,22 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     [Fact, TestCase("SVC-007")]
-    public async Task Update_ByMaster_UpdatesFields()
+    public async Task Update_ByMaster_ReturnsForbidden_FieldsUnchanged()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
-        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, name: "Original", price: 500);
 
         var response = await AuthedClient(master.Token).PutAsJsonAsync($"/api/services/{service.Id}",
             new CreateServiceDto(company.Id, "Master Updated", null, 20, 300, null));
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var updated = await response.Content.ReadFromJsonAsync<ServiceDto>();
-        updated!.Name.Should().Be("Master Updated");
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var listResponse = await AnonymousClient().GetAsync($"/api/services?companyId={company.Id}");
+        var services = await listResponse.Content.ReadFromJsonAsync<List<ServiceDto>>();
+        var unchanged = services.Should().ContainSingle(s => s.Id == service.Id).Subject;
+        unchanged.Name.Should().Be("Original");
+        unchanged.Price.Should().Be(500);
     }
 
     [Fact, TestCase("SVC-008")]
@@ -178,5 +182,52 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AuthedClient(user.Token).DeleteAsync($"/api/services/{Guid.NewGuid()}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact, TestCase("SVC-013")]
+    public async Task Delete_ByMaster_ReturnsForbidden_ServiceStaysActive()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+
+        var response = await AuthedClient(master.Token).DeleteAsync($"/api/services/{service.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var listResponse = await AnonymousClient().GetAsync($"/api/services?companyId={company.Id}");
+        var services = await listResponse.Content.ReadFromJsonAsync<List<ServiceDto>>();
+        services.Should().Contain(s => s.Id == service.Id);
+    }
+
+    [Fact, TestCase("SVC-014")]
+    public async Task GetByCompany_ByMaster_StillReturnsServices()
+    {
+        // GET stays unrestricted for a Master — required by ManualBookingModal, which lets a master
+        // pick a service when recording a walk-in (ARCHITECTURE.md §11 T-B7 "Готово, когда").
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+
+        var response = await AuthedClient(master.Token).GetAsync($"/api/services?companyId={company.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var services = await response.Content.ReadFromJsonAsync<List<ServiceDto>>();
+        services.Should().Contain(s => s.Id == service.Id);
+    }
+
+    [Fact, TestCase("SVC-015")]
+    public async Task Create_WithZeroDuration_ReturnsBadRequest()
+    {
+        // Reproduces audit hypothesis E1 before the fix: a zero-length service degenerates the
+        // conflict-check interval (b.StartTime < slotEnd && b.EndTime > startTime is never true for a
+        // zero-width slot), allowing unlimited overlapping bookings on the same time. [Range(1, 1440)]
+        // on CreateServiceDto.DurationMinutes closes this at the validation layer.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/services",
+            new CreateServiceDto(company.Id, "Zero Duration", null, 0, 500, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Companies;
@@ -618,6 +619,87 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         entry.OwnedCompanyCount.Should().Be(1);
         entry.PlanConfigId.Should().Be(configId);
         entry.SubscriptionActive.Should().BeTrue();
+    }
+
+    // ── DELETE /api/admin/plans/{id} & PUT .../subscription — US-08 (Q2) ──────
+
+    [Fact, TestCase("ADM-032")]
+    public async Task DeletePlan_WithActiveSubscriber_ReturnsConflict_AndPlanStaysActive()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+        await SetSubscriptionAsync(company.Id, configId);
+
+        var response = await adminClient.DeleteAsync($"/api/admin/plans/{configId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("1");
+
+        var plans = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        plans.Should().ContainSingle(p => p.Id == configId && p.IsActive);
+    }
+
+    [Fact, TestCase("ADM-033")]
+    public async Task UpdateSubscription_WithDeactivatedPlan_ReturnsBadRequest()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+
+        // Deactivate it directly — no active subscriber yet, so DeletePlan itself would succeed too,
+        // but going straight to the DB keeps this test focused on UpdateSubscription's own check.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+            var plan = await db.SubscriptionPlanConfigs.FindAsync(configId);
+            plan!.IsActive = false;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await adminClient.PutJsonAsync($"/api/admin/owners/{owner.UserId}/subscription",
+            new UpdateSubscriptionDto(configId, DateTime.UtcNow.AddMonths(1), true, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("ADM-034")]
+    public async Task Owner_OnDeactivatedPlan_ResolvesToFree()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false, allowSelfBooking: true);
+        var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+        await SetSubscriptionAsync(company.Id, configId);
+
+        var before = await AnonymousClient().GetAsync($"/api/companies/{company.Slug}");
+        (await before.Content.ReadFromJsonAsync<CompanyDto>())!.OnlineBookingEnabled.Should().BeTrue();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+            var plan = await db.SubscriptionPlanConfigs.FindAsync(configId);
+            plan!.IsActive = false;
+            await db.SaveChangesAsync();
+        }
+
+        var after = await AnonymousClient().GetAsync($"/api/companies/{company.Slug}");
+        (await after.Content.ReadFromJsonAsync<CompanyDto>())!.OnlineBookingEnabled.Should().BeFalse();
+    }
+
+    [Fact, TestCase("ADM-036")]
+    public async Task UpdateSubscription_UnknownOwnerUserId_ReturnsNotFound()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+
+        var response = await adminClient.PutJsonAsync($"/api/admin/owners/{Guid.NewGuid()}/subscription",
+            new UpdateSubscriptionDto(null, null, true, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     private SubscriptionPlanConfig NewPlanConfig() => new()

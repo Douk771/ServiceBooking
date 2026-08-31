@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.WorkingHours;
 using ServiceBooking.Tests.Infrastructure;
 
@@ -173,5 +175,127 @@ public class WorkingHoursTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
         var response = await AuthedClient(user.Token).DeleteAsync($"/api/workinghours/{Guid.NewGuid()}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── Predicate fix (US-04, audit A5) ────────────────────────────────────────
+
+    [Fact, TestCase("WH-011")]
+    public async Task Get_ByUnrelatedAuthenticatedUser_ReturnsForbidden()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var stranger = await RegisterAsync();
+        var from = NextWeekday();
+
+        var response = await AuthedClient(stranger.Token).GetAsync(
+            $"/api/workinghours?masterId={master.UserId}&companyId={company.Id}&from={from:yyyy-MM-dd}&to={from:yyyy-MM-dd}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("WH-012")]
+    public async Task Get_ByMasterOfSameCompany_AboutAnotherMaster_ReturnsForbidden()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master1 = await AddMasterAsync(owner.Token, company.Id);
+        var master2 = await AddMasterAsync(owner.Token, company.Id);
+        var from = NextWeekday();
+
+        var response = await AuthedClient(master1.Token).GetAsync(
+            $"/api/workinghours?masterId={master2.UserId}&companyId={company.Id}&from={from:yyyy-MM-dd}&to={from:yyyy-MM-dd}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("WH-013")]
+    public async Task Get_ByMasterAboutThemselves_InTheirOwnCompany_ReturnsOk()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var from = NextWeekday();
+
+        var response = await AuthedClient(master.Token).GetAsync(
+            $"/api/workinghours?masterId={master.UserId}&companyId={company.Id}&from={from:yyyy-MM-dd}&to={from:yyyy-MM-dd}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact, TestCase("WH-014")]
+    public async Task Get_ByOwnerAboutTheirMaster_ReturnsOk()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var from = NextWeekday();
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/workinghours?masterId={master.UserId}&companyId={company.Id}&from={from:yyyy-MM-dd}&to={from:yyyy-MM-dd}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact, TestCase("WH-015")]
+    public async Task Put_MasterInACompanyTheyDoNotBelongTo_ReturnsForbidden_AndWritesNothing()
+    {
+        // Audit A5: requesterId == masterId alone used to be enough, regardless of companyId — a
+        // master could set themselves working hours inside a company they never joined.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var (otherOwner, otherCompany) = await CreateOwnerWithCompanyAsync();
+        var date = NextWeekday();
+
+        var dto = new UpsertWorkingHoursDto(master.UserId, otherCompany.Id, date, true,
+            new TimeOnly(9, 0), new TimeOnly(18, 0), []);
+        var response = await AuthedClient(master.Token).PutAsJsonAsync("/api/workinghours", dto);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var check = await AuthedClient(otherOwner.Token).GetAsync(
+            $"/api/workinghours?masterId={master.UserId}&companyId={otherCompany.Id}&from={date:yyyy-MM-dd}&to={date:yyyy-MM-dd}");
+        check.StatusCode.Should().Be(HttpStatusCode.OK);
+        var hours = await check.Content.ReadFromJsonAsync<List<WorkingHoursDto>>();
+        hours.Should().BeEmpty();
+    }
+
+    [Fact, TestCase("WH-016")]
+    public async Task Put_ByFormerMemberAfterRemoval_ReturnsForbidden()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var membersResponse = await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/members");
+        var members = await membersResponse.Content.ReadFromJsonAsync<List<ServiceBooking.API.DTOs.Companies.MemberDto>>();
+        var memberId = members!.Single(m => m.UserId == master.UserId).Id;
+
+        var removeResponse = await AuthedClient(owner.Token).DeleteAsync($"/api/companies/{company.Id}/members/{memberId}");
+        removeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var date = NextWeekday();
+        var dto = new UpsertWorkingHoursDto(master.UserId, company.Id, date, true,
+            new TimeOnly(9, 0), new TimeOnly(18, 0), []);
+        var response = await AuthedClient(master.Token).PutAsJsonAsync("/api/workinghours", dto);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    // ── Atomicity of Upsert (audit B3) ───────────────────────────────────────
+
+    [Fact, TestCase("WH-017")]
+    public async Task Put_ConcurrentRequestsForSameDay_ResultInExactlyOneRow()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(i =>
+            AuthedClient(master.Token).PutAsJsonAsync("/api/workinghours",
+                new UpsertWorkingHoursDto(master.UserId, company.Id, date, true,
+                    new TimeOnly(9, 0), new TimeOnly(18 - i, 0), []))));
+
+        responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+        var count = await db.WorkingHours.CountAsync(wh =>
+            wh.MasterId == master.UserId && wh.CompanyId == company.Id && wh.Date == date);
+        count.Should().Be(1);
     }
 }

@@ -77,7 +77,11 @@ public class CompaniesController(
     {
         var memberQuery = db.CompanyMembers
             .Include(cm => cm.User)
-            .Where(cm => cm.CompanyId == id && cm.Company.IsActive);
+            // A Client-role membership row exists for a company's own customers (e.g. anyone who books
+            // there), never for staff — without this filter they'd show up in the public "book a
+            // master" picker (audit Q6/US-12).
+            .Where(cm => cm.CompanyId == id && cm.Company.IsActive &&
+                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner));
 
         if (serviceId.HasValue)
         {
@@ -118,7 +122,7 @@ public class CompaniesController(
             cm.Id, cm.UserId, cm.User.FirstName, cm.User.LastName,
             cm.User.PhoneNumber ?? "", cm.User.Email, cm.User.AvatarUrl, cm.Role.ToString(), cm.Bio,
             masterServices.Where(ms => ms.MasterId == cm.UserId).Select(ms => ms.ServiceId).ToList(),
-            cm.User.CommissionPercent
+            cm.CommissionPercent
         )).ToList();
 
         return Ok(result);
@@ -362,8 +366,10 @@ public class CompaniesController(
         await db.SaveChangesAsync();
         await limitTransaction.CommitAsync();
 
+        // New members always start at 0 commission on this membership — same as before, just no longer
+        // sourced from a value that could carry over from a different company (US-15).
         return Ok(new MemberDto(member.Id, user.Id, user.FirstName, user.LastName,
-            user.PhoneNumber ?? "", user.Email, user.AvatarUrl, dto.Role, dto.Bio, [], user.CommissionPercent));
+            user.PhoneNumber ?? "", user.Email, user.AvatarUrl, dto.Role, dto.Bio, [], member.CommissionPercent));
     }
 
     [HttpPut("{id:guid}/members/{memberId:guid}/commission")]
@@ -372,13 +378,13 @@ public class CompaniesController(
     {
         if (!await CanManageCompany(id)) return Forbid();
 
-        var member = await db.CompanyMembers.Include(cm => cm.User).FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
+        var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
 
-        member.User.CommissionPercent = Math.Clamp(dto.CommissionPercent, 0, 100);
+        member.CommissionPercent = Math.Clamp(dto.CommissionPercent, 0, 100);
         await db.SaveChangesAsync();
 
-        return Ok(new { member.UserId, member.User.CommissionPercent });
+        return Ok(new { member.UserId, member.CommissionPercent });
     }
 
     [HttpDelete("{id:guid}/members/{memberId:guid}")]

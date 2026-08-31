@@ -2,8 +2,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
@@ -42,6 +42,12 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(request.MasterId, request.CompanyId, userId)) return Forbid();
 
+        // Serialize concurrent Put calls for the same master+company so the delete-then-insert below
+        // is atomic — otherwise two simultaneous requests could interleave and leave a mix of old and
+        // new rows (CURRENT_STATE §6, audit B3).
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"schedule-template:{request.MasterId}:{request.CompanyId}");
+
         var old = db.WeeklyScheduleTemplates
             .Where(t => t.MasterId == request.MasterId && t.CompanyId == request.CompanyId);
         db.WeeklyScheduleTemplates.RemoveRange(old);
@@ -59,6 +65,7 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
 
         await db.WeeklyScheduleTemplates.AddRangeAsync(newTemplates);
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         return Ok();
     }
@@ -73,6 +80,18 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(masterId, companyId, userId)) return Forbid();
+
+        if (to < from) return BadRequest("Invalid date range: 'to' must not be earlier than 'from'.");
+        // 366, not 365 — a full leap-year range must be applyable in a single call, which is the
+        // normal case for "apply my template for the whole year" (audit B4).
+        if (to.DayNumber - from.DayNumber > 366)
+            return BadRequest("Date range is too large: at most 366 days can be applied at once.");
+
+        // Serialize concurrent Apply calls for the same master+company so the find-or-create loop below
+        // is atomic — otherwise two simultaneous requests could both miss the same existing row and both
+        // insert, producing a duplicate that the unique index would then reject.
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"working-hours:{masterId}:{companyId}");
 
         var templates = await db.WeeklyScheduleTemplates
             .Where(t => t.MasterId == masterId && t.CompanyId == companyId)
@@ -116,17 +135,19 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
         }
 
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
         return Ok(new { message = "Template applied successfully." });
     }
 
     private async Task<bool> CanManage(string masterId, Guid companyId, string requesterId)
     {
         if (User.IsInRole("SuperAdmin")) return true;
-        if (requesterId == masterId) return true;
-        return await db.CompanyMembers.AnyAsync(cm =>
-            cm.CompanyId == companyId &&
-            cm.UserId == requesterId &&
-            cm.Role == UserRole.CompanyOwner);
+        // Being the master is not enough on its own: without the membership check any authenticated user
+        // could pass their own id with an arbitrary companyId and write themselves a schedule template
+        // inside a company they have nothing to do with (audit A5). It also revokes access as soon as a
+        // master is removed from the company.
+        if (requesterId == masterId) return await CompanyMembership.IsStaffAsync(db, companyId, requesterId);
+        return await CompanyMembership.IsOwnerAsync(db, companyId, requesterId);
     }
 }
 

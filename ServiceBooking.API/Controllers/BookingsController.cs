@@ -29,16 +29,21 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
 
     [HttpGet("slots")]
     public async Task<ActionResult<List<TimeSlotResult>>> GetSlots(
+        [FromQuery] Guid companyId,
         [FromQuery] string masterId,
         [FromQuery] Guid serviceId,
         [FromQuery] DateOnly date,
         [FromQuery] bool manual = false)
     {
         // `manual` is client-supplied, so only honor it once we've independently verified the caller
-        // is actually logged in — same trust bar BookingsController.Create already uses for
-        // isStaffManualBooking.
-        var allowWithoutSchedule = manual && User.Identity?.IsAuthenticated == true;
-        var slots = await slotService.GetAvailableSlotsAsync(masterId, serviceId, date, allowWithoutSchedule);
+        // actually works in THIS company — same trust bar BookingsController.Create uses for
+        // isStaffManualBooking. Anyone else gets the regular schedule-gated grid, same as a guest
+        // (closes the A1 bypass: previously any authenticated user could pass manual=true).
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var isStaff = userId is not null &&
+            (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, companyId, userId));
+        var allowWithoutSchedule = manual && isStaff;
+        var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, serviceId, date, allowWithoutSchedule);
         return Ok(slots);
     }
 

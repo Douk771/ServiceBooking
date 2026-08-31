@@ -40,16 +40,23 @@ public class ReportsController(AppDbContext db, SubscriptionResolver subscriptio
                         b.Date >= from && b.Date <= to)
             .ToListAsync();
 
+        // Commission is per-membership (US-15): a moonlighting master can earn a different rate at
+        // each company, so it must be read from THIS company's CompanyMember row, not from AppUser.
+        var commissions = await db.CompanyMembers
+            .Where(cm => cm.CompanyId == companyId)
+            .ToDictionaryAsync(cm => cm.UserId, cm => cm.CommissionPercent);
+
         var result = bookings
             .GroupBy(b => b.Master)
             .Select(g =>
             {
                 var master = g.Key;
+                var commissionPercent = commissions.GetValueOrDefault(master.Id);
                 var total = g.Sum(b => b.Price);
-                var commission = Math.Round(total * master.CommissionPercent / 100, 2);
+                var commission = Math.Round(total * commissionPercent / 100, 2);
                 return new MasterReportDto(
                     master.Id, $"{master.FirstName} {master.LastName}",
-                    master.CommissionPercent, g.Count(), total, commission, total - commission);
+                    commissionPercent, g.Count(), total, commission, total - commission);
             })
             .OrderByDescending(r => r.TotalAmount)
             .ToList();

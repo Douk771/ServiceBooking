@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.Tests.Infrastructure;
 
@@ -114,5 +115,57 @@ public class AuthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var client = AuthedClient(user.Token);
         var response = await client.GetAsync("/api/profile");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // ── SecurityStamp-based token revocation (US-17, audit A7) ────────────────
+
+    [Fact, TestCase("AUTH-011")]
+    public async Task Token_IssuedBeforePasswordChange_IsRevoked_AfterChangePassword()
+    {
+        var phone = UniquePhone();
+        await RegisterAsync(phone, "OldPassword123!");
+        var oldToken = (await LoginAsync(phone, "OldPassword123!")).Token;
+
+        var changeResponse = await AuthedClient(oldToken).PostAsJsonAsync("/api/profile/change-password",
+            new ChangePasswordDto("OldPassword123!", "NewPassword456!"));
+        changeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Same, never-reissued token — ChangePasswordAsync rotated AppUser.SecurityStamp server-side,
+        // so the "sstamp" claim baked into this token no longer matches.
+        var response = await AuthedClient(oldToken).GetAsync("/api/profile");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact, TestCase("AUTH-012")]
+    public async Task Token_IssuedAfterPasswordChange_IsUsable()
+    {
+        var phone = UniquePhone();
+        await RegisterAsync(phone, "OldPassword123!");
+        var oldToken = (await LoginAsync(phone, "OldPassword123!")).Token;
+
+        await AuthedClient(oldToken).PostAsJsonAsync("/api/profile/change-password",
+            new ChangePasswordDto("OldPassword123!", "NewPassword456!"));
+
+        var newToken = (await LoginAsync(phone, "NewPassword456!")).Token;
+        var response = await AuthedClient(newToken).GetAsync("/api/profile");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact, TestCase("AUTH-013")]
+    public async Task Token_IssuedBeforePhoneChange_IsRevoked_AfterChangePhone()
+    {
+        var oldPhone = UniquePhone();
+        var newPhone = UniquePhone();
+        await RegisterAsync(oldPhone, "Password123!");
+        var oldToken = (await LoginAsync(oldPhone, "Password123!")).Token;
+
+        // ChangePhone persists the new phone via UserManager.SetUserNameAsync, which — like
+        // ChangePasswordAsync — rotates AppUser.SecurityStamp as a side effect.
+        var changeResponse = await AuthedClient(oldToken).PostAsJsonAsync("/api/profile/change-phone",
+            new ChangePhoneDto("Password123!", newPhone));
+        changeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var response = await AuthedClient(oldToken).GetAsync("/api/profile");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

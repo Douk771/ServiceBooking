@@ -1,0 +1,103 @@
+using FluentAssertions;
+using ServiceBooking.API.Services;
+using ServiceBooking.Core.Entities;
+
+namespace ServiceBooking.UnitTests;
+
+public class SubscriptionResolverRulesTests
+{
+    private static readonly DateTime Now = new(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    private static SubscriptionPlanConfig FullPlan(bool isActive = true) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "Full",
+        AllowOnlineBooking = true,
+        AllowMailing = true,
+        AllowAnalytics = true,
+        AllowPublicListing = true,
+        AllowOnlinePayment = true,
+        MaxEmployees = 10,
+        MaxCompanies = 5,
+        IsActive = isActive,
+    };
+
+    [Fact]
+    public void Resolve_NoSubscription_ReturnsFree()
+    {
+        var plan = SubscriptionResolver.Resolve(null, Now);
+
+        plan.Should().Be(EffectivePlan.Free);
+    }
+
+    [Fact]
+    public void Resolve_SubscriptionInactive_ReturnsFree()
+    {
+        var sub = new AccountSubscription { IsActive = false, PlanConfig = FullPlan() };
+
+        var plan = SubscriptionResolver.Resolve(sub, Now);
+
+        plan.Should().Be(EffectivePlan.Free);
+    }
+
+    [Fact]
+    public void Resolve_PaidUntilInThePast_ReturnsFree()
+    {
+        var sub = new AccountSubscription
+        {
+            IsActive = true, PaidUntil = Now.AddDays(-1), PlanConfig = FullPlan()
+        };
+
+        var plan = SubscriptionResolver.Resolve(sub, Now);
+
+        plan.Should().Be(EffectivePlan.Free);
+    }
+
+    [Fact]
+    public void Resolve_PaidUntilNull_ButActive_ReturnsPlan()
+    {
+        // No PaidUntil means "not on a metered cycle" (e.g. an admin-granted plan), not "expired".
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = null, PlanConfig = FullPlan() };
+
+        var plan = SubscriptionResolver.Resolve(sub, Now);
+
+        plan.Should().NotBe(EffectivePlan.Free);
+        plan.AllowOnlineBooking.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Resolve_PlanConfigNull_ReturnsFree()
+    {
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = null };
+
+        var plan = SubscriptionResolver.Resolve(sub, Now);
+
+        plan.Should().Be(EffectivePlan.Free);
+    }
+
+    [Fact]
+    public void Resolve_PlanConfigDeactivated_ReturnsFree_EvenThoughSubscriptionItselfIsActive()
+    {
+        // US-08: an admin-deactivated plan (e.g. discontinued tariff) must not keep granting its
+        // features forever to whoever was on it when it was retired.
+        var sub = new AccountSubscription
+        {
+            IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = FullPlan(isActive: false)
+        };
+
+        var plan = SubscriptionResolver.Resolve(sub, Now);
+
+        plan.Should().Be(EffectivePlan.Free);
+    }
+
+    [Fact]
+    public void Resolve_ActivePaidPlan_ReturnsPlanConfigValues()
+    {
+        var config = FullPlan();
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
+
+        var plan = SubscriptionResolver.Resolve(sub, Now);
+
+        plan.Should().Be(EffectivePlan.FromConfig(config));
+    }
+}

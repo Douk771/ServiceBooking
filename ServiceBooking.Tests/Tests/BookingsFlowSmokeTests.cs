@@ -463,7 +463,7 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         (await AuthedClient(owner.Token).PutAsJsonAsync("/api/workinghours", dto)).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await AnonymousClient().GetAsync(
-            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
@@ -493,7 +493,7 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         bookingResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var response = await AnonymousClient().GetAsync(
-            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
 
         var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
         slots.Should().NotContain(s => s.Start == new TimeOnly(11, 0));
@@ -511,7 +511,7 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         // Deliberately not calling SetWorkingDayAsync — no WorkingHours row exists for this date.
 
         var response = await AnonymousClient().GetAsync(
-            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var slots = await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>();
@@ -533,7 +533,7 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         (await AuthedClient(owner.Token).PutAsJsonAsync("/api/workinghours", dto)).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await AnonymousClient().GetAsync(
-            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
 
         var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
         slots.Should().Contain(s => s.Start == new TimeOnly(11, 0));
@@ -559,7 +559,7 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         // Deliberately not calling SetWorkingDayAsync — no WorkingHours row exists for this date.
 
         var response = await AuthedClient(owner.Token).GetAsync(
-            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
@@ -587,7 +587,7 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         bookingResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var response = await AuthedClient(owner.Token).GetAsync(
-            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
 
         var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
         slots.Should().NotContain(s => s.Start == new TimeOnly(11, 0));
@@ -605,10 +605,60 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         var date = NextWeekday();
 
         var response = await AnonymousClient().GetAsync(
-            $"/api/bookings/slots?masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var slots = await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>();
         slots.Should().BeEmpty();
+    }
+
+    // ── companyId scoping (US-04 п. 5 / A4, US-13 п. 6 / A1) ─────────────────
+
+    [Fact, TestCase("BK-042")]
+    public async Task GetSlots_ManualFlag_FromAuthenticatedNonMember_ScheduleStillApplies()
+    {
+        // Closes A1: only an authenticated caller who actually works in THIS company may bypass the
+        // schedule via manual=true. A logged-in stranger gets the ordinary schedule-gated grid.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        // Deliberately not calling SetWorkingDayAsync — no WorkingHours row exists for this date.
+        var stranger = await RegisterAsync();
+
+        var response = await AuthedClient(stranger.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var slots = await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>();
+        slots.Should().BeEmpty();
+    }
+
+    [Fact, TestCase("BK-043")]
+    public async Task GetSlots_MasterInTwoCompanies_ScheduleFromOtherCompanyDoesNotLeakIn()
+    {
+        // Closes A4: a moonlighting master's WorkingHours row set in company A must not surface on
+        // company B's slot grid.
+        var (ownerA, companyA) = await CreateOwnerWithCompanyAsync();
+        var masterShared = await AddMasterAsync(ownerA.Token, companyA.Id);
+        var serviceA = await CreateServiceAsync(ownerA.Token, companyA.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(ownerA.Token, masterShared.UserId, companyA.Id, date);
+
+        var (ownerB, companyB) = await CreateOwnerWithCompanyAsync();
+        var addToB = await AuthedClient(ownerB.Token).PostAsJsonAsync($"/api/companies/{companyB.Id}/members",
+            new { phone = masterShared.Phone, firstName = masterShared.FirstName, lastName = masterShared.LastName,
+                  role = "Master", bio = (string?)null, email = (string?)null });
+        addToB.StatusCode.Should().Be(HttpStatusCode.OK);
+        var serviceB = await CreateServiceAsync(ownerB.Token, companyB.Id, durationMinutes: 60);
+        // Deliberately no WorkingHours row for masterShared in companyB.
+
+        var slotsA = await AnonymousClient().GetAsync(
+            $"/api/bookings/slots?companyId={companyA.Id}&masterId={masterShared.UserId}&serviceId={serviceA.Id}&date={date:yyyy-MM-dd}");
+        var slotsB = await AnonymousClient().GetAsync(
+            $"/api/bookings/slots?companyId={companyB.Id}&masterId={masterShared.UserId}&serviceId={serviceB.Id}&date={date:yyyy-MM-dd}");
+
+        (await slotsA.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!.Should().NotBeEmpty();
+        (await slotsB.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!.Should().BeEmpty();
     }
 }

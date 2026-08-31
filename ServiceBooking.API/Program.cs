@@ -102,6 +102,13 @@ builder.Services.AddAuthentication(opt =>
                 var user = await userManager.FindByIdAsync(userId);
                 if (user is null) { context.Fail("User no longer exists"); return; }
 
+                // A JWT lives up to 7 days, so changing a leaked password must invalidate tokens issued
+                // before it. ASP.NET Identity already rotates SecurityStamp on ChangePasswordAsync/
+                // SetUserNameAsync; we compare the stamp baked into the token with the current one.
+                // `user` is already loaded for the role refresh below, so this costs no extra query.
+                var stamp = principal!.FindFirstValue("sstamp");
+                if (stamp is null || stamp != user.SecurityStamp) { context.Fail("Token has been revoked"); return; }
+
                 var currentRoles = await userManager.GetRolesAsync(user);
 
                 var identity = (ClaimsIdentity)principal!.Identity!;
