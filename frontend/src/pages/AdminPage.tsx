@@ -11,6 +11,7 @@ import { Input } from '../components/ui/Input'
 import { StatusBadge } from '../components/ui/Badge'
 import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
+import { getPlanErrorMessage } from '../utils/planError'
 
 // ── Stats tab ─────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,11 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
 
   const { data: plans } = useQuery({ queryKey: ['admin-plans'], queryFn: plansApi.list })
   const activePlans = (plans ?? []).filter(p => p.isActive)
+  // The owner's current plan may have been deactivated after assignment (US-08). It stays selected
+  // and visible, marked "(неактивен)", so saving without touching the dropdown doesn't silently drop
+  // the owner to Free — but it isn't offered to switch a different owner onto it.
+  const currentPlan = plans?.find(p => p.id === owner.planConfigId)
+  const currentPlanInactive = !!currentPlan && !currentPlan.isActive
 
   const { data: history } = useQuery({
     queryKey: ['admin-subscription-history', owner.ownerUserId],
@@ -84,6 +90,9 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
           <select value={planConfigId} onChange={e => setPlanConfigId(e.target.value)}
             className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold">
             <option value="">Free (без тарифа)</option>
+            {currentPlanInactive && (
+              <option value={currentPlan!.id}>{currentPlan!.name} (неактивен)</option>
+            )}
             {activePlans.map(p => (
               <option key={p.id} value={p.id}>
                 {p.name} {p.pricePerMonth > 0 ? `— ${p.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : ''}
@@ -106,6 +115,8 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
             className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
             placeholder="Способ оплаты, счёт и т.д." />
         </div>
+        {mut.isError && <p className="text-sm text-danger">{getPlanErrorMessage(mut.error)}</p>}
+
         <div className="flex gap-3 pt-1">
           <Button variant="secondary" className="flex-1" onClick={onClose}>Отмена</Button>
           <Button className="flex-1" loading={mut.isPending} onClick={() => mut.mutate()}>Сохранить</Button>

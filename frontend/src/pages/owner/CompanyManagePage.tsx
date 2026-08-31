@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
+import { AxiosError } from 'axios'
 import { companiesApi } from '../../api/companies'
 import { servicesApi } from '../../api/services'
 import { Card } from '../../components/ui/Card'
@@ -12,6 +13,15 @@ import { Icon } from '../../components/ui/Icon'
 import { ScheduleTab } from './ScheduleTab'
 import { getAddMemberErrorMessage } from '../../utils/memberError'
 import type { Service } from '../../types'
+
+// Generic fallback for mutations on this page that don't have a dedicated *Error.ts mapper:
+// the backend's text/plain bodies (400/403/409) are shown verbatim when present, otherwise a
+// Russian fallback describes the action that failed.
+function mutationErrorText(err: unknown, fallback: string): string {
+  const ax = err as AxiosError
+  const data = ax?.response?.data
+  return typeof data === 'string' && data ? data : fallback
+}
 
 // ── Services tab ──────────────────────────────────────────────────────────────
 
@@ -26,6 +36,8 @@ function ServicesTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const [editing, setEditing] = useState<Service | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
 
   const { data: services, isLoading } = useQuery({
     queryKey: ['services', companyId],
@@ -42,23 +54,26 @@ function ServicesTab({ companyId }: { companyId: string }) {
     setValue('price', s.price)
   }
 
-  const closeForm = () => { setEditing(null); setShowAdd(false); reset() }
+  const closeForm = () => { setEditing(null); setShowAdd(false); setFormError(''); reset() }
 
   const createMut = useMutation({
     mutationFn: (d: ServiceFormData) =>
       servicesApi.create({ companyId, name: d.name, description: d.description || undefined, durationMinutes: +d.durationMinutes, price: +d.price }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['services', companyId] }); closeForm() },
+    onError: (err: unknown) => setFormError(mutationErrorText(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
   })
 
   const updateMut = useMutation({
     mutationFn: (d: ServiceFormData) =>
       servicesApi.update(editing!.id, { companyId, name: d.name, description: d.description || undefined, durationMinutes: +d.durationMinutes, price: +d.price }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['services', companyId] }); closeForm() },
+    onError: (err: unknown) => setFormError(mutationErrorText(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => servicesApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['services', companyId] }),
+    onSuccess: () => { setDeleteError(''); qc.invalidateQueries({ queryKey: ['services', companyId] }) },
+    onError: (err: unknown) => setDeleteError(mutationErrorText(err, 'Не удалось удалить услугу. Попробуйте снова.')),
   })
 
   const onSubmit = (d: ServiceFormData) => editing ? updateMut.mutate(d) : createMut.mutate(d)
@@ -104,6 +119,8 @@ function ServicesTab({ companyId }: { companyId: string }) {
         </Card>
       )}
 
+      {deleteError && <p className="text-sm text-danger mt-3">{deleteError}</p>}
+
       {(showAdd || editing) && (
         <Modal title={editing ? 'Редактировать услугу' : 'Добавить услугу'} onClose={closeForm}>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
@@ -142,6 +159,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
                 {...register('price', { required: 'Введите цену', min: { value: 0, message: 'Цена не может быть отрицательной' } })}
               />
             </div>
+            {formError && <p className="text-sm text-danger">{formError}</p>}
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" className="flex-1" onClick={closeForm}>Отмена</Button>
               <Button type="submit" className="flex-1" loading={isPending}>
@@ -174,6 +192,8 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
   const [dirty, setDirty] = useState(false)
   const [commission, setCommission] = useState(m.commissionPercent)
   const [commissionDirty, setCommissionDirty] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [commissionError, setCommissionError] = useState('')
 
   const toggle = (id: string) => {
     setSelected(prev => {
@@ -186,12 +206,14 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
 
   const saveMut = useMutation({
     mutationFn: () => companiesApi.updateMemberServices(companyId, m.id, [...selected]),
-    onSuccess: () => { setDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+    onSuccess: () => { setSaveError(''); setDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+    onError: (err: unknown) => setSaveError(mutationErrorText(err, 'Не удалось сохранить услуги сотрудника.')),
   })
 
   const commissionMut = useMutation({
     mutationFn: () => companiesApi.updateMemberCommission(companyId, m.id, commission),
-    onSuccess: () => { setCommissionDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+    onSuccess: () => { setCommissionError(''); setCommissionDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+    onError: (err: unknown) => setCommissionError(mutationErrorText(err, 'Не удалось сохранить комиссию.')),
   })
 
   return (
@@ -205,6 +227,7 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
             <p className="font-medium text-ink">{m.firstName} {m.lastName}</p>
             <p className="text-sm text-muted truncate">{m.phone || m.email} · {roleLabel[m.role] ?? m.role}</p>
             {m.bio && <p className="text-xs text-muted mt-0.5 truncate">{m.bio}</p>}
+            {commissionError && <p className="text-xs text-danger mt-0.5">{commissionError}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -281,6 +304,7 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
                 <Icon name="check" size={12} strokeWidth={2} /> Сохранено
               </span>
             )}
+            {saveError && <span className="text-xs text-danger">{saveError}</span>}
           </div>
         </div>
       )}
@@ -291,6 +315,7 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
 function MembersTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
+  const [removeError, setRemoveError] = useState('')
   const { register, handleSubmit, reset } = useForm<{ phone: string; firstName: string; lastName: string; role: string; bio: string; email: string }>({
     defaultValues: { role: 'Master' }
   })
@@ -321,7 +346,8 @@ function MembersTab({ companyId }: { companyId: string }) {
 
   const removeMut = useMutation({
     mutationFn: (memberId: string) => companiesApi.removeMember(companyId, memberId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['company-members', companyId] }),
+    onSuccess: () => { setRemoveError(''); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+    onError: (err: unknown) => setRemoveError(mutationErrorText(err, 'Не удалось удалить сотрудника.')),
   })
 
   return (
@@ -342,6 +368,7 @@ function MembersTab({ companyId }: { companyId: string }) {
           Достигнут лимит сотрудников по текущему тарифу — повысьте тариф, чтобы добавить ещё
         </p>
       )}
+      {removeError && <p className="text-sm text-danger mb-4 -mt-2">{removeError}</p>}
 
       {isLoading ? (
         <div className="grid gap-3">
@@ -424,9 +451,12 @@ function SettingsTab({ companyId }: { companyId: string }) {
     } : undefined,
   })
 
+  const [settingsError, setSettingsError] = useState('')
+
   const updateMut = useMutation({
     mutationFn: (d: Record<string, unknown>) => companiesApi.update(companyId, d),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-companies'] }),
+    onSuccess: () => { setSettingsError(''); qc.invalidateQueries({ queryKey: ['my-companies'] }) },
+    onError: (err: unknown) => setSettingsError(mutationErrorText(err, 'Не удалось сохранить настройки компании.')),
   })
 
   const logoMut = useMutation({
@@ -525,6 +555,7 @@ function SettingsTab({ companyId }: { companyId: string }) {
               <Icon name="check" size={14} strokeWidth={2} /> Сохранено
             </p>
           )}
+          {settingsError && <p className="text-sm text-danger">{settingsError}</p>}
           <Button type="submit" loading={updateMut.isPending} disabled={!isDirty}>Сохранить изменения</Button>
         </form>
       </Card>

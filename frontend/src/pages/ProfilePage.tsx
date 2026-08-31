@@ -73,8 +73,6 @@ export function ProfilePage() {
     queryFn: profileApi.get,
   })
 
-  const isMasterOrOwner = user?.roles.some(r => ['Master', 'CompanyOwner'].includes(r))
-
   // ── Profile form ──────────────────────────────────────────────────────────
   const { register: regProfile, handleSubmit: hsProfile, formState: { isDirty: pDirty } } = useForm({
     values: profile ? {
@@ -167,15 +165,6 @@ export function ProfilePage() {
             <Input label="Имя" {...regProfile('firstName', { required: true })} />
             <Input label="Фамилия" {...regProfile('lastName', { required: true })} />
           </div>
-          {isMasterOrOwner && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[13px] font-medium text-[#4A4038]">Процент от услуги (%)</label>
-              <div className="rounded-xl border border-line bg-cream-deep px-3.5 py-2.5 text-sm text-ink-soft">
-                {profile?.commissionPercent}%
-              </div>
-              <p className="text-xs text-muted">Устанавливается владельцем компании, самостоятельно изменить нельзя</p>
-            </div>
-          )}
           {updateMut.isSuccess && (
             <p className="text-sm text-success flex items-center gap-1.5">
               <Icon name="check" size={14} strokeWidth={2} /> Данные сохранены

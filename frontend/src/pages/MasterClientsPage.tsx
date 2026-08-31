@@ -71,12 +71,8 @@ function ClientCard({ client, companyId }: ClientCardProps) {
           </div>
         </div>
         <div className="text-right shrink-0">
-          {client.phone ? (
+          {client.phone && (
             <a href={`tel:${client.phone}`} onClick={e => e.stopPropagation()} className="text-sm text-gold hover:text-gold-dark">{client.phone}</a>
-          ) : (
-            <span className="text-xs text-muted flex items-center gap-1 justify-end">
-              <Icon name="phone" size={12} strokeWidth={1.7} /> Доступен 24 ч после визита
-            </span>
           )}
           {client.email && <p className="text-xs text-muted">{client.email}</p>}
         </div>

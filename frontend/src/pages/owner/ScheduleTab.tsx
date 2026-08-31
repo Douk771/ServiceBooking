@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { WeeklyTemplateModal } from '../../components/schedule/WeeklyTemplateModal'
+import { getScheduleErrorMessage } from '../../utils/scheduleError'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ function isoWeekday(d: Date) {
   const d0 = getDay(d)
   return d0 === 0 ? 7 : d0
 }
+
 
 // ── Day editor modal ──────────────────────────────────────────────────────────
 
@@ -44,6 +46,7 @@ function DayEditor({ date, entry, masterId, companyId, onClose, onSaved }: DayEd
   )
 
   const qc = useQueryClient()
+  const [mutError, setMutError] = useState('')
 
   const upsertMut = useMutation({
     mutationFn: () =>
@@ -55,12 +58,14 @@ function DayEditor({ date, entry, masterId, companyId, onClose, onSaved }: DayEd
         endTime: toApiTime(end),
         breaks: breaks.map(b => ({ startTime: toApiTime(b.startTime), endTime: toApiTime(b.endTime) })),
       }),
-    onSuccess: () => { onSaved(); onClose() },
+    onSuccess: () => { setMutError(''); onSaved(); onClose() },
+    onError: (err: unknown) => setMutError(getScheduleErrorMessage(err)),
   })
 
   const deleteMut = useMutation({
     mutationFn: () => workingHoursApi.delete(entry!.id),
-    onSuccess: () => { qc.invalidateQueries(); onClose() },
+    onSuccess: () => { setMutError(''); qc.invalidateQueries(); onClose() },
+    onError: (err: unknown) => setMutError(getScheduleErrorMessage(err)),
   })
 
   const addBreak    = () => setBreaks([...breaks, { startTime: '13:00', endTime: '14:00' }])
@@ -157,8 +162,8 @@ function DayEditor({ date, entry, masterId, companyId, onClose, onSaved }: DayEd
           </Button>
         </div>
 
-        {upsertMut.isError && (
-          <p className="text-sm text-danger text-center">Ошибка сохранения</p>
+        {mutError && (
+          <p className="text-sm text-danger text-center">{mutError}</p>
         )}
       </div>
     </Modal>

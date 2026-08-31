@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
 import { Icon } from '../components/ui/Icon'
 import { ReviewModal } from '../components/review/ReviewModal'
+import { getBookingErrorMessage } from '../utils/bookingError'
 import type { Booking } from '../types'
 
 type FilterTab = 'all' | 'upcoming' | 'completed' | 'cancelled'
@@ -46,9 +47,12 @@ export function ClientBookingsPage() {
 
   const canReviewSet = useMemo(() => new Set((canReviewList ?? []).map(r => r.bookingId)), [canReviewList])
 
+  const [cancelError, setCancelError] = useState('')
+
   const cancel = useMutation({
     mutationFn: (id: string) => bookingsApi.cancel(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['client-bookings'] }),
+    onSuccess: () => { setCancelError(''); qc.invalidateQueries({ queryKey: ['client-bookings'] }) },
+    onError: (err) => setCancelError(getBookingErrorMessage(err)),
   })
 
   // Group by month
@@ -89,6 +93,12 @@ export function ClientBookingsPage() {
           </button>
         ))}
       </div>
+
+      {cancelError && (
+        <div className="mb-6 rounded-xl bg-danger-bg text-danger text-sm px-4 py-3 flex items-center gap-2">
+          <Icon name="alert-circle" size={15} strokeWidth={1.8} /> {cancelError}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid gap-4">

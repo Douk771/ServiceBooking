@@ -59,8 +59,8 @@ export function BookingModal({ service, company, onClose }: Props) {
   // Today is only offered as a booking date if the master still has at least one slot today
   // that both isn't already taken and hasn't passed yet — otherwise there's nothing left to pick.
   const { data: slotsToday = [] } = useQuery({
-    queryKey: ['slots', selectedMasterId, service.id, todayStr],
-    queryFn: () => bookingsApi.getSlots(selectedMasterId, service.id, todayStr),
+    queryKey: ['slots', company.id, selectedMasterId, service.id, todayStr],
+    queryFn: () => bookingsApi.getSlots(company.id, selectedMasterId, service.id, todayStr),
     enabled: !!selectedMasterId,
     staleTime: 0,
   })
@@ -75,8 +75,8 @@ export function BookingModal({ service, company, onClose }: Props) {
   ]
 
   const { data: rawSlots, isLoading: slotsLoading } = useQuery({
-    queryKey: ['slots', selectedMasterId, service.id, selectedDate],
-    queryFn: () => bookingsApi.getSlots(selectedMasterId, service.id, selectedDate),
+    queryKey: ['slots', company.id, selectedMasterId, service.id, selectedDate],
+    queryFn: () => bookingsApi.getSlots(company.id, selectedMasterId, service.id, selectedDate),
     enabled: !!selectedMasterId && !!selectedDate,
     staleTime: 0, // always fetch fresh — bookings made by others should be reflected immediately
   })

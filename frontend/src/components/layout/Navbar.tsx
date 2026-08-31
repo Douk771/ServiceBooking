@@ -1,15 +1,20 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../store/authStore'
 import { Icon } from '../ui/Icon'
 
 export function Navbar() {
   const { user, logout, isAuthenticated, hasRole } = useAuthStore()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [menuOpen, setMenuOpen] = useState(false)
 
   const closeMenu = () => setMenuOpen(false)
-  const handleLogout = () => { closeMenu(); logout(); navigate('/') }
+  // Clears every cached query on logout — otherwise, on a shared computer, the next person to log
+  // in sees the previous user's ['my-companies'], ['company-clients', …], reports etc. for the first
+  // render, before their own queries refetch (US-19, C5).
+  const handleLogout = () => { closeMenu(); logout(); qc.clear(); navigate('/') }
 
   const isMasterOrOwner = hasRole('Master') || hasRole('CompanyOwner') || hasRole('SuperAdmin')
   const isAdmin = hasRole('SuperAdmin')

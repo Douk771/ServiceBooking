@@ -4,6 +4,7 @@ import { format, startOfMonth, endOfMonth, addDays } from 'date-fns'
 import { scheduleTemplateApi, type DayTemplate } from '../../api/scheduleTemplate'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
+import { getScheduleErrorMessage } from '../../utils/scheduleError'
 
 const DAY_NAMES = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
@@ -33,17 +34,23 @@ export function WeeklyTemplateModal({ masterId, companyId, onClose }: Props) {
     if (templateData && templateData.length > 0) setDays(templateData)
   }, [templateData])
 
+  const [mutError, setMutError] = useState('')
+
   const saveMut = useMutation({
     mutationFn: () => scheduleTemplateApi.save({ masterId, companyId, days }),
+    onSuccess: () => setMutError(''),
+    onError: (err: unknown) => setMutError(getScheduleErrorMessage(err)),
   })
 
   const applyMut = useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) =>
       scheduleTemplateApi.apply(masterId, companyId, from, to),
     onSuccess: () => {
+      setMutError('')
       qc.invalidateQueries({ queryKey: ['working-hours'] })
       onClose()
     },
+    onError: (err: unknown) => setMutError(getScheduleErrorMessage(err)),
   })
 
   function updateDay(idx: number, patch: Partial<DayTemplate>) {
@@ -104,8 +111,8 @@ export function WeeklyTemplateModal({ masterId, companyId, onClose }: Props) {
           </div>
         ))}
 
-        {(saveMut.isError || applyMut.isError) && (
-          <p className="text-sm text-danger">Произошла ошибка. Попробуйте снова.</p>
+        {mutError && (
+          <p className="text-sm text-danger">{mutError}</p>
         )}
 
         <div className="flex flex-col gap-2 pt-2 border-t border-line mt-1">

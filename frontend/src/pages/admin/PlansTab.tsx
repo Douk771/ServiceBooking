@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
+import { getPlanErrorMessage } from '../../utils/planError'
 
 interface PlanForm {
   name: string
@@ -175,18 +176,25 @@ export function PlansTab() {
                         Уведомление за {plan.notifyDaysBefore} дн. до деактивации
                       </p>
                     </div>
-                    <div className="flex gap-2 shrink-0">
-                      <Button variant="secondary" size="sm" onClick={() => openEdit(plan)}>
-                        Редактировать
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        loading={deactivateMut.isPending}
-                        onClick={() => deactivateMut.mutate(plan.id)}
-                      >
-                        Деактивировать
-                      </Button>
+                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <div className="flex gap-2">
+                        <Button variant="secondary" size="sm" onClick={() => openEdit(plan)}>
+                          Редактировать
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          loading={deactivateMut.isPending && deactivateMut.variables === plan.id}
+                          onClick={() => deactivateMut.mutate(plan.id)}
+                        >
+                          Деактивировать
+                        </Button>
+                      </div>
+                      {deactivateMut.isError && deactivateMut.variables === plan.id && (
+                        <p className="text-xs text-danger text-right max-w-[220px]">
+                          {getPlanErrorMessage(deactivateMut.error)}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -296,8 +304,11 @@ export function PlansTab() {
               onChange={e => setForm(f => ({ ...f, notifyDaysBefore: e.target.value }))}
             />
 
-            {(createMut.isError || updateMut.isError) && (
-              <p className="text-sm text-danger">{editingPlan ? 'Ошибка при сохранении тарифа' : 'Ошибка при создании тарифа'}</p>
+            {createMut.isError && (
+              <p className="text-sm text-danger">{getPlanErrorMessage(createMut.error)}</p>
+            )}
+            {updateMut.isError && (
+              <p className="text-sm text-danger">{getPlanErrorMessage(updateMut.error)}</p>
             )}
 
             <div className="flex gap-3 pt-1">

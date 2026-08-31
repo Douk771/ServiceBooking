@@ -5,6 +5,7 @@ import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../api/bookings'
 import { reviewsApi } from '../api/reviews'
 import { mastersApi, type MasterClient } from '../api/masters'
+import { getBookingErrorMessage } from '../utils/bookingError'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
@@ -147,6 +148,11 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-ink">{b.serviceName}</span>
+              {b.companyName && (
+                <span className="text-xs text-muted flex items-center gap-1">
+                  <Icon name="store" size={11} strokeWidth={1.8} /> {b.companyName}
+                </span>
+              )}
               <StatusBadge status={b.status} />
               {b.paymentStatus === 'Pending' && (
                 <span className="text-xs font-medium bg-warning-bg text-warning px-2.5 py-0.5 rounded-full">
@@ -216,6 +222,7 @@ export function MyBookingsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [rescheduleBooking, setRescheduleBooking] = useState<Booking | null>(null)
   const [reviewBooking, setReviewBooking] = useState<Booking | null>(null)
+  const [actionError, setActionError] = useState('')
   const qc = useQueryClient()
 
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -228,19 +235,23 @@ export function MyBookingsPage() {
 
   const cancel = useMutation({
     mutationFn: (id: string) => bookingsApi.cancel(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['master-bookings'] }),
+    onSuccess: () => { setActionError(''); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onError: (err) => setActionError(getBookingErrorMessage(err)),
   })
   const complete = useMutation({
     mutationFn: (id: string) => bookingsApi.complete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['master-bookings'] }),
+    onSuccess: () => { setActionError(''); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onError: (err) => setActionError(getBookingErrorMessage(err)),
   })
   const noShow = useMutation({
     mutationFn: (id: string) => bookingsApi.noShow(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['master-bookings'] }),
+    onSuccess: () => { setActionError(''); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onError: (err) => setActionError(getBookingErrorMessage(err)),
   })
   const markPaid = useMutation({
     mutationFn: (id: string) => bookingsApi.markPaid(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['master-bookings'] }),
+    onSuccess: () => { setActionError(''); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onError: (err) => setActionError(getBookingErrorMessage(err)),
   })
 
   const { data: canReviewList } = useQuery({
@@ -292,6 +303,12 @@ export function MyBookingsPage() {
           <Icon name="plus" size={15} strokeWidth={2} /> Добавить запись
         </Button>
       </div>
+
+      {actionError && (
+        <div className="mb-5 rounded-xl bg-danger-bg text-danger text-sm px-4 py-3 flex items-center gap-2">
+          <Icon name="alert-circle" size={15} strokeWidth={1.8} /> {actionError}
+        </div>
+      )}
 
       {showCreateModal && <ManualBookingModal onClose={() => setShowCreateModal(false)} />}
       {rescheduleBooking && <RescheduleModal booking={rescheduleBooking} onClose={() => setRescheduleBooking(null)} />}
