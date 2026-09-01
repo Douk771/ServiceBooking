@@ -18,7 +18,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         // as plain top-level statements BEFORE WebApplicationBuilder.Build() runs. ConfigureAppConfiguration
         // callbacks are merged in too late to affect those reads, so UseSetting is required here — it seeds
         // the configuration's initial in-memory source, which is visible from the very first read.
-        builder.UseSetting("ConnectionStrings:DefaultConnection", "Host=localhost;Database=servicebooking_test;Username=postgres;Password=");
+        builder.UseSetting("ConnectionStrings:DefaultConnection", TestDatabaseFixture.ConnectionString);
         builder.UseSetting("Jwt:Key", "TEST_ONLY_SECRET_KEY_AT_LEAST_32_CHARACTERS_LONG");
         builder.UseSetting("Jwt:Issuer", "ServiceBooking");
         builder.UseSetting("Jwt:Audience", "ServiceBookingClient");

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using ServiceBooking.API.DTOs.Services;
 using ServiceBooking.Tests.Infrastructure;
@@ -229,5 +230,25 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             new CreateServiceDto(company.Id, "Zero Duration", null, 0, 500, null));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("SVC-016")]
+    public async Task Create_BySuperAdmin_UnknownCompanyId_Returns500ProblemJson()
+    {
+        // Deliberately left uncovered by US-09 (out of scope — that story is only about the Master
+        // role): SuperAdmin bypasses CanManageCompany unconditionally, and ServicesController.Create
+        // never checks the company exists, so this reaches SaveChangesAsync and violates the
+        // Services.CompanyId -> Companies FK. Used here as a stable trigger for the cycle's new global
+        // exception handler (T-B14, ARCHITECTURE.md §6): a 500 must now come back as
+        // application/problem+json with a non-empty traceId, not an empty body / developer page.
+        var admin = await LoginAsSuperAdminAsync();
+
+        var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/services",
+            new CreateServiceDto(Guid.NewGuid(), "Ghost Company Service", null, 30, 500, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("traceId").GetString().Should().NotBeNullOrEmpty();
     }
 }

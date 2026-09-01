@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.DTOs.Bookings;
@@ -33,10 +34,13 @@ public record CreateBookingDto(
     string MasterId,
     DateOnly Date,
     TimeOnly StartTime,
-    string? Notes,
+    // Attributes go directly on the positional record parameter, not as `[property: ...]` — see
+    // ServiceDto.cs for why: on this runtime (net8.0, Microsoft.AspNetCore.App 8.0.3) the `[property:
+    // ...]` form throws InvalidOperationException out of ASP.NET Core's record model-binding.
+    [MaxLength(2000)] string? Notes,
     // Guest fields (used when not authenticated)
-    string? GuestName,
-    string? GuestPhone,
-    string? GuestEmail,
+    [MaxLength(200)] string? GuestName,
+    [MaxLength(32)] string? GuestPhone,
+    [MaxLength(256)] string? GuestEmail,
     string? CaptchaToken
 );

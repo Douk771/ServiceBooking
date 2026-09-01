@@ -10,15 +10,19 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// </summary>
 public class TestDatabaseFixture : IAsyncLifetime
 {
-    private const string TestConnectionString =
-        "Host=localhost;Database=servicebooking_test;Username=postgres;Password=";
+    // Overridable via SERVICEBOOKING_TEST_CONNECTION so CI (and any dev box with a differently
+    // configured Postgres) can point the whole suite at a different database without editing code —
+    // falls back to the same literal that has always worked locally when the variable isn't set.
+    public static readonly string ConnectionString =
+        Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_CONNECTION")
+        ?? "Host=localhost;Database=servicebooking_test;Username=postgres;Password=";
 
     public CustomWebApplicationFactory Factory { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(TestConnectionString)
+            .UseNpgsql(ConnectionString)
             .Options;
 
         await using (var db = new AppDbContext(options))

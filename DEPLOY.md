@@ -97,11 +97,26 @@ nano .env
 
 Заполните:
 - `POSTGRES_PASSWORD` — сгенерируйте: `openssl rand -base64 24`
-- `JWT_KEY` — сгенерируйте: `openssl rand -base64 48`
+- `JWT_KEY` — сгенерируйте: `openssl rand -base64 48` (**обязательно**: минимум 32 символа и не равно
+  плейсхолдеру из `appsettings.json` — иначе контейнер откажется стартовать, см. ниже)
 - `SUPERADMIN_PHONE` — ваш номер в формате `+7XXXXXXXXXX`, станет суперадмином при первом запуске
+- `SUPERADMIN_PASSWORD` — пароль для аккаунта суперадмина (**обязательно**: не равно плейсхолдеру
+  `Admin12345` — иначе контейнер откажется стартовать)
 - `SMARTCAPTCHA_SECRET_KEY` / `SMARTCAPTCHA_SITE_KEY` — из кабинета Yandex Cloud SmartCaptcha
 
 Сохраните (Ctrl+O, Enter, Ctrl+X в nano). Файл `.env` не попадёт в git — он в `.gitignore`.
+
+**Перед запуском проверьте подстановку переменных** (не поднимает контейнеры, только печатает
+итоговый конфиг):
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env config
+```
+
+Убедитесь, что `Jwt__Key`/`SuperAdmin__Password` в выводе — реальные значения, а не пустые строки.
+С этого цикла API **фейлится при старте** (fail-fast, не поднимается вовсе), если `Jwt:Key` или
+`SuperAdmin:Password` отсутствуют либо остались плейсхолдером — так безопаснее, чем боевой контейнер,
+который тихо стартовал бы со значением `Admin12345`/недлинным ключом из `appsettings.json`.
 
 ---
 
@@ -116,8 +131,12 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 
 ```bash
 docker compose -f docker-compose.prod.yml ps
-curl -s http://127.0.0.1:5000/swagger/index.html -o /dev/null -w "%{http_code}\n"   # ожидаем 200
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5000/api/companies   # ожидаем 200
 ```
+
+Swagger в Production **не поднимается вовсе** (доступен только при локальной разработке,
+`ASPNETCORE_ENVIRONMENT=Development`) — `curl .../swagger/index.html` теперь корректно вернёт `404`,
+это не признак проблемы.
 
 Если `curl` не вернул 200 — посмотрите логи и пришлите мне вывод:
 

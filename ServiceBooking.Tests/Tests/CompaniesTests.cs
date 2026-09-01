@@ -531,6 +531,47 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [Fact, TestCase("CO-069")]
+    public async Task UpdateMemberServices_ServiceFromAnotherCompany_ReturnsBadRequest_LeavesLinksUnchanged()
+    {
+        // Audit B2: without this check an owner could attach their master to a service that belongs to
+        // someone else's company. Also verifies the write is atomic: an existing valid link must survive
+        // a rejected request untouched.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var ownService = await CreateServiceAsync(owner.Token, company.Id);
+        var member = await GetMemberAsync(owner.Token, company.Id, master.UserId);
+
+        var setup = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}/members/{member.Id}/services", new List<Guid> { ownService.Id });
+        setup.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var (otherOwner, otherCompany) = await CreateOwnerWithCompanyAsync();
+        var foreignService = await CreateServiceAsync(otherOwner.Token, otherCompany.Id);
+
+        var response = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}/members/{member.Id}/services", new List<Guid> { foreignService.Id });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var updated = await GetMemberAsync(owner.Token, company.Id, master.UserId);
+        updated.ServiceIds.Should().ContainSingle(id => id == ownService.Id);
+        updated.ServiceIds.Should().NotContain(foreignService.Id);
+    }
+
+    [Fact, TestCase("CO-070")]
+    public async Task UpdateMemberServices_UnknownServiceId_ReturnsBadRequest_NotServerError()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var member = await GetMemberAsync(owner.Token, company.Id, master.UserId);
+
+        var response = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}/members/{member.Id}/services", new List<Guid> { Guid.NewGuid() });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     // ── PUT /api/companies/{id}/members/{memberId}/commission ────────────────
 
     [Fact, TestCase("CO-021")]
@@ -804,6 +845,21 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [Fact, TestCase("CO-066")]
+    public async Task AddMember_BySuperAdmin_UnknownRoleName_ReturnsBadRequest_NotServerError()
+    {
+        // Audit D3: SuperAdmin's CanAssignRole accepted any string sight unseen, so a typo'd role name
+        // used to sail through to Enum.Parse<UserRole> and blow up with an unhandled 500.
+        var (_, company) = await CreateOwnerWithCompanyAsync();
+        var admin = await LoginAsSuperAdminAsync();
+        var toAdd = await RegisterAsync();
+
+        var response = await AuthedClient(admin.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
+            new { phone = toAdd.Phone, firstName = toAdd.FirstName, lastName = toAdd.LastName, role = "Bogus", bio = (string?)null });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [Fact, TestCase("CO-037")]
     public async Task AddMember_DuplicateMember_ReturnsConflict()
     {
@@ -897,6 +953,9 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("CO-043")]
     public async Task GetStats_AggregatesRevenueAndCounts_ForOwner()
     {
+        // T-B12 (US-18, decision Q11): GetStats filters by the VISIT date (Booking.Date), not by
+        // CreatedAt — so the window below spans the visit date itself, not "now" (the row is created
+        // "now" during this test, but the visit is NextWeekday(), up to a week out).
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
         var service = await CreateServiceAsync(owner.Token, company.Id, price: 2500);
@@ -912,8 +971,8 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var completeResponse = await AuthedClient(master.Token).PatchAsync($"/api/bookings/{booking!.Id}/complete", null);
         completeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var from = Uri.EscapeDataString(DateTime.UtcNow.AddMinutes(-15).ToString("o"));
-        var to = Uri.EscapeDataString(DateTime.UtcNow.AddMinutes(15).ToString("o"));
+        var from = Uri.EscapeDataString(date.ToDateTime(TimeOnly.MinValue).ToString("o"));
+        var to = Uri.EscapeDataString(date.ToDateTime(TimeOnly.MinValue).ToString("o"));
         var statsResponse = await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/stats?from={from}&to={to}");
 
         statsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -934,6 +993,61 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AuthedClient(stranger.Token).GetAsync($"/api/companies/{company.Id}/stats?from={from}&to={to}");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("CO-071")]
+    public async Task GetStats_FiltersByVisitDate_MatchesReportsMastersForSamePeriod()
+    {
+        // T-B12 (US-18, decision Q11): the row is created "now" (CreatedAt), but the visit is
+        // NextWeekday() — days later (Booking.Date). GetStats must land it in the report for the VISIT
+        // date, and agree with GET /api/reports/masters (which already filters by Date), not the date
+        // the row happened to be created on.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, price: 1500);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var createResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+        var booking = (await createResponse.Content.ReadJsonAsync<BookingDto>())!;
+        (await AuthedClient(master.Token).PatchAsync($"/api/bookings/{booking.Id}/complete", null))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var from = Uri.EscapeDataString(date.ToDateTime(TimeOnly.MinValue).ToString("o"));
+        var to = Uri.EscapeDataString(date.ToDateTime(TimeOnly.MinValue).ToString("o"));
+        var statsResponse = await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/stats?from={from}&to={to}");
+        var stats = await statsResponse.Content.ReadFromJsonAsync<StatsResult>();
+
+        var reportResponse = await AuthedClient(owner.Token).GetAsync(
+            $"/api/reports/masters?companyId={company.Id}&from={date:yyyy-MM-dd}&to={date:yyyy-MM-dd}");
+        var report = await reportResponse.Content.ReadJsonAsync<List<MasterReportDto>>();
+
+        stats!.TotalRevenue.Should().Be(1500);
+        report.Should().ContainSingle(r => r.MasterId == master.UserId && r.TotalAmount == 1500);
+    }
+
+    [Fact, TestCase("CO-072")]
+    public async Task GetStats_MissingFromOrTo_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+
+        var response = await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/stats");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("CO-073")]
+    public async Task GetStats_ToBeforeFrom_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+
+        var from = Uri.EscapeDataString(DateTime.UtcNow.ToString("o"));
+        var to = Uri.EscapeDataString(DateTime.UtcNow.AddDays(-1).ToString("o"));
+        var response = await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/stats?from={from}&to={to}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact, TestCase("CO-045")]

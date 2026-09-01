@@ -7,7 +7,6 @@ using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
-using ServiceBooking.Core.Entities;
 
 namespace ServiceBooking.API.Controllers;
 
@@ -16,10 +15,27 @@ namespace ServiceBooking.API.Controllers;
 public class BookingsController(AppDbContext db, SlotService slotService, CaptchaService captchaService, SubscriptionResolver subscriptionResolver) : ControllerBase
 {
     [HttpGet("occupied")]
+    [Authorize]
     public async Task<ActionResult<List<OccupiedRangeDto>>> GetOccupied(
         [FromQuery] string masterId,
         [FromQuery] DateOnly date)
     {
+        // masterId isn't secret (the public GET /api/companies/{id}/masters lists every master's id),
+        // so this endpoint used to let anyone anonymous pull any master's occupied hours across every
+        // company they work in (audit E3/Q9). Now it requires the caller to actually have a reason to
+        // know: SuperAdmin, the master themselves, or staff of at least one company the master also
+        // belongs to.
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var canView = User.IsInRole("SuperAdmin") || userId == masterId ||
+            await db.CompanyMembers.AnyAsync(cm => cm.UserId == userId &&
+                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner) &&
+                db.CompanyMembers.Any(m => m.UserId == masterId && m.CompanyId == cm.CompanyId));
+        if (!canView) return Forbid();
+
+        // Occupancy is deliberately NOT scoped by company: a master who works for two businesses is
+        // still one person, so a booking made in company A must block the same time in company B.
+        // Working hours ARE scoped by company (a master can keep different schedules) — the asymmetry
+        // is intentional (ARCHITECTURE.md §2.3, decision Q9). No companyId parameter is introduced here.
         var bookings = await db.Bookings
             .Where(b => b.MasterId == masterId && b.Date == date && b.Status != BookingStatus.Cancelled)
             .Select(b => new OccupiedRangeDto(b.StartTime, b.EndTime))
@@ -53,17 +69,28 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var isAuthenticated = userId is not null;
 
-        // A booking is a "staff manual booking" when an authenticated caller (a master/owner) supplies
-        // guest details to record a walk-in for a third party. Everything else is an online self-booking:
-        // either a guest booking for themselves, or an authenticated client booking for themselves.
-        var isManualBooking = !string.IsNullOrEmpty(dto.GuestName);
-        var isStaffManualBooking = isAuthenticated && isManualBooking;
+        // Company must exist before anything else — including for an authenticated caller. Previously
+        // this check only ran on the guest branch, so a logged-in caller with a bad CompanyId fell
+        // through to a 500 from a broken FK instead of a clean 404 (US-05).
+        var company = await db.Companies.FindAsync(dto.CompanyId);
+        if (company is null) return NotFound("Company not found");
 
-        // Guest booking requires captcha
-        if (!isAuthenticated)
+        // A booking is a "staff manual booking" when an authenticated caller who actually works in THIS
+        // company supplies guest details to record a walk-in for a third party. Everything else is an
+        // online self-booking: a guest booking for themselves, or an authenticated client booking for
+        // themselves.
+        var isManualBooking = !string.IsNullOrEmpty(dto.GuestName);
+        var isStaff = isAuthenticated &&
+            (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, dto.CompanyId, userId!));
+        var isStaffManualBooking = isManualBooking && isStaff;
+
+        // Anyone who supplies guest details without actually working here is not staff — they are a guest
+        // with an account, and they go through the exact same gates a guest does (self-booking toggle,
+        // captcha, tariff). This is the A1 bypass: previously `guestName` alone was enough to skip all four.
+        var isGuestPath = !isAuthenticated || (isManualBooking && !isStaff);
+
+        if (isGuestPath)
         {
-            var company = await db.Companies.FindAsync(dto.CompanyId);
-            if (company is null) return NotFound("Company not found");
             if (!company.AllowSelfBooking) return Forbid();
 
             // Guest booking is bot-protected by Yandex SmartCaptcha. When enforced (server key set, or
@@ -93,8 +120,19 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
 
         var service = await db.Services.FindAsync(dto.ServiceId);
         if (service is null) return NotFound("Service not found");
+        // Objects exist but their combination doesn't make sense — 400, not 404 (ARCHITECTURE.md §14.4).
+        if (service.CompanyId != dto.CompanyId) return BadRequest("Service does not belong to this company");
+        if (!service.IsActive) return BadRequest("Service is not available");
+        if (!await CompanyMembership.IsStaffAsync(db, dto.CompanyId, dto.MasterId))
+            return BadRequest("Master is not a staff member of this company");
 
         var slotEnd = dto.StartTime.AddMinutes(service.DurationMinutes);
+
+        // Not in the past, and doesn't wrap past midnight (TimeOnly can't represent 24:00, so an
+        // overflowing slot would otherwise silently give EndTime < StartTime). Applies to every path,
+        // including staff manual bookings — Q7's relaxation is about working hours, not about the past.
+        if (!IsBookableMoment(dto.Date, dto.StartTime, service.DurationMinutes))
+            return Conflict("Time slot is no longer available");
 
         AppUser? client = null;
         if (isAuthenticated && !isManualBooking)
@@ -102,8 +140,8 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
 
         // Prepayment is gated the same way as public listing: the owner's own toggle
         // (Company.RequirePrepayment) AND the tariff's AllowOnlinePayment — mirrors CompanyDto.PrepaymentEnabled.
-        var requiresPrepayment = !isManualBooking && effectivePlan.AllowOnlinePayment
-            && (await db.Companies.FindAsync(dto.CompanyId))?.RequirePrepayment == true;
+        // Applies to every non-staff path (a client who supplied guestName is still an online self-booking).
+        var requiresPrepayment = !isStaffManualBooking && effectivePlan.AllowOnlinePayment && company.RequirePrepayment;
 
         var booking = new Booking
         {
@@ -111,7 +149,11 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             CompanyId = dto.CompanyId,
             ServiceId = dto.ServiceId,
             MasterId = dto.MasterId,
-            ClientId = isManualBooking ? null : userId,
+            // A client who supplies guestName without actually being staff is still the owner of the
+            // booking (A6 fix carried through here too) — only a genuine staff manual booking leaves
+            // ClientId unset. Previously `isManualBooking ? null : userId` gave such a client an
+            // ownerless "guest" booking that anyone could later review (see ReviewsController).
+            ClientId = isStaffManualBooking ? null : userId,
             GuestName = dto.GuestName,
             GuestPhone = dto.GuestPhone,
             GuestEmail = dto.GuestEmail,
@@ -130,21 +172,44 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"booking-slot:{dto.MasterId}:{dto.Date:O}");
 
-        var conflict = await db.Bookings.AnyAsync(b =>
-            b.MasterId == dto.MasterId &&
-            b.Date == dto.Date &&
-            b.Status != BookingStatus.Cancelled &&
-            b.StartTime < slotEnd && b.EndTime > dto.StartTime);
+        // Occupancy is deliberately NOT scoped by company: a master who works for two businesses is
+        // still one person, so a booking made in company A must block the same time in company B.
+        // Working hours ARE scoped by company (a master can keep different schedules) — the asymmetry
+        // is intentional (ARCHITECTURE.md §2.3).
+        var existingBookings = await db.Bookings
+            .Where(b => b.MasterId == dto.MasterId && b.Date == dto.Date && b.Status != BookingStatus.Cancelled)
+            .Select(b => new TimeRange(b.StartTime, b.EndTime))
+            .ToListAsync();
 
-        if (conflict) return Conflict("Time slot is no longer available");
+        bool slotOk;
+        if (isStaffManualBooking)
+        {
+            // Decision Q7: staff may book any free time, no schedule/breaks/grid rule applies — only the
+            // existing conflict check (unchanged expression, dating back to before this cycle).
+            slotOk = !existingBookings.Any(b => b.Start < slotEnd && b.End > dto.StartTime);
+        }
+        else
+        {
+            // Everyone else gets exactly the rule GET /api/bookings/slots would have offered them: the
+            // same SlotCalculator, so the two can never drift apart (US-03).
+            var workingHours = await db.WorkingHours
+                .Include(wh => wh.Breaks)
+                .FirstOrDefaultAsync(wh => wh.MasterId == dto.MasterId && wh.CompanyId == dto.CompanyId
+                    && wh.Date == dto.Date && wh.IsWorking);
+            var breaks = workingHours?.Breaks.Select(b => new TimeRange(b.StartTime, b.EndTime)).ToList() ?? [];
+
+            slotOk = SlotCalculator.IsSlotAllowed(dto.StartTime, service.DurationMinutes,
+                workingHours?.StartTime, workingHours?.EndTime, breaks, existingBookings, allowWithoutSchedule: false);
+        }
+
+        if (!slotOk) return Conflict("Time slot is no longer available");
 
         db.Bookings.Add(booking);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
 
         var master = await db.Users.FindAsync(dto.MasterId);
-        var bookingCompany = await db.Companies.FindAsync(dto.CompanyId);
-        booking.Company = bookingCompany!;
+        booking.Company = company;
         var clientName = client is not null
             ? $"{client.FirstName} {client.LastName}"
             : dto.GuestName ?? "Guest";
@@ -203,6 +268,9 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
     [Authorize]
     public async Task<ActionResult<List<BookingDto>>> GetClientBookings([FromQuery] string? status)
     {
+        if (!BookingFilters.TryParseClientStatus(status, out var filter))
+            return BadRequest("Unknown status filter. Expected: upcoming, Pending, Confirmed, Cancelled, Completed, NoShow.");
+
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var query = db.Bookings
             .Include(b => b.Service)
@@ -211,8 +279,18 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             .Include(b => b.Company)
             .Where(b => b.ClientId == userId);
 
-        if (!string.IsNullOrEmpty(status) && Enum.TryParse<BookingStatus>(status, out var s))
-            query = query.Where(b => b.Status == s);
+        var nowUtc = DateTime.UtcNow;
+        query = filter.Kind switch
+        {
+            // One clock read, not two: reading DateTime.UtcNow twice can straddle midnight and produce
+            // a mismatched (date, time) pair. UTC is the project-wide reference until timezones land
+            // (deliberately out of this cycle) — for the target zones (UTC+3..+12) it errs toward
+            // showing a booking slightly longer, never toward hiding an upcoming one.
+            ClientStatusFilterKind.Upcoming => query.Where(BookingFilters.Upcoming(
+                DateOnly.FromDateTime(nowUtc), TimeOnly.FromDateTime(nowUtc))),
+            ClientStatusFilterKind.ByStatus => query.Where(b => b.Status == filter.Status),
+            _ => query
+        };
 
         var bookings = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime).ToListAsync();
         return Ok(bookings.Select(b =>
@@ -312,6 +390,15 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
 
         var slotEnd = dto.StartTime.AddMinutes(booking.Service.DurationMinutes);
 
+        // This endpoint is staff-only (CanManageBookingAsync above lets in only the assigned master,
+        // the company's owner, or SuperAdmin — a client can never reach here, they only have Cancel).
+        // By decision Q7 that means the SAME relaxed rule as a staff manual booking in Create: any free
+        // time, no working-hours/breaks/grid check. Deliberately NOT validated against WorkingHours —
+        // see ARCHITECTURE.md §3.4/§14.1: RescheduleModal's grid doesn't know the master's schedule, so a
+        // full validation would reject slots the UI itself offered, with no way to explain why.
+        if (!IsBookableMoment(dto.Date, dto.StartTime, booking.Service.DurationMinutes))
+            return Conflict("Time slot is no longer available");
+
         // Same TOCTOU concern as Create: serialize concurrent reschedules/creates targeting this
         // master+date before checking for a conflict.
         await using var transaction = await db.Database.BeginTransactionAsync();
@@ -359,6 +446,24 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
     // SuperAdmin, or the CompanyOwner of the booking's company. Used by every staff operation (view,
     // complete, mark-paid, no-show, reschedule, cancel) so the rule can't drift between them again —
     // cancel used to be missing the CompanyOwner branch that all the others had.
+    // The one rule about *when* a booking may sit, shared by Create and Reschedule so the two can't
+    // drift apart: not in the past, and not wrapping past midnight (TimeOnly can't represent 24:00, so
+    // an overflowing slot would otherwise silently produce EndTime < StartTime). This applies to every
+    // path including staff manual bookings — Q7 relaxes working hours, not the past. UTC is the
+    // project-wide reference until timezones land; see ARCHITECTURE.md §2.5.
+    private static bool IsBookableMoment(DateOnly date, TimeOnly startTime, int durationMinutes)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var today = DateOnly.FromDateTime(nowUtc);
+        var nowTime = TimeOnly.FromDateTime(nowUtc);
+
+        var isInThePast = date < today || (date == today && startTime < nowTime);
+        var overflowsIntoNextDay =
+            startTime.ToTimeSpan() + TimeSpan.FromMinutes(durationMinutes) >= TimeSpan.FromDays(1);
+
+        return !isInThePast && !overflowsIntoNextDay;
+    }
+
     private async Task<bool> CanManageBookingAsync(Booking booking, string userId)
     {
         if (booking.MasterId == userId || User.IsInRole("SuperAdmin")) return true;

@@ -137,11 +137,20 @@ public class CompaniesController(
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
 
+        var requested = serviceIds.Distinct().ToList();
+
         // Remove existing services for this master that belong to this company
         var companyServiceIds = await db.Services
             .Where(s => s.CompanyId == id)
             .Select(s => s.Id)
             .ToListAsync();
+
+        // Every requested id must belong to THIS company — checked before any write (US-16, audit B2)
+        // so a bad id can't leave the link table half-updated. A stray Guid that matches nothing would
+        // otherwise slip through Contains() checks below and either silently vanish or (for an id from
+        // another company) attach a master to a service that isn't theirs to serve.
+        if (requested.Any(sid => !companyServiceIds.Contains(sid)))
+            return BadRequest("One or more services do not belong to this company.");
 
         var existing = await db.MasterServices
             .Where(ms => ms.MasterId == member.UserId && companyServiceIds.Contains(ms.ServiceId))
@@ -149,7 +158,7 @@ public class CompaniesController(
 
         db.MasterServices.RemoveRange(existing);
 
-        foreach (var sid in serviceIds.Distinct())
+        foreach (var sid in requested)
             db.MasterServices.Add(new MasterService { Id = Guid.NewGuid(), MasterId = member.UserId, ServiceId = sid });
 
         await db.SaveChangesAsync();
@@ -302,6 +311,11 @@ public class CompaniesController(
         // Validate that the caller is allowed to assign the requested role
         if (!await CanAssignRole(dto.Role)) return Forbid();
 
+        // SuperAdmin's CanAssignRole above accepts any string sight unseen — so a typo'd role name from
+        // a SuperAdmin caller used to sail through and blow up Enum.Parse<UserRole> below with an
+        // unhandled 500 (audit D3). Reject an unknown role name explicitly instead.
+        if (!Enum.TryParse<UserRole>(dto.Role, out _)) return BadRequest("Unknown role");
+
         // Tariff seat limit: counts ALL members (the owner already occupies one seat), so a Free plan
         // (MaxEmployees = 1) leaves room for the owner only — no staff can be added until upgraded.
         // Only blocks adding NEW members once at/over the cap; existing members are never removed.
@@ -403,17 +417,24 @@ public class CompaniesController(
 
     [HttpGet("{id:guid}/stats")]
     [Authorize]
-    public async Task<IActionResult> GetStats(Guid id, [FromQuery] DateTime from, [FromQuery] DateTime to)
+    public async Task<IActionResult> GetStats(Guid id, [FromQuery] DateTime? from, [FromQuery] DateTime? to)
     {
         if (!await CanManageCompany(id)) return Forbid();
 
-        from = DateTime.SpecifyKind(from, DateTimeKind.Utc);
-        to = DateTime.SpecifyKind(to, DateTimeKind.Utc);
+        if (from is null || to is null) return BadRequest("Both 'from' and 'to' are required.");
+        if (to < from) return BadRequest("Invalid date range: 'to' must not be earlier than 'from'.");
+
+        // The date of truth is the VISIT date (Booking.Date), not the date the booking row was created
+        // (decision Q11) — a booking made on June 30th for a July 5th visit must land in the July report,
+        // matching GET /api/reports/masters (ReportsController.cs), which already filters by Date. Before
+        // this fix the two reports could disagree about which period a booking belonged to.
+        var fromDate = DateOnly.FromDateTime(from.Value);
+        var toDate = DateOnly.FromDateTime(to.Value);
 
         var bookings = await db.Bookings
             .Include(b => b.Service)
             .Include(b => b.Master)
-            .Where(b => b.CompanyId == id && b.CreatedAt >= from && b.CreatedAt <= to)
+            .Where(b => b.CompanyId == id && b.Date >= fromDate && b.Date <= toDate)
             .ToListAsync();
 
         var completed = bookings.Where(b => b.Status == BookingStatus.Completed).ToList();
@@ -421,14 +442,16 @@ public class CompaniesController(
 
         var totalRevenue = completed.Sum(b => b.Price);
 
-        // New clients: first booking in this company falls in [from, to]
+        // New clients: first VISIT in this company falls in [fromDate, toDate] — same date semantics as
+        // the revenue filter above (ARCHITECTURE.md §14.3), so a single response never mixes "first
+        // created" and "first visited" as two different meanings of "new".
         var allCompanyBookings = await db.Bookings
             .Where(b => b.CompanyId == id && b.ClientId != null)
             .GroupBy(b => b.ClientId!)
-            .Select(g => new { ClientId = g.Key, FirstDate = g.Min(b => b.CreatedAt) })
+            .Select(g => new { ClientId = g.Key, FirstDate = g.Min(b => b.Date) })
             .ToListAsync();
 
-        var newClientsCount = allCompanyBookings.Count(c => c.FirstDate >= from && c.FirstDate <= to);
+        var newClientsCount = allCompanyBookings.Count(c => c.FirstDate >= fromDate && c.FirstDate <= toDate);
 
         var masterStats = completed
             .GroupBy(b => b.MasterId)

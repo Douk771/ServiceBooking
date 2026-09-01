@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.WorkingHours;
 using ServiceBooking.API.Services;
@@ -303,13 +304,88 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
             .Content.ReadJsonAsync<BookingDto>();
         await AuthedClient(clientUser.Token).PatchAsJsonAsync($"/api/bookings/{toCancel!.Id}/cancel", (string?)null);
 
-        var response = await AnonymousClient().GetAsync(
+        // T-B16: GetOccupied is no longer anonymous — the master viewing their own occupancy is always
+        // allowed.
+        var response = await AuthedClient(master.Token).GetAsync(
             $"/api/bookings/occupied?masterId={master.UserId}&date={date:yyyy-MM-dd}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var ranges = (await response.Content.ReadFromJsonAsync<List<OccupiedRangeDto>>())!;
         ranges.Should().Contain(r => r.Start == keep!.StartTime && r.End == keep.EndTime);
         ranges.Should().NotContain(r => r.Start == new TimeOnly(12, 0));
+    }
+
+    [Fact, TestCase("BK-044")]
+    public async Task GetOccupied_Anonymous_ReturnsUnauthorized()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+
+        var response = await AnonymousClient().GetAsync($"/api/bookings/occupied?masterId={master.UserId}&date={date:yyyy-MM-dd}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact, TestCase("BK-045")]
+    public async Task GetOccupied_UnrelatedAuthenticatedUser_ReturnsForbidden()
+    {
+        // masterId isn't secret (GET /api/companies/{id}/masters lists it publicly), so this closes
+        // audit E3/Q9: knowing the id alone must no longer be enough to see occupancy.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var stranger = await RegisterAsync();
+        var date = NextWeekday();
+
+        var response = await AuthedClient(stranger.Token).GetAsync($"/api/bookings/occupied?masterId={master.UserId}&date={date:yyyy-MM-dd}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("BK-046")]
+    public async Task GetOccupied_MasterInTwoCompanies_ReturnsIntervalsFromBoth()
+    {
+        var (ownerA, companyA) = await CreateOwnerWithCompanyAsync();
+        var masterShared = await AddMasterAsync(ownerA.Token, companyA.Id);
+        var serviceA = await CreateServiceAsync(ownerA.Token, companyA.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(ownerA.Token, masterShared.UserId, companyA.Id, date);
+
+        var (ownerB, companyB) = await CreateOwnerWithCompanyAsync();
+        var addToB = await AuthedClient(ownerB.Token).PostAsJsonAsync($"/api/companies/{companyB.Id}/members",
+            new { phone = masterShared.Phone, firstName = masterShared.FirstName, lastName = masterShared.LastName,
+                  role = "Master", bio = (string?)null, email = (string?)null });
+        addToB.StatusCode.Should().Be(HttpStatusCode.OK);
+        var serviceB = await CreateServiceAsync(ownerB.Token, companyB.Id, durationMinutes: 60);
+        await SetWorkingDayAsync(ownerB.Token, masterShared.UserId, companyB.Id, date);
+
+        var clientUser = await RegisterAsync();
+        (await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(companyA.Id, serviceA.Id, masterShared.UserId, date, new TimeOnly(9, 0), null, null, null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+        (await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(companyB.Id, serviceB.Id, masterShared.UserId, date, new TimeOnly(14, 0), null, null, null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var response = await AuthedClient(masterShared.Token).GetAsync(
+            $"/api/bookings/occupied?masterId={masterShared.UserId}&date={date:yyyy-MM-dd}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ranges = await response.Content.ReadFromJsonAsync<List<OccupiedRangeDto>>();
+        ranges.Should().Contain(r => r.Start == new TimeOnly(9, 0));
+        ranges.Should().Contain(r => r.Start == new TimeOnly(14, 0));
+    }
+
+    [Fact, TestCase("BK-047")]
+    public async Task GetOccupied_ByOwnerOfCompanyWhereMasterWorks_ReturnsOk()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+
+        var response = await AuthedClient(owner.Token).GetAsync($"/api/bookings/occupied?masterId={master.UserId}&date={date:yyyy-MM-dd}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // ── Reschedule conflicts ───────────────────────────────────────────────────
@@ -393,6 +469,27 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var booking = await createResponse.Content.ReadJsonAsync<BookingDto>();
         booking!.PaymentStatus.Should().Be(PaymentStatus.NotRequired);
+    }
+
+    [Fact, TestCase("BK-049")]
+    public async Task GuestBooking_WithPrepaymentAndPayingTariff_IsPending()
+    {
+        // A guest booking is an online self-booking like any other, so the prepayment gate applies to
+        // it too. Before the isStaffManualBooking fix this case fell through to NotRequired: "manual"
+        // used to mean "the body carries a guestName", which every genuine guest sends — so the guest
+        // path silently skipped prepayment. See API_CONTRACT.md §2.3.
+        var (owner, company) = await CreateOwnerWithCompanyAsync(requirePrepayment: true);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var createResponse = await AnonymousClient().PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, "Guest Name", "+79990001122", null, null));
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var booking = await createResponse.Content.ReadJsonAsync<BookingDto>();
+        booking!.PaymentStatus.Should().Be(PaymentStatus.Pending);
     }
 
     [Fact, TestCase("BK-021")]
@@ -660,5 +757,304 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         (await slotsA.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!.Should().NotBeEmpty();
         (await slotsB.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!.Should().BeEmpty();
+    }
+
+    // ── POST /api/bookings — целостность создания (US-13, US-05, T-B14) ─────
+
+    [Fact, TestCase("BK-027")]
+    public async Task Create_AuthenticatedCaller_UnknownCompanyId_ReturnsNotFound()
+    {
+        // Previously an authenticated caller's Create fell straight through the (guest-only) company
+        // check and hit a broken FK — 500. Now the company existence check runs for everyone first.
+        var clientUser = await RegisterAsync();
+
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(Guid.NewGuid(), Guid.NewGuid(), "some-master-id", NextWeekday(), new TimeOnly(10, 0),
+                null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact, TestCase("BK-028")]
+    public async Task Create_OwnerWithoutSubscription_UnknownCompanyId_ReturnsNotFound_NotPaymentRequired()
+    {
+        // The company-existence check (404) must run BEFORE the tariff gate (402) — otherwise a caller
+        // who happens to be an unsubscribed owner would see a misleading 402 for a typo'd companyId.
+        var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(Guid.NewGuid(), Guid.NewGuid(), "some-master-id", NextWeekday(), new TimeOnly(10, 0),
+                null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact, TestCase("BK-032")]
+    public async Task Create_ClientWithGuestName_CompanyDisallowsSelfBooking_ReturnsForbidden()
+    {
+        // Closes A1: a logged-in client who supplies guestName but does NOT actually work at this
+        // company goes through the exact same gates as a guest — including AllowSelfBooking.
+        var (owner, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: false);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        var clientUser = await RegisterAsync();
+
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0),
+                null, "Someone Else", "+79990001122", null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("BK-033")]
+    public async Task Create_ClientWithGuestName_FreePlanCompany_ReturnsPaymentRequired()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true, onlineBooking: false);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        var clientUser = await RegisterAsync();
+
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0),
+                null, "Someone Else", "+79990001122", null, null));
+
+        response.StatusCode.Should().Be((HttpStatusCode)402);
+    }
+
+    [Fact, TestCase("BK-035")]
+    public async Task Create_ServiceFromAnotherCompany_ReturnsBadRequest_NoBookingCreated()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var (otherOwner, otherCompany) = await CreateOwnerWithCompanyAsync();
+        var foreignService = await CreateServiceAsync(otherOwner.Token, otherCompany.Id);
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, foreignService.Id, master.UserId, date, new TimeOnly(11, 0),
+                null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("BK-036")]
+    public async Task Create_MasterNotAMemberOfThisCompany_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var (otherOwner, otherCompany) = await CreateOwnerWithCompanyAsync();
+        var strangerMaster = await AddMasterAsync(otherOwner.Token, otherCompany.Id);
+        var date = NextWeekday();
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, strangerMaster.UserId, date, new TimeOnly(11, 0),
+                null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("BK-037")]
+    public async Task Create_ClientBookingOnNonWorkingDay_ReturnsConflict()
+    {
+        // No WorkingHours row for this date — the client goes through SlotCalculator with
+        // allowWithoutSchedule: false, same as GET /api/bookings/slots would (empty grid).
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0),
+                null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact, TestCase("BK-038")]
+    public async Task Create_ClientBookingInsideABreak_ReturnsConflict()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+
+        var dto = new UpsertWorkingHoursDto(master.UserId, company.Id, date, true,
+            new TimeOnly(9, 0), new TimeOnly(18, 0), [new UpsertBreakDto(new TimeOnly(13, 0), new TimeOnly(14, 0))]);
+        (await AuthedClient(owner.Token).PutAsJsonAsync("/api/workinghours", dto)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(13, 0),
+                null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact, TestCase("BK-039")]
+    public async Task Create_DateInThePast_ReturnsConflict()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var pastDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, pastDate, isWorking: true);
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, pastDate, new TimeOnly(11, 0),
+                null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact, TestCase("BK-040")]
+    public async Task Create_StartTimeNotOnTheGrid_ReturnsConflict()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(10, 7),
+                null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact, TestCase("BK-041")]
+    public async Task Reschedule_ToAPastDate_ReturnsConflict()
+    {
+        // Reformulated per ARCHITECTURE.md §14.1: Reschedule is staff-only and, by decision Q7, follows
+        // the relaxed staff rule (not in the past + no overlap) rather than full WorkingHours validation.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var createResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0),
+                null, null, null, null, null));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var booking = (await createResponse.Content.ReadJsonAsync<BookingDto>())!;
+
+        var pastDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
+        var response = await AuthedClient(master.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/reschedule",
+            new RescheduleDto(pastDate, new TimeOnly(9, 0)));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact, TestCase("BK-048")]
+    public async Task Create_ClientWithGuestName_MissingNameOrPhone_ReturnsBadRequest()
+    {
+        // isGuestPath applies the same gates a real guest gets — including the name/phone requirement —
+        // to a logged-in client who supplies SOME guest details but not both.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        var clientUser = await RegisterAsync();
+
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0),
+                null, "Someone Else", null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // ── GET /api/bookings/client?status= (US-07, T-B15) ──────────────────────
+
+    [Fact, TestCase("BK-029")]
+    public async Task GetClientBookings_StatusUpcoming_ReturnsOnlyFutureConfirmedOrPending()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var futureDate = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, futureDate);
+
+        var clientUser = await RegisterAsync();
+        var futureBooking = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, futureDate, new TimeOnly(9, 0), null, null, null, null, null));
+        futureBooking.StatusCode.Should().Be(HttpStatusCode.Created);
+        var future = (await futureBooking.Content.ReadJsonAsync<BookingDto>())!;
+
+        // Create no longer accepts a past date at all (T-B14), so a past booking has to be planted
+        // directly in the DB — a row in this shape can still exist from before that fix went live.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+            db.Bookings.Add(new ServiceBooking.Core.Entities.Booking
+            {
+                Id = Guid.NewGuid(), CompanyId = company.Id, ServiceId = service.Id, MasterId = master.UserId,
+                ClientId = clientUser.UserId, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-3)),
+                StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(10, 0),
+                Status = BookingStatus.Confirmed, PaymentStatus = PaymentStatus.NotRequired, Price = service.Price
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var response = await AuthedClient(clientUser.Token).GetAsync("/api/bookings/client?status=upcoming");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bookings = await response.Content.ReadJsonAsync<List<BookingDto>>();
+        bookings.Should().ContainSingle(b => b.Id == future.Id);
+        bookings.Should().OnlyContain(b => b.Status == BookingStatus.Confirmed || b.Status == BookingStatus.Pending);
+    }
+
+    [Fact, TestCase("BK-030")]
+    public async Task GetClientBookings_StatusCompletedOrCancelled_FiltersAsBefore()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var create1 = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+        var booking1 = (await create1.Content.ReadJsonAsync<BookingDto>())!;
+        (await AuthedClient(master.Token).PatchAsync($"/api/bookings/{booking1.Id}/complete", null))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var create2 = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null, null, null, null, null));
+        var booking2 = (await create2.Content.ReadJsonAsync<BookingDto>())!;
+        (await AuthedClient(clientUser.Token).PatchAsJsonAsync($"/api/bookings/{booking2.Id}/cancel", (string?)null))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var completedResponse = await AuthedClient(clientUser.Token).GetAsync("/api/bookings/client?status=Completed");
+        var completed = await completedResponse.Content.ReadJsonAsync<List<BookingDto>>();
+        completed.Should().ContainSingle(b => b.Id == booking1.Id);
+
+        var cancelledResponse = await AuthedClient(clientUser.Token).GetAsync("/api/bookings/client?status=Cancelled");
+        var cancelled = await cancelledResponse.Content.ReadJsonAsync<List<BookingDto>>();
+        cancelled.Should().ContainSingle(b => b.Id == booking2.Id);
+    }
+
+    [Fact, TestCase("BK-031")]
+    public async Task GetClientBookings_UnknownStatus_ReturnsBadRequest()
+    {
+        var clientUser = await RegisterAsync();
+
+        var response = await AuthedClient(clientUser.Token).GetAsync("/api/bookings/client?status=garbage");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

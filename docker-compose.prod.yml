@@ -29,6 +29,7 @@ services:
       - Jwt__Audience=ServiceBookingClient
       - AllowedOrigins=https://${DOMAIN},https://www.${DOMAIN}
       - SuperAdmin__Phone=${SUPERADMIN_PHONE}
+      - SuperAdmin__Password=${SUPERADMIN_PASSWORD}
       - SmartCaptcha__SecretKey=${SMARTCAPTCHA_SECRET_KEY}
       - SmartCaptcha__SiteKey=${SMARTCAPTCHA_SITE_KEY}
       - ASPNETCORE_ENVIRONMENT=Production

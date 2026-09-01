@@ -171,7 +171,7 @@ Get-Service ServiceBookingApi   # должен быть Status: Running
 Проверка:
 
 ```powershell
-Invoke-WebRequest http://localhost:5000/swagger/index.html -UseBasicParsing | Select-Object StatusCode
+Invoke-WebRequest http://localhost:5000/api/companies -UseBasicParsing | Select-Object StatusCode
 ```
 
 Ожидаем `200`. Если нет — смотрим `C:\ezbook\logs\api-stderr.log` и присылаете мне содержимое.

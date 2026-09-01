@@ -22,6 +22,10 @@ services:
     ports:
       - "5000:8080"
     environment:
+      # Without this the runtime defaults to Production (the aspnet base image sets no environment),
+      # and the Production fail-fast in Program.cs rejects the placeholder Jwt__Key below — the dev
+      # stack would refuse to start.
+      - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=servicebooking;Username=postgres;Password=postgres
       - Jwt__Key=CHANGE_ME_TO_A_LONG_SECRET_KEY_AT_LEAST_32_CHARS
       - Jwt__Issuer=ServiceBooking

@@ -48,7 +48,12 @@ Authorization: Bearer <token>
 
 ### Интерактивная документация
 
-В любой момент, когда приложение запущено, доступна **Swagger UI по адресу `/swagger`** — там можно интерактивно исследовать все эндпоинты, посмотреть точные схемы запросов/ответов и выполнить запросы прямо из браузера (в схему авторизации нужно вставить только сам токен, без слова `Bearer`).
+**Изменено в цикле санации A (US-10, решение Q4).** Swagger UI по адресу `/swagger` доступен **только
+при локальном запуске в Development** (`ASPNETCORE_ENVIRONMENT=Development`) — в Production и в любом
+развёрнутом окружении (включая staging) он не регистрируется вовсе, `/swagger/*` отдаёт `404`. Раньше
+Swagger был доступен всегда, включая боевой сервер — вся схема API, включая параметры авторизации,
+была публично исследуема кем угодно. Для интеграции с реальными запросами используйте примеры curl из
+раздела 4 этого документа.
 
 ---
 
@@ -268,14 +273,23 @@ CommissionPercent`, по умолчанию `0`), а не пользовател
 
 #### `GET /api/bookings/occupied`
 
-**Доступ:** анонимный.
+**Изменено в цикле санации A (US-20, находка E3, решение Q9).** Раньше — анонимный доступ. Теперь
+**требуется `[Authorize]`** плюс явное право: `SuperAdmin`, сам мастер (`requesterId == masterId`), либо
+участник (`Master`/`CompanyOwner`) хотя бы одной компании, где этот мастер тоже состоит. `masterId` не
+секрет (публичный `GET /api/companies/{id}/masters` перечисляет id всех мастеров компании), поэтому
+анонимный доступ позволял кому угодно вытянуть занятость любого мастера по всем его компаниям.
 
 **Query-параметры:** `masterId` (string, обязателен), `date` (`DateOnly`, формат `yyyy-MM-dd`, обязателен).
 
 Возвращает занятые интервалы времени мастера на указанную дату (все записи кроме отменённых).
+**Занятость по-прежнему считается по всем компаниям мастера** — параметр `companyId` не вводится: масте­р,
+работающий в двух компаниях, физически один человек, и запись в компании A обязана блокировать то же
+время в компании B (решение Q9). Это намеренная асимметрия с расписанием (`WorkingHours`), которое
+скоупится по компании — см. `GET /api/bookings/slots` ниже.
 
 ```bash
-curl "http://localhost:5000/api/bookings/occupied?masterId=6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4&date=2026-07-20"
+curl "http://localhost:5000/api/bookings/occupied?masterId=6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4&date=2026-07-20" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 **Ответ `200 OK`** (`OccupiedRangeDto[]`):
@@ -287,7 +301,9 @@ curl "http://localhost:5000/api/bookings/occupied?masterId=6a9c1e2d-3f4b-4a5c-8d
 ]
 ```
 
-Ошибок, специфичных для этого эндпоинта, нет — при некорректном `masterId`/`date` (не парсится) сработает автоматическая `400`-валидация связывания модели ASP.NET Core; при отсутствии записей возвращается пустой массив.
+**Ошибки:** `401 Unauthorized` (нет токена), `403 Forbidden` (авторизован, но не имеет права на этого
+мастера — тело пустое). При некорректном `masterId`/`date` (не парсится) сработает автоматическая
+`400`-валидация связывания модели ASP.NET Core; при отсутствии записей возвращается пустой массив.
 
 #### `GET /api/bookings/slots`
 
@@ -326,20 +342,33 @@ curl "http://localhost:5000/api/bookings/slots?companyId=3fa85f64-5717-4562-b3fc
 
 **Доступ:** анонимный **или** аутентифицированный (поведение различается).
 
+**Изменено в цикле санации A (T-B14, US-13 + US-05 — крупнейшая правка цикла).** «Персонал» теперь
+определяется не одним лишь присутствием `guestName`, а фактическим членством вызывающего в компании
+(`isStaff = аутентифицирован && (SuperAdmin || участник companyId с ролью Master/CompanyOwner)`).
+Авторизованный клиент, приславший `guestName`, но не работающий в этой компании (`isGuestPath`), теперь
+проходит **ровно те же гейты, что и настоящий гость** — самозапись, капча, обязательность имени/
+телефона, тарифный гейт (закрывает находку A1). `serviceId`/`masterId` теперь обязаны реально
+принадлежать `companyId` (закрывает находку A2), а слот валидируется против расписания для всех, кроме
+персонала, оформляющего ручную запись (закрывает находку A3, решение Q7 — персоналу проверяется только
+пересечение с другими записями и «не в прошлом»). Полный порядок проверок — в таблице ошибок ниже.
+
 **Тело запроса** (`CreateBookingDto`):
 
 | Поле | Тип | Обязательное | Примечание |
 |---|---|---|---|
 | `companyId` | Guid | да | |
-| `serviceId` | Guid | да | |
-| `masterId` | string | да | |
-| `date` | DateOnly | да | |
-| `startTime` | TimeOnly | да | |
-| `notes` | string? | нет | |
-| `guestName` | string? | условно | если указано — запись считается **ручной** (см. §3.4); обязательно для гостевого сценария |
-| `guestPhone` | string? | условно | обязательно для гостевого (неаутентифицированного) сценария |
-| `guestEmail` | string? | нет | |
-| `captchaToken` | string? | условно | токен Yandex SmartCaptcha; требуется для гостевого бронирования, когда капча активна (задан `SmartCaptcha:SecretKey` **или** окружение — Production) |
+| `serviceId` | Guid | да | должна принадлежать `companyId` и быть активной (новое) |
+| `masterId` | string | да | должен быть участником `companyId` с ролью Master/CompanyOwner (новое) |
+| `date` | DateOnly | да | не в прошлом (новое) |
+| `startTime` | TimeOnly | да | не в прошлом; `startTime + длительность услуги` не должно переполнять сутки (новое) |
+| `notes` | string? | нет | ≤ 2000 символов (новое) |
+| `guestName` | string? | условно | если указано И вызывающий не персонал этой компании — обрабатывается как гостевой запрос (см. §3.4); ≤ 200 символов (новое) |
+| `guestPhone` | string? | условно | обязательно для гостевого сценария; ≤ 32 символа (новое) |
+| `guestEmail` | string? | нет | ≤ 256 символов (новое) |
+| `captchaToken` | string? | условно | токен Yandex SmartCaptcha; требуется для гостевого сценария, когда капча активна (задан `SmartCaptcha:SecretKey` **или** окружение — Production) |
+
+Нарушение ограничений длины/диапазона выше даёт `400 application/problem+json`
+(`ValidationProblemDetails`) от автоматической валидации `[ApiController]`.
 
 **Пример запроса (аутентифицированный клиент бронирует сам себя):**
 
@@ -399,22 +428,31 @@ curl -X POST http://localhost:5000/api/bookings \
 }
 ```
 
-**Ошибки** (проверяются строго в этом порядке для гостевого сценария):
+**Ошибки** (проверяются строго в этом порядке; `isGuestPath` = не аутентифицирован ИЛИ (прислал `guestName` И не персонал этой компании)):
 
-| Код | Причина |
-|---|---|
-| `404 Not Found` | (только для гостевого запроса) компания с `companyId` не найдена — `"Company not found"` |
-| `403 Forbidden` | (только для гостевого запроса) `Company.AllowSelfBooking = false` — см. §3.2 |
-| `400 Bad Request` | (только для гостевого запроса) капча активна (см. `captchaToken` выше), но `captchaToken` не передан — `"Captcha required for guest booking"` |
-| `400 Bad Request` | `captchaToken` передан, но не прошёл серверную валидацию Yandex SmartCaptcha (`status != "ok"`, недоступность сервиса валидации или сетевая ошибка — во всех случаях fail-closed) — `"Invalid captcha"` |
-| `400 Bad Request` | (только для гостевого запроса) не заполнены `guestName` и/или `guestPhone` — `"Name and phone are required for guest booking"` |
-| `402 Payment Required` | у компании есть подписка с истёкшим `PaidUntil` — `"Subscription expired. New bookings are not allowed."` |
-| `402 Payment Required` | запрос неаутентифицирован и план компании — Free — `"Online booking requires a paid subscription."` (см. §3.1) |
-| `404 Not Found` | услуга (`serviceId`) не найдена — `"Service not found"` |
-| `409 Conflict` | выбранный слот уже занят другой (неотменённой) записью этого мастера — `"Time slot is no longer available"` |
-| `400 Bad Request` | не пройдена автоматическая валидация модели (например, отсутствуют обязательные поля `companyId`/`serviceId`/`masterId`/`date`/`startTime`) |
+| # | Код | Причина |
+|---|---|---|
+| 0 | `400 Bad Request` | не пройдена автоматическая валидация модели (обязательные поля, ограничения длины — `ValidationProblemDetails`) |
+| 1 | `404 Not Found` | компания с `companyId` не найдена — `"Company not found"` (**теперь для всех**, не только гостя) |
+| 2 | `403 Forbidden` | `[isGuestPath]` `Company.AllowSelfBooking = false` — тело пустое |
+| 3 | `400 Bad Request` | `[isGuestPath]` капча активна, `captchaToken` не передан — `"Captcha required for guest booking"` |
+| 4 | `400 Bad Request` | `[isGuestPath]` `captchaToken` передан, но не прошёл серверную валидацию Yandex SmartCaptcha (fail-closed) — `"Invalid captcha"` |
+| 5 | `400 Bad Request` | `[isGuestPath]` не заполнены `guestName` и/или `guestPhone` — `"Name and phone are required for guest booking"` |
+| 6 | `402 Payment Required` | план компании не позволяет онлайн-запись, и это не ручная запись персонала — `"Online booking requires a paid subscription."` (см. §3.1) |
+| 7 | `404 Not Found` | услуга (`serviceId`) не найдена — `"Service not found"` |
+| 8 | `400 Bad Request` | **новое**: `serviceId` принадлежит другой компании — `"Service does not belong to this company"` |
+| 9 | `400 Bad Request` | **новое**: услуга неактивна (`IsActive = false`) — `"Service is not available"` |
+| 10 | `400 Bad Request` | **новое**: `masterId` не участник `companyId` с ролью Master/CompanyOwner — `"Master is not a staff member of this company"` |
+| 11 | `409 Conflict` | **новое**: `date`+`startTime` в прошлом, либо `startTime` + длительность услуги переполняет сутки — `"Time slot is no longer available"` |
+| 12 | `409 Conflict` | слот не проходит валидацию: для персонала (ручная запись) — пересекается с другой записью мастера; для всех остальных — не входит в сетку, которую отдал бы `GET /api/bookings/slots` (нерабочий день, вне окна, перерыв, не на сетке, занято) — тот же текст `"Time slot is no longer available"` |
 
-Примечание: если запрос аутентифицирован, существование `companyId` явно не проверяется (проверка `Company not found` — только в гостевой ветке); при несуществующем `companyId` в аутентифицированном сценарии ошибка целостности данных проявится на уровне БД.
+Тексты 400/402/403/404/409, которые существовали до цикла санации A, не изменились дословно —
+фронтовые мапперы ошибок продолжают их понимать без правок.
+
+Кому принадлежит запись: `ClientId` заполняется, если вызывающий не является персоналом, оформляющим
+ручную запись (`isStaffManualBooking`). Клиент, приславший `guestName`, но не работающий в компании,
+теперь считается владельцем своей же записи (`ClientId = его userId`), а не «ничьей» гостевой —
+раньше такая запись имела `ClientId = null`, и отзыв на неё мог оставить кто угодно (см. §4.8).
 
 #### `GET /api/bookings/{id}`
 
@@ -451,13 +489,28 @@ curl http://localhost:5000/api/bookings/my -H "Authorization: Bearer $TOKEN"
 
 **Доступ:** любой аутентифицированный пользователь.
 
-**Query-параметры:** `status` (string?, опционально) — по сути имя значения `BookingStatus` (`Pending`/`Confirmed`/`Cancelled`/`Completed`/`NoShow`).
+**Query-параметры:** `status` (string?, опционально).
+
+**Изменено в цикле санации A (US-07, T-B15).** Раньше `status=upcoming` (единственное значение, которое
+реально шлёт фронт) **молча игнорировался** — вкладка «Предстоящие» показывала вообще все записи; статусы
+в нижнем регистре (`cancelled`, `completed`) тоже молча игнорировались; любой мусор проходил без ошибки.
+Теперь (реализовано общей чистой функцией `BookingFilters`, переиспользуемой юнит-тестами):
+
+| `status` | Поведение |
+|---|---|
+| не передан / пустой | без фильтра, все записи |
+| `upcoming` (любой регистр) | только `Confirmed`/`Pending`, и (`date > сегодня` **или** (`date == сегодня` **и** `startTime > текущее время`)) — строго позже «сейчас» (`DateTime.UtcNow`) |
+| имя `BookingStatus` (любой регистр) | фильтр по статусу |
+| числовое значение enum | фильтр по статусу (поведение сохранено) |
+| всё остальное | **`400`**, `text/plain`: `"Unknown status filter. Expected: upcoming, Pending, Confirmed, Cancelled, Completed, NoShow."` |
 
 ```bash
-curl "http://localhost:5000/api/bookings/client?status=Completed" -H "Authorization: Bearer $TOKEN"
+curl "http://localhost:5000/api/bookings/client?status=upcoming" -H "Authorization: Bearer $TOKEN"
 ```
 
-**Ответ `200 OK`** — массив `BookingDto`, отфильтрованный по статусу. **Важный нюанс:** если `status` передан, но не соответствует ни одному значению перечисления `BookingStatus` (`Enum.TryParse` не проходит), фильтр **молча игнорируется** — возвращаются вообще все записи клиента без фильтрации, ошибка `400` не возникает.
+**Ответ `200 OK`** — массив `BookingDto`, отфильтрованный по статусу (форма и сортировка не изменились).
+
+**Ошибки:** `401 Unauthorized`, `400 Bad Request` (неизвестное значение `status`, см. таблицу выше).
 
 #### `GET /api/bookings/master`
 
@@ -545,7 +598,14 @@ curl -X PATCH http://localhost:5000/api/bookings/c47ac10b-58cc-4372-a567-0e02b2c
 | `403 Forbidden` | вызывающий не мастер/владелец компании/SuperAdmin |
 | `404 Not Found` | запись не найдена |
 | `400 Bad Request` | запись уже отменена или завершена — `"Cannot reschedule a cancelled or completed booking"` |
+| `409 Conflict` | **новое** (T-B14): `date`+`startTime` в прошлом, либо переполняет сутки — `"Time slot is no longer available"` |
 | `409 Conflict` | новый слот пересекается с другой (неотменённой) записью того же мастера — `"Time slot is no longer available"` |
+
+**Изменено в цикле санации A (решение Q7, ARCHITECTURE.md §14.1).** Эндпоинт staff-only (клиент вообще
+не может его вызвать), поэтому валидация переноса следует **правилу персонала**, а не полной проверке
+против расписания: не в прошлом + не пересекается с другой записью. Рабочие часы, перерывы и 30-минутная
+сетка к переносу **намеренно не применяются** — иначе сломалась бы сетка `RescheduleModal` (08:00–21:00),
+которая ничего не знает о графике конкретного мастера.
 
 #### `PATCH /api/bookings/{id}/cancel`
 
@@ -688,6 +748,11 @@ curl http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/me
 
 **Тело запроса:** `List<Guid>` — полный новый список `serviceId`, которые может выполнять данный мастер. Полностью заменяет предыдущие привязки (`MasterService`) в рамках этой компании.
 
+**Изменено в цикле санации A (US-16, находка B2).** Перед любыми изменениями (до удаления старых
+привязок) проверяется, что каждый присланный `serviceId` существует и принадлежит компании `{id}`.
+Раньше владелец мог привязать своего мастера к услуге чужой компании, а несуществующий `Guid` давал
+`500` от нарушения FK. Правка атомарна: при отказе ни одна привязка не создаётся и не удаляется.
+
 ```bash
 curl -X PUT http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/members/d2a1b3c4-1111-2222-3333-444455556666/services \
   -H "Authorization: Bearer $OWNER_TOKEN" \
@@ -697,7 +762,7 @@ curl -X PUT http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66
 
 **Успешный ответ:** `204 No Content`.
 
-**Ошибки:** `401 Unauthorized`, `403 Forbidden`, `404 Not Found` (участник с `memberId` не найден в данной компании).
+**Ошибки:** `401 Unauthorized`, `403 Forbidden`, `404 Not Found` (участник с `memberId` не найден в данной компании), `400 Bad Request` (**новое**: один или несколько `serviceId` не принадлежат этой компании / не существуют — `"One or more services do not belong to this company."`).
 
 #### `PUT /api/companies/{id}/members/{memberId}/commission`
 
@@ -829,7 +894,12 @@ curl -X DELETE http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963
 
 **Доступ:** CompanyOwner компании или SuperAdmin.
 
-**Query-параметры:** `from` (DateTime), `to` (DateTime) — диапазон по `Booking.CreatedAt` (не по дате визита).
+**Query-параметры:** `from` (`DateTime?`), `to` (`DateTime?`) — **изменено в цикле санации A** (US-18,
+решение Q11, находка B5): оба стали опциональными на уровне модели, но **обязательными по бизнес-правилу**
+(см. ошибки ниже), и диапазон теперь фильтрует по **дате визита** (`Booking.Date`), а не по `CreatedAt`.
+Раньше запись, созданная 30 июня на визит 5 июля, попадала в отчёт «за июнь» и рисовалась столбиком на
+5 июля (вне выбранного диапазона), а `GET /api/reports/masters` (который уже фильтровал по `Date`) мог
+показать другие цифры за тот же период — теперь оба эндпоинта согласованы.
 
 ```bash
 curl "http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/stats?from=2026-07-01T00:00:00Z&to=2026-07-31T23:59:59Z" \
@@ -857,9 +927,13 @@ curl "http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/s
 }
 ```
 
-`totalRevenue` считается только по **завершённым** записям (`Status == Completed`). `newClientsCount` — число клиентов, у которых **самая первая** запись в этой компании (по всей истории) попадает в интервал `[from, to]`.
+`totalRevenue` считается только по **завершённым** записям (`Status == Completed`), сгруппированным по
+`Booking.Date`. `newClientsCount` — число клиентов, у которых **самый первый визит** в этой компании (по
+всей истории, `Min(b.Date)`, а не `Min(b.CreatedAt)`) попадает в интервал `[from, to]`.
 
-**Ошибки:** `401 Unauthorized`, `403 Forbidden`.
+**Ошибки:** `401 Unauthorized`, `403 Forbidden`, `400 Bad Request` (**новое**: отсутствует `from` или
+`to` — `"Both 'from' and 'to' are required."`; либо `to < from` — `"Invalid date range: 'to' must not
+be earlier than 'from'."`).
 
 ---
 
@@ -1889,13 +1963,13 @@ curl -X POST http://localhost:5000/api/admin/plans \
 | `200 OK` | Успешное чтение или обработка запроса, где не требуется возвращать заголовок `Location` (большинство `GET`, а также многие `POST`/`PUT`, использующие `Ok(...)` вместо `CreatedAtAction(...)`, например `POST /api/companies/{id}/members`, `POST /api/services`) |
 | `201 Created` | Успешное создание ресурса через `CreatedAtAction` — только `POST /api/bookings` и `POST /api/companies` |
 | `204 No Content` | Успешная операция без тела ответа: большинство `PATCH`/`DELETE`, а также некоторые `PUT` (например, `PUT /api/companies/{id}/members/{memberId}/services`, `PUT /api/admin/*`) |
-| `400 Bad Request` | Не пройдена модельная валидация ASP.NET Core (автоматически для любого контроллера с `[ApiController]`); бизнес-валидация не проходит (например, "Name and phone are required for guest booking", неверный текущий пароль, ошибки Identity при регистрации/создании пользователя, запись уже отменена при попытке завершить/отметить неявку, `rating` вне диапазона 1–5 при создании отзыва, неизвестное имя роли в `PUT /api/admin/users/{id}/roles`) |
-| `401 Unauthorized` | Заголовок `Authorization` отсутствует или токен невалиден/просрочен на защищённом эндпоинте; неверные учётные данные при входе; аккаунт временно заблокирован после 5 неудачных попыток входа |
-| `402 Payment Required` | Гостевая запись при плане подписки Free (`Online booking requires a paid subscription.`); попытка создать новую запись при просроченной подписке (`Subscription expired. New bookings are not allowed.`) — оба случая только в `POST /api/bookings` |
-| `403 Forbidden` | Пользователь аутентифицирован, но не обладает нужной ролью (`[Authorize(Roles=...)]`) или не проходит проверку владения (не CompanyOwner/мастер/SuperAdmin для данного ресурса, включая `WorkingHoursController.GET`/`ScheduleTemplateController`); гостевая запись при `Company.AllowSelfBooking=false`; попытка назначить роль, на которую нет прав (CompanyOwner пытается назначить SuperAdmin); попытка оставить отзыв за чужую (привязанную к другому клиенту) или гостевую запись; `Master` пытается создать/изменить/удалить услугу (`POST`/`PUT`/`DELETE /api/services`) |
-| `404 Not Found` | Ресурс с указанным идентификатором не найден (компания, услуга, запись, участник компании, тарифный план, пользователь и т.д.); компания не найдена при попытке гостевого бронирования; несуществующие `ownerUserId`/`planConfigId` в `PUT /api/admin/owners/{id}/subscription` |
-| `409 Conflict` | Выбранный временной слот уже занят другой записью (создание/перенос записи); `slug` компании уже занят; отзыв на эту запись уже существует; пользователь уже состоит участником компании; удаление тарифного плана с активными подписчиками (`DELETE /api/admin/plans/{id}`) |
-| `500 Internal Server Error` | Необработанное исключение — единственный задокументированный явный случай: передача в `POST /api/companies/{id}/members` значения `role`, не входящего в `Client`/`Master`/`CompanyOwner`/`SuperAdmin` (падает `Enum.Parse<UserRole>`) |
+| `400 Bad Request` | Не пройдена модельная валидация ASP.NET Core (автоматически, `ValidationProblemDetails`, для любого контроллера с `[ApiController]` — включая новые `[MaxLength]`/`[Range]` на `CreateBookingDto`/`CreateServiceDto`); бизнес-валидация не проходит: "Name and phone are required for guest booking", "Captcha required for guest booking", "Invalid captcha", "Service does not belong to this company", "Service is not available", "Master is not a staff member of this company" (все — `POST /api/bookings`); "One or more services do not belong to this company" (`PUT /api/companies/{id}/members/{memberId}/services`); "Both 'from' and 'to' are required." / "Invalid date range…" (`GET /api/companies/{id}/stats`, `POST /api/schedule-template/apply`); "Plan is not active" / "Owner not found" не путать с 404 (`PUT /api/admin/owners/{id}/subscription`); "Unknown role" (`POST /api/companies/{id}/members`, неизвестное имя роли — раньше падало `500`); "Unknown status filter…" (`GET /api/bookings/client`); неверный текущий пароль; ошибки Identity при регистрации/создании пользователя; запись уже отменена при попытке завершить/отметить неявку; `rating` вне диапазона 1–5 при создании отзыва |
+| `401 Unauthorized` | Заголовок `Authorization` отсутствует или токен невалиден/просрочен на защищённом эндпоинте (включая отозванный по `SecurityStamp` — см. §3.8); неверные учётные данные при входе; аккаунт временно заблокирован после 5 неудачных попыток входа; анонимный запрос к `GET /api/bookings/occupied` (было анонимным, стало защищённым) |
+| `402 Payment Required` | Гостевая/самостоятельная запись при плане подписки Free (`Online booking requires a paid subscription.`); попытка создать новую запись при просроченной подписке (`Subscription expired. New bookings are not allowed.`) — оба случая только в `POST /api/bookings` |
+| `403 Forbidden` | Пользователь аутентифицирован, но не обладает нужной ролью (`[Authorize(Roles=...)]`) или не проходит проверку владения (не CompanyOwner/мастер/SuperAdmin для данного ресурса, включая `WorkingHoursController.GET`/`ScheduleTemplateController`/`GET /api/bookings/occupied`); гостевая/несотрудничная запись при `Company.AllowSelfBooking=false`; попытка назначить роль, на которую нет прав; попытка оставить отзыв за чужую (привязанную к другому клиенту) или гостевую запись; `Master` пытается создать/изменить/удалить услугу |
+| `404 Not Found` | Ресурс с указанным идентификатором не найден (компания, услуга, запись, участник компании, тарифный план, пользователь и т.д.); компания не найдена при попытке любого бронирования (`POST /api/bookings`, теперь для всех вызывающих, не только гостя); несуществующие `ownerUserId`/`planConfigId` в `PUT /api/admin/owners/{id}/subscription` |
+| `409 Conflict` | Выбранный временной слот уже занят другой записью, находится в нерабочее время/перерыве/не на 30-минутной сетке, или дата/время в прошлом/переполняет сутки (создание/перенос записи, `"Time slot is no longer available"` для всех случаев); `slug` компании уже занят; отзыв на эту запись уже существует; пользователь уже состоит участником компании; удаление тарифного плана с активными подписчиками (`DELETE /api/admin/plans/{id}`) |
+| `500 Internal Server Error` | Необработанное исключение — единственная стабильно воспроизводимая точка: `SuperAdmin` создаёт услугу (`POST /api/services`) в несуществующей `companyId` (падает FK). **Изменено в цикле санации A**: тело теперь всегда `application/problem+json` с полями `type`/`title`/`status`/`traceId` (глобальный обработчик исключений, `Program.cs`) — раньше было пустое тело/страница разработчика. Формат deliberate 400/402/403/404/409 не затронут — `ProblemDetails` используется **только** для необработанных исключений |
 
 ---
 
@@ -1943,3 +2017,16 @@ curl -X POST http://localhost:5000/api/admin/plans \
 16. **Токены не отзывались при смене пароля/телефона** — JWT жил до 7 дней независимо от того, менял ли пользователь пароль. Добавлен claim `sstamp` (снимок `AppUser.SecurityStamp` на момент выпуска токена), который сверяется с текущим значением на каждом запросе (`OnTokenValidated`, бесплатно — `user` там и так уже загружен для перечитки ролей). `ChangePasswordAsync`/`SetUserNameAsync` (смена телефона) ротируют `SecurityStamp` штатно — все ранее выданные токены отзываются немедленно. См. §3.8. Токены, выпущенные **до** этого изменения (без claim'а `sstamp`), отклоняются как отозванные — сервис не в продакшене, переходного периода не предусмотрено.
 17. **Гонка (TOCTOU) при `WorkingHours.Upsert` и `ScheduleTemplate` (аудит, находка B3)** — check-then-act без транзакции мог создать дублирующиеся строки при параллельных запросах. Обёрнуто в транзакцию + `pg_advisory_xact_lock`; добавлен уникальный индекс `(MasterId, CompanyId, Date)` на `WorkingHours`. См. §4.5, §4.6.
 18. **`POST /api/schedule-template/apply` без ограничения диапазона (аудит, находка B4)** — произвольно большой `to - from` мог создать сотни тысяч записей за один вызов. Добавлен потолок: не более 366 дней за раз, `to < from` отклоняется. См. §4.6.
+19. **Услуга чужой компании могла быть привязана мастеру (аудит, находка B2)** — `PUT /api/companies/{id}/members/{memberId}/services` не проверял, что присланные `serviceId` принадлежат компании `{id}`; несуществующий `Guid` также давал `500` от FK. Теперь оба случая дают `400 Bad Request` до какой-либо записи. См. §4.3.
+20. **Отчёт `GET /api/companies/{id}/stats` считал по дате создания записи, а не по дате визита (аудит, находка B5, решение Q11)** — расхождение с `GET /api/reports/masters` (уже фильтровал по дате визита) внутри одного UI. Оба фильтра и группировка теперь читают `Booking.Date`; `from`/`to` стали обязательными по бизнес-правилу (`400` при отсутствии или при `to < from`). См. §4.3.
+21. **`POST /api/bookings` — целостность создания записи (T-B14, аудит, находки A1/A2/A3, находка A5 попутно через `CanAssignRole`)** — крупнейшая правка цикла санации A:
+    - **A1**: авторизованный клиент, приславший `guestName`, но фактически не работающий в компании, автоматически считался «персоналом» и обходил все гостевые гейты (самозапись, капча, тариф). Теперь такой вызывающий проходит ровно те же проверки, что и гость.
+    - **A2**: `serviceId`/`masterId` не проверялись на принадлежность к `companyId` — можно было записаться на чужую услугу или к мастеру, не работающему в этой компании. Теперь оба случая дают `400`.
+    - **A3**: серверная проверка слота смотрела только на пересечение с другими записями, игнорируя рабочие часы, перерывы, сетку и дату в прошлом. Теперь непер­сонал проходит то же правило, что отдаёт `GET /api/bookings/slots` (`SlotCalculator`); персонал (решение Q7) — только «не в прошлом» + «нет пересечения».
+    - Компания теперь проверяется на существование для ЛЮБОГО вызывающего (раньше — только для гостя), устраняя `500` на нарушении FK для авторизованных пользователей с несуществующим `companyId`.
+    - `POST /api/companies/{id}/members` с неизвестным именем роли от `SuperAdmin` (`CanAssignRole` пропускает SuperAdmin с любой строкой) теперь даёт `400` вместо необработанного `Enum.Parse<UserRole>` (`500`).
+    - Появился глобальный обработчик необработанных исключений: любой оставшийся `500` теперь всегда `application/problem+json` с `traceId`, а не пустое тело/страница разработчика (действует во всех окружениях, кроме Development; формат уже существующих 400/402/403/404/409 не затронут). См. §4.2, §6.
+22. **`GET /api/bookings/client?status=upcoming` игнорировался, статусы в нижнем регистре тоже (US-07)** — `Enum.TryParse` без `ignoreCase` не распознавал `upcoming` (единственное значение, которое реально шлёт фронт) и статусы вроде `cancelled`; любой мусор в `status` тоже проходил без ошибки. Переписано на общую чистую функцию `BookingFilters` (юниты в `ServiceBooking.UnitTests`): `upcoming` фильтрует на будущие `Confirmed`/`Pending`, регистр не важен, неизвестное значение — `400`. См. §4.2.
+23. **`GET /api/bookings/occupied` был полностью анонимным (аудит, находка E3, решение Q9)** — `masterId` не секрет (публично перечислен в `GET /api/companies/{id}/masters`), поэтому кто угодно мог узнать занятость любого мастера по всем его компаниям. Теперь требует `[Authorize]` и явное право (сам мастер, персонал общей компании, SuperAdmin) — кросс-компанийность выдачи сохранена намеренно. См. §4.2.
+24. **Swagger был доступен в любом окружении, включая боевое (US-10, решение Q4)** — вся схема API была публично исследуема. Теперь Swagger регистрируется и монтируется только при `ASPNETCORE_ENVIRONMENT=Development`; nginx-конфиг для продакшена (`deploy/nginx/ezbook.conf`) больше не проксирует `/swagger/`.
+25. **Приложение стартовало в Production с плейсхолдер-секретами (US-10, решение Q4)** — `Jwt:Key` (`CHANGE_ME_TO_A_LONG_SECRET_KEY_AT_LEAST_32_CHARS`) и `SuperAdmin:Password` (`Admin12345`) из `appsettings.json` могли молча уйти в боевой контейнер, если их забыли переопределить переменными окружения — попутно найден реальный пробел: `docker-compose.prod.yml` не пробрасывал `SUPERADMIN_PASSWORD` вовсе. Теперь приложение **отказывается стартовать** (fail-fast, до `builder.Build()`) в Production, если `Jwt:Key` короче 32 символов или равен плейсхолдеру, либо если `SuperAdmin:Password` пуст или равен `Admin12345`; `docker-compose.prod.yml`/`.env.production.example`/`DEPLOY.md` обновлены соответствующим образом. `CustomWebApplicationFactory` тестов использует окружение `Testing`, поэтому проверка не задевает набор тестов.
