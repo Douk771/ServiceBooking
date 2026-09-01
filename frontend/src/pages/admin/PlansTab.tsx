@@ -100,13 +100,26 @@ export function PlansTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
   })
 
+  // react-query keeps a mutation's error until the next mutate, so without an explicit reset the
+  // modal reopens showing the previous attempt's failure — potentially from the other mutation, and
+  // about a different plan.
+  const closeModal = () => {
+    setShowCreate(false)
+    createMut.reset()
+    updateMut.reset()
+  }
+
   const openCreate = () => {
     setForm(defaultForm)
     setEditingPlan(null)
+    createMut.reset()
+    updateMut.reset()
     setShowCreate(true)
   }
 
   const openEdit = (plan: PlanConfig) => {
+    createMut.reset()
+    updateMut.reset()
     setForm({
       name: plan.name,
       pricePerMonth: String(plan.pricePerMonth),
@@ -228,7 +241,7 @@ export function PlansTab() {
       )}
 
       {showCreate && (
-        <Modal title={editingPlan ? 'Редактировать тариф' : 'Создать тариф'} onClose={() => setShowCreate(false)}>
+        <Modal title={editingPlan ? 'Редактировать тариф' : 'Создать тариф'} onClose={closeModal}>
           <div className="flex flex-col gap-4">
             <Input
               label="Название *"
@@ -304,15 +317,14 @@ export function PlansTab() {
               onChange={e => setForm(f => ({ ...f, notifyDaysBefore: e.target.value }))}
             />
 
-            {createMut.isError && (
-              <p className="text-sm text-danger">{getPlanErrorMessage(createMut.error)}</p>
-            )}
-            {updateMut.isError && (
-              <p className="text-sm text-danger">{getPlanErrorMessage(updateMut.error)}</p>
+            {(editingPlan ? updateMut.isError : createMut.isError) && (
+              <p className="text-sm text-danger">
+                {getPlanErrorMessage(editingPlan ? updateMut.error : createMut.error, 'Не удалось сохранить тариф.')}
+              </p>
             )}
 
             <div className="flex gap-3 pt-1">
-              <Button type="button" variant="secondary" className="flex-1" onClick={() => setShowCreate(false)}>
+              <Button type="button" variant="secondary" className="flex-1" onClick={closeModal}>
                 Отмена
               </Button>
               <Button

@@ -51,6 +51,9 @@ export function ClientBookingsPage() {
 
   const cancel = useMutation({
     mutationFn: (id: string) => bookingsApi.cancel(id),
+    // Cleared on start as well as on success, so a previous failure doesn't sit on screen looking
+    // like it belongs to the visit the user is cancelling now.
+    onMutate: () => setCancelError(''),
     onSuccess: () => { setCancelError(''); qc.invalidateQueries({ queryKey: ['client-bookings'] }) },
     onError: (err) => setCancelError(getBookingErrorMessage(err)),
   })

@@ -131,9 +131,10 @@ interface BookingRowProps {
   complete: ReturnType<typeof useMutation<unknown, Error, string>>
   noShow: ReturnType<typeof useMutation<unknown, Error, string>>
   markPaid: ReturnType<typeof useMutation<unknown, Error, string>>
+  error: string | null
 }
 
-function BookingRow({ booking: b, client, onReschedule, onReview, canReview, cancel, complete, noShow, markPaid }: BookingRowProps) {
+function BookingRow({ booking: b, client, onReschedule, onReview, canReview, cancel, complete, noShow, markPaid, error }: BookingRowProps) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const isFinalized = b.status === 'Completed' || b.status === 'Cancelled' || b.status === 'NoShow'
 
@@ -211,6 +212,13 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
         </div>
       </div>
 
+      {/* Rendered inside the row rather than as a page-level banner: in a long list the banner
+          appeared off-screen, so an action that failed still looked like nothing had happened. */}
+      {error && (
+        <p className="mt-3 text-sm text-danger flex items-center gap-2">
+          <Icon name="alert-circle" size={15} strokeWidth={1.8} /> {error}
+        </p>
+      )}
       {historyOpen && <ClientHistoryPanel booking={b} client={client} />}
     </Card>
   )
@@ -222,7 +230,7 @@ export function MyBookingsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [rescheduleBooking, setRescheduleBooking] = useState<Booking | null>(null)
   const [reviewBooking, setReviewBooking] = useState<Booking | null>(null)
-  const [actionError, setActionError] = useState('')
+  const [actionError, setActionError] = useState<{ bookingId: string; message: string } | null>(null)
   const qc = useQueryClient()
 
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -235,23 +243,35 @@ export function MyBookingsPage() {
 
   const cancel = useMutation({
     mutationFn: (id: string) => bookingsApi.cancel(id),
-    onSuccess: () => { setActionError(''); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
-    onError: (err) => setActionError(getBookingErrorMessage(err)),
+    // Clear on start, not only on success: otherwise a stale failure from another booking stays on
+    // screen while the new request is in flight and reads as if it belongs to the new action.
+    onMutate: () => setActionError(null),
+    onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
   })
   const complete = useMutation({
     mutationFn: (id: string) => bookingsApi.complete(id),
-    onSuccess: () => { setActionError(''); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
-    onError: (err) => setActionError(getBookingErrorMessage(err)),
+    // Clear on start, not only on success: otherwise a stale failure from another booking stays on
+    // screen while the new request is in flight and reads as if it belongs to the new action.
+    onMutate: () => setActionError(null),
+    onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
   })
   const noShow = useMutation({
     mutationFn: (id: string) => bookingsApi.noShow(id),
-    onSuccess: () => { setActionError(''); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
-    onError: (err) => setActionError(getBookingErrorMessage(err)),
+    // Clear on start, not only on success: otherwise a stale failure from another booking stays on
+    // screen while the new request is in flight and reads as if it belongs to the new action.
+    onMutate: () => setActionError(null),
+    onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
   })
   const markPaid = useMutation({
     mutationFn: (id: string) => bookingsApi.markPaid(id),
-    onSuccess: () => { setActionError(''); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
-    onError: (err) => setActionError(getBookingErrorMessage(err)),
+    // Clear on start, not only on success: otherwise a stale failure from another booking stays on
+    // screen while the new request is in flight and reads as if it belongs to the new action.
+    onMutate: () => setActionError(null),
+    onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
   })
 
   const { data: canReviewList } = useQuery({
@@ -304,12 +324,6 @@ export function MyBookingsPage() {
         </Button>
       </div>
 
-      {actionError && (
-        <div className="mb-5 rounded-xl bg-danger-bg text-danger text-sm px-4 py-3 flex items-center gap-2">
-          <Icon name="alert-circle" size={15} strokeWidth={1.8} /> {actionError}
-        </div>
-      )}
-
       {showCreateModal && <ManualBookingModal onClose={() => setShowCreateModal(false)} />}
       {rescheduleBooking && <RescheduleModal booking={rescheduleBooking} onClose={() => setRescheduleBooking(null)} />}
       {reviewBooking && (
@@ -349,6 +363,7 @@ export function MyBookingsPage() {
                     complete={complete}
                     noShow={noShow}
                     markPaid={markPaid}
+                    error={actionError?.bookingId === b.id ? actionError.message : null}
                   />
                 ))}
               </div>

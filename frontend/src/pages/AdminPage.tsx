@@ -115,7 +115,7 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
             className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
             placeholder="Способ оплаты, счёт и т.д." />
         </div>
-        {mut.isError && <p className="text-sm text-danger">{getPlanErrorMessage(mut.error)}</p>}
+        {mut.isError && <p className="text-sm text-danger">{getPlanErrorMessage(mut.error, 'Не удалось сохранить подписку.')}</p>}
 
         <div className="flex gap-3 pt-1">
           <Button variant="secondary" className="flex-1" onClick={onClose}>Отмена</Button>

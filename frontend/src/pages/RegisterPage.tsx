@@ -1,4 +1,5 @@
 import { useForm } from 'react-hook-form'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
@@ -19,6 +20,7 @@ export function RegisterPage() {
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>()
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -27,6 +29,10 @@ export function RegisterPage() {
     setError('')
     try {
       const res = await authApi.register({ ...data, email: data.email || undefined })
+      // Signing in over a live session (a direct /login link, or registering a second account without
+      // logging out) would otherwise leave the previous user's cached queries in place, and the new
+      // user gets a first frame of someone else's data. Navbar's logout clears for the same reason.
+      qc.clear()
       setAuth({ id: res.userId, phone: res.phone, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
       navigate('/')
     } catch (e: unknown) {

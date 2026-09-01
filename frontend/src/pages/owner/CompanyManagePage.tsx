@@ -2,7 +2,6 @@ import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
-import { AxiosError } from 'axios'
 import { companiesApi } from '../../api/companies'
 import { servicesApi } from '../../api/services'
 import { Card } from '../../components/ui/Card'
@@ -12,16 +11,8 @@ import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { ScheduleTab } from './ScheduleTab'
 import { getAddMemberErrorMessage } from '../../utils/memberError'
+import { getCompanyManageErrorMessage, getLogoErrorMessage } from '../../utils/companyManageError'
 import type { Service } from '../../types'
-
-// Generic fallback for mutations on this page that don't have a dedicated *Error.ts mapper:
-// the backend's text/plain bodies (400/403/409) are shown verbatim when present, otherwise a
-// Russian fallback describes the action that failed.
-function mutationErrorText(err: unknown, fallback: string): string {
-  const ax = err as AxiosError
-  const data = ax?.response?.data
-  return typeof data === 'string' && data ? data : fallback
-}
 
 // ── Services tab ──────────────────────────────────────────────────────────────
 
@@ -60,20 +51,20 @@ function ServicesTab({ companyId }: { companyId: string }) {
     mutationFn: (d: ServiceFormData) =>
       servicesApi.create({ companyId, name: d.name, description: d.description || undefined, durationMinutes: +d.durationMinutes, price: +d.price }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['services', companyId] }); closeForm() },
-    onError: (err: unknown) => setFormError(mutationErrorText(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
+    onError: (err: unknown) => setFormError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
   })
 
   const updateMut = useMutation({
     mutationFn: (d: ServiceFormData) =>
       servicesApi.update(editing!.id, { companyId, name: d.name, description: d.description || undefined, durationMinutes: +d.durationMinutes, price: +d.price }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['services', companyId] }); closeForm() },
-    onError: (err: unknown) => setFormError(mutationErrorText(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
+    onError: (err: unknown) => setFormError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => servicesApi.delete(id),
     onSuccess: () => { setDeleteError(''); qc.invalidateQueries({ queryKey: ['services', companyId] }) },
-    onError: (err: unknown) => setDeleteError(mutationErrorText(err, 'Не удалось удалить услугу. Попробуйте снова.')),
+    onError: (err: unknown) => setDeleteError(getCompanyManageErrorMessage(err, 'Не удалось удалить услугу. Попробуйте снова.')),
   })
 
   const onSubmit = (d: ServiceFormData) => editing ? updateMut.mutate(d) : createMut.mutate(d)
@@ -207,13 +198,13 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
   const saveMut = useMutation({
     mutationFn: () => companiesApi.updateMemberServices(companyId, m.id, [...selected]),
     onSuccess: () => { setSaveError(''); setDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
-    onError: (err: unknown) => setSaveError(mutationErrorText(err, 'Не удалось сохранить услуги сотрудника.')),
+    onError: (err: unknown) => setSaveError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услуги сотрудника.')),
   })
 
   const commissionMut = useMutation({
     mutationFn: () => companiesApi.updateMemberCommission(companyId, m.id, commission),
     onSuccess: () => { setCommissionError(''); setCommissionDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
-    onError: (err: unknown) => setCommissionError(mutationErrorText(err, 'Не удалось сохранить комиссию.')),
+    onError: (err: unknown) => setCommissionError(getCompanyManageErrorMessage(err, 'Не удалось сохранить комиссию.')),
   })
 
   return (
@@ -347,7 +338,7 @@ function MembersTab({ companyId }: { companyId: string }) {
   const removeMut = useMutation({
     mutationFn: (memberId: string) => companiesApi.removeMember(companyId, memberId),
     onSuccess: () => { setRemoveError(''); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
-    onError: (err: unknown) => setRemoveError(mutationErrorText(err, 'Не удалось удалить сотрудника.')),
+    onError: (err: unknown) => setRemoveError(getCompanyManageErrorMessage(err, 'Не удалось удалить сотрудника.')),
   })
 
   return (
@@ -456,12 +447,15 @@ function SettingsTab({ companyId }: { companyId: string }) {
   const updateMut = useMutation({
     mutationFn: (d: Record<string, unknown>) => companiesApi.update(companyId, d),
     onSuccess: () => { setSettingsError(''); qc.invalidateQueries({ queryKey: ['my-companies'] }) },
-    onError: (err: unknown) => setSettingsError(mutationErrorText(err, 'Не удалось сохранить настройки компании.')),
+    onError: (err: unknown) => setSettingsError(getCompanyManageErrorMessage(err, 'Не удалось сохранить настройки компании.')),
   })
 
+  const [logoError, setLogoError] = useState('')
   const logoMut = useMutation({
     mutationFn: (file: File) => companiesApi.uploadLogo(companyId, file),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-companies'] }),
+    onMutate: () => setLogoError(''),
+    onSuccess: () => { setLogoError(''); qc.invalidateQueries({ queryKey: ['my-companies'] }) },
+    onError: (err) => setLogoError(getLogoErrorMessage(err)),
   })
 
   return (
@@ -489,7 +483,7 @@ function SettingsTab({ companyId }: { companyId: string }) {
               {company?.logoUrl ? 'Заменить логотип' : 'Загрузить логотип'}
             </Button>
             <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ</p>
-            {logoMut.isError && <p className="text-xs text-danger mt-1">Не удалось загрузить изображение</p>}
+            {logoError && <p className="text-xs text-danger mt-1">{logoError}</p>}
           </div>
         </div>
 
