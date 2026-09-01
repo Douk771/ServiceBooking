@@ -19,7 +19,7 @@ public record CreateServiceDto(
     // InvalidOperationException ("validation metadata must be associated with the constructor
     // parameter") if a validation attribute lands on the generated property instead — the opposite of
     // what ARCHITECTURE.md §3.5 assumed; corrected here after the functional test suite caught it.
-    [MaxLength(200)] string Name,
+    [Required(AllowEmptyStrings = false), MinLength(1), MaxLength(200)] string Name,
     [MaxLength(2000)] string? Description,
     // 0 or negative would make the booking conflict-check interval degenerate (b.StartTime < slotEnd &&
     // b.EndTime > startTime never true), allowing unlimited overlapping bookings on the same slot

@@ -642,6 +642,50 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         plans.Should().ContainSingle(p => p.Id == configId && p.IsActive);
     }
 
+    [Fact, TestCase("ADM-037")]
+    public async Task UpdatePlan_DeactivatingPlanWithActiveSubscriber_ReturnsConflict_AndPlanStaysActive()
+    {
+        // The 409 on DeletePlan is worth nothing if the same deactivation goes through the edit form:
+        // both doors lead to PlanConfig.IsActive = false, which drops every subscriber to Free.
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+        await SetSubscriptionAsync(company.Id, configId);
+
+        var existing = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var plan = existing!.Single(p => p.Id == configId);
+        plan.IsActive = false;
+
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{configId}", plan);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("1");
+
+        var after = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        after.Should().ContainSingle(p => p.Id == configId && p.IsActive);
+    }
+
+    [Fact, TestCase("ADM-038")]
+    public async Task UpdatePlan_DeactivatingPlanWithoutSubscribers_Succeeds()
+    {
+        // The guard must only bite when someone is actually on the plan — retiring an unused plan
+        // through the edit form stays a normal operation.
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+
+        var existing = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var plan = existing!.Single(p => p.Id == configId);
+        plan.IsActive = false;
+
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{configId}", plan);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var after = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        after.Should().ContainSingle(p => p.Id == configId && !p.IsActive);
+    }
+
     [Fact, TestCase("ADM-033")]
     public async Task UpdateSubscription_WithDeactivatedPlan_ReturnsBadRequest()
     {

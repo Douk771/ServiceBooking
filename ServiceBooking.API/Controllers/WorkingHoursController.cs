@@ -45,7 +45,12 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
         // below is atomic — otherwise two simultaneous requests could both miss the existing row and
         // both insert, leaving two WorkingHours rows for the same day (CURRENT_STATE §6, audit B3).
         await using var transaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"working-hours:{dto.MasterId}:{dto.CompanyId}:{dto.Date:O}");
+        // Deliberately locked on the (master, company) pair rather than the individual date: the
+        // schedule template's Apply writes a whole range under that same coarser key, and a per-date
+        // key here would hash to a different lock — the two would not exclude each other, both would
+        // see "no row for this date", and the second INSERT would hit the unique index and surface as
+        // a 500. Coarser than strictly needed for a single day, correct against Apply.
+        await AdvisoryLock.AcquireAsync(db, $"working-hours:{dto.MasterId}:{dto.CompanyId}");
 
         var existing = await db.WorkingHours
             .Include(wh => wh.Breaks)

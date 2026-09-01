@@ -58,6 +58,19 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var isStaff = userId is not null &&
             (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, companyId, userId));
+
+        // The same triplet check POST /api/bookings performs, for the same reason: without it the
+        // caller picks companyId for the membership check but masterId/serviceId from anywhere. Staff
+        // of company A could then ask for a master of company B with manual=true and get that master's
+        // whole day minus their occupancy — and occupancy is deliberately cross-company (Q9), so this
+        // would be a weaker back door to exactly what GetOccupied above closes. 400, not 404: every
+        // object exists, it is the combination that is wrong (API_CONTRACT.md §2.2).
+        var service = await db.Services.FindAsync(serviceId);
+        if (service is null) return NotFound("Service not found");
+        if (service.CompanyId != companyId) return BadRequest("Service does not belong to this company");
+        if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
+            return BadRequest("Master does not work for this company");
+
         var allowWithoutSchedule = manual && isStaff;
         var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, serviceId, date, allowWithoutSchedule);
         return Ok(slots);

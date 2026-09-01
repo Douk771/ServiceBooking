@@ -325,8 +325,20 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
         plan.AllowPublicListing = dto.AllowPublicListing;
         plan.AllowOnlinePayment = dto.AllowOnlinePayment;
         plan.Description = dto.Description;
-        plan.IsActive = dto.IsActive;
         plan.NotifyDaysBefore = dto.NotifyDaysBefore;
+
+        // Deactivating through this endpoint has exactly the effect DeletePlan refuses below: the
+        // resolver treats PlanConfig.IsActive == false as Free, so every subscriber silently loses
+        // online booking, analytics and their employee limit on the next request. Same guard, same
+        // status, or the 409 there is just a speed bump around a differently-named door.
+        if (plan.IsActive && !dto.IsActive)
+        {
+            var activeSubscribers = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
+            if (activeSubscribers > 0)
+                return Conflict($"Cannot deactivate a plan with {activeSubscribers} active subscriber(s). Move them to another plan first.");
+        }
+        plan.IsActive = dto.IsActive;
+
         await db.SaveChangesAsync();
         return Ok(plan);
     }
