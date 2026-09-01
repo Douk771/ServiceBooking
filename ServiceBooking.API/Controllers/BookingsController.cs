@@ -102,10 +102,15 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
         // captcha, tariff). This is the A1 bypass: previously `guestName` alone was enough to skip all four.
         var isGuestPath = !isAuthenticated || (isManualBooking && !isStaff);
 
+        // The self-booking toggle governs every booking the public makes of its own accord, not just
+        // anonymous ones: a logged-in client booking themselves is online self-booking too. It used to
+        // sit inside the guest branch, so an authenticated client could ignore the switch entirely by
+        // calling the API directly — the same shape of hole as the guestName bypass this cycle closed.
+        // Staff are exempt: recording a walk-in is their tool, and the toggle is about the storefront.
+        if (!isStaff && !company.AllowSelfBooking) return Forbid();
+
         if (isGuestPath)
         {
-            if (!company.AllowSelfBooking) return Forbid();
-
             // Guest booking is bot-protected by Yandex SmartCaptcha. When enforced (server key set, or
             // Production) a valid token is mandatory and validation fails closed; in Development without
             // a key it's skipped. See CaptchaService.

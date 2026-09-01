@@ -471,6 +471,42 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         booking!.PaymentStatus.Should().Be(PaymentStatus.NotRequired);
     }
 
+    [Fact, TestCase("BK-050")]
+    public async Task Create_AuthenticatedClientSelfBooking_WhenCompanyDisallowsSelfBooking_ReturnsForbidden()
+    {
+        // The toggle used to be checked only on the guest branch, so a logged-in client booking for
+        // themselves ignored it entirely when calling the API directly. The UI hides the button, which
+        // is exactly why this went unnoticed — same shape as the guestName bypass (A1).
+        var (owner, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: false);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("BK-051")]
+    public async Task Create_StaffManualBooking_IsNotBlockedByDisabledSelfBooking()
+    {
+        // The flip side: the toggle governs the public storefront, not the staff's own tool. A salon
+        // that turned online booking off still records walk-ins.
+        var (owner, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: false);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var response = await AuthedClient(master.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, "Walk-in Client", "+79990001133", null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
     [Fact, TestCase("BK-049")]
     public async Task GuestBooking_WithPrepaymentAndPayingTariff_IsPending()
     {

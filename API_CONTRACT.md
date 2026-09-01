@@ -302,6 +302,7 @@ isGuestPath          = !аутентифицирован || (guestName не пу
 | Клиент (не сотрудник) с `guestName` в компанию с `AllowSelfBooking = false` | `201` | **`403`** |
 | Клиент с `guestName` в компанию на Free-тарифе | `201`, бесплатная запись | **`402`** `Online booking requires a paid subscription.` |
 | Клиент с `guestName` при включённой капче без токена | `201` | **`400`** `Captcha required for guest booking` |
+| **Авторизованный клиент записывается сам, `AllowSelfBooking = false`** | `201` — переключатель не проверялся вне гостевой ветки | **`403`** |
 | Клиент с `guestName` в компанию с предоплатой | `PaymentStatus = NotRequired` | предоплата назначается, как гостю |
 | **Гостевая запись в компанию с предоплатой** (`RequirePrepayment` + тариф с `AllowOnlinePayment`) | `PaymentStatus = NotRequired` | **`PaymentStatus = Pending`** |
 
