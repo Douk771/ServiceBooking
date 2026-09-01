@@ -2,11 +2,32 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "backend",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "ServiceBooking.API",
+        "--launch-profile",
+        "http",
+        "--urls",
+        "http://localhost:5001"
+      ],
+      "port": 5001,
+      "autoPort": false
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "frontend",
-      "port": 5173
+      "port": 5173,
+      "env": {
+        "VITE_API_TARGET": "http://localhost:5001"
+      }
     }
   ]
 }
