@@ -37,7 +37,7 @@ grep -rn "BK-003" ServiceBooking.Tests/
 | `RPT-` | `ReportsTests.cs` | 12 |
 | `PROF-` | `ProfileTests.cs` | 15 |
 | `ADM-` | `AdminTests.cs` | 35 |
-| **Итого** | | **277** методов (284 запуска с учётом `[Theory]`) |
+| **Итого** | | **283** метода (290 запусков с учётом `[Theory]`) |
 
 Запустить весь набор: `dotnet test ServiceBooking.Tests` из корня репозитория (нужна PostgreSQL —
 см. `ServiceBooking.Tests/Infrastructure/TestDatabaseFixture.cs`). Строка подключения к тестовой БД
