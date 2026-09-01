@@ -77,11 +77,15 @@ mkdir -p /opt/ezbook
 cd /opt/ezbook
 git clone https://github.com/Douk771/ServiceBooking.git app
 cd app
-git checkout feature/deployfirst
+git checkout master
 ```
 
-(`feature/deployfirst` — рабочая ветка с редизайном, деплой-тулингом и последними правками;
-`master` их ещё не содержит.)
+(Деплой-тулинг и редизайн из `feature/deployfirst` уже смёржены в `master` — начиная с этого
+цикла деплоим только `master`, отдельно чекаутить `feature/deployfirst` больше не нужно.
+Если вы читаете это до того, как текущий цикл правок [ветка `sanitation-cycle`] смёржен в
+`master` — на сервере окажется код **без** последних фиксов (fail-fast по секретам, Swagger
+только в Development и т.д.). Сначала смержите `sanitation-cycle` в `master` и запушьте, и
+только потом деплойте.)
 
 Если репозиторий приватный — заведите на GitHub/GitLab deploy-key или используйте
 HTTPS-токен; это разовая настройка доступа, которую тоже нужно сделать вам самим.
