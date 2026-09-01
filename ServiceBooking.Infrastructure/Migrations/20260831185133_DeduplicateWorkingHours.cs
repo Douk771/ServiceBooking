@@ -11,10 +11,12 @@ namespace ServiceBooking.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // Removes duplicate (MasterId, CompanyId, Date) rows created by the pre-fix check-then-act
-            // race in WorkingHoursController.Upsert (audit B3), keeping the row with the largest Id.
-            // Must run BEFORE AddWorkingHoursUniqueIndex, or that migration fails on any surviving
-            // duplicate. The service is not in production (SPEC Q12), so no data-preservation strategy
-            // for the discarded duplicates is needed beyond "keep one, drop the rest".
+            // race in WorkingHoursController.Upsert (audit B3). Keeps the row with the numerically
+            // largest Id — an arbitrary but deterministic tiebreak, NOT "most recently created": Id is
+            // Guid.NewGuid(), which has no chronological ordering. Must run BEFORE
+            // AddWorkingHoursUniqueIndex, or that migration fails on any surviving duplicate. The
+            // service is not in production (SPEC Q12), so no data-preservation strategy for the
+            // discarded duplicates is needed beyond "keep one, drop the rest".
             migrationBuilder.Sql(
                 "DELETE FROM \"WorkingHours\" wh USING \"WorkingHours\" dup " +
                 "WHERE wh.\"MasterId\" = dup.\"MasterId\" AND wh.\"CompanyId\" = dup.\"CompanyId\" " +

@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using ServiceBooking.Core.Entities;
@@ -21,10 +22,13 @@ public class TokenService(IConfiguration config)
             new(JwtRegisteredClaimNames.GivenName, user.FirstName),
             new(JwtRegisteredClaimNames.FamilyName, user.LastName),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            // Baked-in copy of the user's current SecurityStamp, compared against the live value on every
-            // request in Program.cs's OnTokenValidated — lets a stamp rotation (password/phone change)
-            // revoke every token issued before it, even though a JWT itself lives up to 7 days.
-            new("sstamp", user.SecurityStamp ?? "")
+            // A short hash of the user's current SecurityStamp, compared against a hash of the live value
+            // on every request in Program.cs's OnTokenValidated — lets a stamp rotation (password/phone
+            // change) revoke every token issued before it, even though a JWT itself lives up to 7 days.
+            // JWT payloads are base64, not encrypted, and SecurityStamp also seeds ASP.NET Identity's
+            // data-protection tokens (e.g. password reset) — so the raw stamp has no business sitting in
+            // a client-held artifact even though forging it without the signing key is not possible.
+            new("sstamp", HashSecurityStamp(user.SecurityStamp))
         };
         if (!string.IsNullOrEmpty(user.Email))
             claims.Add(new Claim(JwtRegisteredClaimNames.Email, user.Email));
@@ -40,5 +44,17 @@ public class TokenService(IConfiguration config)
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    /// <summary>
+    /// First 8 hex characters of SHA-256(stamp) — short enough to keep the token small, long enough
+    /// (32 bits) that an accidental collision between two different stamps is not a practical concern
+    /// for a revocation check. Must match Program.cs's OnTokenValidated, which hashes the live
+    /// SecurityStamp the same way before comparing.
+    /// </summary>
+    public static string HashSecurityStamp(string? stamp)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(stamp ?? ""));
+        return Convert.ToHexString(bytes)[..8].ToLowerInvariant();
     }
 }

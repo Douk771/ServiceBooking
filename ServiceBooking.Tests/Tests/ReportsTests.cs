@@ -226,6 +226,40 @@ public class ReportsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         entry.MasterEarnings.Should().Be(100);
     }
 
+    [Fact, TestCase("RPT-013")]
+    public async Task GetMastersReport_KeepsCommission_AfterMasterIsRemovedFromCompany()
+    {
+        // Regression test for the same class of bug as RPT-011, one step further: commission used to be
+        // read from the master's CURRENT membership row, so removing them from the company rewrote
+        // closed periods — a master who earned 40% showed 0%, and their share silently moved to the
+        // company. Booking.CommissionPercent is now a snapshot taken at creation, like Booking.Price.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id, commissionPercent: 40);
+        var service = await CreateServiceAsync(owner.Token, company.Id, price: 1000);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var booking = await CreateBookingAsync(clientUser.Token, company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0));
+        await CompleteBookingAsync(master.Token, booking.Id);
+
+        // The master leaves the company after the period is over.
+        var members = await (await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/members"))
+            .Content.ReadFromJsonAsync<List<MemberDto>>();
+        var member = members!.Single(m => m.UserId == master.UserId);
+        var removal = await AuthedClient(owner.Token).DeleteAsync($"/api/companies/{company.Id}/members/{member.Id}");
+        removal.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/reports/masters?companyId={company.Id}&from={date:yyyy-MM-dd}&to={date:yyyy-MM-dd}");
+        var report = await response.Content.ReadJsonAsync<List<MasterReportDto>>();
+
+        var entry = report.Should().ContainSingle(r => r.MasterId == master.UserId).Subject;
+        entry.TotalAmount.Should().Be(1000);
+        entry.MasterEarnings.Should().Be(400);   // not 0 — the rate that applied when the visit happened
+        entry.CompanyEarnings.Should().Be(600);  // not the full 1000
+    }
+
     [Fact, TestCase("RPT-012")]
     public async Task GetMastersReport_ForMoonlightingMaster_UsesThisCompanysOwnCommission()
     {

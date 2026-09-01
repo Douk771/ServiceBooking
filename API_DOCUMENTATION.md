@@ -227,12 +227,33 @@ CommissionPercent`, по умолчанию `0`), а не пользовател
 (совместитель), может иметь разный процент в каждой. Раньше поле лежало на `AppUser.CommissionPercent` и
 одно и то же значение утекало во все компании такого мастера.
 
-Отчёт `GET /api/reports/masters` разбивает суммарную выручку (`TotalAmount`, сумма цен услуг завершённых записей) на:
+**Изменено повторно в цикле санации (пост-ревью).** `GET /api/reports/masters` больше **не** читает
+`CompanyMember.CommissionPercent` напрямую — та же проблема, что решалась выше для `Booking.Price`
+(§3.4/см. п.5 ниже в списке изменений), повторилась и здесь: словарь комиссий строился по
+**действующим** членствам, поэтому увольнение мастера обнуляло его комиссию в уже закрытых, исторических
+отчётах. Теперь `Booking` хранит собственное поле `CommissionPercent` — снимок ставки мастера в этой
+компании **на момент создания записи** (заполняется в `POST /api/bookings` для обоих путей: онлайн-
+самозапись и ручная запись персонала), и отчёт считает по нему, а не по текущему `CompanyMembers`.
+Более позднее изменение ставки или удаление членства не переписывает уже посчитанный период.
 
-- `MasterEarnings = Round(TotalAmount * CommissionPercent / 100, 2)` — доля мастера;
+Отчёт `GET /api/reports/masters` разбивает суммарную выручку (`TotalAmount`, сумма `Booking.Price`
+завершённых записей) на:
+
+- `MasterEarnings` — сумма по каждой брони `Round(Booking.Price * Booking.CommissionPercent / 100, 2)`;
 - `CompanyEarnings = TotalAmount - MasterEarnings` — доля компании (салона).
 
-`CommissionPercent` устанавливается **только владельцем компании** (или SuperAdmin) через `PUT /api/companies/{id}/members/{memberId}/commission` — сам мастер задать себе процент не может. Значение обрезается в диапазон `[0, 100]` через `Math.Clamp`.
+Поле `commissionPercent` в самом объекте ответа (для отображения) — ставка **последней по дате+времени**
+брони в группе; если ставка менялась в течение отчётного периода, `MasterEarnings`/`CompanyEarnings` всё
+равно точны (считаются посуммарно), а показанное число — лишь представительное значение.
+
+`CompanyMember.CommissionPercent` устанавливается **только владельцем компании** (или SuperAdmin) через `PUT /api/companies/{id}/members/{memberId}/commission` — сам мастер задать себе процент не может. Значение обрезается в диапазон `[0, 100]` через `Math.Clamp`. Новая запись (`POST /api/bookings`) снимает копию этого значения в `Booking.CommissionPercent` в момент создания.
+
+Миграция `AddBookingCommissionSnapshot` добавляет колонку `Bookings.CommissionPercent` и бэкфиллит
+существующие строки текущим значением `CompanyMembers` того же мастера/компании (если членства уже нет
+— остаётся `0`, как и у нового дефолта).
+
+`GET /api/companies/{id}/stats` (см. §4.3) комиссию не считает вообще, только `Booking.Price` —
+расхождений с `GET /api/reports/masters` по этому полю не возникает.
 
 **Legacy-поле.** `AppUser.CommissionPercent` (и производные от него `ProfileDto.CommissionPercent`,
 `AdminUserDto.CommissionPercent`) **не удалены** в этом цикле (правило «DTO не меняются»), но больше
@@ -2030,3 +2051,9 @@ curl -X POST http://localhost:5000/api/admin/plans \
 23. **`GET /api/bookings/occupied` был полностью анонимным (аудит, находка E3, решение Q9)** — `masterId` не секрет (публично перечислен в `GET /api/companies/{id}/masters`), поэтому кто угодно мог узнать занятость любого мастера по всем его компаниям. Теперь требует `[Authorize]` и явное право (сам мастер, персонал общей компании, SuperAdmin) — кросс-компанийность выдачи сохранена намеренно. См. §4.2.
 24. **Swagger был доступен в любом окружении, включая боевое (US-10, решение Q4)** — вся схема API была публично исследуема. Теперь Swagger регистрируется и монтируется только при `ASPNETCORE_ENVIRONMENT=Development`; nginx-конфиг для продакшена (`deploy/nginx/ezbook.conf`) больше не проксирует `/swagger/`.
 25. **Приложение стартовало в Production с плейсхолдер-секретами (US-10, решение Q4)** — `Jwt:Key` (`CHANGE_ME_TO_A_LONG_SECRET_KEY_AT_LEAST_32_CHARS`) и `SuperAdmin:Password` (`Admin12345`) из `appsettings.json` могли молча уйти в боевой контейнер, если их забыли переопределить переменными окружения — попутно найден реальный пробел: `docker-compose.prod.yml` не пробрасывал `SUPERADMIN_PASSWORD` вовсе. Теперь приложение **отказывается стартовать** (fail-fast, до `builder.Build()`) в Production, если `Jwt:Key` короче 32 символов или равен плейсхолдеру, либо если `SuperAdmin:Password` пуст или равен `Admin12345`; `docker-compose.prod.yml`/`.env.production.example`/`DEPLOY.md` обновлены соответствующим образом. `CustomWebApplicationFactory` тестов использует окружение `Testing`, поэтому проверка не задевает набор тестов.
+26. **Отчёт по мастерам обнулял комиссию уволенного мастера задним числом** — `ReportsController.cs` строил словарь комиссий по **действующим** `CompanyMembers`, поэтому `GetValueOrDefault` давал `0` для мастера, чьё членство было удалено — исторический, уже закрытый отчётный период менялся задним числом. Комиссия теперь снимается в `Booking.CommissionPercent` в момент создания записи (тот же приём, что и `Booking.Price`, см. п. 5 выше), и отчёт считает по нему, а не по текущему `CompanyMembers`. Миграция `AddBookingCommissionSnapshot` бэкфиллит существующие строки текущим значением членства. См. §3.6, §4.10.
+27. **Нет уникального индекса на членстве компании** — тот же класс проблемы, что и находка B3 (`WorkingHours`): защита от дублирующейся строки `(CompanyId, UserId)` в `CompanyMembers` была только на уровне приложения (`AnyAsync` под advisory-локом в `CompaniesController.AddMember`), без гарантии БД. Добавлен уникальный индекс `(CompanyId, UserId)`; миграция `DeduplicateCompanyMembers` удаляет дубликаты (оставляя строку с наибольшей `CommissionPercent`, при равенстве — с наибольшим `Id`) перед наложением индекса миграцией `AddCompanyMemberUniqueIndex`.
+28. **Общий предикат владения компанией дублировался инлайново в нескольких контроллерах** — `CompaniesController.CanManageCompany`, `ServicesController.CanManageCompany` и проверка в `ReportsController.GetMastersReport` были тремя копиями одного и того же запроса `CompanyMembers.AnyAsync(... Role == CompanyOwner)`. Приведены к общему `CompanyMembership.IsOwnerAsync`. `MastersController.GetClients` отдельно проверял членство **без фильтра по роли** (`CompanyMember.Role` может быть и `Client`) — заменено на `CompanyMembership.IsStaffAsync` (роль `Master`/`CompanyOwner`), как и везде.
+29. **`SecurityStamp` лежал в открытом (не зашифрованном) виде в теле JWT** — claim `sstamp` (см. п. 16 выше) хранил сырой `AppUser.SecurityStamp`; полезная нагрузка JWT — это base64, не шифрование, а штамп участвует в генерации data-protection токенов Identity (например, сброса пароля). Подделать его без ключа подписи нельзя, эксплуатации не было, но внутренний идентификатор ротации identity в клиентском артефакте — лишняя поверхность. Заменено на первые 8 hex-символов SHA-256 от штампа (`TokenService.HashSecurityStamp`); `Program.cs`'s `OnTokenValidated` сравнивает хеши. Токены, выпущенные до этого изменения, отклоняются как отозванные (см. оговорку в п. 16 — сервис не в продакшене, переходного периода нет).
+30. **Мёртвая ветка в `ReviewsController`** — после проверки `booking.ClientId != userId` (см. п. 9 выше) значение `booking.ClientId` всегда равно `userId`, поэтому `user != null ? ... : booking.GuestName` никогда не брало ветку с `GuestName` — читатель мог решить, что гостевые отзывы всё ещё поддерживаются. Упрощено до безусловного `$"{user.FirstName} {user.LastName}"`.
+31. **Мелкие несоответствия найдены в ходе того же прохода**: лишний `Include(b => b.Service)` в `ReportsController` убран (цена берётся из `Booking.Price`, джойн на `Services` не нужен); комментарий в миграции `DeduplicateWorkingHours` про «keeping the row with the largest Id» уточнён — `Id` это `Guid.NewGuid()`, у него нет хронологического порядка, выбор «наибольший Id» произволен, но детерминирован; в `ScheduleTemplateController` условие `to.DayNumber - from.DayNumber > 366` пропускало 367 дней при тексте ошибки «максимум 366» — исправлено на `> 365` (диапазон включает обе границы, поэтому 366 дней соответствует разнице `DayNumber` в 365).

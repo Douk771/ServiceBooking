@@ -156,6 +156,15 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
         // Applies to every non-staff path (a client who supplied guestName is still an online self-booking).
         var requiresPrepayment = !isStaffManualBooking && effectivePlan.AllowOnlinePayment && company.RequirePrepayment;
 
+        // Snapshot the master's CURRENT commission rate for this company onto the booking, the same way
+        // Price snapshots the service's price — see the comment on Booking.CommissionPercent. Read here,
+        // at creation time, not looked up later by the report from a CompanyMembers row that may have
+        // changed rate or been deleted entirely.
+        var masterCommissionPercent = await db.CompanyMembers
+            .Where(cm => cm.CompanyId == dto.CompanyId && cm.UserId == dto.MasterId)
+            .Select(cm => cm.CommissionPercent)
+            .FirstOrDefaultAsync();
+
         var booking = new Booking
         {
             Id = Guid.NewGuid(),
@@ -176,7 +185,8 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             Notes = dto.Notes,
             Status = BookingStatus.Confirmed,
             PaymentStatus = requiresPrepayment ? PaymentStatus.Pending : PaymentStatus.NotRequired,
-            Price = service.Price
+            Price = service.Price,
+            CommissionPercent = masterCommissionPercent
         };
 
         // Serialize concurrent create/reschedule requests for the same master+date so the

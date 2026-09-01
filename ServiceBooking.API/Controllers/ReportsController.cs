@@ -22,38 +22,35 @@ public class ReportsController(AppDbContext db, SubscriptionResolver subscriptio
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
         // Verify caller owns this company
-        if (!User.IsInRole("SuperAdmin"))
-        {
-            var isMember = await db.CompanyMembers.AnyAsync(cm =>
-                cm.CompanyId == companyId && cm.UserId == userId && cm.Role == UserRole.CompanyOwner);
-            if (!isMember) return Forbid();
-        }
+        if (!User.IsInRole("SuperAdmin") && !await CompanyMembership.IsOwnerAsync(db, companyId, userId))
+            return Forbid();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(companyId);
         if (!plan.AllowAnalytics) return StatusCode(402, "Analytics requires a tariff plan that includes it.");
 
         var bookings = await db.Bookings
-            .Include(b => b.Service)
             .Include(b => b.Master)
             .Where(b => b.CompanyId == companyId &&
                         b.Status == BookingStatus.Completed &&
                         b.Date >= from && b.Date <= to)
             .ToListAsync();
 
-        // Commission is per-membership (US-15): a moonlighting master can earn a different rate at
-        // each company, so it must be read from THIS company's CompanyMember row, not from AppUser.
-        var commissions = await db.CompanyMembers
-            .Where(cm => cm.CompanyId == companyId)
-            .ToDictionaryAsync(cm => cm.UserId, cm => cm.CommissionPercent);
-
+        // Commission is per-BOOKING (snapshotted at creation time, same as Price), not read from the
+        // current CompanyMembers row: that row can change rate or disappear entirely (a master leaving
+        // the company) without retroactively altering a historical, already-closed report. See the
+        // comment on Booking.CommissionPercent.
         var result = bookings
             .GroupBy(b => b.Master)
             .Select(g =>
             {
                 var master = g.Key;
-                var commissionPercent = commissions.GetValueOrDefault(master.Id);
+                // All bookings in the group share the same master, but not necessarily the same
+                // commission rate if it changed mid-period — report the rate of the latest booking as
+                // representative, matching how a single "current rate" figure is normally understood.
+                var commissionPercent = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
+                    .First().CommissionPercent;
                 var total = g.Sum(b => b.Price);
-                var commission = Math.Round(total * commissionPercent / 100, 2);
+                var commission = g.Sum(b => Math.Round(b.Price * b.CommissionPercent / 100, 2));
                 return new MasterReportDto(
                     master.Id, $"{master.FirstName} {master.LastName}",
                     commissionPercent, g.Count(), total, commission, total - commission);

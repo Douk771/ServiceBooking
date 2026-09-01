@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Services;
+using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -87,9 +88,6 @@ public class ServicesController(AppDbContext db) : ControllerBase
 
         // Only the CompanyOwner may create/edit/delete services now (US-09, decision Q1) — a Master
         // reads services (GET stays public) but no longer manages the catalog.
-        return await db.CompanyMembers.AnyAsync(cm =>
-            cm.CompanyId == companyId &&
-            cm.UserId == userId &&
-            cm.Role == UserRole.CompanyOwner);
+        return await CompanyMembership.IsOwnerAsync(db, companyId, userId);
     }
 }

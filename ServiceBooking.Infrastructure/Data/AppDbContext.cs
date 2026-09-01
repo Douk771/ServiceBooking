@@ -43,6 +43,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(cm => cm.Company).WithMany(c => c.Members).HasForeignKey(cm => cm.CompanyId);
             e.HasOne(cm => cm.User).WithMany(u => u.CompanyMemberships).HasForeignKey(cm => cm.UserId);
             e.Property(cm => cm.CommissionPercent).HasColumnType("decimal(18,2)");
+            // Makes "one membership row per company+user" a hard DB guarantee, not just the application-
+            // level check-then-act AnyAsync in CompaniesController.AddMember — same class of bug as
+            // WorkingHours (audit B3): without it, a race lets two concurrent requests both pass the
+            // "not already a member" check and both insert, and every reader that assumes at most one
+            // row per (CompanyId, UserId) — e.g. ReportsController's per-master commission lookup —
+            // breaks permanently on the resulting duplicate.
+            e.HasIndex(cm => new { cm.CompanyId, cm.UserId }).IsUnique();
         });
 
         builder.Entity<MasterService>(e =>
@@ -76,6 +83,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Booking>(e =>
         {
             e.Property(b => b.Price).HasColumnType("decimal(10,2)");
+            e.Property(b => b.CommissionPercent).HasColumnType("decimal(18,2)");
             e.HasOne(b => b.Company).WithMany(c => c.Bookings).HasForeignKey(b => b.CompanyId);
             e.HasOne(b => b.Service).WithMany(s => s.Bookings).HasForeignKey(b => b.ServiceId);
             e.HasOne(b => b.Master).WithMany(u => u.MasterBookings).HasForeignKey(b => b.MasterId).OnDelete(DeleteBehavior.Restrict);

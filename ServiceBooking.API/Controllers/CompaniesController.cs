@@ -511,10 +511,7 @@ public class CompaniesController(
         if (userId is null) return false;
         if (User.IsInRole("SuperAdmin")) return true;
 
-        return await db.CompanyMembers.AnyAsync(cm =>
-            cm.CompanyId == companyId &&
-            cm.UserId == userId &&
-            cm.Role == UserRole.CompanyOwner);
+        return await CompanyMembership.IsOwnerAsync(db, companyId, userId);
     }
 
     // SuperAdmin can assign any role; CompanyOwner can assign Master or CompanyOwner only.

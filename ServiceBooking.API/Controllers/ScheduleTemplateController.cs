@@ -83,8 +83,11 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
 
         if (to < from) return BadRequest("Invalid date range: 'to' must not be earlier than 'from'.");
         // 366, not 365 — a full leap-year range must be applyable in a single call, which is the
-        // normal case for "apply my template for the whole year" (audit B4).
-        if (to.DayNumber - from.DayNumber > 366)
+        // normal case for "apply my template for the whole year" (audit B4). The range is INCLUSIVE of
+        // both endpoints, so day count = DayNumber difference + 1: to allow at most 366 days, the
+        // difference itself must be at most 365 (a diff of 366 would be 367 inclusive days, silently
+        // exceeding the limit the error message promises).
+        if (to.DayNumber - from.DayNumber > 365)
             return BadRequest("Date range is too large: at most 366 days can be applied at once.");
 
         // Serialize concurrent Apply calls for the same master+company so the find-or-create loop below

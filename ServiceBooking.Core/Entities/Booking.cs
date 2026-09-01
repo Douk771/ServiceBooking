@@ -22,6 +22,13 @@ public class Booking
     // Snapshot of Service.Price at the moment the booking was created, so that later price changes
     // on the service don't retroactively change historical revenue/commission figures.
     public decimal Price { get; set; }
+
+    // Snapshot of CompanyMember.CommissionPercent (for MasterId at CompanyId) at the moment the booking
+    // was created, for the same reason Price is a snapshot: a later commission-rate change, or the
+    // master's membership being removed entirely, must not retroactively change a closed period's
+    // report. Without this, GetValueOrDefault against the CURRENT CompanyMembers table silently turns a
+    // departed master's historical commission into 0%.
+    public decimal CommissionPercent { get; set; }
     public BookingStatus Status { get; set; } = BookingStatus.Pending;
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.NotRequired;
     public string? Notes { get; set; }

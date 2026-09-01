@@ -36,6 +36,11 @@ public class ReviewsController(AppDbContext db) : ControllerBase
         var alreadyReviewed = await db.Reviews.AnyAsync(r => r.BookingId == request.BookingId);
         if (alreadyReviewed) return Conflict("Review already exists for this booking.");
 
+        // The `booking.ClientId != userId` check above already proved this booking belongs to the
+        // authenticated caller, so it can't be a guest booking (those have ClientId == null) — and
+        // [Authorize] plus Program.cs's OnTokenValidated already proved `userId` names a real, currently
+        // existing user. The old `user != null ? ... : booking.GuestName` fallback was unreachable dead
+        // code that made a reader think guest reviews were still supported.
         var user = await db.Users.FindAsync(userId);
 
         var review = new Review
@@ -45,7 +50,7 @@ public class ReviewsController(AppDbContext db) : ControllerBase
             CompanyId = booking.CompanyId,
             MasterId = booking.MasterId,
             ClientId = booking.ClientId,
-            ReviewerName = user != null ? $"{user.FirstName} {user.LastName}".Trim() : booking.GuestName,
+            ReviewerName = $"{user!.FirstName} {user.LastName}".Trim(),
             Rating = request.Rating,
             Comment = request.Comment,
             CreatedAt = DateTime.UtcNow

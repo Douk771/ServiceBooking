@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -18,9 +19,11 @@ public class MastersController(AppDbContext db) : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-        // Check master is a member of the company
-        var isMember = await db.CompanyMembers
-            .AnyAsync(cm => cm.UserId == userId && cm.CompanyId == companyId);
+        // Check the caller actually works in this company (Master or CompanyOwner) — a plain "any
+        // membership row" check would also let a Client-role member through (CompanyMember.Role can be
+        // Client too), even though the bookings query below is scoped to b.MasterId == userId and would
+        // just come back empty for them. Matches the CompanyMembership convention used elsewhere.
+        var isMember = await CompanyMembership.IsStaffAsync(db, companyId, userId);
         if (!isMember) return Forbid();
 
         // Get all bookings for this master in this company
