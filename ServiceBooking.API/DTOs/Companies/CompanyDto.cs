@@ -1,3 +1,5 @@
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.API.DTOs.Companies;
 
 public record CompanyDto(
@@ -70,4 +72,14 @@ public record UpdateCompanyDto(
     bool? AllowSelfBooking,
     bool? RequirePrepayment,
     bool? ShowInPublicListing
+);
+
+// US-24 p.4 / US-19 p.7 — GET /api/companies/{id}/photo-usage.
+public record CompanyPhotoUsageDto(
+    Guid CompanyId,
+    long UsedBytes,
+    int PhotoCount,
+    int? QuotaMb,       // null = unlimited
+    double? PercentUsed, // null when QuotaMb is null
+    PhotoRetention Retention
 );

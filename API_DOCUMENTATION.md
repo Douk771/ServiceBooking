@@ -255,12 +255,12 @@ CommissionPercent`, по умолчанию `0`), а не пользовател
 `GET /api/companies/{id}/stats` (см. §4.3) комиссию не считает вообще, только `Booking.Price` —
 расхождений с `GET /api/reports/masters` по этому полю не возникает.
 
-**Legacy-поле.** `AppUser.CommissionPercent` (и производные от него `ProfileDto.CommissionPercent`,
-`AdminUserDto.CommissionPercent`) **не удалены** в этом цикле (правило «DTO не меняются»), но больше
-никем не записываются — читаются как `0` всегда. `GET /api/profile` продолжает отдавать это поле в
-теле ответа (для обратной совместимости формы DTO), но фронтенд (`ProfilePage.tsx`) перестал его
-показывать. Оба поля будут удалены в следующем цикле вместе с самой колонкой `AppUser.CommissionPercent`
-— не полагайтесь на них.
+**Удалено в цикле санации B (US-22).** `AppUser.CommissionPercent` был ровно тем legacy-полем, о котором
+предупреждал этот раздел в цикле A — никем не записывался, всегда читался как `0`. Цикл B убрал колонку
+целиком (миграция `AddPlanPhotoLimits`, наряду с добавлением полей тарифа на фото — колонка попала туда,
+а не в отдельную шестую миграцию, поскольку это было самое раннее по цепочке место, где у поля уже не
+оставалось ни одного читателя) и одновременно убрал `commissionPercent` из `ProfileDto` и `AdminUserDto`.
+`GET /api/profile` и `GET /api/admin/users` больше не содержат этого поля в ответе вовсе — см. §4.11, §4.12.
 
 ### 3.7. Назначение ролей
 
@@ -275,6 +275,83 @@ CommissionPercent`, по умолчанию `0`), а не пользовател
 ### 3.8. Роли в JWT и их проверка на каждом запросе
 
 `TokenService.GenerateToken` добавляет claim'ы `ClaimTypes.Role` из списка ролей пользователя **на момент генерации токена** (при регистрации или логине) — сам токен остаётся снимком ролей на момент выпуска. Однако при проверке токена на каждом защищённом запросе обработчик `OnTokenValidated` (см. `Program.cs`) перечитывает **текущий** список ролей пользователя из базы через `UserManager.GetRolesAsync` и заменяет им claim'ы ролей в `ClaimsPrincipal` запроса. Поэтому если роль пользователя меняется после выпуска токена (владелец назначил его мастером, SuperAdmin изменил список ролей или отозвал роль), это отражается **немедленно** на следующем же запросе с уже выданным токеном — повторный вход не требуется. Это касается и отзыва прав: если у пользователя забрали роль (например, разжаловали SuperAdmin), доступ, завязанный на неё, пропадает сразу же, а не только через 7 дней при истечении токена. Единственное, что при этом не проверяется живьём — это `Email`/`FirstName`/`LastName`/`Sub` в самом токене: они остаются такими, какими были на момент выпуска, до следующего входа.
+
+### 3.9. Канонический телефон (цикл санации B, US-26)
+
+Телефон — идентификатор аккаунта (`UserName == PhoneNumber`), поэтому с этого цикла он приводится к
+**канонической форме — только цифры**, без `+`, пробелов, скобок и дефисов — **до записи в БД**, во
+всех точках входа: регистрация, вход, добавление сотрудника (поиск существующего и автосоздание),
+смена телефона в профиле, гостевая запись (`Booking.GuestPhone`), заметка о госте
+(`ClientNote.GuestPhone`), поиск по пользователям в админке.
+
+**Правило нормализации** (`ServiceBooking.API/Services/PhoneNormalizer.cs`, чистая функция без
+зависимостей от БД):
+1. Из строки удаляются все нецифровые символы.
+2. Российский номер из 11 цифр, начинающийся с `8`, приводится к `7…` (`8 999…` → `7999…`).
+3. Номер из 10 цифр, начинающийся с `9`, дополняется до `7XXXXXXXXXX` (`999…` → `7999…`).
+4. Остальные номера (включая международные) сохраняются как последовательность цифр без изменений.
+5. Итог должен содержать от 10 до 15 цифр (границы E.164) — иначе `400 Bad Request`, `text/plain`:
+   `"Phone number must contain 10 to 15 digits."`
+
+**Клиент может присылать номер в любом привычном формате** — сервер сам приводит его к канону. Но
+**возвращается всегда канон**: `AuthResponseDto.phone`, `ProfileDto.phone`, `MemberDto.phone`,
+`AdminUserDto.phone`, `BookingDto.clientPhone`, `MasterClientDto`'s `phone`/`guestPhone`,
+`AdminBookingDto.clientPhone` — везде только цифры, а не то, что ввёл пользователь.
+
+**Побочный эффект — аккаунты и история склеиваются.** Пользователь, зарегистрированный как «8 999…», и
+он же, вошедший как «+7 999…», — теперь один и тот же аккаунт (повторная регистрация в другом формате
+даёт «номер занят», а не второй аккаунт). Гость, записанный в разных форматах телефона, в
+`GET /api/masters/clients` виден как один человек с общей историей и общими заметками — без единой
+строки специального кода, просто потому что группировка идёт по уже каноническим строкам.
+
+**Историческая база нормализована миграцией** (`NormalizePhoneNumbers`, последняя миграция цикла).
+Коллизии (два ранее «разных» аккаунта схлопнулись в один канонический номер) разрешаются
+детерминированно: выживает аккаунт с наибольшим числом связанных строк (записи как клиент + записи как
+мастер + членства в компаниях), при равенстве — самый ранний по `CreatedAt`; проигравшие аккаунты
+удаляются (их брони как клиента не удаляются — `Booking.ClientId` обнуляется). Миграция **останавливается
+с ошибкой**, а не удаляет молча, если среди схлопывающихся аккаунтов два и более владеют компаниями или
+два и более — мастера с существующими записями (такие случаи требуют ручного разбора).
+
+**Показ пользователю** — забота фронтенда, не хранилища: `frontend/src/utils/phone.ts` форматирует
+канон в `+7 (999) 000-00-00` для российских номеров и `+<цифры>` для остальных.
+
+### 3.10. Загрузка изображений: два класса хранения, единый загрузчик, ограничение частоты (цикл санации B, US-19/US-25)
+
+Все четыре эндпоинта загрузки изображений (`POST /api/client-notes/{noteId}/photos`,
+`POST /api/profile/avatar`, `POST /api/services/{id}/image`, `POST /api/companies/{id}/logo`) проходят
+через один и тот же код (`ImageUploadService`/`ImageProcessor`/`ImageSignature`/`FileStorage`):
+
+1. **Проверка по сигнатуре файла** (magic bytes JPEG/PNG/WEBP) — `Content-Type` и имя файла клиента
+   никогда не участвуют в решении о приёме и не влияют на расширение сохранённого файла.
+2. **Лимит 5 МБ** на файл (`Uploads:MaxFileBytes`).
+3. **Изображение всегда пересохраняется сервером**, независимо от тарифа: ресайз (профиль зависит от
+   назначения — 1600 px для фото клиента, 512 px для аватара/логотипа, 1200 px для картинки услуги),
+   применение EXIF-поворота к пикселям и **полное удаление метаданных** — снимок с включённой
+   геолокацией не сохраняет её в выходном файле, потому что перекодирование пишет только пиксели.
+   **Round 3 (code review finding, decompression bomb).** Перед вызовом `SKBitmap.Decode` проверяются
+   заявленные в заголовке файла `codec.Info.Width`/`Height` — файл, чей ЗАЯВЛЕННЫЙ размер превышает 50
+   мегапикселей, отклоняется как `400 Bad Request` ("Image dimensions are too large — try a smaller
+   image.") ДО попытки декодирования. Без этой проверки файл, спокойно проходящий лимит в 5 МБ по
+   размеру на диске, мог бы заявлять размеры вроде 20000×20000 и заставить сервер материализовать ~1.6
+   ГБ несжатого битмапа в памяти — достижимо ЛЮБЫМ аутентифицированным пользователем через
+   `POST /api/profile/avatar` (наименее привилегированный из четырёх эндпоинтов), не только сотрудником
+   компании.
+4. **Ограничение частоты — 10 загрузок в минуту на пользователя** (`Uploads:PerUserPerMinute`),
+   встроенный `Microsoft.AspNetCore.RateLimiting`, партиция по id пользователя. Превышение — **`429 Too
+   Many Requests`**, `text/plain`: `"Too many uploads. Try again in a minute."`
+
+**Два класса хранения:**
+
+| | Публичный (аватар, логотип, картинка услуги) | Приватный (фото к заметке о клиенте) |
+|---|---|---|
+| Где лежит | `wwwroot/uploads/<area>/`, раздаётся `UseStaticFiles` | `Storage:PrivateRoot` — **вне** `wwwroot`, из конфигурации |
+| Что хранится в БД | URL (`/uploads/avatars/<guid>.jpg`) | ключ хранения (`<companyId>/<guid>.jpg`) — не URL, браузеру не отдаётся напрямую |
+| Кто видит | кто угодно, включая анонима | только `Master`/`CompanyOwner` этой компании, через `GET /api/client-notes/photos/{id}` |
+| Входит в квоту тарифа | нет (US-25 п.8) | да (US-24) |
+
+Файлы клиентов физически не могут попасть в раздачу `UseStaticFiles` — приватный каталог смонтирован
+вне `wwwroot`, и в Production при неверной конфигурации (`Storage:PrivateRoot` внутри `wwwroot`) сервис
+не стартует (fail-fast). См. §4.13 «ClientNotePhotos» ниже.
 
 ---
 
@@ -431,23 +508,38 @@ curl -X POST http://localhost:5000/api/bookings \
   "id": "c47ac10b-58cc-4372-a567-0e02b2c3d479",
   "companyId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "companyName": "Салон \"Мираж\"",
+  "companySlug": "miraj-salon",
   "serviceId": "b1eac1b1-4b2e-4b3b-9f2a-2f6e1a1c2d3e",
   "serviceName": "Стрижка мужская",
   "masterId": "6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4",
   "masterName": "Алина Ковальчук",
   "clientId": null,
   "clientName": "Мария Сидорова",
-  "clientPhone": "+380671234567",
+  "clientPhone": "380671234567",
   "clientEmail": "maria@example.com",
   "date": "2026-07-20",
   "startTime": "09:00:00",
   "endTime": "09:40:00",
   "status": "Confirmed",
   "paymentStatus": "NotRequired",
+  "price": 1800,
+  "cancellationReason": null,
   "notes": null,
   "createdAt": "2026-07-18T10:15:00Z"
 }
 ```
+
+**Изменено в цикле санации B (US-06 + Q12).** Три новых поля, отдаются всеми эндпоинтами, возвращающими
+`BookingDto`:
+
+| Поле | Тип | Смысл |
+|---|---|---|
+| `companySlug` | string | слаг компании — чтобы кабинет клиента мог собрать ссылку «Записаться снова», не делая второй запрос |
+| `price` | decimal | снимок `Service.Price` на момент создания записи (уже существовал на сущности — миграции не потребовалось) |
+| `cancellationReason` | string? | причина отмены, если она была передана в `PATCH /api/bookings/{id}/cancel`; `null` для неотменённых записей и для отмены без причины |
+
+**Также с цикла B (US-26) — телефон канонический.** `clientPhone` (и все остальные телефоны в API)
+теперь отдаются только цифрами, без `+`/пробелов/скобок — см. §3.9 ниже.
 
 **Ошибки** (проверяются строго в этом порядке; `isGuestPath` = не аутентифицирован ИЛИ (прислал `guestName` И не персонал этой компании)):
 
@@ -494,17 +586,10 @@ curl http://localhost:5000/api/bookings/c47ac10b-58cc-4372-a567-0e02b2c3d479 \
 | `404 Not Found` | запись с таким `id` не найдена |
 | `403 Forbidden` | вызывающий не является клиентом/мастером/владельцем компании/SuperAdmin для этой записи |
 
-#### `GET /api/bookings/my`
+#### ~~`GET /api/bookings/my`~~ — удалён в цикле санации B (US-22)
 
-**Доступ:** любой аутентифицированный пользователь.
-
-Возвращает все записи, где `ClientId == userId` (то есть только записи, сделанные **самостоятельно**, не ручные записи мастера от имени этого пользователя как гостя), отсортированные по дате/времени по убыванию.
-
-```bash
-curl http://localhost:5000/api/bookings/my -H "Authorization: Bearer $TOKEN"
-```
-
-**Ответ `200 OK`** — массив `BookingDto`. Ошибка: `401 Unauthorized`, если токен не передан/невалиден.
+Маршрута больше не существует (`404`). Полностью вытеснен `GET /api/bookings/client`, который делает то
+же самое (записи, где `ClientId == userId`) плюс необязательный фильтр по статусу — см. ниже.
 
 #### `GET /api/bookings/client`
 
@@ -630,9 +715,16 @@ curl -X PATCH http://localhost:5000/api/bookings/c47ac10b-58cc-4372-a567-0e02b2c
 
 #### `PATCH /api/bookings/{id}/cancel`
 
-**Доступ:** любой аутентифицированный пользователь (`[Authorize]`), с проверкой: разрешено клиенту записи (`ClientId == userId`), назначенному мастеру (`MasterId == userId`) или SuperAdmin. **В отличие от других операций** (complete/noshow/mark-paid/reschedule), здесь **не** предусмотрена проверка на CompanyOwner компании — если владелец компании лично не является мастером записи, он не может отменить её через этот эндпоинт.
+**Доступ:** любой аутентифицированный пользователь (`[Authorize]`), с проверкой: разрешено клиенту
+записи (`ClientId == userId`) либо персоналу — назначенному мастеру (`MasterId == userId`), `CompanyOwner`
+компании записи, или `SuperAdmin` (общий предикат `CanManageBookingAsync`, единый для отмены,
+завершения, no-show, отметки оплаты и переноса).
 
 **Тело запроса:** сырая JSON-строка (необязательная причина отмены), например `"Клиент попросил отменить"` — параметр объявлен как `[FromBody] string? reason`, поэтому тело запроса должно быть **JSON-строкой**, а не объектом.
+
+**Изменено в цикле санации B (US-06).** Причина теперь действительно доходит до другой стороны — см.
+`BookingDto.cancellationReason` выше. Валидация длины: **`400 Bad Request`**, `text/plain`:
+`"Cancellation reason must be 300 characters or fewer."`, если `reason` длиннее 300 символов.
 
 ```bash
 curl -X PATCH http://localhost:5000/api/bookings/c47ac10b-58cc-4372-a567-0e02b2c3d479/cancel \
@@ -643,7 +735,8 @@ curl -X PATCH http://localhost:5000/api/bookings/c47ac10b-58cc-4372-a567-0e02b2c
 
 **Успешный ответ:** `204 No Content`.
 
-**Ошибки:** `401 Unauthorized`, `403 Forbidden` (не клиент/не мастер/не SuperAdmin), `404 Not Found`.
+**Ошибки:** `401 Unauthorized`, `403 Forbidden` (не клиент/не персонал/не SuperAdmin), `404 Not Found`,
+`400 Bad Request` (причина длиннее 300 символов).
 
 ---
 
@@ -956,6 +1049,68 @@ curl "http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/s
 `to` — `"Both 'from' and 'to' are required."`; либо `to < from` — `"Invalid date range: 'to' must not
 be earlier than 'from'."`).
 
+#### `POST /api/companies/{id}/logo` — **изменено в цикле санации B (US-25 п.6)**
+
+**Доступ:** CompanyOwner компании или SuperAdmin. Ограничение частоты: `[EnableRateLimiting("uploads")]`
+(см. §3.10).
+
+**Тело запроса:** `multipart/form-data`, единственное поле `file`.
+
+Логотип теперь загружается через тот же безопасный загрузчик, что и фото клиентов/аватары/картинки
+услуг (§3.10): проверка **сигнатуры файла** (magic bytes), а не заголовка `Content-Type`; ресайз до
+512 px; перекодирование; полное удаление метаданных. Это закрывает обе находки прошлого цикла (не
+проверялось содержимое, не было ограничения частоты) одним изменением — второго пути загрузки картинок
+в решении больше нет.
+
+**Класс хранения — публичный** (`wwwroot/uploads/companies/`, раздаётся `UseStaticFiles`, как и раньше).
+PNG на входе даёт PNG на выходе (прозрачность логотипа сохраняется); JPEG/WEBP на входе — всегда JPEG.
+Старый файл удаляется при замене.
+
+```bash
+curl -X POST http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/logo \
+  -H "Authorization: Bearer $OWNER_TOKEN" \
+  -F "file=@logo.png"
+```
+
+**Ответ `200 OK`** — полный `CompanyDto` с обновлённым `logoUrl`.
+
+**Ошибки:** `400 Bad Request` (`File is required` / `Image is too large — the limit is 5 MB` /
+`Unsupported image type — use JPEG, PNG or WEBP` — текст **дословно совпадает** с прежним, регрессия на
+это проверяется тестом `CO-058`/`CO-074` / `File is not a valid image` / `Image dimensions are too large
+— try a smaller image.` (round 3, decompression bomb — см. §3.10) / `Server storage is full — try
+again later.`), `401`, `403`, `404`, `413` (тело крупнее лимита Kestrel), `429` (см. §3.10).
+
+#### `GET /api/companies/{id}/photo-usage` — **новое в цикле санации B (US-24 п.4, US-19 п.7)**
+
+**Доступ:** персонал компании (`Master`/`CompanyOwner`) или `SuperAdmin`. Единственное место, где
+`SuperAdmin` видит числа по фото клиентов, не видя самого содержимого (решение Q5) — контраст с
+`GET /api/client-notes/photos/{id}` ниже, где `SuperAdmin` получает `403`.
+
+```bash
+curl http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/photo-usage \
+  -H "Authorization: Bearer $OWNER_TOKEN"
+```
+
+**Ответ `200 OK`:**
+
+```json
+{
+  "companyId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "usedBytes": 102301184,
+  "photoCount": 341,
+  "quotaMb": 100,
+  "percentUsed": 97.6,
+  "retention": "TwelveMonths"
+}
+```
+
+`quotaMb: null` означает безлимит (тогда `percentUsed` тоже `null`). Считается по сумме
+`ClientNotePhoto.SizeBytes`, а не обходом файловой системы. Отдельный эндпоинт, а не поля `CompanyDto`:
+последний отдаётся и в публичном каталоге, и в списках — занятый объём стал бы либо публичной утечкой,
+либо N+1-агрегатом на каждую компанию списка.
+
+**Ошибки:** `401 Unauthorized`, `403 Forbidden` (не персонал и не SuperAdmin), `404 Not Found`.
+
 ---
 
 ### 4.4. Services (`/api/services`)
@@ -987,7 +1142,13 @@ curl "http://localhost:5000/api/services?companyId=3fa85f64-5717-4562-b3fc-2c963
 CompanyOwner (или SuperAdmin). Чтение (`GET /api/services`, ниже) не изменилось и остаётся полностью
 открытым — сценарий «мастер выбирает услугу при ручной записи» (`ManualBookingModal`) не затронут.
 
-**Тело запроса** (`CreateServiceDto`): `companyId` (Guid), `name` (string, ≤200 симв.), `description` (string?, ≤2000 симв.), `durationMinutes` (int, `1..1440`), `price` (decimal, `0..1_000_000`), `imageUrl` (string?). Нарушение любого из ограничений длины/диапазона даёт `400 application/problem+json` (`ValidationProblemDetails`) от автоматической валидации `[ApiController]`.
+**Тело запроса** (`CreateServiceDto`): `companyId` (Guid), `name` (string, ≤200 симв.), `description` (string?, ≤2000 симв.), `durationMinutes` (int, `1..1440`), `price` (decimal, `0..1_000_000`). Нарушение любого из ограничений длины/диапазона даёт `400 application/problem+json` (`ValidationProblemDetails`) от автоматической валидации `[ApiController]`.
+
+**Round 3 (code review BLOCKER).** `imageUrl` больше не принимается в теле этого запроса (и `PUT`,
+ниже) — раньше клиент мог передать произвольный `imageUrl` (например,
+`/uploads/../../appsettings.Production.json`), а затем вызвать `POST /api/services/{id}/image`, чтобы
+серверная замена файла удалила по этому пути произвольный файл. Картинка услуги теперь устанавливается
+и заменяется исключительно через `POST /api/services/{id}/image` (см. ниже) — как и у аватара/логотипа.
 
 ```bash
 curl -X POST http://localhost:5000/api/services \
@@ -1010,7 +1171,7 @@ curl -X POST http://localhost:5000/api/services \
 
 **Доступ:** аналогично `POST` — CompanyOwner компании, к которой принадлежит услуга, либо SuperAdmin (Master больше не может, см. выше).
 
-**Тело запроса:** тот же `CreateServiceDto` (полная замена `name`/`description`/`durationMinutes`/`price`; `imageUrl` заменяется только если передан не `null`).
+**Тело запроса:** тот же `CreateServiceDto` (полная замена `name`/`description`/`durationMinutes`/`price`; `imageUrl` в теле этого запроса не принимается вовсе — см. примечание round 3 выше — и остаётся нетронутым).
 
 ```bash
 curl -X PUT http://localhost:5000/api/services/b1eac1b1-4b2e-4b3b-9f2a-2f6e1a1c2d3e \
@@ -1033,6 +1194,26 @@ curl -X DELETE http://localhost:5000/api/services/b1eac1b1-4b2e-4b3b-9f2a-2f6e1a
 ```
 
 **Успешный ответ:** `204 No Content`. **Ошибки:** `401`, `404 Not Found`, `403 Forbidden`.
+
+#### `POST /api/services/{id}/image` — **новое в цикле санации B (US-25)**
+
+**Доступ:** тот же предикат, что у редактирования услуги — CompanyOwner компании или SuperAdmin (роль
+`Master` не управляет каталогом услуг с цикла A). Ограничение частоты: `[EnableRateLimiting("uploads")]`.
+
+**Тело запроса:** `multipart/form-data`, поле `file`. Обработка — тот же загрузчик, что у аватара/
+логотипа (§3.10): ресайз до 1200 px по длинной стороне, публичный класс хранения
+(`wwwroot/uploads/services/`), в квоту фото клиентов не входит.
+
+```bash
+curl -X POST http://localhost:5000/api/services/b1eac1b1-4b2e-4b3b-9f2a-2f6e1a1c2d3e/image \
+  -H "Authorization: Bearer $OWNER_TOKEN" \
+  -F "file=@service.jpg"
+```
+
+**Ответ `200 OK`** — обновлённый `ServiceDto` с непустым `imageUrl`.
+
+**Ошибки:** `400 Bad Request` (см. общие ошибки загрузки §3.10), `401`, `403` (мастер или посторонний),
+`404 Not Found` (услуга не найдена — проверяется до прав, как и у остальных методов контроллера), `429`.
 
 ---
 
@@ -1205,13 +1386,21 @@ curl -X POST "http://localhost:5000/api/schedule-template/apply?masterId=6a9c1e2
 
 #### `GET /api/masters/clients`
 
-**Доступ:** аутентифицированный пользователь, который является участником (`CompanyMember`, любая роль) указанной компании — иначе `403 Forbidden`.
+**Доступ:** сотрудник компании — `Master`/`CompanyOwner` (`CompanyMembership.IsStaffAsync`) — иначе `403
+Forbidden`. **Изменено в цикле санации B (US-07):** раньше пускало любое членство, включая роль
+`Client`; теперь только персонал.
 
 **Query-параметры:** `companyId` (Guid, обязателен).
 
-Возвращает объединённый список клиентов (зарегистрированных — сгруппированных по `ClientId`, и гостевых — сгруппированных по номеру телефона), у которых были записи к этому мастеру в этой компании. **Изменено в цикле санации A (US-22, решение Q10):** контактные данные (`phone`/`email`) отдаются **всегда**, без ограничения по времени — правило «видно только 24 часа после визита» (было в §3.5) снято целиком, без замены. Для каждого клиента также возвращается `bookingSummaries` — полная история его визитов к этому мастеру (дата, услуга, статус), отсортированная от новых к старым; именно её разворачивает карточка клиента на странице «Клиенты» при клике.
+Возвращает объединённый список клиентов (зарегистрированных — сгруппированных по `ClientId`, и гостевых
+— сгруппированных по каноническому номеру телефона, US-26), у которых были записи к этому мастеру в
+этой компании. Контактные данные (`phone`/`email`) отдаются **всегда**, без ограничения по времени
+(снято решением Q10 цикла A). `bookingSummaries` — полная история визитов клиента к этому мастеру (дата,
+услуга, статус), отсортированная от новых к старым.
 
-Поле `notes` — **общие в рамках компании** заметки о клиенте: показываются заметки, оставленные **любым** мастером этой компании об этом клиенте (`ClientNote.CompanyId == companyId`), а не только заметки вызывающего. Это осознанно: когда клиент впервые приходит к новому мастеру, тот видит контекст, оставленный коллегами. Заметки не пересекаются между разными компаниями.
+**Изменено в цикле санации B (US-07) — BREAKING № 1.** `notes` был массивом голых строк, стал массивом
+объектов `ClientNoteDto` — с `id`, автором, датой, ссылкой на визит и вложенными фото. Ограничен
+`Take(50)` заметок на клиента (сортировка — по убыванию даты).
 
 ```bash
 curl "http://localhost:5000/api/masters/clients?companyId=3fa85f64-5717-4562-b3fc-2c963f66afa6" \
@@ -1226,64 +1415,99 @@ curl "http://localhost:5000/api/masters/clients?companyId=3fa85f64-5717-4562-b3f
     "clientId": "9d8e7f6a-1111-2222-3333-444455556666",
     "guestPhone": null,
     "name": "Мария Сидорова",
-    "phone": "+380671234567",
+    "phone": "380671234567",
     "email": "maria@example.com",
     "lastVisitDate": "2026-07-18",
     "totalVisits": 3,
-    "notes": ["Аллергия на аммиак"],
+    "notes": [
+      {
+        "id": "b1b2b3b4-0000-1111-2222-333344445555",
+        "note": "Аллергия на аммиак",
+        "createdAt": "2026-07-18T14:12:03.114Z",
+        "authorId": "6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4",
+        "authorName": "Алина Ковальчук",
+        "bookingId": "c47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "bookingDate": "2026-07-18",
+        "bookingServiceName": "Окрашивание",
+        "canDelete": true,
+        "photos": [
+          {
+            "id": "cc11e2d3-4444-5555-6666-777788889999",
+            "url": "/api/client-notes/photos/cc11e2d3-4444-5555-6666-777788889999",
+            "thumbnailUrl": "/api/client-notes/photos/cc11e2d3-4444-5555-6666-777788889999/thumb",
+            "width": 1600, "height": 1067, "sizeBytes": 312845,
+            "createdAt": "2026-07-18T14:12:41.881Z",
+            "uploadedByName": "Алина Ковальчук",
+            "canDelete": true
+          }
+        ]
+      }
+    ],
     "bookingSummaries": [
       { "date": "2026-07-18", "serviceName": "Стрижка мужская", "status": "Completed" },
       { "date": "2026-07-01", "serviceName": "Окрашивание", "status": "Completed" },
       { "date": "2026-06-15", "serviceName": "Стрижка мужская", "status": "NoShow" }
     ]
-  },
-  {
-    "clientId": null,
-    "guestPhone": "+380509876543",
-    "name": "Олег Гость",
-    "phone": "+380509876543",
-    "email": null,
-    "lastVisitDate": "2026-07-10",
-    "totalVisits": 1,
-    "notes": [],
-    "bookingSummaries": [
-      { "date": "2026-07-10", "serviceName": "Стрижка мужская", "status": "Completed" }
-    ]
   }
 ]
 ```
 
-(Гостевой контакт совпадает с `guestPhone`, так как для гостя это и есть основной способ связи; `email` для него в этом примере не был указан при бронировании.)
+**Важно про `url`/`thumbnailUrl`:** это пути к защищённому API-эндпоинту, а **не** значения, готовые для
+`<img src>` — браузер не добавит заголовок `Authorization` к прямому запросу `<img>`, поэтому фронтенд
+загружает их как авторизованный blob (см. §4.13). Подстановка этих строк напрямую в `src` даёт `401`.
 
-**Ошибки:** `401 Unauthorized`, `403 Forbidden` (вызывающий не состоит участником данной компании).
+`canDelete` вычислен **для вызывающего**: `true`, если он автор заметки/фото или владелец компании
+(решение Q16 + расширение по фото, см. §4.13).
+
+**Ошибки:** `401 Unauthorized`, `403 Forbidden` (вызывающий не персонал данной компании).
 
 #### `POST /api/masters/clients/notes`
 
-**Доступ:** аутентифицированный пользователь, который является участником (`CompanyMember`, любая роль) указанной компании (`companyId`) — иначе `403 Forbidden`. Заметка записывается с автором `MasterId = userId` и привязывается к компании `CompanyId = companyId`, попадая в её общую историю клиента (см. `GET /api/masters/clients` выше).
+**Доступ:** персонал компании (`Master`/`CompanyOwner`) — иначе `403 Forbidden`. **Изменено в цикле
+санации B:** было «любое членство»; заметка записывается с автором `MasterId = userId`.
 
-**Тело запроса** (`AddNoteRequest`): `companyId` (Guid, обязателен), `clientId` (string?), `guestPhone` (string?), `note` (string, обязательно).
+**Тело запроса** (`AddNoteRequest`): `companyId` (Guid, обязателен), `clientId` (string?), `guestPhone`
+(string?, нормализуется к канону перед записью — US-26), `note` (string, обязательно, ≤ 2000 символов),
+`bookingId` (Guid?, **новое в цикле B**) — заполняется, когда заметка создаётся из панели под записью
+(US-17 п.4); в ответе тогда появляются `bookingDate`/`bookingServiceName`.
 
 ```bash
 curl -X POST http://localhost:5000/api/masters/clients/notes \
   -H "Authorization: Bearer $MASTER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "companyId": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "clientId": "9d8e7f6a-1111-2222-3333-444455556666", "note": "Аллергия на аммиак" }'
+  -d '{ "companyId": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "clientId": "9d8e7f6a-1111-2222-3333-444455556666", "note": "Аллергия на аммиак", "bookingId": null }'
 ```
 
-**Успешный ответ `200 OK`**: `{ "id": "b1b2b3b4-0000-1111-2222-333344445555" }`
+**Успешный ответ — изменено в цикле санации B:** `201 Created` с полным объектом `ClientNoteDto` (было
+`200 { "id": "…" }`).
 
-**Ошибки:** `401 Unauthorized`, `403 Forbidden` (вызывающий не участник указанной компании), `400 Bad Request` (не передано `note`).
+**Ошибки:** `401 Unauthorized`, `403 Forbidden` (не персонал компании), `400 Bad Request` (`Note text is
+required.` — пустая заметка; `Note must be 2000 characters or fewer.`; `Booking does not belong to this
+company.` — чужой `bookingId`; `Phone number must contain 10 to 15 digits.` — невалидный `guestPhone`;
+**round 3, code review finding:** `Either clientId or guestPhone is required.` — оба поля пусты (заметка
+без идентификатора клиента навсегда невидима в `GET /api/masters/clients`, которая группирует только по
+`COALESCE(clientId, guestPhone)`); `Client is not associated with this company.` — переданный `clientId`
+не имеет ни одной брони в этой компании).
 
 #### `DELETE /api/masters/clients/notes/{id}`
 
-**Доступ:** удалить заметку может только её **автор** (`MasterId == userId`) — заметки хоть и видны всем мастерам компании (см. `GET /api/masters/clients`), но правит/удаляет каждый только свои. Если заметка существует, но принадлежит другому мастеру, эндпоинт вернёт `404 Not Found` (а не `403 Forbidden`), так как запрос к БД уже включает фильтр по `MasterId`.
+**Изменено в цикле санации B (решение Q16).** Право удаления расширено с «только автор» до «автор
+**или** владелец компании (`CompanyOwner`)». Изоляция между компаниями теперь различает два случая:
+
+| Ситуация | Код |
+|---|---|
+| заметки с таким `id` нет, **или** вызывающий не персонал компании этой заметки | `404 Not Found` (существование чужой заметки не подтверждается) |
+| вызывающий — персонал этой компании, но не автор и не `CompanyOwner` | `403 Forbidden` |
+| автор или `CompanyOwner` компании | `204 No Content` |
+
+Удаление заметки каскадом удаляет все её фото (строки и файлы) — см. §4.13.
 
 ```bash
 curl -X DELETE http://localhost:5000/api/masters/clients/notes/b1b2b3b4-0000-1111-2222-333344445555 \
   -H "Authorization: Bearer $MASTER_TOKEN"
 ```
 
-**Успешный ответ:** `204 No Content`. **Ошибки:** `401 Unauthorized`, `404 Not Found` (заметка не найдена либо принадлежит другому мастеру).
+**Успешный ответ:** `204 No Content`. **Ошибки:** `401 Unauthorized`, `403 Forbidden`, `404 Not Found`.
 
 ---
 
@@ -1469,21 +1693,18 @@ curl http://localhost:5000/api/profile -H "Authorization: Bearer $TOKEN"
 ```json
 {
   "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "phone": "79991234567",
   "email": "ivan.petrov@example.com",
   "firstName": "Иван",
   "lastName": "Петров",
   "avatarUrl": null,
-  "commissionPercent": 0.0,
   "roles": ["Client"]
 }
 ```
 
-`commissionPercent` здесь — **legacy-поле** (изменено в цикле санации A, US-15, находка B1): начиная с
-этого цикла комиссия хранится per-company на `CompanyMember.CommissionPercent` (см. §3.6, §4.3), а это
-поле по-прежнему читает `AppUser.CommissionPercent`, в который `PUT /api/companies/{id}/members/{memberId}/commission`
-больше не пишет — оно навсегда возвращает `0`. Поле оставлено в DTO по правилу «DTO не меняются» и будет
-удалено в следующем цикле вместе с колонкой `AppUser.CommissionPercent`; фронтенд (`ProfilePage.tsx`)
-перестал его отображать.
+**Изменено в цикле санации B (US-22).** `commissionPercent` — legacy-поле, читавшее
+`AppUser.CommissionPercent` (комиссия per-company с цикла A, см. §3.6, §4.3) — убрано из `ProfileDto`
+целиком, вместе с полем в `AdminUserDto` (§4.12). `phone` — канонический (только цифры), см. §3.9.
 
 **Ошибки:** `401 Unauthorized`, `404 Not Found` (крайне маловероятный случай — пользователь из валидного токена не найден в БД, например, был удалён).
 
@@ -1517,6 +1738,36 @@ curl -X POST http://localhost:5000/api/profile/change-password \
 
 **Ошибки:** `401 Unauthorized`, `404 Not Found`, `400 Bad Request` — неверный текущий пароль, либо новый пароль не проходит правила Identity (сообщение — либо конкретная Identity-ошибка, либо, если её нет, generic `"Неверный текущий пароль"`).
 
+#### `POST /api/profile/change-phone`
+
+**Изменено в цикле санации B (US-26).** `newPhone` нормализуется к канону (§3.9) **до** записи —
+сохраняется и возвращается только канон, независимо от формата, в котором его прислал клиент.
+
+**Ошибки** — без изменений в остальном: `401`, `404`, `400 Bad Request` (неверный текущий пароль;
+`"Этот номер телефона уже используется другим аккаунтом"` при занятом номере;
+`"Phone number must contain 10 to 15 digits."` — **новое**, невалидный номер).
+
+#### `POST /api/profile/avatar` — **новое в цикле санации B (US-25)**
+
+**Доступ:** любой аутентифицированный пользователь, только **свой** аватар (id берётся из токена,
+параметра с чужим id нет — `403` для этого эндпоинта недостижим). Ограничение частоты:
+`[EnableRateLimiting("uploads")]`.
+
+**Тело запроса:** `multipart/form-data`, поле `file`. Обработка — общий загрузчик (§3.10): квадратный
+кроп по центру, 512×512, публичный класс хранения (`wwwroot/uploads/avatars/`). Старый файл удаляется
+при замене.
+
+```bash
+curl -X POST http://localhost:5000/api/profile/avatar \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@avatar.jpg"
+```
+
+**Ответ `200 OK`** — полный `ProfileDto` с непустым `avatarUrl` (`/uploads/avatars/<guid>.jpg`),
+обычная ссылка, работает напрямую в `<img src>`.
+
+**Ошибки:** см. общие ошибки загрузки §3.10 (`400`/`401`/`413`/`429`); `403` недостижим.
+
 ---
 
 ### 4.12. Admin (`/api/admin`)
@@ -1543,7 +1794,21 @@ curl http://localhost:5000/api/admin/stats -H "Authorization: Bearer $ADMIN_TOKE
 
 #### `GET /api/admin/users`
 
-**Query-параметры:** `search` (string?, опционально — подстрока по email/firstName/lastName).
+**Query-параметры:** `search` (string?, опционально — подстрока по телефону/email/firstName/lastName).
+
+**Изменено в цикле санации B (US-26).** Если строка поиска «похожа на телефон» (после удаления
+нецифровых символов остаётся ≥ 5 цифр и не остаётся букв), она нормализуется к канону (§3.9) **только
+для сравнения со столбцом телефона** — остальные столбцы (email/имя/фамилия) по-прежнему ищутся как
+введено, иначе поиск по фамилии сломался бы. Поиск по `"Иванов"` не трогается; поиск по `"8 999 123 45
+67"` находит владельца с канонической записью `79991234567`.
+
+**Round 3 (code review finding, утечка данных — исправлено).** Проверка «похоже на телефон» считает
+цифры Unicode-совместимым способом, а фактическая нормализация (`PhoneNormalizer.Normalize`) держит
+только ASCII `0-9` (US-26, специально держится в синхроне с SQL-миграцией — см. §14.3/`PhoneNormalizerTests`).
+Строка, состоящая ТОЛЬКО из не-ASCII цифр (например, арабо-индийских), проходила проверку «похоже на
+телефон», после нормализации превращалась в пустую строку, и сравнение `PhoneNumber.Contains("")` было
+истинным для каждой записи — поиск такой строкой возвращал ВСЕХ пользователей вместо ожидаемого пустого
+результата. Исправлено: пустая нормализованная строка больше не участвует в сравнении по телефону.
 
 ```bash
 curl "http://localhost:5000/api/admin/users?search=ivan" -H "Authorization: Bearer $ADMIN_TOKEN"
@@ -1555,11 +1820,11 @@ curl "http://localhost:5000/api/admin/users?search=ivan" -H "Authorization: Bear
 [
   {
     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "phone": "79991234567",
     "email": "ivan.petrov@example.com",
     "firstName": "Иван",
     "lastName": "Петров",
     "avatarUrl": null,
-    "commissionPercent": 0.0,
     "createdAt": "2026-05-01T10:00:00Z",
     "roles": ["Client"],
     "ownedCompanyCount": 0,
@@ -1570,6 +1835,9 @@ curl "http://localhost:5000/api/admin/users?search=ivan" -H "Authorization: Bear
   }
 ]
 ```
+
+**Изменено в цикле санации B (US-22).** `commissionPercent` убран из `AdminUserDto` целиком (см. §4.11).
+`phone` — канонический (§3.9).
 
 Тариф здесь — тот же аккаунт-уровневый `AccountSubscription`, что и в `GET /api/admin/companies` (см. §3.1) — управление подпиской живёт на вкладке «Пользователи» именно потому, что подписка привязана к владельцу, а не к отдельной компании.
 
@@ -1701,7 +1969,8 @@ curl "http://localhost:5000/api/admin/bookings?status=Completed&from=2026-07-01&
 
 #### `GET /api/admin/plans`
 
-Возвращает список тарифных конфигураций `SubscriptionPlanConfig`, отсортированных по цене.
+Возвращает список тарифных конфигураций `SubscriptionPlanConfig`, отсортированных по цене. Отдаются
+**и неактивные** планы тоже (нужны для истории и для реактивации, US-05) — фильтра по `isActive` нет.
 
 ```bash
 curl http://localhost:5000/api/admin/plans -H "Authorization: Bearer $ADMIN_TOKEN"
@@ -1714,12 +1983,16 @@ curl http://localhost:5000/api/admin/plans -H "Authorization: Bearer $ADMIN_TOKE
   {
     "id": "dd11ee22-0000-1111-2222-333344445555",
     "name": "Pro",
-    "planKey": "pro",
     "pricePerMonth": 999.0,
-    "maxMasters": null,
+    "maxEmployees": 10,
+    "maxCompanies": 3,
     "allowOnlineBooking": true,
     "allowMailing": true,
     "allowAnalytics": true,
+    "allowPublicListing": true,
+    "allowOnlinePayment": true,
+    "photoQuotaMb": 5120,
+    "photoRetention": "TwelveMonths",
     "description": "Полный доступ ко всем функциям",
     "isActive": true,
     "notifyDaysBefore": 7,
@@ -1727,6 +2000,13 @@ curl http://localhost:5000/api/admin/plans -H "Authorization: Bearer $ADMIN_TOKE
   }
 ]
 ```
+
+**Новое в цикле санации B (US-24).** `photoQuotaMb` (int?, мегабайты; `null` = без ограничения) и
+`photoRetention` (строка-enum: `"SixMonths"` / `"TwelveMonths"` / `"Forever"`) — квота и срок хранения
+фото клиентов для этого тарифа. Сущность сериализуется напрямую (отдельного DTO нет), поэтому оба поля
+автоматически участвуют во всех трёх методах ниже без изменения контроллера. Free-базлайн (аккаунт без
+подписки, с просроченной или на деактивированном плане) — `photoQuotaMb: 100, photoRetention:
+"SixMonths"`, разрешается тем же `SubscriptionResolver`, что и остальные возможности (см. §3.1).
 
 #### `POST /api/admin/plans`
 
@@ -1738,12 +2018,16 @@ curl -X POST http://localhost:5000/api/admin/plans \
   -H "Content-Type: application/json" \
   -d '{
         "name": "Enterprise",
-        "planKey": "enterprise",
         "pricePerMonth": 2999.0,
-        "maxMasters": null,
+        "maxEmployees": null,
+        "maxCompanies": null,
         "allowOnlineBooking": true,
         "allowMailing": true,
         "allowAnalytics": true,
+        "allowPublicListing": true,
+        "allowOnlinePayment": true,
+        "photoQuotaMb": null,
+        "photoRetention": "Forever",
         "description": "Для сетей салонов",
         "isActive": true,
         "notifyDaysBefore": 14
@@ -1752,22 +2036,28 @@ curl -X POST http://localhost:5000/api/admin/plans \
 
 **Успешный ответ `200 OK`** — созданный `SubscriptionPlanConfig` (с новым `id`).
 
-**Ошибки:** `401 Unauthorized`, `403 Forbidden`, `400 Bad Request` (модельная валидация).
+**Ошибки:** `401 Unauthorized`, `403 Forbidden`, `400 Bad Request` (модельная валидация; **новое в цикле
+B** — `photoQuotaMb` отрицательный: `"Photo quota must not be negative."`).
 
-**Важно:** тарифные конфигурации, создаваемые здесь (`SubscriptionPlanConfig`), **являются** источником истины для гейтинга — `SubscriptionResolver` резолвит эффективный план компании через подписку её владельца (`AccountSubscription.PlanConfigId`) и читает флаги (`AllowOnlineBooking`, `AllowMailing`, `AllowAnalytics`, `MaxEmployees`, `MaxCompanies`) отсюда напрямую — см. §3.1. Правка конфигурации плана (например, включение `AllowOnlineBooking`) немедленно меняет поведение для всех аккаунтов, подписанных на этот план.
+**Важно:** тарифные конфигурации, создаваемые здесь (`SubscriptionPlanConfig`), **являются** источником истины для гейтинга — `SubscriptionResolver` резолвит эффективный план компании через подписку её владельца (`AccountSubscription.PlanConfigId`) и читает флаги (`AllowOnlineBooking`, `AllowMailing`, `AllowAnalytics`, `MaxEmployees`, `MaxCompanies`, `PhotoQuotaMb`, `PhotoRetention`) отсюда напрямую — см. §3.1. Правка конфигурации плана (например, включение `AllowOnlineBooking`) немедленно меняет поведение для всех аккаунтов, подписанных на этот план.
 
 #### `PUT /api/admin/plans/{id}`
 
-**Тело запроса:** тот же `SubscriptionPlanConfig` (без `id`/`createdAt` — не изменяются).
+**Тело запроса:** тот же `SubscriptionPlanConfig` (без `id`/`createdAt` — не изменяются). Тело с
+`isActive: true` возвращает деактивированный план обратно в продажу (US-05) — отдельного эндпоинта
+реактивации не требуется, поэтому в UI достаточно кнопки, отправляющей текущие значения плана.
 
 ```bash
 curl -X PUT http://localhost:5000/api/admin/plans/dd11ee22-0000-1111-2222-333344445555 \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "name": "Pro", "planKey": "pro", "pricePerMonth": 1199.0, "maxMasters": null, "allowOnlineBooking": true, "allowMailing": true, "allowAnalytics": true, "description": "Обновлённая цена", "isActive": true, "notifyDaysBefore": 7 }'
+  -d '{ "name": "Pro", "pricePerMonth": 1199.0, "maxEmployees": 10, "maxCompanies": 3, "allowOnlineBooking": true, "allowMailing": true, "allowAnalytics": true, "allowPublicListing": true, "allowOnlinePayment": true, "photoQuotaMb": 5120, "photoRetention": "TwelveMonths", "description": "Обновлённая цена", "isActive": true, "notifyDaysBefore": 7 }'
 ```
 
-**Успешный ответ `200 OK`** — обновлённый план. **Ошибки:** `401`, `403`, `404 Not Found`.
+**Успешный ответ `200 OK`** — обновлённый план. **Ошибки:** `401`, `403`, `404 Not Found`, `400 Bad
+Request` (отрицательный `photoQuotaMb`); `409 Conflict` при попытке деактивировать (`isActive: true →
+false`) план с активными подписчиками — `"Cannot deactivate a plan with N active subscriber(s). Move
+them to another plan first."`
 
 #### `DELETE /api/admin/plans/{id}`
 
@@ -1782,11 +2072,144 @@ curl -X DELETE http://localhost:5000/api/admin/plans/dd11ee22-0000-1111-2222-333
 (деактивированный) план продолжал молча действовать для всех, кто уже был на нём, потому что
 `SubscriptionResolver` не смотрел на `PlanConfig.IsActive`. Теперь перед деактивацией проверяется, есть ли
 хотя бы одна активная (`IsActive == true`) `AccountSubscription` на этот план: если да — `409 Conflict` с
-телом вида `"Plan has 3 active subscriber(s). Move them to another plan first."` (число — точное
-количество подписчиков, единственная переменная часть текста), и `IsActive` плана **не** снимается. Нужно
-сначала перевести подписчиков на другой план (`PUT /api/admin/owners/{id}/subscription`).
+телом `"Cannot delete a plan with N active subscriber(s). Move them to another plan first."` (`N` —
+точное количество подписчиков, единственная переменная часть текста), и `IsActive` плана **не**
+снимается. Нужно сначала перевести подписчиков на другой план (`PUT /api/admin/owners/{id}/subscription`).
 
 **Успешный ответ:** `204 No Content`. **Ошибки:** `401`, `403`, `404 Not Found`, `409 Conflict` (есть активные подписчики — см. выше).
+
+#### `GET /api/admin/scheduled-tasks` — **новое в цикле санации B (US-21 п.6)**
+
+**Доступ:** только `SuperAdmin`.
+
+Список зарегистрированных периодических фоновых задач (компонент периодических задач, US-21) с
+последним запуском, длительностью, итогом в цифрах и признаком «жива ли задача». Единственный способ в
+продукте проверить фоновый компонент — экрана в админке пока нет (проверяется `curl`'ом или мониторингом).
+
+```bash
+curl http://localhost:5000/api/admin/scheduled-tasks -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+**Ответ `200 OK`:**
+
+```json
+[
+  {
+    "name": "photo-retention-cleanup",
+    "enabled": true,
+    "periodMinutes": 1440,
+    "lastStartedAt": "2026-09-02T03:00:01.221Z",
+    "lastFinishedAt": "2026-09-02T03:00:12.884Z",
+    "lastDurationMs": 11663,
+    "lastSucceeded": true,
+    "lastSummary": "scanned 812, deleted 37, freed 11.4 MB",
+    "lastError": null,
+    "isOverdue": false
+  }
+]
+```
+
+`isOverdue: true`, если задача не завершалась дольше двух своих периодов (или не запускалась вовсе —
+`lastStartedAt: null`) — это и есть ответ на вопрос «компонент жив?». Единственная зарегистрированная
+задача на сегодня — `photo-retention-cleanup` (US-21, US-24): удаляет фото клиентов старше срока
+хранения тарифа владельца и файлы-сироты; по умолчанию раз в сутки, конфигурируется через
+`ScheduledTasks:{name}:*`. Добавление второй задачи (например, будущие уведомления) — это новый класс
+`IScheduledTask` + одна строка регистрации в DI, без изменения планировщика или этого эндпоинта.
+
+**Ошибки:** `401 Unauthorized`, `403 Forbidden` (не `SuperAdmin`).
+
+---
+
+### 4.13. ClientNotePhotos — фото к заметкам о клиенте (`/api/client-notes`) — **новое в цикле санации B (US-17…US-20)**
+
+Новый контроллер, `[Route("api/client-notes")]`. Все четыре метода живут под одним префиксом, потому
+что путь приватной раздачи зафиксирован дословно (`GET /api/client-notes/photos/{id}`). Общая механика
+загрузки, лимиты, ограничение частоты — §3.10. Приватный класс хранения — файлы физически лежат вне
+`wwwroot` и никогда не раздаются `UseStaticFiles`.
+
+#### `POST /api/client-notes/{noteId}/photos`
+
+**Доступ:** персонал (`Master`/`CompanyOwner`) компании, которой принадлежит заметка. Персонал другой
+компании получает `403` (не `404` — `noteId` уже известен из URL, скрывать нечего). Ограничение
+частоты: `[EnableRateLimiting("uploads")]`.
+
+**Тело запроса:** `multipart/form-data`, поле `file`. До **5 фото на одну заметку**.
+
+```bash
+curl -X POST http://localhost:5000/api/client-notes/b1b2b3b4-0000-1111-2222-333344445555/photos \
+  -H "Authorization: Bearer $MASTER_TOKEN" \
+  -F "file=@work.jpg"
+```
+
+**`201 Created`** (заголовок `Location: /api/client-notes/photos/{id}`) — `ClientNotePhotoDto`
+(форма — см. пример в §4.7). **`200 OK`** с тем же телом, если этот же файл (по хэшу обработанных
+байтов) уже был приложен к этой заметке — двойная отправка формы не создаёт дубль и не расходует квоту
+повторно; фронтенду не нужно различать `200`/`201`.
+
+**Ошибки:**
+
+| Код | Тело | Когда |
+|---|---|---|
+| `400` | `File is required` / `Image is too large — the limit is 5 MB` / `Unsupported image type — use JPEG, PNG or WEBP` / `File is not a valid image` / `Image dimensions are too large — try a smaller image.` (round 3) / `Server storage is full — try again later.` | общие ошибки загрузки, §3.10 |
+| `400` | `This note already has 5 photos.` | шестое фото к одной заметке |
+| `400` | `Photo storage quota exceeded: 98 of 100 MB used. Upgrade the plan for more space.` | квота компании (US-24) исчерпана; числа — переменная часть |
+| `401` | пусто | аноним |
+| `403` | пусто | персонал **другой** компании |
+| `404` | пусто | заметки с таким `noteId` нет |
+| `413`/`429` | — | см. §3.10 |
+
+При исчерпанной квоте файл на диск не записывается — решение принимается по размеру уже обработанного
+(ресайзнутого) изображения, которое до этого момента существует только в памяти.
+
+#### `GET /api/client-notes/photos/{id}` и `GET /api/client-notes/photos/{id}/thumb`
+
+**Доступ:** `[Authorize]`, только персонал компании, которой принадлежит фото.
+
+```bash
+curl http://localhost:5000/api/client-notes/photos/cc11e2d3-4444-5555-6666-777788889999 \
+  -H "Authorization: Bearer $MASTER_TOKEN" -o photo.jpg
+```
+
+**`200 OK`** — поток изображения, `Content-Type: image/jpeg` или `image/png`, `Cache-Control: private,
+max-age=86400`. `/thumb` — то же для миниатюры (320 px по длинной стороне).
+
+**Ошибки:**
+
+| Код | Когда |
+|---|---|
+| `401` | аноним |
+| `403` | вызывающий — **`SuperAdmin`** (решение Q5: суперадмин видит счётчики через `GET /api/companies/{id}/photo-usage`, но не содержимое — единственное место в продукте, где ему отказано) |
+| `404` | фото нет **или** вызывающий не персонал компании этого фото (существование чужого фото не подтверждается) |
+
+**Важно для интеграции с фронтендом:** прямая ссылка требует заголовок `Authorization`, которого браузер
+не добавит к `<img src>` — фронтенд загружает фото как авторизованный `blob` через axios
+(`responseType: 'blob'`), а не подставляет URL напрямую. Ручная проверка: прямая ссылка на фото,
+открытая в браузере без авторизации, не отдаёт изображение.
+
+#### `DELETE /api/client-notes/photos/{id}`
+
+**Доступ:** автор заметки, сотрудник, загрузивший **это** фото, или `CompanyOwner` компании (шире буквы
+решения Q16 на одного человека — иначе мастер не мог бы убрать собственную ошибку с чужой заметки).
+
+```bash
+curl -X DELETE http://localhost:5000/api/client-notes/photos/cc11e2d3-4444-5555-6666-777788889999 \
+  -H "Authorization: Bearer $MASTER_TOKEN"
+```
+
+**`204 No Content`** — строка и оба файла (полный + миниатюра) удаляются; освободившийся объём
+немедленно доступен под новую загрузку (агрегат по сумме размеров в БД, без отдельного пересчёта).
+
+**Ошибки:**
+
+| Код | Когда |
+|---|---|
+| `401` | аноним |
+| `404` | фото нет **или** вызывающий не персонал компании этого фото |
+| `403` | персонал этой компании, но не автор заметки, не загрузивший это фото и не `CompanyOwner` |
+
+Порядок операций всегда «сначала БД, потом диск» — при сбое между шагами остаётся файл-сирота, которую
+подберёт фоновая задача уборки (§4.12 `GET /api/admin/scheduled-tasks`), а не потерянный файл при живой
+строке.
 
 ---
 
@@ -1991,6 +2414,8 @@ curl -X POST http://localhost:5000/api/admin/plans \
 | `404 Not Found` | Ресурс с указанным идентификатором не найден (компания, услуга, запись, участник компании, тарифный план, пользователь и т.д.); компания не найдена при попытке любого бронирования (`POST /api/bookings`, теперь для всех вызывающих, не только гостя); несуществующие `ownerUserId`/`planConfigId` в `PUT /api/admin/owners/{id}/subscription` |
 | `409 Conflict` | Выбранный временной слот уже занят другой записью, находится в нерабочее время/перерыве/не на 30-минутной сетке, или дата/время в прошлом/переполняет сутки (создание/перенос записи, `"Time slot is no longer available"` для всех случаев); `slug` компании уже занят; отзыв на эту запись уже существует; пользователь уже состоит участником компании; удаление тарифного плана с активными подписчиками (`DELETE /api/admin/plans/{id}`) |
 | `500 Internal Server Error` | Необработанное исключение — единственная стабильно воспроизводимая точка: `SuperAdmin` создаёт услугу (`POST /api/services`) в несуществующей `companyId` (падает FK). **Изменено в цикле санации A**: тело теперь всегда `application/problem+json` с полями `type`/`title`/`status`/`traceId` (глобальный обработчик исключений, `Program.cs`) — раньше было пустое тело/страница разработчика. Формат deliberate 400/402/403/404/409 не затронут — `ProblemDetails` используется **только** для необработанных исключений |
+| `413 Payload Too Large` | **Новое в цикле санации B.** Тело запроса превышает `[RequestSizeLimit(5 МБ)]` на одном из четырёх эндпоинтов загрузки изображений (§3.10) — тело пустое, обрывается до контроллера |
+| `429 Too Many Requests` | **Новое в цикле санации B.** Превышен лимит частоты загрузок (10 в минуту на пользователя, §3.10) — единственный код в API с непустым телом по умолчанию у `RateLimiter`, поэтому `text/plain`: `"Too many uploads. Try again in a minute."` явно пишется в `OnRejected` |
 
 ---
 
@@ -2011,6 +2436,16 @@ curl -X POST http://localhost:5000/api/admin/plans \
 6. ~~Смена ролей не применяется мгновенно~~ — исправлено, см. п. 6 в списке "Исправлено" ниже.
 
 7. **Автосозданный пароль мастера нигде не отправляется пользователю.** При автоматическом создании аккаунта в `POST /api/companies/{id}/members` сгенерированный пароль возвращается только в виде самого факта создания аккаунта (сам пароль в ответе API не фигурирует, а email с паролем не отправляется — п. 4 выше). Договорённость о передаче пароля новому мастеру целиком лежит на владельце компании (не автоматизирована).
+
+8. **Согласие клиента на фотосъёмку не запрашивается (цикл санации B, решение заказчика).** Мастер прикрепляет фото к заметке о клиенте без какого-либо шага «клиент согласен» — ни чекбокса, ни текста-дисклеймера, ни хранения факта согласия. Ответственность за законность фотофиксации (персональные данные, а при съёмке лица — потенциально биометрия) лежит на компании-салоне; решение принято заказчиком осознанно и должно быть пересмотрено при выходе продукта в продакшен.
+
+9. **Аватары, картинки услуг и логотип компании не входят в квоту фото клиентов** и не подчищаются фоновой задачей уборки — ограничение для них другое: один файл на сущность плюс общий лимит размера 5 МБ. Квота и срок хранения (`GET /api/companies/{id}/photo-usage`) касаются только приватного класса — фото к заметкам о клиенте.
+
+10. **Суперадмин не видит содержимое фото клиентов** ни при каких обстоятельствах (`GET /api/client-notes/photos/{id}` → `403` для этой роли) — единственное место в продукте, где `SuperAdmin` получает отказ. Счётчики и занятый объём ему доступны через `GET /api/companies/{id}/photo-usage`.
+
+11. **Компонент периодических задач умеет только одну задачу.** Инфраструктура (`IScheduledTask` + `ScheduledTaskRunner`) спроектирована расширяемой (новая задача = класс + строка регистрации в DI), но фактически зарегистрирована пока только уборка просроченных фото. Будущие уведомления/рассылки лягут на неё же, без переписывания планировщика.
+
+12. **Экрана для `GET /api/admin/scheduled-tasks` в админке нет** — только сам эндпоинт. Проверка живости фонового компонента делается `curl`'ом или внешним мониторингом; вкладка в UI — отдельная будущая история низкого риска.
 
 ### Исправлено
 
@@ -2047,6 +2482,7 @@ curl -X POST http://localhost:5000/api/admin/plans \
     - Компания теперь проверяется на существование для ЛЮБОГО вызывающего (раньше — только для гостя), устраняя `500` на нарушении FK для авторизованных пользователей с несуществующим `companyId`.
     - `POST /api/companies/{id}/members` с неизвестным именем роли от `SuperAdmin` (`CanAssignRole` пропускает SuperAdmin с любой строкой) теперь даёт `400` вместо необработанного `Enum.Parse<UserRole>` (`500`).
     - Появился глобальный обработчик необработанных исключений: любой оставшийся `500` теперь всегда `application/problem+json` с `traceId`, а не пустое тело/страница разработчика (действует во всех окружениях, кроме Development; формат уже существующих 400/402/403/404/409 не затронут). См. §4.2, §6.
+22. **Загрузка логотипа компании проверяла только `Content-Type` и не имела ограничения частоты (аудит цикла санации A, находки закрыты в цикле B, US-25 п.6).** Файл с подменённым `Content-Type` (например, произвольный бинарник, выданный за `image/jpeg`) принимался без проверки содержимого; частота загрузок не ограничивалась вовсе. `POST /api/companies/{id}/logo` переведён на общий безопасный загрузчик (§3.10, §4.3): сигнатура файла проверяется по байтам, а не по заголовку, добавлено ограничение 10 загрузок в минуту. Один и тот же загрузчик теперь используется всеми четырьмя эндпоинтами изображений в продукте — второго пути обработки изображений в решении нет.
 22. **`GET /api/bookings/client?status=upcoming` игнорировался, статусы в нижнем регистре тоже (US-07)** — `Enum.TryParse` без `ignoreCase` не распознавал `upcoming` (единственное значение, которое реально шлёт фронт) и статусы вроде `cancelled`; любой мусор в `status` тоже проходил без ошибки. Переписано на общую чистую функцию `BookingFilters` (юниты в `ServiceBooking.UnitTests`): `upcoming` фильтрует на будущие `Confirmed`/`Pending`, регистр не важен, неизвестное значение — `400`. См. §4.2.
 23. **`GET /api/bookings/occupied` был полностью анонимным (аудит, находка E3, решение Q9)** — `masterId` не секрет (публично перечислен в `GET /api/companies/{id}/masters`), поэтому кто угодно мог узнать занятость любого мастера по всем его компаниям. Теперь требует `[Authorize]` и явное право (сам мастер, персонал общей компании, SuperAdmin) — кросс-компанийность выдачи сохранена намеренно. См. §4.2.
 24. **Swagger был доступен в любом окружении, включая боевое (US-10, решение Q4)** — вся схема API была публично исследуема. Теперь Swagger регистрируется и монтируется только при `ASPNETCORE_ENVIRONMENT=Development`; nginx-конфиг для продакшена (`deploy/nginx/ezbook.conf`) больше не проксирует `/swagger/`.

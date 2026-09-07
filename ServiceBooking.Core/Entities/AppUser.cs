@@ -7,7 +7,6 @@ public class AppUser : IdentityUser
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; }
-    public decimal CommissionPercent { get; set; } = 0;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<CompanyMember> CompanyMemberships { get; set; } = [];

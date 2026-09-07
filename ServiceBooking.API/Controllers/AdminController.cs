@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -12,7 +14,8 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/admin")]
 [Authorize(Roles = "SuperAdmin")]
-public class AdminController(AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager) : ControllerBase
+public class AdminController(
+    AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -40,11 +43,28 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
     {
         var query = db.Users.AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
+        {
+            // Phones are stored canonical (digits only, US-26), so a search string that LOOKS like a
+            // phone number (≥5 digits, no letters — a surname never satisfies this) is normalized the
+            // same way before matching against PhoneNumber. Anything else (e.g. "Иванов", "ivanov@")
+            // is searched as typed against every column — normalizing it would just strip letters out
+            // of a name search and break it (ARCHITECTURE.md §11.2).
+            var digitCount = search.Count(char.IsDigit);
+            var looksLikePhone = digitCount >= 5 && !search.Any(char.IsLetter);
+            var phoneSearch = looksLikePhone ? PhoneNormalizer.Normalize(search) : search;
+
+            // digitCount above is Unicode-aware (char.IsDigit), but PhoneNormalizer.Normalize only keeps
+            // ASCII 0-9 (US-26, kept in sync with the SQL migration on purpose — see PhoneNormalizer's
+            // doc comment). A search string made entirely of non-ASCII digits (e.g. Arabic-Indic) passes
+            // the "looks like a phone" check yet normalizes to "" — without this guard,
+            // PhoneNumber.Contains("") is true for every row and the query silently returns every user
+            // regardless of what was searched for (code review finding, data leak).
             query = query.Where(u =>
-                u.PhoneNumber!.Contains(search) ||
+                (phoneSearch.Length > 0 && u.PhoneNumber!.Contains(phoneSearch)) ||
                 u.Email!.Contains(search) ||
                 u.FirstName.Contains(search) ||
                 u.LastName.Contains(search));
+        }
 
         var users = await query.OrderBy(u => u.CreatedAt).ToListAsync();
         var userIds = users.Select(u => u.Id).ToList();
@@ -65,7 +85,7 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
             var roles = await userManager.GetRolesAsync(u);
             var sub = subs.FirstOrDefault(s => s.OwnerUserId == u.Id);
             var ownedCount = ownedCounts.FirstOrDefault(x => x.OwnerUserId == u.Id)?.Count ?? 0;
-            result.Add(new AdminUserDto(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, u.CommissionPercent, u.CreatedAt,
+            result.Add(new AdminUserDto(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, u.CreatedAt,
                 [.. roles], ownedCount, sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true));
         }
         return Ok(result);
@@ -127,7 +147,7 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
             // The tariff is account-level: it belongs to the owner and covers all their companies.
             var sub = subs.FirstOrDefault(s => s.OwnerUserId == c.OwnerUserId);
             var count = bookingCounts.FirstOrDefault(x => x.CompanyId == c.Id)?.Count ?? 0;
-            return new AdminCompanyDto(c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.CreatedAt,
+            return new AdminCompanyDto(c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
                 c.Members.Count, count, c.OwnerUserId, ownerEmails.GetValueOrDefault(c.OwnerUserId, c.OwnerUserId),
                 sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true);
         }).ToList();
@@ -303,6 +323,10 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
     [HttpPost("plans")]
     public async Task<IActionResult> CreatePlan([FromBody] SubscriptionPlanConfig dto)
     {
+        // Negative quota has no sensible meaning (unlike null, which means "unlimited") — reject before
+        // the row exists, the same way every other tariff validation in this controller does (US-24 p.3).
+        if (dto.PhotoQuotaMb is < 0) return BadRequest("Photo quota must not be negative.");
+
         dto.Id = Guid.NewGuid();
         dto.CreatedAt = DateTime.UtcNow;
         db.SubscriptionPlanConfigs.Add(dto);
@@ -313,6 +337,8 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
     [HttpPut("plans/{id:guid}")]
     public async Task<IActionResult> UpdatePlan(Guid id, [FromBody] SubscriptionPlanConfig dto)
     {
+        if (dto.PhotoQuotaMb is < 0) return BadRequest("Photo quota must not be negative.");
+
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
         plan.Name = dto.Name;
@@ -324,6 +350,8 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
         plan.AllowAnalytics = dto.AllowAnalytics;
         plan.AllowPublicListing = dto.AllowPublicListing;
         plan.AllowOnlinePayment = dto.AllowOnlinePayment;
+        plan.PhotoQuotaMb = dto.PhotoQuotaMb;
+        plan.PhotoRetention = dto.PhotoRetention;
         plan.Description = dto.Description;
         plan.NotifyDaysBefore = dto.NotifyDaysBefore;
 
@@ -360,16 +388,56 @@ public class AdminController(AppDbContext db, UserManager<AppUser> userManager, 
         await db.SaveChangesAsync();
         return NoContent();
     }
+
+    // ── Scheduled tasks ────────────────────────────────────────────────────────
+
+    // US-21 p.6: the only visibility this cycle gives the background task component — no admin screen,
+    // just an endpoint a human (or a monitor) can curl. SuperAdmin-only like the rest of this controller.
+    //
+    // scheduledTasks/config are [FromServices] action parameters, not primary-constructor fields (code
+    // review finding): a primary-constructor dependency is resolved for EVERY action on this controller,
+    // even ones that never touch it — GetStats, GetUsers, etc. would all pay for constructing
+    // IEnumerable<IScheduledTask> (which resolves PhotoRetentionCleanupTask and everything IT depends on
+    // — AppDbContext, SubscriptionResolver, FileStorage) on every admin request. Scoping it to just this
+    // action means that cost is only ever paid here.
+    [HttpGet("scheduled-tasks")]
+    public async Task<ActionResult<List<ScheduledTaskStatusDto>>> GetScheduledTasks(
+        [FromServices] IEnumerable<IScheduledTask> scheduledTasks, [FromServices] IConfiguration config)
+    {
+        var states = await db.ScheduledTaskStates.ToDictionaryAsync(s => s.Name);
+        var nowUtc = DateTime.UtcNow;
+
+        var result = scheduledTasks.Select(task =>
+        {
+            var options = ScheduledTaskOptions.For(config, task);
+            states.TryGetValue(task.Name, out var state);
+
+            var isOverdue = ScheduledTaskSchedule.IsOverdue(state?.LastFinishedAtUtc, options.Period, nowUtc);
+
+            return new ScheduledTaskStatusDto(
+                task.Name, options.Enabled, (int)options.Period.TotalMinutes,
+                state?.LastStartedAtUtc, state?.LastFinishedAtUtc, state?.LastDurationMs ?? 0,
+                state?.LastSucceeded ?? false, state?.LastSummary, state?.LastError, isOverdue);
+        }).ToList();
+
+        return Ok(result);
+    }
 }
 
 // ── DTOs ───────────────────────────────────────────────────────────────────────
 
 public record AdminStatsDto(int TotalCompanies, int TotalUsers, int TotalBookings, int CompletedBookings, decimal TotalRevenue);
 
-public record AdminUserDto(string Id, string Phone, string? Email, string FirstName, string LastName, string? AvatarUrl, decimal CommissionPercent, DateTime CreatedAt,
+// CommissionPercent removed (US-22): commission became per-company (CompanyMember.CommissionPercent)
+// back in cycle A; this account-level field means nothing any more and AdminPage.tsx never showed it.
+public record AdminUserDto(string Id, string Phone, string? Email, string FirstName, string LastName, string? AvatarUrl, DateTime CreatedAt,
     List<string> Roles, int OwnedCompanyCount, Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive);
 
-public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, string? Phone, bool IsActive, DateTime CreatedAt,
+// AllowSelfBooking is included (additive) so the admin UI can read the company's CURRENT value before
+// re-sending it unchanged to PUT /api/admin/companies/{id} — that endpoint overwrites all three of its
+// body fields unconditionally, so a caller that has to guess this one risks silently flipping it
+// (found during BE/FE contract integration, US-04).
+public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, string? Phone, bool IsActive, bool AllowSelfBooking, DateTime CreatedAt,
     int MemberCount, int BookingCount, string OwnerUserId, string OwnerEmail,
     Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive);
 
@@ -384,3 +452,8 @@ public record UpdateCompanyOwnerDto(string NewOwnerUserId);
 
 public record AdminBookingDto(Guid Id, string CompanyName, string ServiceName, string MasterName, string ClientName,
     string? ClientPhone, DateOnly Date, TimeOnly StartTime, TimeOnly EndTime, BookingStatus Status, decimal Price);
+
+public record ScheduledTaskStatusDto(
+    string Name, bool Enabled, int PeriodMinutes,
+    DateTime? LastStartedAt, DateTime? LastFinishedAt, int LastDurationMs,
+    bool LastSucceeded, string? LastSummary, string? LastError, bool IsOverdue);

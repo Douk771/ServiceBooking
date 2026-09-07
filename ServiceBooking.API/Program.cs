@@ -3,12 +3,16 @@ using System.Reflection;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Scheduling;
+using ServiceBooking.API.Services.Scheduling.Tasks;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 
@@ -43,6 +47,23 @@ if (builder.Environment.IsProduction())
     if (builder.Configuration["SuperAdmin:Phone"] == "+70000000000")
         Console.WriteLine(
             "WARNING: SuperAdmin:Phone is still the placeholder +70000000000. Set SuperAdmin__Phone in .env.");
+
+    // US-19 p.4 / ARCHITECTURE.md §3.4: a private root that resolves inside wwwroot would be served to
+    // anyone with the link by UseStaticFiles below — the one realistic way client photos leak by
+    // accident (risk R2) is a typo'd .env, so this must stop the deployment, not just log a warning.
+    // Duplicates FileStorage's own default-resolution logic rather than resolving it through the DI
+    // container, which isn't built yet at this point in Program.cs.
+    var contentRoot = builder.Environment.ContentRootPath;
+    var configuredPrivateRoot = builder.Configuration["Storage:PrivateRoot"];
+    var privateRoot = string.IsNullOrEmpty(configuredPrivateRoot)
+        ? Path.Combine(contentRoot, "App_Data", "private-uploads")
+        : configuredPrivateRoot;
+    var privateRootFull = Path.GetFullPath(privateRoot);
+    var wwwrootFull = Path.GetFullPath(Path.Combine(contentRoot, "wwwroot")) + Path.DirectorySeparatorChar;
+    if (privateRootFull.StartsWith(wwwrootFull, StringComparison.Ordinal))
+        throw new InvalidOperationException(
+            "Storage:PrivateRoot resolves inside wwwroot — client photos would be served by " +
+            "UseStaticFiles to anyone with the link. Set Storage__PrivateRoot to a path outside wwwroot.");
 }
 
 builder.Services.AddControllers()
@@ -175,6 +196,41 @@ builder.Services.AddScoped<SlotService>();
 builder.Services.AddScoped<SubscriptionResolver>();
 builder.Services.AddHttpClient<CaptchaService>();
 
+// Image uploads (US-19, US-25): FileStorage holds no per-request state (just the two configured roots),
+// so it's a singleton; ImageUploadService is scoped only because everything else in this layer is —
+// it has no state of its own either.
+builder.Services.AddSingleton<FileStorage>();
+builder.Services.AddScoped<ImageUploadService>();
+
+// Rate limiting (US-19 p.5, ARCHITECTURE.md §10): one named policy, applied only via
+// [EnableRateLimiting("uploads")] on the four upload endpoints — app.UseRateLimiter() below is a no-op
+// for everything else. Partitioned by user id (falls back to IP for the theoretical anonymous case,
+// though every upload endpoint also requires [Authorize]).
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.AddPolicy("uploads", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                      ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = ctx.RequestServices.GetRequiredService<IConfiguration>().GetValue("Uploads:PerUserPerMinute", 10),
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0 // reject immediately rather than queue — no benefit to making the caller wait
+        }));
+    // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §13) — the built-in rejection
+    // response is empty, so OnRejected has to write the body itself or uploadError.ts couldn't tell a
+    // 429 apart from a 403.
+    o.OnRejected = async (ctx, _) =>
+        await ctx.HttpContext.Response.WriteAsync("Too many uploads. Try again in a minute.");
+});
+
+// Scheduled background tasks (US-21): one BackgroundService that ticks whatever IScheduledTask
+// implementations are registered — adding a second task later is exactly one more line like this one,
+// the runner itself never changes (ARCHITECTURE.md §8.1).
+builder.Services.AddScoped<IScheduledTask, PhotoRetentionCleanupTask>();
+builder.Services.AddHostedService<ScheduledTaskRunner>();
+
 var app = builder.Build();
 
 // In Development the framework's developer exception page already renders the full exception, so the
@@ -221,9 +277,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
-app.UseStaticFiles(); // serves wwwroot/uploads/... (company logos, etc.)
+app.UseStaticFiles(); // serves wwwroot/uploads/... (company logos, avatars, service images) — the
+                       // PUBLIC storage class only; client-note photos never go through this (ARCHITECTURE.md §12.1)
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter(); // no global limiter configured — a no-op except where [EnableRateLimiting] is used
 app.MapControllers();
 
 // Seed roles and super-admin on startup
@@ -241,8 +299,13 @@ using (var scope = app.Services.CreateScope())
             await roleManager.CreateAsync(new IdentityRole(role));
 
     // The SuperAdmin, like every account, is now identified by phone (UserName == phone). Email is
-    // optional and kept only for display. Config key SuperAdmin:Phone drives login.
-    var adminPhone = builder.Configuration["SuperAdmin:Phone"];
+    // optional and kept only for display. Config key SuperAdmin:Phone drives login. US-26: seeded with
+    // the SAME canonical form AuthController.Login normalizes to — otherwise a config value like
+    // "+70000000000" would seed "UserName = +70000000000" while every login attempt normalizes to
+    // "70000000000" and never finds it.
+    var adminPhone = builder.Configuration["SuperAdmin:Phone"] is { Length: > 0 } rawAdminPhone
+        ? PhoneNormalizer.Normalize(rawAdminPhone)
+        : null;
     var adminEmail = builder.Configuration["SuperAdmin:Email"];
     var adminPassword = builder.Configuration["SuperAdmin:Password"];
     if (adminPhone is not null && adminPassword is not null)

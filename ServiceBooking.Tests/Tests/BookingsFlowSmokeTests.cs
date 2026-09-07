@@ -1093,4 +1093,87 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    // ── US-06 + Q12: cancellationReason / price / companySlug ────────────────
+
+    [Fact, TestCase("BK-053")]
+    public async Task Cancel_WithReason_IsVisibleOnTheBookingAfterwards()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30, price: 1800);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        var clientUser = await RegisterAsync();
+
+        var create = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+        var booking = (await create.Content.ReadJsonAsync<BookingDto>())!;
+
+        // Every BookingDto now carries these three fields, regardless of status.
+        booking.Price.Should().Be(1800);
+        booking.CompanySlug.Should().Be(company.Slug);
+        booking.CancellationReason.Should().BeNull();
+
+        var reason = "Мастер заболел";
+        var cancel = await AuthedClient(master.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/cancel", reason);
+        cancel.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var reGet = await AuthedClient(clientUser.Token).GetAsync($"/api/bookings/{booking.Id}");
+        var reDto = await reGet.Content.ReadJsonAsync<BookingDto>();
+        reDto!.CancellationReason.Should().Be(reason);
+        reDto.Status.Should().Be(BookingStatus.Cancelled);
+    }
+
+    [Fact, TestCase("BK-054")]
+    public async Task Cancel_ReasonLongerThan300Characters_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        var clientUser = await RegisterAsync();
+
+        var create = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+        var booking = (await create.Content.ReadJsonAsync<BookingDto>())!;
+
+        var tooLong = new string('x', 301);
+        var response = await AuthedClient(clientUser.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/cancel", tooLong);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("BK-055")]
+    public async Task Cancel_WithoutReason_LeavesCancellationReasonNull()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        var clientUser = await RegisterAsync();
+
+        var create = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+        var booking = (await create.Content.ReadJsonAsync<BookingDto>())!;
+
+        var cancel = await AuthedClient(clientUser.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/cancel", (string?)null);
+        cancel.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var reGet = await AuthedClient(clientUser.Token).GetAsync($"/api/bookings/{booking.Id}");
+        (await reGet.Content.ReadJsonAsync<BookingDto>())!.CancellationReason.Should().BeNull();
+    }
+
+    [Fact, TestCase("BK-056")]
+    public async Task GetMyBookings_RouteNoLongerExists()
+    {
+        // US-22, BREAKING № 2: superseded by GET /api/bookings/client.
+        var clientUser = await RegisterAsync();
+
+        var response = await AuthedClient(clientUser.Token).GetAsync("/api/bookings/my");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }

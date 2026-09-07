@@ -9,7 +9,7 @@ import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
 import { Icon } from '../components/ui/Icon'
 import { ReviewModal } from '../components/review/ReviewModal'
-import { getBookingErrorMessage } from '../utils/bookingError'
+import { getCancelErrorMessage } from '../utils/cancelError'
 import type { Booking } from '../types'
 
 type FilterTab = 'all' | 'upcoming' | 'completed' | 'cancelled'
@@ -25,6 +25,39 @@ function canCancelBooking(b: Booking): boolean {
   if (b.status !== 'Pending' && b.status !== 'Confirmed') return false
   const bookingDateTime = parseISO(`${b.date}T${b.startTime}`)
   return differenceInHours(bookingDateTime, new Date()) > 2
+}
+
+interface ClientCancelFormProps {
+  bookingId: string
+  onCancel: (reason: string) => void
+  onBack: () => void
+  loading: boolean
+}
+
+function ClientCancelForm({ bookingId, onCancel, onBack, loading }: ClientCancelFormProps) {
+  const [reason, setReason] = useState('')
+  return (
+    <div className="mt-3 border-t border-line pt-3 flex flex-col gap-2">
+      <label htmlFor={`client-cancel-reason-${bookingId}`} className="text-xs font-medium text-ink-soft">
+        Причина (увидит салон)
+      </label>
+      <textarea
+        id={`client-cancel-reason-${bookingId}`}
+        value={reason}
+        onChange={e => setReason(e.target.value)}
+        maxLength={300}
+        rows={2}
+        placeholder="Необязательно"
+        className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
+      />
+      <div className="flex gap-2 justify-end">
+        <Button size="sm" variant="secondary" onClick={onBack} disabled={loading}>Назад</Button>
+        <Button size="sm" variant="danger" loading={loading} onClick={() => onCancel(reason.trim())}>
+          Отменить запись
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 export function ClientBookingsPage() {
@@ -48,14 +81,15 @@ export function ClientBookingsPage() {
   const canReviewSet = useMemo(() => new Set((canReviewList ?? []).map(r => r.bookingId)), [canReviewList])
 
   const [cancelError, setCancelError] = useState('')
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
 
   const cancel = useMutation({
-    mutationFn: (id: string) => bookingsApi.cancel(id),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => bookingsApi.cancel(id, reason || undefined),
     // Cleared on start as well as on success, so a previous failure doesn't sit on screen looking
     // like it belongs to the visit the user is cancelling now.
     onMutate: () => setCancelError(''),
-    onSuccess: () => { setCancelError(''); qc.invalidateQueries({ queryKey: ['client-bookings'] }) },
-    onError: (err) => setCancelError(getBookingErrorMessage(err)),
+    onSuccess: () => { setCancelError(''); setCancellingId(null); qc.invalidateQueries({ queryKey: ['client-bookings'] }) },
+    onError: (err) => setCancelError(getCancelErrorMessage(err)),
   })
 
   // Group by month
@@ -97,12 +131,6 @@ export function ClientBookingsPage() {
         ))}
       </div>
 
-      {cancelError && (
-        <div className="mb-6 rounded-xl bg-danger-bg text-danger text-sm px-4 py-3 flex items-center gap-2">
-          <Icon name="alert-circle" size={15} strokeWidth={1.8} /> {cancelError}
-        </div>
-      )}
-
       {isLoading ? (
         <div className="grid gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -118,63 +146,79 @@ export function ClientBookingsPage() {
               </h3>
               <div className="flex flex-col gap-2.5">
                 {group.items.map(b => (
-                  <div key={b.id} className="bg-white border border-line rounded-[18px] px-5 py-[18px] flex items-center gap-4 flex-wrap">
-                    {/* Date/time block */}
-                    <div className="text-center bg-cream-deep rounded-[14px] px-3.5 py-2.5 min-w-[66px] shrink-0">
-                      <div className="text-[11.5px] text-gold-dark">
-                        {format(parseISO(b.date), 'd MMM', { locale: ru })}
+                  <div key={b.id} className="bg-white border border-line rounded-[18px] px-5 py-[18px]">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      {/* Date/time block */}
+                      <div className="text-center bg-cream-deep rounded-[14px] px-3.5 py-2.5 min-w-[66px] shrink-0">
+                        <div className="text-[11.5px] text-gold-dark">
+                          {format(parseISO(b.date), 'd MMM', { locale: ru })}
+                        </div>
+                        <div className="text-[17px] font-bold text-ink">{b.startTime.slice(0, 5)}</div>
                       </div>
-                      <div className="text-[17px] font-bold text-ink">{b.startTime.slice(0, 5)}</div>
+
+                      {/* Main info */}
+                      <div className="flex-1 min-w-[180px]">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-[14.5px] text-ink">{b.serviceName}</span>
+                          <StatusBadge status={b.status} />
+                        </div>
+                        {b.companyName && (
+                          <p className="text-[13px] text-ink-soft mt-1">{b.companyName} · {b.masterName}</p>
+                        )}
+                        {b.price != null && (
+                          <p className="text-[13px] font-semibold text-gold-dark mt-0.5">
+                            {b.price.toLocaleString('ru-RU')} ₽
+                          </p>
+                        )}
+                        {b.status === 'Cancelled' && b.cancellationReason && (
+                          <p className="text-[12.5px] text-danger mt-1 bg-danger-bg rounded-lg px-2 py-1 inline-block">
+                            Причина отмены: {b.cancellationReason}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex flex-col gap-2 shrink-0 items-end">
+                        {canCancelBooking(b) && cancellingId !== b.id && (
+                          <Button size="sm" variant="danger" onClick={() => setCancellingId(b.id)}>
+                            Отменить
+                          </Button>
+                        )}
+                        {b.status === 'Completed' && canReviewSet.has(b.id) && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => setReviewBooking(b)}
+                          >
+                            <Icon name="star" size={12} className="text-gold-dark" />
+                            Оставить отзыв
+                          </Button>
+                        )}
+                        {b.companySlug && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => navigate(`/company/${b.companySlug}`)}
+                          >
+                            Записаться снова
+                          </Button>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Main info */}
-                    <div className="flex-1 min-w-[180px]">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-[14.5px] text-ink">{b.serviceName}</span>
-                        <StatusBadge status={b.status} />
-                      </div>
-                      {b.companyName && (
-                        <p className="text-[13px] text-ink-soft mt-1">{b.companyName} · {b.masterName}</p>
-                      )}
-                      {b.price != null && (
-                        <p className="text-[13px] font-semibold text-gold-dark mt-0.5">
-                          {b.price.toLocaleString('ru-RU')} ₽
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex flex-col gap-2 shrink-0 items-end">
-                      {canCancelBooking(b) && (
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          loading={cancel.isPending}
-                          onClick={() => cancel.mutate(b.id)}
-                        >
-                          Отменить
-                        </Button>
-                      )}
-                      {b.status === 'Completed' && canReviewSet.has(b.id) && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => setReviewBooking(b)}
-                        >
-                          <Icon name="star" size={12} className="text-gold-dark" />
-                          Оставить отзыв
-                        </Button>
-                      )}
-                      {b.companySlug && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => navigate(`/company/${b.companySlug}`)}
-                        >
-                          Записаться снова
-                        </Button>
-                      )}
-                    </div>
+                    {cancellingId === b.id && (
+                      <ClientCancelForm
+                        bookingId={b.id}
+                        loading={cancel.isPending}
+                        onBack={() => setCancellingId(null)}
+                        onCancel={(reason) => cancel.mutate({ id: b.id, reason })}
+                      />
+                    )}
+                    {cancellingId === b.id && cancelError && (
+                      <p className="mt-2 text-sm text-danger flex items-center gap-2">
+                        <Icon name="alert-circle" size={14} strokeWidth={1.8} /> {cancelError}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

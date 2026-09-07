@@ -1,6 +1,7 @@
 using FluentAssertions;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.UnitTests;
 
@@ -20,6 +21,8 @@ public class SubscriptionResolverRulesTests
         MaxEmployees = 10,
         MaxCompanies = 5,
         IsActive = isActive,
+        PhotoQuotaMb = 5120,
+        PhotoRetention = PhotoRetention.TwelveMonths,
     };
 
     [Fact]
@@ -99,5 +102,44 @@ public class SubscriptionResolverRulesTests
         var plan = SubscriptionResolver.Resolve(sub, Now);
 
         plan.Should().Be(EffectivePlan.FromConfig(config));
+    }
+
+    // ── US-24: photo quota / retention travel the same pipe as every other flag ────────────
+
+    [Fact]
+    public void Resolve_NoSubscription_PhotoBaselineIsHundredMegabytesSixMonths()
+    {
+        var plan = SubscriptionResolver.Resolve(null, Now);
+
+        plan.PhotoQuotaMb.Should().Be(100);
+        plan.PhotoRetention.Should().Be(PhotoRetention.SixMonths);
+    }
+
+    [Fact]
+    public void Resolve_PlanConfigDeactivated_FallsBackToPhotoBaseline_NotThePlansOwnValues()
+    {
+        var sub = new AccountSubscription
+        {
+            IsActive = true, PaidUntil = Now.AddDays(30),
+            PlanConfig = FullPlan(isActive: false) // PhotoQuotaMb = 5120, PhotoRetention = TwelveMonths on the config itself
+        };
+
+        var plan = SubscriptionResolver.Resolve(sub, Now);
+
+        plan.PhotoQuotaMb.Should().Be(100);
+        plan.PhotoRetention.Should().Be(PhotoRetention.SixMonths);
+    }
+
+    [Fact]
+    public void Resolve_ActivePlanWithUnlimitedPhotoQuota_PreservesNull()
+    {
+        var config = FullPlan();
+        config.PhotoQuotaMb = null;
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
+
+        var plan = SubscriptionResolver.Resolve(sub, Now);
+
+        plan.PhotoQuotaMb.Should().BeNull();
+        plan.PhotoRetention.Should().Be(PhotoRetention.TwelveMonths);
     }
 }

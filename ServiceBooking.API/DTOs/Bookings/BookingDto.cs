@@ -7,6 +7,8 @@ public record BookingDto(
     Guid Id,
     Guid CompanyId,
     string CompanyName,
+    // US-06 + Q12: lets the client cabinet build a "book again" link without a second lookup.
+    string CompanySlug,
     Guid ServiceId,
     string ServiceName,
     string MasterId,
@@ -20,6 +22,10 @@ public record BookingDto(
     TimeOnly EndTime,
     BookingStatus Status,
     PaymentStatus PaymentStatus,
+    // US-06 + Q12: a snapshot of Service.Price at booking time (already on the entity — no migration).
+    decimal Price,
+    // US-06: null unless the booking was cancelled WITH a reason.
+    string? CancellationReason,
     string? Notes,
     DateTime CreatedAt
 );

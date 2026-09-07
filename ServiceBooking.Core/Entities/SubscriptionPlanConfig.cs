@@ -1,3 +1,5 @@
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.Core.Entities;
 public class SubscriptionPlanConfig
 {
@@ -16,6 +18,12 @@ public class SubscriptionPlanConfig
     // Whether the company may require online prepayment for self-booked visits (Company.RequirePrepayment).
     // A paid-tier feature like AllowMailing/AllowAnalytics — off on the Free baseline.
     public bool AllowOnlinePayment { get; set; } = false;
+    // Client-note photo storage cap in megabytes; null = unlimited (US-24). Enforced against the sum of
+    // ClientNotePhoto.SizeBytes for the company, not against this field's unit directly — see
+    // PhotoQuota and ClientNotePhotosController.
+    public int? PhotoQuotaMb { get; set; } = 100;
+    // How long client-note photos survive before the background cleanup task (US-21) removes them.
+    public PhotoRetention PhotoRetention { get; set; } = PhotoRetention.SixMonths;
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
     public int NotifyDaysBefore { get; set; } = 7;

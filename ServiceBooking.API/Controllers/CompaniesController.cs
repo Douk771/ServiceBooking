@@ -1,9 +1,8 @@
-using System.IO;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
@@ -16,7 +15,8 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 public class CompaniesController(
-    AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver, IWebHostEnvironment env) : ControllerBase
+    AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
+    ImageUploadService imageUploadService, FileStorage storage) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<CompanyDto>>> GetAll()
@@ -254,52 +254,74 @@ public class CompaniesController(
         return Ok(MapToDto(company, plan));
     }
 
-    // Uploads/replaces the company's logo image. Stored on local disk under wwwroot/uploads/companies
-    // and served back via static files (see Program.cs UseStaticFiles) — there's no cloud storage
-    // configured in this project. The extension is derived from the validated Content-Type, never from
-    // the client-supplied filename, so this can't be used for path traversal or to serve an arbitrary
-    // extension.
+    // Uploads/replaces the company's logo. US-25 p.6: moved onto the same ImageUploadService every other
+    // upload endpoint uses — this single change is what fixes both findings the previous cycle's review
+    // left open (only Content-Type was checked, never the real bytes; no rate limit at all). Public
+    // storage class (wwwroot/uploads/companies), served by UseStaticFiles like before — a logo is meant
+    // to be visible to anyone browsing the storefront, so it does NOT go through the private client-photo
+    // pipeline (see FileStorage's class doc for why the two are split).
     [HttpPost("{id:guid}/logo")]
     [Authorize]
+    [EnableRateLimiting("uploads")]
     [RequestSizeLimit(5 * 1024 * 1024)]
-    public async Task<ActionResult<CompanyDto>> UploadLogo(Guid id, IFormFile file)
+    public async Task<ActionResult<CompanyDto>> UploadLogo(Guid id, IFormFile? file)
     {
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await CanManageCompany(id)) return Forbid();
 
-        if (file is null || file.Length == 0) return BadRequest("No file uploaded");
-        if (file.Length > 5 * 1024 * 1024) return BadRequest("File too large (max 5MB)");
+        var validation = await imageUploadService.ReadAndProcessAsync(file, ImageProfile.CompanyLogo);
+        if (!validation.Success) return BadRequest(validation.ErrorMessage);
 
-        var extension = file.ContentType switch
+        // Order matters (ARCHITECTURE.md §1.4/§21.2, code review finding): write the new file, commit the
+        // new URL, THEN delete the old file. A failed SaveChangesAsync after deleting the old file first
+        // would leave a live row pointing at nothing — the one state this pipeline must never produce.
+        var oldUrl = company.LogoUrl;
+        var newUrl = await storage.SavePublicAsync(PublicArea.Companies, validation.Image!.Bytes, validation.Image.Extension);
+        company.LogoUrl = newUrl;
+        try
         {
-            "image/jpeg" => ".jpg",
-            "image/png" => ".png",
-            "image/webp" => ".webp",
-            _ => null
-        };
-        if (extension is null) return BadRequest("Unsupported image type — use JPEG, PNG or WEBP");
-
-        var uploadsDir = Path.Combine(env.ContentRootPath, "wwwroot", "uploads", "companies");
-        Directory.CreateDirectory(uploadsDir);
-
-        var fileName = $"{Guid.NewGuid()}{extension}";
-        var filePath = Path.Combine(uploadsDir, fileName);
-        await using (var stream = new FileStream(filePath, FileMode.Create))
-            await file.CopyToAsync(stream);
-
-        // Clean up the previous logo file if it's one we stored ourselves (skip external URLs).
-        if (company.LogoUrl is { } oldUrl && oldUrl.StartsWith("/uploads/companies/"))
+            await db.SaveChangesAsync();
+        }
+        catch
         {
-            var oldPath = Path.Combine(env.ContentRootPath, "wwwroot", oldUrl.TrimStart('/'));
-            if (System.IO.File.Exists(oldPath)) System.IO.File.Delete(oldPath);
+            storage.DeletePublic(newUrl); // the update didn't persist — don't leave the new file orphaned either
+            throw;
         }
 
-        company.LogoUrl = $"/uploads/companies/{fileName}";
-        await db.SaveChangesAsync();
+        storage.DeletePublic(oldUrl); // old file removed on replace, same as before this cycle, just reordered
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         return Ok(MapToDto(company, plan));
+    }
+
+    // US-24 p.4 / US-19 p.7: the only place a company's client-photo storage usage is exposed. NOT
+    // folded into CompanyDto — that DTO is also returned by the public directory and by list endpoints,
+    // where a per-company aggregate would either leak private usage data publicly or force an N+1 sum
+    // over every company in a list (ARCHITECTURE.md §12.3). One call, one company, one screen.
+    [HttpGet("{id:guid}/photo-usage")]
+    [Authorize]
+    public async Task<ActionResult<CompanyPhotoUsageDto>> GetPhotoUsage(Guid id)
+    {
+        var company = await db.Companies.FindAsync(id);
+        if (company is null) return NotFound();
+
+        // Staff of THIS company, or SuperAdmin — this is the one place SuperAdmin gets numbers about
+        // client photos without ever getting the content itself (decision Q5, ARCHITECTURE.md §12.3).
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var isAllowed = userId is not null &&
+            (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, id, userId));
+        if (!isAllowed) return Forbid();
+
+        var usedBytes = await db.ClientNotePhotos.Where(p => p.CompanyId == id).SumAsync(p => (long?)p.SizeBytes) ?? 0;
+        var photoCount = await db.ClientNotePhotos.CountAsync(p => p.CompanyId == id);
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
+
+        double? percentUsed = plan.PhotoQuotaMb is { } quotaMb && quotaMb > 0
+            ? Math.Round(usedBytes / (quotaMb * 1024.0 * 1024.0) * 100, 1)
+            : null;
+
+        return Ok(new CompanyPhotoUsageDto(id, usedBytes, photoCount, plan.PhotoQuotaMb, percentUsed, plan.PhotoRetention));
     }
 
     [HttpPost("{id:guid}/members")]
@@ -334,21 +356,29 @@ public class CompaniesController(
                 return StatusCode(402, "Employee limit reached for the current tariff plan.");
         }
 
+        // US-26: search AND auto-create both use the canonical form — otherwise adding a colleague by
+        // "8 999..." would silently create a second account for someone already registered as
+        // "+7 999...".
+        if (!PhoneNormalizer.TryNormalize(dto.Phone, out var canonicalPhone))
+            return BadRequest("Phone number must contain 10 to 15 digits.");
+
         // Accounts are identified by phone (UserName == phone), so look the member up by phone.
-        var user = await userManager.FindByNameAsync(dto.Phone);
+        var user = await userManager.FindByNameAsync(canonicalPhone);
 
         if (user is null)
         {
             // Auto-create by phone. Derived temporary password: "Sb" + last 6 digits of the phone,
             // right-padded to at least 8 chars — always contains an upper ('S'), a lower ('b') and
             // digits, satisfying the password policy. The owner must pass this on to the new master.
-            var digits = new string(dto.Phone.Where(char.IsDigit).ToArray());
-            var tail = digits.Length >= 6 ? digits[^6..] : digits;
+            // Now derived from the CANONICAL phone (US-26 p.4 note): for a "+7 999..." input the result
+            // is unchanged, but for "8 999..." it differs from before this cycle — called out in
+            // CHANGELOG.md.
+            var tail = canonicalPhone.Length >= 6 ? canonicalPhone[^6..] : canonicalPhone;
             var pwd = $"Sb{tail}".PadRight(8, '0');
             user = new AppUser
             {
-                UserName = dto.Phone,
-                PhoneNumber = dto.Phone,
+                UserName = canonicalPhone,
+                PhoneNumber = canonicalPhone,
                 PhoneNumberConfirmed = true, // added by the owner → treated as a verified number
                 Email = dto.Email,
                 FirstName = dto.FirstName,

@@ -1,5 +1,7 @@
 import { api } from './client'
 
+export type PhotoRetention = 'SixMonths' | 'TwelveMonths' | 'Forever'
+
 export interface PlanConfig {
   id: string
   name: string
@@ -14,6 +16,10 @@ export interface PlanConfig {
   description: string | null
   isActive: boolean
   notifyDaysBefore: number
+  /** Photo storage quota in MB for client-note photos (US-24); null = unlimited. */
+  photoQuotaMb: number | null
+  /** How long client-note photos are kept before the cleanup task removes them (US-21, US-24). */
+  photoRetention: PhotoRetention
 }
 
 export const plansApi = {

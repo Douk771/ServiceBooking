@@ -12,6 +12,8 @@ import { StatusBadge } from '../components/ui/Badge'
 import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
 import { getPlanErrorMessage } from '../utils/planError'
+import { getCompanyAdminErrorMessage } from '../utils/companyAdminError'
+import { formatPhone } from '../utils/phone'
 
 // ── Stats tab ─────────────────────────────────────────────────────────────────
 
@@ -182,7 +184,7 @@ function ChangeOwnerModal({ company, onClose }: { company: AdminCompany; onClose
               <input type="radio" name="newOwner" className="accent-gold" checked={selectedUserId === u.id} onChange={() => setSelectedUserId(u.id)} />
               <div>
                 <p className="text-sm font-medium text-ink">{u.firstName} {u.lastName}</p>
-                <p className="text-xs text-muted">{u.phone}{u.email ? ` · ${u.email}` : ''}</p>
+                <p className="text-xs text-muted">{formatPhone(u.phone)}{u.email ? ` · ${u.email}` : ''}</p>
               </div>
             </label>
           ))}
@@ -198,14 +200,63 @@ function ChangeOwnerModal({ company, onClose }: { company: AdminCompany; onClose
   )
 }
 
+function BlockCompanyModal({ company, onClose }: { company: AdminCompany; onClose: () => void }) {
+  const qc = useQueryClient()
+  const willBlock = company.isActive
+
+  const mut = useMutation({
+    // AdminUpdateCompanyDto requires all three fields — sending only isActive would silently reset
+    // the others to their zero values (API_CONTRACT.md §14), so the currently-known name and
+    // allowSelfBooking travel along even though this screen only changes isActive.
+    mutationFn: () => adminApi.updateCompany(company.id, {
+      name: company.name,
+      isActive: !company.isActive,
+      allowSelfBooking: company.allowSelfBooking,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-companies'] })
+      onClose()
+    },
+  })
+
+  return (
+    <Modal title={willBlock ? `Заблокировать «${company.name}»?` : `Разблокировать «${company.name}»?`} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        {willBlock ? (
+          <div className="text-sm text-ink-soft flex flex-col gap-1.5">
+            <p>После блокировки:</p>
+            <ul className="list-disc pl-5 flex flex-col gap-1">
+              <li>компания пропадёт из публичного каталога;</li>
+              <li>её страница перестанет открываться;</li>
+              <li>сотрудники не увидят её в своём кабинете.</li>
+            </ul>
+            <p className="mt-1">Уже созданные записи <strong>не отменяются</strong>, роли сотрудников не отзываются.</p>
+          </div>
+        ) : (
+          <p className="text-sm text-ink-soft">Компания снова появится в каталоге, её страница и кабинет сотрудников станут доступны.</p>
+        )}
+        {mut.isError && <p className="text-sm text-danger">{getCompanyAdminErrorMessage(mut.error)}</p>}
+        <div className="flex gap-3 pt-1">
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={mut.isPending}>Отмена</Button>
+          <Button variant={willBlock ? 'danger' : 'primary'} className="flex-1" loading={mut.isPending} onClick={() => mut.mutate()}>
+            {willBlock ? 'Заблокировать' : 'Разблокировать'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function CompaniesTab() {
   const [search, setSearch] = useState('')
   const [changeOwnerFor, setChangeOwnerFor] = useState<AdminCompany | null>(null)
+  const [blockingCompany, setBlockingCompany] = useState<AdminCompany | null>(null)
   const { data, isLoading } = useQuery({ queryKey: ['admin-companies', search], queryFn: () => adminApi.getCompanies(search || undefined) })
 
   return (
     <div>
       {changeOwnerFor && <ChangeOwnerModal company={changeOwnerFor} onClose={() => setChangeOwnerFor(null)} />}
+      {blockingCompany && <BlockCompanyModal company={blockingCompany} onClose={() => setBlockingCompany(null)} />}
       <div className="mb-4">
         <Input placeholder="Поиск по названию или email..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
@@ -227,7 +278,12 @@ function CompaniesTab() {
                   <p className="text-xs text-muted mt-0.5">{c.ownerEmail} · {c.memberCount} сотр. · {c.bookingCount} записей</p>
                 </div>
               </div>
-              <Button variant="secondary" size="sm" onClick={() => setChangeOwnerFor(c)}>Сменить владельца</Button>
+              <div className="flex gap-2">
+                <Button variant={c.isActive ? 'danger' : 'secondary'} size="sm" onClick={() => setBlockingCompany(c)}>
+                  {c.isActive ? 'Заблокировать' : 'Разблокировать'}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setChangeOwnerFor(c)}>Сменить владельца</Button>
+              </div>
             </Card>
           ))}
         </div>
@@ -315,7 +371,7 @@ function UsersTab() {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted truncate">{u.phone}{u.email ? ` · ${u.email}` : ''}</p>
+                  <p className="text-xs text-muted truncate">{formatPhone(u.phone)}{u.email ? ` · ${u.email}` : ''}</p>
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
@@ -386,7 +442,7 @@ function AllBookingsTab() {
                 <p className="text-xs text-muted mt-0.5">{b.serviceName} · {b.masterName} · {b.date} {b.startTime.slice(0,5)}</p>
                 {b.clientPhone && (
                   <p className="text-xs text-muted flex items-center gap-1">
-                    <Icon name="phone" size={11} strokeWidth={1.8} /> {b.clientPhone}
+                    <Icon name="phone" size={11} strokeWidth={1.8} /> {formatPhone(b.clientPhone)}
                   </p>
                 )}
               </div>

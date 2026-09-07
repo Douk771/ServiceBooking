@@ -3,16 +3,19 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { format, parseISO, isToday, isTomorrow, addDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../api/bookings'
-import { reviewsApi } from '../api/reviews'
 import { mastersApi, type MasterClient } from '../api/masters'
+import { clientNotesApi } from '../api/clientNotes'
 import { getBookingErrorMessage } from '../utils/bookingError'
+import { getCancelErrorMessage } from '../utils/cancelError'
+import { formatPhone } from '../utils/phone'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
 import { Icon } from '../components/ui/Icon'
 import { ManualBookingModal } from '../components/booking/ManualBookingModal'
 import { RescheduleModal } from '../components/booking/RescheduleModal'
-import { ReviewModal } from '../components/review/ReviewModal'
+import { NoteCard } from '../components/clientNotes/NoteCard'
+import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
 import type { Booking } from '../types'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,18 +44,34 @@ interface ClientHistoryPanelProps {
 
 function ClientHistoryPanel({ booking, client }: ClientHistoryPanelProps) {
   const [newNote, setNewNote] = useState('')
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
+  const [photoUploadError, setPhotoUploadError] = useState('')
   const qc = useQueryClient()
 
   const addNoteMut = useMutation({
-    mutationFn: () =>
-      mastersApi.addNote({
+    mutationFn: async () => {
+      const created = await mastersApi.addNote({
         companyId: booking.companyId,
         clientId: booking.clientId ?? undefined,
         guestPhone: booking.clientId ? undefined : (booking.clientPhone ?? undefined),
         note: newNote,
-      }),
+        // Created from the panel under a specific booking row — the note is linked to that visit
+        // automatically (US-17 п. 4), so the history shows what was done and when without extra input.
+        bookingId: booking.id,
+      })
+      setPhotoUploadError('')
+      for (const file of pendingPhotos) {
+        try {
+          await clientNotesApi.uploadPhoto(created.id, file)
+        } catch {
+          setPhotoUploadError('Заметка сохранена, но не все фото удалось загрузить.')
+        }
+      }
+      return created
+    },
     onSuccess: () => {
       setNewNote('')
+      setPendingPhotos([])
       qc.invalidateQueries({ queryKey: ['master-clients', booking.companyId] })
     },
   })
@@ -88,32 +107,76 @@ function ClientHistoryPanel({ booking, client }: ClientHistoryPanelProps) {
         {notes.length === 0 ? (
           <p className="text-sm text-muted mb-2">Нет заметок</p>
         ) : (
-          <ul className="flex flex-col gap-1 mb-2">
-            {notes.map((n, i) => (
-              <li key={i} className="text-sm text-ink-soft bg-cream-deep rounded-xl px-3 py-2">
-                {n}
-              </li>
+          <ul className="flex flex-col gap-1.5 mb-2">
+            {notes.map((n) => (
+              <NoteCard key={n.id} note={n} companyId={booking.companyId} />
             ))}
           </ul>
         )}
-        <div className="flex gap-2 mt-2">
-          <input
-            type="text"
-            value={newNote}
-            onChange={e => setNewNote(e.target.value)}
-            placeholder="Оставить отзыв о клиенте…"
-            className="flex-1 rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold"
-            onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate() }}
+        <div className="flex flex-col gap-2 mt-2">
+          <label className="sr-only" htmlFor={`new-note-${booking.id}`}>Добавить заметку</label>
+          <div className="flex gap-2">
+            <input
+              id={`new-note-${booking.id}`}
+              type="text"
+              value={newNote}
+              onChange={e => setNewNote(e.target.value)}
+              placeholder="Добавить заметку…"
+              className="flex-1 rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold"
+              onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate() }}
+            />
+            <Button
+              size="sm"
+              onClick={() => addNoteMut.mutate()}
+              disabled={!newNote.trim()}
+              loading={addNoteMut.isPending}
+            >
+              Добавить
+            </Button>
+          </div>
+          <NotePhotoUploader
+            remainingSlots={5 - pendingPhotos.length}
+            value={pendingPhotos}
+            onChange={setPendingPhotos}
+            compact
           />
-          <Button
-            size="sm"
-            onClick={() => addNoteMut.mutate()}
-            disabled={!newNote.trim()}
-            loading={addNoteMut.isPending}
-          >
-            Добавить
-          </Button>
+          {photoUploadError && <p className="text-xs text-danger">{photoUploadError}</p>}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Cancel-with-reason inline form ───────────────────────────────────────────
+
+interface CancelFormProps {
+  bookingId: string
+  onCancel: (reason: string) => void
+  onBack: () => void
+  loading: boolean
+}
+
+function CancelForm({ bookingId, onCancel, onBack, loading }: CancelFormProps) {
+  const [reason, setReason] = useState('')
+  return (
+    <div className="mt-3 border-t border-line pt-3 flex flex-col gap-2">
+      <label htmlFor={`cancel-reason-${bookingId}`} className="text-xs font-medium text-ink-soft">
+        Причина (увидит клиент)
+      </label>
+      <textarea
+        id={`cancel-reason-${bookingId}`}
+        value={reason}
+        onChange={e => setReason(e.target.value)}
+        maxLength={300}
+        rows={2}
+        placeholder="Необязательно"
+        className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
+      />
+      <div className="flex gap-2 justify-end">
+        <Button size="sm" variant="secondary" onClick={onBack} disabled={loading}>Назад</Button>
+        <Button size="sm" variant="danger" loading={loading} onClick={() => onCancel(reason.trim())}>
+          Отменить запись
+        </Button>
       </div>
     </div>
   )
@@ -125,17 +188,16 @@ interface BookingRowProps {
   booking: Booking
   client: MasterClient | undefined
   onReschedule: (b: Booking) => void
-  onReview: (b: Booking) => void
-  canReview: boolean
-  cancel: ReturnType<typeof useMutation<unknown, Error, string>>
+  cancel: ReturnType<typeof useMutation<unknown, Error, { id: string; reason: string }>>
   complete: ReturnType<typeof useMutation<unknown, Error, string>>
   noShow: ReturnType<typeof useMutation<unknown, Error, string>>
   markPaid: ReturnType<typeof useMutation<unknown, Error, string>>
   error: string | null
 }
 
-function BookingRow({ booking: b, client, onReschedule, onReview, canReview, cancel, complete, noShow, markPaid, error }: BookingRowProps) {
+function BookingRow({ booking: b, client, onReschedule, cancel, complete, noShow, markPaid, error }: BookingRowProps) {
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const isFinalized = b.status === 'Completed' || b.status === 'Cancelled' || b.status === 'NoShow'
 
   return (
@@ -171,12 +233,17 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
             </p>
             {b.clientPhone && (
               <p className="text-xs text-muted mt-0.5 flex items-center gap-1">
-                <Icon name="phone" size={11} strokeWidth={1.8} /> {b.clientPhone}
+                <Icon name="phone" size={11} strokeWidth={1.8} /> {formatPhone(b.clientPhone)}
               </p>
             )}
             {b.notes && (
               <p className="text-xs text-ink-soft mt-1 bg-cream-deep rounded-lg px-2 py-1">
                 {b.notes}
+              </p>
+            )}
+            {b.status === 'Cancelled' && b.cancellationReason && (
+              <p className="text-xs text-danger mt-1 bg-danger-bg rounded-lg px-2 py-1">
+                Причина отмены: {b.cancellationReason}
               </p>
             )}
           </div>
@@ -191,16 +258,13 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
             <Button size="sm" variant="secondary" onClick={() => onReschedule(b)}>Перенести</Button>
             <Button size="sm" loading={complete.isPending} onClick={() => complete.mutate(b.id)}>Выполнено</Button>
             <Button size="sm" variant="secondary" loading={noShow.isPending} onClick={() => noShow.mutate(b.id)}>Не пришёл</Button>
-            <Button size="sm" variant="danger" loading={cancel.isPending} onClick={() => cancel.mutate(b.id)}>Отменить</Button>
+            {!cancelling && (
+              <Button size="sm" variant="danger" onClick={() => setCancelling(true)}>Отменить</Button>
+            )}
           </>)}
-          {b.status === 'Completed' && canReview && (
-            <Button size="sm" variant="secondary" onClick={() => onReview(b)}>
-              <Icon name="star" size={13} strokeWidth={1.8} /> Отзыв об услуге
-            </Button>
-          )}
           {isFinalized ? (
             <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(v => !v)}>
-              <Icon name="star" size={13} strokeWidth={1.8} /> Отзыв о клиенте
+              <Icon name="star" size={13} strokeWidth={1.8} /> Заметки о клиенте
               <Icon name="chevron-down" size={13} strokeWidth={1.8} className={`transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
             </Button>
           ) : (
@@ -219,6 +283,14 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
           <Icon name="alert-circle" size={15} strokeWidth={1.8} /> {error}
         </p>
       )}
+      {cancelling && (
+        <CancelForm
+          bookingId={b.id}
+          loading={cancel.isPending}
+          onBack={() => setCancelling(false)}
+          onCancel={(reason) => { cancel.mutate({ id: b.id, reason }); setCancelling(false) }}
+        />
+      )}
       {historyOpen && <ClientHistoryPanel booking={b} client={client} />}
     </Card>
   )
@@ -229,7 +301,6 @@ function BookingRow({ booking: b, client, onReschedule, onReview, canReview, can
 export function MyBookingsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [rescheduleBooking, setRescheduleBooking] = useState<Booking | null>(null)
-  const [reviewBooking, setReviewBooking] = useState<Booking | null>(null)
   const [actionError, setActionError] = useState<{ bookingId: string; message: string } | null>(null)
   const qc = useQueryClient()
 
@@ -242,12 +313,12 @@ export function MyBookingsPage() {
   })
 
   const cancel = useMutation({
-    mutationFn: (id: string) => bookingsApi.cancel(id),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => bookingsApi.cancel(id, reason || undefined),
     // Clear on start, not only on success: otherwise a stale failure from another booking stays on
     // screen while the new request is in flight and reads as if it belongs to the new action.
     onMutate: () => setActionError(null),
     onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
-    onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
+    onError: (err, { id }) => setActionError({ bookingId: id, message: getCancelErrorMessage(err) }),
   })
   const complete = useMutation({
     mutationFn: (id: string) => bookingsApi.complete(id),
@@ -273,13 +344,6 @@ export function MyBookingsPage() {
     onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
     onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
   })
-
-  const { data: canReviewList } = useQuery({
-    queryKey: ['can-review'],
-    queryFn: reviewsApi.canReview,
-  })
-
-  const canReviewSet = useMemo(() => new Set((canReviewList ?? []).map(r => r.bookingId)), [canReviewList])
 
   // Client history/notes are scoped per company (see MastersController.GetClients) — fetch the
   // client list for every company the master has bookings in, then look each booking's client up.
@@ -326,16 +390,6 @@ export function MyBookingsPage() {
 
       {showCreateModal && <ManualBookingModal onClose={() => setShowCreateModal(false)} />}
       {rescheduleBooking && <RescheduleModal booking={rescheduleBooking} onClose={() => setRescheduleBooking(null)} />}
-      {reviewBooking && (
-        <ReviewModal
-          bookingId={reviewBooking.id}
-          serviceName={reviewBooking.serviceName}
-          masterName={reviewBooking.clientName}
-          companyId={reviewBooking.companyId}
-          onClose={() => setReviewBooking(null)}
-          onSuccess={() => setReviewBooking(null)}
-        />
-      )}
 
       {isLoading ? (
         <div className="grid gap-4">
@@ -357,8 +411,6 @@ export function MyBookingsPage() {
                     booking={b}
                     client={clientByKey.get(b.clientId ?? b.clientPhone ?? '')}
                     onReschedule={setRescheduleBooking}
-                    onReview={setReviewBooking}
-                    canReview={canReviewSet.has(b.id)}
                     cancel={cancel}
                     complete={complete}
                     noShow={noShow}

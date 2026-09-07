@@ -9,9 +9,12 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
+import { Avatar } from '../../components/ui/Avatar'
 import { ScheduleTab } from './ScheduleTab'
 import { getAddMemberErrorMessage } from '../../utils/memberError'
 import { getCompanyManageErrorMessage, getLogoErrorMessage } from '../../utils/companyManageError'
+import { getUploadErrorMessage } from '../../utils/uploadError'
+import { formatPhone } from '../../utils/phone'
 import type { Service } from '../../types'
 
 // ── Services tab ──────────────────────────────────────────────────────────────
@@ -29,6 +32,8 @@ function ServicesTab({ companyId }: { companyId: string }) {
   const [showAdd, setShowAdd] = useState(false)
   const [formError, setFormError] = useState('')
   const [deleteError, setDeleteError] = useState('')
+  const [imageError, setImageError] = useState('')
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   const { data: services, isLoading } = useQuery({
     queryKey: ['services', companyId],
@@ -39,13 +44,29 @@ function ServicesTab({ companyId }: { companyId: string }) {
 
   const openEdit = (s: Service) => {
     setEditing(s)
+    setImageError('')
     setValue('name', s.name)
     setValue('description', s.description ?? '')
     setValue('durationMinutes', s.durationMinutes)
     setValue('price', s.price)
   }
 
-  const closeForm = () => { setEditing(null); setShowAdd(false); setFormError(''); reset() }
+  const closeForm = () => { setEditing(null); setShowAdd(false); setFormError(''); setImageError(''); reset() }
+
+  // Only available once the service already has an id — a brand-new service must be saved first
+  // (US-25: POST /api/services/{id}/image needs an existing service).
+  const imageMut = useMutation({
+    mutationFn: (file: File) => servicesApi.uploadImage(editing!.id, file),
+    onMutate: () => setImageError(''),
+    onSuccess: (updated) => {
+      // Refreshes the thumbnail inside the still-open modal immediately, not just the list behind it —
+      // `editing` is a snapshot taken when the modal opened, so without this the new photo only shows
+      // up after closing and reopening the form.
+      setEditing(updated)
+      qc.invalidateQueries({ queryKey: ['services', companyId] })
+    },
+    onError: (err: unknown) => setImageError(getUploadErrorMessage(err)),
+  })
 
   const createMut = useMutation({
     mutationFn: (d: ServiceFormData) =>
@@ -87,12 +108,21 @@ function ServicesTab({ companyId }: { companyId: string }) {
         <div className="grid gap-3">
           {services.map((s) => (
             <Card key={s.id} className="p-4 flex items-center justify-between gap-4">
-              <div>
-                <p className="font-medium text-ink">{s.name}</p>
-                <p className="text-sm text-muted flex items-center gap-1">
-                  <Icon name="clock" size={13} strokeWidth={1.7} /> {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
-                </p>
-                {s.description && <p className="text-xs text-muted mt-0.5 line-clamp-1">{s.description}</p>}
+              <div className="flex items-center gap-3 min-w-0">
+                {s.imageUrl ? (
+                  <img src={s.imageUrl} alt={s.name} className="w-11 h-11 rounded-xl object-cover shrink-0" />
+                ) : (
+                  <div className="w-11 h-11 rounded-xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold shrink-0">
+                    {s.name[0]?.toUpperCase() ?? '?'}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="font-medium text-ink">{s.name}</p>
+                  <p className="text-sm text-muted flex items-center gap-1">
+                    <Icon name="clock" size={13} strokeWidth={1.7} /> {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                  </p>
+                  {s.description && <p className="text-xs text-muted mt-0.5 line-clamp-1">{s.description}</p>}
+                </div>
               </div>
               <div className="flex gap-2 shrink-0">
                 <Button variant="secondary" size="sm" onClick={() => openEdit(s)}>Изменить</Button>
@@ -115,6 +145,34 @@ function ServicesTab({ companyId }: { companyId: string }) {
       {(showAdd || editing) && (
         <Modal title={editing ? 'Редактировать услугу' : 'Добавить услугу'} onClose={closeForm}>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+            {editing && (
+              <div className="flex items-center gap-3">
+                {editing.imageUrl ? (
+                  <img src={editing.imageUrl} alt={editing.name} className="w-14 h-14 rounded-xl object-cover shrink-0" />
+                ) : (
+                  <div className="w-14 h-14 rounded-xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-lg shrink-0">
+                    {editing.name[0]?.toUpperCase() ?? '?'}
+                  </div>
+                )}
+                <div>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) imageMut.mutate(f); e.target.value = '' }}
+                  />
+                  <Button type="button" size="sm" variant="secondary" loading={imageMut.isPending} onClick={() => imageInputRef.current?.click()}>
+                    {editing.imageUrl ? 'Заменить фото' : 'Загрузить фото'}
+                  </Button>
+                  <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ</p>
+                  {imageError && <p className="text-xs text-danger mt-1">{imageError}</p>}
+                </div>
+              </div>
+            )}
+            {!editing && (
+              <p className="text-xs text-muted -mt-1">Фото услуги можно будет добавить после сохранения.</p>
+            )}
             <Input
               label="Название *"
               placeholder="Название услуги..."
@@ -211,12 +269,10 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
     <Card className="overflow-hidden">
       <div className="p-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-semibold text-sm shrink-0">
-            {m.firstName[0]}{m.lastName[0]}
-          </div>
+          <Avatar avatarUrl={m.avatarUrl} firstName={m.firstName} lastName={m.lastName} size={40} className="text-sm" />
           <div className="min-w-0">
             <p className="font-medium text-ink">{m.firstName} {m.lastName}</p>
-            <p className="text-sm text-muted truncate">{m.phone || m.email} · {roleLabel[m.role] ?? m.role}</p>
+            <p className="text-sm text-muted truncate">{(m.phone ? formatPhone(m.phone) : '') || m.email} · {roleLabel[m.role] ?? m.role}</p>
             {m.bio && <p className="text-xs text-muted mt-0.5 truncate">{m.bio}</p>}
             {commissionError && <p className="text-xs text-danger mt-0.5">{commissionError}</p>}
           </div>
@@ -553,7 +609,130 @@ function SettingsTab({ companyId }: { companyId: string }) {
           <Button type="submit" loading={updateMut.isPending} disabled={!isDirty}>Сохранить изменения</Button>
         </form>
       </Card>
+
+      {company && <WidgetCard company={company} />}
+      <PhotoUsageCard companyId={companyId} />
     </div>
+  )
+}
+
+// ── Website widget snippet (US-03) ──────────────────────────────────────────
+
+/**
+ * Escapes a string for safe use inside an HTML attribute value. Without this, a company name
+ * containing `"` (or `&`/`<`/`>`) would produce a snippet that isn't valid HTML once pasted onto the
+ * owner's own site — the `title="..."` attribute would end early at the embedded quote.
+ */
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function WidgetCard({ company }: { company: import('../../types').Company }) {
+  const [copied, setCopied] = useState(false)
+  // Domain comes from the current page's own address, not a hardcoded value (US-03 п. 3) — this way
+  // the snippet is correct in dev, staging and prod without a build-time config knob.
+  const origin = window.location.origin
+  const embedUrl = `${origin}/embed/${company.slug}`
+  const snippet = `<iframe src="${embedUrl}" width="100%" height="700" title="Онлайн-запись — ${escapeHtmlAttribute(company.name)}" loading="lazy" style="border:0"></iframe>`
+
+  const copySnippet = async () => {
+    try {
+      await navigator.clipboard.writeText(snippet)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API can be unavailable (older browsers, insecure context) — the snippet is still
+      // selectable text below, so this isn't a dead end, just a missed shortcut.
+    }
+  }
+
+  return (
+    <Card className="p-6 mt-[18px]">
+      <h2 className="text-lg font-semibold text-ink mb-1">Виджет для сайта</h2>
+      <p className="text-sm text-muted mb-4">Вставьте код на свой сайт — форма записи откроется прямо там.</p>
+
+      {(!company.allowSelfBooking || !company.onlineBookingEnabled) && (
+        <div className="mb-4 rounded-xl bg-warning-bg text-warning text-sm px-4 py-3 flex items-start gap-2">
+          <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
+          <span>
+            {!company.onlineBookingEnabled
+              ? 'Онлайн-запись не входит в текущий тариф или отключена — виджет покажет услуги, но запись из него не пройдёт.'
+              : 'Самозапись клиентов выключена в настройках — виджет покажет услуги, но запись из него не пройдёт.'}
+          </span>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1.5 mb-4">
+        <label className="text-sm font-medium text-ink-soft">Прямая ссылка</label>
+        <div className="flex gap-2">
+          <input
+            readOnly
+            value={embedUrl}
+            className="flex-1 rounded-xl border border-line px-3.5 py-2.5 text-sm bg-cream-deep text-ink-soft outline-none"
+          />
+          <Button type="button" variant="secondary" onClick={() => window.open(embedUrl, '_blank', 'noopener,noreferrer')}>
+            <Icon name="external-link" size={14} strokeWidth={1.8} /> Открыть предпросмотр
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-medium text-ink-soft">Код для вставки</label>
+        <textarea
+          readOnly
+          rows={3}
+          value={snippet}
+          className="rounded-xl border border-line px-3.5 py-2.5 text-xs font-mono bg-cream-deep text-ink-soft outline-none resize-none"
+        />
+        <Button type="button" size="sm" variant="secondary" className="self-start mt-1" onClick={copySnippet}>
+          <Icon name="copy" size={13} strokeWidth={1.8} /> {copied ? 'Скопировано' : 'Скопировать'}
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
+// ── Photo storage usage (US-24) ─────────────────────────────────────────────
+
+const RETENTION_LABEL_RU: Record<string, string> = {
+  SixMonths: '6 месяцев',
+  TwelveMonths: '12 месяцев',
+  Forever: 'бессрочно',
+}
+
+function PhotoUsageCard({ companyId }: { companyId: string }) {
+  const { data: usage, isLoading, isError } = useQuery({
+    queryKey: ['company-photo-usage', companyId],
+    queryFn: () => companiesApi.getPhotoUsage(companyId),
+  })
+
+  if (isLoading) return <div className="h-20 bg-cream-deep rounded-2xl animate-pulse mt-[18px]" />
+  if (isError || !usage) return null
+
+  const usedMb = usage.usedBytes / (1024 * 1024)
+  const nearQuota = usage.percentUsed != null && usage.percentUsed > 90
+
+  return (
+    <Card className="p-6 mt-[18px]">
+      <h2 className="text-lg font-semibold text-ink mb-1">Хранилище фото клиентов</h2>
+      <p className="text-sm text-ink-soft mt-2">
+        Занято {usedMb.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}
+        {' '}из {usage.quotaMb != null ? `${usage.quotaMb} МБ` : '∞'} · {usage.photoCount} фото
+      </p>
+      <p className="text-sm text-ink-soft mt-1">
+        Фото хранятся {RETENTION_LABEL_RU[usage.retention] ?? usage.retention}
+      </p>
+      {nearQuota && (
+        <div className="mt-3 rounded-xl bg-warning-bg text-warning text-sm px-4 py-3 flex items-start gap-2">
+          <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
+          <span>Место под фото почти закончилось. Смените тариф, чтобы освободить больше места.</span>
+        </div>
+      )}
+    </Card>
   )
 }
 

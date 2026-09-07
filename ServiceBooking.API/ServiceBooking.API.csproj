@@ -12,6 +12,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="SkiaSharp" Version="2.88.8" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="2.88.8" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
   </ItemGroup>
 
@@ -22,5 +24,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets ServiceBooking.UnitTests exercise ImageProcessor's internal pure helpers (orientation,
+         crop, resize) directly with synthetic bitmaps, instead of hand-crafting real EXIF bytes just to
+         reach them through the public Process() entry point (see ImageProcessor.ApplyOrigin doc). -->
+    <InternalsVisibleTo Include="ServiceBooking.UnitTests" />
+  </ItemGroup>
 
 </Project>

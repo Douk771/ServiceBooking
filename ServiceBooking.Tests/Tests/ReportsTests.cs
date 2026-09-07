@@ -214,7 +214,7 @@ public class ReportsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         // The owner raises the service's price after the booking was made and completed.
         var updateResponse = await AuthedClient(owner.Token).PutAsJsonAsync($"/api/services/{service.Id}",
-            new CreateServiceDto(company.Id, "Updated Name", null, 60, 5000, null));
+            new CreateServiceDto(company.Id, "Updated Name", null, 60, 5000));
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await AuthedClient(owner.Token).GetAsync(

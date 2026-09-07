@@ -45,6 +45,15 @@ export interface UpdateCompanyPayload {
   showInPublicListing?: boolean
 }
 
+export interface CompanyPhotoUsage {
+  companyId: string
+  usedBytes: number
+  photoCount: number
+  quotaMb: number | null
+  percentUsed: number | null
+  retention: 'SixMonths' | 'TwelveMonths' | 'Forever'
+}
+
 export const companiesApi = {
   getAll: () => api.get<Company[]>('/companies').then((r) => r.data),
   getBySlug: (slug: string) => api.get<Company>(`/companies/${slug}`).then((r) => r.data),
@@ -70,4 +79,6 @@ export const companiesApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then((r) => r.data)
   },
+  getPhotoUsage: (id: string) =>
+    api.get<CompanyPhotoUsage>(`/companies/${id}/photo-usage`).then((r) => r.data),
 }

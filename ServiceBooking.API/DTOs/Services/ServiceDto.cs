@@ -12,6 +12,12 @@ public record ServiceDto(
     string? ImageUrl
 );
 
+// ImageUrl is deliberately NOT a field here (code review finding, US-19/US-25): it used to be accepted
+// verbatim from the client and written straight onto Service.ImageUrl, which — combined with
+// FileStorage.DeletePublic's now-fixed containment check — meant a caller could point a service at an
+// arbitrary "/uploads/..." path and then trigger POST /api/services/{id}/image to delete whatever file
+// that path resolved to. The only way to set this field now is the dedicated upload endpoint
+// (POST /api/services/{id}/image), which always writes a URL FileStorage itself generated.
 public record CreateServiceDto(
     Guid CompanyId,
     // Attributes go directly on the positional record parameter, NOT as `[property: ...]`: on this
@@ -25,6 +31,5 @@ public record CreateServiceDto(
     // b.EndTime > startTime never true), allowing unlimited overlapping bookings on the same slot
     // (audit E1) — SVC-015 pins this down.
     [Range(1, 1440)] int DurationMinutes,
-    [Range(0, 1_000_000)] decimal Price,
-    string? ImageUrl
+    [Range(0, 1_000_000)] decimal Price
 );

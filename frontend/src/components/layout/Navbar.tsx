@@ -18,7 +18,8 @@ export function Navbar() {
 
   const isMasterOrOwner = hasRole('Master') || hasRole('CompanyOwner') || hasRole('SuperAdmin')
   const isAdmin = hasRole('SuperAdmin')
-  const isClient = !isMasterOrOwner && isAuthenticated()
+  // "Мои визиты" (personal bookings as a client) is shown to every authenticated user, not just
+  // Client-only accounts: a master or owner can also be a client of a different salon (US-08, Q13).
 
   const navLinkClass = 'text-sm font-medium text-ink-soft hover:text-gold-dark transition-colors'
   const mobileLinkClass = 'block px-4 py-3 text-[15px] font-medium text-ink-soft hover:text-gold-dark hover:bg-cream-deep rounded-xl transition-colors'
@@ -37,12 +38,10 @@ export function Navbar() {
         <div className="hidden md:flex items-center gap-7">
           {isAuthenticated() ? (
             <>
-              {isClient && (
-                <Link to="/my-visits" className={navLinkClass}>Мои визиты</Link>
-              )}
               {isMasterOrOwner && (
                 <Link to="/my-bookings" className={navLinkClass}>Мои записи</Link>
               )}
+              <Link to="/my-visits" className={navLinkClass}>Мои визиты</Link>
               {isMasterOrOwner && (
                 <Link to="/cabinet" className={navLinkClass}>Кабинет</Link>
               )}
@@ -92,12 +91,10 @@ export function Navbar() {
         <div className="md:hidden border-t border-line bg-cream px-4 py-3 flex flex-col gap-1">
           {isAuthenticated() ? (
             <>
-              {isClient && (
-                <Link to="/my-visits" className={mobileLinkClass} onClick={closeMenu}>Мои визиты</Link>
-              )}
               {isMasterOrOwner && (
                 <Link to="/my-bookings" className={mobileLinkClass} onClick={closeMenu}>Мои записи</Link>
               )}
+              <Link to="/my-visits" className={mobileLinkClass} onClick={closeMenu}>Мои визиты</Link>
               {isMasterOrOwner && (
                 <Link to="/cabinet" className={mobileLinkClass} onClick={closeMenu}>Кабинет</Link>
               )}

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.DTOs.ClientNotes;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -12,8 +13,12 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/masters")]
 [Authorize]
-public class MastersController(AppDbContext db) : ControllerBase
+public class MastersController(AppDbContext db, FileStorage storage) : ControllerBase
 {
+    // Notes shown per client are capped so a long-lived client's history can't turn this into an
+    // unbounded fetch (NFR §9 p.6, ARCHITECTURE.md §21.5) — newest first, most useful ones kept.
+    private const int NotesPerClient = 50;
+
     [HttpGet("clients")]
     public async Task<IActionResult> GetClients([FromQuery] Guid companyId)
     {
@@ -26,6 +31,10 @@ public class MastersController(AppDbContext db) : ControllerBase
         var isMember = await CompanyMembership.IsStaffAsync(db, companyId, userId);
         if (!isMember) return Forbid();
 
+        // Needed once, up front: whether the CALLER (not the notes' authors) is this company's owner —
+        // decides `canDelete` on every note and photo below (decision Q16).
+        var callerIsOwner = await CompanyMembership.IsOwnerAsync(db, companyId, userId);
+
         // Get all bookings for this master in this company
         var bookings = await db.Bookings
             .Include(b => b.Client)
@@ -36,9 +45,39 @@ public class MastersController(AppDbContext db) : ControllerBase
         // Notes are shared across the whole company: a master seeing a client (e.g. a new booking to a
         // master this client hasn't visited before) sees prior notes written by ANY colleague in the
         // same company — not just their own. Scoped to companyId so notes don't leak between businesses.
+        //
+        // The Take(NotesPerClient) cap is applied HERE, in the query, via a ROW_NUMBER() window
+        // partitioned per client/guest — not by pulling every note (and every attached photo) the
+        // company has ever accumulated into memory and slicing afterwards in NotesFor(...) below (code
+        // review finding: a salon with a couple of years of history could have thousands of rows here).
+        // COALESCE(ClientId, GuestPhone) mirrors exactly how the two grouping branches below identify a
+        // "client" — a registered client by id, a guest by phone.
         var notes = await db.ClientNotes
-            .Where(n => n.CompanyId == companyId)
+            .FromSqlInterpolated($"""
+                SELECT ranked.* FROM (
+                    SELECT cn.*,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY COALESCE(cn."ClientId", cn."GuestPhone")
+                               ORDER BY cn."CreatedAt" DESC
+                           ) AS "Rn"
+                    FROM "ClientNotes" cn
+                    WHERE cn."CompanyId" = {companyId}
+                ) ranked
+                WHERE ranked."Rn" <= {NotesPerClient}
+                """)
+            .Include(n => n.Master)
+            .Include(n => n.Booking).ThenInclude(b => b!.Service)
+            .Include(n => n.Photos).ThenInclude(p => p.UploadedBy)
             .ToListAsync();
+
+        // The query above already caps each client/guest at NotesPerClient rows — this Take is a cheap,
+        // redundant safety net (in case a future refactor of the query above ever loses the window-
+        // function limit), not the actual bound.
+        List<ClientNoteDto> NotesFor(IEnumerable<ClientNote> matching) => matching
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(NotesPerClient)
+            .Select(n => MapNoteToDto(n, userId, callerIsOwner))
+            .ToList();
 
         // Group by registered clients
         var registeredClients = bookings
@@ -48,24 +87,23 @@ public class MastersController(AppDbContext db) : ControllerBase
             {
                 var lastBooking = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.EndTime).First();
                 var client = lastBooking.Client;
-                var clientNotes = notes.Where(n => n.ClientId == g.Key).Select(n => n.Note).ToList();
-                return new
-                {
-                    clientId = g.Key,
-                    guestPhone = (string?)null,
-                    name = client != null ? $"{client.FirstName} {client.LastName}".Trim() : "Unknown",
-                    // The "contact visible only 24h after visit" rule (decision Q10) is removed: it was
-                    // half-implemented (no re-hide, no UI to unlock early) and served no protection —
-                    // a master who serves a client already has their phone/notes from the booking flow.
-                    phone = client?.PhoneNumber,
-                    email = client?.Email,
-                    lastVisitDate = lastBooking.Date,
-                    totalVisits = g.Count(),
-                    notes = clientNotes,
-                    bookingSummaries = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
-                        .Select(b => new { date = b.Date, serviceName = b.Service.Name, status = b.Status.ToString() })
+                return new MasterClientDto(
+                    ClientId: g.Key,
+                    GuestPhone: null,
+                    Name: client != null ? $"{client.FirstName} {client.LastName}".Trim() : "Unknown",
+                    // The "contact visible only 24h after visit" rule (decision Q10, cycle A) is removed:
+                    // it was half-implemented (no re-hide, no UI to unlock early) and served no
+                    // protection — a master who serves a client already has their phone/notes from the
+                    // booking flow.
+                    Phone: client?.PhoneNumber,
+                    Email: client?.Email,
+                    LastVisitDate: lastBooking.Date,
+                    TotalVisits: g.Count(),
+                    Notes: NotesFor(notes.Where(n => n.ClientId == g.Key)),
+                    BookingSummaries: g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
+                        .Select(b => new BookingSummaryDto(b.Date, b.Service.Name, b.Status.ToString()))
                         .ToList()
-                };
+                );
             });
 
         // Group by guest phone
@@ -75,24 +113,22 @@ public class MastersController(AppDbContext db) : ControllerBase
             .Select(g =>
             {
                 var lastBooking = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.EndTime).First();
-                var clientNotes = notes.Where(n => n.GuestPhone == g.Key).Select(n => n.Note).ToList();
-                return new
-                {
-                    clientId = (string?)null,
-                    guestPhone = g.Key,
-                    name = lastBooking.GuestName ?? "Guest",
-                    phone = g.Key,
-                    email = lastBooking.GuestEmail,
-                    lastVisitDate = lastBooking.Date,
-                    totalVisits = g.Count(),
-                    notes = clientNotes,
-                    bookingSummaries = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
-                        .Select(b => new { date = b.Date, serviceName = b.Service.Name, status = b.Status.ToString() })
+                return new MasterClientDto(
+                    ClientId: null,
+                    GuestPhone: g.Key,
+                    Name: lastBooking.GuestName ?? "Guest",
+                    Phone: g.Key,
+                    Email: lastBooking.GuestEmail,
+                    LastVisitDate: lastBooking.Date,
+                    TotalVisits: g.Count(),
+                    Notes: NotesFor(notes.Where(n => n.GuestPhone == g.Key)),
+                    BookingSummaries: g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
+                        .Select(b => new BookingSummaryDto(b.Date, b.Service.Name, b.Status.ToString()))
                         .ToList()
-                };
+                );
             });
 
-        var result = registeredClients.Cast<object>().Concat(guestClients.Cast<object>()).ToList();
+        var result = registeredClients.Concat(guestClients).ToList();
         return Ok(result);
     }
 
@@ -101,11 +137,52 @@ public class MastersController(AppDbContext db) : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-        // The author must be a member of the company the note is filed under — otherwise anyone could
-        // seed notes into a company's shared client history.
-        var isMember = await db.CompanyMembers
-            .AnyAsync(cm => cm.UserId == userId && cm.CompanyId == request.CompanyId);
-        if (!isMember) return Forbid();
+        // The author must actually work here (Master or CompanyOwner) — tightened from "any membership
+        // row" (which let a Client-role member of the company seed notes into its shared client history)
+        // to match the CompanyMembership convention used everywhere else (US-07 p.2).
+        var isStaff = await CompanyMembership.IsStaffAsync(db, request.CompanyId, userId);
+        if (!isStaff) return Forbid();
+
+        if (string.IsNullOrWhiteSpace(request.Note))
+            return BadRequest("Note text is required.");
+        if (request.Note.Length > 2000)
+            return BadRequest("Note must be 2000 characters or fewer.");
+
+        var guestPhone = request.GuestPhone;
+        if (!string.IsNullOrWhiteSpace(guestPhone))
+        {
+            if (!PhoneNormalizer.TryNormalize(guestPhone, out var canonicalGuestPhone))
+                return BadRequest("Phone number must contain 10 to 15 digits.");
+            guestPhone = canonicalGuestPhone;
+        }
+
+        // A note with neither identifier attaches to nothing GetClients can ever group it under (that
+        // query only surfaces notes via COALESCE(ClientId, GuestPhone) over this company's bookings) —
+        // it would be written successfully and then be permanently invisible (code review finding).
+        if (string.IsNullOrWhiteSpace(request.ClientId) && string.IsNullOrWhiteSpace(guestPhone))
+            return BadRequest("Either clientId or guestPhone is required.");
+
+        if (!string.IsNullOrWhiteSpace(request.ClientId))
+        {
+            // ClientId is caller-supplied and otherwise unchecked — without this, any staff member could
+            // attach a note to an arbitrary AppUser id who has never booked with this company (code
+            // review finding). "Associated with the company" mirrors exactly how GetClients above decides
+            // who counts as this company's registered client: at least one booking here.
+            var clientHasBookingHere = await db.Bookings
+                .AnyAsync(b => b.CompanyId == request.CompanyId && b.ClientId == request.ClientId);
+            if (!clientHasBookingHere)
+                return BadRequest("Client is not associated with this company.");
+        }
+
+        if (request.BookingId is { } bookingId)
+        {
+            var bookingCompanyId = await db.Bookings
+                .Where(b => b.Id == bookingId)
+                .Select(b => (Guid?)b.CompanyId)
+                .FirstOrDefaultAsync();
+            if (bookingCompanyId != request.CompanyId)
+                return BadRequest("Booking does not belong to this company.");
+        }
 
         var note = new ClientNote
         {
@@ -113,15 +190,25 @@ public class MastersController(AppDbContext db) : ControllerBase
             CompanyId = request.CompanyId,
             MasterId = userId,
             ClientId = request.ClientId,
-            GuestPhone = request.GuestPhone,
+            GuestPhone = guestPhone,
             Note = request.Note,
+            BookingId = request.BookingId,
             CreatedAt = DateTime.UtcNow
         };
 
         db.ClientNotes.Add(note);
         await db.SaveChangesAsync();
 
-        return Ok(new { note.Id });
+        var author = await db.Users.FindAsync(userId);
+        note.Master = author!;
+        // BookingId is validated above but the navigation isn't loaded by SaveChangesAsync — fetch it
+        // so the response can include bookingDate/bookingServiceName (API_CONTRACT.md §2.1) without a
+        // second round trip to the client.
+        if (request.BookingId is { } linkedBookingId)
+            note.Booking = await db.Bookings.Include(b => b.Service).FirstOrDefaultAsync(b => b.Id == linkedBookingId);
+
+        // A freshly-created note is always deletable by its own author, and never has photos yet.
+        return StatusCode(StatusCodes.Status201Created, MapNoteToDto(note, userId, callerIsOwner: false));
     }
 
     [HttpDelete("clients/notes/{id:guid}")]
@@ -129,14 +216,58 @@ public class MastersController(AppDbContext db) : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-        var note = await db.ClientNotes.FirstOrDefaultAsync(n => n.Id == id && n.MasterId == userId);
-        if (note == null) return NotFound();
+        var note = await db.ClientNotes
+            .Include(n => n.Photos)
+            .FirstOrDefaultAsync(n => n.Id == id);
 
-        db.ClientNotes.Remove(note);
+        // Cross-tenant isolation (decision, ARCHITECTURE.md §21.4): a caller who isn't staff of this
+        // note's company gets 404 either way, so the existence of someone else's note is never
+        // confirmed by a 403 instead. A caller who IS staff here but not the author/owner gets 403 —
+        // that rule is meant to be visible and testable, not hidden behind a blanket 404.
+        if (note is null) return NotFound();
+        var isStaffHere = await CompanyMembership.IsStaffAsync(db, note.CompanyId, userId);
+        if (!isStaffHere) return NotFound();
+
+        var isAuthor = note.MasterId == userId;
+        var isOwner = await CompanyMembership.IsOwnerAsync(db, note.CompanyId, userId);
+        if (!isAuthor && !isOwner) return Forbid();
+
+        var photoKeys = note.Photos.Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
+
+        db.ClientNotes.Remove(note); // cascades ClientNotePhotos rows (AppDbContext)
         await db.SaveChangesAsync();
+
+        // Files are deleted only AFTER the DB commit succeeds (ARCHITECTURE.md §1.4): the worst outcome
+        // of a crash between the two steps is an orphaned file, which the retention cleanup task picks
+        // up later — a live row pointing at a missing file is the state that must never happen.
+        foreach (var (full, thumb) in photoKeys)
+        {
+            storage.DeletePrivate(full);
+            storage.DeletePrivate(thumb);
+        }
 
         return NoContent();
     }
-}
 
-public record AddNoteRequest(Guid CompanyId, string? ClientId, string? GuestPhone, string Note);
+    private static ClientNoteDto MapNoteToDto(ClientNote n, string callerId, bool callerIsOwner)
+    {
+        var noteCanDelete = callerIsOwner || n.MasterId == callerId;
+        var authorName = n.Master is not null ? $"{n.Master.FirstName} {n.Master.LastName}".Trim() : "";
+
+        var photos = n.Photos
+            .OrderBy(p => p.CreatedAt)
+            .Select(p => new ClientNotePhotoDto(
+                p.Id,
+                $"/api/client-notes/photos/{p.Id}",
+                $"/api/client-notes/photos/{p.Id}/thumb",
+                p.Width, p.Height, p.SizeBytes, p.CreatedAt,
+                p.UploadedBy is not null ? $"{p.UploadedBy.FirstName} {p.UploadedBy.LastName}".Trim() : null,
+                CanDelete: noteCanDelete || p.UploadedByUserId == callerId))
+            .ToList();
+
+        return new ClientNoteDto(
+            n.Id, n.Note, n.CreatedAt, n.MasterId, authorName,
+            n.BookingId, n.Booking?.Date, n.Booking?.Service?.Name,
+            noteCanDelete, photos);
+    }
+}

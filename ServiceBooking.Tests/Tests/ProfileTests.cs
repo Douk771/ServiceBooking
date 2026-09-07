@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using ServiceBooking.API.Controllers;
+using ServiceBooking.API.Services;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -65,12 +66,12 @@ public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("PROF-005")]
     public async Task UpdateProfile_CannotSetOwnCommissionPercent_FieldIsNotOnTheDto()
     {
-        // UpdateProfileDto intentionally no longer has a CommissionPercent field — commission is
-        // set exclusively by the company owner via PUT /api/companies/{id}/members/{memberId}/commission
-        // (see CompaniesTests.cs). Since US-15 (B1) that value lives on CompanyMember, not AppUser, so
-        // ProfileDto.CommissionPercent (still sourced from the legacy AppUser field, kept only because
-        // DTOs don't change mid-cycle — ARCHITECTURE.md §14.2) never reflects it and reads 0 regardless
-        // of what the owner set. ProfilePage.tsx stops displaying this field (T-F4).
+        // UpdateProfileDto intentionally has no CommissionPercent field — commission is set exclusively
+        // by the company owner via PUT /api/companies/{id}/members/{memberId}/commission (see
+        // CompaniesTests.cs); since cycle A that value lives on CompanyMember, not AppUser. Cycle B
+        // (US-22) removes the account-level ProfileDto.CommissionPercent entirely — it was a legacy
+        // field the UI never showed. This test now only pins that a plain profile update still succeeds
+        // for a master with a company-level commission set.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id, commissionPercent: 30);
 
@@ -78,7 +79,7 @@ public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await response.Content.ReadFromJsonAsync<ProfileDto>();
-        updated!.CommissionPercent.Should().Be(0);
+        updated!.FirstName.Should().Be("New");
     }
 
     // ── POST /api/profile/change-password ───────────────────────────────────────────────
@@ -198,7 +199,11 @@ public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await response.Content.ReadJsonAsync<ProfileDto>();
-        updated!.Phone.Should().Be(newPhone);
+        // US-26: the canonical (digits-only) form is what's stored and returned, not the "+7..." shape
+        // the caller sent — PhoneNormalizerTests pins the normalization rule itself; this is the
+        // regression guard that ChangePhone actually applies it (was "phone stored as typed" before
+        // this cycle).
+        updated!.Phone.Should().Be(PhoneNormalizer.Normalize(newPhone));
 
         var loginWithNew = await LoginRawAsync(newPhone, "Password123!");
         loginWithNew.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -243,5 +248,67 @@ public class ProfileTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AnonymousClient().PostAsJsonAsync("/api/profile/change-phone",
             new ChangePhoneDto("Whatever123!", UniquePhone()));
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // ── POST /api/profile/avatar ──────────────────────────────────────────────
+
+    [Fact, TestCase("PROF-016")]
+    public async Task UploadAvatar_ValidImage_SetsAvatarUrlServedUnderUploadsPath()
+    {
+        var user = await RegisterAsync();
+
+        using var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(TestImages.TallJpeg());
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        content.Add(fileContent, "file", "avatar.jpg");
+
+        var response = await AuthedClient(user.Token).PostAsync("/api/profile/avatar", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var dto = await response.Content.ReadJsonAsync<ProfileDto>();
+        dto!.AvatarUrl.Should().NotBeNullOrEmpty();
+        dto.AvatarUrl.Should().StartWith("/uploads/avatars/");
+
+        var served = await AnonymousClient().GetAsync(dto.AvatarUrl);
+        served.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact, TestCase("PROF-017")]
+    public async Task UploadAvatar_ReplacesOldFile()
+    {
+        var user = await RegisterAsync();
+
+        async Task<string> UploadAsync()
+        {
+            using var content = new MultipartFormDataContent();
+            var fileContent = new ByteArrayContent(TestImages.SolidPng());
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+            content.Add(fileContent, "file", "avatar.png");
+            var res = await AuthedClient(user.Token).PostAsync("/api/profile/avatar", content);
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            return (await res.Content.ReadJsonAsync<ProfileDto>())!.AvatarUrl!;
+        }
+
+        var firstUrl = await UploadAsync();
+        var secondUrl = await UploadAsync();
+
+        secondUrl.Should().NotBe(firstUrl);
+        (await AnonymousClient().GetAsync(secondUrl)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await AnonymousClient().GetAsync(firstUrl)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact, TestCase("PROF-018")]
+    public async Task UploadAvatar_ContentIsNotAnImage_ReturnsBadRequest()
+    {
+        var user = await RegisterAsync();
+
+        using var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent([1, 2, 3, 4]);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        content.Add(fileContent, "file", "avatar.jpg");
+
+        var response = await AuthedClient(user.Token).PostAsync("/api/profile/avatar", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

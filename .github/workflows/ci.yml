@@ -45,8 +45,10 @@ jobs:
       - name: Restore
         run: dotnet restore ServiceBooking.sln
 
+      # -warnaserror only goes on now that the Blazor template project (which carried its own warning)
+      # is out of the solution — US-22, ARCHITECTURE.md §16/§19 T-B17.
       - name: Build
-        run: dotnet build ServiceBooking.sln --no-restore -c Release
+        run: dotnet build ServiceBooking.sln --no-restore -c Release -warnaserror
 
       # Fast, no-DB suite runs first so a broken build/pure-logic regression fails quickly, before
       # spending time on the functional suite against Postgres.
@@ -77,5 +79,22 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      - name: Unit tests
+        run: npm run test:run
+
       - name: Build
         run: npm run build
+
+  # Doesn't run the container or hit any endpoint — just proves the image actually builds. This matters
+  # specifically because of SkiaSharp.NativeAssets.Linux.NoDependencies (ARCHITECTURE.md §2.1): it only
+  # loads on a glibc base image, so a Dockerfile that quietly regressed to an -alpine tag, or a native
+  # asset that failed to publish, would build fine with plain `dotnet build`/`dotnet run` and only fail
+  # here or in a real container. Runs on GitHub's own Docker Engine — nothing is pushed anywhere.
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f ServiceBooking.API/Dockerfile -t servicebooking-api:ci .

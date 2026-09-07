@@ -1,12 +1,18 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { plansApi, type PlanConfig } from '../../api/plans'
+import { plansApi, type PlanConfig, type PhotoRetention } from '../../api/plans'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { getPlanErrorMessage } from '../../utils/planError'
+
+const RETENTION_LABELS: Record<PhotoRetention, string> = {
+  SixMonths: '6 месяцев',
+  TwelveMonths: '12 месяцев',
+  Forever: 'Бессрочно',
+}
 
 interface PlanForm {
   name: string
@@ -20,6 +26,8 @@ interface PlanForm {
   allowOnlinePayment: boolean
   description: string
   notifyDaysBefore: string
+  photoQuotaMb: string
+  photoRetention: PhotoRetention
 }
 
 const defaultForm: PlanForm = {
@@ -34,6 +42,8 @@ const defaultForm: PlanForm = {
   allowOnlinePayment: false,
   description: '',
   notifyDaysBefore: '7',
+  photoQuotaMb: '1024',
+  photoRetention: 'TwelveMonths',
 }
 
 function featureIcon(enabled: boolean) {
@@ -61,6 +71,9 @@ export function PlansTab() {
     queryFn: plansApi.list,
   })
 
+  // Always sends isActive: true — deliberate (US-05): saving the edit form is also how a deactivated
+  // plan gets reactivated, so "Сохранить" on an inactive plan doubles as "Активировать". The dedicated
+  // "Активировать" button below is the same call with the plan's current values, unchanged.
   const formToPayload = () => ({
     name: form.name,
     pricePerMonth: parseFloat(form.pricePerMonth) || 0,
@@ -73,6 +86,8 @@ export function PlansTab() {
     allowOnlinePayment: form.allowOnlinePayment,
     description: form.description || null,
     notifyDaysBefore: parseInt(form.notifyDaysBefore) || 7,
+    photoQuotaMb: form.photoQuotaMb.trim() === '' ? null : parseInt(form.photoQuotaMb),
+    photoRetention: form.photoRetention,
     isActive: true,
   })
 
@@ -97,6 +112,29 @@ export function PlansTab() {
 
   const deactivateMut = useMutation({
     mutationFn: (id: string) => plansApi.deactivate(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
+  })
+
+  // US-05: reactivates a plan that was previously deactivated — same PUT the edit form uses, just with
+  // the plan's own current values and isActive forced true, so it doesn't require opening the form.
+  const activateMut = useMutation({
+    mutationFn: (plan: PlanConfig) =>
+      plansApi.update(plan.id, {
+        name: plan.name,
+        pricePerMonth: plan.pricePerMonth,
+        maxEmployees: plan.maxEmployees,
+        maxCompanies: plan.maxCompanies,
+        allowOnlineBooking: plan.allowOnlineBooking,
+        allowMailing: plan.allowMailing,
+        allowAnalytics: plan.allowAnalytics,
+        allowPublicListing: plan.allowPublicListing,
+        allowOnlinePayment: plan.allowOnlinePayment,
+        description: plan.description,
+        notifyDaysBefore: plan.notifyDaysBefore,
+        photoQuotaMb: plan.photoQuotaMb,
+        photoRetention: plan.photoRetention,
+        isActive: true,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
   })
 
@@ -132,6 +170,8 @@ export function PlansTab() {
       allowOnlinePayment: plan.allowOnlinePayment,
       description: plan.description ?? '',
       notifyDaysBefore: String(plan.notifyDaysBefore),
+      photoQuotaMb: plan.photoQuotaMb !== null ? String(plan.photoQuotaMb) : '',
+      photoRetention: plan.photoRetention,
     })
     setEditingPlan(plan)
     setShowCreate(true)
@@ -188,6 +228,10 @@ export function PlansTab() {
                       <p className="text-xs text-muted mt-1">
                         Уведомление за {plan.notifyDaysBefore} дн. до деактивации
                       </p>
+                      <p className="text-xs text-muted mt-0.5">
+                        Фото клиентов: {plan.photoQuotaMb !== null ? `до ${plan.photoQuotaMb} МБ` : 'без ограничения'} ·
+                        {' '}хранятся {RETENTION_LABELS[plan.photoRetention]}
+                      </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                       <div className="flex gap-2">
@@ -220,11 +264,32 @@ export function PlansTab() {
               <p className="text-xs font-medium text-muted uppercase tracking-wide mb-2">Неактивные</p>
               <div className="grid gap-2">
                 {inactive.map(plan => (
-                  <div key={plan.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-cream-deep opacity-60">
-                    <span className="font-medium text-muted line-through">{plan.name}</span>
-                    <span className="text-xs text-muted">
-                      {plan.pricePerMonth > 0 ? `${plan.pricePerMonth} ₽/мес` : 'Бесплатно'}
-                    </span>
+                  <div key={plan.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-cream-deep flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium text-muted line-through">{plan.name}</span>
+                      <span className="text-xs text-muted">
+                        {plan.pricePerMonth > 0 ? `${plan.pricePerMonth} ₽/мес` : 'Бесплатно'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex gap-2">
+                        <Button variant="secondary" size="sm" onClick={() => openEdit(plan)}>
+                          Редактировать
+                        </Button>
+                        <Button
+                          size="sm"
+                          loading={activateMut.isPending && activateMut.variables?.id === plan.id}
+                          onClick={() => activateMut.mutate(plan)}
+                        >
+                          Активировать
+                        </Button>
+                      </div>
+                      {activateMut.isError && activateMut.variables?.id === plan.id && (
+                        <p className="text-xs text-danger text-right max-w-[220px]">
+                          {getPlanErrorMessage(activateMut.error)}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -273,6 +338,29 @@ export function PlansTab() {
                 onChange={e => setForm(f => ({ ...f, maxCompanies: e.target.value }))}
                 placeholder="∞"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Квота фото клиентов, МБ (∞)"
+                type="number"
+                min={0}
+                value={form.photoQuotaMb}
+                onChange={e => setForm(f => ({ ...f, photoQuotaMb: e.target.value }))}
+                placeholder="∞"
+              />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-medium text-[#4A4038]">Срок хранения фото</label>
+                <select
+                  value={form.photoRetention}
+                  onChange={e => setForm(f => ({ ...f, photoRetention: e.target.value as PhotoRetention }))}
+                  className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
+                >
+                  <option value="SixMonths">6 месяцев</option>
+                  <option value="TwelveMonths">12 месяцев</option>
+                  <option value="Forever">Бессрочно</option>
+                </select>
+              </div>
             </div>
 
             <div>

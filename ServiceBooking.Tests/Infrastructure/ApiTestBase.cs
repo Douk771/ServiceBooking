@@ -186,7 +186,8 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
     protected async Task<Guid> CreateTestPlanConfigAsync(
         bool allowOnlineBooking = false, bool allowMailing = false,
         bool allowAnalytics = false, bool allowPublicListing = true, bool allowOnlinePayment = false,
-        int? maxEmployees = null, int? maxCompanies = null)
+        int? maxEmployees = null, int? maxCompanies = null,
+        int? photoQuotaMb = 100, PhotoRetention photoRetention = PhotoRetention.SixMonths)
     {
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -196,6 +197,7 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
             PricePerMonth = 0, MaxEmployees = maxEmployees, MaxCompanies = maxCompanies,
             AllowOnlineBooking = allowOnlineBooking, AllowMailing = allowMailing,
             AllowAnalytics = allowAnalytics, AllowPublicListing = allowPublicListing, AllowOnlinePayment = allowOnlinePayment,
+            PhotoQuotaMb = photoQuotaMb, PhotoRetention = photoRetention,
             IsActive = true, CreatedAt = DateTime.UtcNow,
         };
         db.SubscriptionPlanConfigs.Add(config);
@@ -246,7 +248,7 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
     {
         var client = AuthedClient(token);
         var response = await client.PostAsJsonAsync("/api/services",
-            new CreateServiceDto(companyId, name ?? Unique("Service "), null, durationMinutes, price, null));
+            new CreateServiceDto(companyId, name ?? Unique("Service "), null, durationMinutes, price));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ServiceDto>())!;
     }

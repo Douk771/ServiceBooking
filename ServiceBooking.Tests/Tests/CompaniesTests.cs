@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Companies;
+using ServiceBooking.API.Services;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Tests.Infrastructure;
 
@@ -279,8 +280,10 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var (owner, company) = await CreateOwnerWithCompanyAsync();
 
         using var content = new MultipartFormDataContent();
-        var bytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 }; // not a real JPEG, content-type is what's validated
-        var fileContent = new ByteArrayContent(bytes);
+        // A genuinely decodable JPEG (US-19): the new loader checks the signature AND decodes the file,
+        // so bare magic-number bytes (accepted pre-cycle-B, when only Content-Type was trusted) are no
+        // longer enough — see CO-0xx below for that regression, which is the whole point of this cycle.
+        var fileContent = new ByteArrayContent(TestImages.SolidJpeg());
         fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
         content.Add(fileContent, "file", "logo.jpg");
 
@@ -302,6 +305,45 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var fileContent = new ByteArrayContent([1, 2, 3]);
         fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
         content.Add(fileContent, "file", "not-an-image.pdf");
+
+        var response = await AuthedClient(owner.Token).PostAsync($"/api/companies/{company.Id}/logo", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("CO-074")]
+    public async Task UploadLogo_ContentTypeClaimsImage_ButBytesAreNot_ReturnsBadRequest()
+    {
+        // US-19 p.1 / US-25 p.6 regression guard: before this cycle, only Content-Type was checked
+        // (CompaniesController.cs:271-281), so a non-image file with a spoofed image Content-Type was
+        // accepted. The new loader decides purely from the byte signature — plain text with a claimed
+        // "image/jpeg" Content-Type is rejected the same way a ".jpg" filename would be (MC-2xx shares
+        // this exact scenario for client-note photos).
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+
+        using var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent("this is not an image at all"u8.ToArray());
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        content.Add(fileContent, "file", "logo.jpg");
+
+        var response = await AuthedClient(owner.Token).PostAsync($"/api/companies/{company.Id}/logo", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Unsupported image type");
+    }
+
+    [Fact, TestCase("CO-075")]
+    public async Task UploadLogo_RealSignatureButUndecodableBytes_ReturnsBadRequest()
+    {
+        // Two independent checks (ARCHITECTURE.md §4.1 steps 5 and 8): a file whose first bytes ARE a
+        // real JPEG signature but whose content isn't a decodable image (truncated/corrupt) is rejected
+        // by the decoder, one layer past the signature check that CO-063 exercises.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+
+        using var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent([0xFF, 0xD8, 0xFF, 0xD9]); // JPEG magic bytes, no real scan data
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        content.Add(fileContent, "file", "logo.jpg");
 
         var response = await AuthedClient(owner.Token).PostAsync($"/api/companies/{company.Id}/logo", content);
 
@@ -332,7 +374,7 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         async Task<string> UploadAsync()
         {
             using var content = new MultipartFormDataContent();
-            var fileContent = new ByteArrayContent([0xFF, 0xD8, 0xFF, 0xD9]);
+            var fileContent = new ByteArrayContent(TestImages.SolidPng());
             fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
             content.Add(fileContent, "file", "logo.png");
             var res = await AuthedClient(owner.Token).PostAsync($"/api/companies/{company.Id}/logo", content);
@@ -350,6 +392,45 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         // New logo is served; the previous file was cleaned up and now 404s.
         (await AnonymousClient().GetAsync(secondUrl)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await AnonymousClient().GetAsync(firstUrl)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── GET /api/companies/{id}/photo-usage ─────────────────────────────────
+
+    [Fact, TestCase("CO-076")]
+    public async Task GetPhotoUsage_ByOwner_ReturnsQuotaAndZeroUsageForNewCompany()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+
+        var response = await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/photo-usage");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var dto = await response.Content.ReadJsonAsync<CompanyPhotoUsageDto>();
+        dto!.PhotoCount.Should().Be(0);
+        dto.UsedBytes.Should().Be(0);
+    }
+
+    [Fact, TestCase("CO-077")]
+    public async Task GetPhotoUsage_ByOutsider_ReturnsForbidden()
+    {
+        var (_, company) = await CreateOwnerWithCompanyAsync();
+        var stranger = await RegisterAsync();
+
+        var response = await AuthedClient(stranger.Token).GetAsync($"/api/companies/{company.Id}/photo-usage");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("CO-078")]
+    public async Task GetPhotoUsage_BySuperAdmin_ReturnsCountersWithoutError()
+    {
+        // Decision Q5: SuperAdmin gets numbers, never content — this is the one endpoint where that
+        // shows up as a 200, contrasted with GET /api/client-notes/photos/{id}'s 403 for the same role.
+        var (_, company) = await CreateOwnerWithCompanyAsync();
+        var admin = await LoginAsSuperAdminAsync();
+
+        var response = await AuthedClient(admin.Token).GetAsync($"/api/companies/{company.Id}/photo-usage");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact, TestCase("CO-062")]
@@ -575,12 +656,12 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // ── PUT /api/companies/{id}/members/{memberId}/commission ────────────────
 
     [Fact, TestCase("CO-021")]
-    public async Task UpdateMemberCommission_ByOwner_PersistsInMembers_ButNoLongerInProfile()
+    public async Task UpdateMemberCommission_ByOwner_PersistsInMembers()
     {
-        // US-15 (B1): commission moved from AppUser to CompanyMember, so it's per-membership now.
-        // GET /api/profile reads the legacy AppUser.CommissionPercent field, which this endpoint no
-        // longer writes — it's kept in the DTO (rule "DTOs don't change") but permanently reads 0,
-        // and ProfilePage.tsx stops displaying it (T-F4, ARCHITECTURE.md §14.2).
+        // Commission is per-membership (CompanyMember.CommissionPercent) since cycle A; cycle B (US-22)
+        // removes the account-level ProfileDto.CommissionPercent field entirely, since it never
+        // reflected this value and the UI never showed it — so GET /api/profile is no longer part of
+        // this test at all.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
         var member = await GetMemberAsync(owner.Token, company.Id, master.UserId);
@@ -591,10 +672,6 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var updatedMember = await GetMemberAsync(owner.Token, company.Id, master.UserId);
         updatedMember.CommissionPercent.Should().Be(35);
-
-        var profileResponse = await AuthedClient(master.Token).GetAsync("/api/profile");
-        var profile = await profileResponse.Content.ReadFromJsonAsync<ProfileDto>();
-        profile!.CommissionPercent.Should().Be(0);
     }
 
     [Fact, TestCase("CO-022")]
@@ -896,10 +973,13 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var member = await response.Content.ReadFromJsonAsync<MemberDto>();
-        member!.Phone.Should().Be(phone);
+        // US-26: canonical (digits-only) phone is what's stored/returned.
+        member!.Phone.Should().Be(PhoneNormalizer.Normalize(phone));
 
-        // Derived temporary password: "Sb" + last 6 digits of the phone, right-padded to 8.
-        var digits = new string(phone.Where(char.IsDigit).ToArray());
+        // Derived temporary password: "Sb" + last 6 digits of the CANONICAL phone, right-padded to 8
+        // (ARCHITECTURE.md §11.2 — for a "+7..." input like UniquePhone() this is the same tail as
+        // before, but it is now explicitly the canonical digits, not whatever the caller sent).
+        var digits = PhoneNormalizer.Normalize(phone);
         var tail = digits.Length >= 6 ? digits[^6..] : digits;
         var expectedPassword = $"Sb{tail}".PadRight(8, '0');
 

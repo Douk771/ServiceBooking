@@ -163,7 +163,7 @@ New-Item -ItemType Directory -Force -Path C:\ezbook\logs | Out-Null
 
 C:\nssm\nssm.exe install ServiceBookingApi "C:\Program Files\dotnet\dotnet.exe" "C:\ezbook\publish\api\ServiceBooking.API.dll"
 C:\nssm\nssm.exe set ServiceBookingApi AppDirectory "C:\ezbook\publish\api"
-C:\nssm\nssm.exe set ServiceBookingApi AppEnvironmentExtra ASPNETCORE_ENVIRONMENT=Production ASPNETCORE_URLS=http://localhost:5000
+C:\nssm\nssm.exe set ServiceBookingApi AppEnvironmentExtra ASPNETCORE_ENVIRONMENT=Production ASPNETCORE_URLS=http://localhost:5000 Storage__PrivateRoot=C:\ezbook\private-uploads
 C:\nssm\nssm.exe set ServiceBookingApi AppStdout C:\ezbook\logs\api-stdout.log
 C:\nssm\nssm.exe set ServiceBookingApi AppStderr C:\ezbook\logs\api-stderr.log
 C:\nssm\nssm.exe set ServiceBookingApi Start SERVICE_AUTO_START
@@ -171,6 +171,17 @@ C:\nssm\nssm.exe set ServiceBookingApi Start SERVICE_AUTO_START
 Start-Service ServiceBookingApi
 Get-Service ServiceBookingApi   # должен быть Status: Running
 ```
+
+**Два класса хранения файлов.** Публичные изображения (логотип компании, аватары, картинки услуг)
+по-прежнему лежат под `C:\ezbook\publish\api\wwwroot\uploads\` и раздаются через правило `^uploads/` в
+`web.config` (шаг 5). Фото к заметкам о клиентах — персональные данные — лежат **отдельно**, в каталоге
+из `Storage__PrivateRoot` выше (`C:\ezbook\private-uploads`, создайте его вручную командой
+`New-Item -ItemType Directory -Force -Path C:\ezbook\private-uploads`, права `Modify` — учётной записи,
+под которой работает служба; IIS этот каталог видеть не должен вовсе). **Не кладите его внутрь
+`C:\inetpub\wwwroot\...`** — IIS раздаст его как статику раньше, чем запрос дойдёт до ARR-прокси, и фото
+клиентов салонов станут публично доступны по прямой ссылке. Раздача приватных фото идёт только через
+`GET /api/client-notes/photos/{id}` — правило `^api/` в `web.config` уже его покрывает, ничего менять
+не нужно.
 
 Проверка:
 

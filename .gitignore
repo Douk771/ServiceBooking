@@ -30,7 +30,14 @@ Thumbs.db
 # Uploaded files (local disk storage — not committed)
 ServiceBooking.API/wwwroot/uploads/**
 !ServiceBooking.API/wwwroot/uploads/**/.gitkeep
+# Private storage class default root (US-19, ARCHITECTURE.md §3.3) — dev-only default, same reasoning
+# as the public uploads dir above.
+ServiceBooking.API/App_Data/
 
 # Secrets
 **/appsettings.*.json
 !**/appsettings.json
+# appsettings.Testing.json carries no secrets — just the Testing-environment overrides functional tests
+# rely on (scheduler disabled, upload rate limit raised, ARCHITECTURE.md §8.5) — must be committed so
+# the test suite behaves the same for every developer and in CI.
+!ServiceBooking.API/appsettings.Testing.json

@@ -1,4 +1,4 @@
-import { useRef, type MouseEvent } from 'react'
+import { useEffect, useRef, type MouseEvent } from 'react'
 
 /**
  * Returns handlers for a modal backdrop that closes only on a genuine backdrop click —
@@ -9,6 +9,9 @@ import { useRef, type MouseEvent } from 'react'
  * trackpad). In that case the browser dispatches the `click` on the overlay, which a
  * naive `onClick={onClose}` would treat as a dismiss.
  *
+ * Also closes on Escape (NFR §9 п. 8 of SPEC cycle B) — attached once via `document`, not on the
+ * overlay element, so it fires regardless of what currently has focus inside the modal.
+ *
  * Spread the result onto the overlay element:
  *   const dismiss = useOverlayDismiss(onClose)
  *   <div className="fixed inset-0 ..." {...dismiss}>...</div>
@@ -17,6 +20,14 @@ import { useRef, type MouseEvent } from 'react'
  */
 export function useOverlayDismiss(onClose: () => void) {
   const pressStartedOnOverlay = useRef(false)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   return {
     onMouseDown: (e: MouseEvent<HTMLElement>) => {

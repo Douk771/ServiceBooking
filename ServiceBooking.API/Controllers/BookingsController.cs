@@ -128,6 +128,17 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
                 return BadRequest("Name and phone are required for guest booking");
         }
 
+        // US-26: canonical form is what gets stored, for guest bookings same as everywhere else —
+        // otherwise the same walk-in phoned in as "8 999..." and booked online as "+7 999..." would
+        // show up as two different people in MastersController.GetClients.
+        var guestPhone = dto.GuestPhone;
+        if (!string.IsNullOrEmpty(guestPhone))
+        {
+            if (!PhoneNormalizer.TryNormalize(guestPhone, out var canonicalGuestPhone))
+                return BadRequest("Phone number must contain 10 to 15 digits.");
+            guestPhone = canonicalGuestPhone;
+        }
+
         // Plan: Free permits ONLY staff manual bookings. Any online self-booking — a guest booking for
         // themselves, or an authenticated client booking for themselves — requires the company's owner
         // account to be on a plan whose tariff config allows online booking (the resolver already
@@ -182,7 +193,7 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             // ownerless "guest" booking that anyone could later review (see ReviewsController).
             ClientId = isStaffManualBooking ? null : userId,
             GuestName = dto.GuestName,
-            GuestPhone = dto.GuestPhone,
+            GuestPhone = guestPhone,
             GuestEmail = dto.GuestEmail,
             Date = dto.Date,
             StartTime = dto.StartTime,
@@ -270,27 +281,9 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
         return Ok(MapToDto(booking, booking.Service, booking.Master, clientName));
     }
 
-    [HttpGet("my")]
-    [Authorize]
-    public async Task<ActionResult<List<BookingDto>>> GetMyBookings()
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var bookings = await db.Bookings
-            .Include(b => b.Service)
-            .Include(b => b.Master)
-            .Include(b => b.Client)
-            .Include(b => b.Company)
-            .Where(b => b.ClientId == userId)
-            .OrderByDescending(b => b.Date)
-            .ThenByDescending(b => b.StartTime)
-            .ToListAsync();
-
-        return Ok(bookings.Select(b =>
-        {
-            var name = b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Guest";
-            return MapToDto(b, b.Service, b.Master, name);
-        }));
-    }
+    // GET /api/bookings/my removed (US-22, BREAKING № 2, API_CONTRACT.md §3.3): fully superseded by
+    // GET /api/bookings/client, which does everything this did plus a status filter. Its only consumer
+    // (frontend/src/api/bookings.ts) already moved to /client.
 
     [HttpGet("client")]
     [Authorize]
@@ -462,6 +455,11 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
         var canCancel = booking.ClientId == userId || await CanManageBookingAsync(booking, userId);
         if (!canCancel) return Forbid();
 
+        // US-06: the reason now actually reaches the other side (BookingDto.cancellationReason), so it
+        // needs the same length guard every other free-text field in the product gets.
+        if (reason is { Length: > 300 })
+            return BadRequest("Cancellation reason must be 300 characters or fewer.");
+
         booking.Status = BookingStatus.Cancelled;
         booking.CancellationReason = reason;
         booking.UpdatedAt = DateTime.UtcNow;
@@ -500,8 +498,9 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
     }
 
     private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName) =>
-        new(b.Id, b.CompanyId, b.Company?.Name ?? "", b.ServiceId, s.Name, b.MasterId,
+        new(b.Id, b.CompanyId, b.Company?.Name ?? "", b.Company?.Slug ?? "", b.ServiceId, s.Name, b.MasterId,
             $"{master.FirstName} {master.LastName}", b.ClientId, clientName,
             b.GuestPhone ?? b.Client?.PhoneNumber, b.GuestEmail ?? b.Client?.Email,
-            b.Date, b.StartTime, b.EndTime, b.Status, b.PaymentStatus, b.Notes, b.CreatedAt);
+            b.Date, b.StartTime, b.EndTime, b.Status, b.PaymentStatus, b.Price, b.CancellationReason,
+            b.Notes, b.CreatedAt);
 }

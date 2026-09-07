@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/authStore'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Icon } from '../ui/Icon'
+import { Avatar } from '../ui/Avatar'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { getBookingErrorMessage } from '../../utils/bookingError'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
@@ -168,9 +169,7 @@ export function BookingModal({ service, company, onClose }: Props) {
                       onClick={() => pickMaster(m.userId)}
                       className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
-                      <div className="w-10 h-10 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-[13px] shrink-0">
-                        {m.firstName[0]}{m.lastName[0]}
-                      </div>
+                      <Avatar avatarUrl={m.avatarUrl} firstName={m.firstName} lastName={m.lastName} size={40} className="text-[13px]" />
                       <div>
                         <p className="font-semibold text-sm text-ink">{m.firstName} {m.lastName}</p>
                         {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}

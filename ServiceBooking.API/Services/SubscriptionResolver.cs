@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services;
@@ -11,20 +12,27 @@ public record EffectivePlan(
     bool AllowPublicListing,
     bool AllowOnlinePayment,
     int? MaxEmployees,
-    int? MaxCompanies)
+    int? MaxCompanies,
+    // Client-note photo storage cap in MB; null = unlimited (US-24, ARCHITECTURE.md §7.1).
+    int? PhotoQuotaMb,
+    PhotoRetention PhotoRetention)
 {
     // No usable subscription → a restrictive baseline: no paid features, and an account may have just
     // one company with one employee (the owner alone). This is what blocks free-company spam and forces
     // an upgrade before a second branch or the first extra staff member can be added. Public listing is
     // the one flag that stays true on Free — otherwise every existing unsubscribed company would
-    // silently vanish from the public directory.
+    // silently vanish from the public directory. Photo limits get the same treatment as everything else
+    // here: a low but non-zero baseline (SPEC US-24 p.2, "low-risk assumption") rather than 0/null,
+    // which would either block every upload or grant unlimited storage to unpaid accounts.
     public static readonly EffectivePlan Free = new(
         AllowOnlineBooking: false, AllowMailing: false, AllowAnalytics: false,
-        AllowPublicListing: true, AllowOnlinePayment: false, MaxEmployees: 1, MaxCompanies: 1);
+        AllowPublicListing: true, AllowOnlinePayment: false, MaxEmployees: 1, MaxCompanies: 1,
+        PhotoQuotaMb: 100, PhotoRetention: PhotoRetention.SixMonths);
 
     public static EffectivePlan FromConfig(SubscriptionPlanConfig c) => new(
         c.AllowOnlineBooking, c.AllowMailing, c.AllowAnalytics,
-        c.AllowPublicListing, c.AllowOnlinePayment, c.MaxEmployees, c.MaxCompanies);
+        c.AllowPublicListing, c.AllowOnlinePayment, c.MaxEmployees, c.MaxCompanies,
+        c.PhotoQuotaMb, c.PhotoRetention);
 }
 
 /// <summary>

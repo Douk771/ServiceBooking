@@ -131,6 +131,27 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         users.Should().Contain(u => u.Id == user.UserId);
     }
 
+    [Fact, TestCase("ADM-044")]
+    public async Task GetUsers_SearchOfNonAsciiDigitsOnly_DoesNotMatchEveryUser()
+    {
+        // Arabic-Indic digits (٠١٢٣٤) satisfy the "looks like a phone" heuristic in AdminController.GetUsers
+        // (>= 5 Unicode digits, no letters — char.IsDigit is Unicode-aware) but PhoneNormalizer.Normalize
+        // only keeps ASCII 0-9, so a naive implementation normalizes this search to "". Without the
+        // `phoneSearch.Length > 0` guard, `PhoneNumber.Contains("")` is true for every row and the search
+        // silently returns every user regardless of what was typed (code review finding, data leak).
+        var admin = await LoginAsSuperAdminAsync();
+        var uniqueTag = Unique("nonasciiguard");
+        var controlUser = await RegisterAsync(firstName: uniqueTag);
+
+        var response = await AuthedClient(admin.Token).GetAsync($"/api/admin/users?search={Uri.EscapeDataString("٠١٢٣٤")}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var users = await response.Content.ReadFromJsonAsync<List<AdminUserDto>>();
+
+        // The control user's name/email/phone contain no Arabic-Indic digits — if the search silently
+        // fell back to matching everyone, it would show up here anyway.
+        users.Should().NotContain(u => u.Id == controlUser.UserId);
+    }
+
     [Fact, TestCase("ADM-011")]
     public async Task UpdateRoles_AsSuperAdmin_ReplacesOldRolesWithNewOnes()
     {
@@ -480,14 +501,18 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var newPlan = NewPlanConfig();
         var createResponse = await adminClient.PostAsJsonAsync("/api/admin/plans", newPlan);
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var created = await createResponse.Content.ReadFromJsonAsync<SubscriptionPlanConfig>();
+        var created = await createResponse.Content.ReadJsonAsync<SubscriptionPlanConfig>();
         created!.Id.Should().NotBeEmpty();
         created.Name.Should().Be(newPlan.Name);
+        // US-24: photo quota/retention travel through the same create/update/GET cycle as every other
+        // tariff field — no separate DTO, the entity is serialized directly (API_CONTRACT.md §11).
+        created.PhotoQuotaMb.Should().Be(newPlan.PhotoQuotaMb);
+        created.PhotoRetention.Should().Be(newPlan.PhotoRetention);
 
         // GET /plans includes the new plan.
         var listResponse = await adminClient.GetAsync("/api/admin/plans");
         listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var plans = await listResponse.Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var plans = await listResponse.Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
         plans.Should().Contain(p => p.Id == created.Id);
 
         // Update.
@@ -496,21 +521,25 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         created.MaxEmployees = 5;
         created.MaxCompanies = 3;
         created.AllowAnalytics = true;
+        created.PhotoQuotaMb = 2048;
+        created.PhotoRetention = PhotoRetention.Forever;
         var updateResponse = await adminClient.PutAsJsonAsync($"/api/admin/plans/{created.Id}", created);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var updated = await updateResponse.Content.ReadFromJsonAsync<SubscriptionPlanConfig>();
+        var updated = await updateResponse.Content.ReadJsonAsync<SubscriptionPlanConfig>();
         updated!.Name.Should().Be("Updated Plan Name");
         updated.PricePerMonth.Should().Be(999.99m);
         updated.MaxEmployees.Should().Be(5);
         updated.MaxCompanies.Should().Be(3);
         updated.AllowAnalytics.Should().BeTrue();
+        updated.PhotoQuotaMb.Should().Be(2048);
+        updated.PhotoRetention.Should().Be(PhotoRetention.Forever);
 
         // Soft-delete: sets IsActive = false but GetPlans does NOT filter by IsActive, so it still shows up.
         var deleteResponse = await adminClient.DeleteAsync($"/api/admin/plans/{created.Id}");
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var listAfterDelete = await adminClient.GetAsync("/api/admin/plans");
-        var plansAfterDelete = await listAfterDelete.Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var plansAfterDelete = await listAfterDelete.Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
         var stillPresent = plansAfterDelete.Should().ContainSingle(p => p.Id == created.Id).Subject;
         stillPresent.IsActive.Should().BeFalse();
 
@@ -638,7 +667,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("1");
 
-        var plans = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var plans = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
         plans.Should().ContainSingle(p => p.Id == configId && p.IsActive);
     }
 
@@ -653,7 +682,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
         await SetSubscriptionAsync(company.Id, configId);
 
-        var existing = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var existing = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
         var plan = existing!.Single(p => p.Id == configId);
         plan.IsActive = false;
 
@@ -662,7 +691,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await response.Content.ReadAsStringAsync()).Should().Contain("1");
 
-        var after = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var after = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
         after.Should().ContainSingle(p => p.Id == configId && p.IsActive);
     }
 
@@ -675,14 +704,14 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var adminClient = AuthedClient(admin.Token);
         var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
 
-        var existing = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var existing = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
         var plan = existing!.Single(p => p.Id == configId);
         plan.IsActive = false;
 
         var response = await adminClient.PutJsonAsync($"/api/admin/plans/{configId}", plan);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var after = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadFromJsonAsync<List<SubscriptionPlanConfig>>();
+        var after = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
         after.Should().ContainSingle(p => p.Id == configId && !p.IsActive);
     }
 
@@ -757,6 +786,50 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         AllowAnalytics = false,
         Description = "Test plan",
         IsActive = true,
-        NotifyDaysBefore = 7
+        NotifyDaysBefore = 7,
+        PhotoQuotaMb = 5120,
+        PhotoRetention = PhotoRetention.TwelveMonths
     };
+
+    // ── US-24: photo quota / retention validation ────────────────────────────
+
+    [Fact, TestCase("ADM-041")]
+    public async Task CreatePlan_NegativePhotoQuota_ReturnsBadRequest()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var plan = NewPlanConfig();
+        plan.PhotoQuotaMb = -1;
+
+        var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/plans", plan);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("ADM-042")]
+    public async Task UpdatePlan_NegativePhotoQuota_ReturnsBadRequest()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var created = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", NewPlanConfig()))
+            .Content.ReadJsonAsync<SubscriptionPlanConfig>())!;
+
+        created.PhotoQuotaMb = -5;
+        var response = await adminClient.PutAsJsonAsync($"/api/admin/plans/{created.Id}", created);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("ADM-043")]
+    public async Task CreatePlan_NullPhotoQuota_MeansUnlimited_PersistsAsNull()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var plan = NewPlanConfig();
+        plan.PhotoQuotaMb = null;
+
+        var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/plans", plan);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var created = await response.Content.ReadJsonAsync<SubscriptionPlanConfig>();
+        created!.PhotoQuotaMb.Should().BeNull();
+    }
 }

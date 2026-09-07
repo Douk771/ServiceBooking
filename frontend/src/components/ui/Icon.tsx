@@ -5,6 +5,7 @@ export type IconName =
   | 'check' | 'check-circle' | 'chevron-left' | 'chevron-right' | 'chevron-down'
   | 'search' | 'user' | 'users' | 'scissors' | 'store' | 'bar-chart' | 'megaphone'
   | 'settings' | 'log-out' | 'menu' | 'plus' | 'arrow-right' | 'x' | 'credit-card' | 'alert-circle'
+  | 'trash' | 'image' | 'copy' | 'external-link'
 
 /**
  * Minimal line-icon set for the premium redesign (see design_handoff_site_redesign/README.md).
@@ -124,6 +125,34 @@ const paths: Record<IconName, JSX.Element> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 8v5M12 16.2v.1" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16" />
+      <path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7" />
+      <path d="M6 7l1 13a2 2 0 0 0 2 1.8h6a2 2 0 0 0 2-1.8l1-13" />
+      <path d="M10 11v6M14 11v6" />
+    </>
+  ),
+  image: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <circle cx="8.5" cy="9.5" r="1.7" />
+      <path d="M21 16l-5.5-5.5a2 2 0 0 0-2.8 0L4 19" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="8.5" y="8.5" width="12" height="12" rx="2.2" />
+      <path d="M15.5 8.5V5.7A2.2 2.2 0 0 0 13.3 3.5H5.7A2.2 2.2 0 0 0 3.5 5.7v7.6a2.2 2.2 0 0 0 2.2 2.2h2.8" />
+    </>
+  ),
+  'external-link': (
+    <>
+      <path d="M14 4h6v6" />
+      <path d="M10 14L20 4" />
+      <path d="M18 13.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5.5" />
     </>
   ),
 }

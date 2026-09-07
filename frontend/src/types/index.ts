@@ -76,6 +76,9 @@ export interface Booking {
   status: BookingStatus
   paymentStatus?: PaymentStatus
   price?: number
+  /** Reason the booking was cancelled, shown to whichever side didn't cancel it (US-06). Null/absent
+   *  when the booking was never cancelled, or was cancelled without a reason. */
+  cancellationReason?: string | null
   notes?: string
   createdAt: string
 }

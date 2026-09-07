@@ -20,7 +20,6 @@ export interface ProfileDto {
   firstName: string
   lastName: string
   avatarUrl?: string
-  commissionPercent: number
   roles: string[]
   /** Only present for CompanyOwner — subscriptions are bound to the owner account. */
   plan: ProfilePlanDto | null
@@ -38,4 +37,11 @@ export const profileApi = {
     api.post('/profile/change-password', { currentPassword, newPassword }),
   changePhone: (currentPassword: string, newPhone: string) =>
     api.post<ProfileDto>('/profile/change-phone', { currentPassword, newPhone }).then(r => r.data),
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<ProfileDto>('/profile/avatar', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(r => r.data)
+  },
 }

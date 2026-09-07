@@ -16,6 +16,11 @@ public class AuthController(
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
     {
+        // US-26: the account is identified by the CANONICAL phone — otherwise "8 999..." and
+        // "+7 999..." would register as two different accounts (the exact problem this history fixes).
+        if (!PhoneNormalizer.TryNormalize(dto.Phone, out var canonicalPhone))
+            return BadRequest("Phone number must contain 10 to 15 digits.");
+
         // Phone is the account identifier: it goes into UserName (which has Identity's unique index),
         // giving phone uniqueness for free. Email is optional.
         var user = new AppUser
@@ -23,8 +28,8 @@ public class AuthController(
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             Email = dto.Email,
-            UserName = dto.Phone,
-            PhoneNumber = dto.Phone
+            UserName = canonicalPhone,
+            PhoneNumber = canonicalPhone
         };
 
         var result = await userManager.CreateAsync(user, dto.Password);
@@ -41,8 +46,13 @@ public class AuthController(
     [HttpPost("login")]
     public async Task<ActionResult<AuthResponseDto>> Login(LoginDto dto)
     {
-        // UserName == phone, so look the account up by name (uses the normalized-username index).
-        var user = await userManager.FindByNameAsync(dto.Phone);
+        // Same canonical form the account was created/normalized to — this is what lets someone who
+        // registered as "8 999..." log in typing "+7 999..." (US-26, AUTH-0xx). An invalid-looking
+        // number simply won't match anything and falls through to the same 401 as any other bad login —
+        // no separate 400 here, to avoid leaking whether a number "looks right" to an attacker probing
+        // logins.
+        var canonicalPhone = PhoneNormalizer.Normalize(dto.Phone);
+        var user = await userManager.FindByNameAsync(canonicalPhone);
         if (user is null)
             return Unauthorized("Invalid credentials");
 

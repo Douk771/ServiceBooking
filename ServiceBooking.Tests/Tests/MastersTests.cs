@@ -2,22 +2,14 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
+using ServiceBooking.API.DTOs.ClientNotes;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
 public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
-    private record BookingSummaryEntry(DateOnly Date, string ServiceName, string Status);
-
-    private record MasterClientEntry(
-        string? ClientId, string? GuestPhone, string Name, string? Phone, string? Email,
-        DateOnly LastVisitDate, int TotalVisits, List<string> Notes, List<BookingSummaryEntry> BookingSummaries);
-
-    private record AddNoteResponse(Guid Id);
-
     // ── GET /api/masters/clients ──────────────────────────────────────────────
 
     [Fact, TestCase("MC-001")]
@@ -51,21 +43,18 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientEntry>>();
+        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientDto>>();
         var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
         entry.TotalVisits.Should().Be(2);
         entry.Name.Should().Be($"{clientUser.FirstName} {clientUser.LastName}");
         entry.GuestPhone.Should().BeNull();
 
-        // Contact info is always shown to a master who serves the client (US-22, decision Q10 — the
-        // "hidden until 24h after visit" rule is removed entirely, see MC-012 below).
-        entry.Phone.Should().Be(clientUser.Phone);
+        // Contact info is always shown to a master who serves the client (cycle A decision Q10 — the
+        // "hidden until 24h after visit" rule is removed entirely, see MC-012 below). Phone is canonical
+        // (digits only) — US-26.
+        entry.Phone.Should().Be("79995551234");
         entry.Email.Should().Be(clientUser.Email);
 
-        // Regression guard: MastersController.GetClients previously omitted `bookingSummaries` from
-        // its response entirely, even though MasterClientsPage.tsx's expanded "visit history" panel
-        // unconditionally called `.length`/`.map` on it — clicking any client crashed the whole page
-        // (React unmounts on an uncaught render error) because the field was `undefined`.
         entry.BookingSummaries.Should().HaveCount(2);
         entry.BookingSummaries.Should().OnlyContain(b => b.ServiceName == service.Name && b.Status == "Confirmed" && b.Date == date);
     }
@@ -79,7 +68,11 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var date = NextWeekday();
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
-        var guestPhone = "+7999" + Guid.NewGuid().ToString("N")[..7];
+        // A guest phone with enough entropy to be collision-free across a run, kept in an already-
+        // canonical (digits-only, 11-digit, leading 7) shape so the assertion below doesn't need to
+        // account for US-26 normalization separately. (Guid hex digits can include a-f, which isn't a
+        // digit — so the random suffix is taken from a decimal, not hex, representation.)
+        var guestPhone = "7999" + Math.Abs(Guid.NewGuid().GetHashCode()).ToString().PadLeft(7, '0')[..7];
         var guestBooking = await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings",
             new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(15, 0), null, "Walk-in Guest", guestPhone, "guest@test.local", null));
         guestBooking.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -87,7 +80,7 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientEntry>>();
+        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientDto>>();
         var entry = entries.Should().ContainSingle(e => e.GuestPhone == guestPhone).Which;
         entry.ClientId.Should().BeNull();
         entry.Name.Should().Be("Walk-in Guest");
@@ -99,9 +92,6 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("MC-007")]
     public async Task GetClients_BookingSummaries_ReflectStatusTransitionsAcrossActiveAndFinalizedBookings()
     {
-        // Mirrors the MyBookingsPage "client history" panel, which now shows the client's full visit
-        // history (including active, non-finalized bookings) with per-booking status badges. That relies
-        // on bookingSummaries reflecting each booking's CURRENT status, not just "Confirmed" at creation.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
         var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
@@ -132,7 +122,7 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await masterClient.GetAsync($"/api/masters/clients?companyId={company.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientEntry>>();
+        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientDto>>();
         var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
 
         entry.TotalVisits.Should().Be(3);
@@ -145,10 +135,6 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("MC-008")]
     public async Task GetClients_NoteAddedWhileBookingActive_RemainsVisibleAfterBookingIsFinalized()
     {
-        // Validates the exact workflow the new MyBookingsPage "client history" panel supports: a note
-        // left about a client is not tied to one specific booking, so it must still show up (alongside
-        // the growing visit history) regardless of what happens to the booking that was open when the
-        // note was added.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
         var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
@@ -165,22 +151,20 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var noteText = Unique("Left mid-appointment ");
         var addResponse = await masterClient.PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(company.Id, clientUser.UserId, null, noteText));
-        addResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        // Confirm the note is already visible while the booking is still active (Confirmed) — this is
-        // the "history for active bookings too" half of the requirement.
         var beforeResponse = await masterClient.GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var beforeEntry = (await beforeResponse.Content.ReadFromJsonAsync<List<MasterClientEntry>>())!
+        var beforeEntry = (await beforeResponse.Content.ReadFromJsonAsync<List<MasterClientDto>>())!
             .Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
-        beforeEntry.Notes.Should().Contain(noteText);
+        beforeEntry.Notes.Should().Contain(n => n.Note == noteText);
         beforeEntry.BookingSummaries.Should().OnlyContain(b => b.Status == "Confirmed");
 
         (await masterClient.PatchAsync($"/api/bookings/{bookingId}/noshow", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var afterResponse = await masterClient.GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var afterEntry = (await afterResponse.Content.ReadFromJsonAsync<List<MasterClientEntry>>())!
+        var afterEntry = (await afterResponse.Content.ReadFromJsonAsync<List<MasterClientDto>>())!
             .Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
-        afterEntry.Notes.Should().Contain(noteText);
+        afterEntry.Notes.Should().Contain(n => n.Note == noteText);
         afterEntry.BookingSummaries.Should().ContainSingle(b => b.Status == "NoShow");
     }
 
@@ -203,12 +187,111 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var noteText = Unique("VIP customer ");
         var addResponse = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(company.Id, clientUser.UserId, null, noteText));
-        addResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        // US-07: creation now returns 201 + the full note object, not 200 + { id }.
+        addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!;
+        created.Note.Should().Be(noteText);
+        created.AuthorId.Should().Be(master.UserId);
+        created.CanDelete.Should().BeTrue();
+        created.Photos.Should().BeEmpty();
 
         var listResponse = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var entries = await listResponse.Content.ReadFromJsonAsync<List<MasterClientEntry>>();
+        var entries = await listResponse.Content.ReadFromJsonAsync<List<MasterClientDto>>();
         var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
-        entry.Notes.Should().Contain(noteText);
+        entry.Notes.Should().Contain(n => n.Note == noteText && n.Id == created.Id);
+    }
+
+    [Fact, TestCase("MC-013")]
+    public async Task AddNote_WithBookingId_LinksTheVisitAndIsReturnedInTheNote()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var bookingResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+        var booking = (await bookingResponse.Content.ReadJsonAsync<BookingDto>())!;
+
+        var addResponse = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
+            new AddNoteRequest(company.Id, clientUser.UserId, null, Unique("Note from panel "), booking.Id));
+
+        addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!;
+        created.BookingId.Should().Be(booking.Id);
+        created.BookingDate.Should().Be(date);
+        created.BookingServiceName.Should().Be(service.Name);
+    }
+
+    [Fact, TestCase("MC-014")]
+    public async Task AddNote_WithBookingFromAnotherCompany_ReturnsBadRequest()
+    {
+        var (ownerA, companyA) = await CreateOwnerWithCompanyAsync();
+        var masterA = await AddMasterAsync(ownerA.Token, companyA.Id);
+        var serviceA = await CreateServiceAsync(ownerA.Token, companyA.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(ownerA.Token, masterA.UserId, companyA.Id, date);
+        var clientUser = await RegisterAsync();
+        var bookingResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(companyA.Id, serviceA.Id, masterA.UserId, date, new TimeOnly(9, 0), null, null, null, null, null));
+        var booking = (await bookingResponse.Content.ReadJsonAsync<BookingDto>())!;
+
+        var (ownerB, companyB) = await CreateOwnerWithCompanyAsync();
+        var masterB = await AddMasterAsync(ownerB.Token, companyB.Id);
+
+        var response = await AuthedClient(masterB.Token).PostAsJsonAsync("/api/masters/clients/notes",
+            new AddNoteRequest(companyB.Id, clientUser.UserId, null, Unique("Note "), booking.Id));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("MC-015")]
+    public async Task AddNote_EmptyText_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+
+        var response = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
+            new AddNoteRequest(company.Id, null, "+79990003333", "   "));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("MC-018")]
+    public async Task AddNote_WithNeitherClientIdNorGuestPhone_ReturnsBadRequest()
+    {
+        // A note with neither identifier attaches to nothing GetClients could ever group it under
+        // (MastersController.cs:159-163) — it would be written and then be permanently invisible.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+
+        var response = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
+            new AddNoteRequest(company.Id, null, null, Unique("Orphaned note ")));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("MC-019")]
+    public async Task AddNote_WithClientIdOfUserWithNoBookingsAtThisCompany_ReturnsBadRequest()
+    {
+        // ClientId is caller-supplied and otherwise unchecked; without the "has a booking here" guard
+        // (MastersController.cs:165-175) any staff member could attach a note to an arbitrary AppUser id
+        // who has never interacted with this company at all.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var stranger = await RegisterAsync();
+
+        var response = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
+            new AddNoteRequest(company.Id, stranger.UserId, null, Unique("Note about a stranger ")));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // And it must not have been silently written and left invisible either.
+        var entries = await (await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}"))
+            .Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        entries.Should().NotContain(e => e.ClientId == stranger.UserId);
     }
 
     // ── DELETE /api/masters/clients/notes/{id} ───────────────────────────────
@@ -221,7 +304,7 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var addResponse = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(company.Id, null, "+79990001111", Unique("Note ")));
-        var note = (await addResponse.Content.ReadFromJsonAsync<AddNoteResponse>())!;
+        var note = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!;
 
         var deleteResponse = await AuthedClient(master.Token).DeleteAsync($"/api/masters/clients/notes/{note.Id}");
 
@@ -229,18 +312,54 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     [Fact, TestCase("MC-006")]
-    public async Task DeleteNote_AsDifferentMaster_ReturnsNotFound()
+    public async Task DeleteNote_AsColleagueWhoIsNotAuthorOrOwner_ReturnsForbidden()
     {
+        // API_CONTRACT.md §2.2 / decision Q16: a colleague who works in the SAME company but is neither
+        // the author nor the CompanyOwner gets 403 (visible, testable) rather than 404 — the previous
+        // cycle's "scope the lookup by MasterId" trick, which incidentally produced 404 for this case,
+        // is gone now that the rule is explicit.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var masterA = await AddMasterAsync(owner.Token, company.Id);
         var masterB = await AddMasterAsync(owner.Token, company.Id);
 
         var addResponse = await AuthedClient(masterA.Token).PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(company.Id, null, "+79990002222", Unique("Note ")));
-        var note = (await addResponse.Content.ReadFromJsonAsync<AddNoteResponse>())!;
+        var note = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!;
 
-        // MastersController.DeleteNote scopes its lookup by `n.MasterId == userId`, so a different
-        // master's attempt doesn't find the row under their own id — resulting in 404, not 403.
+        var response = await AuthedClient(masterB.Token).DeleteAsync($"/api/masters/clients/notes/{note.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("MC-016")]
+    public async Task DeleteNote_AsCompanyOwner_DeletingAMastersNote_Succeeds()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+
+        var addResponse = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
+            new AddNoteRequest(company.Id, null, "+79990004444", Unique("Note ")));
+        var note = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!;
+
+        var response = await AuthedClient(owner.Token).DeleteAsync($"/api/masters/clients/notes/{note.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact, TestCase("MC-017")]
+    public async Task DeleteNote_FromAnotherCompany_ReturnsNotFound()
+    {
+        // Cross-tenant isolation (ARCHITECTURE.md §21.4): staff of a DIFFERENT company gets 404, not
+        // 403 — the existence of someone else's note is never confirmed.
+        var (ownerA, companyA) = await CreateOwnerWithCompanyAsync();
+        var masterA = await AddMasterAsync(ownerA.Token, companyA.Id);
+        var addResponse = await AuthedClient(masterA.Token).PostAsJsonAsync("/api/masters/clients/notes",
+            new AddNoteRequest(companyA.Id, null, "+79990005555", Unique("Note ")));
+        var note = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!;
+
+        var (ownerB, companyB) = await CreateOwnerWithCompanyAsync();
+        var masterB = await AddMasterAsync(ownerB.Token, companyB.Id);
+
         var response = await AuthedClient(masterB.Token).DeleteAsync($"/api/masters/clients/notes/{note.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -249,9 +368,6 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("MC-009")]
     public async Task Notes_AreSharedAcrossMastersWithinTheSameCompany()
     {
-        // Client history is shared within a company: a note master A writes about a client must be
-        // visible to master B when that same client shows up in B's clients list (e.g. a first booking
-        // to a new master) — so colleagues see prior context rather than starting blind.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var masterA = await AddMasterAsync(owner.Token, company.Id);
         var masterB = await AddMasterAsync(owner.Token, company.Id);
@@ -270,20 +386,16 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var sharedNote = Unique("Allergic to product X ");
         (await AuthedClient(masterA.Token).PostAsJsonAsync("/api/masters/clients/notes",
-            new AddNoteRequest(company.Id, clientUser.UserId, null, sharedNote))).StatusCode.Should().Be(HttpStatusCode.OK);
+            new AddNoteRequest(company.Id, clientUser.UserId, null, sharedNote))).StatusCode.Should().Be(HttpStatusCode.Created);
 
-        // Master B, listing the same client in the same company, sees master A's note.
         var bEntries = await (await AuthedClient(masterB.Token).GetAsync($"/api/masters/clients?companyId={company.Id}"))
-            .Content.ReadFromJsonAsync<List<MasterClientEntry>>();
-        bEntries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which.Notes.Should().Contain(sharedNote);
+            .Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        bEntries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which.Notes.Should().Contain(n => n.Note == sharedNote);
     }
 
     [Fact, TestCase("MC-010")]
     public async Task Notes_AreNotSharedAcrossDifferentCompanies()
     {
-        // Sharing is scoped to a single company. The same client books in BOTH companies (so they're
-        // listed in each), but a note filed in company A must NOT surface when the client is listed in
-        // company B — separate businesses keep separate client histories.
         var date = NextWeekday();
         var clientUser = await RegisterAsync();
 
@@ -305,18 +417,16 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var noteInA = Unique("Note filed in company A ");
         (await AuthedClient(masterA.Token).PostAsJsonAsync("/api/masters/clients/notes",
-            new AddNoteRequest(companyA.Id, clientUser.UserId, null, noteInA))).StatusCode.Should().Be(HttpStatusCode.OK);
+            new AddNoteRequest(companyA.Id, clientUser.UserId, null, noteInA))).StatusCode.Should().Be(HttpStatusCode.Created);
 
-        // Master B lists the same client (who did book in B) — the company-A note must not appear.
         var bEntries = await (await AuthedClient(masterB.Token).GetAsync($"/api/masters/clients?companyId={companyB.Id}"))
-            .Content.ReadFromJsonAsync<List<MasterClientEntry>>();
-        bEntries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which.Notes.Should().NotContain(noteInA);
+            .Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        bEntries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which.Notes.Should().NotContain(n => n.Note == noteInA);
     }
 
     [Fact, TestCase("MC-011")]
     public async Task AddNote_ByNonMemberOfThatCompany_ReturnsForbidden()
     {
-        // Only a member of the company may file a note into its shared client history.
         var (_, company) = await CreateOwnerWithCompanyAsync();
         var stranger = await RegisterAsync();
 
@@ -329,10 +439,6 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("MC-012")]
     public async Task GetClients_VisitMoreThan24HoursAgo_StillShowsContact()
     {
-        // US-22 (decision Q10): the old rule hid phone/email once the visit was more than 24h in the
-        // past. It's removed with no replacement — contact stays visible regardless of how long ago the
-        // client visited. Backdating the booking directly through the DB is the only way to reach this
-        // state: the API never accepts a past date, and there's no endpoint to age one after creation.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
         var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
@@ -353,7 +459,7 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         }
 
         var response = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientEntry>>();
+        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientDto>>();
 
         var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
         entry.Phone.Should().Be(clientUser.Phone);

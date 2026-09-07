@@ -22,6 +22,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<MailLog> MailLogs => Set<MailLog>();
     public DbSet<SubscriptionPlanConfig> SubscriptionPlanConfigs => Set<SubscriptionPlanConfig>();
     public DbSet<SubscriptionChangeLog> SubscriptionChangeLogs => Set<SubscriptionChangeLog>();
+    public DbSet<ClientNotePhoto> ClientNotePhotos => Set<ClientNotePhoto>();
+    public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -113,6 +115,32 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(n => n.Master).WithMany().HasForeignKey(n => n.MasterId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(n => n.Client).WithMany().HasForeignKey(n => n.ClientId).OnDelete(DeleteBehavior.SetNull);
+            // SetNull rather than Cascade: deleting a booking (the product never does this today — see
+            // Booking's own comment) must not delete the note and its photos with it, since the work was
+            // still performed (US-20 p.5, ARCHITECTURE.md §5.1).
+            e.HasOne(n => n.Booking).WithMany().HasForeignKey(n => n.BookingId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<ClientNotePhoto>(e =>
+        {
+            e.HasOne(p => p.ClientNote).WithMany(n => n.Photos)
+                .HasForeignKey(p => p.ClientNoteId).OnDelete(DeleteBehavior.Cascade);
+            // Deleting the uploader must not delete company data: notes and photos belong to the
+            // company, not to the employee (same rule as ClientNote.MasterId's comment and RemoveMember,
+            // US-20 p.4). This is also what makes the phone-normalisation migration's account merges
+            // safe (ARCHITECTURE.md §14.2) — a merged-away account's uploads simply lose an attribution,
+            // not the photo itself.
+            e.HasOne(p => p.UploadedBy).WithMany()
+                .HasForeignKey(p => p.UploadedByUserId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(p => p.ClientNoteId);
+            e.HasIndex(p => new { p.CompanyId, p.CreatedAt }); // quota sum AND retention scan (§6.1, §7.2)
+            e.HasIndex(p => new { p.ClientNoteId, p.ContentHash }).IsUnique(); // idempotent re-upload, §6.3
+        });
+
+        builder.Entity<ScheduledTaskState>(e =>
+        {
+            e.HasKey(s => s.Name);
+            e.Property(s => s.Name).HasMaxLength(100);
         });
 
         builder.Entity<MailLog>(e => {

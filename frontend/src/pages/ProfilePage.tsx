@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { AxiosError } from 'axios'
@@ -9,6 +9,9 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Icon } from '../components/ui/Icon'
+import { Avatar } from '../components/ui/Avatar'
+import { formatPhone } from '../utils/phone'
+import { getUploadErrorMessage } from '../utils/uploadError'
 
 const roleLabel: Record<string, string> = {
   Client: 'Клиент', Master: 'Мастер', CompanyOwner: 'Владелец', SuperAdmin: 'Супер-администратор',
@@ -67,10 +70,22 @@ export function ProfilePage() {
   const qc = useQueryClient()
   const [pwdSuccess, setPwdSuccess] = useState(false)
   const [phoneSuccess, setPhoneSuccess] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const [avatarError, setAvatarError] = useState('')
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['profile'],
     queryFn: profileApi.get,
+  })
+
+  // The avatar is shown from `profile.avatarUrl` (this page's own query) rather than from the auth
+  // store's `user` — that type doesn't carry it, and the only place besides here that displays a
+  // user's own avatar today is a future concern, not this one.
+  const avatarMut = useMutation({
+    mutationFn: (file: File) => profileApi.uploadAvatar(file),
+    onMutate: () => setAvatarError(''),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
+    onError: (err: unknown) => setAvatarError(getUploadErrorMessage(err)),
   })
 
   // ── Profile form ──────────────────────────────────────────────────────────
@@ -141,12 +156,29 @@ export function ProfilePage() {
 
       {/* Avatar + roles */}
       <Card className="p-[26px] mb-[18px] flex items-center gap-5">
-        <div className="w-[72px] h-[72px] rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-2xl shrink-0">
-          {profile?.firstName[0]}{profile?.lastName[0]}
+        <div className="relative shrink-0">
+          {profile && (
+            <Avatar avatarUrl={profile.avatarUrl} firstName={profile.firstName} lastName={profile.lastName} size={72} className="text-2xl" />
+          )}
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) avatarMut.mutate(f); e.target.value = '' }}
+          />
+          <button
+            type="button"
+            onClick={() => avatarInputRef.current?.click()}
+            aria-label="Изменить фото профиля"
+            className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-ink text-cream flex items-center justify-center hover:bg-ink/90 transition-colors"
+          >
+            <Icon name="image" size={12} strokeWidth={1.8} />
+          </button>
         </div>
         <div>
           <p className="text-[19px] font-semibold text-ink">{profile?.firstName} {profile?.lastName}</p>
-          <p className="text-[13.5px] text-ink-soft mt-1">{profile?.phone}{profile?.email ? ` · ${profile.email}` : ''}</p>
+          <p className="text-[13.5px] text-ink-soft mt-1">{formatPhone(profile?.phone)}{profile?.email ? ` · ${profile.email}` : ''}</p>
           <div className="flex flex-wrap gap-1.5 mt-2.5">
             {profile?.roles.map(r => (
               <span key={r} className="text-xs font-semibold bg-cream-deep text-gold-dark px-2.5 py-1 rounded-full">
@@ -154,6 +186,8 @@ export function ProfilePage() {
               </span>
             ))}
           </div>
+          {avatarMut.isPending && <p className="text-xs text-muted mt-1.5">Загрузка фото…</p>}
+          {avatarError && <p className="text-xs text-danger mt-1.5">{avatarError}</p>}
         </div>
       </Card>
 

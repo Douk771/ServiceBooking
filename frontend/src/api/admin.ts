@@ -16,7 +16,6 @@ export interface AdminUser {
   firstName: string
   lastName: string
   avatarUrl?: string
-  commissionPercent: number
   createdAt: string
   roles: string[]
   ownedCompanyCount: number
@@ -33,6 +32,7 @@ export interface AdminCompany {
   email?: string
   phone?: string
   isActive: boolean
+  allowSelfBooking: boolean
   createdAt: string
   memberCount: number
   bookingCount: number

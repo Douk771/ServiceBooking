@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Auth;
+using ServiceBooking.API.Services;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -21,7 +22,9 @@ public class AuthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
         body!.Token.Should().NotBeNullOrEmpty();
-        body.Phone.Should().Be(phone);
+        // US-26: the canonical (digits-only) form is stored and returned, not whatever shape the
+        // caller sent — was "phone stored as typed" before this cycle.
+        body.Phone.Should().Be(PhoneNormalizer.Normalize(phone));
         body.Email.Should().BeNull(); // email is optional and wasn't supplied
         body.Roles.Should().ContainSingle().Which.Should().Be("Client");
     }
@@ -57,7 +60,7 @@ public class AuthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
-        body!.Phone.Should().Be(phone);
+        body!.Phone.Should().Be(PhoneNormalizer.Normalize(phone));
     }
 
     [Fact, TestCase("AUTH-005")]

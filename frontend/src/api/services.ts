@@ -17,4 +17,11 @@ export const servicesApi = {
   update: (id: string, data: CreateServicePayload) =>
     api.put<Service>(`/services/${id}`, data).then((r) => r.data),
   delete: (id: string) => api.delete(`/services/${id}`),
+  uploadImage: (id: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<Service>(`/services/${id}/image`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data)
+  },
 }

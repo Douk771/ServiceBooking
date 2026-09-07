@@ -3,9 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { mastersApi, type MasterClient } from '../api/masters'
+import { clientNotesApi } from '../api/clientNotes'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
+import { NoteCard } from '../components/clientNotes/NoteCard'
+import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
+import { formatPhone } from '../utils/phone'
 
 const STATUS_LABELS: Record<string, string> = {
   Pending: 'Ожидает',
@@ -31,18 +35,31 @@ interface ClientCardProps {
 function ClientCard({ client, companyId }: ClientCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [newNote, setNewNote] = useState('')
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
+  const [photoUploadError, setPhotoUploadError] = useState('')
   const qc = useQueryClient()
 
   const addNoteMut = useMutation({
-    mutationFn: () =>
-      mastersApi.addNote({
+    mutationFn: async () => {
+      const created = await mastersApi.addNote({
         companyId,
         clientId: client.clientId ?? undefined,
         guestPhone: client.guestPhone ?? undefined,
         note: newNote,
-      }),
+      })
+      setPhotoUploadError('')
+      for (const file of pendingPhotos) {
+        try {
+          await clientNotesApi.uploadPhoto(created.id, file)
+        } catch {
+          setPhotoUploadError('Заметка сохранена, но не все фото удалось загрузить.')
+        }
+      }
+      return created
+    },
     onSuccess: () => {
       setNewNote('')
+      setPendingPhotos([])
       qc.invalidateQueries({ queryKey: ['master-clients', companyId] })
     },
   })
@@ -72,7 +89,7 @@ function ClientCard({ client, companyId }: ClientCardProps) {
         </div>
         <div className="text-right shrink-0">
           {client.phone && (
-            <a href={`tel:${client.phone}`} onClick={e => e.stopPropagation()} className="text-sm text-gold hover:text-gold-dark">{client.phone}</a>
+            <a href={`tel:+${client.phone}`} onClick={e => e.stopPropagation()} className="text-sm text-gold hover:text-gold-dark">{formatPhone(client.phone)}</a>
           )}
           {client.email && <p className="text-xs text-muted">{client.email}</p>}
         </div>
@@ -107,31 +124,42 @@ function ClientCard({ client, companyId }: ClientCardProps) {
             {client.notes.length === 0 ? (
               <p className="text-sm text-muted mb-2">Нет заметок</p>
             ) : (
-              <ul className="flex flex-col gap-1 mb-2">
-                {client.notes.map((n, i) => (
-                  <li key={i} className="text-sm text-ink-soft bg-cream-deep rounded-xl px-3 py-2">
-                    {n}
-                  </li>
+              <ul className="flex flex-col gap-1.5 mb-2">
+                {client.notes.map((n) => (
+                  <NoteCard key={n.id} note={n} companyId={companyId} />
                 ))}
               </ul>
             )}
-            <div className="flex gap-2 mt-2">
-              <input
-                type="text"
-                value={newNote}
-                onChange={e => setNewNote(e.target.value)}
-                placeholder="Добавить заметку…"
-                className="flex-1 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
-                onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate() }}
+            <div className="flex flex-col gap-2 mt-2">
+              <label className="sr-only" htmlFor={`new-note-${client.clientId ?? client.guestPhone}`}>
+                Добавить заметку
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id={`new-note-${client.clientId ?? client.guestPhone}`}
+                  type="text"
+                  value={newNote}
+                  onChange={e => setNewNote(e.target.value)}
+                  placeholder="Добавить заметку…"
+                  className="flex-1 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
+                  onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate() }}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => addNoteMut.mutate()}
+                  disabled={!newNote.trim()}
+                  loading={addNoteMut.isPending}
+                >
+                  Добавить
+                </Button>
+              </div>
+              <NotePhotoUploader
+                remainingSlots={5 - pendingPhotos.length}
+                value={pendingPhotos}
+                onChange={setPendingPhotos}
+                compact
               />
-              <Button
-                size="sm"
-                onClick={() => addNoteMut.mutate()}
-                disabled={!newNote.trim()}
-                loading={addNoteMut.isPending}
-              >
-                Добавить
-              </Button>
+              {photoUploadError && <p className="text-xs text-danger">{photoUploadError}</p>}
             </div>
           </div>
         </div>

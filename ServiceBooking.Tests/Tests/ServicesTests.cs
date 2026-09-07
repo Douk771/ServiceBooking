@@ -37,7 +37,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var (owner, company) = await CreateOwnerWithCompanyAsync();
 
         var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/services",
-            new CreateServiceDto(company.Id, "Haircut", "A basic haircut", 45, 800, null));
+            new CreateServiceDto(company.Id, "Haircut", "A basic haircut", 45, 800));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var created = await response.Content.ReadFromJsonAsync<ServiceDto>();
@@ -56,7 +56,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var master = await AddMasterAsync(owner.Token, company.Id);
 
         var response = await AuthedClient(master.Token).PostAsJsonAsync("/api/services",
-            new CreateServiceDto(company.Id, "Manicure", null, 30, 500, null));
+            new CreateServiceDto(company.Id, "Manicure", null, 30, 500));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -68,7 +68,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var stranger = await RegisterAsync();
 
         var response = await AuthedClient(stranger.Token).PostAsJsonAsync("/api/services",
-            new CreateServiceDto(company.Id, "Unauthorized Service", null, 30, 500, null));
+            new CreateServiceDto(company.Id, "Unauthorized Service", null, 30, 500));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -79,7 +79,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var (_, company) = await CreateOwnerWithCompanyAsync();
 
         var response = await AnonymousClient().PostAsJsonAsync("/api/services",
-            new CreateServiceDto(company.Id, "Guest Service", null, 30, 500, null));
+            new CreateServiceDto(company.Id, "Guest Service", null, 30, 500));
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -93,7 +93,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var service = await CreateServiceAsync(owner.Token, company.Id, name: "Old Name", durationMinutes: 30, price: 500);
 
         var response = await AuthedClient(owner.Token).PutAsJsonAsync($"/api/services/{service.Id}",
-            new CreateServiceDto(company.Id, "New Name", "New description", 60, 1200, null));
+            new CreateServiceDto(company.Id, "New Name", "New description", 60, 1200));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await response.Content.ReadFromJsonAsync<ServiceDto>();
@@ -111,7 +111,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var service = await CreateServiceAsync(owner.Token, company.Id, name: "Original", price: 500);
 
         var response = await AuthedClient(master.Token).PutAsJsonAsync($"/api/services/{service.Id}",
-            new CreateServiceDto(company.Id, "Master Updated", null, 20, 300, null));
+            new CreateServiceDto(company.Id, "Master Updated", null, 20, 300));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
@@ -128,7 +128,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var user = await RegisterAsync();
 
         var response = await AuthedClient(user.Token).PutAsJsonAsync($"/api/services/{Guid.NewGuid()}",
-            new CreateServiceDto(Guid.NewGuid(), "Doesn't Matter", null, 30, 500, null));
+            new CreateServiceDto(Guid.NewGuid(), "Doesn't Matter", null, 30, 500));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -141,7 +141,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var stranger = await RegisterAsync();
 
         var response = await AuthedClient(stranger.Token).PutAsJsonAsync($"/api/services/{service.Id}",
-            new CreateServiceDto(company.Id, "Hijacked", null, 30, 500, null));
+            new CreateServiceDto(company.Id, "Hijacked", null, 30, 500));
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -227,7 +227,7 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var (owner, company) = await CreateOwnerWithCompanyAsync();
 
         var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/services",
-            new CreateServiceDto(company.Id, "Zero Duration", null, 0, 500, null));
+            new CreateServiceDto(company.Id, "Zero Duration", null, 0, 500));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -244,11 +244,63 @@ public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var admin = await LoginAsSuperAdminAsync();
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/services",
-            new CreateServiceDto(Guid.NewGuid(), "Ghost Company Service", null, 30, 500, null));
+            new CreateServiceDto(Guid.NewGuid(), "Ghost Company Service", null, 30, 500));
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         body.GetProperty("traceId").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    // ── POST /api/services/{id}/image ────────────────────────────────────────
+
+    [Fact, TestCase("SVC-017")]
+    public async Task UploadImage_ByOwner_SetsImageUrl()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+
+        using var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(TestImages.SolidJpeg());
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        content.Add(fileContent, "file", "service.jpg");
+
+        var response = await AuthedClient(owner.Token).PostAsync($"/api/services/{service.Id}/image", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var dto = await response.Content.ReadJsonAsync<ServiceDto>();
+        dto!.ImageUrl.Should().StartWith("/uploads/services/");
+    }
+
+    [Fact, TestCase("SVC-018")]
+    public async Task UploadImage_ByMaster_ReturnsForbidden()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+
+        using var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(TestImages.SolidJpeg());
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        content.Add(fileContent, "file", "service.jpg");
+
+        var response = await AuthedClient(master.Token).PostAsync($"/api/services/{service.Id}/image", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("SVC-019")]
+    public async Task UploadImage_UnknownService_ReturnsNotFound()
+    {
+        var (owner, _) = await CreateOwnerWithCompanyAsync();
+
+        using var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(TestImages.SolidJpeg());
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        content.Add(fileContent, "file", "service.jpg");
+
+        var response = await AuthedClient(owner.Token).PostAsync($"/api/services/{Guid.NewGuid()}/image", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
