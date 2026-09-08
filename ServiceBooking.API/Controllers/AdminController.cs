@@ -266,7 +266,26 @@ public class AdminController(
         var newOwner = await userManager.FindByIdAsync(dto.NewOwnerUserId);
         if (newOwner is null) return BadRequest("User not found");
 
+        var oldOwnerUserId = company.OwnerUserId;
         company.OwnerUserId = newOwner.Id;
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
+
+        // US-46, ARCHITECTURE.md §19.3 (bug found during that history's design): Company.OwnerUserId
+        // and the CompanyMember row carrying the CompanyOwner role must move together. Before this fix
+        // they didn't — this endpoint changed OwnerUserId and granted the Identity role to the new
+        // owner, but never touched the old owner's CompanyMember row, so IdentityRoleSync (which is
+        // driven purely by CompanyMember rows) would recompute CompanyOwner for someone no longer the
+        // owner. The old owner keeps their membership — they may still work here — but is demoted to
+        // Master rather than left holding a CompanyOwner row for a company they no longer own.
+        if (oldOwnerUserId != newOwner.Id)
+        {
+            var oldMembership = await db.CompanyMembers.FirstOrDefaultAsync(cm =>
+                cm.CompanyId == id && cm.UserId == oldOwnerUserId && cm.Role == UserRole.CompanyOwner);
+            if (oldMembership is not null)
+                oldMembership.Role = UserRole.Master;
+        }
 
         var membership = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.CompanyId == id && cm.UserId == newOwner.Id);
         if (membership is null)
@@ -274,10 +293,15 @@ public class AdminController(
         else
             membership.Role = UserRole.CompanyOwner;
 
-        if (!await userManager.IsInRoleAsync(newOwner, "CompanyOwner"))
-            await userManager.AddToRoleAsync(newOwner, "CompanyOwner");
-
         await db.SaveChangesAsync();
+        // US-46: recompute roles for BOTH the new owner (gains CompanyOwner) and the old one (may lose
+        // it, unless they still hold it via another company — SyncAsync recomputes from ALL of their
+        // CompanyMember rows, not just this company's).
+        await IdentityRoleSync.SyncAsync(db, userManager, newOwner.Id);
+        if (oldOwnerUserId != newOwner.Id)
+            await IdentityRoleSync.SyncAsync(db, userManager, oldOwnerUserId);
+        await transaction.CommitAsync();
+
         return NoContent();
     }
 

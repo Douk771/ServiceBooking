@@ -217,12 +217,12 @@ public class CompaniesController(
         db.Companies.Add(company);
         db.CompanyMembers.Add(member);
 
-        // Ensure user has CompanyOwner role
-        var user = await userManager.FindByIdAsync(userId);
-        if (user != null && !await userManager.IsInRoleAsync(user, "CompanyOwner"))
-            await userManager.AddToRoleAsync(user, "CompanyOwner");
-
         await db.SaveChangesAsync();
+        // US-46, ARCHITECTURE.md §8.3/§8.4: recompute Identity roles from the CompanyMember rows just
+        // written, inside the same transaction and AFTER SaveChangesAsync — UserManager writes its own
+        // AspNetUserRoles changes through the same AppDbContext, so this is the order that keeps both
+        // writes in one commit instead of a separate round trip.
+        await IdentityRoleSync.SyncAsync(db, userManager, userId);
         await limitTransaction.CommitAsync();
 
         // `plan` was already resolved above for the MaxCompanies check — reuse it so the response
@@ -404,10 +404,9 @@ public class CompaniesController(
 
         db.CompanyMembers.Add(member);
 
-        if (!await userManager.IsInRoleAsync(user, dto.Role))
-            await userManager.AddToRoleAsync(user, dto.Role);
-
         await db.SaveChangesAsync();
+        // US-46: same "membership change → SaveChangesAsync → SyncAsync → commit" order as Create.
+        await IdentityRoleSync.SyncAsync(db, userManager, user.Id);
         await limitTransaction.CommitAsync();
 
         // New members always start at 0 commission on this membership — same as before, just no longer
@@ -440,8 +439,20 @@ public class CompaniesController(
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
 
+        var removedUserId = member.UserId;
+
+        // US-46 p.5, ARCHITECTURE.md §8.4: this is the point that used to leave a stale Identity role
+        // behind entirely (removing a member never revoked Master/CompanyOwner) — the lock is the same
+        // one AddMember already takes for the seat-limit check, extended here for the first time to
+        // RemoveMember.
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
+
         db.CompanyMembers.Remove(member);
         await db.SaveChangesAsync();
+        await IdentityRoleSync.SyncAsync(db, userManager, removedUserId);
+        await transaction.CommitAsync();
+
         return NoContent();
     }
 
