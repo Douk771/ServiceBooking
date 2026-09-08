@@ -81,6 +81,17 @@ export interface Booking {
   cancellationReason?: string | null
   notes?: string
   createdAt: string
+  /** Version of the privacy policy in effect at the moment of a guest booking (US-37 §7.2). Null on
+   *  staff-created bookings and on bookings made by an already-registered client. Never rewritten
+   *  retroactively — this is why it's the version, not a live reference. */
+  consentPrivacyVersion?: string | null
+  /** Version of the terms of service in effect at the moment of a guest booking. Same nullability as
+   *  consentPrivacyVersion. */
+  consentTermsVersion?: string | null
+  consentAcceptedAt?: string | null
+  /** true when the client who made this booking has since deleted their account — the booking is
+   *  anonymized (clientId/guest fields cleared) but kept for the salon's records (ARCHITECTURE.md §5.2). */
+  clientDeleted?: boolean
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'
@@ -103,4 +114,48 @@ export interface User {
   firstName: string
   lastName: string
   roles: string[]
+}
+
+/** API_CONTRACT.md §11.1 — the single pagination envelope shared by all four paginated endpoints
+ *  in this cycle (admin users, admin companies, company reviews, master clients). `hasNext` is
+ *  computed by the server (`page * pageSize < total`) — the frontend never derives it itself. */
+export interface Paged<T> {
+  items: T[]
+  page: number
+  pageSize: number
+  total: number
+  hasNext: boolean
+}
+
+export type LegalDocumentType = 'Privacy' | 'Terms'
+export type LegalChangeKind = 'Material' | 'Editorial'
+
+/** API_CONTRACT.md §1 — metadata only, no text. Used for the footer/registration links and to
+ *  compare versions without paying for the HTML body. */
+export interface LegalDocumentMeta {
+  type: LegalDocumentType
+  title: string
+  version: string
+  effectiveFrom: string
+  isDraft: boolean
+  changeKind: LegalChangeKind
+}
+
+/** API_CONTRACT.md §2 — metadata plus the HTML fragment for /privacy and /terms. */
+export interface LegalDocument extends LegalDocumentMeta {
+  contentHtml: string
+}
+
+/** API_CONTRACT.md §3 — one entry per document type in GET /api/legal/consent-status. */
+export interface ConsentStatusDocument {
+  type: LegalDocumentType
+  version: string
+  acceptedVersion: string | null
+  changeKind: LegalChangeKind
+}
+
+export interface ConsentStatus {
+  requiresAcceptance: boolean
+  showBanner: boolean
+  documents: ConsentStatusDocument[]
 }
