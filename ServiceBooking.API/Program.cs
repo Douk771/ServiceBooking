@@ -5,12 +5,15 @@ using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Health;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.API.Services.Scheduling.Tasks;
 using ServiceBooking.Core.Entities;
@@ -225,6 +228,12 @@ builder.Services.AddRateLimiter(o =>
         await ctx.HttpContext.Response.WriteAsync("Too many uploads. Try again in a minute.");
 });
 
+// Health checks (US-43, ARCHITECTURE.md §10): "live" never touches anything and always answers 200 —
+// it just proves the process is up and can accept HTTP. "ready" additionally proves the database is
+// reachable and migrated, tagged "ready" so MapHealthChecks below can select just this one check.
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseReadyHealthCheck>("database", tags: ["ready"]);
+
 // Scheduled background tasks (US-21): one BackgroundService that ticks whatever IScheduledTask
 // implementations are registered — adding a second task later is exactly one more line like this one,
 // the runner itself never changes (ARCHITECTURE.md §8.1).
@@ -284,6 +293,27 @@ app.UseAuthorization();
 app.UseRateLimiter(); // no global limiter configured — a no-op except where [EnableRateLimiting] is used
 app.MapControllers();
 
+// Health checks (US-43, ARCHITECTURE.md §10.1). Deliberately NOT [EnableRateLimiting] anywhere near
+// these two routes: monitoring must not be able to lock itself out, and there is no global limiter in
+// this project (app.UseRateLimiter() above is a no-op except where the attribute is applied), so simply
+// never applying the attribute here is the whole mechanism (§9.3). Both are anonymous — a health probe
+// cannot authenticate.
+//
+// Custom two-field ResponseWriter for both endpoints: the framework's default JSON payload includes
+// each check's exception message, which for "database" would leak a connection string fragment or a
+// driver error straight onto a public, unauthenticated endpoint (US-43 p.3).
+app.MapHealthChecks("/api/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false, // no checks run at all — this route never touches the database
+    ResponseWriter = WriteHealthResponse
+}).AllowAnonymous();
+
+app.MapHealthChecks("/api/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = WriteHealthResponse
+}).AllowAnonymous();
+
 // Seed roles and super-admin on startup
 using (var scope = app.Services.CreateScope())
 {
@@ -327,6 +357,21 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Own JSON body for both health endpoints, two fields only (US-43 p.3): the framework's default
+// UIResponseWriter serializes every check's exception message, which for "database" would put a
+// connection-string fragment or driver error onto a public, unauthenticated endpoint. "failed" carries
+// whichever check's HealthCheckResult.Unhealthy(description) fired first — "database" or "migrations"
+// (DatabaseReadyHealthCheck), the two values API_CONTRACT.md §10.2 documents.
+static Task WriteHealthResponse(HttpContext context, HealthReport report)
+{
+    context.Response.ContentType = "application/json";
+    if (report.Status == HealthStatus.Healthy)
+        return context.Response.WriteAsync("""{"status":"Healthy"}""");
+
+    var failed = report.Entries.Values.FirstOrDefault(e => e.Status != HealthStatus.Healthy).Description ?? "database";
+    return context.Response.WriteAsJsonAsync(new { status = "Unhealthy", failed });
+}
 
 // Exposes the implicit Program class so the functional test project can spin up
 // the app in-memory via WebApplicationFactory<Program>.
