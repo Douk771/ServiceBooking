@@ -109,6 +109,14 @@ export function EmbedPage() {
         <a href="/" className="hover:text-muted transition-colors">
           EZBOOK
         </a>
+        {' · '}
+        <a href="/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors">
+          Политика обработки данных
+        </a>
+        {' · '}
+        <a href="/terms" target="_blank" rel="noopener noreferrer" className="hover:text-muted transition-colors">
+          Соглашение
+        </a>
       </p>
 
       {selectedService && company && (

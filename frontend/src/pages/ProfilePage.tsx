@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
+import { Link } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { format } from 'date-fns'
 import { profileApi, type ProfilePlanDto } from '../api/profile'
@@ -142,6 +143,33 @@ export function ProfilePage() {
     },
   })
 
+  // ── Data export (US-38) ──────────────────────────────────────────────────
+  const [exportError, setExportError] = useState('')
+  const exportMut = useMutation({
+    mutationFn: () => profileApi.exportData(),
+    onMutate: () => setExportError(''),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `servicebooking-export-${format(new Date(), 'yyyy-MM-dd')}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    },
+    onError: async (err: unknown) => {
+      // With `responseType: 'blob'`, axios puts the error body in a Blob too — read it as text to
+      // get the plain-text 429 message the server sent (API_CONTRACT.md §0.2, §8).
+      if (err instanceof AxiosError && err.response?.data instanceof Blob) {
+        const text = await err.response.data.text()
+        setExportError(text || 'Не удалось скачать данные. Попробуйте снова.')
+      } else {
+        setExportError('Не удалось скачать данные. Попробуйте снова.')
+      }
+    },
+  })
+
   if (isLoading) {
     return (
       <div className="max-w-[640px] mx-auto px-8 py-11">
@@ -272,6 +300,35 @@ export function ProfilePage() {
           )}
           <Button type="submit" variant="secondary" loading={phoneMut.isPending}>Изменить телефон</Button>
         </form>
+      </Card>
+
+      {/* Data export (US-38) */}
+      <Card className="p-[26px] mt-[18px]">
+        <h2 className="text-[15.5px] font-semibold text-ink mb-3">Мои данные</h2>
+        <p className="text-sm text-ink-soft mb-1.5">
+          В файл войдут: профиль, история согласий, компании, где вы состоите, ваши записи и отзывы, а
+          также перечень заметок и фотографий о вас (без содержимого).
+        </p>
+        <p className="text-sm text-ink-soft mb-4">
+          В файл <strong>не войдут</strong>: текст заметок сотрудников салона о вас и содержимое
+          фотографий, загруженных салоном, — это результат работы салона, а не ваши данные.
+          Запросить их можно у салона напрямую.
+        </p>
+        {exportError && <p className="text-sm text-danger mb-3">{exportError}</p>}
+        <Button variant="secondary" loading={exportMut.isPending} onClick={() => exportMut.mutate()}>
+          Скачать мои данные
+        </Button>
+      </Card>
+
+      {/* Account deletion (US-39) */}
+      <Card className="p-[26px] mt-[18px]">
+        <h2 className="text-[15.5px] font-semibold text-ink mb-2">Удаление аккаунта</h2>
+        <p className="text-sm text-ink-soft mb-4">
+          Удаление персональных данных и закрытие доступа. Действие необратимо.
+        </p>
+        <Link to="/profile/delete">
+          <Button variant="danger">Удалить аккаунт</Button>
+        </Link>
       </Card>
     </div>
   )

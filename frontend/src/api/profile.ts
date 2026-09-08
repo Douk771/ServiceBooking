@@ -44,4 +44,11 @@ export const profileApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
+  /** GET /api/profile/export — US-38. Fetched as a blob (token still needed, hence going through the
+   *  same axios instance rather than a plain <a href>) and turned into a download via createObjectURL
+   *  by the caller (API_CONTRACT.md §8). */
+  exportData: () => api.get('/profile/export', { responseType: 'blob' }).then(r => r.data as Blob),
+  /** POST /api/profile/delete-account — US-39. 204 on success. */
+  deleteAccount: (currentPassword: string) =>
+    api.post('/profile/delete-account', { currentPassword }),
 }

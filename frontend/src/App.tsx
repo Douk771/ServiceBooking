@@ -12,6 +12,9 @@ import { CabinetPage } from './pages/CabinetPage'
 import { CompanyManagePage } from './pages/owner/CompanyManagePage'
 import { ProfilePage } from './pages/ProfilePage'
 import { AdminPage } from './pages/AdminPage'
+import { LegalDocumentPage } from './pages/LegalDocumentPage'
+import { DeleteAccountPage } from './pages/DeleteAccountPage'
+import { Footer } from './components/layout/Footer'
 import { useAuthStore } from './store/authStore'
 
 const queryClient = new QueryClient({
@@ -69,15 +72,21 @@ export default function App() {
                 <Route path="/profile" element={
                   <ProtectedRoute><ProfilePage /></ProtectedRoute>
                 } />
+                <Route path="/profile/delete" element={
+                  <ProtectedRoute><DeleteAccountPage /></ProtectedRoute>
+                } />
                 <Route path="/admin" element={
                   <ProtectedRoute roles={['SuperAdmin']}>
                     <AdminPage />
                   </ProtectedRoute>
                 } />
+                <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
+                <Route path="/terms" element={<LegalDocumentPage type="Terms" />} />
                 {/* Legacy redirects */}
                 <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
                 <Route path="/owner" element={<Navigate to="/cabinet" replace />} />
               </Routes>
+              <Footer />
             </div>
           } />
         </Routes>
