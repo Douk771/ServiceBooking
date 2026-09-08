@@ -13,6 +13,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Serilog;
+using Serilog.Events;
+using Serilog.Formatting.Compact;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Health;
 using ServiceBooking.API.Services.Legal;
@@ -23,6 +26,59 @@ using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Serilog replaces the host logger entirely (US-45, ARCHITECTURE.md §11.1) — both stdout (docker logs)
+// and a rolling file (survives container recreation, docker logs doesn't). CompactJsonFormatter on
+// both, so a log line is one JSON object whether it's read live or grepped from disk a day later.
+// PhoneMaskingEnricher is the second/third rung of §11.3's defence; it self-limits to Warning+/exception
+// events, so it costs nothing on the Information-level "request completed" line every request produces.
+builder.Host.UseSerilog((context, services, loggerConfig) =>
+{
+    loggerConfig
+        .MinimumLevel.Information()
+        // EF Core logs every SQL statement (with parameter values — i.e. phone numbers, names) at
+        // Information by default; without this override that alone would be both a wall of noise and a
+        // PII leak that bypasses the enricher (enrichers see the RENDERED event, but EF's own query
+        // logger writes parameter values into properties the enricher would still catch — this override
+        // means it never has to).
+        .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+        .Enrich.FromLogContext()
+        .Enrich.With<PhoneMaskingEnricher>()
+        .WriteTo.Console(new CompactJsonFormatter())
+        .WriteTo.File(new CompactJsonFormatter(), Path.Combine("logs", "app-.json"),
+            rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14,
+            fileSizeLimitBytes: 100 * 1024 * 1024, rollOnFileSizeLimit: true);
+
+    // Sink to GlitchTip via the Sentry protocol (ARCHITECTURE.md §11.4). Empty DSN → sink not
+    // registered at all, same pattern as CaptchaService.IsEnforced: Development/Testing carry no DSN by
+    // configuration, so nothing leaves the process there, and a Production deployment that hasn't set
+    // one up yet still starts and runs (US-45 pp. 8–9).
+    var sentryDsn = context.Configuration["Sentry:Dsn"];
+    if (!string.IsNullOrWhiteSpace(sentryDsn))
+    {
+        loggerConfig.WriteTo.Sentry(o =>
+        {
+            o.Dsn = sentryDsn;
+            o.MinimumEventLevel = LogEventLevel.Error; // only real failures become GlitchTip issues
+            o.MinimumBreadcrumbLevel = LogEventLevel.Warning;
+            o.SendDefaultPii = false;
+            o.Environment = context.HostingEnvironment.EnvironmentName;
+            o.Release = context.Configuration["Sentry:Release"];
+            // Same masking rule as the log pipeline (§11.3 p.2), applied to the top-level free-text
+            // message — the one place Sentry's own SDK doesn't go through Serilog's property pipeline.
+            // Individual exception frame messages/stack traces are not scanned (out of scope for this
+            // cycle's pass); by construction they should never carry raw request data in the first
+            // place, since .NET stack traces contain source locations, not caught values.
+            o.SetBeforeSend((sentryEvent, _) =>
+            {
+                if (sentryEvent.Message?.Message is { } message)
+                    sentryEvent.Message.Message = LogMasking.MaskPhoneSequences(message);
+                return sentryEvent;
+            });
+        });
+    }
+});
 
 // Fail-fast on obviously-unsafe deployment configuration (US-10 → US-48, ARCHITECTURE.md §13). Runs
 // before anything reads these values, and BEFORE builder.Build() — so a misconfigured deployment never
@@ -383,6 +439,32 @@ if (!isDeveloperEnvironment)
             "Terms document the service cannot legally accept registrations. Check the container logs " +
             "above for the specific validation error and fix legal.json or the mounted files.");
 }
+
+// One line per request (US-45, ARCHITECTURE.md §11.1) — method, path, status, duration for free, plus
+// traceId/userId via EnrichDiagnosticContext. Runs BEFORE UseExceptionHandler (architecture decision:
+// the request-completed log line must exist even for the request that trips the exception handler,
+// carrying the SAME traceId the 500 response's problem+json puts in front of the operator — that
+// pairing is the whole point of "найди по traceId" in DEPLOY.md).
+app.UseSerilogRequestLogging(opts =>
+{
+    // Every DELIBERATE 4xx (400/402/403/404/409/429/451) logs at Information, never Warning/Error
+    // (US-45 p.5) — they are normal traffic, not incidents. Only an unhandled exception or a 5xx is
+    // Warning/Error-worthy from the request-logging middleware's point of view; background-task and
+    // infrastructure-level Warning/Error events (§11.2) are logged separately, by their own code, not
+    // through this line.
+    // UseExceptionHandler (registered below) already catches the exception and writes the 500 body
+    // before this middleware runs its own logging (it wraps everything AFTER it, this line included),
+    // so `ex` is normally null here even for a 500 — the status code is the reliable signal.
+    opts.GetLevel = (httpContext, _, ex) =>
+        ex is not null || httpContext.Response.StatusCode >= 500 ? LogEventLevel.Error : LogEventLevel.Information;
+    opts.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        // The SAME value the 500 handler puts into problem+json's traceId — if these two ever diverge,
+        // "найди по traceId" in DEPLOY.md stops working, which is the whole point of this line existing.
+        diagnosticContext.Set("traceId", Activity.Current?.Id ?? httpContext.TraceIdentifier);
+        diagnosticContext.Set("userId", httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier));
+    };
+});
 
 // In Development the framework's developer exception page already renders the full exception, so the
 // handler is only wired up elsewhere. Everywhere else an unhandled exception must still produce a

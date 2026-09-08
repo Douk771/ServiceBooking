@@ -37,6 +37,9 @@ ServiceBooking.API/wwwroot/uploads/**
 ServiceBooking.API/App_Data/*
 !ServiceBooking.API/App_Data/legal/
 
+# Serilog's rolling file sink (US-45, ARCHITECTURE.md §11.1) — a runtime artifact, not data or config.
+ServiceBooking.API/logs/
+
 # Secrets
 **/appsettings.*.json
 !**/appsettings.json
