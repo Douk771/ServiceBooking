@@ -310,7 +310,11 @@ function RolesModal({ user, onClose }: { user: AdminUser; onClose: () => void })
   const ALL_ROLES = ['Client', 'Master', 'CompanyOwner', 'SuperAdmin']
   const [selected, setSelected] = useState<Set<string>>(new Set(user.roles))
 
-  const toggle = (r: string) => setSelected(prev => { const n = new Set(prev); n.has(r) ? n.delete(r) : n.add(r); return n })
+  const toggle = (r: string) => setSelected(prev => {
+    const n = new Set(prev)
+    if (n.has(r)) n.delete(r); else n.add(r)
+    return n
+  })
 
   const mut = useMutation({
     mutationFn: () => adminApi.updateUserRoles(user.id, [...selected]),

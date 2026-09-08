@@ -292,6 +292,11 @@ export function ScheduleTab({ companyId, selfMasterId }: Props) {
 
   const onSaved = () => qc.invalidateQueries({ queryKey: ['working-hours', masterId, companyId, from, to] })
 
+  // Declared before the early return below — a hook after a conditional `return` breaks the rule
+  // that hooks run unconditionally in the same order on every render (react-hooks/rules-of-hooks);
+  // members loading in vs. becoming empty between renders would otherwise skip this hook sometimes.
+  const [showTemplate, setShowTemplate] = useState(false)
+
   if (!selfMasterId && masters.length === 0 && members !== undefined) {
     return (
       <Card className="p-12 text-center text-muted">
@@ -300,8 +305,6 @@ export function ScheduleTab({ companyId, selfMasterId }: Props) {
       </Card>
     )
   }
-
-  const [showTemplate, setShowTemplate] = useState(false)
 
   return (
     <div>
