@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -205,13 +206,32 @@ builder.Services.AddHttpClient<CaptchaService>();
 builder.Services.AddSingleton<FileStorage>();
 builder.Services.AddScoped<ImageUploadService>();
 
-// Rate limiting (US-19 p.5, ARCHITECTURE.md §10): one named policy, applied only via
-// [EnableRateLimiting("uploads")] on the four upload endpoints — app.UseRateLimiter() below is a no-op
-// for everything else. Partitioned by user id (falls back to IP for the theoretical anonymous case,
-// though every upload endpoint also requires [Authorize]).
+// ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
+// gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default
+// KnownNetworks/KnownProxies ship with loopback pre-trusted, which happens to be exactly the address
+// every request arrives from inside THIS container, so leaving the defaults in place would mean
+// trusting X-Forwarded-For from anyone who can reach the port at all. Both are cleared, then only what
+// the operator declared in config is trusted back in.
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    o.ForwardLimit = 1; // exactly one hop: nginx. More hops in the chain would be spoofable.
+    o.KnownNetworks.Clear();
+    o.KnownProxies.Clear();
+    foreach (var cidr in builder.Configuration.GetSection("ForwardedHeaders:TrustedNetworks").Get<string[]>() ?? [])
+        o.KnownNetworks.Add(IPNetwork.Parse(cidr));
+});
+
+// Rate limiting (US-19 p.5, US-42, ARCHITECTURE.md §9–§10). Five named policies, each applied only via
+// [EnableRateLimiting("...")] on its specific endpoint(s) — app.UseRateLimiter() below is a no-op for
+// everything else, so health checks are unaffected by construction, without needing an explicit
+// exclusion (§9.3).
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // uploads: unchanged from cycle B — same policy name, same partition key, same rejection text
+    // (uploadError.ts on the frontend is written against this exact string).
     o.AddPolicy("uploads", ctx => RateLimitPartition.GetFixedWindowLimiter(
         partitionKey: ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)
                       ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
@@ -221,12 +241,89 @@ builder.Services.AddRateLimiter(o =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0 // reject immediately rather than queue — no benefit to making the caller wait
         }));
-    // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §13) — the built-in rejection
-    // response is empty, so OnRejected has to write the body itself or uploadError.ts couldn't tell a
-    // 429 apart from a 403.
-    o.OnRejected = async (ctx, _) =>
-        await ctx.HttpContext.Response.WriteAsync("Too many uploads. Try again in a minute.");
+
+    // auth-login / auth-register: partitioned purely by the (ForwardedHeaders-resolved) caller IP —
+    // there is no account yet to key on for register, and for login keying on IP is the point (Identity
+    // lockout already protects a single account; this protects against credential-stuffing across many
+    // accounts from one address).
+    o.AddPolicy("auth-login", ctx => IpWindowPolicy(ctx, "auth-login", defaultPermitLimit: 10, defaultWindowMinutes: 1));
+    o.AddPolicy("auth-register", ctx => IpWindowPolicy(ctx, "auth-register", defaultPermitLimit: 5, defaultWindowMinutes: 60));
+
+    // booking-create: an anonymous caller is keyed and capped by IP (guest booking spam); an
+    // authenticated caller is keyed by their own user id with a limit an order of magnitude higher —
+    // staff recording ten walk-ins in a row never touches the guest limit, because they are not counted
+    // by IP at all (ARCHITECTURE.md §9.2). "Authenticated" here only means the JWT parsed — this policy
+    // has no idea whether the caller is staff of the target company, and per SPEC §7 p.1 it must not
+    // query the database to find out.
+    o.AddPolicy("booking-create", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var windowMinutes = config.GetValue("RateLimits:booking-create:WindowMinutes", 60);
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is not null)
+            return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = config.GetValue("RateLimits:booking-create:PermitLimit", 120),
+                Window = TimeSpan.FromMinutes(windowMinutes),
+                QueueLimit = 0
+            });
+
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:booking-create:AnonymousPermitLimit", 10),
+            Window = TimeSpan.FromMinutes(windowMinutes),
+            QueueLimit = 0
+        });
+    });
+
+    // data-export: keyed by user id only — the endpoint requires [Authorize], there is no anonymous case.
+    o.AddPolicy("data-export", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:data-export:PermitLimit", 3),
+            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:data-export:WindowMinutes", 1440)),
+            QueueLimit = 0
+        });
+    });
+
+    // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
+    // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
+    // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
+    // text (ARCHITECTURE.md §9.4) — "uploads" keeps its original English string unchanged, since
+    // uploadError.ts is written against that exact value.
+    o.OnRejected = async (ctx, cancellationToken) =>
+    {
+        var policyName = ctx.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
+        var message = policyName switch
+        {
+            "auth-login" => "Слишком много попыток входа. Повторите через минуту.",
+            "auth-register" => "Слишком много регистраций с этого адреса. Повторите позже.",
+            "booking-create" => "Слишком много записей с этого адреса. Повторите позже.",
+            "data-export" => "Выгрузка доступна не чаще трёх раз в сутки.",
+            _ => "Too many uploads. Try again in a minute."
+        };
+        await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
+    };
 });
+
+// Shared by auth-login/auth-register: partition purely by the caller's (ForwardedHeaders-resolved) IP,
+// PermitLimit/WindowMinutes read from RateLimits:{policyName}:* with the given defaults.
+static RateLimitPartition<string> IpWindowPolicy(
+    HttpContext ctx, string policyName, int defaultPermitLimit, int defaultWindowMinutes)
+{
+    var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+    var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+    return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+    {
+        PermitLimit = config.GetValue($"RateLimits:{policyName}:PermitLimit", defaultPermitLimit),
+        Window = TimeSpan.FromMinutes(config.GetValue($"RateLimits:{policyName}:WindowMinutes", defaultWindowMinutes)),
+        QueueLimit = 0
+    });
+}
 
 // Health checks (US-43, ARCHITECTURE.md §10): "live" never touches anything and always answers 200 —
 // it just proves the process is up and can accept HTTP. "ready" additionally proves the database is
@@ -241,6 +338,11 @@ builder.Services.AddScoped<IScheduledTask, PhotoRetentionCleanupTask>();
 builder.Services.AddHostedService<ScheduledTaskRunner>();
 
 var app = builder.Build();
+
+// FIRST in the pipeline, before anything reads Connection.RemoteIpAddress — the rate limiter's IP
+// partitions (auth-login, auth-register, booking-create) and Serilog's request logging both need the
+// REAL client address, not nginx's, and both run later in this pipeline (ARCHITECTURE.md §9.1).
+app.UseForwardedHeaders();
 
 // In Development the framework's developer exception page already renders the full exception, so the
 // handler is only wired up elsewhere. Everywhere else an unhandled exception must still produce a

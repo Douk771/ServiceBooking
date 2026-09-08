@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
@@ -14,6 +15,7 @@ public class AuthController(
     TokenService tokenService) : ControllerBase
 {
     [HttpPost("register")]
+    [EnableRateLimiting("auth-register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
     {
         // US-26: the account is identified by the CANONICAL phone — otherwise "8 999..." and
@@ -44,6 +46,7 @@ public class AuthController(
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting("auth-login")]
     public async Task<ActionResult<AuthResponseDto>> Login(LoginDto dto)
     {
         // Same canonical form the account was created/normalized to — this is what lets someone who

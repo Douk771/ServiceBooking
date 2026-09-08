@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.Services;
@@ -77,6 +78,7 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
     }
 
     [HttpPost]
+    [EnableRateLimiting("booking-create")]
     public async Task<ActionResult<BookingDto>> Create(CreateBookingDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
