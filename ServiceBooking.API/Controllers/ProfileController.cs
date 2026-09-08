@@ -167,6 +167,131 @@ public class ProfileController(
         return Ok(await MapToDtoAsync(user, roles));
     }
 
+    // US-39, ARCHITECTURE.md §7.3/§7.4/§19.2. POST, not DELETE: needs a body with the current password,
+    // the same jest as change-phone above — DELETE with a body is poorly supported by proxies/clients,
+    // and this product already has the convention.
+    //
+    // The row survives as a tombstone (DeletedAtUtc) rather than being physically removed — the
+    // decision that departs from SPEC's literal wording (US-39 p.2), recorded in ARCHITECTURE.md §19.2:
+    // Booking.Master/Review.Master/Company.Owner/MailLog.SentBy are Restrict (a physical delete would
+    // simply fail), and ClientNote.Master is Cascade, so it would silently destroy every note this
+    // person wrote about OTHER clients — company data, explicitly protected by US-39 p.3 / risk R4.
+    // Every personal-data field on the row is scrubbed instead; DeletedAtUtc is what makes that
+    // "scrubbed on purpose" rather than indistinguishable from corruption.
+    [HttpPost("delete-account")]
+    public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountDto dto)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var user = await userManager.FindByIdAsync(userId);
+        if (user is null) return NotFound();
+
+        if (!await userManager.CheckPasswordAsync(user, dto.CurrentPassword))
+            return BadRequest("Неверный текущий пароль");
+
+        // Gate #2: a company owner must transfer or close their company first — deleting the account
+        // out from under an active business is not this endpoint's job (API_CONTRACT.md §9).
+        if (await db.Companies.AnyAsync(c => c.OwnerUserId == userId))
+            return Conflict("За вами числится компания. Передайте её другому владельцу или обратитесь " +
+                             "в поддержку — тогда аккаунт можно будет удалить.");
+
+        // Captured before any field on `user` is scrubbed below — needed to find guest-path bookings/
+        // notes recorded under this phone before the account existed (same match MastersController.
+        // GetClients and the export endpoint use), and to clean up the old avatar file after commit.
+        var canonicalPhone = user.PhoneNumber;
+        var oldAvatarUrl = user.AvatarUrl;
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+
+        // Step 1: consent records are this person's own data about their own acceptance — deleted
+        // outright, unlike everything below which is either company data (kept) or this person's
+        // participation in company data (anonymized, not erased).
+        var consents = await db.UserConsents.Where(c => c.UserId == userId).ToListAsync();
+        db.UserConsents.RemoveRange(consents);
+
+        // Step 2: notes ABOUT this person (by ClientId, or by guest phone for pre-registration visits) —
+        // gather photo storage keys before the cascade delete removes the ClientNotePhoto rows, since
+        // the files themselves live outside the database (ARCHITECTURE.md §1.4: DB row goes first, file
+        // cleanup happens only after a successful commit).
+        var notesAboutMe = await db.ClientNotes
+            .Include(n => n.Photos)
+            .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+            .ToListAsync();
+        var photoKeysToDelete = notesAboutMe.SelectMany(n => n.Photos)
+            .Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
+        db.ClientNotes.RemoveRange(notesAboutMe); // cascades ClientNotePhotos (AppDbContext)
+
+        // Step 3: bookings are anonymized, never deleted — the salon's revenue/commission history for a
+        // completed visit must stay intact (US-39 p.3). Matches both the client path and the guest path
+        // (a booking made before this person registered, found the same way as step 2's notes).
+        var bookingsToAnonymize = await db.Bookings
+            .Where(b => b.ClientId == userId || (canonicalPhone != null && b.GuestPhone == canonicalPhone))
+            .ToListAsync();
+        foreach (var booking in bookingsToAnonymize)
+        {
+            booking.ClientId = null;
+            booking.GuestName = null;
+            booking.GuestPhone = null;
+            booking.GuestEmail = null;
+            booking.Notes = null;
+            booking.ClientDeleted = true;
+        }
+
+        // Step 4: reviews are depersonalized, not deleted — the review is about the salon, and the
+        // rating/text remain meaningful without the author's identity attached.
+        var reviewsToDeperson = await db.Reviews.Where(r => r.ClientId == userId).ToListAsync();
+        foreach (var review in reviewsToDeperson)
+        {
+            review.ClientId = null;
+            review.ReviewerName = "Удалённый пользователь";
+        }
+
+        // Step 5: company memberships are removed and Identity roles resynced — same lock this person's
+        // OWN AddMember/RemoveMember calls would have taken, extended here to every company they belong
+        // to (US-46, ARCHITECTURE.md §7.4 step 5).
+        var membershipCompanyIds = await db.CompanyMembers
+            .Where(cm => cm.UserId == userId).Select(cm => cm.CompanyId).Distinct().ToListAsync();
+        foreach (var companyId in membershipCompanyIds)
+            await AdvisoryLock.AcquireAsync(db, $"company-members:{companyId}");
+
+        var memberships = await db.CompanyMembers.Where(cm => cm.UserId == userId).ToListAsync();
+        db.CompanyMembers.RemoveRange(memberships);
+        await db.SaveChangesAsync();
+        await IdentityRoleSync.SyncAsync(db, userManager, userId);
+
+        // Step 6: the account itself becomes a tombstone. Every personal-data field is scrubbed; login
+        // is made impossible two ways at once (PasswordHash cleared AND a permanent lockout), and the
+        // phone number is freed for reuse by clearing UserName/PhoneNumber (Identity's unique index is
+        // on NormalizedUserName, so "deleted-{id}" being unique is what makes this safe to repeat).
+        user.FirstName = "Удалённый";
+        user.LastName = "пользователь";
+        user.AvatarUrl = null;
+        user.PasswordHash = null;
+        user.LockoutEnabled = true;
+        user.LockoutEnd = DateTimeOffset.MaxValue;
+        user.DeletedAtUtc = DateTime.UtcNow;
+        await userManager.SetEmailAsync(user, null);
+        await userManager.SetPhoneNumberAsync(user, null);
+        await userManager.SetUserNameAsync(user, $"deleted-{user.Id}");
+        // Rotates SecurityStamp, which is what actually invalidates every token issued before this
+        // moment — Program.cs's OnTokenValidated compares a hash of it on every request (US-39 p.7).
+        await userManager.UpdateSecurityStampAsync(user);
+
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        // Files only after the commit succeeds (ARCHITECTURE.md §1.4) — the worst outcome of a crash
+        // between the two is an orphaned file, which photo-retention-cleanup sweeps up later; a DB row
+        // pointing at a missing file is the state that must never happen.
+        foreach (var (full, thumb) in photoKeysToDelete)
+        {
+            storage.DeletePrivate(full);
+            storage.DeletePrivate(thumb);
+        }
+        storage.DeletePublic(oldAvatarUrl);
+
+        return NoContent();
+    }
+
     // US-25: any authenticated user replaces their OWN avatar — the id comes from the token, there is
     // no route parameter, so a caller can't reach anyone else's avatar through this endpoint (403 is
     // unreachable here, per API_CONTRACT.md §7). Public storage class: the avatar is meant to be seen by
@@ -244,6 +369,7 @@ public record ProfilePlanDto(
 public record UpdateProfileDto(string FirstName, string LastName);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
 public record ChangePhoneDto(string CurrentPassword, string NewPhone);
+public record DeleteAccountDto(string CurrentPassword);
 
 // US-38 export DTOs (API_CONTRACT.md §8) — deliberately their own shape, not a reuse of ProfileDto/
 // BookingDto/etc.: the export is a legal artifact with its own contract (no ids of other people's
