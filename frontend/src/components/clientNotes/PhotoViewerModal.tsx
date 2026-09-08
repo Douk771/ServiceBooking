@@ -71,7 +71,10 @@ export function PhotoViewerModal({
           <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
             <div className="text-sm text-ink-soft">
               {bookingDate && (
-                <p>{bookingServiceName ? `${bookingServiceName} · ` : ''}{bookingDate}</p>
+                <p>
+                  {bookingServiceName ? `${bookingServiceName} · ` : ''}
+                  {bookingDate}
+                </p>
               )}
               <p className="text-xs text-muted mt-0.5">
                 Загрузил(а): {photo.uploadedByName ?? 'аккаунт удалён'}

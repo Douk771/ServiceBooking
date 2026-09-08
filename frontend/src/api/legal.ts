@@ -3,8 +3,7 @@ import type { ConsentStatus, LegalDocument, LegalDocumentMeta, LegalDocumentType
 
 export const legalApi = {
   /** GET /api/legal/documents — public, metadata for both documents (API_CONTRACT.md §1). */
-  getDocuments: () =>
-    api.get<{ documents: LegalDocumentMeta[] }>('/legal/documents').then((r) => r.data.documents),
+  getDocuments: () => api.get<{ documents: LegalDocumentMeta[] }>('/legal/documents').then((r) => r.data.documents),
 
   /** GET /api/legal/documents/{type} — public, metadata + HTML text of one document
    *  (API_CONTRACT.md §2). `type` is case-insensitive server-side; we always send lowercase. */

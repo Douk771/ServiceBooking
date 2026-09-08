@@ -11,13 +11,15 @@ function axiosErrorWith(status: number, data: unknown): AxiosError {
 
 describe('getAuthErrorMessage', () => {
   it('429 on login → server text (rate limit)', () => {
-    expect(getAuthErrorMessage(axiosErrorWith(429, 'Слишком много попыток входа. Повторите через минуту.')))
-      .toBe('Слишком много попыток входа. Повторите через минуту.')
+    expect(getAuthErrorMessage(axiosErrorWith(429, 'Слишком много попыток входа. Повторите через минуту.'))).toBe(
+      'Слишком много попыток входа. Повторите через минуту.',
+    )
   })
 
   it('429 on register → server text (rate limit)', () => {
-    expect(getAuthErrorMessage(axiosErrorWith(429, 'Слишком много регистраций с этого адреса. Повторите позже.')))
-      .toBe('Слишком много регистраций с этого адреса. Повторите позже.')
+    expect(getAuthErrorMessage(axiosErrorWith(429, 'Слишком много регистраций с этого адреса. Повторите позже.'))).toBe(
+      'Слишком много регистраций с этого адреса. Повторите позже.',
+    )
   })
 
   it('429 with empty body → generic fallback', () => {
@@ -25,13 +27,15 @@ describe('getAuthErrorMessage', () => {
   })
 
   it('400 missing acceptedLegal → consent message', () => {
-    expect(getAuthErrorMessage(axiosErrorWith(400, 'Consent to the Terms of Service and the Privacy Policy is required.')))
-      .toBe('Необходимо принять условия использования и политику обработки персональных данных.')
+    expect(
+      getAuthErrorMessage(axiosErrorWith(400, 'Consent to the Terms of Service and the Privacy Policy is required.')),
+    ).toBe('Необходимо принять условия использования и политику обработки персональных данных.')
   })
 
   it('400 with other text → server text as-is', () => {
-    expect(getAuthErrorMessage(axiosErrorWith(400, 'Phone number must contain 10 to 15 digits.')))
-      .toBe('Phone number must contain 10 to 15 digits.')
+    expect(getAuthErrorMessage(axiosErrorWith(400, 'Phone number must contain 10 to 15 digits.'))).toBe(
+      'Phone number must contain 10 to 15 digits.',
+    )
   })
 
   it('500 → generic fallback', () => {

@@ -15,8 +15,7 @@ export function getBookingErrorMessage(error: unknown): string {
 
   switch (status) {
     case 402:
-      if (lower.includes('expired'))
-        return 'Подписка компании истекла — запись временно недоступна.'
+      if (lower.includes('expired')) return 'Подписка компании истекла — запись временно недоступна.'
       return 'Онлайн-запись в этой компании сейчас недоступна.'
     case 403:
       return 'Онлайн-запись недоступна — запись только через мастера.'
@@ -28,10 +27,8 @@ export function getBookingErrorMessage(error: unknown): string {
       // US-42 `booking-create` policy — same fixed text regardless of guest/staff (API_CONTRACT.md §7.3).
       return serverMsg || 'Слишком много записей с этого адреса. Повторите позже.'
     case 400:
-      if (lower.includes('captcha'))
-        return 'Не удалось пройти проверку. Обновите страницу и попробуйте снова.'
-      if (lower.includes('name') || lower.includes('phone'))
-        return 'Укажите имя и телефон.'
+      if (lower.includes('captcha')) return 'Не удалось пройти проверку. Обновите страницу и попробуйте снова.'
+      if (lower.includes('name') || lower.includes('phone')) return 'Укажите имя и телефон.'
       return serverMsg || 'Проверьте введённые данные.'
     default:
       return 'Произошла ошибка. Попробуйте снова.'

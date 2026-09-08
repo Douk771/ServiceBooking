@@ -25,7 +25,9 @@ class FakeIntersectionObserver implements IntersectionObserver {
   }
   disconnect() {}
   unobserve() {}
-  takeRecords(): IntersectionObserverEntry[] { return [] }
+  takeRecords(): IntersectionObserverEntry[] {
+    return []
+  }
 }
 
 beforeEach(() => {

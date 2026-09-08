@@ -21,10 +21,10 @@ function StatTile({ label, value }: { label: string; value: string }) {
 }
 
 function BarChart({ data }: { data: { date: string; revenue: number }[] }) {
-  const max = Math.max(...data.map(d => d.revenue), 1)
+  const max = Math.max(...data.map((d) => d.revenue), 1)
   return (
     <div className="flex items-end gap-1 h-32 overflow-x-auto pb-1">
-      {data.map(d => {
+      {data.map((d) => {
         const pct = (d.revenue / max) * 100
         const label = d.date.slice(5) // MM-DD
         return (
@@ -52,18 +52,21 @@ export function DashboardTab({ companies }: Props) {
 
   function getPeriodDates(): { from: string; to: string } {
     const now = new Date()
-    if (period === 'today') return {
-      from: format(startOfDay(now), 'yyyy-MM-dd'),
-      to: format(endOfDay(now), 'yyyy-MM-dd'),
-    }
-    if (period === 'week') return {
-      from: format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
-      to: format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
-    }
-    if (period === 'month') return {
-      from: format(startOfMonth(now), 'yyyy-MM-dd'),
-      to: format(endOfMonth(now), 'yyyy-MM-dd'),
-    }
+    if (period === 'today')
+      return {
+        from: format(startOfDay(now), 'yyyy-MM-dd'),
+        to: format(endOfDay(now), 'yyyy-MM-dd'),
+      }
+    if (period === 'week')
+      return {
+        from: format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
+        to: format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'),
+      }
+    if (period === 'month')
+      return {
+        from: format(startOfMonth(now), 'yyyy-MM-dd'),
+        to: format(endOfMonth(now), 'yyyy-MM-dd'),
+      }
     return { from: customFrom, to: customTo }
   }
 
@@ -107,8 +110,11 @@ export function DashboardTab({ companies }: Props) {
             <div className="bg-white border border-line rounded-[18px] p-[22px]">
               <p className="text-sm font-semibold text-ink mb-3.5">Загрузка мастеров</p>
               <div className="flex flex-col">
-                {stats.masterStats.map(m => (
-                  <div key={m.masterId} className="flex items-center justify-between gap-4 py-2.5 border-b border-cream-deep last:border-0 text-[13.5px]">
+                {stats.masterStats.map((m) => (
+                  <div
+                    key={m.masterId}
+                    className="flex items-center justify-between gap-4 py-2.5 border-b border-cream-deep last:border-0 text-[13.5px]"
+                  >
                     <span className="text-ink">{m.masterName}</span>
                     <span className="font-semibold text-gold-dark shrink-0">{m.revenue.toLocaleString('ru-RU')} ₽</span>
                   </div>
@@ -122,8 +128,11 @@ export function DashboardTab({ companies }: Props) {
             <div className="bg-white border border-line rounded-[18px] p-[22px]">
               <p className="text-sm font-semibold text-ink mb-3.5">Популярные услуги</p>
               <div className="flex flex-col">
-                {stats.popularServices.slice(0, 5).map(s => (
-                  <div key={s.serviceId} className="flex items-center justify-between gap-4 py-2.5 border-b border-cream-deep last:border-0 text-[13.5px]">
+                {stats.popularServices.slice(0, 5).map((s) => (
+                  <div
+                    key={s.serviceId}
+                    className="flex items-center justify-between gap-4 py-2.5 border-b border-cream-deep last:border-0 text-[13.5px]"
+                  >
                     <span className="text-ink">{s.serviceName}</span>
                     <span className="text-muted shrink-0">{s.count}×</span>
                   </div>
@@ -143,15 +152,19 @@ export function DashboardTab({ companies }: Props) {
         {companies.length > 1 && (
           <select
             value={selectedId}
-            onChange={e => setCompanyId(e.target.value)}
+            onChange={(e) => setCompanyId(e.target.value)}
             className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
           >
-            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
           </select>
         )}
 
         <div className="flex gap-1 bg-cream-deep p-1 rounded-full">
-          {PERIODS.map(p => (
+          {PERIODS.map((p) => (
             <button
               key={p.key}
               onClick={() => setPeriod(p.key)}
@@ -167,14 +180,14 @@ export function DashboardTab({ companies }: Props) {
             <input
               type="date"
               value={customFrom}
-              onChange={e => setCustomFrom(e.target.value)}
+              onChange={(e) => setCustomFrom(e.target.value)}
               className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
             />
             <span className="text-muted">—</span>
             <input
               type="date"
               value={customTo}
-              onChange={e => setCustomTo(e.target.value)}
+              onChange={(e) => setCustomTo(e.target.value)}
               className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
             />
           </div>
@@ -184,7 +197,9 @@ export function DashboardTab({ companies }: Props) {
       {isLoading && (
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 bg-cream-deep rounded-2xl animate-pulse" />)}
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-20 bg-cream-deep rounded-2xl animate-pulse" />
+            ))}
           </div>
           <div className="h-40 bg-cream-deep rounded-2xl animate-pulse" />
         </div>

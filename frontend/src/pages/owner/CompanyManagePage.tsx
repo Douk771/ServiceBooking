@@ -40,7 +40,13 @@ function ServicesTab({ companyId }: { companyId: string }) {
     queryFn: () => servicesApi.getByCompany(companyId),
   })
 
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<ServiceFormData>()
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    formState: { errors },
+  } = useForm<ServiceFormData>()
 
   const openEdit = (s: Service) => {
     setEditing(s)
@@ -51,7 +57,13 @@ function ServicesTab({ companyId }: { companyId: string }) {
     setValue('price', s.price)
   }
 
-  const closeForm = () => { setEditing(null); setShowAdd(false); setFormError(''); setImageError(''); reset() }
+  const closeForm = () => {
+    setEditing(null)
+    setShowAdd(false)
+    setFormError('')
+    setImageError('')
+    reset()
+  }
 
   // Only available once the service already has an id — a brand-new service must be saved first
   // (US-25: POST /api/services/{id}/image needs an existing service).
@@ -70,25 +82,49 @@ function ServicesTab({ companyId }: { companyId: string }) {
 
   const createMut = useMutation({
     mutationFn: (d: ServiceFormData) =>
-      servicesApi.create({ companyId, name: d.name, description: d.description || undefined, durationMinutes: +d.durationMinutes, price: +d.price }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['services', companyId] }); closeForm() },
-    onError: (err: unknown) => setFormError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
+      servicesApi.create({
+        companyId,
+        name: d.name,
+        description: d.description || undefined,
+        durationMinutes: +d.durationMinutes,
+        price: +d.price,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['services', companyId] })
+      closeForm()
+    },
+    onError: (err: unknown) =>
+      setFormError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
   })
 
   const updateMut = useMutation({
     mutationFn: (d: ServiceFormData) =>
-      servicesApi.update(editing!.id, { companyId, name: d.name, description: d.description || undefined, durationMinutes: +d.durationMinutes, price: +d.price }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['services', companyId] }); closeForm() },
-    onError: (err: unknown) => setFormError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
+      servicesApi.update(editing!.id, {
+        companyId,
+        name: d.name,
+        description: d.description || undefined,
+        durationMinutes: +d.durationMinutes,
+        price: +d.price,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['services', companyId] })
+      closeForm()
+    },
+    onError: (err: unknown) =>
+      setFormError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услугу. Попробуйте снова.')),
   })
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => servicesApi.delete(id),
-    onSuccess: () => { setDeleteError(''); qc.invalidateQueries({ queryKey: ['services', companyId] }) },
-    onError: (err: unknown) => setDeleteError(getCompanyManageErrorMessage(err, 'Не удалось удалить услугу. Попробуйте снова.')),
+    onSuccess: () => {
+      setDeleteError('')
+      qc.invalidateQueries({ queryKey: ['services', companyId] })
+    },
+    onError: (err: unknown) =>
+      setDeleteError(getCompanyManageErrorMessage(err, 'Не удалось удалить услугу. Попробуйте снова.')),
   })
 
-  const onSubmit = (d: ServiceFormData) => editing ? updateMut.mutate(d) : createMut.mutate(d)
+  const onSubmit = (d: ServiceFormData) => (editing ? updateMut.mutate(d) : createMut.mutate(d))
   const isPending = createMut.isPending || updateMut.isPending
 
   return (
@@ -102,7 +138,9 @@ function ServicesTab({ companyId }: { companyId: string }) {
 
       {isLoading ? (
         <div className="grid gap-3">
-          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />)}
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
+          ))}
         </div>
       ) : services && services.length > 0 ? (
         <div className="grid gap-3">
@@ -119,13 +157,16 @@ function ServicesTab({ companyId }: { companyId: string }) {
                 <div className="min-w-0">
                   <p className="font-medium text-ink">{s.name}</p>
                   <p className="text-sm text-muted flex items-center gap-1">
-                    <Icon name="clock" size={13} strokeWidth={1.7} /> {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                    <Icon name="clock" size={13} strokeWidth={1.7} /> {s.durationMinutes} мин ·{' '}
+                    {s.price.toLocaleString('ru-RU')} ₽
                   </p>
                   {s.description && <p className="text-xs text-muted mt-0.5 line-clamp-1">{s.description}</p>}
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
-                <Button variant="secondary" size="sm" onClick={() => openEdit(s)}>Изменить</Button>
+                <Button variant="secondary" size="sm" onClick={() => openEdit(s)}>
+                  Изменить
+                </Button>
                 <Button variant="danger" size="sm" loading={deleteMut.isPending} onClick={() => deleteMut.mutate(s.id)}>
                   Удалить
                 </Button>
@@ -148,7 +189,11 @@ function ServicesTab({ companyId }: { companyId: string }) {
             {editing && (
               <div className="flex items-center gap-3">
                 {editing.imageUrl ? (
-                  <img src={editing.imageUrl} alt={editing.name} className="w-14 h-14 rounded-xl object-cover shrink-0" />
+                  <img
+                    src={editing.imageUrl}
+                    alt={editing.name}
+                    className="w-14 h-14 rounded-xl object-cover shrink-0"
+                  />
                 ) : (
                   <div className="w-14 h-14 rounded-xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-lg shrink-0">
                     {editing.name[0]?.toUpperCase() ?? '?'}
@@ -160,9 +205,19 @@ function ServicesTab({ companyId }: { companyId: string }) {
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
                     className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) imageMut.mutate(f); e.target.value = '' }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) imageMut.mutate(f)
+                      e.target.value = ''
+                    }}
                   />
-                  <Button type="button" size="sm" variant="secondary" loading={imageMut.isPending} onClick={() => imageInputRef.current?.click()}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    loading={imageMut.isPending}
+                    onClick={() => imageInputRef.current?.click()}
+                  >
                     {editing.imageUrl ? 'Заменить фото' : 'Загрузить фото'}
                   </Button>
                   <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ</p>
@@ -170,9 +225,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
                 </div>
               </div>
             )}
-            {!editing && (
-              <p className="text-xs text-muted -mt-1">Фото услуги можно будет добавить после сохранения.</p>
-            )}
+            {!editing && <p className="text-xs text-muted -mt-1">Фото услуги можно будет добавить после сохранения.</p>}
             <Input
               label="Название *"
               placeholder="Название услуги..."
@@ -196,7 +249,10 @@ function ServicesTab({ companyId }: { companyId: string }) {
                 step={5}
                 placeholder="60"
                 error={errors.durationMinutes?.message}
-                {...register('durationMinutes', { required: 'Введите длительность', min: { value: 5, message: 'Минимум 5 мин' } })}
+                {...register('durationMinutes', {
+                  required: 'Введите длительность',
+                  min: { value: 5, message: 'Минимум 5 мин' },
+                })}
               />
               <Input
                 label="Цена (₽) *"
@@ -205,12 +261,17 @@ function ServicesTab({ companyId }: { companyId: string }) {
                 step={50}
                 placeholder="1500"
                 error={errors.price?.message}
-                {...register('price', { required: 'Введите цену', min: { value: 0, message: 'Цена не может быть отрицательной' } })}
+                {...register('price', {
+                  required: 'Введите цену',
+                  min: { value: 0, message: 'Цена не может быть отрицательной' },
+                })}
               />
             </div>
             {formError && <p className="text-sm text-danger">{formError}</p>}
             <div className="flex gap-3 pt-2">
-              <Button type="button" variant="secondary" className="flex-1" onClick={closeForm}>Отмена</Button>
+              <Button type="button" variant="secondary" className="flex-1" onClick={closeForm}>
+                Отмена
+              </Button>
               <Button type="submit" className="flex-1" loading={isPending}>
                 {editing ? 'Сохранить' : 'Добавить'}
               </Button>
@@ -245,9 +306,10 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
   const [commissionError, setCommissionError] = useState('')
 
   const toggle = (id: string) => {
-    setSelected(prev => {
+    setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
     setDirty(true)
@@ -255,13 +317,22 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
 
   const saveMut = useMutation({
     mutationFn: () => companiesApi.updateMemberServices(companyId, m.id, [...selected]),
-    onSuccess: () => { setSaveError(''); setDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
-    onError: (err: unknown) => setSaveError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услуги сотрудника.')),
+    onSuccess: () => {
+      setSaveError('')
+      setDirty(false)
+      qc.invalidateQueries({ queryKey: ['company-members', companyId] })
+    },
+    onError: (err: unknown) =>
+      setSaveError(getCompanyManageErrorMessage(err, 'Не удалось сохранить услуги сотрудника.')),
   })
 
   const commissionMut = useMutation({
     mutationFn: () => companiesApi.updateMemberCommission(companyId, m.id, commission),
-    onSuccess: () => { setCommissionError(''); setCommissionDirty(false); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+    onSuccess: () => {
+      setCommissionError('')
+      setCommissionDirty(false)
+      qc.invalidateQueries({ queryKey: ['company-members', companyId] })
+    },
     onError: (err: unknown) => setCommissionError(getCompanyManageErrorMessage(err, 'Не удалось сохранить комиссию.')),
   })
 
@@ -271,8 +342,12 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
         <div className="flex items-center gap-3 min-w-0">
           <Avatar avatarUrl={m.avatarUrl} firstName={m.firstName} lastName={m.lastName} size={40} className="text-sm" />
           <div className="min-w-0">
-            <p className="font-medium text-ink">{m.firstName} {m.lastName}</p>
-            <p className="text-sm text-muted truncate">{(m.phone ? formatPhone(m.phone) : '') || m.email} · {roleLabel[m.role] ?? m.role}</p>
+            <p className="font-medium text-ink">
+              {m.firstName} {m.lastName}
+            </p>
+            <p className="text-sm text-muted truncate">
+              {(m.phone ? formatPhone(m.phone) : '') || m.email} · {roleLabel[m.role] ?? m.role}
+            </p>
             {m.bio && <p className="text-xs text-muted mt-0.5 truncate">{m.bio}</p>}
             {commissionError && <p className="text-xs text-danger mt-0.5">{commissionError}</p>}
           </div>
@@ -286,7 +361,10 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
               max={100}
               step={1}
               value={commission}
-              onChange={(e) => { setCommission(Number(e.target.value)); setCommissionDirty(true) }}
+              onChange={(e) => {
+                setCommission(Number(e.target.value))
+                setCommissionDirty(true)
+              }}
               className="w-16 rounded-lg border border-line px-2 py-1 text-sm outline-none focus:border-gold"
             />
             <span className="text-xs text-muted">%</span>
@@ -298,11 +376,16 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
           </div>
           {services.length > 0 && (
             <button
-              onClick={() => setExpanded(e => !e)}
+              onClick={() => setExpanded((e) => !e)}
               className="flex items-center gap-1 text-xs text-muted hover:text-gold-dark border border-line hover:border-line-strong rounded-lg px-2 py-1 transition-colors"
             >
               Услуги {selected.size > 0 ? `(${selected.size})` : ''}
-              <Icon name="chevron-down" size={12} strokeWidth={1.8} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              <Icon
+                name="chevron-down"
+                size={12}
+                strokeWidth={1.8}
+                className={`transition-transform ${expanded ? 'rotate-180' : ''}`}
+              />
             </button>
           )}
           <Button variant="danger" size="sm" loading={removeLoading} onClick={() => onRemove(m.id)}>
@@ -315,7 +398,7 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
         <div className="border-t border-line px-4 py-3 bg-cream-deep">
           <p className="text-xs font-medium text-muted uppercase tracking-wide mb-2">Услуги сотрудника</p>
           <div className="flex flex-wrap gap-2 mb-3">
-            {services.map(s => {
+            {services.map((s) => {
               const checked = selected.has(s.id)
               return (
                 <label
@@ -326,13 +409,10 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
                       : 'bg-white border-line text-ink-soft hover:border-line-strong'
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    className="sr-only"
-                    checked={checked}
-                    onChange={() => toggle(s.id)}
-                  />
-                  <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-gold-dark border-gold-dark' : 'border-line-strong'}`}>
+                  <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggle(s.id)} />
+                  <span
+                    className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${checked ? 'bg-gold-dark border-gold-dark' : 'border-line-strong'}`}
+                  >
                     {checked && <Icon name="check" size={9} strokeWidth={2.5} className="text-cream" />}
                   </span>
                   {s.name}
@@ -363,8 +443,15 @@ function MembersTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [removeError, setRemoveError] = useState('')
-  const { register, handleSubmit, reset } = useForm<{ phone: string; firstName: string; lastName: string; role: string; bio: string; email: string }>({
-    defaultValues: { role: 'Master' }
+  const { register, handleSubmit, reset } = useForm<{
+    phone: string
+    firstName: string
+    lastName: string
+    role: string
+    bio: string
+    email: string
+  }>({
+    defaultValues: { role: 'Master' },
   })
 
   const { data: members, isLoading } = useQuery({
@@ -387,13 +474,28 @@ function MembersTab({ companyId }: { companyId: string }) {
 
   const addMut = useMutation({
     mutationFn: (d: { phone: string; firstName: string; lastName: string; role: string; bio: string; email: string }) =>
-      companiesApi.addMember(companyId, d.phone, d.firstName, d.lastName, d.role, d.bio || undefined, d.email || undefined),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['company-members', companyId] }); setShowAdd(false); reset() },
+      companiesApi.addMember(
+        companyId,
+        d.phone,
+        d.firstName,
+        d.lastName,
+        d.role,
+        d.bio || undefined,
+        d.email || undefined,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['company-members', companyId] })
+      setShowAdd(false)
+      reset()
+    },
   })
 
   const removeMut = useMutation({
     mutationFn: (memberId: string) => companiesApi.removeMember(companyId, memberId),
-    onSuccess: () => { setRemoveError(''); qc.invalidateQueries({ queryKey: ['company-members', companyId] }) },
+    onSuccess: () => {
+      setRemoveError('')
+      qc.invalidateQueries({ queryKey: ['company-members', companyId] })
+    },
     onError: (err: unknown) => setRemoveError(getCompanyManageErrorMessage(err, 'Не удалось удалить сотрудника.')),
   })
 
@@ -406,7 +508,9 @@ function MembersTab({ companyId }: { companyId: string }) {
             <Icon name="plus" size={14} strokeWidth={2} /> Добавить
           </Button>
           {company?.maxEmployees != null && (
-            <p className="text-xs text-muted">{members?.length ?? 0} / {company.maxEmployees} сотрудников</p>
+            <p className="text-xs text-muted">
+              {members?.length ?? 0} / {company.maxEmployees} сотрудников
+            </p>
           )}
         </div>
       </div>
@@ -419,7 +523,9 @@ function MembersTab({ companyId }: { companyId: string }) {
 
       {isLoading ? (
         <div className="grid gap-3">
-          {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />)}
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
+          ))}
         </div>
       ) : members && members.length > 0 ? (
         <div className="grid gap-3">
@@ -442,13 +548,26 @@ function MembersTab({ companyId }: { companyId: string }) {
       )}
 
       {showAdd && (
-        <Modal title="Добавить сотрудника" onClose={() => { setShowAdd(false); reset() }}>
+        <Modal
+          title="Добавить сотрудника"
+          onClose={() => {
+            setShowAdd(false)
+            reset()
+          }}
+        >
           <form onSubmit={handleSubmit((d) => addMut.mutate(d))} className="flex flex-col gap-4">
             <p className="text-xs text-muted bg-warning-bg border border-[#EAD9AC] rounded-xl px-3 py-2">
-              Если пользователь ещё не зарегистрирован — аккаунт будет создан автоматически.<br />
-              Временный пароль: <strong>Sb + последние 6 цифр телефона</strong> (например, <em>+7 999 123‑45‑67</em> → <em>Sb234567</em>)
+              Если пользователь ещё не зарегистрирован — аккаунт будет создан автоматически.
+              <br />
+              Временный пароль: <strong>Sb + последние 6 цифр телефона</strong> (например, <em>+7 999 123‑45‑67</em> →{' '}
+              <em>Sb234567</em>)
             </p>
-            <Input label="Телефон *" type="tel" placeholder="+7 999 000 00 00" {...register('phone', { required: true })} />
+            <Input
+              label="Телефон *"
+              type="tel"
+              placeholder="+7 999 000 00 00"
+              {...register('phone', { required: true })}
+            />
             <div className="grid grid-cols-2 gap-3">
               <Input label="Имя *" placeholder="Иван" {...register('firstName', { required: true })} />
               <Input label="Фамилия *" placeholder="Иванов" {...register('lastName', { required: true })} />
@@ -467,8 +586,20 @@ function MembersTab({ companyId }: { companyId: string }) {
             <Input label="О сотруднике" placeholder="Специализация, опыт..." {...register('bio')} />
             {addMut.isError && <p className="text-sm text-danger">{getAddMemberErrorMessage(addMut.error)}</p>}
             <div className="flex gap-3 pt-2">
-              <Button type="button" variant="secondary" className="flex-1" onClick={() => { setShowAdd(false); reset() }}>Отмена</Button>
-              <Button type="submit" className="flex-1" loading={addMut.isPending}>Добавить</Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  setShowAdd(false)
+                  reset()
+                }}
+              >
+                Отмена
+              </Button>
+              <Button type="submit" className="flex-1" loading={addMut.isPending}>
+                Добавить
+              </Button>
             </div>
           </form>
         </Modal>
@@ -485,32 +616,45 @@ function SettingsTab({ companyId }: { companyId: string }) {
   const company = companies?.find((c) => c.id === companyId)
   const logoInputRef = useRef<HTMLInputElement>(null)
 
-  const { register, handleSubmit, formState: { isDirty } } = useForm({
-    values: company ? {
-      name: company.name,
-      description: company.description ?? '',
-      address: company.address ?? '',
-      phone: company.phone ?? '',
-      email: company.email ?? '',
-      allowSelfBooking: company.allowSelfBooking,
-      requirePrepayment: company.requirePrepayment ?? false,
-      showInPublicListing: company.showInPublicListing ?? true,
-    } : undefined,
+  const {
+    register,
+    handleSubmit,
+    formState: { isDirty },
+  } = useForm({
+    values: company
+      ? {
+          name: company.name,
+          description: company.description ?? '',
+          address: company.address ?? '',
+          phone: company.phone ?? '',
+          email: company.email ?? '',
+          allowSelfBooking: company.allowSelfBooking,
+          requirePrepayment: company.requirePrepayment ?? false,
+          showInPublicListing: company.showInPublicListing ?? true,
+        }
+      : undefined,
   })
 
   const [settingsError, setSettingsError] = useState('')
 
   const updateMut = useMutation({
     mutationFn: (d: Record<string, unknown>) => companiesApi.update(companyId, d),
-    onSuccess: () => { setSettingsError(''); qc.invalidateQueries({ queryKey: ['my-companies'] }) },
-    onError: (err: unknown) => setSettingsError(getCompanyManageErrorMessage(err, 'Не удалось сохранить настройки компании.')),
+    onSuccess: () => {
+      setSettingsError('')
+      qc.invalidateQueries({ queryKey: ['my-companies'] })
+    },
+    onError: (err: unknown) =>
+      setSettingsError(getCompanyManageErrorMessage(err, 'Не удалось сохранить настройки компании.')),
   })
 
   const [logoError, setLogoError] = useState('')
   const logoMut = useMutation({
     mutationFn: (file: File) => companiesApi.uploadLogo(companyId, file),
     onMutate: () => setLogoError(''),
-    onSuccess: () => { setLogoError(''); qc.invalidateQueries({ queryKey: ['my-companies'] }) },
+    onSuccess: () => {
+      setLogoError('')
+      qc.invalidateQueries({ queryKey: ['my-companies'] })
+    },
     onError: (err) => setLogoError(getLogoErrorMessage(err)),
   })
 
@@ -521,7 +665,11 @@ function SettingsTab({ companyId }: { companyId: string }) {
         {/* Logo */}
         <div className="flex items-center gap-4 mb-6">
           {company?.logoUrl ? (
-            <img src={company.logoUrl} alt="Логотип" className="w-16 h-16 rounded-2xl object-cover border border-line" />
+            <img
+              src={company.logoUrl}
+              alt="Логотип"
+              className="w-16 h-16 rounded-2xl object-cover border border-line"
+            />
           ) : (
             <div className="w-16 h-16 rounded-2xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-xl">
               {company?.name?.[0] ?? '?'}
@@ -533,9 +681,18 @@ function SettingsTab({ companyId }: { companyId: string }) {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) logoMut.mutate(f); e.target.value = '' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) logoMut.mutate(f)
+                e.target.value = ''
+              }}
             />
-            <Button size="sm" variant="secondary" loading={logoMut.isPending} onClick={() => logoInputRef.current?.click()}>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={logoMut.isPending}
+              onClick={() => logoInputRef.current?.click()}
+            >
               {company?.logoUrl ? 'Заменить логотип' : 'Загрузить логотип'}
             </Button>
             <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ</p>
@@ -569,7 +726,9 @@ function SettingsTab({ companyId }: { companyId: string }) {
               <span className="text-sm text-ink-soft">Разрешить клиентам записываться самостоятельно</span>
             </label>
             {company && !company.planAllowsOnlineBooking && (
-              <p className="text-xs text-warning mt-1 ml-7">Онлайн-запись не входит в текущий тариф — повысьте тариф, чтобы включить</p>
+              <p className="text-xs text-warning mt-1 ml-7">
+                Онлайн-запись не входит в текущий тариф — повысьте тариф, чтобы включить
+              </p>
             )}
           </div>
           <div>
@@ -583,7 +742,9 @@ function SettingsTab({ companyId }: { companyId: string }) {
               <span className="text-sm text-ink-soft">Требовать предоплату при онлайн-записи</span>
             </label>
             {company && !company.planAllowsOnlinePayment && (
-              <p className="text-xs text-warning mt-1 ml-7">Онлайн-оплата не входит в текущий тариф — повысьте тариф, чтобы включить</p>
+              <p className="text-xs text-warning mt-1 ml-7">
+                Онлайн-оплата не входит в текущий тариф — повысьте тариф, чтобы включить
+              </p>
             )}
           </div>
           <div>
@@ -597,7 +758,9 @@ function SettingsTab({ companyId }: { companyId: string }) {
               <span className="text-sm text-ink-soft">Показывать компанию в общем списке</span>
             </label>
             {company && !company.planAllowsPublicListing && (
-              <p className="text-xs text-warning mt-1 ml-7">Отображение в общем списке не входит в текущий тариф — повысьте тариф, чтобы включить</p>
+              <p className="text-xs text-warning mt-1 ml-7">
+                Отображение в общем списке не входит в текущий тариф — повысьте тариф, чтобы включить
+              </p>
             )}
           </div>
           {updateMut.isSuccess && (
@@ -606,7 +769,9 @@ function SettingsTab({ companyId }: { companyId: string }) {
             </p>
           )}
           {settingsError && <p className="text-sm text-danger">{settingsError}</p>}
-          <Button type="submit" loading={updateMut.isPending} disabled={!isDirty}>Сохранить изменения</Button>
+          <Button type="submit" loading={updateMut.isPending} disabled={!isDirty}>
+            Сохранить изменения
+          </Button>
         </form>
       </Card>
 
@@ -624,11 +789,7 @@ function SettingsTab({ companyId }: { companyId: string }) {
  * owner's own site — the `title="..."` attribute would end early at the embedded quote.
  */
 function escapeHtmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 function WidgetCard({ company }: { company: import('../../types').Company }) {
@@ -674,7 +835,11 @@ function WidgetCard({ company }: { company: import('../../types').Company }) {
             value={embedUrl}
             className="flex-1 rounded-xl border border-line px-3.5 py-2.5 text-sm bg-cream-deep text-ink-soft outline-none"
           />
-          <Button type="button" variant="secondary" onClick={() => window.open(embedUrl, '_blank', 'noopener,noreferrer')}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => window.open(embedUrl, '_blank', 'noopener,noreferrer')}
+          >
             <Icon name="external-link" size={14} strokeWidth={1.8} /> Открыть предпросмотр
           </Button>
         </div>
@@ -705,7 +870,11 @@ const RETENTION_LABEL_RU: Record<string, string> = {
 }
 
 function PhotoUsageCard({ companyId }: { companyId: string }) {
-  const { data: usage, isLoading, isError } = useQuery({
+  const {
+    data: usage,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ['company-photo-usage', companyId],
     queryFn: () => companiesApi.getPhotoUsage(companyId),
   })
@@ -720,8 +889,8 @@ function PhotoUsageCard({ companyId }: { companyId: string }) {
     <Card className="p-6 mt-[18px]">
       <h2 className="text-lg font-semibold text-ink mb-1">Хранилище фото клиентов</h2>
       <p className="text-sm text-ink-soft mt-2">
-        Занято {usedMb.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}
-        {' '}из {usage.quotaMb != null ? `${usage.quotaMb} МБ` : '∞'} · {usage.photoCount} фото
+        Занято {usedMb.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} из{' '}
+        {usage.quotaMb != null ? `${usage.quotaMb} МБ` : '∞'} · {usage.photoCount} фото
       </p>
       <p className="text-sm text-ink-soft mt-1">
         Фото хранятся {RETENTION_LABEL_RU[usage.retention] ?? usage.retention}
@@ -748,10 +917,10 @@ export function CompanyManagePage() {
   const company = companies?.find((c) => c.id === id)
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: 'services',  label: 'Услуги' },
-    { key: 'schedule',  label: 'Расписание' },
-    { key: 'members',   label: 'Сотрудники' },
-    { key: 'settings',  label: 'Настройки' },
+    { key: 'services', label: 'Услуги' },
+    { key: 'schedule', label: 'Расписание' },
+    { key: 'members', label: 'Сотрудники' },
+    { key: 'settings', label: 'Настройки' },
   ]
 
   return (
@@ -778,10 +947,10 @@ export function CompanyManagePage() {
         ))}
       </div>
 
-      {id && tab === 'services'  && <ServicesTab  companyId={id} />}
-      {id && tab === 'schedule'  && <ScheduleTab  companyId={id} />}
-      {id && tab === 'members'   && <MembersTab   companyId={id} />}
-      {id && tab === 'settings'  && <SettingsTab  companyId={id} />}
+      {id && tab === 'services' && <ServicesTab companyId={id} />}
+      {id && tab === 'schedule' && <ScheduleTab companyId={id} />}
+      {id && tab === 'members' && <MembersTab companyId={id} />}
+      {id && tab === 'settings' && <SettingsTab companyId={id} />}
     </div>
   )
 }

@@ -11,8 +11,9 @@ function axiosErrorWith(status: number, data: unknown): AxiosError {
 
 describe('getLegalErrorMessage', () => {
   it('503 → unavailable message', () => {
-    expect(getLegalErrorMessage(axiosErrorWith(503, 'Правовые документы временно недоступны.')))
-      .toBe('Правовые документы временно недоступны.')
+    expect(getLegalErrorMessage(axiosErrorWith(503, 'Правовые документы временно недоступны.'))).toBe(
+      'Правовые документы временно недоступны.',
+    )
   })
 
   it('503 with empty body → generic unavailable fallback', () => {
@@ -20,8 +21,11 @@ describe('getLegalErrorMessage', () => {
   })
 
   it('409 → re-read new revision message', () => {
-    expect(getLegalErrorMessage(axiosErrorWith(409, 'Документы были обновлены ещё раз — перечитайте и примите новую редакцию.')))
-      .toBe('Документы были обновлены ещё раз — перечитайте и примите новую редакцию.')
+    expect(
+      getLegalErrorMessage(
+        axiosErrorWith(409, 'Документы были обновлены ещё раз — перечитайте и примите новую редакцию.'),
+      ),
+    ).toBe('Документы были обновлены ещё раз — перечитайте и примите новую редакцию.')
   })
 
   it('404 → not found message', () => {
@@ -29,11 +33,14 @@ describe('getLegalErrorMessage', () => {
   })
 
   it('400 → required-fields message', () => {
-    expect(getLegalErrorMessage(axiosErrorWith(400, 'Обе версии документов обязательны.')))
-      .toBe('Обе версии документов обязательны.')
+    expect(getLegalErrorMessage(axiosErrorWith(400, 'Обе версии документов обязательны.'))).toBe(
+      'Обе версии документов обязательны.',
+    )
   })
 
   it('500 → generic fallback', () => {
-    expect(getLegalErrorMessage(axiosErrorWith(500, undefined))).toBe('Не удалось загрузить документ. Попробуйте снова.')
+    expect(getLegalErrorMessage(axiosErrorWith(500, undefined))).toBe(
+      'Не удалось загрузить документ. Попробуйте снова.',
+    )
   })
 })

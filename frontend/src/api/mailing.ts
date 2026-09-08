@@ -10,7 +10,6 @@ export interface MailLog {
 
 export const mailingApi = {
   send: (companyId: string, data: { subject: string; message: string }) =>
-    api.post<{ recipientCount: number; message: string }>(`/companies/${companyId}/mail`, data).then(r => r.data),
-  history: (companyId: string) =>
-    api.get<MailLog[]>(`/companies/${companyId}/mail`).then(r => r.data),
+    api.post<{ recipientCount: number; message: string }>(`/companies/${companyId}/mail`, data).then((r) => r.data),
+  history: (companyId: string) => api.get<MailLog[]>(`/companies/${companyId}/mail`).then((r) => r.data),
 }

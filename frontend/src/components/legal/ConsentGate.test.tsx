@@ -36,14 +36,20 @@ const status: ConsentStatus = {
 
 beforeEach(() => {
   accept.mockReset()
-  useAuthStore.setState({ user: { id: 'u1', phone: '79991234567', firstName: 'Иван', lastName: 'Петров', roles: ['Client'] }, token: 'old-token' })
+  useAuthStore.setState({
+    user: { id: 'u1', phone: '79991234567', firstName: 'Иван', lastName: 'Петров', roles: ['Client'] },
+    token: 'old-token',
+  })
   useLegalStore.setState({ consentRequired: true })
 })
 
 describe('ConsentGate', () => {
   it('offers exactly reading the documents, signing out, and deleting the account — nothing else', () => {
     renderGate(status)
-    expect(screen.getByRole('link', { name: /Политика обработки персональных данных/ })).toHaveAttribute('href', '/privacy')
+    expect(screen.getByRole('link', { name: /Политика обработки персональных данных/ })).toHaveAttribute(
+      'href',
+      '/privacy',
+    )
     expect(screen.getByRole('link', { name: /Пользовательское соглашение/ })).toHaveAttribute('href', '/terms')
     expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Удалить аккаунт' })).toHaveAttribute('href', '/profile/delete')
@@ -71,6 +77,8 @@ describe('ConsentGate', () => {
 
     await user.click(screen.getByRole('button', { name: 'Принимаю новую редакцию' }))
 
-    expect(await screen.findByText('Документы были обновлены ещё раз — перечитайте и примите новую редакцию.')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Документы были обновлены ещё раз — перечитайте и примите новую редакцию.'),
+    ).toBeInTheDocument()
   })
 })

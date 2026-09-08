@@ -49,10 +49,7 @@ export function ManualBookingModal({ onClose }: Props) {
   const { data: companies, isLoading: companiesLoading } = useQuery({
     queryKey: ['my-companies-all'],
     queryFn: async () => {
-      const [owned, member] = await Promise.all([
-        companiesApi.getMy(),
-        companiesApi.getMemberOf(),
-      ])
+      const [owned, member] = await Promise.all([companiesApi.getMy(), companiesApi.getMemberOf()])
       const all = [...owned, ...member]
       return Array.from(new Map(all.map((c) => [c.id, c])).values())
     },
@@ -124,13 +121,17 @@ export function ManualBookingModal({ onClose }: Props) {
     ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
     ...Array.from({ length: 14 }, (_, i) => {
       const d = addDays(now, i + 1)
-      return { value: format(d, 'yyyy-MM-dd'), label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }) }
+      return {
+        value: format(d, 'yyyy-MM-dd'),
+        label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }),
+      }
     }),
   ]
 
-  const progressSteps: Step[] = companies?.length === 1
-    ? ['service', 'master', 'datetime', 'client']
-    : ['company', 'service', 'master', 'datetime', 'client']
+  const progressSteps: Step[] =
+    companies?.length === 1
+      ? ['service', 'master', 'datetime', 'client']
+      : ['company', 'service', 'master', 'datetime', 'client']
   const currentIdx = progressSteps.indexOf(step)
 
   const formattedDate = days.find((d) => d.value === selectedDate)?.label ?? ''
@@ -138,10 +139,7 @@ export function ManualBookingModal({ onClose }: Props) {
   const dismiss = useOverlayDismiss(onClose)
 
   return (
-    <div
-      className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5"
-      {...dismiss}
-    >
+    <div className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5" {...dismiss}>
       <div className="bg-cream rounded-[26px] shadow-modal w-full max-w-[440px] max-h-[88vh] overflow-y-auto">
         {/* Header */}
         <div className="p-6 pb-[22px] border-b border-line">
@@ -150,7 +148,8 @@ export function ManualBookingModal({ onClose }: Props) {
               <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Записать клиента</h2>
               {selectedService && (
                 <p className="text-[13px] text-ink-soft">
-                  {selectedService.name} · {selectedService.durationMinutes} мин · {selectedService.price.toLocaleString('ru-RU')} ₽
+                  {selectedService.name} · {selectedService.durationMinutes} мин ·{' '}
+                  {selectedService.price.toLocaleString('ru-RU')} ₽
                 </p>
               )}
             </div>
@@ -164,9 +163,7 @@ export function ManualBookingModal({ onClose }: Props) {
               {progressSteps.map((s, i) => (
                 <div
                   key={s}
-                  className={`h-1 flex-1 rounded-full transition-colors ${
-                    currentIdx >= i ? 'bg-ink' : 'bg-line'
-                  }`}
+                  className={`h-1 flex-1 rounded-full transition-colors ${currentIdx >= i ? 'bg-ink' : 'bg-line'}`}
                 />
               ))}
             </div>
@@ -174,21 +171,25 @@ export function ManualBookingModal({ onClose }: Props) {
         </div>
 
         <div className="p-6 pt-[22px]">
-
           {/* ── Company ── */}
           {step === 'company' && (
             <div>
               <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите компанию</h3>
               {companiesLoading ? (
                 <div className="flex flex-col gap-2.5">
-                  {[1, 2].map((i) => <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />)}
+                  {[1, 2].map((i) => (
+                    <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />
+                  ))}
                 </div>
               ) : companies && companies.length > 0 ? (
                 <div className="flex flex-col gap-2.5">
                   {companies.map((c) => (
                     <button
                       key={c.id}
-                      onClick={() => { setSelectedCompany(c); setStep('service') }}
+                      onClick={() => {
+                        setSelectedCompany(c)
+                        setStep('service')
+                      }}
                       className="flex items-center gap-3 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
                       <div className="w-10 h-10 rounded-xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-sm shrink-0">
@@ -198,7 +199,12 @@ export function ManualBookingModal({ onClose }: Props) {
                         <p className="font-semibold text-sm text-ink">{c.name}</p>
                         {c.address && <p className="text-xs text-muted">{c.address}</p>}
                       </div>
-                      <Icon name="chevron-right" size={16} strokeWidth={1.8} className="ml-auto text-line-strong shrink-0" />
+                      <Icon
+                        name="chevron-right"
+                        size={16}
+                        strokeWidth={1.8}
+                        className="ml-auto text-line-strong shrink-0"
+                      />
                     </button>
                   ))}
                 </div>
@@ -217,19 +223,26 @@ export function ManualBookingModal({ onClose }: Props) {
               <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите услугу</h3>
               {servicesLoading ? (
                 <div className="flex flex-col gap-2.5">
-                  {[1, 2, 3].map((i) => <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />)}
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />
+                  ))}
                 </div>
               ) : services && services.length > 0 ? (
                 <div className="flex flex-col gap-2.5">
                   {services.map((s) => (
                     <button
                       key={s.id}
-                      onClick={() => { setSelectedService(s); setStep('master') }}
+                      onClick={() => {
+                        setSelectedService(s)
+                        setStep('master')
+                      }}
                       className="flex items-center justify-between p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
                       <div>
                         <p className="font-semibold text-sm text-ink">{s.name}</p>
-                        <p className="text-xs text-muted mt-0.5">{s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽</p>
+                        <p className="text-xs text-muted mt-0.5">
+                          {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                        </p>
                       </div>
                       <Icon name="chevron-right" size={16} strokeWidth={1.8} className="text-line-strong shrink-0" />
                     </button>
@@ -248,22 +261,34 @@ export function ManualBookingModal({ onClose }: Props) {
               <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите мастера</h3>
               {mastersLoading ? (
                 <div className="flex flex-col gap-2.5">
-                  {[1, 2].map((i) => <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />)}
+                  {[1, 2].map((i) => (
+                    <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
+                  ))}
                 </div>
               ) : masters && masters.length > 0 ? (
                 <div className="flex flex-col gap-2.5">
                   {masters.map((m) => (
                     <button
                       key={m.userId}
-                      onClick={() => { setSelectedMasterId(m.userId); setStep('datetime') }}
+                      onClick={() => {
+                        setSelectedMasterId(m.userId)
+                        setStep('datetime')
+                      }}
                       className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
                       <Avatar avatarUrl={m.avatarUrl} firstName={m.firstName} lastName={m.lastName} size={40} />
                       <div>
-                        <p className="font-semibold text-sm text-ink">{m.firstName} {m.lastName}</p>
+                        <p className="font-semibold text-sm text-ink">
+                          {m.firstName} {m.lastName}
+                        </p>
                         {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
                       </div>
-                      <Icon name="chevron-right" size={16} strokeWidth={1.8} className="ml-auto text-line-strong shrink-0" />
+                      <Icon
+                        name="chevron-right"
+                        size={16}
+                        strokeWidth={1.8}
+                        className="ml-auto text-line-strong shrink-0"
+                      />
                     </button>
                   ))}
                 </div>
@@ -286,7 +311,10 @@ export function ManualBookingModal({ onClose }: Props) {
                 {days.map((d) => (
                   <button
                     key={d.value}
-                    onClick={() => { setSelectedDate(d.value); setSelectedTime('') }}
+                    onClick={() => {
+                      setSelectedDate(d.value)
+                      setSelectedTime('')
+                    }}
                     className={`px-3.5 py-3 rounded-xl border text-[13.5px] transition-all text-left ${
                       selectedDate === d.value
                         ? 'bg-ink text-cream border-ink'
@@ -426,7 +454,6 @@ export function ManualBookingModal({ onClose }: Props) {
               </Button>
             </div>
           )}
-
         </div>
       </div>
     </div>

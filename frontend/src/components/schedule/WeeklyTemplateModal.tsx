@@ -8,7 +8,7 @@ import { getScheduleErrorMessage } from '../../utils/scheduleError'
 
 const DAY_NAMES = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-const DEFAULT_DAYS: DayTemplate[] = [1, 2, 3, 4, 5, 6, 7].map(d => ({
+const DEFAULT_DAYS: DayTemplate[] = [1, 2, 3, 4, 5, 6, 7].map((d) => ({
   dayOfWeek: d,
   isWorking: d <= 5,
   startTime: '09:00',
@@ -54,7 +54,7 @@ export function WeeklyTemplateModal({ masterId, companyId, onClose }: Props) {
   })
 
   function updateDay(idx: number, patch: Partial<DayTemplate>) {
-    setDays(prev => prev.map((d, i) => i === idx ? { ...d, ...patch } : d))
+    setDays((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)))
   }
 
   function handleApplyMonth() {
@@ -83,7 +83,7 @@ export function WeeklyTemplateModal({ masterId, companyId, onClose }: Props) {
               <input
                 type="checkbox"
                 checked={day.isWorking}
-                onChange={e => updateDay(idx, { isWorking: e.target.checked })}
+                onChange={(e) => updateDay(idx, { isWorking: e.target.checked })}
                 className="w-4 h-4 accent-gold"
               />
               <span className="text-sm text-ink-soft">Рабочий</span>
@@ -93,49 +93,33 @@ export function WeeklyTemplateModal({ masterId, companyId, onClose }: Props) {
                 <input
                   type="time"
                   value={day.startTime}
-                  onChange={e => updateDay(idx, { startTime: e.target.value })}
+                  onChange={(e) => updateDay(idx, { startTime: e.target.value })}
                   className="rounded-xl border border-line px-2 py-1.5 text-sm outline-none focus:border-gold bg-white text-ink"
                 />
                 <span className="text-muted text-sm">—</span>
                 <input
                   type="time"
                   value={day.endTime}
-                  onChange={e => updateDay(idx, { endTime: e.target.value })}
+                  onChange={(e) => updateDay(idx, { endTime: e.target.value })}
                   className="rounded-xl border border-line px-2 py-1.5 text-sm outline-none focus:border-gold bg-white text-ink"
                 />
               </div>
             )}
-            {!day.isWorking && (
-              <span className="ml-auto text-sm text-muted">Выходной</span>
-            )}
+            {!day.isWorking && <span className="ml-auto text-sm text-muted">Выходной</span>}
           </div>
         ))}
 
-        {mutError && (
-          <p className="text-sm text-danger">{mutError}</p>
-        )}
+        {mutError && <p className="text-sm text-danger">{mutError}</p>}
 
         <div className="flex flex-col gap-2 pt-2 border-t border-line mt-1">
-          <Button
-            onClick={() => saveMut.mutate()}
-            loading={saveMut.isPending}
-            className="w-full"
-          >
+          <Button onClick={() => saveMut.mutate()} loading={saveMut.isPending} className="w-full">
             Сохранить шаблон
           </Button>
           <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="secondary"
-              onClick={handleApplyMonth}
-              loading={applyMut.isPending}
-            >
+            <Button variant="secondary" onClick={handleApplyMonth} loading={applyMut.isPending}>
               Применить к месяцу
             </Button>
-            <Button
-              variant="secondary"
-              onClick={handleApply3Months}
-              loading={applyMut.isPending}
-            >
+            <Button variant="secondary" onClick={handleApply3Months} loading={applyMut.isPending}>
               Применить к 3 мес.
             </Button>
           </div>

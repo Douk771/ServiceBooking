@@ -30,9 +30,10 @@ export function DeleteAccountPage() {
       navigate('/')
     },
     onError: (err: unknown) => {
-      const message = err instanceof AxiosError && typeof err.response?.data === 'string'
-        ? err.response.data
-        : 'Не удалось удалить аккаунт. Попробуйте снова.'
+      const message =
+        err instanceof AxiosError && typeof err.response?.data === 'string'
+          ? err.response.data
+          : 'Не удалось удалить аккаунт. Попробуйте снова.'
       setError(message)
     },
   })
@@ -49,14 +50,14 @@ export function DeleteAccountPage() {
             <li>удалятся заметки о вас и загруженные о вас фотографии;</li>
             <li>отзывы останутся, но без указания вашего имени;</li>
             <li>
-              <strong>визиты останутся у салона в обезличенном виде</strong> (дата, услуга, мастер,
-              цена, статус — без вашего имени и телефона), чтобы не портить отчётность салона;
+              <strong>визиты останутся у салона в обезличенном виде</strong> (дата, услуга, мастер, цена, статус — без
+              вашего имени и телефона), чтобы не портить отчётность салона;
             </li>
             <li>телефон освободится — по нему можно будет зарегистрироваться заново.</li>
           </ul>
           <p>
-            Если вы владеете компанией, сначала передайте её другому владельцу или обратитесь в
-            поддержку — иначе удаление вернёт ошибку.
+            Если вы владеете компанией, сначала передайте её другому владельцу или обратитесь в поддержку — иначе
+            удаление вернёт ошибку.
           </p>
           <p>
             Подробнее — в{' '}
@@ -67,12 +68,7 @@ export function DeleteAccountPage() {
           </p>
         </div>
 
-        <Input
-          label="Текущий пароль"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <Input label="Текущий пароль" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
 
         <label className="flex items-start gap-3 cursor-pointer">
           <input
@@ -96,7 +92,10 @@ export function DeleteAccountPage() {
           size="lg"
           loading={mut.isPending}
           disabled={!password || !confirmed}
-          onClick={() => { setError(''); mut.mutate() }}
+          onClick={() => {
+            setError('')
+            mut.mutate()
+          }}
         >
           Удалить аккаунт навсегда
         </Button>

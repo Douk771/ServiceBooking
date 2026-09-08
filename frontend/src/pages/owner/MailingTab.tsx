@@ -13,7 +13,11 @@ export function MailingTab({ companyId }: { companyId: string }) {
   const [message, setMessage] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
-  const { data: history, isLoading, refetch } = useQuery({
+  const {
+    data: history,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ['mailing-history', companyId],
     queryFn: () => mailingApi.history(companyId),
   })
@@ -40,14 +44,20 @@ export function MailingTab({ companyId }: { companyId: string }) {
             label="Тема"
             placeholder="Акция — скидка 20% в июле"
             value={subject}
-            onChange={e => { setSubject(e.target.value); setSuccessMsg('') }}
+            onChange={(e) => {
+              setSubject(e.target.value)
+              setSuccessMsg('')
+            }}
           />
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-[#4A4038]">Сообщение</label>
             <textarea
               rows={4}
               value={message}
-              onChange={e => { setMessage(e.target.value); setSuccessMsg('') }}
+              onChange={(e) => {
+                setMessage(e.target.value)
+                setSuccessMsg('')
+              }}
               placeholder="Уважаемые клиенты! Рады сообщить..."
               className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep resize-none bg-white text-ink"
             />
@@ -58,14 +68,8 @@ export function MailingTab({ companyId }: { companyId: string }) {
               <span>{successMsg}</span>
             </div>
           )}
-          {sendMut.isError && (
-            <p className="text-sm text-danger">Ошибка при отправке рассылки</p>
-          )}
-          <Button
-            loading={sendMut.isPending}
-            disabled={!canSend}
-            onClick={() => sendMut.mutate()}
-          >
+          {sendMut.isError && <p className="text-sm text-danger">Ошибка при отправке рассылки</p>}
+          <Button loading={sendMut.isPending} disabled={!canSend} onClick={() => sendMut.mutate()}>
             Отправить рассылку
           </Button>
         </div>
@@ -81,7 +85,7 @@ export function MailingTab({ companyId }: { companyId: string }) {
           </div>
         ) : history && history.length > 0 ? (
           <div className="grid gap-3">
-            {history.map(log => (
+            {history.map((log) => (
               <Card key={log.id} className="p-4">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>

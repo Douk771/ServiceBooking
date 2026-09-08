@@ -52,9 +52,11 @@ function featureIcon(enabled: boolean) {
 
 function FeatureBadge({ label, enabled }: { label: string; enabled: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
-      enabled ? 'bg-success-bg text-success' : 'bg-cream-deep text-muted'
-    }`}>
+    <span
+      className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+        enabled ? 'bg-success-bg text-success' : 'bg-cream-deep text-muted'
+      }`}
+    >
       {featureIcon(enabled)} {label}
     </span>
   )
@@ -177,8 +179,8 @@ export function PlansTab() {
     setShowCreate(true)
   }
 
-  const active = plans?.filter(p => p.isActive) ?? []
-  const inactive = plans?.filter(p => !p.isActive) ?? []
+  const active = plans?.filter((p) => p.isActive) ?? []
+  const inactive = plans?.filter((p) => !p.isActive) ?? []
 
   return (
     <div>
@@ -199,7 +201,7 @@ export function PlansTab() {
         <>
           {active.length > 0 && (
             <div className="grid gap-4 mb-6">
-              {active.map(plan => (
+              {active.map((plan) => (
                 <Card key={plan.id} className="p-5">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="flex-1">
@@ -222,15 +224,13 @@ export function PlansTab() {
                         <FeatureBadge label="В общем списке" enabled={plan.allowPublicListing} />
                         <FeatureBadge label="Онлайн-оплата" enabled={plan.allowOnlinePayment} />
                       </div>
-                      {plan.description && (
-                        <p className="text-sm text-muted">{plan.description}</p>
-                      )}
+                      {plan.description && <p className="text-sm text-muted">{plan.description}</p>}
                       <p className="text-xs text-muted mt-1">
                         Уведомление за {plan.notifyDaysBefore} дн. до деактивации
                       </p>
                       <p className="text-xs text-muted mt-0.5">
-                        Фото клиентов: {plan.photoQuotaMb !== null ? `до ${plan.photoQuotaMb} МБ` : 'без ограничения'} ·
-                        {' '}хранятся {RETENTION_LABELS[plan.photoRetention]}
+                        Фото клиентов: {plan.photoQuotaMb !== null ? `до ${plan.photoQuotaMb} МБ` : 'без ограничения'} ·{' '}
+                        хранятся {RETENTION_LABELS[plan.photoRetention]}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -263,8 +263,11 @@ export function PlansTab() {
             <div>
               <p className="text-xs font-medium text-muted uppercase tracking-wide mb-2">Неактивные</p>
               <div className="grid gap-2">
-                {inactive.map(plan => (
-                  <div key={plan.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-cream-deep flex-wrap">
+                {inactive.map((plan) => (
+                  <div
+                    key={plan.id}
+                    className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-cream-deep flex-wrap"
+                  >
                     <div className="flex items-center gap-3">
                       <span className="font-medium text-muted line-through">{plan.name}</span>
                       <span className="text-xs text-muted">
@@ -312,7 +315,7 @@ export function PlansTab() {
               label="Название *"
               placeholder="Basic"
               value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
             <div className="grid grid-cols-3 gap-3">
               <Input
@@ -320,14 +323,14 @@ export function PlansTab() {
                 type="number"
                 min={0}
                 value={form.pricePerMonth}
-                onChange={e => setForm(f => ({ ...f, pricePerMonth: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, pricePerMonth: e.target.value }))}
               />
               <Input
                 label="Макс. сотрудников (∞)"
                 type="number"
                 min={1}
                 value={form.maxEmployees}
-                onChange={e => setForm(f => ({ ...f, maxEmployees: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, maxEmployees: e.target.value }))}
                 placeholder="∞"
               />
               <Input
@@ -335,7 +338,7 @@ export function PlansTab() {
                 type="number"
                 min={1}
                 value={form.maxCompanies}
-                onChange={e => setForm(f => ({ ...f, maxCompanies: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, maxCompanies: e.target.value }))}
                 placeholder="∞"
               />
             </div>
@@ -346,14 +349,14 @@ export function PlansTab() {
                 type="number"
                 min={0}
                 value={form.photoQuotaMb}
-                onChange={e => setForm(f => ({ ...f, photoQuotaMb: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, photoQuotaMb: e.target.value }))}
                 placeholder="∞"
               />
               <div className="flex flex-col gap-1.5">
                 <label className="text-[13px] font-medium text-[#4A4038]">Срок хранения фото</label>
                 <select
                   value={form.photoRetention}
-                  onChange={e => setForm(f => ({ ...f, photoRetention: e.target.value as PhotoRetention }))}
+                  onChange={(e) => setForm((f) => ({ ...f, photoRetention: e.target.value as PhotoRetention }))}
                   className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
                 >
                   <option value="SixMonths">6 месяцев</option>
@@ -377,7 +380,7 @@ export function PlansTab() {
                     <input
                       type="checkbox"
                       checked={form[key]}
-                      onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))}
+                      onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.checked }))}
                       className="w-4 h-4 accent-gold"
                     />
                     <span className="text-sm text-ink-soft">{label}</span>
@@ -391,7 +394,7 @@ export function PlansTab() {
               <textarea
                 rows={2}
                 value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 placeholder="Для малого бизнеса"
                 className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold focus:ring-2 focus:ring-cream-deep resize-none"
               />
@@ -402,7 +405,7 @@ export function PlansTab() {
               type="number"
               min={0}
               value={form.notifyDaysBefore}
-              onChange={e => setForm(f => ({ ...f, notifyDaysBefore: e.target.value }))}
+              onChange={(e) => setForm((f) => ({ ...f, notifyDaysBefore: e.target.value }))}
             />
 
             {(editingPlan ? updateMut.isError : createMut.isError) && (
@@ -418,7 +421,7 @@ export function PlansTab() {
               <Button
                 className="flex-1"
                 loading={editingPlan ? updateMut.isPending : createMut.isPending}
-                onClick={() => editingPlan ? updateMut.mutate() : createMut.mutate()}
+                onClick={() => (editingPlan ? updateMut.mutate() : createMut.mutate())}
               >
                 {editingPlan ? 'Сохранить' : 'Создать'}
               </Button>

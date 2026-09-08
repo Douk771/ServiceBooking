@@ -54,15 +54,23 @@ export function ConsentGate({ status }: Props) {
         </div>
         <h1 className="font-serif text-2xl font-medium text-ink mb-2.5">Документы обновились</h1>
         <p className="text-sm text-ink-soft leading-[1.6] mb-6">
-          Мы изменили политику обработки персональных данных и/или пользовательское соглашение.
-          Чтобы продолжить пользоваться сервисом, ознакомьтесь с новой редакцией и примите её.
+          Мы изменили политику обработки персональных данных и/или пользовательское соглашение. Чтобы продолжить
+          пользоваться сервисом, ознакомьтесь с новой редакцией и примите её.
         </p>
 
         <div className="flex flex-col gap-2 mb-6">
-          <Link to="/privacy" target="_blank" className="text-sm text-gold hover:text-gold-dark flex items-center gap-1.5">
+          <Link
+            to="/privacy"
+            target="_blank"
+            className="text-sm text-gold hover:text-gold-dark flex items-center gap-1.5"
+          >
             <Icon name="chevron-right" size={13} strokeWidth={1.8} /> Политика обработки персональных данных
           </Link>
-          <Link to="/terms" target="_blank" className="text-sm text-gold hover:text-gold-dark flex items-center gap-1.5">
+          <Link
+            to="/terms"
+            target="_blank"
+            className="text-sm text-gold hover:text-gold-dark flex items-center gap-1.5"
+          >
             <Icon name="chevron-right" size={13} strokeWidth={1.8} /> Пользовательское соглашение
           </Link>
         </div>
@@ -74,9 +82,13 @@ export function ConsentGate({ status }: Props) {
         </Button>
 
         <div className="flex items-center justify-center gap-4 text-xs text-muted mt-2">
-          <button onClick={handleLogout} className="hover:text-ink-soft transition-colors">Выйти</button>
+          <button onClick={handleLogout} className="hover:text-ink-soft transition-colors">
+            Выйти
+          </button>
           <span>·</span>
-          <Link to="/profile/delete" className="hover:text-ink-soft transition-colors">Удалить аккаунт</Link>
+          <Link to="/profile/delete" className="hover:text-ink-soft transition-colors">
+            Удалить аккаунт
+          </Link>
         </div>
       </div>
     </div>

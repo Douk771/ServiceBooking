@@ -24,13 +24,19 @@ beforeEach(() => {
 describe('LegalUpdateBanner', () => {
   it('renders nothing when showBanner is false', () => {
     const { container } = render(
-      <MemoryRouter><LegalUpdateBanner status={makeStatus({ showBanner: false })} /></MemoryRouter>,
+      <MemoryRouter>
+        <LegalUpdateBanner status={makeStatus({ showBanner: false })} />
+      </MemoryRouter>,
     )
     expect(container).toBeEmptyDOMElement()
   })
 
   it('shows the banner with a "понятно" dismiss button when showBanner is true', () => {
-    render(<MemoryRouter><LegalUpdateBanner status={makeStatus()} /></MemoryRouter>)
+    render(
+      <MemoryRouter>
+        <LegalUpdateBanner status={makeStatus()} />
+      </MemoryRouter>,
+    )
     expect(screen.getByText(/Документы обновлены/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Понятно' })).toBeInTheDocument()
   })
@@ -38,19 +44,31 @@ describe('LegalUpdateBanner', () => {
   it('dismissing the banner hides it and it stays hidden on a fresh mount for the same version', async () => {
     const user = userEvent.setup()
     const status = makeStatus()
-    const { unmount } = render(<MemoryRouter><LegalUpdateBanner status={status} /></MemoryRouter>)
+    const { unmount } = render(
+      <MemoryRouter>
+        <LegalUpdateBanner status={status} />
+      </MemoryRouter>,
+    )
 
     await user.click(screen.getByRole('button', { name: 'Понятно' }))
     expect(screen.queryByText(/Документы обновлены/)).not.toBeInTheDocument()
     unmount()
 
-    render(<MemoryRouter><LegalUpdateBanner status={status} /></MemoryRouter>)
+    render(
+      <MemoryRouter>
+        <LegalUpdateBanner status={status} />
+      </MemoryRouter>,
+    )
     expect(screen.queryByText(/Документы обновлены/)).not.toBeInTheDocument()
   })
 
   it('a later real version change re-shows the banner after an earlier dismissal', () => {
     localStorage.setItem('legal-banner-dismissed-version', 'Privacy:2026-01-01|Terms:2026-01-01')
-    render(<MemoryRouter><LegalUpdateBanner status={makeStatus()} /></MemoryRouter>)
+    render(
+      <MemoryRouter>
+        <LegalUpdateBanner status={makeStatus()} />
+      </MemoryRouter>,
+    )
     expect(screen.getByText(/Документы обновлены/)).toBeInTheDocument()
   })
 })

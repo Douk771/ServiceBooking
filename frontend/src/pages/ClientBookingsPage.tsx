@@ -44,14 +44,16 @@ function ClientCancelForm({ bookingId, onCancel, onBack, loading }: ClientCancel
       <textarea
         id={`client-cancel-reason-${bookingId}`}
         value={reason}
-        onChange={e => setReason(e.target.value)}
+        onChange={(e) => setReason(e.target.value)}
         maxLength={300}
         rows={2}
         placeholder="Необязательно"
         className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
       />
       <div className="flex gap-2 justify-end">
-        <Button size="sm" variant="secondary" onClick={onBack} disabled={loading}>Назад</Button>
+        <Button size="sm" variant="secondary" onClick={onBack} disabled={loading}>
+          Назад
+        </Button>
         <Button size="sm" variant="danger" loading={loading} onClick={() => onCancel(reason.trim())}>
           Отменить запись
         </Button>
@@ -66,7 +68,8 @@ export function ClientBookingsPage() {
   const [tab, setTab] = useState<FilterTab>('all')
   const [reviewBooking, setReviewBooking] = useState<Booking | null>(null)
 
-  const statusParam = tab === 'upcoming' ? 'upcoming' : tab === 'completed' ? 'Completed' : tab === 'cancelled' ? 'Cancelled' : undefined
+  const statusParam =
+    tab === 'upcoming' ? 'upcoming' : tab === 'completed' ? 'Completed' : tab === 'cancelled' ? 'Cancelled' : undefined
 
   const { data: bookings, isLoading } = useQuery({
     queryKey: ['client-bookings', tab],
@@ -78,7 +81,7 @@ export function ClientBookingsPage() {
     queryFn: reviewsApi.canReview,
   })
 
-  const canReviewSet = useMemo(() => new Set((canReviewList ?? []).map(r => r.bookingId)), [canReviewList])
+  const canReviewSet = useMemo(() => new Set((canReviewList ?? []).map((r) => r.bookingId)), [canReviewList])
 
   const [cancelError, setCancelError] = useState('')
   const [cancellingId, setCancellingId] = useState<string | null>(null)
@@ -88,7 +91,11 @@ export function ClientBookingsPage() {
     // Cleared on start as well as on success, so a previous failure doesn't sit on screen looking
     // like it belongs to the visit the user is cancelling now.
     onMutate: () => setCancelError(''),
-    onSuccess: () => { setCancelError(''); setCancellingId(null); qc.invalidateQueries({ queryKey: ['client-bookings'] }) },
+    onSuccess: () => {
+      setCancelError('')
+      setCancellingId(null)
+      qc.invalidateQueries({ queryKey: ['client-bookings'] })
+    },
     onError: (err) => setCancelError(getCancelErrorMessage(err)),
   })
 
@@ -116,14 +123,12 @@ export function ClientBookingsPage() {
 
       {/* Filter tabs */}
       <div className="inline-flex gap-1 bg-cream-deep p-1 rounded-full mb-8">
-        {TABS.map(t => (
+        {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-[18px] py-[9px] rounded-full text-[13.5px] font-semibold transition-colors ${
-              tab === t.key
-                ? 'bg-white text-ink shadow-sm'
-                : 'text-gold-dark hover:text-ink'
+              tab === t.key ? 'bg-white text-ink shadow-sm' : 'text-gold-dark hover:text-ink'
             }`}
           >
             {t.label}
@@ -139,13 +144,13 @@ export function ClientBookingsPage() {
         </div>
       ) : grouped.length > 0 ? (
         <div className="flex flex-col gap-7">
-          {grouped.map(group => (
+          {grouped.map((group) => (
             <div key={group.label}>
               <h3 className="text-[12.5px] font-bold tracking-[0.05em] uppercase text-muted mb-3 capitalize">
                 {group.label}
               </h3>
               <div className="flex flex-col gap-2.5">
-                {group.items.map(b => (
+                {group.items.map((b) => (
                   <div key={b.id} className="bg-white border border-line rounded-[18px] px-5 py-[18px]">
                     <div className="flex items-center gap-4 flex-wrap">
                       {/* Date/time block */}
@@ -163,7 +168,9 @@ export function ClientBookingsPage() {
                           <StatusBadge status={b.status} />
                         </div>
                         {b.companyName && (
-                          <p className="text-[13px] text-ink-soft mt-1">{b.companyName} · {b.masterName}</p>
+                          <p className="text-[13px] text-ink-soft mt-1">
+                            {b.companyName} · {b.masterName}
+                          </p>
                         )}
                         {b.price != null && (
                           <p className="text-[13px] font-semibold text-gold-dark mt-0.5">
@@ -185,21 +192,13 @@ export function ClientBookingsPage() {
                           </Button>
                         )}
                         {b.status === 'Completed' && canReviewSet.has(b.id) && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => setReviewBooking(b)}
-                          >
+                          <Button size="sm" variant="secondary" onClick={() => setReviewBooking(b)}>
                             <Icon name="star" size={12} className="text-gold-dark" />
                             Оставить отзыв
                           </Button>
                         )}
                         {b.companySlug && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => navigate(`/company/${b.companySlug}`)}
-                          >
+                          <Button size="sm" variant="ghost" onClick={() => navigate(`/company/${b.companySlug}`)}>
                             Записаться снова
                           </Button>
                         )}

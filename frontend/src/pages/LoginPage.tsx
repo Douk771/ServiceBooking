@@ -16,7 +16,11 @@ interface FormData {
 }
 
 export function LoginPage() {
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>()
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<FormData>()
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -32,13 +36,25 @@ export function LoginPage() {
       // logging out) would otherwise leave the previous user's cached queries in place, and the new
       // user gets a first frame of someone else's data. Navbar's logout clears for the same reason.
       qc.clear()
-      setAuth({ id: res.userId, phone: res.phone, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
+      setAuth(
+        {
+          id: res.userId,
+          phone: res.phone,
+          email: res.email,
+          firstName: res.firstName,
+          lastName: res.lastName,
+          roles: res.roles,
+        },
+        res.token,
+      )
       navigate('/')
     } catch (e: unknown) {
       // 429 (US-42 `auth-login` policy) gets its own text; every other failure on this endpoint is a
       // wrong-credentials 401, which the server sends with an empty body (API_CONTRACT.md §0.2) —
       // authError's generic fallback would be misleadingly vague there, so it's only consulted for 429.
-      setError(e instanceof AxiosError && e.response?.status === 429 ? getAuthErrorMessage(e) : 'Неверный телефон или пароль')
+      setError(
+        e instanceof AxiosError && e.response?.status === 429 ? getAuthErrorMessage(e) : 'Неверный телефон или пароль',
+      )
     } finally {
       setLoading(false)
     }
@@ -76,9 +92,7 @@ export function LoginPage() {
               {...register('password', { required: 'Введите пароль' })}
             />
 
-            {error && (
-              <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>
-            )}
+            {error && <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>}
 
             <Button type="submit" size="lg" loading={loading} className="mt-1 w-full">
               Войти

@@ -13,5 +13,5 @@ export interface CompanyStats {
 
 export const statsApi = {
   getCompanyStats: (companyId: string, from: string, to: string) =>
-    api.get<CompanyStats>(`/companies/${companyId}/stats`, { params: { from, to } }).then(r => r.data),
+    api.get<CompanyStats>(`/companies/${companyId}/stats`, { params: { from, to } }).then((r) => r.data),
 }

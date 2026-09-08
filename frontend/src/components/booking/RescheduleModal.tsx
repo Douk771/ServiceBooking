@@ -8,7 +8,10 @@ import { Icon } from '../ui/Icon'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import type { Booking } from '../../types'
 
-interface OccupiedRange { start: string; end: string }
+interface OccupiedRange {
+  start: string
+  end: string
+}
 
 interface Props {
   booking: Booking
@@ -62,15 +65,18 @@ export function RescheduleModal({ booking, onClose }: Props) {
     queryFn: () => bookingsApi.getOccupied(booking.masterId, todayStr),
     staleTime: 0,
   })
-  const hasAvailableSlotToday = TIME_GRID.some((time) =>
-    timeToMinutes(time) > nowMinutes && !isTimeOccupied(time, duration, occupiedToday, booking.startTime)
+  const hasAvailableSlotToday = TIME_GRID.some(
+    (time) => timeToMinutes(time) > nowMinutes && !isTimeOccupied(time, duration, occupiedToday, booking.startTime),
   )
 
   const days = [
     ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
     ...Array.from({ length: 14 }, (_, i) => {
       const d = addDays(now, i + 1)
-      return { value: format(d, 'yyyy-MM-dd'), label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }) }
+      return {
+        value: format(d, 'yyyy-MM-dd'),
+        label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }),
+      }
     }),
   ]
 
@@ -95,10 +101,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
   const dismiss = useOverlayDismiss(onClose)
 
   return (
-    <div
-      className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5"
-      {...dismiss}
-    >
+    <div className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5" {...dismiss}>
       <div className="bg-cream rounded-[26px] shadow-modal w-full max-w-[440px] max-h-[88vh] overflow-y-auto">
         <div className="p-6 pb-[22px] border-b border-line flex items-center justify-between">
           <div>
@@ -119,7 +122,10 @@ export function RescheduleModal({ booking, onClose }: Props) {
             {days.map((d) => (
               <button
                 key={d.value}
-                onClick={() => { setSelectedDate(d.value); setSelectedTime('') }}
+                onClick={() => {
+                  setSelectedDate(d.value)
+                  setSelectedTime('')
+                }}
                 className={`px-3.5 py-3 rounded-xl border text-[13.5px] transition-all text-left ${
                   selectedDate === d.value
                     ? 'bg-ink text-cream border-ink'
@@ -136,9 +142,10 @@ export function RescheduleModal({ booking, onClose }: Props) {
             <>
               <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-3">Новое время</h3>
               <div className="grid grid-cols-4 gap-2 mb-6">
-                {TIME_GRID.filter((time) =>
-                  !isTimeOccupied(time, duration, occupied, booking.startTime) &&
-                  (selectedDate !== todayStr || timeToMinutes(time) > nowMinutes)
+                {TIME_GRID.filter(
+                  (time) =>
+                    !isTimeOccupied(time, duration, occupied, booking.startTime) &&
+                    (selectedDate !== todayStr || timeToMinutes(time) > nowMinutes),
                 ).map((time) => {
                   const isSelected = selectedTime === time
                   return (
@@ -146,9 +153,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
                       key={time}
                       onClick={() => setSelectedTime(isSelected ? '' : time)}
                       className={`py-2 rounded-xl text-[13.5px] font-medium border transition-all ${
-                        isSelected
-                          ? 'bg-ink text-cream border-ink'
-                          : 'border-line bg-white hover:border-line-strong'
+                        isSelected ? 'bg-ink text-cream border-ink' : 'border-line bg-white hover:border-line-strong'
                       }`}
                     >
                       {time}

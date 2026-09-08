@@ -72,63 +72,94 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           {/* Embed route — no Navbar, no consent gate: the widget is used by anonymous guests */}
-          <Route path="/embed/:slug" element={
-            <div className="min-h-screen bg-white font-sans">
-              <EmbedPage />
-            </div>
-          } />
+          <Route
+            path="/embed/:slug"
+            element={
+              <div className="min-h-screen bg-white font-sans">
+                <EmbedPage />
+              </div>
+            }
+          />
 
           {/* All other routes with Navbar */}
-          <Route path="*" element={
-            <div className="min-h-screen bg-cream font-sans text-ink">
-              <Navbar />
-              <LegalGuard>
-                <Routes>
-                  <Route path="/" element={<HomePage />} />
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/register" element={<RegisterPage />} />
-                  <Route path="/company/:slug" element={<CompanyPage />} />
-                  <Route path="/my-bookings" element={
-                    <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
-                      <MyBookingsPage />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/my-visits" element={
-                    <ProtectedRoute roles={['Client', 'Master', 'CompanyOwner', 'SuperAdmin']}>
-                      <ClientBookingsPage />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/cabinet" element={
-                    <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
-                      <CabinetPage />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/owner/company/:id" element={
-                    <ProtectedRoute roles={['CompanyOwner', 'SuperAdmin']}>
-                      <CompanyManagePage />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/profile" element={
-                    <ProtectedRoute><ProfilePage /></ProtectedRoute>
-                  } />
-                  <Route path="/profile/delete" element={
-                    <ProtectedRoute><DeleteAccountPage /></ProtectedRoute>
-                  } />
-                  <Route path="/admin" element={
-                    <ProtectedRoute roles={['SuperAdmin']}>
-                      <AdminPage />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
-                  <Route path="/terms" element={<LegalDocumentPage type="Terms" />} />
-                  {/* Legacy redirects */}
-                  <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
-                  <Route path="/owner" element={<Navigate to="/cabinet" replace />} />
-                </Routes>
-                <Footer />
-              </LegalGuard>
-            </div>
-          } />
+          <Route
+            path="*"
+            element={
+              <div className="min-h-screen bg-cream font-sans text-ink">
+                <Navbar />
+                <LegalGuard>
+                  <Routes>
+                    <Route path="/" element={<HomePage />} />
+                    <Route path="/login" element={<LoginPage />} />
+                    <Route path="/register" element={<RegisterPage />} />
+                    <Route path="/company/:slug" element={<CompanyPage />} />
+                    <Route
+                      path="/my-bookings"
+                      element={
+                        <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
+                          <MyBookingsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/my-visits"
+                      element={
+                        <ProtectedRoute roles={['Client', 'Master', 'CompanyOwner', 'SuperAdmin']}>
+                          <ClientBookingsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/cabinet"
+                      element={
+                        <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
+                          <CabinetPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/owner/company/:id"
+                      element={
+                        <ProtectedRoute roles={['CompanyOwner', 'SuperAdmin']}>
+                          <CompanyManagePage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/profile"
+                      element={
+                        <ProtectedRoute>
+                          <ProfilePage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/profile/delete"
+                      element={
+                        <ProtectedRoute>
+                          <DeleteAccountPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin"
+                      element={
+                        <ProtectedRoute roles={['SuperAdmin']}>
+                          <AdminPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
+                    <Route path="/terms" element={<LegalDocumentPage type="Terms" />} />
+                    {/* Legacy redirects */}
+                    <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
+                    <Route path="/owner" element={<Navigate to="/cabinet" replace />} />
+                  </Routes>
+                  <Footer />
+                </LegalGuard>
+              </div>
+            }
+          />
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

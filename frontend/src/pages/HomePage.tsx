@@ -48,9 +48,21 @@ function CompanyCard({ company }: { company: Company }) {
 }
 
 const howItWorks = [
-  { icon: 'user', title: 'Выберите специалиста', text: 'Смотрите профили мастеров, их специализацию и отзывы клиентов.' },
-  { icon: 'calendar', title: 'Выберите удобное время', text: 'Актуальные свободные слоты — записывайтесь на сегодня или на неделю вперёд.' },
-  { icon: 'check-circle', title: 'Получите подтверждение', text: 'Мгновенное подтверждение записи и напоминание накануне визита.' },
+  {
+    icon: 'user',
+    title: 'Выберите специалиста',
+    text: 'Смотрите профили мастеров, их специализацию и отзывы клиентов.',
+  },
+  {
+    icon: 'calendar',
+    title: 'Выберите удобное время',
+    text: 'Актуальные свободные слоты — записывайтесь на сегодня или на неделю вперёд.',
+  },
+  {
+    icon: 'check-circle',
+    title: 'Получите подтверждение',
+    text: 'Мгновенное подтверждение записи и напоминание накануне визита.',
+  },
 ] as const
 
 export function HomePage() {
@@ -60,7 +72,7 @@ export function HomePage() {
   })
   const [search, setSearch] = useState('')
 
-  const filtered = companies?.filter(c => {
+  const filtered = companies?.filter((c) => {
     const q = search.trim().toLowerCase()
     if (!q) return true
     return c.name.toLowerCase().includes(q) || (c.address ?? '').toLowerCase().includes(q)
@@ -76,10 +88,13 @@ export function HomePage() {
             Онлайн-запись за пару минут
           </div>
           <h1 className="font-serif text-[44px] md:text-[60px] leading-[1.08] font-medium mb-6 -tracking-[0.01em] text-ink">
-            Красота и уход,<br /><em className="text-gold-dark not-italic italic">подобранные под вас</em>
+            Красота и уход,
+            <br />
+            <em className="text-gold-dark not-italic italic">подобранные под вас</em>
           </h1>
           <p className="text-lg leading-[1.6] text-ink-soft max-w-[460px] mb-9">
-            Найдите проверенного мастера, выберите удобное время и получите подтверждение записи мгновенно — без звонков и ожидания.
+            Найдите проверенного мастера, выберите удобное время и получите подтверждение записи мгновенно — без звонков
+            и ожидания.
           </p>
           <div className="flex items-center gap-7 flex-wrap">
             <a
@@ -89,7 +104,9 @@ export function HomePage() {
               Найти специалиста
               <Icon name="arrow-right" size={16} strokeWidth={1.8} />
             </a>
-            <a href="#how" className="text-[15px] font-medium text-ink border-b border-ink">Как это работает</a>
+            <a href="#how" className="text-[15px] font-medium text-ink border-b border-ink">
+              Как это работает
+            </a>
           </div>
         </div>
         <div className="hidden md:block w-full aspect-[4/5] rounded-[28px] border border-line overflow-hidden">
@@ -120,10 +137,15 @@ export function HomePage() {
             <p className="text-[15px] text-ink-soft">Проверенные специалисты на платформе</p>
           </div>
           <div className="relative">
-            <Icon name="search" size={17} strokeWidth={1.8} className="absolute left-4 top-1/2 -translate-y-1/2 text-gold-dark" />
+            <Icon
+              name="search"
+              size={17}
+              strokeWidth={1.8}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-gold-dark"
+            />
             <input
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
               placeholder="Поиск по названию или адресу"
               className="w-[280px] pl-[42px] pr-4 py-3 rounded-full border border-line bg-white text-sm outline-none text-ink focus:border-gold focus:ring-[3px] focus:ring-cream-deep"
             />
@@ -138,7 +160,9 @@ export function HomePage() {
           </div>
         ) : filtered && filtered.length > 0 ? (
           <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
-            {filtered.map((c) => <CompanyCard key={c.id} company={c} />)}
+            {filtered.map((c) => (
+              <CompanyCard key={c.id} company={c} />
+            ))}
           </div>
         ) : (
           <div className="text-center py-16 text-muted">

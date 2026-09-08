@@ -16,7 +16,10 @@ const DISMISSED_KEY = 'legal-banner-dismissed-version'
  * real change re-shows it even though the user already dismissed an earlier one.
  */
 export function LegalUpdateBanner({ status }: Props) {
-  const versionKey = status.documents.map((d) => `${d.type}:${d.version}`).sort().join('|')
+  const versionKey = status.documents
+    .map((d) => `${d.type}:${d.version}`)
+    .sort()
+    .join('|')
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISSED_KEY) === versionKey)
 
   if (!status.showBanner || dismissed) return null
@@ -31,9 +34,13 @@ export function LegalUpdateBanner({ status }: Props) {
       <span className="flex items-center gap-1.5">
         <Icon name="alert-circle" size={14} strokeWidth={1.8} />
         Документы обновлены —{' '}
-        <Link to="/privacy" className="underline hover:no-underline">политика</Link>
+        <Link to="/privacy" className="underline hover:no-underline">
+          политика
+        </Link>
         {' и '}
-        <Link to="/terms" className="underline hover:no-underline">соглашение</Link>
+        <Link to="/terms" className="underline hover:no-underline">
+          соглашение
+        </Link>
       </span>
       <button onClick={handleDismiss} className="font-semibold hover:opacity-70 transition-opacity">
         Понятно

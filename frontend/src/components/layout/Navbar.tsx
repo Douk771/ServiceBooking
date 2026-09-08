@@ -14,7 +14,12 @@ export function Navbar() {
   // Clears every cached query on logout — otherwise, on a shared computer, the next person to log
   // in sees the previous user's ['my-companies'], ['company-clients', …], reports etc. for the first
   // render, before their own queries refetch (US-19, C5).
-  const handleLogout = () => { closeMenu(); logout(); qc.clear(); navigate('/') }
+  const handleLogout = () => {
+    closeMenu()
+    logout()
+    qc.clear()
+    navigate('/')
+  }
 
   const isMasterOrOwner = hasRole('Master') || hasRole('CompanyOwner') || hasRole('SuperAdmin')
   const isAdmin = hasRole('SuperAdmin')
@@ -22,7 +27,8 @@ export function Navbar() {
   // Client-only accounts: a master or owner can also be a client of a different salon (US-08, Q13).
 
   const navLinkClass = 'text-sm font-medium text-ink-soft hover:text-gold-dark transition-colors'
-  const mobileLinkClass = 'block px-4 py-3 text-[15px] font-medium text-ink-soft hover:text-gold-dark hover:bg-cream-deep rounded-xl transition-colors'
+  const mobileLinkClass =
+    'block px-4 py-3 text-[15px] font-medium text-ink-soft hover:text-gold-dark hover:bg-cream-deep rounded-xl transition-colors'
 
   return (
     <nav className="sticky top-0 z-50 bg-cream/86 backdrop-blur-md border-b border-line">
@@ -39,26 +45,43 @@ export function Navbar() {
           {isAuthenticated() ? (
             <>
               {isMasterOrOwner && (
-                <Link to="/my-bookings" className={navLinkClass}>Мои записи</Link>
+                <Link to="/my-bookings" className={navLinkClass}>
+                  Мои записи
+                </Link>
               )}
-              <Link to="/my-visits" className={navLinkClass}>Мои визиты</Link>
+              <Link to="/my-visits" className={navLinkClass}>
+                Мои визиты
+              </Link>
               {isMasterOrOwner && (
-                <Link to="/cabinet" className={navLinkClass}>Кабинет</Link>
+                <Link to="/cabinet" className={navLinkClass}>
+                  Кабинет
+                </Link>
               )}
               {isAdmin && (
-                <Link to="/admin" className={navLinkClass}>Админ</Link>
+                <Link to="/admin" className={navLinkClass}>
+                  Админ
+                </Link>
               )}
-              <button onClick={handleLogout} className="flex items-center gap-1.5 text-sm font-medium text-ink-soft hover:text-gold-dark transition-colors">
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 text-sm font-medium text-ink-soft hover:text-gold-dark transition-colors"
+              >
                 <Icon name="log-out" size={15} strokeWidth={1.7} />
                 Выйти
               </button>
-              <Link to="/profile" className="w-9 h-9 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-xs hover:bg-line transition-colors shrink-0">
-                {user?.firstName[0]}{user?.lastName[0]}
+              <Link
+                to="/profile"
+                className="w-9 h-9 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-xs hover:bg-line transition-colors shrink-0"
+              >
+                {user?.firstName[0]}
+                {user?.lastName[0]}
               </Link>
             </>
           ) : (
             <>
-              <Link to="/login" className={navLinkClass}>Войти</Link>
+              <Link to="/login" className={navLinkClass}>
+                Войти
+              </Link>
               <Link
                 to="/register"
                 className="inline-flex items-center bg-ink hover:bg-ink/90 text-cream text-sm font-semibold px-[22px] py-2.5 rounded-full transition-colors"
@@ -72,12 +95,17 @@ export function Navbar() {
         {/* Mobile controls */}
         <div className="flex items-center gap-2 md:hidden">
           {isAuthenticated() && (
-            <Link to="/profile" className="w-9 h-9 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-xs hover:bg-line transition-colors shrink-0" onClick={closeMenu}>
-              {user?.firstName[0]}{user?.lastName[0]}
+            <Link
+              to="/profile"
+              className="w-9 h-9 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-xs hover:bg-line transition-colors shrink-0"
+              onClick={closeMenu}
+            >
+              {user?.firstName[0]}
+              {user?.lastName[0]}
             </Link>
           )}
           <button
-            onClick={() => setMenuOpen(v => !v)}
+            onClick={() => setMenuOpen((v) => !v)}
             className="w-9 h-9 rounded-full flex items-center justify-center text-ink-soft hover:bg-cream-deep transition-colors shrink-0"
             aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
           >
@@ -92,14 +120,22 @@ export function Navbar() {
           {isAuthenticated() ? (
             <>
               {isMasterOrOwner && (
-                <Link to="/my-bookings" className={mobileLinkClass} onClick={closeMenu}>Мои записи</Link>
+                <Link to="/my-bookings" className={mobileLinkClass} onClick={closeMenu}>
+                  Мои записи
+                </Link>
               )}
-              <Link to="/my-visits" className={mobileLinkClass} onClick={closeMenu}>Мои визиты</Link>
+              <Link to="/my-visits" className={mobileLinkClass} onClick={closeMenu}>
+                Мои визиты
+              </Link>
               {isMasterOrOwner && (
-                <Link to="/cabinet" className={mobileLinkClass} onClick={closeMenu}>Кабинет</Link>
+                <Link to="/cabinet" className={mobileLinkClass} onClick={closeMenu}>
+                  Кабинет
+                </Link>
               )}
               {isAdmin && (
-                <Link to="/admin" className={mobileLinkClass} onClick={closeMenu}>Админ</Link>
+                <Link to="/admin" className={mobileLinkClass} onClick={closeMenu}>
+                  Админ
+                </Link>
               )}
               <button onClick={handleLogout} className={`${mobileLinkClass} flex items-center gap-2 text-left w-full`}>
                 <Icon name="log-out" size={16} strokeWidth={1.7} />
@@ -108,8 +144,12 @@ export function Navbar() {
             </>
           ) : (
             <>
-              <Link to="/login" className={mobileLinkClass} onClick={closeMenu}>Войти</Link>
-              <Link to="/register" className={mobileLinkClass} onClick={closeMenu}>Регистрация</Link>
+              <Link to="/login" className={mobileLinkClass} onClick={closeMenu}>
+                Войти
+              </Link>
+              <Link to="/register" className={mobileLinkClass} onClick={closeMenu}>
+                Регистрация
+              </Link>
             </>
           )}
         </div>

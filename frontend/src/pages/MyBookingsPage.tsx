@@ -91,11 +91,17 @@ function ClientHistoryPanel({ booking, client }: ClientHistoryPanelProps) {
               <div key={i} className="flex items-center gap-3 text-sm">
                 <span className="text-muted shrink-0">{b.date}</span>
                 <span className="text-ink flex-1">{b.serviceName}</span>
-                <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium shrink-0 ${
-                  b.status === 'Completed' ? 'bg-success-bg text-success'
-                  : b.status === 'Cancelled' ? 'bg-danger-bg text-danger'
-                  : 'bg-cream-deep text-ink-soft'
-                }`}>{STATUS_LABELS[b.status] ?? b.status}</span>
+                <span
+                  className={`text-xs px-2.5 py-0.5 rounded-full font-medium shrink-0 ${
+                    b.status === 'Completed'
+                      ? 'bg-success-bg text-success'
+                      : b.status === 'Cancelled'
+                        ? 'bg-danger-bg text-danger'
+                        : 'bg-cream-deep text-ink-soft'
+                  }`}
+                >
+                  {STATUS_LABELS[b.status] ?? b.status}
+                </span>
               </div>
             ))}
           </div>
@@ -114,16 +120,20 @@ function ClientHistoryPanel({ booking, client }: ClientHistoryPanelProps) {
           </ul>
         )}
         <div className="flex flex-col gap-2 mt-2">
-          <label className="sr-only" htmlFor={`new-note-${booking.id}`}>Добавить заметку</label>
+          <label className="sr-only" htmlFor={`new-note-${booking.id}`}>
+            Добавить заметку
+          </label>
           <div className="flex gap-2">
             <input
               id={`new-note-${booking.id}`}
               type="text"
               value={newNote}
-              onChange={e => setNewNote(e.target.value)}
+              onChange={(e) => setNewNote(e.target.value)}
               placeholder="Добавить заметку…"
               className="flex-1 rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold"
-              onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate() }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate()
+              }}
             />
             <Button
               size="sm"
@@ -166,14 +176,16 @@ function CancelForm({ bookingId, onCancel, onBack, loading }: CancelFormProps) {
       <textarea
         id={`cancel-reason-${bookingId}`}
         value={reason}
-        onChange={e => setReason(e.target.value)}
+        onChange={(e) => setReason(e.target.value)}
         maxLength={300}
         rows={2}
         placeholder="Необязательно"
         className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
       />
       <div className="flex gap-2 justify-end">
-        <Button size="sm" variant="secondary" onClick={onBack} disabled={loading}>Назад</Button>
+        <Button size="sm" variant="secondary" onClick={onBack} disabled={loading}>
+          Назад
+        </Button>
         <Button size="sm" variant="danger" loading={loading} onClick={() => onCancel(reason.trim())}>
           Отменить запись
         </Button>
@@ -236,11 +248,7 @@ function BookingRow({ booking: b, client, onReschedule, cancel, complete, noShow
                 <Icon name="phone" size={11} strokeWidth={1.8} /> {formatPhone(b.clientPhone)}
               </p>
             )}
-            {b.notes && (
-              <p className="text-xs text-ink-soft mt-1 bg-cream-deep rounded-lg px-2 py-1">
-                {b.notes}
-              </p>
-            )}
+            {b.notes && <p className="text-xs text-ink-soft mt-1 bg-cream-deep rounded-lg px-2 py-1">{b.notes}</p>}
             {b.status === 'Cancelled' && b.cancellationReason && (
               <p className="text-xs text-danger mt-1 bg-danger-bg rounded-lg px-2 py-1">
                 Причина отмены: {b.cancellationReason}
@@ -249,28 +257,53 @@ function BookingRow({ booking: b, client, onReschedule, cancel, complete, noShow
           </div>
         </div>
         <div className="flex gap-2 flex-wrap sm:justify-end">
-          {(b.status === 'Pending' || b.status === 'Confirmed') && (<>
-            {b.paymentStatus === 'Pending' && (
-              <Button size="sm" variant="secondary" loading={markPaid.isPending} onClick={() => markPaid.mutate(b.id)}>
-                <Icon name="credit-card" size={13} strokeWidth={1.8} /> Отметить оплату
+          {(b.status === 'Pending' || b.status === 'Confirmed') && (
+            <>
+              {b.paymentStatus === 'Pending' && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={markPaid.isPending}
+                  onClick={() => markPaid.mutate(b.id)}
+                >
+                  <Icon name="credit-card" size={13} strokeWidth={1.8} /> Отметить оплату
+                </Button>
+              )}
+              <Button size="sm" variant="secondary" onClick={() => onReschedule(b)}>
+                Перенести
               </Button>
-            )}
-            <Button size="sm" variant="secondary" onClick={() => onReschedule(b)}>Перенести</Button>
-            <Button size="sm" loading={complete.isPending} onClick={() => complete.mutate(b.id)}>Выполнено</Button>
-            <Button size="sm" variant="secondary" loading={noShow.isPending} onClick={() => noShow.mutate(b.id)}>Не пришёл</Button>
-            {!cancelling && (
-              <Button size="sm" variant="danger" onClick={() => setCancelling(true)}>Отменить</Button>
-            )}
-          </>)}
+              <Button size="sm" loading={complete.isPending} onClick={() => complete.mutate(b.id)}>
+                Выполнено
+              </Button>
+              <Button size="sm" variant="secondary" loading={noShow.isPending} onClick={() => noShow.mutate(b.id)}>
+                Не пришёл
+              </Button>
+              {!cancelling && (
+                <Button size="sm" variant="danger" onClick={() => setCancelling(true)}>
+                  Отменить
+                </Button>
+              )}
+            </>
+          )}
           {isFinalized ? (
-            <Button size="sm" variant="secondary" onClick={() => setHistoryOpen(v => !v)}>
+            <Button size="sm" variant="secondary" onClick={() => setHistoryOpen((v) => !v)}>
               <Icon name="star" size={13} strokeWidth={1.8} /> Заметки о клиенте
-              <Icon name="chevron-down" size={13} strokeWidth={1.8} className={`transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
+              <Icon
+                name="chevron-down"
+                size={13}
+                strokeWidth={1.8}
+                className={`transition-transform ${historyOpen ? 'rotate-180' : ''}`}
+              />
             </Button>
           ) : (
-            <Button size="sm" variant="ghost" onClick={() => setHistoryOpen(v => !v)}>
+            <Button size="sm" variant="ghost" onClick={() => setHistoryOpen((v) => !v)}>
               История клиента
-              <Icon name="chevron-down" size={13} strokeWidth={1.8} className={`transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
+              <Icon
+                name="chevron-down"
+                size={13}
+                strokeWidth={1.8}
+                className={`transition-transform ${historyOpen ? 'rotate-180' : ''}`}
+              />
             </Button>
           )}
         </div>
@@ -288,7 +321,10 @@ function BookingRow({ booking: b, client, onReschedule, cancel, complete, noShow
           bookingId={b.id}
           loading={cancel.isPending}
           onBack={() => setCancelling(false)}
-          onCancel={(reason) => { cancel.mutate({ id: b.id, reason }); setCancelling(false) }}
+          onCancel={(reason) => {
+            cancel.mutate({ id: b.id, reason })
+            setCancelling(false)
+          }}
         />
       )}
       {historyOpen && <ClientHistoryPanel booking={b} client={client} />}
@@ -317,7 +353,10 @@ export function MyBookingsPage() {
     // Clear on start, not only on success: otherwise a stale failure from another booking stays on
     // screen while the new request is in flight and reads as if it belongs to the new action.
     onMutate: () => setActionError(null),
-    onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onSuccess: () => {
+      setActionError(null)
+      qc.invalidateQueries({ queryKey: ['master-bookings'] })
+    },
     onError: (err, { id }) => setActionError({ bookingId: id, message: getCancelErrorMessage(err) }),
   })
   const complete = useMutation({
@@ -325,7 +364,10 @@ export function MyBookingsPage() {
     // Clear on start, not only on success: otherwise a stale failure from another booking stays on
     // screen while the new request is in flight and reads as if it belongs to the new action.
     onMutate: () => setActionError(null),
-    onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onSuccess: () => {
+      setActionError(null)
+      qc.invalidateQueries({ queryKey: ['master-bookings'] })
+    },
     onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
   })
   const noShow = useMutation({
@@ -333,7 +375,10 @@ export function MyBookingsPage() {
     // Clear on start, not only on success: otherwise a stale failure from another booking stays on
     // screen while the new request is in flight and reads as if it belongs to the new action.
     onMutate: () => setActionError(null),
-    onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onSuccess: () => {
+      setActionError(null)
+      qc.invalidateQueries({ queryKey: ['master-bookings'] })
+    },
     onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
   })
   const markPaid = useMutation({
@@ -341,18 +386,18 @@ export function MyBookingsPage() {
     // Clear on start, not only on success: otherwise a stale failure from another booking stays on
     // screen while the new request is in flight and reads as if it belongs to the new action.
     onMutate: () => setActionError(null),
-    onSuccess: () => { setActionError(null); qc.invalidateQueries({ queryKey: ['master-bookings'] }) },
+    onSuccess: () => {
+      setActionError(null)
+      qc.invalidateQueries({ queryKey: ['master-bookings'] })
+    },
     onError: (err, id) => setActionError({ bookingId: id, message: getBookingErrorMessage(err) }),
   })
 
   // Client history/notes are scoped per company (see MastersController.GetClients) — fetch the
   // client list for every company the master has bookings in, then look each booking's client up.
-  const companyIds = useMemo(
-    () => Array.from(new Set((bookings ?? []).map(b => b.companyId))),
-    [bookings]
-  )
+  const companyIds = useMemo(() => Array.from(new Set((bookings ?? []).map((b) => b.companyId))), [bookings])
   const clientQueries = useQueries({
-    queries: companyIds.map(companyId => ({
+    queries: companyIds.map((companyId) => ({
       queryKey: ['master-clients', companyId],
       // Pagination on this endpoint (API_CONTRACT.md §11) is designed for the "Мои клиенты" list
       // screen, not this cross-reference lookup — pageSize is set to the server's own cap (100) to
@@ -406,9 +451,7 @@ export function MyBookingsPage() {
         <div className="grid gap-6">
           {grouped.map(([date, dayBookings]) => (
             <div key={date}>
-              <h3 className="text-sm font-semibold text-muted uppercase tracking-wide mb-2">
-                {dayLabel(date)}
-              </h3>
+              <h3 className="text-sm font-semibold text-muted uppercase tracking-wide mb-2">{dayLabel(date)}</h3>
               <div className="grid gap-2">
                 {dayBookings.map((b: Booking) => (
                   <BookingRow

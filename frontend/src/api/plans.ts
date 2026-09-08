@@ -23,8 +23,9 @@ export interface PlanConfig {
 }
 
 export const plansApi = {
-  list: () => api.get<PlanConfig[]>('/admin/plans').then(r => r.data),
-  create: (data: Partial<PlanConfig>) => api.post<PlanConfig>('/admin/plans', data).then(r => r.data),
-  update: (id: string, data: Partial<PlanConfig>) => api.put<PlanConfig>(`/admin/plans/${id}`, data).then(r => r.data),
+  list: () => api.get<PlanConfig[]>('/admin/plans').then((r) => r.data),
+  create: (data: Partial<PlanConfig>) => api.post<PlanConfig>('/admin/plans', data).then((r) => r.data),
+  update: (id: string, data: Partial<PlanConfig>) =>
+    api.put<PlanConfig>(`/admin/plans/${id}`, data).then((r) => r.data),
   deactivate: (id: string) => api.delete(`/admin/plans/${id}`),
 }

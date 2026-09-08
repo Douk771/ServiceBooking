@@ -15,14 +15,19 @@ import { formatPhone } from '../utils/phone'
 import { getUploadErrorMessage } from '../utils/uploadError'
 
 const roleLabel: Record<string, string> = {
-  Client: 'Клиент', Master: 'Мастер', CompanyOwner: 'Владелец', SuperAdmin: 'Супер-администратор',
+  Client: 'Клиент',
+  Master: 'Мастер',
+  CompanyOwner: 'Владелец',
+  SuperAdmin: 'Супер-администратор',
 }
 
 function PlanFeature({ label, enabled }: { label: string; enabled: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
-      enabled ? 'bg-success-bg text-success' : 'bg-[#F5F2EC] text-muted'
-    }`}>
+    <span
+      className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
+        enabled ? 'bg-success-bg text-success' : 'bg-[#F5F2EC] text-muted'
+      }`}
+    >
       {enabled ? '✓' : '✗'} {label}
     </span>
   )
@@ -39,7 +44,9 @@ function PlanSection({ plan }: { plan: ProfilePlanDto }) {
     <Card className="p-[26px] mb-[18px]">
       <div className="flex items-center justify-between mb-3.5 flex-wrap gap-2">
         <h2 className="text-[15.5px] font-semibold text-ink">Тарифный план</h2>
-        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusLabel.className}`}>{statusLabel.text}</span>
+        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusLabel.className}`}>
+          {statusLabel.text}
+        </span>
       </div>
       <div className="flex items-center gap-3.5 mb-3.5 flex-wrap">
         <span className="text-lg font-bold text-ink">{plan.planName}</span>
@@ -90,11 +97,17 @@ export function ProfilePage() {
   })
 
   // ── Profile form ──────────────────────────────────────────────────────────
-  const { register: regProfile, handleSubmit: hsProfile, formState: { isDirty: pDirty } } = useForm({
-    values: profile ? {
-      firstName: profile.firstName,
-      lastName: profile.lastName,
-    } : undefined,
+  const {
+    register: regProfile,
+    handleSubmit: hsProfile,
+    formState: { isDirty: pDirty },
+  } = useForm({
+    values: profile
+      ? {
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+        }
+      : undefined,
   })
 
   const updateMut = useMutation({
@@ -109,20 +122,39 @@ export function ProfilePage() {
   })
 
   // ── Password form ─────────────────────────────────────────────────────────
-  const { register: regPwd, handleSubmit: hsPwd, reset: resetPwd, setError: setPwdError, formState: { errors: pwdErrors } } = useForm<{
-    currentPassword: string; newPassword: string; confirmPassword: string
+  const {
+    register: regPwd,
+    handleSubmit: hsPwd,
+    reset: resetPwd,
+    setError: setPwdError,
+    formState: { errors: pwdErrors },
+  } = useForm<{
+    currentPassword: string
+    newPassword: string
+    confirmPassword: string
   }>()
 
   const pwdMut = useMutation({
     mutationFn: (d: { currentPassword: string; newPassword: string }) =>
       profileApi.changePassword(d.currentPassword, d.newPassword),
-    onSuccess: () => { resetPwd(); setPwdSuccess(true); setTimeout(() => setPwdSuccess(false), 3000) },
+    onSuccess: () => {
+      resetPwd()
+      setPwdSuccess(true)
+      setTimeout(() => setPwdSuccess(false), 3000)
+    },
     onError: () => setPwdError('currentPassword', { message: 'Неверный текущий пароль' }),
   })
 
   // ── Phone form ────────────────────────────────────────────────────────────
-  const { register: regPhone, handleSubmit: hsPhone, reset: resetPhone, setError: setPhoneError, formState: { errors: phoneErrors } } = useForm<{
-    currentPassword: string; newPhone: string
+  const {
+    register: regPhone,
+    handleSubmit: hsPhone,
+    reset: resetPhone,
+    setError: setPhoneError,
+    formState: { errors: phoneErrors },
+  } = useForm<{
+    currentPassword: string
+    newPhone: string
   }>()
 
   const phoneMut = useMutation({
@@ -136,9 +168,10 @@ export function ProfilePage() {
       setTimeout(() => setPhoneSuccess(false), 3000)
     },
     onError: (err: unknown) => {
-      const message = err instanceof AxiosError && typeof err.response?.data === 'string'
-        ? err.response.data
-        : 'Не удалось изменить номер телефона'
+      const message =
+        err instanceof AxiosError && typeof err.response?.data === 'string'
+          ? err.response.data
+          : 'Не удалось изменить номер телефона'
       setPhoneError('currentPassword', { message })
     },
   })
@@ -186,14 +219,24 @@ export function ProfilePage() {
       <Card className="p-[26px] mb-[18px] flex items-center gap-5">
         <div className="relative shrink-0">
           {profile && (
-            <Avatar avatarUrl={profile.avatarUrl} firstName={profile.firstName} lastName={profile.lastName} size={72} className="text-2xl" />
+            <Avatar
+              avatarUrl={profile.avatarUrl}
+              firstName={profile.firstName}
+              lastName={profile.lastName}
+              size={72}
+              className="text-2xl"
+            />
           )}
           <input
             ref={avatarInputRef}
             type="file"
             accept="image/jpeg,image/png,image/webp"
             className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) avatarMut.mutate(f); e.target.value = '' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) avatarMut.mutate(f)
+              e.target.value = ''
+            }}
           />
           <button
             type="button"
@@ -205,10 +248,15 @@ export function ProfilePage() {
           </button>
         </div>
         <div>
-          <p className="text-[19px] font-semibold text-ink">{profile?.firstName} {profile?.lastName}</p>
-          <p className="text-[13.5px] text-ink-soft mt-1">{formatPhone(profile?.phone)}{profile?.email ? ` · ${profile.email}` : ''}</p>
+          <p className="text-[19px] font-semibold text-ink">
+            {profile?.firstName} {profile?.lastName}
+          </p>
+          <p className="text-[13.5px] text-ink-soft mt-1">
+            {formatPhone(profile?.phone)}
+            {profile?.email ? ` · ${profile.email}` : ''}
+          </p>
           <div className="flex flex-wrap gap-1.5 mt-2.5">
-            {profile?.roles.map(r => (
+            {profile?.roles.map((r) => (
               <span key={r} className="text-xs font-semibold bg-cream-deep text-gold-dark px-2.5 py-1 rounded-full">
                 {roleLabel[r] ?? r}
               </span>
@@ -243,13 +291,16 @@ export function ProfilePage() {
       {/* Password */}
       <Card className="p-[26px]">
         <h2 className="text-[15.5px] font-semibold text-ink mb-[18px]">Смена пароля</h2>
-        <form onSubmit={hsPwd((d) => {
-          if (d.newPassword !== d.confirmPassword) {
-            setPwdError('confirmPassword', { message: 'Пароли не совпадают' })
-            return
-          }
-          pwdMut.mutate({ currentPassword: d.currentPassword, newPassword: d.newPassword })
-        })} className="flex flex-col gap-4">
+        <form
+          onSubmit={hsPwd((d) => {
+            if (d.newPassword !== d.confirmPassword) {
+              setPwdError('confirmPassword', { message: 'Пароли не совпадают' })
+              return
+            }
+            pwdMut.mutate({ currentPassword: d.currentPassword, newPassword: d.newPassword })
+          })}
+          className="flex flex-col gap-4"
+        >
           <Input
             label="Текущий пароль"
             type="password"
@@ -272,7 +323,9 @@ export function ProfilePage() {
               <Icon name="check" size={14} strokeWidth={2} /> Пароль изменён
             </p>
           )}
-          <Button type="submit" variant="secondary" loading={pwdMut.isPending}>Изменить пароль</Button>
+          <Button type="submit" variant="secondary" loading={pwdMut.isPending}>
+            Изменить пароль
+          </Button>
         </form>
       </Card>
 
@@ -298,7 +351,9 @@ export function ProfilePage() {
               <Icon name="check" size={14} strokeWidth={2} /> Телефон изменён
             </p>
           )}
-          <Button type="submit" variant="secondary" loading={phoneMut.isPending}>Изменить телефон</Button>
+          <Button type="submit" variant="secondary" loading={phoneMut.isPending}>
+            Изменить телефон
+          </Button>
         </form>
       </Card>
 
@@ -306,13 +361,12 @@ export function ProfilePage() {
       <Card className="p-[26px] mt-[18px]">
         <h2 className="text-[15.5px] font-semibold text-ink mb-3">Мои данные</h2>
         <p className="text-sm text-ink-soft mb-1.5">
-          В файл войдут: профиль, история согласий, компании, где вы состоите, ваши записи и отзывы, а
-          также перечень заметок и фотографий о вас (без содержимого).
+          В файл войдут: профиль, история согласий, компании, где вы состоите, ваши записи и отзывы, а также перечень
+          заметок и фотографий о вас (без содержимого).
         </p>
         <p className="text-sm text-ink-soft mb-4">
-          В файл <strong>не войдут</strong>: текст заметок сотрудников салона о вас и содержимое
-          фотографий, загруженных салоном, — это результат работы салона, а не ваши данные.
-          Запросить их можно у салона напрямую.
+          В файл <strong>не войдут</strong>: текст заметок сотрудников салона о вас и содержимое фотографий, загруженных
+          салоном, — это результат работы салона, а не ваши данные. Запросить их можно у салона напрямую.
         </p>
         {exportError && <p className="text-sm text-danger mb-3">{exportError}</p>}
         <Button variant="secondary" loading={exportMut.isPending} onClick={() => exportMut.mutate()}>

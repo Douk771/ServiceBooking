@@ -76,7 +76,7 @@ function ClientCard({ client, companyId }: ClientCardProps) {
   return (
     <Card className="p-4">
       <button
-        onClick={() => setExpanded(v => !v)}
+        onClick={() => setExpanded((v) => !v)}
         className="w-full text-left flex items-center justify-between gap-4"
       >
         <div className="flex items-center gap-3">
@@ -85,16 +85,30 @@ function ClientCard({ client, companyId }: ClientCardProps) {
           </div>
           <div>
             <p className="font-semibold text-ink">{client.name}</p>
-            <p className="text-xs text-muted">Последний визит: {lastVisit} · {client.totalVisits} {client.totalVisits === 1 ? 'визит' : client.totalVisits < 5 ? 'визита' : 'визитов'}</p>
+            <p className="text-xs text-muted">
+              Последний визит: {lastVisit} · {client.totalVisits}{' '}
+              {client.totalVisits === 1 ? 'визит' : client.totalVisits < 5 ? 'визита' : 'визитов'}
+            </p>
           </div>
         </div>
         <div className="text-right shrink-0">
           {client.phone && (
-            <a href={`tel:+${client.phone}`} onClick={e => e.stopPropagation()} className="text-sm text-gold hover:text-gold-dark">{formatPhone(client.phone)}</a>
+            <a
+              href={`tel:+${client.phone}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-sm text-gold hover:text-gold-dark"
+            >
+              {formatPhone(client.phone)}
+            </a>
           )}
           {client.email && <p className="text-xs text-muted">{client.email}</p>}
         </div>
-        <Icon name="chevron-down" size={16} strokeWidth={1.8} className={`text-muted shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        <Icon
+          name="chevron-down"
+          size={16}
+          strokeWidth={1.8}
+          className={`text-muted shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {expanded && (
@@ -110,7 +124,9 @@ function ClientCard({ client, companyId }: ClientCardProps) {
                   <div key={i} className="flex items-center gap-3 text-sm">
                     <span className="text-muted shrink-0">{b.date}</span>
                     <span className="text-ink flex-1">{b.serviceName}</span>
-                    <span className={`text-xs px-2.5 py-0.5 rounded-full shrink-0 font-medium ${STATUS_CLASSES[b.status] ?? 'bg-cream-deep text-ink-soft'}`}>
+                    <span
+                      className={`text-xs px-2.5 py-0.5 rounded-full shrink-0 font-medium ${STATUS_CLASSES[b.status] ?? 'bg-cream-deep text-ink-soft'}`}
+                    >
                       {STATUS_LABELS[b.status] ?? b.status}
                     </span>
                   </div>
@@ -140,10 +156,12 @@ function ClientCard({ client, companyId }: ClientCardProps) {
                   id={`new-note-${client.clientId ?? client.guestPhone}`}
                   type="text"
                   value={newNote}
-                  onChange={e => setNewNote(e.target.value)}
+                  onChange={(e) => setNewNote(e.target.value)}
                   placeholder="Добавить заметку…"
                   className="flex-1 rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
-                  onKeyDown={e => { if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate() }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newNote.trim()) addNoteMut.mutate()
+                  }}
                 />
                 <Button
                   size="sm"
@@ -187,9 +205,7 @@ export function MasterClientsPage({ companyId }: Props) {
 
   // The server doesn't take a search parameter on this endpoint (API_CONTRACT.md §11.2) — this only
   // narrows the clients already on the current page, not the full list.
-  const filtered = (clients ?? []).filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = (clients ?? []).filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
 
   if (isLoading) {
     return (
@@ -218,11 +234,16 @@ export function MasterClientsPage({ companyId }: Props) {
       </div>
 
       <div className="mb-4 relative">
-        <Icon name="search" size={16} strokeWidth={1.8} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+        <Icon
+          name="search"
+          size={16}
+          strokeWidth={1.8}
+          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
+        />
         <input
           type="text"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder="Поиск по имени…"
           className="w-full rounded-full border border-line pl-10 pr-4 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
         />
@@ -238,18 +259,20 @@ export function MasterClientsPage({ companyId }: Props) {
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {filtered.map(c => (
-            <ClientCard
-              key={c.clientId ?? c.guestPhone ?? c.name}
-              client={c}
-              companyId={companyId}
-            />
+          {filtered.map((c) => (
+            <ClientCard key={c.clientId ?? c.guestPhone ?? c.name} client={c} companyId={companyId} />
           ))}
         </div>
       )}
 
       {data && (
-        <Pagination page={data.page} pageSize={data.pageSize} total={data.total} hasNext={data.hasNext} onPageChange={setPage} />
+        <Pagination
+          page={data.page}
+          pageSize={data.pageSize}
+          total={data.total}
+          hasNext={data.hasNext}
+          onPageChange={setPage}
+        />
       )}
     </div>
   )

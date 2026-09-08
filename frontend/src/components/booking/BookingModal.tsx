@@ -34,14 +34,14 @@ function BackLink({ onClick, children }: { onClick: () => void; children: React.
 
 export function BookingModal({ service, company, onClose }: Props) {
   const { isAuthenticated } = useAuthStore()
-  const [step, setStep]               = useState<Step>('master')
+  const [step, setStep] = useState<Step>('master')
   const [selectedMasterId, setSelectedMasterId] = useState('')
-  const [selectedDate, setSelectedDate]         = useState('')
-  const [selectedSlot, setSelectedSlot]         = useState('')
-  const [guestName, setGuestName]     = useState('')
-  const [guestPhone, setGuestPhone]   = useState('')
-  const [guestEmail, setGuestEmail]   = useState('')
-  const [notes, setNotes]             = useState('')
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedSlot, setSelectedSlot] = useState('')
+  const [guestName, setGuestName] = useState('')
+  const [guestPhone, setGuestPhone] = useState('')
+  const [guestEmail, setGuestEmail] = useState('')
+  const [notes, setNotes] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
 
   // Load masters that can perform this service
@@ -72,7 +72,10 @@ export function BookingModal({ service, company, onClose }: Props) {
     ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
     ...Array.from({ length: 14 }, (_, i) => {
       const d = addDays(now, i + 1)
-      return { value: format(d, 'yyyy-MM-dd'), label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }) }
+      return {
+        value: format(d, 'yyyy-MM-dd'),
+        label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }),
+      }
     }),
   ]
 
@@ -93,10 +96,10 @@ export function BookingModal({ service, company, onClose }: Props) {
         date: selectedDate,
         startTime: selectedSlot,
         notes,
-        guestName:  isAuthenticated() ? undefined : guestName,
+        guestName: isAuthenticated() ? undefined : guestName,
         guestPhone: isAuthenticated() ? undefined : guestPhone,
         guestEmail: isAuthenticated() ? undefined : guestEmail,
-        captchaToken: isAuthenticated() ? undefined : (captchaToken || undefined),
+        captchaToken: isAuthenticated() ? undefined : captchaToken || undefined,
       }),
     onSuccess: () => setStep('done'),
   })
@@ -107,7 +110,7 @@ export function BookingModal({ service, company, onClose }: Props) {
     setStep('date')
   }
 
-  const selectedMaster = masters?.find(m => m.userId === selectedMasterId)
+  const selectedMaster = masters?.find((m) => m.userId === selectedMasterId)
 
   // Progress bar steps (exclude 'done', map 'master' only if >1 master)
   const progressSteps: Step[] = ['master', 'date', 'slot', 'info']
@@ -116,10 +119,7 @@ export function BookingModal({ service, company, onClose }: Props) {
   const dismiss = useOverlayDismiss(onClose)
 
   return (
-    <div
-      className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5"
-      {...dismiss}
-    >
+    <div className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5" {...dismiss}>
       <div className="bg-cream rounded-[26px] shadow-modal w-full max-w-[440px] max-h-[88vh] overflow-y-auto">
         {/* Header */}
         <div className="p-6 pb-[22px] border-b border-line">
@@ -141,9 +141,7 @@ export function BookingModal({ service, company, onClose }: Props) {
               {progressSteps.map((s, i) => (
                 <div
                   key={s}
-                  className={`h-1 flex-1 rounded-full transition-colors ${
-                    currentIdx >= i ? 'bg-ink' : 'bg-line'
-                  }`}
+                  className={`h-1 flex-1 rounded-full transition-colors ${currentIdx >= i ? 'bg-ink' : 'bg-line'}`}
                 />
               ))}
             </div>
@@ -151,7 +149,6 @@ export function BookingModal({ service, company, onClose }: Props) {
         </div>
 
         <div className="p-6 pt-[22px]">
-
           {/* ── Step: Master ── */}
           {step === 'master' && (
             <div>
@@ -170,19 +167,30 @@ export function BookingModal({ service, company, onClose }: Props) {
                       onClick={() => pickMaster(m.userId)}
                       className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                     >
-                      <Avatar avatarUrl={m.avatarUrl} firstName={m.firstName} lastName={m.lastName} size={40} className="text-[13px]" />
+                      <Avatar
+                        avatarUrl={m.avatarUrl}
+                        firstName={m.firstName}
+                        lastName={m.lastName}
+                        size={40}
+                        className="text-[13px]"
+                      />
                       <div>
-                        <p className="font-semibold text-sm text-ink">{m.firstName} {m.lastName}</p>
+                        <p className="font-semibold text-sm text-ink">
+                          {m.firstName} {m.lastName}
+                        </p>
                         {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
                       </div>
-                      <Icon name="chevron-right" size={16} strokeWidth={1.8} className="ml-auto text-line-strong shrink-0" />
+                      <Icon
+                        name="chevron-right"
+                        size={16}
+                        strokeWidth={1.8}
+                        className="ml-auto text-line-strong shrink-0"
+                      />
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-muted py-8">
-                  Нет доступных мастеров для этой услуги
-                </p>
+                <p className="text-center text-muted py-8">Нет доступных мастеров для этой услуги</p>
               )}
             </div>
           )}
@@ -198,7 +206,10 @@ export function BookingModal({ service, company, onClose }: Props) {
                 {days.map((d) => (
                   <button
                     key={d.value}
-                    onClick={() => { setSelectedDate(d.value); setStep('slot') }}
+                    onClick={() => {
+                      setSelectedDate(d.value)
+                      setStep('slot')
+                    }}
                     className="px-3.5 py-3 rounded-xl border border-line bg-white text-[13.5px] hover:border-line-strong transition-all text-left"
                   >
                     {d.label}
@@ -224,7 +235,10 @@ export function BookingModal({ service, company, onClose }: Props) {
                   {slots.map((s) => (
                     <button
                       key={s.start}
-                      onClick={() => { setSelectedSlot(s.start); setStep('info') }}
+                      onClick={() => {
+                        setSelectedSlot(s.start)
+                        setStep('info')
+                      }}
                       className={`py-[11px] rounded-xl text-[13.5px] font-medium border transition-all ${
                         selectedSlot === s.start
                           ? 'bg-ink text-cream border-ink'
@@ -254,7 +268,7 @@ export function BookingModal({ service, company, onClose }: Props) {
                   </div>
                 )}
                 <div className="text-ink-soft mt-0.5">
-                  {days.find(d => d.value === selectedDate)?.label} · {selectedSlot.slice(0, 5)}
+                  {days.find((d) => d.value === selectedDate)?.label} · {selectedSlot.slice(0, 5)}
                 </div>
               </div>
 
@@ -264,21 +278,21 @@ export function BookingModal({ service, company, onClose }: Props) {
                     label="Ваше имя *"
                     placeholder="Иван Иванов"
                     value={guestName}
-                    onChange={e => setGuestName(e.target.value)}
+                    onChange={(e) => setGuestName(e.target.value)}
                   />
                   <Input
                     label="Телефон *"
                     type="tel"
                     placeholder="+7 999 000 00 00"
                     value={guestPhone}
-                    onChange={e => setGuestPhone(e.target.value)}
+                    onChange={(e) => setGuestPhone(e.target.value)}
                   />
                   <Input
                     label="Email"
                     type="email"
                     placeholder="your@email.com"
                     value={guestEmail}
-                    onChange={e => setGuestEmail(e.target.value)}
+                    onChange={(e) => setGuestEmail(e.target.value)}
                   />
                 </>
               )}
@@ -290,7 +304,7 @@ export function BookingModal({ service, company, onClose }: Props) {
                   rows={3}
                   placeholder="Пожелания или вопросы..."
                   value={notes}
-                  onChange={e => setNotes(e.target.value)}
+                  onChange={(e) => setNotes(e.target.value)}
                 />
               </div>
 
@@ -341,14 +355,13 @@ export function BookingModal({ service, company, onClose }: Props) {
               </div>
               <h3 className="font-serif text-xl font-medium text-ink mb-2">Запись подтверждена!</h3>
               <p className="text-sm text-ink-soft mb-6">
-                Ждём вас {days.find(d => d.value === selectedDate)?.label} в {selectedSlot.slice(0, 5)}
+                Ждём вас {days.find((d) => d.value === selectedDate)?.label} в {selectedSlot.slice(0, 5)}
               </p>
               <Button onClick={onClose} variant="secondary" size="lg">
                 Закрыть
               </Button>
             </div>
           )}
-
         </div>
       </div>
     </div>

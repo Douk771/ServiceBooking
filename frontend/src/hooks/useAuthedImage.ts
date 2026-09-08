@@ -32,7 +32,11 @@ export function useAuthedImage(photoId: string, variant: 'full' | 'thumb') {
     return () => observer.disconnect()
   }, [isVisible])
 
-  const { data: blob, isLoading, isError } = useQuery({
+  const {
+    data: blob,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ['note-photo', photoId, variant],
     queryFn: () => clientNotesApi.getPhotoBlob(photoId, variant),
     enabled: isVisible,

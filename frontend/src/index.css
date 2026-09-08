@@ -18,14 +18,14 @@
   }
 
   a {
-    color: #A9835A;
+    color: #a9835a;
   }
   a:hover {
-    color: #8F6C46;
+    color: #8f6c46;
   }
 
   ::selection {
-    background: #E6DCCB;
+    background: #e6dccb;
   }
 }
 

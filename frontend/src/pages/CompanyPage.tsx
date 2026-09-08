@@ -25,7 +25,11 @@ function ServiceCard({
     <div className="bg-white border border-line rounded-[18px] p-[22px] flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-center gap-4">
         {service.imageUrl ? (
-          <img src={service.imageUrl} alt={service.name} className="w-[52px] h-[52px] rounded-[14px] object-cover shrink-0" />
+          <img
+            src={service.imageUrl}
+            alt={service.name}
+            className="w-[52px] h-[52px] rounded-[14px] object-cover shrink-0"
+          />
         ) : (
           <div className="w-[52px] h-[52px] rounded-[14px] bg-cream-deep flex items-center justify-center shrink-0">
             <span className="text-lg font-bold text-gold-dark">{service.name[0]?.toUpperCase() ?? '?'}</span>
@@ -33,9 +37,7 @@ function ServiceCard({
         )}
         <div>
           <h3 className="text-base font-semibold text-ink mb-1">{service.name}</h3>
-          {service.description && (
-            <p className="text-[13.5px] text-ink-soft mb-1.5 max-w-sm">{service.description}</p>
-          )}
+          {service.description && <p className="text-[13.5px] text-ink-soft mb-1.5 max-w-sm">{service.description}</p>}
           <div className="flex items-center gap-3.5 text-[13px]">
             <span className="text-muted flex items-center gap-1">
               <Icon name="clock" size={13} strokeWidth={1.6} />
@@ -81,16 +83,16 @@ export function CompanyPage() {
   // Average is computed from the current page only — the server doesn't return an aggregate rating
   // (API_CONTRACT.md §11 doesn't add one), so this was already page-scoped in spirit even before
   // pagination; it's just more visibly so on page 2+ now.
-  const avgRating = reviews && reviews.length > 0
-    ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
-    : null
+  const avgRating = reviews && reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null
 
   if (companyLoading) {
     return (
       <div className="max-w-[900px] mx-auto px-8 py-10">
         <div className="h-[280px] bg-cream-deep rounded-3xl animate-pulse mb-10" />
         <div className="grid gap-3.5">
-          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 bg-cream-deep rounded-2xl animate-pulse" />)}
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-24 bg-cream-deep rounded-2xl animate-pulse" />
+          ))}
         </div>
       </div>
     )
@@ -115,7 +117,11 @@ export function CompanyPage() {
         </div>
         <div className="px-6 pb-6 pt-7 flex items-start gap-5">
           {company.logoUrl ? (
-            <img src={company.logoUrl} alt={company.name} className="w-16 h-16 rounded-[18px] object-cover -mt-[52px] border-4 border-white shrink-0" />
+            <img
+              src={company.logoUrl}
+              alt={company.name}
+              className="w-16 h-16 rounded-[18px] object-cover -mt-[52px] border-4 border-white shrink-0"
+            />
           ) : (
             <div className="w-16 h-16 rounded-[18px] bg-cream-deep flex items-center justify-center shrink-0 -mt-[52px] border-4 border-white">
               <Icon name="store" size={28} strokeWidth={1.6} className="text-gold-dark" />
@@ -123,7 +129,9 @@ export function CompanyPage() {
           )}
           <div className="flex-1 min-w-0">
             <h1 className="font-serif text-[30px] font-medium text-ink mb-1.5">{company.name}</h1>
-            {company.description && <p className="text-[15px] leading-[1.55] text-ink-soft mb-3.5 max-w-[520px]">{company.description}</p>}
+            {company.description && (
+              <p className="text-[15px] leading-[1.55] text-ink-soft mb-3.5 max-w-[520px]">{company.description}</p>
+            )}
             <div className="flex gap-5 flex-wrap text-[13.5px] text-gold-dark">
               {company.address && (
                 <span className="flex items-center gap-1.5">
@@ -166,17 +174,14 @@ export function CompanyPage() {
       )}
       {servicesLoading ? (
         <div className="grid gap-3.5 mb-[52px]">
-          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 bg-cream-deep rounded-2xl animate-pulse" />)}
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-24 bg-cream-deep rounded-2xl animate-pulse" />
+          ))}
         </div>
       ) : services && services.length > 0 ? (
         <div className="grid gap-3.5 mb-[52px]">
           {services.map((s) => (
-            <ServiceCard
-              key={s.id}
-              service={s}
-              canBook={canBook}
-              onBook={setSelectedService}
-            />
+            <ServiceCard key={s.id} service={s} canBook={canBook} onBook={setSelectedService} />
           ))}
         </div>
       ) : (
@@ -204,14 +209,17 @@ export function CompanyPage() {
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div>
                   <span className="font-semibold text-sm text-ink">{r.reviewerName}</span>
-                  <span className="text-muted text-[13px]"> · {r.serviceName} у {r.masterName}</span>
+                  <span className="text-muted text-[13px]">
+                    {' '}
+                    · {r.serviceName} у {r.masterName}
+                  </span>
                 </div>
                 <span className="text-[12.5px] text-muted shrink-0">
                   {format(parseISO(r.createdAt), 'd MMM yyyy', { locale: ru })}
                 </span>
               </div>
               <div className="flex gap-0.5 mb-2">
-                {[1, 2, 3, 4, 5].map(s => (
+                {[1, 2, 3, 4, 5].map((s) => (
                   <Icon key={s} name="star" size={13} className={s <= r.rating ? 'text-[#B08A3E]' : 'text-line'} />
                 ))}
               </div>
@@ -237,11 +245,7 @@ export function CompanyPage() {
 
       {/* Booking Modal */}
       {selectedService && company && (
-        <BookingModal
-          service={selectedService}
-          company={company}
-          onClose={() => setSelectedService(null)}
-        />
+        <BookingModal service={selectedService} company={company} onClose={() => setSelectedService(null)} />
       )}
     </div>
   )

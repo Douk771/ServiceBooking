@@ -57,8 +57,8 @@ export function LegalDocumentPage({ type }: Props) {
         <div className="mb-6 flex items-start gap-2.5 rounded-2xl bg-warning-bg text-warning px-4 py-3 text-sm">
           <Icon name="alert-circle" size={16} strokeWidth={1.8} className="shrink-0 mt-0.5" />
           <p>
-            <strong>Черновая редакция.</strong> Документ подготовлен командой сервиса и ожидает
-            юридической проверки; будет заменён без уведомления.
+            <strong>Черновая редакция.</strong> Документ подготовлен командой сервиса и ожидает юридической проверки;
+            будет заменён без уведомления.
           </p>
         </div>
       )}

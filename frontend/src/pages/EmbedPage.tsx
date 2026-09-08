@@ -71,7 +71,7 @@ export function EmbedPage() {
         </div>
       ) : services && services.length > 0 ? (
         <div className="grid gap-3">
-          {services.map(s => (
+          {services.map((s) => (
             <Card key={s.id} className="p-4 flex items-center justify-between gap-3">
               <div>
                 <p className="font-medium text-ink">{s.name}</p>
@@ -120,11 +120,7 @@ export function EmbedPage() {
       </p>
 
       {selectedService && company && (
-        <BookingModal
-          service={selectedService}
-          company={company}
-          onClose={() => setSelectedService(null)}
-        />
+        <BookingModal service={selectedService} company={company} onClose={() => setSelectedService(null)} />
       )}
     </div>
   )

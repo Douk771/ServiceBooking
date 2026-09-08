@@ -14,12 +14,12 @@ export const clientNotesApi = {
       .post<ClientNotePhoto>(`/client-notes/${noteId}/photos`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      .then(r => r.data)
+      .then((r) => r.data)
   },
   deletePhoto: (photoId: string) => api.delete(`/client-notes/photos/${photoId}`),
   /** `variant` selects the full-size image (opened only in the viewer modal) or the thumbnail. */
   getPhotoBlob: (photoId: string, variant: 'full' | 'thumb') =>
     api
       .get<Blob>(`/client-notes/photos/${photoId}${variant === 'thumb' ? '/thumb' : ''}`, { responseType: 'blob' })
-      .then(r => r.data),
+      .then((r) => r.data),
 }

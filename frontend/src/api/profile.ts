@@ -31,24 +31,25 @@ export interface UpdateProfilePayload {
 }
 
 export const profileApi = {
-  get: () => api.get<ProfileDto>('/profile').then(r => r.data),
-  update: (data: UpdateProfilePayload) => api.put<ProfileDto>('/profile', data).then(r => r.data),
+  get: () => api.get<ProfileDto>('/profile').then((r) => r.data),
+  update: (data: UpdateProfilePayload) => api.put<ProfileDto>('/profile', data).then((r) => r.data),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post('/profile/change-password', { currentPassword, newPassword }),
   changePhone: (currentPassword: string, newPhone: string) =>
-    api.post<ProfileDto>('/profile/change-phone', { currentPassword, newPhone }).then(r => r.data),
+    api.post<ProfileDto>('/profile/change-phone', { currentPassword, newPhone }).then((r) => r.data),
   uploadAvatar: (file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return api.post<ProfileDto>('/profile/avatar', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }).then(r => r.data)
+    return api
+      .post<ProfileDto>('/profile/avatar', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data)
   },
   /** GET /api/profile/export — US-38. Fetched as a blob (token still needed, hence going through the
    *  same axios instance rather than a plain <a href>) and turned into a download via createObjectURL
    *  by the caller (API_CONTRACT.md §8). */
-  exportData: () => api.get('/profile/export', { responseType: 'blob' }).then(r => r.data as Blob),
+  exportData: () => api.get('/profile/export', { responseType: 'blob' }).then((r) => r.data as Blob),
   /** POST /api/profile/delete-account — US-39. 204 on success. */
-  deleteAccount: (currentPassword: string) =>
-    api.post('/profile/delete-account', { currentPassword }),
+  deleteAccount: (currentPassword: string) => api.post('/profile/delete-account', { currentPassword }),
 }

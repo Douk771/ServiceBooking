@@ -30,7 +30,14 @@ interface NotePhotoUploaderProps {
  * gallery input has no `capture` attribute (and allows `multiple`); the camera input has `capture` and
  * takes one photo at a time, matching how the native camera UI hands files back.
  */
-export function NotePhotoUploader({ noteId, remainingSlots, value, onChange, onUploaded, compact }: NotePhotoUploaderProps) {
+export function NotePhotoUploader({
+  noteId,
+  remainingSlots,
+  value,
+  onChange,
+  onUploaded,
+  compact,
+}: NotePhotoUploaderProps) {
   const galleryInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
@@ -96,7 +103,9 @@ export function NotePhotoUploader({ noteId, remainingSlots, value, onChange, onU
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="sr-only" htmlFor={`note-photo-gallery-${noteId ?? 'new'}`}>Выбрать фото из галереи</label>
+        <label className="sr-only" htmlFor={`note-photo-gallery-${noteId ?? 'new'}`}>
+          Выбрать фото из галереи
+        </label>
         <input
           id={`note-photo-gallery-${noteId ?? 'new'}`}
           ref={galleryInputRef}
@@ -104,9 +113,14 @@ export function NotePhotoUploader({ noteId, remainingSlots, value, onChange, onU
           accept="image/*"
           multiple
           className="hidden"
-          onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
+          onChange={(e) => {
+            handleFiles(e.target.files)
+            e.target.value = ''
+          }}
         />
-        <label className="sr-only" htmlFor={`note-photo-camera-${noteId ?? 'new'}`}>Сделать фото камерой</label>
+        <label className="sr-only" htmlFor={`note-photo-camera-${noteId ?? 'new'}`}>
+          Сделать фото камерой
+        </label>
         <input
           id={`note-photo-camera-${noteId ?? 'new'}`}
           ref={cameraInputRef}
@@ -114,7 +128,10 @@ export function NotePhotoUploader({ noteId, remainingSlots, value, onChange, onU
           accept="image/*"
           capture="environment"
           className="hidden"
-          onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
+          onChange={(e) => {
+            handleFiles(e.target.files)
+            e.target.value = ''
+          }}
         />
         <Button
           type="button"

@@ -28,7 +28,10 @@ export function Avatar({ avatarUrl, firstName, lastName = '', size = 40, classNa
       style={style}
       className={`rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold shrink-0 ${className}`}
     >
-      <span style={{ fontSize: size * 0.36 }}>{firstName[0]?.toUpperCase()}{lastName[0]?.toUpperCase() ?? ''}</span>
+      <span style={{ fontSize: size * 0.36 }}>
+        {firstName[0]?.toUpperCase()}
+        {lastName[0]?.toUpperCase() ?? ''}
+      </span>
     </div>
   )
 }

@@ -34,9 +34,18 @@ export function NoteCard({ note, companyId }: NoteCardProps) {
 
   const deletePhotoMut = useMutation({
     mutationFn: (photoId: string) => clientNotesApi.deletePhoto(photoId),
-    onMutate: (photoId: string) => { setDeletingPhotoId(photoId); setPhotoError('') },
-    onSuccess: () => { setDeletingPhotoId(null); invalidate() },
-    onError: (e: unknown) => { setDeletingPhotoId(null); setPhotoError(getUploadErrorMessage(e)) },
+    onMutate: (photoId: string) => {
+      setDeletingPhotoId(photoId)
+      setPhotoError('')
+    },
+    onSuccess: () => {
+      setDeletingPhotoId(null)
+      invalidate()
+    },
+    onError: (e: unknown) => {
+      setDeletingPhotoId(null)
+      setPhotoError(getUploadErrorMessage(e))
+    },
   })
 
   const dateLabel = (() => {
@@ -57,14 +66,21 @@ export function NoteCard({ note, companyId }: NoteCardProps) {
             {note.bookingServiceName && ` · ${note.bookingServiceName}`}
           </p>
         </div>
-        {note.canDelete && (
-          confirmingDelete ? (
+        {note.canDelete &&
+          (confirmingDelete ? (
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-xs text-danger">Удалить?</span>
-              <Button size="sm" variant="danger" loading={deleteNoteMut.isPending} onClick={() => deleteNoteMut.mutate()}>
+              <Button
+                size="sm"
+                variant="danger"
+                loading={deleteNoteMut.isPending}
+                onClick={() => deleteNoteMut.mutate()}
+              >
                 Да
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(false)}>Нет</Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(false)}>
+                Нет
+              </Button>
             </div>
           ) : (
             <button
@@ -75,20 +91,14 @@ export function NoteCard({ note, companyId }: NoteCardProps) {
             >
               <Icon name="trash" size={14} strokeWidth={1.8} />
             </button>
-          )
-        )}
+          ))}
       </div>
 
       <PhotoGallery note={note} onDeletePhoto={(id) => deletePhotoMut.mutate(id)} deletingPhotoId={deletingPhotoId} />
 
       {note.photos.length < 5 && (
         <div className="mt-2">
-          <NotePhotoUploader
-            noteId={note.id}
-            remainingSlots={5 - note.photos.length}
-            compact
-            onUploaded={invalidate}
-          />
+          <NotePhotoUploader noteId={note.id} remainingSlots={5 - note.photos.length} compact onUploaded={invalidate} />
         </div>
       )}
       {photoError && <p className="text-xs text-danger mt-1">{photoError}</p>}

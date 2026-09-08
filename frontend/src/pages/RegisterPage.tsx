@@ -19,7 +19,12 @@ interface FormData {
 }
 
 export function RegisterPage() {
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm<FormData>({
     defaultValues: { acceptedLegal: false },
   })
   const { setAuth } = useAuthStore()
@@ -38,7 +43,17 @@ export function RegisterPage() {
       // logging out) would otherwise leave the previous user's cached queries in place, and the new
       // user gets a first frame of someone else's data. Navbar's logout clears for the same reason.
       qc.clear()
-      setAuth({ id: res.userId, phone: res.phone, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
+      setAuth(
+        {
+          id: res.userId,
+          phone: res.phone,
+          email: res.email,
+          firstName: res.firstName,
+          lastName: res.lastName,
+          roles: res.roles,
+        },
+        res.token,
+      )
       navigate('/')
     } catch (e: unknown) {
       setError(getAuthErrorMessage(e))
@@ -85,18 +100,16 @@ export function RegisterPage() {
               error={errors.phone?.message}
               {...register('phone', { required: 'Введите телефон' })}
             />
-            <Input
-              label="Email (необязательно)"
-              type="email"
-              placeholder="your@email.com"
-              {...register('email')}
-            />
+            <Input label="Email (необязательно)" type="email" placeholder="your@email.com" {...register('email')} />
             <Input
               label="Пароль"
               type="password"
               placeholder="Минимум 8 символов"
               error={errors.password?.message}
-              {...register('password', { required: 'Введите пароль', minLength: { value: 8, message: 'Минимум 8 символов' } })}
+              {...register('password', {
+                required: 'Введите пароль',
+                minLength: { value: 8, message: 'Минимум 8 символов' },
+              })}
             />
 
             <label className="flex items-start gap-2.5 cursor-pointer">
@@ -117,9 +130,7 @@ export function RegisterPage() {
               </span>
             </label>
 
-            {error && (
-              <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>
-            )}
+            {error && <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>}
 
             <Button type="submit" size="lg" loading={loading} disabled={!acceptedLegal} className="mt-1 w-full">
               Зарегистрироваться

@@ -14,8 +14,7 @@ export function getCancelErrorMessage(error: unknown): string {
 
   switch (status) {
     case 400:
-      if (serverMsg.toLowerCase().includes('300'))
-        return 'Причина не может быть длиннее 300 символов.'
+      if (serverMsg.toLowerCase().includes('300')) return 'Причина не может быть длиннее 300 символов.'
       // Any other 400 isn't in the mapped set — generic Russian message rather than the server's
       // raw (often English) text (same pattern as uploadError.ts).
       return 'Не удалось отменить запись. Проверьте данные и попробуйте снова.'

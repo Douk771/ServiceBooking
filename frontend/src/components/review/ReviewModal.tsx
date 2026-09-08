@@ -39,7 +39,7 @@ export function ReviewModal({ bookingId, serviceName, masterName, companyId, onC
 
         {/* Star rating */}
         <div className="flex gap-2 mb-5">
-          {[1, 2, 3, 4, 5].map(star => (
+          {[1, 2, 3, 4, 5].map((star) => (
             <button
               key={star}
               type="button"
@@ -48,11 +48,7 @@ export function ReviewModal({ bookingId, serviceName, masterName, companyId, onC
               onMouseLeave={() => setHovered(0)}
               onClick={() => setRating(star)}
             >
-              <Icon
-                name="star"
-                size={30}
-                className={(hovered || rating) >= star ? 'text-[#B08A3E]' : 'text-line'}
-              />
+              <Icon name="star" size={30} className={(hovered || rating) >= star ? 'text-[#B08A3E]' : 'text-line'} />
             </button>
           ))}
         </div>
@@ -63,20 +59,13 @@ export function ReviewModal({ bookingId, serviceName, masterName, companyId, onC
           rows={4}
           placeholder="Расскажите о своём опыте (необязательно)"
           value={comment}
-          onChange={e => setComment(e.target.value)}
+          onChange={(e) => setComment(e.target.value)}
         />
 
-        {submit.isError && (
-          <p className="text-sm text-danger mb-3">Не удалось отправить отзыв. Попробуйте снова.</p>
-        )}
+        {submit.isError && <p className="text-sm text-danger mb-3">Не удалось отправить отзыв. Попробуйте снова.</p>}
 
         <div className="flex gap-3">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={onClose}
-            disabled={submit.isPending}
-          >
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={submit.isPending}>
             Отмена
           </Button>
           <Button

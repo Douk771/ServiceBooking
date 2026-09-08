@@ -17,14 +17,18 @@ export interface CreateBookingPayload {
 export const bookingsApi = {
   getSlots: (companyId: string, masterId: string, serviceId: string, date: string, manual = false) =>
     api
-      .get<TimeSlot[]>('/bookings/slots', { params: { companyId, masterId, serviceId, date, manual: manual || undefined } })
+      .get<TimeSlot[]>('/bookings/slots', {
+        params: { companyId, masterId, serviceId, date, manual: manual || undefined },
+      })
       .then((r) => r.data),
 
   create: (data: CreateBookingPayload) =>
-    api.post<Booking>('/bookings', {
-      ...data,
-      startTime: data.startTime.length === 5 ? `${data.startTime}:00` : data.startTime,
-    }).then((r) => r.data),
+    api
+      .post<Booking>('/bookings', {
+        ...data,
+        startTime: data.startTime.length === 5 ? `${data.startTime}:00` : data.startTime,
+      })
+      .then((r) => r.data),
 
   getOccupied: (masterId: string, date: string) =>
     api.get<{ start: string; end: string }[]>('/bookings/occupied', { params: { masterId, date } }).then((r) => r.data),
@@ -42,9 +46,8 @@ export const bookingsApi = {
   noShow: (id: string) => api.patch(`/bookings/${id}/noshow`),
   markPaid: (id: string) => api.patch(`/bookings/${id}/mark-paid`),
 
-  cancel: (id: string, reason?: string) =>
-    api.patch(`/bookings/${id}/cancel`, reason ? JSON.stringify(reason) : null),
+  cancel: (id: string, reason?: string) => api.patch(`/bookings/${id}/cancel`, reason ? JSON.stringify(reason) : null),
 
   getClientBookings: (status?: string) =>
-    api.get<import('../types').Booking[]>('/bookings/client', { params: status ? { status } : {} }).then(r => r.data),
+    api.get<import('../types').Booking[]>('/bookings/client', { params: status ? { status } : {} }).then((r) => r.data),
 }

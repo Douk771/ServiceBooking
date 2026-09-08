@@ -5,7 +5,9 @@ import { Pagination } from './Pagination'
 
 describe('Pagination', () => {
   it('renders nothing when everything fits on page 1', () => {
-    const { container } = render(<Pagination page={1} pageSize={20} total={12} hasNext={false} onPageChange={vi.fn()} />)
+    const { container } = render(
+      <Pagination page={1} pageSize={20} total={12} hasNext={false} onPageChange={vi.fn()} />,
+    )
     expect(container).toBeEmptyDOMElement()
   })
 

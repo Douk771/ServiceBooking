@@ -46,9 +46,8 @@ export const mastersApi = {
   // API_CONTRACT.md §11.2 (BREAKING) — array replaced by the Paged<T> envelope, sorted by last visit
   // date DESC on the server.
   getClients: (companyId: string, page = 1, pageSize = 20) =>
-    api.get<Paged<MasterClient>>('/masters/clients', { params: { companyId, page, pageSize } }).then(r => r.data),
+    api.get<Paged<MasterClient>>('/masters/clients', { params: { companyId, page, pageSize } }).then((r) => r.data),
   addNote: (data: { companyId: string; clientId?: string; guestPhone?: string; note: string; bookingId?: string }) =>
-    api.post<ClientNote>('/masters/clients/notes', data).then(r => r.data),
-  deleteNote: (id: string) =>
-    api.delete(`/masters/clients/notes/${id}`),
+    api.post<ClientNote>('/masters/clients/notes', data).then((r) => r.data),
+  deleteNote: (id: string) => api.delete(`/masters/clients/notes/${id}`),
 }
