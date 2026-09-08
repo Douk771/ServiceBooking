@@ -28,6 +28,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Legal document text (ARCHITECTURE.md §4.1) is committed source, unlike the rest of App_Data —
+         it has to ship in the build/publish output (and therefore the Docker image) so a container with
+         no bind-mount over it still has a valid manifest to fail-fast against on first boot. -->
+    <Content Update="App_Data\legal\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Lets ServiceBooking.UnitTests exercise ImageProcessor's internal pure helpers (orientation,
          crop, resize) directly with synthetic bitmaps, instead of hand-crafting real EXIF bytes just to
          reach them through the public Process() entry point (see ImageProcessor.ApplyOrigin doc). -->

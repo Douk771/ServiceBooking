@@ -31,8 +31,11 @@ Thumbs.db
 ServiceBooking.API/wwwroot/uploads/**
 !ServiceBooking.API/wwwroot/uploads/**/.gitkeep
 # Private storage class default root (US-19, ARCHITECTURE.md §3.3) — dev-only default, same reasoning
-# as the public uploads dir above.
-ServiceBooking.API/App_Data/
+# as the public uploads dir above. Legal document text (ARCHITECTURE.md §4.1) is the one exception: it
+# is committed like code, so Development/Testing work out of the box and the text goes through review —
+# unlike private-uploads, which only ever holds runtime-generated files.
+ServiceBooking.API/App_Data/*
+!ServiceBooking.API/App_Data/legal/
 
 # Secrets
 **/appsettings.*.json

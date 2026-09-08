@@ -15,6 +15,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Health;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.API.Services.Scheduling.Tasks;
 using ServiceBooking.Core.Entities;
@@ -22,11 +23,16 @@ using ServiceBooking.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Fail-fast on obviously-unsafe production configuration (US-10, decision Q4). Runs before anything
-// reads these values, and BEFORE builder.Build() — so a misconfigured Production deployment never
+// Fail-fast on obviously-unsafe deployment configuration (US-10 → US-48, ARCHITECTURE.md §13). Runs
+// before anything reads these values, and BEFORE builder.Build() — so a misconfigured deployment never
 // finishes starting instead of silently running with a guessable/placeholder secret.
 // CustomWebApplicationFactory (tests) uses ASPNETCORE_ENVIRONMENT=Testing, so this never fires there.
-if (builder.Environment.IsProduction())
+//
+// Allow-list, not deny-list (US-48, cycle C): an environment nobody told this code about yet (Staging,
+// Preview, Demo) must be treated as production-grade. Only the two environments we KNOW are developer
+// contexts are exempt — everything else gets the full set of checks, including anything introduced later.
+var isDeveloperEnvironment = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing");
+if (!isDeveloperEnvironment)
 {
     var jwtKeyValue = builder.Configuration["Jwt:Key"];
     if (string.IsNullOrEmpty(jwtKeyValue) || jwtKeyValue.Length < 32 ||
@@ -206,6 +212,11 @@ builder.Services.AddHttpClient<CaptchaService>();
 builder.Services.AddSingleton<FileStorage>();
 builder.Services.AddScoped<ImageUploadService>();
 
+// Legal documents (US-36, ARCHITECTURE.md §4): a singleton so the in-memory snapshot is shared by every
+// request instead of re-parsed per scope — the whole point of the ReloadSeconds cache (§4.3).
+builder.Services.Configure<LegalOptions>(builder.Configuration.GetSection("Legal"));
+builder.Services.AddSingleton<LegalDocumentProvider>();
+
 // ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
 // gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default
 // KnownNetworks/KnownProxies ship with loopback pre-trusted, which happens to be exactly the address
@@ -343,6 +354,30 @@ var app = builder.Build();
 // partitions (auth-login, auth-register, booking-create) and Serilog's request logging both need the
 // REAL client address, not nginx's, and both run later in this pipeline (ARCHITECTURE.md §9.1).
 app.UseForwardedHeaders();
+
+// Two more fail-fast checks (US-42, US-36 → US-48, ARCHITECTURE.md §13), added in cycle C. Unlike the
+// block above, both need a constructed service provider (IPNetwork parsing for the first is already
+// done by ForwardedHeadersOptions above; loading legal.json goes through LegalDocumentProvider), so they
+// run here, after builder.Build(), rather than being folded into the pre-Build block.
+if (!isDeveloperEnvironment)
+{
+    var trustedNetworks = builder.Configuration.GetSection("ForwardedHeaders:TrustedNetworks").Get<string[]>();
+    if (trustedNetworks is null || trustedNetworks.Length == 0)
+        throw new InvalidOperationException(
+            "ForwardedHeaders:TrustedNetworks is empty — the rate limiter would partition every caller " +
+            "under nginx's own address instead of the real client IP, which is a denial-of-service " +
+            "footgun, not a limiter. Set FORWARDEDHEADERS__TRUSTEDNETWORKS__0 in .env (the docker bridge " +
+            "subnet — see DEPLOY.md).");
+
+    using var legalCheckScope = app.Services.CreateScope();
+    var legalProvider = legalCheckScope.ServiceProvider.GetRequiredService<LegalDocumentProvider>();
+    legalProvider.LoadAtStartup();
+    if (legalProvider.Current is null)
+        throw new InvalidOperationException(
+            "Legal documents (App_Data/legal/legal.json) failed to load — without a valid Privacy and " +
+            "Terms document the service cannot legally accept registrations. Check the container logs " +
+            "above for the specific validation error and fix legal.json or the mounted files.");
+}
 
 // In Development the framework's developer exception page already renders the full exception, so the
 // handler is only wired up elsewhere. Everywhere else an unhandled exception must still produce a

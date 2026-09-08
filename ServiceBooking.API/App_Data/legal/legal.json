@@ -1,0 +1,22 @@
+{
+  "documents": [
+    {
+      "type": "Privacy",
+      "version": "2026-09-08-draft",
+      "effectiveFrom": "2026-09-08",
+      "isDraft": true,
+      "changeKind": "Material",
+      "title": "Политика обработки персональных данных",
+      "file": "privacy.html"
+    },
+    {
+      "type": "Terms",
+      "version": "2026-09-08-draft",
+      "effectiveFrom": "2026-09-08",
+      "isDraft": true,
+      "changeKind": "Material",
+      "title": "Пользовательское соглашение",
+      "file": "terms.html"
+    }
+  ]
+}
