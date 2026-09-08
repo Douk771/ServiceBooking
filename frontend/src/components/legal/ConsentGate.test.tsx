@@ -9,9 +9,14 @@ import { useLegalStore } from '../../store/legalStore'
 import type { ConsentStatus } from '../../types'
 
 const accept = vi.fn()
+const exportData = vi.fn()
 
 vi.mock('../../api/legal', () => ({
   legalApi: { accept: (...args: unknown[]) => accept(...args) },
+}))
+
+vi.mock('../../api/profile', () => ({
+  profileApi: { exportData: (...args: unknown[]) => exportData(...args) },
 }))
 
 function renderGate(status: ConsentStatus) {
@@ -36,6 +41,7 @@ const status: ConsentStatus = {
 
 beforeEach(() => {
   accept.mockReset()
+  exportData.mockReset()
   useAuthStore.setState({
     user: { id: 'u1', phone: '79991234567', firstName: 'Иван', lastName: 'Петров', roles: ['Client'] },
     token: 'old-token',
@@ -44,7 +50,7 @@ beforeEach(() => {
 })
 
 describe('ConsentGate', () => {
-  it('offers exactly reading the documents, signing out, and deleting the account — nothing else', () => {
+  it('offers exactly reading the documents, signing out, exporting data, and deleting the account — nothing else', () => {
     renderGate(status)
     expect(screen.getByRole('link', { name: /Политика обработки персональных данных/ })).toHaveAttribute(
       'href',
@@ -52,7 +58,29 @@ describe('ConsentGate', () => {
     )
     expect(screen.getByRole('link', { name: /Пользовательское соглашение/ })).toHaveAttribute('href', '/terms')
     expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Выгрузить мои данные' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Удалить аккаунт' })).toHaveAttribute('href', '/profile/delete')
+  })
+
+  it('lets the user download their data export from the blocking screen', async () => {
+    const user = userEvent.setup()
+    exportData.mockResolvedValueOnce(new Blob(['{}'], { type: 'application/json' }))
+    const createObjectURL = vi.fn().mockReturnValue('blob:mock')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+    // jsdom doesn't implement navigation — stub the anchor click so the download trigger doesn't
+    // spam an unrelated "Not implemented: navigation" error to stderr.
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    renderGate(status)
+    await user.click(screen.getByRole('button', { name: 'Выгрузить мои данные' }))
+
+    await waitFor(() => expect(exportData).toHaveBeenCalled())
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalled())
+    expect(clickSpy).toHaveBeenCalled()
+
+    clickSpy.mockRestore()
+    vi.unstubAllGlobals()
   })
 
   it('accepting stores the new token and clears the consentRequired flag', async () => {

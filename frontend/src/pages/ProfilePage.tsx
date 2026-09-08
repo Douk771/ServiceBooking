@@ -6,6 +6,7 @@ import { AxiosError } from 'axios'
 import { format } from 'date-fns'
 import { profileApi, type ProfilePlanDto } from '../api/profile'
 import { useAuthStore } from '../store/authStore'
+import { useExportData } from '../hooks/useExportData'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -177,31 +178,7 @@ export function ProfilePage() {
   })
 
   // ── Data export (US-38) ──────────────────────────────────────────────────
-  const [exportError, setExportError] = useState('')
-  const exportMut = useMutation({
-    mutationFn: () => profileApi.exportData(),
-    onMutate: () => setExportError(''),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `servicebooking-export-${format(new Date(), 'yyyy-MM-dd')}.json`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    },
-    onError: async (err: unknown) => {
-      // With `responseType: 'blob'`, axios puts the error body in a Blob too — read it as text to
-      // get the plain-text 429 message the server sent (API_CONTRACT.md §0.2, §8).
-      if (err instanceof AxiosError && err.response?.data instanceof Blob) {
-        const text = await err.response.data.text()
-        setExportError(text || 'Не удалось скачать данные. Попробуйте снова.')
-      } else {
-        setExportError('Не удалось скачать данные. Попробуйте снова.')
-      }
-    },
-  })
+  const { exportMut, exportError } = useExportData()
 
   if (isLoading) {
     return (

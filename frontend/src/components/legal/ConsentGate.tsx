@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { legalApi } from '../../api/legal'
 import { useAuthStore } from '../../store/authStore'
 import { useLegalStore } from '../../store/legalStore'
+import { useExportData } from '../../hooks/useExportData'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { getLegalErrorMessage } from '../../utils/legalError'
@@ -16,7 +17,8 @@ interface Props {
  * Full-screen blocking state for a "Material" legal-document change (US-37 п. 4, API_CONTRACT.md §0.3).
  * Rendered whenever `requiresAcceptance` is true — from either the 451 branch in client.ts or the
  * consent-status query on app entry. While it's up, the only things a signed-in user can do are read
- * the documents, sign out, or delete their account (T-F2 done-criterion) — nothing else is reachable
+ * the documents, sign out, export their data, or delete their account (T-F2 done-criterion; export and
+ * delete-account are both in the 451 allow-list per API_CONTRACT.md §0.4) — nothing else is reachable
  * because everything else keeps returning 451.
  */
 export function ConsentGate({ status }: Props) {
@@ -24,6 +26,7 @@ export function ConsentGate({ status }: Props) {
   const navigate = useNavigate()
   const { user, setAuth, logout } = useAuthStore()
   const setConsentRequired = useLegalStore((s) => s.setConsentRequired)
+  const { exportMut, exportError } = useExportData()
 
   const privacy = status.documents.find((d) => d.type === 'Privacy')
   const terms = status.documents.find((d) => d.type === 'Terms')
@@ -79,6 +82,18 @@ export function ConsentGate({ status }: Props) {
 
         <Button size="lg" className="w-full mb-3" loading={mut.isPending} onClick={() => mut.mutate()}>
           Принимаю новую редакцию
+        </Button>
+
+        {exportError && <p className="text-sm text-danger mb-3">{exportError}</p>}
+
+        <Button
+          variant="secondary"
+          size="lg"
+          className="w-full mb-3"
+          loading={exportMut.isPending}
+          onClick={() => exportMut.mutate()}
+        >
+          Выгрузить мои данные
         </Button>
 
         <div className="flex items-center justify-center gap-4 text-xs text-muted mt-2">
