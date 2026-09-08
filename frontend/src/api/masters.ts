@@ -45,8 +45,16 @@ export interface MasterClient {
 export const mastersApi = {
   // API_CONTRACT.md §11.2 (BREAKING) — array replaced by the Paged<T> envelope, sorted by last visit
   // date DESC on the server.
-  getClients: (companyId: string, page = 1, pageSize = 20) =>
-    api.get<Paged<MasterClient>>('/masters/clients', { params: { companyId, page, pageSize } }).then((r) => r.data),
+  //
+  // `search` (cycle C fix, T-F5 follow-up; API_CONTRACT.md §18.1) filters by name and phone on the
+  // server, applied before pagination, matching the `?search=` convention already used by
+  // `/api/admin/users` and `/api/admin/companies` (§11.2).
+  getClients: (companyId: string, page = 1, pageSize = 20, search = '') =>
+    api
+      .get<Paged<MasterClient>>('/masters/clients', {
+        params: { companyId, page, pageSize, search: search.trim() || undefined },
+      })
+      .then((r) => r.data),
   addNote: (data: { companyId: string; clientId?: string; guestPhone?: string; note: string; bookingId?: string }) =>
     api.post<ClientNote>('/masters/clients/notes', data).then((r) => r.data),
   deleteNote: (id: string) => api.delete(`/masters/clients/notes/${id}`),

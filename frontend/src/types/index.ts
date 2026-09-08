@@ -31,6 +31,15 @@ export interface Company {
   planAllowsPublicListing?: boolean
   /** Seat cap for company members (owner included). Null/undefined means unlimited. */
   maxEmployees?: number | null
+  /**
+   * Server-computed aggregate over ALL of the company's reviews (not just the current page of
+   * `GET /api/companies/{id}/reviews`) — cycle C fix for the QA-found regression where the average
+   * was computed client-side from `reviewsData.items` and changed when paging through reviews
+   * (TEST_CATALOG.md "Регрессии продукта, найденные QA…", item 2). `null`/absent when there are no
+   * reviews yet. Field names and shape per API_CONTRACT.md §18.2.
+   */
+  averageRating?: number | null
+  reviewCount?: number
 }
 
 export interface Service {
