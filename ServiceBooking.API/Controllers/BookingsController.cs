@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -13,7 +14,9 @@ namespace ServiceBooking.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class BookingsController(AppDbContext db, SlotService slotService, CaptchaService captchaService, SubscriptionResolver subscriptionResolver) : ControllerBase
+public class BookingsController(
+    AppDbContext db, SlotService slotService, CaptchaService captchaService,
+    SubscriptionResolver subscriptionResolver, LegalDocumentProvider legalProvider) : ControllerBase
 {
     [HttpGet("occupied")]
     [Authorize]
@@ -183,6 +186,28 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             .Select(cm => cm.CommissionPercent)
             .FirstOrDefaultAsync();
 
+        // US-37 p.3, ARCHITECTURE.md §5.2/§6.2: the consent snapshot is filled by the SERVER, from the
+        // legal documents in effect right now, and ONLY on the guest path — never from the request body
+        // (CreateBookingDto gets no new fields for this), and never on a staff manual booking or an
+        // authenticated client's own booking (their consent already lives in UserConsent). If the
+        // manifest happens to be unavailable (only possible outside Production), the booking still goes
+        // through — a guest's ability to book must not depend on the legal text provider being up —
+        // just without a consent snapshot on this one booking.
+        string? consentPrivacyVersion = null, consentTermsVersion = null;
+        DateTime? consentAcceptedAtUtc = null;
+        if (isGuestPath)
+        {
+            var legalSnapshot = legalProvider.Current;
+            var privacyDoc = legalSnapshot?.Get(LegalDocumentType.Privacy);
+            var termsDoc = legalSnapshot?.Get(LegalDocumentType.Terms);
+            if (privacyDoc is not null && termsDoc is not null)
+            {
+                consentPrivacyVersion = privacyDoc.Version;
+                consentTermsVersion = termsDoc.Version;
+                consentAcceptedAtUtc = DateTime.UtcNow;
+            }
+        }
+
         var booking = new Booking
         {
             Id = Guid.NewGuid(),
@@ -201,6 +226,9 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             StartTime = dto.StartTime,
             EndTime = slotEnd,
             Notes = dto.Notes,
+            ConsentPrivacyVersion = consentPrivacyVersion,
+            ConsentTermsVersion = consentTermsVersion,
+            ConsentAcceptedAtUtc = consentAcceptedAtUtc,
             Status = BookingStatus.Confirmed,
             PaymentStatus = requiresPrepayment ? PaymentStatus.Pending : PaymentStatus.NotRequired,
             Price = service.Price,
@@ -504,5 +532,6 @@ public class BookingsController(AppDbContext db, SlotService slotService, Captch
             $"{master.FirstName} {master.LastName}", b.ClientId, clientName,
             b.GuestPhone ?? b.Client?.PhoneNumber, b.GuestEmail ?? b.Client?.Email,
             b.Date, b.StartTime, b.EndTime, b.Status, b.PaymentStatus, b.Price, b.CancellationReason,
-            b.Notes, b.CreatedAt);
+            b.Notes, b.CreatedAt,
+            b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted);
 }

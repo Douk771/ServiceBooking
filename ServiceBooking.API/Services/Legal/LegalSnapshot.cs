@@ -1,3 +1,5 @@
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.API.Services.Legal;
 
 /// <summary>One published document: metadata plus the HTML fragment (ARCHITECTURE.md §4.2).</summary>

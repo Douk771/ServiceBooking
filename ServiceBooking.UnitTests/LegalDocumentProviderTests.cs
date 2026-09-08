@@ -4,6 +4,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.UnitTests;
 

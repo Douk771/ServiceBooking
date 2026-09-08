@@ -53,20 +53,27 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
 
     // ── Identity ─────────────────────────────────────────────────────────────
 
+    // acceptedLegal defaults to true (cycle C, BREAKING № 1, API_CONTRACT.md §5): almost every existing
+    // scenario in this suite predates the legal consent requirement and only cares about the OTHER
+    // effects of registering, so the default keeps every call site that doesn't care about consent
+    // unchanged. Tests that specifically exercise the consent gate pass acceptedLegal explicitly.
     protected async Task<AuthResponseDto> RegisterAsync(
-        string? phone = null, string password = "Password123!", string firstName = "Test", string lastName = "User", string? email = null)
+        string? phone = null, string password = "Password123!", string firstName = "Test", string lastName = "User",
+        string? email = null, bool acceptedLegal = true)
     {
         phone ??= UniquePhone();
         var client = AnonymousClient();
-        var response = await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email));
+        var response = await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, acceptedLegal));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }
 
-    protected async Task<HttpResponseMessage> RegisterRawAsync(string phone, string password, string firstName = "Test", string lastName = "User", string? email = null)
+    protected async Task<HttpResponseMessage> RegisterRawAsync(
+        string phone, string password, string firstName = "Test", string lastName = "User",
+        string? email = null, bool acceptedLegal = true)
     {
         var client = AnonymousClient();
-        return await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email));
+        return await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, acceptedLegal));
     }
 
     protected async Task<AuthResponseDto> LoginAsync(string phone, string password)

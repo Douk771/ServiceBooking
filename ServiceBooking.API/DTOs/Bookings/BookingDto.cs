@@ -27,7 +27,15 @@ public record BookingDto(
     // US-06: null unless the booking was cancelled WITH a reason.
     string? CancellationReason,
     string? Notes,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    // US-37, ARCHITECTURE.md §5.2: filled by the server, guest bookings only — null on staff manual
+    // bookings and on authenticated-client bookings (API_CONTRACT.md §7.2).
+    string? ConsentPrivacyVersion,
+    string? ConsentTermsVersion,
+    DateTime? ConsentAcceptedAt,
+    // US-39: true once the client who made this booking has deleted their account (§7.4) — the booking
+    // itself was anonymized, not deleted.
+    bool ClientDeleted
 );
 
 public record OccupiedRangeDto(TimeOnly Start, TimeOnly End);

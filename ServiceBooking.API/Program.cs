@@ -19,6 +19,7 @@ using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.API.Services.Scheduling.Tasks;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -76,7 +77,11 @@ if (!isDeveloperEnvironment)
             "UseStaticFiles to anyone with the link. Set Storage__PrivateRoot to a path outside wwwroot.");
 }
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+        // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
+        // LegalDocumentProvider is resolved from DI per-request rather than requiring a service-locator
+        // pattern here.
+        options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>())
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 
@@ -457,6 +462,7 @@ using (var scope = app.Services.CreateScope())
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var legalDocumentProvider = scope.ServiceProvider.GetRequiredService<LegalDocumentProvider>();
 
     await db.Database.MigrateAsync();
 
@@ -489,6 +495,27 @@ using (var scope = app.Services.CreateScope())
                     "Failed to seed the SuperAdmin account: " +
                     string.Join("; ", createAdmin.Errors.Select(e => e.Description)));
             await userManager.AddToRoleAsync(admin, "SuperAdmin");
+
+            // US-37, ARCHITECTURE.md §6.3: LegalConsentFilter applies to every authenticated route,
+            // SuperAdmin's own admin API included — there is no carve-out for the seeded account in the
+            // contract. Without this the freshly-seeded SuperAdmin would be locked out of everything
+            // outside the allow-list until they happened to call POST /api/legal/accept, which nothing
+            // in the admin UI prompts them to do. Recording consent to the currently-loaded documents
+            // at seed time is the same conceptual act AuthController.Register performs for every other
+            // new account; if no manifest is loaded yet (only possible outside Production), this is
+            // skipped and the account behaves like any pre-cycle-C account until it next logs in after
+            // the manifest is fixed.
+            var legalSnapshot = legalDocumentProvider.Current;
+            var seededPrivacyDoc = legalSnapshot?.Get(LegalDocumentType.Privacy);
+            var seededTermsDoc = legalSnapshot?.Get(LegalDocumentType.Terms);
+            if (seededPrivacyDoc is not null && seededTermsDoc is not null)
+            {
+                var acceptedAt = DateTime.UtcNow;
+                db.UserConsents.AddRange(
+                    new UserConsent { Id = Guid.NewGuid(), UserId = admin.Id, DocumentType = LegalDocumentType.Privacy, Version = seededPrivacyDoc.Version, AcceptedAtUtc = acceptedAt },
+                    new UserConsent { Id = Guid.NewGuid(), UserId = admin.Id, DocumentType = LegalDocumentType.Terms, Version = seededTermsDoc.Version, AcceptedAtUtc = acceptedAt });
+                await db.SaveChangesAsync();
+            }
         }
     }
 }

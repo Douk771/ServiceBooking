@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
+using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Legal;
 

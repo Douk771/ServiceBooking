@@ -36,6 +36,20 @@ public class Booking
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    // Consent snapshot, US-37 (ARCHITECTURE.md §5.2). Filled by the SERVER, from the legal documents
+    // snapshot in effect at creation time, ONLY on the guest booking path — never from the request body,
+    // and never rewritten after creation. Staff manual bookings and authenticated-client bookings leave
+    // these null: staff collected consent outside the product, and an authenticated client's consent
+    // already lives in UserConsent.
+    public string? ConsentPrivacyVersion { get; set; }
+    public string? ConsentTermsVersion { get; set; }
+    public DateTime? ConsentAcceptedAtUtc { get; set; }
+
+    // Set by account deletion (US-39, ARCHITECTURE.md §5.2/§7.4) when this booking's ClientId is
+    // anonymized — distinguishes "obscured on purpose" from a data-integrity bug (ClientId null with an
+    // empty GuestName would otherwise look identical to corruption).
+    public bool ClientDeleted { get; set; }
+
     public Company Company { get; set; } = null!;
     public Service Service { get; set; } = null!;
     public AppUser Master { get; set; } = null!;

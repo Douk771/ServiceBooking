@@ -9,7 +9,13 @@ namespace ServiceBooking.API.Services;
 
 public class TokenService(IConfiguration config)
 {
-    public string GenerateToken(AppUser user, IList<string> roles)
+    // privacyVersion/termsVersion: the version of each document THIS user has actually accepted, as
+    // recorded in UserConsent at the moment the token is issued (registration, login, or
+    // POST /api/legal/accept) — never the document's CURRENT version. LegalConsentFilter compares these
+    // claims against the current snapshot on every authenticated request without touching the database
+    // (ARCHITECTURE.md §6.3); null (no consent recorded — an account predating cycle C, or Dev/Testing
+    // without a loaded manifest) simply omits the claim, which the filter treats as "does not match".
+    public string GenerateToken(AppUser user, IList<string> roles, string? privacyVersion = null, string? termsVersion = null)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -32,6 +38,9 @@ public class TokenService(IConfiguration config)
         };
         if (!string.IsNullOrEmpty(user.Email))
             claims.Add(new Claim(JwtRegisteredClaimNames.Email, user.Email));
+
+        if (privacyVersion is not null) claims.Add(new Claim("lcp", privacyVersion));
+        if (termsVersion is not null) claims.Add(new Claim("lct", termsVersion));
 
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 

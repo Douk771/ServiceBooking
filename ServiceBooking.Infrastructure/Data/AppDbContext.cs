@@ -24,6 +24,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<SubscriptionChangeLog> SubscriptionChangeLogs => Set<SubscriptionChangeLog>();
     public DbSet<ClientNotePhoto> ClientNotePhotos => Set<ClientNotePhoto>();
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
+    public DbSet<UserConsent> UserConsents => Set<UserConsent>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -141,6 +142,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasKey(s => s.Name);
             e.Property(s => s.Name).HasMaxLength(100);
+        });
+
+        builder.Entity<UserConsent>(e =>
+        {
+            // "At most one row per document per user" as a hard DB guarantee (US-37, ARCHITECTURE.md
+            // §5.1) — no journal is kept, re-acceptance overwrites the existing row.
+            e.HasIndex(c => new { c.UserId, c.DocumentType }).IsUnique();
+            e.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<MailLog>(e => {
