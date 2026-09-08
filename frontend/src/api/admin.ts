@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { BookingStatus } from '../types'
+import type { BookingStatus, Paged } from '../types'
 
 export interface AdminStats {
   totalCompanies: number
@@ -83,9 +83,12 @@ export interface MasterReport {
 
 export const adminApi = {
   getStats: () => api.get<AdminStats>('/admin/stats').then(r => r.data),
-  getUsers: (search?: string) => api.get<AdminUser[]>('/admin/users', { params: { search } }).then(r => r.data),
+  // API_CONTRACT.md §11.2 (BREAKING) — array replaced by the Paged<T> envelope.
+  getUsers: (search?: string, page = 1, pageSize = 20) =>
+    api.get<Paged<AdminUser>>('/admin/users', { params: { search, page, pageSize } }).then(r => r.data),
   updateUserRoles: (id: string, roles: string[]) => api.put(`/admin/users/${id}/roles`, roles),
-  getCompanies: (search?: string) => api.get<AdminCompany[]>('/admin/companies', { params: { search } }).then(r => r.data),
+  getCompanies: (search?: string, page = 1, pageSize = 20) =>
+    api.get<Paged<AdminCompany>>('/admin/companies', { params: { search, page, pageSize } }).then(r => r.data),
   updateSubscription: (ownerUserId: string, planConfigId: string | null, paidUntil: string | null, isActive: boolean, comment?: string) =>
     api.put(`/admin/owners/${ownerUserId}/subscription`, { planConfigId, paidUntil, isActive, comment }),
   getSubscriptionHistory: (ownerUserId: string) =>

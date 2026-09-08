@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { Paged } from '../types'
 
 export interface ClientNotePhoto {
   id: string
@@ -42,8 +43,10 @@ export interface MasterClient {
 }
 
 export const mastersApi = {
-  getClients: (companyId: string) =>
-    api.get<MasterClient[]>('/masters/clients', { params: { companyId } }).then(r => r.data),
+  // API_CONTRACT.md §11.2 (BREAKING) — array replaced by the Paged<T> envelope, sorted by last visit
+  // date DESC on the server.
+  getClients: (companyId: string, page = 1, pageSize = 20) =>
+    api.get<Paged<MasterClient>>('/masters/clients', { params: { companyId, page, pageSize } }).then(r => r.data),
   addNote: (data: { companyId: string; clientId?: string; guestPhone?: string; note: string; bookingId?: string }) =>
     api.post<ClientNote>('/masters/clients/notes', data).then(r => r.data),
   deleteNote: (id: string) =>

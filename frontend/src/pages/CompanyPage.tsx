@@ -8,6 +8,7 @@ import { servicesApi } from '../api/services'
 import { reviewsApi } from '../api/reviews'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
+import { Pagination } from '../components/ui/Pagination'
 import { BookingModal } from '../components/booking/BookingModal'
 import type { Service } from '../types'
 
@@ -69,12 +70,17 @@ export function CompanyPage() {
     enabled: !!company,
   })
 
-  const { data: reviews } = useQuery({
-    queryKey: ['company-reviews', company?.id],
-    queryFn: () => reviewsApi.getForCompany(company!.id),
+  const [reviewsPage, setReviewsPage] = useState(1)
+  const { data: reviewsData } = useQuery({
+    queryKey: ['company-reviews', company?.id, reviewsPage],
+    queryFn: () => reviewsApi.getForCompany(company!.id, reviewsPage),
     enabled: !!company,
   })
+  const reviews = reviewsData?.items
 
+  // Average is computed from the current page only — the server doesn't return an aggregate rating
+  // (API_CONTRACT.md §11 doesn't add one), so this was already page-scoped in spirit even before
+  // pagination; it's just more visibly so on page 2+ now.
   const avgRating = reviews && reviews.length > 0
     ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
     : null
@@ -186,7 +192,7 @@ export function CompanyPage() {
           <div className="flex items-center gap-1.5 bg-warning-bg px-3 py-1 rounded-full text-[13px]">
             <Icon name="star" size={12} className="text-[#B08A3E]" />
             <span className="font-bold text-warning">{avgRating.toFixed(1)}</span>
-            <span className="text-muted">· {reviews!.length} отзывов</span>
+            <span className="text-muted">· {reviewsData?.total ?? reviews!.length} отзывов</span>
           </div>
         )}
       </div>
@@ -217,6 +223,16 @@ export function CompanyPage() {
         <div className="text-center py-8 text-muted">
           <p>Пока нет отзывов</p>
         </div>
+      )}
+
+      {reviewsData && (
+        <Pagination
+          page={reviewsData.page}
+          pageSize={reviewsData.pageSize}
+          total={reviewsData.total}
+          hasNext={reviewsData.hasNext}
+          onPageChange={setReviewsPage}
+        />
       )}
 
       {/* Booking Modal */}

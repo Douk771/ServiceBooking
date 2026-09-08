@@ -11,6 +11,7 @@ import { Input } from '../components/ui/Input'
 import { StatusBadge } from '../components/ui/Badge'
 import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
+import { Pagination } from '../components/ui/Pagination'
 import { getPlanErrorMessage } from '../utils/planError'
 import { getCompanyAdminErrorMessage } from '../utils/companyAdminError'
 import { formatPhone } from '../utils/phone'
@@ -159,7 +160,7 @@ function ChangeOwnerModal({ company, onClose }: { company: AdminCompany; onClose
     queryKey: ['admin-users', search],
     queryFn: () => adminApi.getUsers(search || undefined),
   })
-  const candidates = (users ?? []).filter(u => u.id !== company.ownerUserId)
+  const candidates = (users?.items ?? []).filter(u => u.id !== company.ownerUserId)
 
   const mut = useMutation({
     mutationFn: () => adminApi.updateCompanyOwner(company.id, selectedUserId),
@@ -249,22 +250,29 @@ function BlockCompanyModal({ company, onClose }: { company: AdminCompany; onClos
 
 function CompaniesTab() {
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [changeOwnerFor, setChangeOwnerFor] = useState<AdminCompany | null>(null)
   const [blockingCompany, setBlockingCompany] = useState<AdminCompany | null>(null)
-  const { data, isLoading } = useQuery({ queryKey: ['admin-companies', search], queryFn: () => adminApi.getCompanies(search || undefined) })
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-companies', search, page],
+    queryFn: () => adminApi.getCompanies(search || undefined, page),
+  })
+  // Typing a new search always restarts at page 1 — otherwise "page 3" of the old, wider result set
+  // could be past the end of a narrower one and render nothing with no indication why.
+  const handleSearch = (value: string) => { setSearch(value); setPage(1) }
 
   return (
     <div>
       {changeOwnerFor && <ChangeOwnerModal company={changeOwnerFor} onClose={() => setChangeOwnerFor(null)} />}
       {blockingCompany && <BlockCompanyModal company={blockingCompany} onClose={() => setBlockingCompany(null)} />}
       <div className="mb-4">
-        <Input placeholder="Поиск по названию или email..." value={search} onChange={e => setSearch(e.target.value)} />
+        <Input placeholder="Поиск по названию или email..." value={search} onChange={e => handleSearch(e.target.value)} />
       </div>
       {isLoading ? (
         <div className="grid gap-3">{Array.from({length:4}).map((_,i)=><div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse"/>)}</div>
       ) : (
         <div className="grid gap-3">
-          {(data ?? []).map(c => (
+          {(data?.items ?? []).map(c => (
             <Card key={c.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold shrink-0">{c.name[0]}</div>
@@ -287,6 +295,9 @@ function CompaniesTab() {
             </Card>
           ))}
         </div>
+      )}
+      {data && (
+        <Pagination page={data.page} pageSize={data.pageSize} total={data.total} hasNext={data.hasNext} onPageChange={setPage} />
       )}
     </div>
   )
@@ -331,9 +342,14 @@ function RolesModal({ user, onClose }: { user: AdminUser; onClose: () => void })
 
 function UsersTab() {
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [editUser, setEditUser] = useState<AdminUser | null>(null)
   const [editSub, setEditSub] = useState<AdminUser | null>(null)
-  const { data, isLoading } = useQuery({ queryKey: ['admin-users', search], queryFn: () => adminApi.getUsers(search || undefined) })
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-users', search, page],
+    queryFn: () => adminApi.getUsers(search || undefined, page),
+  })
+  const handleSearch = (value: string) => { setSearch(value); setPage(1) }
 
   return (
     <div>
@@ -351,13 +367,13 @@ function UsersTab() {
         />
       )}
       <div className="mb-4">
-        <Input placeholder="Поиск по email, имени..." value={search} onChange={e => setSearch(e.target.value)} />
+        <Input placeholder="Поиск по email, имени..." value={search} onChange={e => handleSearch(e.target.value)} />
       </div>
       {isLoading ? (
         <div className="grid gap-3">{Array.from({length:5}).map((_,i)=><div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse"/>)}</div>
       ) : (
         <div className="grid gap-2">
-          {(data ?? []).map(u => (
+          {(data?.items ?? []).map(u => (
             <Card key={u.id} className="p-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-full bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-sm shrink-0">{u.firstName[0]}{u.lastName[0]}</div>
@@ -383,6 +399,9 @@ function UsersTab() {
             </Card>
           ))}
         </div>
+      )}
+      {data && (
+        <Pagination page={data.page} pageSize={data.pageSize} total={data.total} hasNext={data.hasNext} onPageChange={setPage} />
       )}
     </div>
   )

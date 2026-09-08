@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { Paged } from '../types'
 
 export interface Review {
   rating: number
@@ -17,8 +18,9 @@ export interface CanReviewItem {
 }
 
 export const reviewsApi = {
-  getForCompany: (companyId: string) =>
-    api.get<Review[]>(`/companies/${companyId}/reviews`).then(r => r.data),
+  // API_CONTRACT.md §11.2 (BREAKING) — array replaced by the Paged<T> envelope, sorted createdAt DESC.
+  getForCompany: (companyId: string, page = 1, pageSize = 20) =>
+    api.get<Paged<Review>>(`/companies/${companyId}/reviews`, { params: { page, pageSize } }).then(r => r.data),
 
   canReview: () =>
     api.get<CanReviewItem[]>('/reviews/can-review').then(r => r.data),

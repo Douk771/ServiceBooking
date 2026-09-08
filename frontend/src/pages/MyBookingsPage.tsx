@@ -354,13 +354,18 @@ export function MyBookingsPage() {
   const clientQueries = useQueries({
     queries: companyIds.map(companyId => ({
       queryKey: ['master-clients', companyId],
-      queryFn: () => mastersApi.getClients(companyId),
+      // Pagination on this endpoint (API_CONTRACT.md §11) is designed for the "Мои клиенты" list
+      // screen, not this cross-reference lookup — pageSize is set to the server's own cap (100) to
+      // keep the practical impact low, but a company with more clients than that will have some
+      // bookings here show without their client's note/history context. Flagged for the architect:
+      // this lookup arguably wants an unpaginated variant of the endpoint.
+      queryFn: () => mastersApi.getClients(companyId, 1, 100),
     })),
   })
   const clientByKey = useMemo(() => {
     const map = new Map<string, MasterClient>()
     for (const q of clientQueries) {
-      for (const c of q.data ?? []) {
+      for (const c of q.data?.items ?? []) {
         const key = c.clientId ?? c.guestPhone
         if (key) map.set(key, c)
       }

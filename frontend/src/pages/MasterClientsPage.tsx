@@ -7,6 +7,7 @@ import { clientNotesApi } from '../api/clientNotes'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
+import { Pagination } from '../components/ui/Pagination'
 import { NoteCard } from '../components/clientNotes/NoteCard'
 import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
 import { formatPhone } from '../utils/phone'
@@ -174,13 +175,18 @@ interface Props {
 
 export function MasterClientsPage({ companyId }: Props) {
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 20
 
-  const { data: clients, isLoading, isError } = useQuery({
-    queryKey: ['master-clients', companyId],
-    queryFn: () => mastersApi.getClients(companyId),
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['master-clients', companyId, page],
+    queryFn: () => mastersApi.getClients(companyId, page, pageSize),
     enabled: !!companyId,
   })
+  const clients = data?.items
 
+  // The server doesn't take a search parameter on this endpoint (API_CONTRACT.md §11.2) — this only
+  // narrows the clients already on the current page, not the full list.
   const filtered = (clients ?? []).filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase())
   )
@@ -208,7 +214,7 @@ export function MasterClientsPage({ companyId }: Props) {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-lg font-semibold text-ink">Мои клиенты</h2>
-        <span className="text-sm text-muted">{filtered.length} клиентов</span>
+        <span className="text-sm text-muted">{data?.total ?? filtered.length} клиентов</span>
       </div>
 
       <div className="mb-4 relative">
@@ -240,6 +246,10 @@ export function MasterClientsPage({ companyId }: Props) {
             />
           ))}
         </div>
+      )}
+
+      {data && (
+        <Pagination page={data.page} pageSize={data.pageSize} total={data.total} hasNext={data.hasNext} onPageChange={setPage} />
       )}
     </div>
   )
