@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.ClientNotes;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -43,7 +44,8 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        var entriesPage = await response.Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>();
+        var entries = entriesPage?.Items;
         var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
         entry.TotalVisits.Should().Be(2);
         entry.Name.Should().Be($"{clientUser.FirstName} {clientUser.LastName}");
@@ -80,7 +82,8 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        var entriesPage = await response.Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>();
+        var entries = entriesPage?.Items;
         var entry = entries.Should().ContainSingle(e => e.GuestPhone == guestPhone).Which;
         entry.ClientId.Should().BeNull();
         entry.Name.Should().Be("Walk-in Guest");
@@ -122,7 +125,8 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await masterClient.GetAsync($"/api/masters/clients?companyId={company.Id}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        var entriesPage = await response.Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>();
+        var entries = entriesPage?.Items;
         var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
 
         entry.TotalVisits.Should().Be(3);
@@ -154,7 +158,7 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var beforeResponse = await masterClient.GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var beforeEntry = (await beforeResponse.Content.ReadFromJsonAsync<List<MasterClientDto>>())!
+        var beforeEntry = (await beforeResponse.Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>())!.Items
             .Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
         beforeEntry.Notes.Should().Contain(n => n.Note == noteText);
         beforeEntry.BookingSummaries.Should().OnlyContain(b => b.Status == "Confirmed");
@@ -162,7 +166,7 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         (await masterClient.PatchAsync($"/api/bookings/{bookingId}/noshow", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var afterResponse = await masterClient.GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var afterEntry = (await afterResponse.Content.ReadFromJsonAsync<List<MasterClientDto>>())!
+        var afterEntry = (await afterResponse.Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>())!.Items
             .Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
         afterEntry.Notes.Should().Contain(n => n.Note == noteText);
         afterEntry.BookingSummaries.Should().ContainSingle(b => b.Status == "NoShow");
@@ -196,7 +200,8 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         created.Photos.Should().BeEmpty();
 
         var listResponse = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var entries = await listResponse.Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        var entriesPage = await listResponse.Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>();
+        var entries = entriesPage?.Items;
         var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
         entry.Notes.Should().Contain(n => n.Note == noteText && n.Id == created.Id);
     }
@@ -289,8 +294,9 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         // And it must not have been silently written and left invisible either.
-        var entries = await (await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}"))
-            .Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        var entriesPage = await (await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}"))
+            .Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>();
+            var entries = entriesPage?.Items;
         entries.Should().NotContain(e => e.ClientId == stranger.UserId);
     }
 
@@ -388,8 +394,9 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         (await AuthedClient(masterA.Token).PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(company.Id, clientUser.UserId, null, sharedNote))).StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var bEntries = await (await AuthedClient(masterB.Token).GetAsync($"/api/masters/clients?companyId={company.Id}"))
-            .Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        var bEntriesPage = await (await AuthedClient(masterB.Token).GetAsync($"/api/masters/clients?companyId={company.Id}"))
+            .Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>();
+            var bEntries = bEntriesPage?.Items;
         bEntries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which.Notes.Should().Contain(n => n.Note == sharedNote);
     }
 
@@ -419,8 +426,9 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         (await AuthedClient(masterA.Token).PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(companyA.Id, clientUser.UserId, null, noteInA))).StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var bEntries = await (await AuthedClient(masterB.Token).GetAsync($"/api/masters/clients?companyId={companyB.Id}"))
-            .Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        var bEntriesPage = await (await AuthedClient(masterB.Token).GetAsync($"/api/masters/clients?companyId={companyB.Id}"))
+            .Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>();
+            var bEntries = bEntriesPage?.Items;
         bEntries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which.Notes.Should().NotContain(n => n.Note == noteInA);
     }
 
@@ -459,7 +467,8 @@ public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         }
 
         var response = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var entries = await response.Content.ReadFromJsonAsync<List<MasterClientDto>>();
+        var entriesPage = await response.Content.ReadFromJsonAsync<PagedResult<MasterClientDto>>();
+        var entries = entriesPage?.Items;
 
         var entry = entries.Should().ContainSingle(e => e.ClientId == clientUser.UserId).Which;
         entry.Phone.Should().Be(clientUser.Phone);

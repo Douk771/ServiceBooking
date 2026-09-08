@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.ClientNotes;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.Infrastructure.Data;
 using ServiceBooking.Tests.Infrastructure;
@@ -63,8 +64,8 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         photo.CanDelete.Should().BeTrue();
 
         var listResponse = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
-        var entries = await listResponse.Content.ReadJsonAsync<List<MasterClientDto>>();
-        var note = entries!.SelectMany(e => e.Notes).Should().ContainSingle(n => n.Id == noteId).Which;
+        var entriesPage = await listResponse.Content.ReadJsonAsync<PagedResult<MasterClientDto>>();
+        var note = entriesPage!.Items.SelectMany(e => e.Notes).Should().ContainSingle(n => n.Id == noteId).Which;
         note.Photos.Should().ContainSingle(p => p.Id == photo.Id);
     }
 

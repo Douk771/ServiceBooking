@@ -4,6 +4,7 @@ using FluentAssertions;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.DTOs.Bookings;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -11,10 +12,6 @@ namespace ServiceBooking.Tests.Tests;
 public class ReviewsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     private record CreateReviewResponse(Guid Id);
-
-    private record CompanyReviewEntry(
-        Guid Id, int Rating, string? Comment, string? ReviewerName,
-        string MasterName, string ServiceName, DateTime CreatedAt);
 
     /// <summary>
     /// Full setup: owner + company + master + service + working day + a client who books and
@@ -186,7 +183,8 @@ public class ReviewsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AnonymousClient().GetAsync($"/api/companies/{company.Id}/reviews");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var reviews = await response.Content.ReadFromJsonAsync<List<CompanyReviewEntry>>();
+        var reviewsPage = await response.Content.ReadFromJsonAsync<PagedResult<ReviewDto>>();
+        var reviews = reviewsPage?.Items;
         reviews.Should().BeEmpty();
     }
 
@@ -228,7 +226,8 @@ public class ReviewsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AnonymousClient().GetAsync($"/api/companies/{company.Id}/reviews");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var reviews = await response.Content.ReadFromJsonAsync<List<CompanyReviewEntry>>();
+        var reviewsPage = await response.Content.ReadFromJsonAsync<PagedResult<ReviewDto>>();
+        var reviews = reviewsPage?.Items;
         reviews.Should().HaveCount(2);
         reviews![0].Comment.Should().Be("Second");
         reviews[1].Comment.Should().Be("First");
@@ -251,8 +250,9 @@ public class ReviewsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             new CreateReviewRequest(bookingB.Id, 2, "Review for company B"));
         reviewB.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var reviews = await (await AnonymousClient().GetAsync($"/api/companies/{companyB.Id}/reviews"))
-            .Content.ReadFromJsonAsync<List<CompanyReviewEntry>>();
+        var reviewsPage = await (await AnonymousClient().GetAsync($"/api/companies/{companyB.Id}/reviews"))
+            .Content.ReadFromJsonAsync<PagedResult<ReviewDto>>();
+        var reviews = reviewsPage?.Items;
 
         reviews.Should().ContainSingle();
         reviews![0].Comment.Should().Be("Review for company B");

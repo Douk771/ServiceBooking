@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -112,7 +113,8 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         // Admin search matches email (as well as phone/name); the tag lives only in this user's email.
         var response = await AuthedClient(admin.Token).GetAsync($"/api/admin/users?search={uniqueTag}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var users = await response.Content.ReadFromJsonAsync<List<AdminUserDto>>();
+        var usersPage = await response.Content.ReadFromJsonAsync<PagedResult<AdminUserDto>>();
+        var users = usersPage?.Items;
 
         users.Should().ContainSingle(u => u.Id == user.UserId);
         users!.Should().OnlyContain(u => u.Email != null && u.Email.Contains(uniqueTag));
@@ -126,7 +128,8 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var user = await RegisterAsync(firstName: firstName);
 
         var response = await AuthedClient(admin.Token).GetAsync($"/api/admin/users?search={firstName}");
-        var users = await response.Content.ReadFromJsonAsync<List<AdminUserDto>>();
+        var usersPage = await response.Content.ReadFromJsonAsync<PagedResult<AdminUserDto>>();
+        var users = usersPage?.Items;
 
         users.Should().Contain(u => u.Id == user.UserId);
     }
@@ -145,7 +148,8 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var response = await AuthedClient(admin.Token).GetAsync($"/api/admin/users?search={Uri.EscapeDataString("٠١٢٣٤")}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var users = await response.Content.ReadFromJsonAsync<List<AdminUserDto>>();
+        var usersPage = await response.Content.ReadFromJsonAsync<PagedResult<AdminUserDto>>();
+        var users = usersPage?.Items;
 
         // The control user's name/email/phone contain no Arabic-Indic digits — if the search silently
         // fell back to matching everyone, it would show up here anyway.
@@ -294,7 +298,8 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var response = await AuthedClient(admin.Token).GetAsync($"/api/admin/companies?search={slugTag}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var companies = await response.Content.ReadJsonAsync<List<AdminCompanyDto>>();
+        var companiesPage = await response.Content.ReadJsonAsync<PagedResult<AdminCompanyDto>>();
+        var companies = companiesPage?.Items;
 
         var found = companies.Should().ContainSingle(c => c.Id == company.Id).Subject;
         found.MemberCount.Should().Be(2); // owner + master
@@ -323,7 +328,8 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         second.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var listResponse = await adminClient.GetAsync($"/api/admin/companies?search={company.Slug}");
-        var companies = await listResponse.Content.ReadJsonAsync<List<AdminCompanyDto>>();
+        var companiesPage = await listResponse.Content.ReadJsonAsync<PagedResult<AdminCompanyDto>>();
+        var companies = companiesPage?.Items;
 
         // Exactly one row for this company — a duplicate-insert bug would still show one row here
         // (GetCompanies groups by company id), but the reflected plan must be the *second* call's value,
@@ -365,8 +371,9 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             $"/api/admin/companies/{company.Id}/owner", new UpdateCompanyOwnerDto(newOwner.UserId));
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var companies = await (await AuthedClient(admin.Token).GetAsync($"/api/admin/companies?search={company.Slug}"))
-            .Content.ReadFromJsonAsync<List<AdminCompanyDto>>();
+        var companiesPage = await (await AuthedClient(admin.Token).GetAsync($"/api/admin/companies?search={company.Slug}"))
+            .Content.ReadFromJsonAsync<PagedResult<AdminCompanyDto>>();
+            var companies = companiesPage?.Items;
         companies.Should().ContainSingle(c => c.Id == company.Id && c.OwnerUserId == newOwner.UserId);
 
         // Reassigning OwnerUserId alone wouldn't let the new owner actually manage the company (that's
@@ -428,8 +435,9 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             $"/api/admin/companies/{company.Id}/owner", new UpdateCompanyOwnerDto(paidOwner.UserId));
         transfer.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var companies = await (await AuthedClient(admin.Token).GetAsync($"/api/admin/companies?search={company.Slug}"))
-            .Content.ReadFromJsonAsync<List<AdminCompanyDto>>();
+        var companiesPage = await (await AuthedClient(admin.Token).GetAsync($"/api/admin/companies?search={company.Slug}"))
+            .Content.ReadFromJsonAsync<PagedResult<AdminCompanyDto>>();
+            var companies = companiesPage?.Items;
         var entry = companies.Should().ContainSingle(c => c.Id == company.Id).Subject;
         entry.OwnerUserId.Should().Be(paidOwner.UserId);
         entry.PlanName.Should().Be("QA Full Access"); // now governed by the new owner's paid plan
@@ -617,9 +625,13 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var secondCompany = (await secondResponse.Content.ReadFromJsonAsync<CompanyDto>())!;
 
-        // Search matches company name/email (not owner email), so fetch all and pick the two by id.
-        var companies = await (await adminClient.GetAsync("/api/admin/companies"))
-            .Content.ReadJsonAsync<List<AdminCompanyDto>>();
+        // Search matches company name/email (not owner email), so fetch a large page and pick the two by
+        // id — pageSize=500 (cycle C pagination, US-49) comfortably covers what this shared-database
+        // suite accumulates by the time this test runs; ordered oldest-first, a small default page would
+        // miss companies created late in the run.
+        var companiesPage = await (await adminClient.GetAsync("/api/admin/companies?pageSize=500"))
+            .Content.ReadJsonAsync<PagedResult<AdminCompanyDto>>();
+        var companies = companiesPage!.Items;
 
         // Both companies resolve to the same owner account and therefore the same plan.
         var first = companies.Should().ContainSingle(c => c.Id == firstCompany.Id).Subject;
@@ -641,8 +653,9 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var configId = await CreateTestPlanConfigAsync(allowMailing: true);
         await SetSubscriptionAsync(company.Id, configId);
 
-        var users = await (await adminClient.GetAsync($"/api/admin/users?search={Uri.EscapeDataString(owner.Phone)}"))
-            .Content.ReadFromJsonAsync<List<AdminUserDto>>();
+        var usersPage = await (await adminClient.GetAsync($"/api/admin/users?search={Uri.EscapeDataString(owner.Phone)}"))
+            .Content.ReadFromJsonAsync<PagedResult<AdminUserDto>>();
+            var users = usersPage?.Items;
 
         var entry = users.Should().ContainSingle(u => u.Id == owner.UserId).Subject;
         entry.OwnedCompanyCount.Should().Be(1);

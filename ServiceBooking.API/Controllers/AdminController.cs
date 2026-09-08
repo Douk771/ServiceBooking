@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
@@ -39,8 +40,10 @@ public class AdminController(
     // ── Users ──────────────────────────────────────────────────────────────────
 
     [HttpGet("users")]
-    public async Task<ActionResult<List<AdminUserDto>>> GetUsers([FromQuery] string? search)
+    public async Task<ActionResult<PagedResult<AdminUserDto>>> GetUsers(
+        [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.Users.AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -66,7 +69,11 @@ public class AdminController(
                 u.LastName.Contains(search));
         }
 
-        var users = await query.OrderBy(u => u.CreatedAt).ToListAsync();
+        // US-49 p.6: tie-break by Id — CreatedAt alone doesn't guarantee a deterministic order for rows
+        // with equal timestamps, and without one, page 2 can reshow (or skip) a row page 1 already showed.
+        var total = await query.CountAsync();
+        var users = await query.OrderBy(u => u.CreatedAt).ThenBy(u => u.Id)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
         var userIds = users.Select(u => u.Id).ToList();
 
         // Subscriptions are account-level (bound to the owner), so surface each user's plan and how many
@@ -79,16 +86,27 @@ public class AdminController(
             .Select(g => new { OwnerUserId = g.Key, Count = g.Count() })
             .ToListAsync();
 
-        var result = new List<AdminUserDto>();
-        foreach (var u in users)
+        // US-49 p.3: ONE join for the whole page's roles instead of userManager.GetRolesAsync(u) inside
+        // the loop below — the previous shape made N extra queries per page, independent of page size
+        // only in the sense that it scaled with it instead. Pagination alone would only have masked this
+        // (a smaller N is still N), not fixed it.
+        var roleMap = await (from ur in db.UserRoles
+                              join r in db.Roles on ur.RoleId equals r.Id
+                              where userIds.Contains(ur.UserId)
+                              select new { ur.UserId, r.Name }).ToListAsync();
+        var rolesByUser = roleMap.GroupBy(x => x.UserId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Name ?? "").ToList());
+
+        var result = users.Select(u =>
         {
-            var roles = await userManager.GetRolesAsync(u);
             var sub = subs.FirstOrDefault(s => s.OwnerUserId == u.Id);
             var ownedCount = ownedCounts.FirstOrDefault(x => x.OwnerUserId == u.Id)?.Count ?? 0;
-            result.Add(new AdminUserDto(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, u.CreatedAt,
-                [.. roles], ownedCount, sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true));
-        }
-        return Ok(result);
+            return new AdminUserDto(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, u.CreatedAt,
+                rolesByUser.GetValueOrDefault(u.Id, []), ownedCount, sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free",
+                sub?.PaidUntil, sub?.IsActive ?? true);
+        }).ToList();
+
+        return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
     }
 
     [HttpPut("users/{id}/roles")]
@@ -123,15 +141,19 @@ public class AdminController(
     // ── Companies ──────────────────────────────────────────────────────────────
 
     [HttpGet("companies")]
-    public async Task<ActionResult<List<AdminCompanyDto>>> GetCompanies([FromQuery] string? search)
+    public async Task<ActionResult<PagedResult<AdminCompanyDto>>> GetCompanies(
+        [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.Companies
             .Include(c => c.Members)
             .AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(c => c.Name.Contains(search) || c.Email!.Contains(search));
 
-        var companies = await query.OrderBy(c => c.CreatedAt).ToListAsync();
+        var total = await query.CountAsync();
+        var companies = await query.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
         var ids = companies.Select(c => c.Id).ToList();
         var ownerIds = companies.Select(c => c.OwnerUserId).Distinct().ToList();
         var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig).Where(s => ownerIds.Contains(s.OwnerUserId)).ToListAsync();
@@ -152,7 +174,7 @@ public class AdminController(
                 sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true);
         }).ToList();
 
-        return Ok(result);
+        return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
     }
 
     [HttpPut("owners/{ownerUserId}/subscription")]

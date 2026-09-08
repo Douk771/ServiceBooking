@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.ClientNotes;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -20,8 +21,10 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
     private const int NotesPerClient = 50;
 
     [HttpGet("clients")]
-    public async Task<IActionResult> GetClients([FromQuery] Guid companyId)
+    public async Task<ActionResult<PagedResult<MasterClientDto>>> GetClients(
+        [FromQuery] Guid companyId, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
         // Check the caller actually works in this company (Master or CompanyOwner) — a plain "any
@@ -128,8 +131,21 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
                 );
             });
 
-        var result = registeredClients.Concat(guestClients).ToList();
-        return Ok(result);
+        // US-49: pagination applies to THIS list — the clients grouped from the master's bookings in
+        // this company, already fully materialized above (existing shape, not restructured by this
+        // cycle) — not to the ROW_NUMBER() note-capping query above it, which stays exactly as it was
+        // (ARCHITECTURE.md §15: "GET /api/masters/clients содержит ROW_NUMBER()-запрос через
+        // FromSqlInterpolated" is a warning about not disturbing that query, not a description of how
+        // pagination itself is implemented). Ordered by last visit date DESC, tie-broken by the same
+        // client key GetClients/AddNote use everywhere else: registered client id, or guest phone.
+        var allClients = registeredClients.Concat(guestClients)
+            .OrderByDescending(c => c.LastVisitDate)
+            .ThenBy(c => c.ClientId ?? c.GuestPhone)
+            .ToList();
+        var total = allClients.Count;
+        var pageItems = allClients.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
+
+        return Ok(Pagination.Create(pageItems, currentPage, currentPageSize, total));
     }
 
     [HttpPost("clients/notes")]

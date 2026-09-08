@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -89,28 +90,32 @@ public class ReviewsController(AppDbContext db) : ControllerBase
 public class CompanyReviewsController(AppDbContext db) : ControllerBase
 {
     [HttpGet("{companyId}/reviews")]
-    public async Task<IActionResult> GetCompanyReviews(Guid companyId)
+    public async Task<ActionResult<PagedResult<ReviewDto>>> GetCompanyReviews(
+        Guid companyId, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
-        var reviews = await db.Reviews
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        var query = db.Reviews.Where(r => r.CompanyId == companyId);
+
+        var total = await query.CountAsync();
+        // US-49 p.6: CreatedAt DESC, then Id — the tie-break PostgreSQL needs to guarantee page 2 never
+        // reshows a row page 1 already showed when two reviews share a timestamp.
+        var reviews = await query
             .Include(r => r.Master)
-            .Include(r => r.Booking)
-                .ThenInclude(b => b.Service)
-            .Where(r => r.CompanyId == companyId)
-            .OrderByDescending(r => r.CreatedAt)
-            .Select(r => new
-            {
-                r.Id,
-                r.Rating,
-                r.Comment,
-                r.ReviewerName,
-                masterName = r.Master.FirstName + " " + r.Master.LastName,
-                serviceName = r.Booking.Service.Name,
-                r.CreatedAt
-            })
+            .Include(r => r.Booking).ThenInclude(b => b.Service)
+            .OrderByDescending(r => r.CreatedAt).ThenBy(r => r.Id)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
+            .Select(r => new ReviewDto(
+                r.Id, r.Rating, r.Comment, r.ReviewerName,
+                r.Master.FirstName + " " + r.Master.LastName, r.Booking.Service.Name, r.CreatedAt))
             .ToListAsync();
 
-        return Ok(reviews);
+        return Ok(Pagination.Create(reviews, currentPage, currentPageSize, total));
     }
 }
 
 public record CreateReviewRequest(Guid BookingId, int Rating, string? Comment);
+
+// Named record replacing the previous anonymous-object shape (US-49 BREAKING № 2, API_CONTRACT.md §11)
+// — an anonymous type can't be the T in PagedResult<T>.
+public record ReviewDto(
+    Guid Id, int Rating, string? Comment, string? ReviewerName, string MasterName, string ServiceName, DateTime CreatedAt);
