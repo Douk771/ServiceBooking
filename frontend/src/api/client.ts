@@ -1,5 +1,7 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
+import { useLegalStore } from '../store/legalStore'
+import { queryClient } from '../queryClient'
 
 export const api = axios.create({
   baseURL: '/api',
@@ -23,6 +25,15 @@ api.interceptors.response.use(
   (err) => {
     const url: string = err.config?.url ?? ''
     const isAuthEndpoint = AUTH_PATHS_WITHOUT_REDIRECT.some((p) => url.includes(p))
+    // 451 means "accept the updated legal documents before doing anything else" — it is NOT a
+    // permissions error, so unlike 401 it never logs the user out (API_CONTRACT.md §0.3). ConsentGate
+    // reads this flag and takes over the screen; every other request keeps failing 451 until
+    // POST /api/legal/accept clears it by minting a token with fresh consent claims.
+    if (err.response?.status === 451) {
+      useLegalStore.getState().setConsentRequired(true)
+      queryClient.invalidateQueries({ queryKey: ['legal-consent-status'] })
+      return Promise.reject(err)
+    }
     if (err.response?.status === 401 && !isAuthEndpoint) {
       useAuthStore.getState().logout()
       window.location.href = '/login'

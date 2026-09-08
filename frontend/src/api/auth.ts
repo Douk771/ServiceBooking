@@ -11,5 +11,7 @@ export const authApi = {
     phone: string
     password: string
     email?: string
+    /** Required by API_CONTRACT.md §5 (BREAKING № 1) — a missing or `false` value is a 400. */
+    acceptedLegal: boolean
   }) => api.post<AuthResponse>('/auth/register', data).then((r) => r.data),
 }

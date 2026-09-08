@@ -24,6 +24,9 @@ export function getBookingErrorMessage(error: unknown): string {
       return 'Это время уже занято. Выберите другой слот.'
     case 404:
       return 'Услуга или компания не найдена.'
+    case 429:
+      // US-42 `booking-create` policy — same fixed text regardless of guest/staff (API_CONTRACT.md §7.3).
+      return serverMsg || 'Слишком много записей с этого адреса. Повторите позже.'
     case 400:
       if (lower.includes('captcha'))
         return 'Не удалось пройти проверку. Обновите страницу и попробуйте снова.'

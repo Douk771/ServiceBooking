@@ -1,11 +1,13 @@
 import { useForm } from 'react-hook-form'
 import { useQueryClient } from '@tanstack/react-query'
+import { AxiosError } from 'axios'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Icon } from '../components/ui/Icon'
+import { getAuthErrorMessage } from '../utils/authError'
 import { useState } from 'react'
 
 interface FormData {
@@ -32,8 +34,11 @@ export function LoginPage() {
       qc.clear()
       setAuth({ id: res.userId, phone: res.phone, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
       navigate('/')
-    } catch {
-      setError('Неверный телефон или пароль')
+    } catch (e: unknown) {
+      // 429 (US-42 `auth-login` policy) gets its own text; every other failure on this endpoint is a
+      // wrong-credentials 401, which the server sends with an empty body (API_CONTRACT.md §0.2) —
+      // authError's generic fallback would be misleadingly vague there, so it's only consulted for 429.
+      setError(e instanceof AxiosError && e.response?.status === 429 ? getAuthErrorMessage(e) : 'Неверный телефон или пароль')
     } finally {
       setLoading(false)
     }

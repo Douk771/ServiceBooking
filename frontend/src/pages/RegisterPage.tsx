@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Icon } from '../components/ui/Icon'
+import { getAuthErrorMessage } from '../utils/authError'
 import { useState } from 'react'
 
 interface FormData {
@@ -14,15 +15,19 @@ interface FormData {
   phone: string
   password: string
   email?: string
+  acceptedLegal: boolean
 }
 
 export function RegisterPage() {
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>()
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
+    defaultValues: { acceptedLegal: false },
+  })
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const acceptedLegal = watch('acceptedLegal')
 
   const onSubmit = async (data: FormData) => {
     setLoading(true)
@@ -36,8 +41,7 @@ export function RegisterPage() {
       setAuth({ id: res.userId, phone: res.phone, email: res.email, firstName: res.firstName, lastName: res.lastName, roles: res.roles }, res.token)
       navigate('/')
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: string } })?.response?.data
-      setError(typeof msg === 'string' ? msg : 'Ошибка регистрации. Попробуйте снова.')
+      setError(getAuthErrorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -95,11 +99,29 @@ export function RegisterPage() {
               {...register('password', { required: 'Введите пароль', minLength: { value: 8, message: 'Минимум 8 символов' } })}
             />
 
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                className="w-4 h-4 mt-0.5 rounded accent-gold"
+                {...register('acceptedLegal', { required: true })}
+              />
+              <span className="text-[13px] text-ink-soft leading-snug">
+                Принимаю{' '}
+                <Link to="/terms" target="_blank" className="text-gold hover:text-gold-dark">
+                  пользовательское соглашение
+                </Link>{' '}
+                и{' '}
+                <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
+                  политику обработки персональных данных
+                </Link>
+              </span>
+            </label>
+
             {error && (
               <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>
             )}
 
-            <Button type="submit" size="lg" loading={loading} className="mt-1 w-full">
+            <Button type="submit" size="lg" loading={loading} disabled={!acceptedLegal} className="mt-1 w-full">
               Зарегистрироваться
             </Button>
           </form>

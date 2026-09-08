@@ -9,6 +9,7 @@ import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Icon } from '../ui/Icon'
 import { Avatar } from '../ui/Avatar'
+import { Link } from 'react-router-dom'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { getBookingErrorMessage } from '../../utils/bookingError'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
@@ -312,6 +313,19 @@ export function BookingModal({ service, company, onClose }: Props) {
               >
                 Подтвердить запись
               </Button>
+
+              {!isAuthenticated() && (
+                <p className="text-center text-xs text-muted -mt-1.5">
+                  Нажимая «Подтвердить запись», вы соглашаетесь с{' '}
+                  <Link to="/terms" target="_blank" className="text-gold hover:text-gold-dark">
+                    пользовательским соглашением
+                  </Link>{' '}
+                  и{' '}
+                  <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
+                    политикой обработки персональных данных
+                  </Link>
+                </p>
+              )}
 
               {mutation.isError && (
                 <p className="text-sm text-danger text-center">{getBookingErrorMessage(mutation.error)}</p>
