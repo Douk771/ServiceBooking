@@ -1,0 +1,42 @@
+# .editorconfig — documents the C# style already in use across ServiceBooking.API/.Core/.Infrastructure
+# (US-50, ARCHITECTURE.md §18.2 T-B11). Deliberately descriptive, not aspirational: these rules describe
+# CURRENT_STATE §6's conventions (primary constructors, file-scoped namespaces, record DTOs, four-space
+# indent) so an IDE nudges new code toward the existing style instead of a fresh, unrelated one.
+#
+# NOT wired into CI via `dotnet format --verify-no-changes` in this pass: a dry run against the current
+# tree flags several hundred pre-existing whitespace/wrapping diffs (mostly multi-line method-call
+# argument wrapping in ServiceBooking.Tests, none introduced by cycle C) that default `dotnet format`
+# disagrees with. ARCHITECTURE.md §17.1/US-50 p.4 is explicit that a mass reformat must be its own,
+# separate, last commit — not mixed into a config-only PR, and not something this task's remaining scope
+# covers. Left as an explicit gap for the next pass (see handoff report) rather than silently either
+# skipping the config file or forcing an unreviewed repo-wide reformat.
+
+root = true
+
+[*]
+indent_style = space
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.cs]
+indent_size = 4
+csharp_using_directive_placement = outside_namespace:silent
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_prefer_simple_using_statement = true:suggestion
+csharp_style_var_when_type_is_apparent = true:silent
+csharp_style_var_elsewhere = true:silent
+csharp_new_line_before_open_brace = all
+dotnet_sort_system_directives_first = true
+
+# DTOs are records everywhere in this codebase (CURRENT_STATE §6) — nothing to enforce beyond letting
+# the IDE suggest it where a class with only public settable properties looks like it should have been one.
+csharp_style_prefer_top_level_statements = true:suggestion
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
