@@ -80,10 +80,12 @@ export function CompanyPage() {
   })
   const reviews = reviewsData?.items
 
-  // Average is computed from the current page only — the server doesn't return an aggregate rating
-  // (API_CONTRACT.md §11 doesn't add one), so this was already page-scoped in spirit even before
-  // pagination; it's just more visibly so on page 2+ now.
-  const avgRating = reviews && reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : null
+  // Server-computed aggregate over the company's full review history (Company.averageRating/
+  // reviewCount) — NOT derived from the current page of `reviewsData.items`. Computing it from the
+  // page was a QA-confirmed regression (TEST_CATALOG.md, item 2 under "Регрессии продукта, найденные
+  // QA…"): it changed depending on which page of reviews the visitor happened to be on.
+  const avgRating = company?.averageRating ?? null
+  const reviewCount = company?.reviewCount ?? 0
 
   if (companyLoading) {
     return (
@@ -197,7 +199,7 @@ export function CompanyPage() {
           <div className="flex items-center gap-1.5 bg-warning-bg px-3 py-1 rounded-full text-[13px]">
             <Icon name="star" size={12} className="text-[#B08A3E]" />
             <span className="font-bold text-warning">{avgRating.toFixed(1)}</span>
-            <span className="text-muted">· {reviewsData?.total ?? reviews!.length} отзывов</span>
+            <span className="text-muted">· {reviewCount} отзывов</span>
           </div>
         )}
       </div>

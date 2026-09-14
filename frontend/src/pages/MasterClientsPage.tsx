@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -11,6 +11,7 @@ import { Pagination } from '../components/ui/Pagination'
 import { NoteCard } from '../components/clientNotes/NoteCard'
 import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
 import { formatPhone } from '../utils/phone'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 
 const STATUS_LABELS: Record<string, string> = {
   Pending: 'Ожидает',
@@ -193,19 +194,22 @@ interface Props {
 
 export function MasterClientsPage({ companyId }: Props) {
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 400)
   const [page, setPage] = useState(1)
   const pageSize = 20
 
+  // Reset to page 1 whenever the (debounced) search term changes — a stale page number from a
+  // previous search could otherwise land past `hasNext` and render as an empty result.
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch])
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['master-clients', companyId, page],
-    queryFn: () => mastersApi.getClients(companyId, page, pageSize),
+    queryKey: ['master-clients', companyId, page, debouncedSearch],
+    queryFn: () => mastersApi.getClients(companyId, page, pageSize, debouncedSearch),
     enabled: !!companyId,
   })
-  const clients = data?.items
-
-  // The server doesn't take a search parameter on this endpoint (API_CONTRACT.md §11.2) — this only
-  // narrows the clients already on the current page, not the full list.
-  const filtered = (clients ?? []).filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
+  const clients = data?.items ?? []
 
   if (isLoading) {
     return (
@@ -230,7 +234,7 @@ export function MasterClientsPage({ companyId }: Props) {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-lg font-semibold text-ink">Мои клиенты</h2>
-        <span className="text-sm text-muted">{data?.total ?? filtered.length} клиентов</span>
+        <span className="text-sm text-muted">{data?.total ?? clients.length} клиентов</span>
       </div>
 
       <div className="mb-4 relative">
@@ -244,22 +248,22 @@ export function MasterClientsPage({ companyId }: Props) {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Поиск по имени…"
+          placeholder="Поиск по имени или телефону…"
           className="w-full rounded-full border border-line pl-10 pr-4 py-2.5 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep bg-white text-ink"
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {clients.length === 0 ? (
         <Card className="p-12 text-center text-muted">
           <Icon name="users" size={32} strokeWidth={1.4} className="mx-auto mb-3" />
           <p className="text-lg font-medium text-ink-soft">
-            {search ? 'Клиентов не найдено' : 'У вас пока нет клиентов'}
+            {debouncedSearch ? 'Клиентов не найдено' : 'У вас пока нет клиентов'}
           </p>
-          {!search && <p className="text-sm mt-1">Здесь появятся клиенты после первых записей</p>}
+          {!debouncedSearch && <p className="text-sm mt-1">Здесь появятся клиенты после первых записей</p>}
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {filtered.map((c) => (
+          {clients.map((c) => (
             <ClientCard key={c.clientId ?? c.guestPhone ?? c.name} client={c} companyId={companyId} />
           ))}
         </div>
