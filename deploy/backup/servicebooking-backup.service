@@ -1,0 +1,13 @@
+[Unit]
+Description=ServiceBooking: pg_dump + volume backup
+# Backups must not fight the app for docker.sock access mid-deploy.
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# journalctl -u servicebooking-backup gives the full run history for free — no separate logfile to
+# rotate or lose track of (ARCHITECTURE.md §12.1).
+ExecStart=/opt/ezbook/app/deploy/backup/backup.sh
+# One operator, no dashboard: exit code alone must say whether last night's backup worked.
+# `systemctl status servicebooking-backup` shows it directly.

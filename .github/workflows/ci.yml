@@ -85,14 +85,39 @@ jobs:
       - name: Unit tests
         run: npm run test:run
 
+      # SmartCaptcha SITE key (not the secret key — site keys are meant to be public, they're baked into
+      # every page that shows the widget) is a build-time Vite variable (CURRENT_STATE.md §1), so it has
+      # to be present HERE, not on the VPS, now that the VPS never runs `npm run build` at all (T-D3).
+      # Configure it once: repo Settings -> Secrets and variables -> Actions -> Variables ->
+      # VITE_SMARTCAPTCHA_SITEKEY. Empty/unset is fine for CI's own tests (the captcha widget just won't
+      # render), but the deployed build needs a real value or registration/booking forms show no captcha.
       - name: Build
+        env:
+          VITE_SMARTCAPTCHA_SITEKEY: ${{ vars.VITE_SMARTCAPTCHA_SITEKEY }}
         run: npm run build
 
-  # Doesn't run the container or hit any endpoint — just proves the image actually builds. This matters
-  # specifically because of SkiaSharp.NativeAssets.Linux.NoDependencies (ARCHITECTURE.md §2.1): it only
-  # loads on a glibc base image, so a Dockerfile that quietly regressed to an -alpine tag, or a native
-  # asset that failed to publish, would build fine with plain `dotnet build`/`dotnet run` and only fail
-  # here or in a real container. Runs on GitHub's own Docker Engine — nothing is pushed anywhere.
+      # Frontend build moves off the production server entirely (T-D3, US-44, ARCHITECTURE.md §12.3):
+      # deploy/deploy.sh downloads this artifact and ships it to the VPS instead of running `npm ci &&
+      # npm run build` on the box being served from. 30-day retention matches the number of recent
+      # releases anyone would plausibly want to roll back to by hand.
+      - name: Upload frontend dist
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/sanitation-cycle'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.sha }}
+          path: frontend/dist
+          retention-days: 30
+
+  # Builds the image AND actually runs it (T-D1, US-41, ARCHITECTURE.md §12.2) — plain `dotnet
+  # build`/`dotnet run` never touches the published container, so nothing here previously caught either
+  # of these classes of bug:
+  #   - SkiaSharp.NativeAssets.Linux.NoDependencies (ARCHITECTURE.md §2.1) only loads on a glibc base
+  #     image; a Dockerfile that quietly regressed to an -alpine tag would build fine and only crash
+  #     inside a real container;
+  #   - files that exist on disk in the repo but don't ship in the *published* output (wrong `Content`
+  #     glob in a .csproj, missing COPY, etc.) — `dotnet run` reads straight from the source tree and
+  #     never notices.
+  # Runs entirely on GitHub's own Docker Engine — nothing is pushed anywhere, no external services.
   docker-build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -101,3 +126,37 @@ jobs:
 
       - name: Build API image
         run: docker build -f ServiceBooking.API/Dockerfile -t servicebooking-api:ci .
+
+      - name: Start Postgres
+        run: |
+          docker network create ci-smoke
+          docker run -d --name pg-smoke --network ci-smoke \
+            -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=servicebooking \
+            postgres:16-alpine
+
+      # Runs the image as ASPNETCORE_ENVIRONMENT=Production on purpose (US-41 п.5 leaves the choice to
+      # the architect, ARCHITECTURE.md §12.2): this doubles as proof that the fail-fast checks (US-48)
+      # are satisfied by exactly the env vars documented in DEPLOY.md/.env.production.example, and that
+      # the list there is complete — if a new required variable is added later without updating this
+      # step, the job goes red, which is the point, not an inconvenience.
+      - name: Start API container (Production)
+        run: |
+          docker run -d --name api-smoke --network ci-smoke -p 8080:8080 \
+            -e ASPNETCORE_ENVIRONMENT=Production \
+            -e ConnectionStrings__DefaultConnection="Host=pg-smoke;Database=servicebooking;Username=postgres;Password=postgres" \
+            -e Jwt__Key="$(openssl rand -base64 48)" \
+            -e Jwt__Issuer=ServiceBooking \
+            -e Jwt__Audience=ServiceBookingClient \
+            -e AllowedOrigins=http://localhost:5173 \
+            -e SuperAdmin__Phone=+79990000000 \
+            -e SuperAdmin__Password="Ci$(openssl rand -hex 8)Aa1" \
+            -e Storage__PrivateRoot=/app/private-uploads \
+            -e ForwardedHeaders__TrustedNetworks__0=172.16.0.0/12 \
+            servicebooking-api:ci
+
+      - name: Smoke test (health, register, avatar upload — exercises SkiaSharp for real)
+        run: BASE_URL=http://localhost:8080 bash deploy/ci/smoke.sh
+
+      - name: Container logs (always, so a smoke failure shows the actual crash/exception)
+        if: always()
+        run: docker logs api-smoke || true

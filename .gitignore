@@ -8,6 +8,9 @@ obj/
 *.userprefs
 appsettings.Development.json
 
+# Test run artifacts (dotnet test --collect etc.) — regenerated on every run, not source
+TestResults/
+
 # Deployment secrets
 .env
 .env.production
@@ -39,6 +42,11 @@ ServiceBooking.API/App_Data/*
 
 # Serilog's rolling file sink (US-45, ARCHITECTURE.md §11.1) — a runtime artifact, not data or config.
 ServiceBooking.API/logs/
+
+# Repo-root /legal — the operator-owned directory docker-compose.prod.yml bind-mounts onto the VPS
+# (DEPLOY.md §2.1, ARCHITECTURE.md §4.1). It only exists on the VPS itself, created there from the
+# committed ServiceBooking.API/App_Data/legal draft; never meant to be a tracked path in this repo.
+/legal/
 
 # Secrets
 **/appsettings.*.json

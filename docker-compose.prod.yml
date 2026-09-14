@@ -19,6 +19,12 @@ services:
     build:
       context: .
       dockerfile: ServiceBooking.API/Dockerfile
+    # Explicit, stable image name/tag (T-D3, US-44, ARCHITECTURE.md §12.3) — without this, compose
+    # derives the tag from the checkout directory name, which rollback.sh would have to guess. Rebuilds
+    # write here on every `up -d --build`; deploy-remote.sh tags THIS name `:previous` before rebuilding,
+    # and rollback.sh's whole "one command" trick is `docker tag servicebooking-api:previous
+    # servicebooking-api:latest && up -d` — no rebuild involved.
+    image: servicebooking-api:latest
     restart: unless-stopped
     ports:
       - "127.0.0.1:5000:8080"   # bound to localhost only; nginx on the host proxies to it
@@ -36,14 +42,41 @@ services:
       # Private storage class for client-note photos (ARCHITECTURE.md §3): must never resolve inside
       # wwwroot/uploads (the public class, api_uploads below) — the API fail-fasts on startup if it does.
       - Storage__PrivateRoot=/app/private-uploads
+      # Docker bridge subnet compose assigns this stack (ARCHITECTURE.md §9.1) — the only hop the rate
+      # limiter is allowed to trust X-Forwarded-For from. Empty/unset -> fail-fast on startup (US-48).
+      - ForwardedHeaders__TrustedNetworks__0=${FORWARDEDHEADERS__TRUSTEDNETWORKS__0}
+      # GlitchTip DSN (T-D4, US-45, docker-compose.glitchtip.yml). Empty on purpose until GlitchTip is
+      # provisioned — the Sentry.Serilog sink simply doesn't register when this is blank
+      # (ARCHITECTURE.md §11.4), the app runs the same either way.
+      - Sentry__Dsn=${SENTRY_DSN:-}
+      - Sentry__Release=${GIT_SHA:-}
     volumes:
       - api_uploads:/app/wwwroot/uploads          # public class: company logos, avatars, service images
       - api_private_uploads:/app/private-uploads  # private class: client-note photos — back this up separately, it holds personal data
+      - api_logs:/app/logs                        # Serilog file sink (ARCHITECTURE.md §11.1) — not backed up, it's a disposable diagnostic, not data
+      - ./legal:/app/App_Data/legal:ro             # bind-mount OVER the baked-in draft (ARCHITECTURE.md §4.1): edit files on the host, no rebuild/redeploy needed
+    # /api/health/live never touches the database (ARCHITECTURE.md §10.1), so this only tells docker
+    # "the process is up and answering HTTP" — readiness (DB + migrations) is what deploy-remote.sh /
+    # rollback.sh poll separately after a restart (T-D3). start_period is generous on purpose: it has to
+    # cover EF Core applying pending migrations on startup (Program.cs -> MigrateAsync()).
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
+
+# Health-check reference (T-D7, US-43, ARCHITECTURE.md §10.3) — see DEPLOY.md for the full writeup:
+#   curl -s https://<домен>/api/health/ready
+#     {"status":"Healthy"}                          — можно деплоить/поднимать нагрузку
+#     {"status":"Unhealthy","failed":"database"}     — БД недоступна ИЛИ остались непринятые миграции
+#     нет ответа / connection refused                — процесс не поднялся вовсе (смотрите `docker compose logs api`)
 
 volumes:
   postgres_data:
   api_uploads:
   api_private_uploads:
+  api_logs:

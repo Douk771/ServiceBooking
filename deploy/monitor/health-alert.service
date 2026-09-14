@@ -1,0 +1,6 @@
+[Unit]
+Description=ServiceBooking: readiness probe (uptime alert)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ezbook/app/deploy/monitor/health-alert.sh

@@ -1,0 +1,12 @@
+[Unit]
+Description=ServiceBooking: nightly backup timer
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+# Catches up a missed run if the VPS was rebooted/off at 03:30 (US-40, "one operator" — a backup that
+# silently never ran because the box happened to be rebooting is worse than one that's an hour late).
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

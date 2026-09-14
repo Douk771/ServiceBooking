@@ -1,0 +1,79 @@
+# Self-hosted GlitchTip (T-D4, US-45, ARCHITECTURE.md §11.4) — speaks the Sentry protocol, so the
+# Sentry.Serilog sink already wired into the API (Program.cs, appsettings.json Sentry:Dsn) needs no
+# code changes to talk to it.
+#
+# Chosen over self-hosted Sentry deliberately (ARCHITECTURE.md §2, table row "Трекер ошибок (сервер)"):
+# self-hosted Sentry is ~20 containers, Kafka, ClickHouse, Redis, an official 16 GB RAM minimum — more
+# than this whole product needs to run. GlitchTip is four containers, ~1 GB, single operator (SPEC Р8).
+#
+# Runs on the SAME VPS as docker-compose.prod.yml, as a separate stack (separate `docker compose -f`
+# invocation, own postgres/redis — deliberately not sharing the app's database). Reachable only through
+# nginx, with basic-auth or on its own subdomain with TLS — see DEPLOY.md §11.1, do not publish `web`'s
+# port directly to the internet.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: glitchtip
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_POSTGRES_PASSWORD}
+    volumes:
+      - glitchtip_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - glitchtip_redis_data:/data
+
+  web:
+    image: glitchtip/glitchtip:v4.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"   # localhost only — nginx proxies to it, same convention as the api service
+    environment:
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_POSTGRES_PASSWORD}@postgres:5432/glitchtip
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+      PORT: 8000
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+      GLITCHTIP_DOMAIN: https://${GLITCHTIP_DOMAIN}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@localhost}
+      # Retention is explicit on purpose (ARCHITECTURE.md §11.4): a tracker that silently fills the disk
+      # takes the whole VPS down with it, including the app it's supposed to be watching.
+      GLITCHTIP_MAX_EVENT_LIFE_DAYS: 30
+      ENABLE_OPEN_USER_REGISTRATION: "false"
+    volumes:
+      - glitchtip_uploads:/code/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    image: glitchtip/glitchtip:v4.1
+    restart: unless-stopped
+    command: ./bin/run-celery-with-beat.sh
+    environment:
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_POSTGRES_PASSWORD}@postgres:5432/glitchtip
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+      GLITCHTIP_DOMAIN: https://${GLITCHTIP_DOMAIN}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@localhost}
+      GLITCHTIP_MAX_EVENT_LIFE_DAYS: 30
+    volumes:
+      - glitchtip_uploads:/code/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  glitchtip_postgres_data:
+  glitchtip_redis_data:
+  glitchtip_uploads:

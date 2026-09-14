@@ -7,6 +7,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 EXPOSE 8080
 
+# curl is needed for two things the base image doesn't ship (aspnet:8.0 has neither curl nor wget):
+# the docker-compose HEALTHCHECK (docker-compose.prod.yml, T-D7/US-43) and deploy/ci/smoke.sh polling
+# /api/health/live from inside the same container network in CI (T-D1/US-41). ~1.5 MB, no dev headers.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY ["ServiceBooking.API/ServiceBooking.API.csproj", "ServiceBooking.API/"]
