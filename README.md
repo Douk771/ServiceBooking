@@ -110,30 +110,52 @@ cd frontend && npm install && npm run dev
 - `SUPERADMIN_PHONE` / `SUPERADMIN_PASSWORD` — учётная запись, которая получает роль SuperAdmin
   при первом старте.
 - `SMARTCAPTCHA_SECRET_KEY` / `SMARTCAPTCHA_SITE_KEY` — из кабинета Yandex Cloud SmartCaptcha.
+- `FORWARDEDHEADERS__TRUSTEDNETWORKS__0` — подсеть docker-моста, единственная, из которой rate
+  limiting доверяет реальному IP клиента (за nginx).
+- `SENTRY_DSN` — необязательно, DSN self-hosted GlitchTip (трекер ошибок, см. `DEPLOY.md` §11);
+  пусто — приложение и деплой работают без него.
 
-В Production API **не стартует** (fail-fast), если `JWT_KEY` или `SUPERADMIN_PASSWORD` не заданы
-или остались плейсхолдером — так безопаснее, чем боевой контейнер, который тихо поднялся бы с
-предсказуемым секретом. Реальные секреты никогда не коммитятся — `.env`, `.env.production` и
+В Production API **не стартует** (fail-fast), если `JWT_KEY`, `SUPERADMIN_PASSWORD` или
+`FORWARDEDHEADERS__TRUSTEDNETWORKS__0` не заданы или остались плейсхолдером — так безопаснее, чем
+боевой контейнер, который тихо поднялся бы с предсказуемым секретом или лимитом, считающим всех
+одним IP. Реальные секреты никогда не коммитятся — `.env`, `.env.production` и
 `appsettings.Production.json` в `.gitignore`.
 
 ### CI
 
-`.github/workflows/ci.yml` на каждый push/PR прогоняет два независимых, параллельных джоба:
+`.github/workflows/ci.yml` на каждый push/PR прогоняет три независимых, параллельных джоба:
 
 - `backend` — сборку solution (`-warnaserror`), юнит-тесты (`ServiceBooking.UnitTests`, без БД),
   функциональные тесты (`ServiceBooking.Tests`, против Postgres в service-контейнере — БД
   тестовая, `servicebooking_test`, создаётся и пересоздаётся самим тестовым прогоном);
-- `frontend` — `tsc --noEmit`, юнит-тесты фронтенда (`npm run test:run`, Vitest + jsdom +
-  Testing Library) и `npm run build`.
+- `frontend` — `tsc --noEmit`, `npm run lint`, юнит-тесты фронтенда (`npm run test:run`, Vitest +
+  jsdom + Testing Library) и `npm run build` (результат публикуется артефактом — см. «Деплой» ниже);
+- `docker-build` — собирает боевой Docker-образ API **и запускает его по-настоящему**: поднимает
+  Postgres, стартует контейнер в режиме `Production`, ждёт готовности и прогоняет
+  `deploy/ci/smoke.sh` — регистрация + загрузка фото аватара, единственный путь, который реально
+  трогает нативную библиотеку SkiaSharp внутри контейнера. Падение любого шага — красная сборка.
 
 Никакие продакшн-секреты в CI не используются.
 
 ### Деплой
 
-Задеплоено на VPS (docker + nginx) и на Windows-ВМ (IIS) — пошаговые инструкции:
+Боевой контур — один: Linux VPS, docker compose + nginx + certbot, инструкция —
+[`DEPLOY.md`](DEPLOY.md). [`DEPLOY-windows.md`](DEPLOY-windows.md) (IIS + NSSM + win-acme)
+сохранён для демо-стенда, но **не поддерживается как боевой контур** — в нём нет автоматических
+бэкапов, security-заголовков, health-check-деплоя с откатом и наблюдаемости.
 
-- [`DEPLOY.md`](DEPLOY.md) — Linux VPS, docker compose + nginx + certbot.
-- [`DEPLOY-windows.md`](DEPLOY-windows.md) — Windows-ВМ, IIS + NSSM + win-acme.
+Обновление на уже задеплоенный VPS — одной командой с локальной машины (`./deploy/deploy.sh`, см.
+`DEPLOY.md` §9): скрипт забирает готовый фронтенд-билд из CI, отправляет его на сервер, переключает
+релиз и ждёт готовности API; при неудаче печатает готовую команду отката (`deploy/rollback.sh`, тоже
+одна команда, без параметров — `DEPLOY.md` §8).
 
-Обновление на уже задеплоенный VPS — одной командой с локальной машины
-(`./deploy/deploy.sh`, см. `DEPLOY.md` §9).
+**Бэкапы.** Ежесуточный `pg_dump` + снимок обоих файловых хранилищ, systemd-таймер на самом VPS —
+`DEPLOY.md` §10. **Важное ограничение:** копия хранится **локально, на том же сервере**, внешней
+копии нет (решение заказчика) — схема защищает от порчи данных и ошибки оператора, но **не защищает
+от потери или блокировки самого VPS**. Восстановление проверено фактическим прогоном
+«уничтожить → восстановить → открыть приватное фото клиента через API» — дата и результат прогона
+записаны в `DEPLOY.md` §10.2.
+
+**Часовые пояса.** Все контейнеры работают в UTC. У продукта нет понятия часового пояса компании:
+время визита — местное время салона, введённое буквально, без конвертации между часовыми поясами
+(`DEPLOY.md` §13) — это ограничение продукта, а не баг.

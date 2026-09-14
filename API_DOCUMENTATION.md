@@ -74,6 +74,7 @@ Swagger был доступен всегда, включая боевой сер
 | `phone` | string | да | идентификатор аккаунта, должен быть уникален |
 | `password` | string | да | минимум 8 символов (см. правила пароля ниже) |
 | `email` | string? | нет | если передан — должен быть валидным email (`[EmailAddress]`) |
+| `acceptedLegal` | bool | **да — новое, цикл санации C (US-37)** | должно быть `true`, иначе `400 Bad Request`; фиксирует согласие с текущими на момент регистрации версиями Политики конфиденциальности и Условий использования (см. §2.6) |
 
 **Пример запроса:**
 
@@ -85,9 +86,14 @@ curl -X POST http://localhost:5000/api/auth/register \
         "lastName": "Петров",
         "phone": "+79991234567",
         "password": "Passw0rd1",
-        "email": "ivan.petrov@example.com"
+        "email": "ivan.petrov@example.com",
+        "acceptedLegal": true
       }'
 ```
+
+**Цикл санации C, US-37 — BREAKING.** Регистрация без `acceptedLegal: true` теперь отдаёт `400 Bad
+Request`. При успехе пишутся две строки согласия (Privacy + Terms) с версией, действовавшей на момент
+регистрации — см. §2.6.
 
 **Успешный ответ `200 OK`** (`AuthResponseDto`) — `email` может быть `null`, если не передавался:
 
@@ -172,6 +178,108 @@ curl http://localhost:5000/api/bookings/my \
 ```
 
 Если заголовок отсутствует или токен некорректен/просрочен — `401 Unauthorized`. Если пользователь авторизован, но не обладает нужной ролью для конкретного эндпоинта (`[Authorize(Roles = "...")]`) — `403 Forbidden`.
+
+### 2.6. Правовые документы (`/api/legal`) — **новое в цикле санации C (US-36, US-37)**
+
+Согласие с Политикой конфиденциальности и Условиями использования обязательно с этого цикла
+(`acceptedLegal: true` при регистрации, см. §2.1). Версии документов хранятся в
+`App_Data/legal/legal.json` (плюс `privacy.html`/`terms.html`) и грузятся в память при старте
+приложения — вне Development/Testing приложение **не запускается**, если манифест не проходит
+валидацию (`LegalDocumentProvider`, US-48).
+
+#### `GET /api/legal/documents`
+
+**Доступ:** анонимный. Метаданные обоих документов (без текста) — для подвала сайта, формы
+регистрации, сравнения версий.
+
+```bash
+curl http://localhost:5000/api/legal/documents
+```
+
+**Ответ `200 OK`**:
+
+```json
+{
+  "documents": [
+    { "type": "Privacy", "title": "Политика обработки персональных данных", "version": "2026-09-15", "effectiveFrom": "2026-09-15", "isDraft": false, "changeKind": "Material" },
+    { "type": "Terms", "title": "Пользовательское соглашение", "version": "2026-09-15", "effectiveFrom": "2026-09-15", "isDraft": false, "changeKind": "Material" }
+  ]
+}
+```
+
+`changeKind` — `"Material"` (существенная правка, требует повторного согласия) или `"Editorial"`
+(редакционная, не требует). `isDraft: true` — сервер помечает документ черновым, фронт рисует плашку.
+
+**Ошибки:** `503 Service Unavailable` (`text/plain`) — манифест не загрузился; в Production это
+недостижимо, приложение fail-fast'нулось бы на старте (см. выше).
+
+#### `GET /api/legal/documents/{type}`
+
+**Доступ:** анонимный. `{type}` — `privacy` или `terms` (без учёта регистра). Metadata + `contentHtml`
+(санитайзенный фрагмент HTML — без `<script>`/`on*=`, годится для прямой вставки в контейнер).
+
+```bash
+curl http://localhost:5000/api/legal/documents/privacy
+```
+
+**Ошибки:** `404 Not Found` — `{type}` не `privacy`/`terms`; `503` — как выше.
+
+#### `GET /api/legal/consent-status`
+
+**Доступ:** аутентифицированный — **но доступен даже пользователю с непринятой существенной
+редакцией** (allow-list эндпоинтов ниже). Считается из claim'ов текущего JWT и снимка документов в
+памяти — без обращения к БД.
+
+```bash
+curl http://localhost:5000/api/legal/consent-status -H "Authorization: Bearer $TOKEN"
+```
+
+**Ответ `200 OK`**:
+
+```json
+{
+  "requiresAcceptance": true,
+  "showBanner": false,
+  "documents": [
+    { "type": "Privacy", "version": "2026-10-01", "acceptedVersion": "2026-09-15", "changeKind": "Material" },
+    { "type": "Terms", "version": "2026-09-15", "acceptedVersion": "2026-09-15", "changeKind": "Material" }
+  ]
+}
+```
+
+`requiresAcceptance: true` → фронт показывает блокирующий экран (`ConsentGate`) — сервер в этом
+состоянии отвечает `451` на любой другой защищённый эндпоинт (см. ниже). `showBanner: true` →
+ненавязчивый баннер «документы обновлены» (только для `changeKind: "Editorial"`). Оба поля никогда не
+`true` одновременно.
+
+#### `POST /api/legal/accept`
+
+**Доступ:** аутентифицированный, тоже в allow-list. Записывает согласие с **действующими на момент
+запроса** версиями и выдаёт новый JWT (версии согласия зашиты в claim'ы, старый токен продолжает
+нести старые значения).
+
+**Тело запроса:** `{ "privacyVersion": "...", "termsVersion": "..." }` — обе версии обязательны и
+сверяются с текущими действующими; если пока пользователь читал документ версия успела смениться
+ещё раз — `409 Conflict`, а не тихая запись согласия на редакцию, которую он не видел.
+
+```bash
+curl -X POST http://localhost:5000/api/legal/accept \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "privacyVersion": "2026-10-01", "termsVersion": "2026-09-15" }'
+```
+
+**Ответ `200 OK`**: `{ "token": "eyJ...", "acceptedAt": "2026-10-02T08:41:12.447Z" }` — **новый токен
+обязательно кладётся в `authStore`**, иначе следующий запрос снова получит `451`.
+
+**Ошибки:** `400` — пустое поле версии; `401` — нет токена; `409` — версия в теле не совпадает с
+действующей; `503` — документы не загружены.
+
+#### 451 — непринятая существенная редакция
+
+Если действующая версия хотя бы одного документа сменилась **существенно** (`changeKind: "Material"`)
+после того, как пользователь в последний раз соглашался, **любой** защищённый эндпоинт, кроме
+allow-list (`/api/legal/*`, `GET /api/profile`, `GET /api/profile/export`,
+`POST /api/profile/delete-account`), отвечает `451` до вызова `POST /api/legal/accept`.
 
 ---
 
@@ -352,6 +460,29 @@ CommissionPercent`, по умолчанию `0`), а не пользовател
 Файлы клиентов физически не могут попасть в раздачу `UseStaticFiles` — приватный каталог смонтирован
 вне `wwwroot`, и в Production при неверной конфигурации (`Storage:PrivateRoot` внутри `wwwroot`) сервис
 не стартует (fail-fast). См. §4.13 «ClientNotePhotos» ниже.
+
+### 3.11. Конверт `PagedResult<T>` — **новое в цикле санации C (US-49)**
+
+Четыре выборки перешли с «отдать весь список» на пагинацию — один и тот же конверт для всех четырёх:
+
+```json
+{ "items": [ … ], "page": 1, "pageSize": 20, "total": 137, "hasNext": true }
+```
+
+| Параметр запроса | Умолчание | Правило |
+|---|---|---|
+| `page` | 1 | с единицы; `< 1` трактуется как `1` |
+| `pageSize` | 20 | потолок **100** — большее значение молча обрезается, а не `400` |
+
+`hasNext = page * pageSize < total`. Затронутые эндпоинты (было: голый массив → стало:
+`PagedResult<T>`, **ломающее изменение**):
+
+- `GET /api/admin/users?search=`
+- `GET /api/admin/companies?search=`
+- `GET /api/companies/{companyId}/reviews`
+- `GET /api/masters/clients?companyId=&search=`
+
+Подробности по каждому — в соответствующих подразделах §4.
 
 ---
 
@@ -765,12 +896,23 @@ curl http://localhost:5000/api/companies
     "email": "info@mirage.example",
     "allowSelfBooking": true,
     "requirePrepayment": false,
-    "onlineBookingEnabled": true
+    "onlineBookingEnabled": true,
+    "averageRating": 4.62,
+    "reviewCount": 137
   }
 ]
 ```
 
 `onlineBookingEnabled` — вычисляемое поле: `true`, только если онлайн-запись реально пройдёт для **любого** способа записи (гостевого или авторизованного клиента), т.е. `allowSelfBooking = true` **и** эффективный план владельца компании (см. §3.1, `SubscriptionResolver`) даёт `AllowOnlineBooking = true`. Это в точности повторяет гейт `POST /api/bookings`, так что клиент может заранее решить, показывать ли рабочую кнопку записи или предложить войти/дождаться оплаты подписки владельцем.
+
+**`averageRating`/`reviewCount` — новое в доводочном проходе цикла C (регрессия, найденная QA).**
+Средний рейтинг компании, посчитанный **в БД по всем отзывам компании** (`GROUP BY`/`AVG`/`COUNT`),
+а не по одной странице `GET /api/companies/{companyId}/reviews` (см. §3.11, §4.8) — до этой правки
+витрина компании показывала средний балл только по последней странице отзывов и он визуально менялся
+при листании. `averageRating` — `number | null` (`null`, если отзывов ещё нет), `reviewCount` —
+всегда число, `0` при их отсутствии. Поля есть во всех ответах `CompanyDto` (`GET /api/companies`,
+`GET /api/companies/my`, `GET /api/companies/member`, `GET /api/companies/{slug}`,
+`POST /api/companies`, `PUT /api/companies/{id}`, `POST /api/companies/{id}/logo`).
 
 #### `GET /api/companies/my`
 
@@ -1390,66 +1532,85 @@ curl -X POST "http://localhost:5000/api/schedule-template/apply?masterId=6a9c1e2
 Forbidden`. **Изменено в цикле санации B (US-07):** раньше пускало любое членство, включая роль
 `Client`; теперь только персонал.
 
-**Query-параметры:** `companyId` (Guid, обязателен).
+**Query-параметры:** `companyId` (Guid, обязателен), `search` (string?, опционально — **новое в
+доводочном проходе цикла C**, см. ниже), `page`/`pageSize` (int?, опционально — см. §3.11).
 
 Возвращает объединённый список клиентов (зарегистрированных — сгруппированных по `ClientId`, и гостевых
 — сгруппированных по каноническому номеру телефона, US-26), у которых были записи к этому мастеру в
 этой компании. Контактные данные (`phone`/`email`) отдаются **всегда**, без ограничения по времени
 (снято решением Q10 цикла A). `bookingSummaries` — полная история визитов клиента к этому мастеру (дата,
-услуга, статус), отсортированная от новых к старым.
+услуга, статус), отсортированная от новых к старым. Список отсортирован по дате последнего визита по
+убыванию, тай-брейк — по ключу клиента (`clientId` либо `guestPhone`).
+
+**Изменено в цикле санации C (US-49) — BREAKING № 2.** Ответ был голым массивом
+`MasterClientDto[]`, стал конвертом `PagedResult<MasterClientDto>` (§3.11): `{ "items": [...], "page":
+1, "pageSize": 20, "total": 12, "hasNext": false }`.
+
+**`search` — добавлено в доводочном проходе цикла C (регрессия, найденная QA).** При переходе на
+пагинацию параметр `search` был описан в контракте, но не реализован — фронтенд фильтровал только уже
+загруженную страницу (20 клиентов), и поиск не находил клиента за пределами текущей страницы. Теперь
+`search` фильтрует **полный** список клиентов мастера в этой компании (регистронезависимо по имени;
+для телефона — если строка похожа на номер, она нормализуется через `PhoneNormalizer`, как и на
+`GET /api/admin/users?search=`, §4.12) **до** пагинации; `total` в ответе — количество после фильтра.
 
 **Изменено в цикле санации B (US-07) — BREAKING № 1.** `notes` был массивом голых строк, стал массивом
 объектов `ClientNoteDto` — с `id`, автором, датой, ссылкой на визит и вложенными фото. Ограничен
 `Take(50)` заметок на клиента (сортировка — по убыванию даты).
 
 ```bash
-curl "http://localhost:5000/api/masters/clients?companyId=3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+curl "http://localhost:5000/api/masters/clients?companyId=3fa85f64-5717-4562-b3fc-2c963f66afa6&search=%2B7999&page=1&pageSize=20" \
   -H "Authorization: Bearer $MASTER_TOKEN"
 ```
 
 **Ответ `200 OK`**:
 
 ```json
-[
-  {
-    "clientId": "9d8e7f6a-1111-2222-3333-444455556666",
-    "guestPhone": null,
-    "name": "Мария Сидорова",
-    "phone": "380671234567",
-    "email": "maria@example.com",
-    "lastVisitDate": "2026-07-18",
-    "totalVisits": 3,
-    "notes": [
-      {
-        "id": "b1b2b3b4-0000-1111-2222-333344445555",
-        "note": "Аллергия на аммиак",
-        "createdAt": "2026-07-18T14:12:03.114Z",
-        "authorId": "6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4",
-        "authorName": "Алина Ковальчук",
-        "bookingId": "c47ac10b-58cc-4372-a567-0e02b2c3d479",
-        "bookingDate": "2026-07-18",
-        "bookingServiceName": "Окрашивание",
-        "canDelete": true,
-        "photos": [
-          {
-            "id": "cc11e2d3-4444-5555-6666-777788889999",
-            "url": "/api/client-notes/photos/cc11e2d3-4444-5555-6666-777788889999",
-            "thumbnailUrl": "/api/client-notes/photos/cc11e2d3-4444-5555-6666-777788889999/thumb",
-            "width": 1600, "height": 1067, "sizeBytes": 312845,
-            "createdAt": "2026-07-18T14:12:41.881Z",
-            "uploadedByName": "Алина Ковальчук",
-            "canDelete": true
-          }
-        ]
-      }
-    ],
-    "bookingSummaries": [
-      { "date": "2026-07-18", "serviceName": "Стрижка мужская", "status": "Completed" },
-      { "date": "2026-07-01", "serviceName": "Окрашивание", "status": "Completed" },
-      { "date": "2026-06-15", "serviceName": "Стрижка мужская", "status": "NoShow" }
-    ]
-  }
-]
+{
+  "items": [
+    {
+      "clientId": "9d8e7f6a-1111-2222-3333-444455556666",
+      "guestPhone": null,
+      "name": "Мария Сидорова",
+      "phone": "380671234567",
+      "email": "maria@example.com",
+      "lastVisitDate": "2026-07-18",
+      "totalVisits": 3,
+      "notes": [
+        {
+          "id": "b1b2b3b4-0000-1111-2222-333344445555",
+          "note": "Аллергия на аммиак",
+          "createdAt": "2026-07-18T14:12:03.114Z",
+          "authorId": "6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4",
+          "authorName": "Алина Ковальчук",
+          "bookingId": "c47ac10b-58cc-4372-a567-0e02b2c3d479",
+          "bookingDate": "2026-07-18",
+          "bookingServiceName": "Окрашивание",
+          "canDelete": true,
+          "photos": [
+            {
+              "id": "cc11e2d3-4444-5555-6666-777788889999",
+              "url": "/api/client-notes/photos/cc11e2d3-4444-5555-6666-777788889999",
+              "thumbnailUrl": "/api/client-notes/photos/cc11e2d3-4444-5555-6666-777788889999/thumb",
+              "width": 1600, "height": 1067, "sizeBytes": 312845,
+              "createdAt": "2026-07-18T14:12:41.881Z",
+              "uploadedByName": "Алина Ковальчук",
+              "canDelete": true
+            }
+          ]
+        }
+      ],
+      "bookingSummaries": [
+        { "date": "2026-07-18", "serviceName": "Стрижка мужская", "status": "Completed" },
+        { "date": "2026-07-01", "serviceName": "Окрашивание", "status": "Completed" },
+        { "date": "2026-06-15", "serviceName": "Стрижка мужская", "status": "NoShow" }
+      ]
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 1,
+  "hasNext": false
+}
 ```
 
 **Важно про `url`/`thumbnailUrl`:** это пути к защищённому API-эндпоинту, а **не** значения, готовые для
@@ -1565,27 +1726,42 @@ curl http://localhost:5000/api/reviews/can-review -H "Authorization: Bearer $TOK
 
 **Доступ:** анонимный (публичные отзывы компании для витрины).
 
+**Query-параметры:** `page`/`pageSize` (int?, опционально — см. §3.11).
+
 ```bash
-curl http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/reviews
+curl "http://localhost:5000/api/companies/3fa85f64-5717-4562-b3fc-2c963f66afa6/reviews?page=1&pageSize=20"
 ```
 
-**Ответ `200 OK`**:
+**Изменено в цикле санации C (US-49) — BREAKING № 2.** Ответ был голым массивом `ReviewDto[]`, стал
+конвертом `PagedResult<ReviewDto>` (§3.11), отсортированным по `createdAt DESC`:
 
 ```json
-[
-  {
-    "id": "e5e6e7e8-0000-1111-2222-333344445555",
-    "rating": 5,
-    "comment": "Отличный мастер!",
-    "reviewerName": "Иван Петров",
-    "masterName": "Алина Ковальчук",
-    "serviceName": "Стрижка мужская",
-    "createdAt": "2026-07-18T12:00:00Z"
-  }
-]
+{
+  "items": [
+    {
+      "id": "e5e6e7e8-0000-1111-2222-333344445555",
+      "rating": 5,
+      "comment": "Отличный мастер!",
+      "reviewerName": "Иван Петров",
+      "masterName": "Алина Ковальчук",
+      "serviceName": "Стрижка мужская",
+      "createdAt": "2026-07-18T12:00:00Z"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 1,
+  "hasNext": false
+}
 ```
 
-Если компания с таким `companyId` не существует — возвращается пустой массив `[]` (без `404`).
+Если компания с таким `companyId` не существует — `items: []`, `total: 0` (без `404`).
+
+**Средний рейтинг компании по ВСЕМ отзывам — теперь не на этом эндпоинте.** До цикла C этот эндпоинт
+отдавал все отзывы без лимита, и клиент мог посчитать точное среднее сам; с пагинацией это стало
+неточным (регрессия, найденная QA: среднее менялось при листании). Правильный агрегат — поля
+`averageRating`/`reviewCount` на `CompanyDto` (§4.3), посчитанные в БД по полной истории отзывов
+компании, а не по одной странице.
 
 ---
 
@@ -1768,6 +1944,47 @@ curl -X POST http://localhost:5000/api/profile/avatar \
 
 **Ошибки:** см. общие ошибки загрузки §3.10 (`400`/`401`/`413`/`429`); `403` недостижим.
 
+#### `GET /api/profile/export` — **новое в цикле санации C (US-38)**
+
+**Доступ:** любой аутентифицированный пользователь, только **свои** данные. В allow-list консент-фильтра
+(доступен даже с непринятой существенной редакцией правовых документов, §2.6). Ограничение частоты —
+отдельная политика `data-export`: **3 запроса / 1440 минут** на пользователя.
+
+Отдаёт **все** данные пользователя, известные системе: профиль, свои записи (как клиента), свои заметки
+о клиентах (если пользователь — персонал компании), тексты заметок — но **не** байты фото и не хеши
+файлов, и не чужие данные ни в каком виде.
+
+```bash
+curl http://localhost:5000/api/profile/export -H "Authorization: Bearer $TOKEN"
+```
+
+**Ответ `200 OK`** — JSON-документ с профилем и связанными данными пользователя (структура — снимок
+всех таблиц, где у пользователя есть строки; сохраняется как есть, без пересчёта отчётности).
+
+**Ошибки:** `401 Unauthorized`; `429 Too Many Requests` — четвёртый вызов за 24 часа.
+
+#### `POST /api/profile/delete-account` — **новое в цикле санации C (US-39)**
+
+**Доступ:** любой аутентифицированный пользователь, кроме владельца хотя бы одной активной компании
+(`CompanyOwner` не может удалить аккаунт напрямую, пока не передаст/не закроет свои компании) — иначе
+`409 Conflict` с человекочитаемым текстом. В allow-list консент-фильтра.
+
+Необратимо отключает вход (пароль/логин перестают работать, текущий JWT теряет силу немедленно — через
+ротацию `SecurityStamp`, а не через ожидание истечения токена). Записи пользователя **не удаляются**:
+они помечаются `clientDeleted: true`, `clientId` обнуляется, дата/цена/статус визита не меняются —
+компания не теряет свою историю операций из-за ухода клиента. Тот же номер телефона снова доступен для
+регистрации новым аккаунтом. Заметки, которые этот пользователь как мастер оставил о **других**
+клиентах, не удаляются вместе с его аккаунтом (US-39 п. 3) — компания не теряет свои данные из-за ухода
+автора.
+
+```bash
+curl -X POST http://localhost:5000/api/profile/delete-account -H "Authorization: Bearer $TOKEN"
+```
+
+**Успешный ответ:** `204 No Content`.
+
+**Ошибки:** `401 Unauthorized`; `409 Conflict` — вызывающий владеет хотя бы одной активной компанией.
+
 ---
 
 ### 4.12. Admin (`/api/admin`)
@@ -1794,7 +2011,8 @@ curl http://localhost:5000/api/admin/stats -H "Authorization: Bearer $ADMIN_TOKE
 
 #### `GET /api/admin/users`
 
-**Query-параметры:** `search` (string?, опционально — подстрока по телефону/email/firstName/lastName).
+**Query-параметры:** `search` (string?, опционально — подстрока по телефону/email/firstName/lastName),
+`page`/`pageSize` (int?, опционально — см. §3.11).
 
 **Изменено в цикле санации B (US-26).** Если строка поиска «похожа на телефон» (после удаления
 нецифровых символов остаётся ≥ 5 цифр и не остаётся букв), она нормализуется к канону (§3.9) **только
@@ -1811,30 +2029,41 @@ curl http://localhost:5000/api/admin/stats -H "Authorization: Bearer $ADMIN_TOKE
 результата. Исправлено: пустая нормализованная строка больше не участвует в сравнении по телефону.
 
 ```bash
-curl "http://localhost:5000/api/admin/users?search=ivan" -H "Authorization: Bearer $ADMIN_TOKEN"
+curl "http://localhost:5000/api/admin/users?search=ivan&page=1&pageSize=20" -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-**Ответ `200 OK`** (`AdminUserDto[]`):
+**Изменено в цикле санации C (US-49) — BREAKING № 2.** Ответ был голым массивом `AdminUserDto[]`,
+стал конвертом `PagedResult<AdminUserDto>` (§3.11), отсортированным по `createdAt`, затем `id`:
 
 ```json
-[
-  {
-    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "phone": "79991234567",
-    "email": "ivan.petrov@example.com",
-    "firstName": "Иван",
-    "lastName": "Петров",
-    "avatarUrl": null,
-    "createdAt": "2026-05-01T10:00:00Z",
-    "roles": ["Client"],
-    "ownedCompanyCount": 0,
-    "planConfigId": null,
-    "planName": "Free",
-    "paidUntil": null,
-    "subscriptionActive": true
-  }
-]
+{
+  "items": [
+    {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "phone": "79991234567",
+      "email": "ivan.petrov@example.com",
+      "firstName": "Иван",
+      "lastName": "Петров",
+      "avatarUrl": null,
+      "createdAt": "2026-05-01T10:00:00Z",
+      "roles": ["Client"],
+      "ownedCompanyCount": 0,
+      "planConfigId": null,
+      "planName": "Free",
+      "paidUntil": null,
+      "subscriptionActive": true
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 1,
+  "hasNext": false
+}
 ```
+
+**Изменено в цикле санации C (US-49 п. 3).** Роли теперь выбираются одним join'ом
+(`AspNetUserRoles × AspNetRoles`) вместо `userManager.GetRolesAsync` в цикле по каждому пользователю
+страницы — устранён N+1, ответ не изменился.
 
 **Изменено в цикле санации B (US-22).** `commissionPercent` убран из `AdminUserDto` целиком (см. §4.11).
 `phone` — канонический (§3.9).
@@ -1866,34 +2095,43 @@ curl -X PUT http://localhost:5000/api/admin/users/3fa85f64-5717-4562-b3fc-2c963f
 
 #### `GET /api/admin/companies`
 
-**Query-параметры:** `search` (string?, опционально — по имени/email компании).
+**Query-параметры:** `search` (string?, опционально — по имени/email компании), `page`/`pageSize`
+(int?, опционально — см. §3.11).
 
 ```bash
-curl "http://localhost:5000/api/admin/companies" -H "Authorization: Bearer $ADMIN_TOKEN"
+curl "http://localhost:5000/api/admin/companies?page=1&pageSize=20" -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-**Ответ `200 OK`** (`AdminCompanyDto[]`):
+**Изменено в цикле санации C (US-49) — BREAKING № 2.** Ответ был голым массивом
+`AdminCompanyDto[]`, стал конвертом `PagedResult<AdminCompanyDto>` (§3.11), отсортированным по
+`createdAt`, затем `id`:
 
 ```json
-[
-  {
-    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-    "name": "Салон \"Мираж\"",
-    "slug": "mirage-salon",
-    "email": "info@mirage.example",
-    "phone": "+380441234567",
-    "isActive": true,
-    "createdAt": "2026-01-15T09:00:00Z",
-    "memberCount": 3,
-    "bookingCount": 512,
-    "ownerUserId": "6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4",
-    "ownerEmail": "owner@mirage.example",
-    "planConfigId": "dd11ee22-0000-1111-2222-333344445555",
-    "planName": "Basic",
-    "paidUntil": "2026-12-31T00:00:00Z",
-    "subscriptionActive": true
-  }
-]
+{
+  "items": [
+    {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "name": "Салон \"Мираж\"",
+      "slug": "mirage-salon",
+      "email": "info@mirage.example",
+      "phone": "+380441234567",
+      "isActive": true,
+      "createdAt": "2026-01-15T09:00:00Z",
+      "memberCount": 3,
+      "bookingCount": 512,
+      "ownerUserId": "6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4",
+      "ownerEmail": "owner@mirage.example",
+      "planConfigId": "dd11ee22-0000-1111-2222-333344445555",
+      "planName": "Basic",
+      "paidUntil": "2026-12-31T00:00:00Z",
+      "subscriptionActive": true
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 1,
+  "hasNext": false
+}
 ```
 
 Подписка резолвится через владельца (`ownerUserId`) — если у нескольких компаний один и тот же владелец, у них будут одинаковые `planConfigId`/`planName`/`paidUntil`/`subscriptionActive` (см. §3.1). При отсутствии подписки у владельца `planConfigId` — `null`, а `planName` — строка `"Free"`.
@@ -2211,6 +2449,36 @@ curl -X DELETE http://localhost:5000/api/client-notes/photos/cc11e2d3-4444-5555-
 подберёт фоновая задача уборки (§4.12 `GET /api/admin/scheduled-tasks`), а не потерянный файл при живой
 строке.
 
+### 4.14. Health checks (`/api/health`) — **новое в цикле санации C (US-43)**
+
+**Доступ:** анонимный, без rate limiting (не подпадает ни под одну политику §3.10). На эти два
+эндпоинта опираются `HEALTHCHECK` контейнера, скрипт деплоя и smoke-тест в CI — намеренно бедный
+ответ: ни строк подключения, ни версий, ни стектрейсов.
+
+#### `GET /api/health/live`
+
+Отвечает `200` сразу, как только хост поднялся — не проверяет БД. Подтверждает, что процесс жив и
+принимает соединения.
+
+```bash
+curl http://localhost:5000/api/health/live
+# → 200 { "status": "Healthy" }
+```
+
+#### `GET /api/health/ready`
+
+Проверяет доступность PostgreSQL **и** отсутствие неприменённых миграций.
+
+```bash
+curl http://localhost:5000/api/health/ready
+```
+
+| Код | Тело | Когда |
+|---|---|---|
+| `200` | `{ "status": "Healthy" }` | соединение с БД есть, миграции применены |
+| `503` | `{ "status": "Unhealthy", "failed": "database" }` | БД недоступна |
+| `503` | `{ "status": "Unhealthy", "failed": "migrations" }` | есть неприменённые миграции (окно старта) |
+
 ---
 
 ## 5. Сквозные сценарии использования
@@ -2223,7 +2491,7 @@ curl -X DELETE http://localhost:5000/api/client-notes/photos/cc11e2d3-4444-5555-
 # 1. Регистрация владельца
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{ "firstName": "Наталья", "lastName": "Гриценко", "email": "natalia@mirage.example", "password": "Passw0rd1", "phone": "+380671112233" }'
+  -d '{ "firstName": "Наталья", "lastName": "Гриценко", "email": "natalia@mirage.example", "password": "Passw0rd1", "phone": "+380671112233", "acceptedLegal": true }'
 # → сохранить .token как $OWNER_TOKEN, .userId как $OWNER_ID
 
 # 2. Создание компании (автоматически присваивает роль CompanyOwner)
@@ -2278,7 +2546,7 @@ curl -X POST "http://localhost:5000/api/schedule-template/apply?masterId=$MASTER
 # 1. Регистрация клиента (можно пропустить и бронировать как гость — см. §5.4)
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{ "firstName": "Иван", "lastName": "Петров", "email": "ivan.petrov@example.com", "password": "Passw0rd1" }'
+  -d '{ "firstName": "Иван", "lastName": "Петров", "email": "ivan.petrov@example.com", "password": "Passw0rd1", "phone": "+79991234567", "acceptedLegal": true }'
 # → сохранить .token как $CLIENT_TOKEN
 
 # 2. Просмотр доступных слотов на дату
@@ -2415,7 +2683,9 @@ curl -X POST http://localhost:5000/api/admin/plans \
 | `409 Conflict` | Выбранный временной слот уже занят другой записью, находится в нерабочее время/перерыве/не на 30-минутной сетке, или дата/время в прошлом/переполняет сутки (создание/перенос записи, `"Time slot is no longer available"` для всех случаев); `slug` компании уже занят; отзыв на эту запись уже существует; пользователь уже состоит участником компании; удаление тарифного плана с активными подписчиками (`DELETE /api/admin/plans/{id}`) |
 | `500 Internal Server Error` | Необработанное исключение — единственная стабильно воспроизводимая точка: `SuperAdmin` создаёт услугу (`POST /api/services`) в несуществующей `companyId` (падает FK). **Изменено в цикле санации A**: тело теперь всегда `application/problem+json` с полями `type`/`title`/`status`/`traceId` (глобальный обработчик исключений, `Program.cs`) — раньше было пустое тело/страница разработчика. Формат deliberate 400/402/403/404/409 не затронут — `ProblemDetails` используется **только** для необработанных исключений |
 | `413 Payload Too Large` | **Новое в цикле санации B.** Тело запроса превышает `[RequestSizeLimit(5 МБ)]` на одном из четырёх эндпоинтов загрузки изображений (§3.10) — тело пустое, обрывается до контроллера |
-| `429 Too Many Requests` | **Новое в цикле санации B.** Превышен лимит частоты загрузок (10 в минуту на пользователя, §3.10) — единственный код в API с непустым телом по умолчанию у `RateLimiter`, поэтому `text/plain`: `"Too many uploads. Try again in a minute."` явно пишется в `OnRejected` |
+| `429 Too Many Requests` | **Новое в цикле санации B, расширено в цикле санации C (US-42).** Превышен лимит частоты — политика `uploads` (10/мин, §3.10), плюс с цикла C: `auth-login` (10/мин по IP), `auth-register` (5/60 мин по IP), `booking-create` (10/60 мин аноним, 120/60 мин авторизован), `data-export` (3/1440 мин по пользователю, `GET /api/profile/export`). Тело — `text/plain`, свой текст на русском для каждой политики (например, `"Слишком много попыток входа. Попробуйте позже."`) |
+| `451 Unavailable For Legal Reasons` | **Новое в цикле санации C (US-37).** Действующая версия хотя бы одного правового документа сменилась **существенно** (`changeKind: "Material"`) после последнего согласия пользователя — глобальный фильтр (`LegalConsentFilter`) блокирует любой защищённый эндпоинт, кроме allow-list (§2.6), до `POST /api/legal/accept` |
+| `503 Service Unavailable` | Правовые документы не загружены — `/api/legal/*` (§2.6), `text/plain`; недоступна БД или есть неприменённые миграции — `GET /api/health/ready` (§4.14), тело `application/json` с полем `failed` |
 
 ---
 
@@ -2493,3 +2763,7 @@ curl -X POST http://localhost:5000/api/admin/plans \
 29. **`SecurityStamp` лежал в открытом (не зашифрованном) виде в теле JWT** — claim `sstamp` (см. п. 16 выше) хранил сырой `AppUser.SecurityStamp`; полезная нагрузка JWT — это base64, не шифрование, а штамп участвует в генерации data-protection токенов Identity (например, сброса пароля). Подделать его без ключа подписи нельзя, эксплуатации не было, но внутренний идентификатор ротации identity в клиентском артефакте — лишняя поверхность. Заменено на первые 8 hex-символов SHA-256 от штампа (`TokenService.HashSecurityStamp`); `Program.cs`'s `OnTokenValidated` сравнивает хеши. Токены, выпущенные до этого изменения, отклоняются как отозванные (см. оговорку в п. 16 — сервис не в продакшене, переходного периода нет).
 30. **Мёртвая ветка в `ReviewsController`** — после проверки `booking.ClientId != userId` (см. п. 9 выше) значение `booking.ClientId` всегда равно `userId`, поэтому `user != null ? ... : booking.GuestName` никогда не брало ветку с `GuestName` — читатель мог решить, что гостевые отзывы всё ещё поддерживаются. Упрощено до безусловного `$"{user.FirstName} {user.LastName}"`.
 31. **Мелкие несоответствия найдены в ходе того же прохода**: лишний `Include(b => b.Service)` в `ReportsController` убран (цена берётся из `Booking.Price`, джойн на `Services` не нужен); комментарий в миграции `DeduplicateWorkingHours` про «keeping the row with the largest Id» уточнён — `Id` это `Guid.NewGuid()`, у него нет хронологического порядка, выбор «наибольший Id» произволен, но детерминирован; в `ScheduleTemplateController` условие `to.DayNumber - from.DayNumber > 366` пропускало 367 дней при тексте ошибки «максимум 366» — исправлено на `> 365` (диапазон включает обе границы, поэтому 366 дней соответствует разнице `DayNumber` в 365).
+32. **Поиск по базе клиентов мастера не работал за пределами текущей страницы (регрессия цикла C, доводочный проход, найдено QA).** Переход `GET /api/masters/clients` на пагинацию (US-49) добавил в контракт параметр `search`, но не в реализацию — фронтенд фильтровал только уже загруженную страницу (до 20 клиентов), поиск не находил клиента дальше неё. Добавлен серверный `search`, применяется к полному списку клиентов **до** пагинации: регистронезависимо по имени, с той же эвристикой «похоже на телефон → нормализовать через `PhoneNormalizer`», что и `GET /api/admin/users?search=`. См. §4.7, `API_CONTRACT.md` §18.1.
+33. **Средний рейтинг компании на публичной странице визуально менялся при листании отзывов (регрессия цикла C, доводочный проход, найдено QA).** После перехода `GET /api/companies/{companyId}/reviews` на пагинацию (US-49) фронтенд продолжал считать среднее по `reviews.reduce(...)` над одной страницей — до пагинации тот же эндпоинт отдавал все отзывы без лимита, и число было точным. Добавлены `averageRating`/`reviewCount` на `CompanyDto`, посчитанные в БД (`GROUP BY`/`AVG`/`COUNT`) по **всей** истории отзывов компании. См. §4.3, §4.8, `API_CONTRACT.md` §18.2.
+34. **Опубликованный Docker-образ падал на старте: `privacy.html`/`terms.html` не попадали в `dotnet publish` (блокировало CI, доводочный проход).** `ServiceBooking.API.csproj` содержал единственную директиву `<Content Update="App_Data\legal\**">` — `Update` редактирует метаданные уже существующего MSBuild-item, а Web SDK по умолчанию включает как `Content` только `legal.json` (известное расширение), но не `.html`-файлы; для них `Update` был тихим no-op. На стенде это маскировал bind-mount поверх образа, но голый образ падал на старте с «Legal documents failed to load» (fail-fast, US-48, §4.14/§7 п. 25 по аналогии). Директива разделена на `Content Update="**\*.json"` (для уже неявно включённого `legal.json`) и `Content Include="**\*.html"` (для `.html`, которые не подхватывались вовсе) — оба типа файлов теперь гарантированно попадают и в `dotnet build`, и в `dotnet publish`.
+35. **Fail-fast проверки US-48 (слабые дефолты вне Development/Testing, пустой `ForwardedHeaders:TrustedNetworks`) не имели ни одного автотеста (доводочный проход, найдено QA).** Логика жила top-level-выражениями в `Program.cs` до `WebApplicationBuilder.Build()`, что делало её недоступной для юнит-тестов и дорогой для функциональных (полноценный хост на каждый сценарий). Вынесена в чистые статические методы `DeploymentSafetyChecks` (`ServiceBooking.API/Services/DeploymentSafetyChecks.cs`), принимающие только `IConfiguration` и пару строк — без `IWebHostEnvironment`/DI. `Program.cs` делегирует туда, поведение не изменилось. Добавлено 28 юнит-тестов (`DeploymentSafetyChecksTests.cs`), включая прямую проверку сценария «Staging с плейсхолдер-паролем/без `Jwt:Key` не проходит `ValidateSecrets`» и «пустой `TrustedNetworks` вне Development/Testing не проходит `ValidateTrustedNetworksConfigured`».
