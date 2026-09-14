@@ -191,6 +191,34 @@ public class LegalDocumentProviderTests : IDisposable
         provider.Current.Should().BeNull();
     }
 
+    // Code review finding: ResolveContentPath (the freshness-check path resolver) used to reject only
+    // ".." and nothing else, so a rooted/absolute "file" value (e.g. "/etc/passwd" on Unix, or
+    // "C:\secrets.txt" on Windows) would make Path.Combine(_root, fileName) return a path OUTSIDE
+    // _root — Combine discards the first argument entirely when the second is rooted. LoadDocument's
+    // own containment check would still reject such a file as content, but the freshness poll would
+    // have already started tracking an unrelated file's mtime. IsBareFilename is now the one rule both
+    // call sites share, so this can't reappear as a second, slightly different check.
+    [Theory]
+    [InlineData("/etc/passwd")]
+    [InlineData(@"C:\secrets.txt")]
+    [InlineData("..")]
+    [InlineData("a/../b.html")]
+    [InlineData(@"a\b.html")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void IsBareFilename_PathSegmentsOrRootedOrEmpty_ReturnsFalse(string? fileName)
+    {
+        LegalDocumentProvider.IsBareFilename(fileName).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("privacy.html")]
+    [InlineData("terms-v2.html")]
+    public void IsBareFilename_PlainFilename_ReturnsTrue(string fileName)
+    {
+        LegalDocumentProvider.IsBareFilename(fileName).Should().BeTrue();
+    }
+
     private sealed class FakeWebHostEnvironment : IWebHostEnvironment
     {
         public string ApplicationName { get; set; } = "ServiceBooking.UnitTests";

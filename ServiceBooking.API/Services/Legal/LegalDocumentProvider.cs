@@ -129,9 +129,24 @@ public partial class LegalDocumentProvider
     /// strict containment check LoadDocument performs before ever reading a file as content.</summary>
     private string? ResolveContentPath(string? fileName)
     {
-        if (string.IsNullOrWhiteSpace(fileName) || fileName.Contains("..")) return null;
+        if (!IsBareFilename(fileName)) return null;
         return Path.Combine(_root, fileName);
     }
+
+    /// <summary>
+    /// The one "no path segments, no traversal" rule shared by ResolveContentPath (freshness check)
+    /// and LoadDocument (actual content read). A rooted/absolute fileName (e.g. "/etc/legal.html" or
+    /// "C:\legal.html") contains neither ".." nor a separator relative to itself, so checking those
+    /// alone would let ResolveContentPath escape _root entirely — not a content-disclosure risk (mtime
+    /// only, and LoadDocument's own copy of this check would still reject it as content), but it would
+    /// make the freshness poll silently track an unrelated file's mtime instead. One rule, not two.
+    /// </summary>
+    internal static bool IsBareFilename(string? fileName) =>
+        !string.IsNullOrWhiteSpace(fileName)
+        && !fileName.Contains('/')
+        && !fileName.Contains('\\')
+        && !fileName.Contains("..")
+        && !Path.IsPathRooted(fileName);
 
     private LegalSnapshot LoadSnapshot(List<ManifestEntry> entries)
     {
@@ -162,7 +177,7 @@ public partial class LegalDocumentProvider
         if (entry.IsDraft && !entry.Version.EndsWith("-draft", StringComparison.Ordinal))
             throw new InvalidOperationException($"{type}: isDraft is true but version '{entry.Version}' does not end with '-draft'.");
 
-        if (string.IsNullOrWhiteSpace(entry.File) || entry.File.Contains('/') || entry.File.Contains('\\') || entry.File.Contains(".."))
+        if (!IsBareFilename(entry.File))
             throw new InvalidOperationException($"{type}: 'file' must be a bare filename, no path segments.");
 
         var fullPath = Path.GetFullPath(Path.Combine(_root, entry.File));

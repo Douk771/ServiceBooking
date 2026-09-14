@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.DTOs.Bookings;
@@ -211,6 +213,16 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
     // existing row", both try to INSERT, and the second one dies on the (UserId, DocumentType) unique
     // constraint with an unhandled DbUpdateException → 500. The fix wraps the upsert in a transaction +
     // AdvisoryLock keyed on the user. This pins that firing the request twice in parallel never 500s.
+    //
+    // Second code review finding (this test, this cycle): RegisterAsync defaults to acceptedLegal:
+    // true, so AuthController.Register already writes both UserConsent rows at registration time — a
+    // parallel Accept afterwards only ever hits the UPDATE branch of UpsertConsentAsync, where a
+    // concurrent UPDATE of the *same* row is trivially serialized by Postgres on its own, with or
+    // without the AdvisoryLock. That never exercises the unique-index INSERT race the lock exists for,
+    // so the test used to pass even with the transaction + AdvisoryLock removed. To force the real race,
+    // this test deletes the two UserConsent rows straight from the database after registering — exactly
+    // the state of a legacy user who signed up before consent tracking existed, i.e. the very case
+    // /accept exists to handle — so both parallel calls read "no existing row" and race to INSERT.
     [Fact, TestCase("LEG-036")]
     public async Task Accept_CalledTwiceInParallelBySameUser_NeitherCallReturnsServerError()
     {
@@ -219,6 +231,16 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
             .Content.ReadJsonAsync<LegalDocumentListDto>();
         var privacy = docs!.Documents.First(d => d.Type == "Privacy").Version;
         var terms = docs.Documents.First(d => d.Type == "Terms").Version;
+
+        // Simulate a legacy account with no consent rows yet, so the upcoming parallel Accept calls
+        // both take the INSERT branch and actually race on the unique (UserId, DocumentType) index.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+            var rows = db.UserConsents.Where(c => c.UserId == user.UserId);
+            db.UserConsents.RemoveRange(rows);
+            await db.SaveChangesAsync();
+        }
 
         var client1 = AuthedClient(user.Token);
         var client2 = AuthedClient(user.Token);
