@@ -84,7 +84,11 @@ public class LegalConsentFilter(LegalDocumentProvider provider) : IAsyncAuthoriz
 
         if (path.StartsWith("/api/legal/", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.StartsWith("/api/health/", StringComparison.OrdinalIgnoreCase)) return true;
-        if (path.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase)) return true;
+        // API_CONTRACT.md §0.4 allow-lists POST /api/auth/**, not the whole path regardless of method.
+        // AuthController only exposes POST today, so this was behaviorally identical to a blanket
+        // path match — but a future GET /api/auth/* (e.g. a "who am I" probe) would have silently
+        // landed in the allow-list too. Matching the contract exactly closes that off now.
+        if (HttpMethods.IsPost(method) && path.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsGet(method) && string.Equals(path, "/api/profile", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsPost(method) && string.Equals(path, "/api/profile/delete-account", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsGet(method) && string.Equals(path, "/api/profile/export", StringComparison.OrdinalIgnoreCase)) return true;

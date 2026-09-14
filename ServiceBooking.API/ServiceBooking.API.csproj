@@ -30,8 +30,19 @@
   <ItemGroup>
     <!-- Legal document text (ARCHITECTURE.md §4.1) is committed source, unlike the rest of App_Data —
          it has to ship in the build/publish output (and therefore the Docker image) so a container with
-         no bind-mount over it still has a valid manifest to fail-fast against on first boot. -->
-    <Content Update="App_Data\legal\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+         no bind-mount over it still has a valid manifest to fail-fast against on first boot.
+
+         Split in two, deliberately NOT a single `Content Update="App_Data\legal\**"`:
+         - `legal.json` is already picked up by the Web SDK's default content glob (known content
+           extension), so it only needs `Update` to add the CopyTo* metadata — `Include`-ing it again
+           throws NETSDK1022 ("duplicate Content items were included").
+         - `*.html` is NOT a default content extension, so `Update` on it (the previous, broken form of
+           this ItemGroup, which used one `App_Data\legal\**` glob for both) matched no existing item and
+           was silently a no-op: privacy.html/terms.html never made it into `dotnet publish`'s output
+           (verified — only legal.json showed up under App_Data/legal in a published tree). It needs
+           `Include`, which creates the item outright. -->
+    <Content Update="App_Data\legal\**\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="App_Data\legal\**\*.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

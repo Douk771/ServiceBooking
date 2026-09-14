@@ -40,7 +40,14 @@ public record CompanyDto(
     bool PlanAllowsPublicListing,
     // Seat cap for CompanyMembers rows (owner included — see CompaniesController.AddMember's seat-limit
     // check, which counts ALL members the same way). Null means unlimited.
-    int? MaxEmployees
+    int? MaxEmployees,
+    // QA cycle C regression fix: company-wide average rating and review count, computed by the
+    // database over ALL of the company's reviews (CompaniesController.GetReviewAggregateAsync /
+    // GetReviewAggregatesAsync) — NOT derived from a single page of GET /api/companies/{id}/reviews,
+    // which is paginated (§11) and would make the number visibly shift as a caller pages through
+    // reviews. Null/0 when the company has no reviews yet.
+    double? AverageRating,
+    int ReviewCount
 );
 
 public record CreateCompanyDto(

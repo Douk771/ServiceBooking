@@ -15,13 +15,28 @@ public static class Pagination
 
     public static (int Page, int PageSize) Normalize(int? page, int? pageSize)
     {
-        var normalizedPage = page is >= 1 ? page.Value : 1;
         var normalizedPageSize = pageSize switch
         {
             null or <= 0 => DefaultPageSize,
             > MaxPageSize => MaxPageSize,
             _ => pageSize.Value
         };
+
+        // Every call site computes an int offset as (page - 1) * pageSize (e.g. AdminController,
+        // ReviewsController, MastersController). page is caller-supplied and unbounded above — a huge
+        // page (up to int.MaxValue) times pageSize overflows a 32-bit int, producing a negative OFFSET
+        // that either throws at the DB (public, anonymous endpoints included) or, for in-memory LINQ,
+        // silently wraps Skip's clamping and returns page 1's data instead of an empty page. Clamping
+        // here — the one place all four call sites funnel through — keeps every call site overflow-safe
+        // without each of them having to know why.
+        var maxPage = int.MaxValue / normalizedPageSize;
+        var normalizedPage = page switch
+        {
+            null or < 1 => 1,
+            _ when page.Value > maxPage => maxPage,
+            _ => page.Value
+        };
+
         return (normalizedPage, normalizedPageSize);
     }
 

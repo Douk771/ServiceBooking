@@ -23,13 +23,14 @@ public class CompaniesController(
     {
         var companies = await db.Companies.Where(c => c.IsActive).ToListAsync();
         var plans = await subscriptionResolver.GetEffectivePlansAsync(companies.Select(c => c.Id));
+        var ratings = await GetReviewAggregatesAsync(companies.Select(c => c.Id));
 
         // The public directory additionally requires both the owner's own opt-in (ShowInPublicListing)
         // and the tariff's AllowPublicListing — unlike GetMy/GetMemberOf/GetBySlug, which show the
         // company to people who already know about it regardless of directory placement.
         return Ok(companies
             .Where(c => c.ShowInPublicListing && plans[c.Id].AllowPublicListing)
-            .Select(c => MapToDto(c, plans[c.Id])));
+            .Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount)));
     }
 
     [HttpGet("my")]
@@ -42,8 +43,10 @@ public class CompaniesController(
             .Where(cm => cm.UserId == userId && cm.Role == UserRole.CompanyOwner && cm.Company.IsActive)
             .ToListAsync();
         var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
+        var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
 
-        return Ok(memberships.Select(cm => MapToDto(cm.Company, plans[cm.CompanyId])));
+        return Ok(memberships.Select(cm =>
+            MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount)));
     }
 
     // Returns all companies where the current user is a member (any role)
@@ -57,8 +60,10 @@ public class CompaniesController(
             .Where(cm => cm.UserId == userId && cm.Company.IsActive)
             .ToListAsync();
         var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
+        var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
 
-        return Ok(memberships.Select(cm => MapToDto(cm.Company, plans[cm.CompanyId])));
+        return Ok(memberships.Select(cm =>
+            MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount)));
     }
 
     [HttpGet("{slug}")]
@@ -68,7 +73,12 @@ public class CompaniesController(
         if (c is null) return NotFound();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(c.Id);
-        return Ok(MapToDto(c, plan));
+        // US-49 regression fix (QA cycle C): rating shown on the public company page must be a true
+        // company-wide aggregate computed by the database, not derived from whatever page of reviews
+        // GET /api/companies/{companyId}/reviews happens to have loaded (which visibly changed as the
+        // caller paged through reviews — ARCHITECTURE.md §11.2/§21.5 pagination note).
+        var (averageRating, reviewCount) = await GetReviewAggregateAsync(c.Id);
+        return Ok(MapToDto(c, plan, averageRating, reviewCount));
     }
 
     // Public: list masters for a company, optionally filtered by serviceId
@@ -228,7 +238,8 @@ public class CompaniesController(
         // `plan` was already resolved above for the MaxCompanies check — reuse it so the response
         // reflects the owner's real plan (e.g. their existing paid plan when opening a 2nd+ branch),
         // instead of assuming Free.
-        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, MapToDto(company, plan));
+        // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
+        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, MapToDto(company, plan, null, 0));
     }
 
     [HttpPut("{id:guid}")]
@@ -251,7 +262,8 @@ public class CompaniesController(
         await db.SaveChangesAsync();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
-        return Ok(MapToDto(company, plan));
+        var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
+        return Ok(MapToDto(company, plan, averageRating, reviewCount));
     }
 
     // Uploads/replaces the company's logo. US-25 p.6: moved onto the same ImageUploadService every other
@@ -292,7 +304,8 @@ public class CompaniesController(
         storage.DeletePublic(oldUrl); // old file removed on replace, same as before this cycle, just reordered
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
-        return Ok(MapToDto(company, plan));
+        var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
+        return Ok(MapToDto(company, plan, averageRating, reviewCount));
     }
 
     // US-24 p.4 / US-19 p.7: the only place a company's client-photo storage usage is exposed. NOT
@@ -565,8 +578,8 @@ public class CompaniesController(
 
     // Single source of truth for building a CompanyDto from an entity + its resolved plan, so the
     // combined flags (OnlineBookingEnabled, PublicListingEnabled, PrepaymentEnabled) can't drift between
-    // the five endpoints that return a CompanyDto.
-    private static CompanyDto MapToDto(Company c, EffectivePlan plan) => new(
+    // the seven call sites that return a CompanyDto.
+    private static CompanyDto MapToDto(Company c, EffectivePlan plan, double? averageRating, int reviewCount) => new(
         c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email,
         c.AllowSelfBooking, c.RequirePrepayment,
         c.AllowSelfBooking && plan.AllowOnlineBooking,
@@ -578,5 +591,45 @@ public class CompaniesController(
         plan.AllowOnlineBooking,
         plan.AllowOnlinePayment,
         plan.AllowPublicListing,
-        plan.MaxEmployees);
+        plan.MaxEmployees,
+        averageRating,
+        reviewCount);
+
+    // QA cycle C regression fix: the public company page showed an average rating computed from
+    // whatever single page of reviews GET /api/companies/{companyId}/reviews had loaded — it visibly
+    // changed as the caller paged through reviews. The fix is a true company-wide aggregate, computed
+    // by PostgreSQL (AVG/COUNT), not assembled in memory from a bounded page. Single-company variant
+    // used by the three endpoints that build/mutate one company at a time.
+    private async Task<(double? AverageRating, int ReviewCount)> GetReviewAggregateAsync(Guid companyId)
+    {
+        var aggregate = await db.Reviews
+            .Where(r => r.CompanyId == companyId)
+            .GroupBy(r => 1)
+            .Select(g => new { Count = g.Count(), Average = g.Average(r => (double)r.Rating) })
+            .FirstOrDefaultAsync();
+
+        return aggregate is null ? (null, 0) : (aggregate.Average, aggregate.Count);
+    }
+
+    // Batched variant for the three list endpoints (GetAll, GetMy, GetMemberOf) — one GROUP BY query for
+    // the whole page/list instead of one query per company, same pattern as
+    // SubscriptionResolver.GetEffectivePlansAsync. Companies with zero reviews (not present in the
+    // GROUP BY result) are filled in as (null, 0) so callers can safely index the dictionary by every id
+    // they asked for.
+    private async Task<Dictionary<Guid, (double? AverageRating, int ReviewCount)>> GetReviewAggregatesAsync(
+        IEnumerable<Guid> companyIds)
+    {
+        var ids = companyIds.ToList();
+        var aggregates = await db.Reviews
+            .Where(r => ids.Contains(r.CompanyId))
+            .GroupBy(r => r.CompanyId)
+            .Select(g => new { CompanyId = g.Key, Count = g.Count(), Average = g.Average(r => (double)r.Rating) })
+            .ToListAsync();
+
+        var result = aggregates.ToDictionary(
+            a => a.CompanyId, a => ((double?)a.Average, a.Count));
+        foreach (var id in ids)
+            result.TryAdd(id, (null, 0));
+        return result;
+    }
 }

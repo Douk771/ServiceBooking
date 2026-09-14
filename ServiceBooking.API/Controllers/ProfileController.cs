@@ -57,9 +57,15 @@ public class ProfileController(
             .Select(cm => new ExportMembershipDto(cm.Company.Name, cm.Role.ToString(), cm.JoinedAt))
             .ToListAsync();
 
+        // Matches DeleteAccount's step 3 and MastersController.GetClients: a visit made as a guest
+        // BEFORE this person registered, on the same canonical phone, is data about this subject just
+        // as much as a visit made while logged in — DeleteAccount already anonymizes both branches, so
+        // the export must show both too, or a deletion could erase data the export never revealed
+        // (API_CONTRACT.md §8).
+        var canonicalPhone = user.PhoneNumber;
         var bookings = await db.Bookings
             .Include(b => b.Service).Include(b => b.Master).Include(b => b.Company)
-            .Where(b => b.ClientId == userId)
+            .Where(b => b.ClientId == userId || (canonicalPhone != null && b.GuestPhone == canonicalPhone))
             .OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
             .Select(b => new ExportBookingDto(
                 b.Id, b.Date, b.StartTime, b.EndTime, b.Company.Name, b.Service.Name,
@@ -77,7 +83,6 @@ public class ProfileController(
         // Notes/photos "about me" are found the same way DeleteAccount and MastersController.GetClients
         // do: by ClientId for a registered client, or by canonical GuestPhone for visits made before
         // registering (a client can be both, if they booked as a guest before signing up).
-        var canonicalPhone = user.PhoneNumber;
         var notesAboutMe = await db.ClientNotes
             .Include(n => n.Company).Include(n => n.Photos)
             .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
@@ -137,6 +142,13 @@ public class ProfileController(
     // SetUserNameAsync — that's what actually enforces the uniqueness check and persists both
     // PhoneNumber and UserName/NormalizedUserName in one write. Requires the current password,
     // same as changing the password, since it's effectively changing the login identifier.
+    //
+    // Deferred (code review, cycle C): the new number is NOT verified — only the current password is
+    // checked, and PhoneNumberConfirmed is never consulted. Combined with Export/DeleteAccount
+    // matching guest bookings by canonical phone, that lets someone move their account onto a number
+    // a guest once booked with and read that guest's visit history. Accepted knowingly; the fix is
+    // an SMS confirmation of the new number, which waits on the messaging channel — see
+    // SPEC_DEFERRED_NOTIFICATIONS.md "Отложенное, связанное с этой темой".
     [HttpPost("change-phone")]
     public async Task<ActionResult<ProfileDto>> ChangePhone([FromBody] ChangePhoneDto dto)
     {

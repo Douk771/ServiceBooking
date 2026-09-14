@@ -22,7 +22,7 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
 
     [HttpGet("clients")]
     public async Task<ActionResult<PagedResult<MasterClientDto>>> GetClients(
-        [FromQuery] Guid companyId, [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] Guid companyId, [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -142,6 +142,30 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
             .OrderByDescending(c => c.LastVisitDate)
             .ThenBy(c => c.ClientId ?? c.GuestPhone)
             .ToList();
+
+        // US-49 regression fix (QA cycle C): search must filter the FULL client list before pagination,
+        // not just the page the frontend happens to already have in hand — otherwise a client on page 3
+        // is simply invisible to a search typed on page 1. This list is already fully materialized in
+        // memory above (existing shape, see comment on the block above), so filtering here is a plain
+        // LINQ-to-objects Where, not a second SQL round trip.
+        //
+        // Same phone-vs-name heuristic as AdminController.GetUsers (ARCHITECTURE.md §11.2): a search
+        // string that looks like a phone number (≥5 digits, no letters) is normalized through
+        // PhoneNormalizer the same way phones are stored, so "+7 999 123-45-67", "8 999 123 45 67" and
+        // "79991234567" all match the same canonical client regardless of how the caller typed it.
+        // Anything else is matched against the client's display name, case-insensitively.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var digitCount = search.Count(char.IsDigit);
+            var looksLikePhone = digitCount >= 5 && !search.Any(char.IsLetter);
+            var phoneSearch = looksLikePhone ? PhoneNormalizer.Normalize(search) : search;
+
+            allClients = allClients.Where(c =>
+                c.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                (phoneSearch.Length > 0 && c.Phone is not null && c.Phone.Contains(phoneSearch)))
+                .ToList();
+        }
+
         var total = allClients.Count;
         var pageItems = allClients.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
 

@@ -87,6 +87,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.Property(b => b.Price).HasColumnType("decimal(10,2)");
             e.Property(b => b.CommissionPercent).HasColumnType("decimal(18,2)");
+            // ARCHITECTURE.md §5.2: a legal document version snapshot, same 64-char cap the manifest
+            // loader enforces on the source (LegalDocumentProvider.LoadDocument) — was left as
+            // unbounded `text` before this fix (code review finding).
+            e.Property(b => b.ConsentPrivacyVersion).HasMaxLength(64);
+            e.Property(b => b.ConsentTermsVersion).HasMaxLength(64);
             e.HasOne(b => b.Company).WithMany(c => c.Bookings).HasForeignKey(b => b.CompanyId);
             e.HasOne(b => b.Service).WithMany(s => s.Bookings).HasForeignKey(b => b.ServiceId);
             e.HasOne(b => b.Master).WithMany(u => u.MasterBookings).HasForeignKey(b => b.MasterId).OnDelete(DeleteBehavior.Restrict);
@@ -149,6 +154,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // "At most one row per document per user" as a hard DB guarantee (US-37, ARCHITECTURE.md
             // §5.1) — no journal is kept, re-acceptance overwrites the existing row.
             e.HasIndex(c => new { c.UserId, c.DocumentType }).IsUnique();
+            e.Property(c => c.Version).HasMaxLength(64); // matches ARCHITECTURE.md §5.1 (was `text`)
             e.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 

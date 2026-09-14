@@ -88,49 +88,13 @@ builder.Host.UseSerilog((context, services, loggerConfig) =>
 // Allow-list, not deny-list (US-48, cycle C): an environment nobody told this code about yet (Staging,
 // Preview, Demo) must be treated as production-grade. Only the two environments we KNOW are developer
 // contexts are exempt — everything else gets the full set of checks, including anything introduced later.
-var isDeveloperEnvironment = builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing");
+// The gate and the checks themselves live in DeploymentSafetyChecks (US-48 test-coverage gap, QA cycle
+// C) — pure, DI-free static methods so ServiceBooking.UnitTests can exercise them directly without
+// booting a host; this call site is unchanged behavior, just delegated.
+var isDeveloperEnvironment = DeploymentSafetyChecks.IsDeveloperEnvironment(builder.Environment.EnvironmentName);
 if (!isDeveloperEnvironment)
 {
-    var jwtKeyValue = builder.Configuration["Jwt:Key"];
-    if (string.IsNullOrEmpty(jwtKeyValue) || jwtKeyValue.Length < 32 ||
-        jwtKeyValue == "CHANGE_ME_TO_A_LONG_SECRET_KEY_AT_LEAST_32_CHARS")
-        throw new InvalidOperationException(
-            "Jwt:Key is missing, too short (<32 chars) or still the placeholder. Set Jwt__Key in .env.");
-
-    // Two placeholders reach this check, not one: "Admin12345" ships in appsettings.json, and
-    // "CHANGE_ME" ships in .env.production.example. The second one is the more dangerous of the two —
-    // it passes a naive placeholder check but fails the Identity password policy (no digit, no
-    // lowercase), so the seed below would fail to create the account and the operator would see an
-    // obscure downstream error instead of this message.
-    var superAdminPassword = builder.Configuration["SuperAdmin:Password"];
-    if (string.IsNullOrEmpty(superAdminPassword) ||
-        superAdminPassword is "Admin12345" or "CHANGE_ME")
-        throw new InvalidOperationException(
-            "SuperAdmin:Password is missing or still a placeholder. Set SuperAdmin__Password in .env " +
-            "to a real password (at least 8 characters, with a digit, an uppercase and a lowercase letter).");
-
-    // The seeded phone isn't a secret the way the password/JWT key are, so this is a warning, not a
-    // fail-fast: a deployment that forgot to override it stays reachable, just with a foreseeable login.
-    if (builder.Configuration["SuperAdmin:Phone"] == "+70000000000")
-        Console.WriteLine(
-            "WARNING: SuperAdmin:Phone is still the placeholder +70000000000. Set SuperAdmin__Phone in .env.");
-
-    // US-19 p.4 / ARCHITECTURE.md §3.4: a private root that resolves inside wwwroot would be served to
-    // anyone with the link by UseStaticFiles below — the one realistic way client photos leak by
-    // accident (risk R2) is a typo'd .env, so this must stop the deployment, not just log a warning.
-    // Duplicates FileStorage's own default-resolution logic rather than resolving it through the DI
-    // container, which isn't built yet at this point in Program.cs.
-    var contentRoot = builder.Environment.ContentRootPath;
-    var configuredPrivateRoot = builder.Configuration["Storage:PrivateRoot"];
-    var privateRoot = string.IsNullOrEmpty(configuredPrivateRoot)
-        ? Path.Combine(contentRoot, "App_Data", "private-uploads")
-        : configuredPrivateRoot;
-    var privateRootFull = Path.GetFullPath(privateRoot);
-    var wwwrootFull = Path.GetFullPath(Path.Combine(contentRoot, "wwwroot")) + Path.DirectorySeparatorChar;
-    if (privateRootFull.StartsWith(wwwrootFull, StringComparison.Ordinal))
-        throw new InvalidOperationException(
-            "Storage:PrivateRoot resolves inside wwwroot — client photos would be served by " +
-            "UseStaticFiles to anyone with the link. Set Storage__PrivateRoot to a path outside wwwroot.");
+    DeploymentSafetyChecks.ValidateSecrets(builder.Configuration, builder.Environment.ContentRootPath);
 }
 
 builder.Services.AddControllers(options =>
@@ -422,13 +386,10 @@ app.UseForwardedHeaders();
 // run here, after builder.Build(), rather than being folded into the pre-Build block.
 if (!isDeveloperEnvironment)
 {
-    var trustedNetworks = builder.Configuration.GetSection("ForwardedHeaders:TrustedNetworks").Get<string[]>();
-    if (trustedNetworks is null || trustedNetworks.Length == 0)
-        throw new InvalidOperationException(
-            "ForwardedHeaders:TrustedNetworks is empty — the rate limiter would partition every caller " +
-            "under nginx's own address instead of the real client IP, which is a denial-of-service " +
-            "footgun, not a limiter. Set FORWARDEDHEADERS__TRUSTEDNETWORKS__0 in .env (the docker bridge " +
-            "subnet — see DEPLOY.md).");
+    // Delegated to DeploymentSafetyChecks (see the pre-Build block above for why) — this one doesn't
+    // actually need the constructed service provider either, it just historically ran alongside the
+    // legal-document check below, which does.
+    DeploymentSafetyChecks.ValidateTrustedNetworksConfigured(builder.Configuration);
 
     using var legalCheckScope = app.Services.CreateScope();
     var legalProvider = legalCheckScope.ServiceProvider.GetRequiredService<LegalDocumentProvider>();
@@ -445,6 +406,14 @@ if (!isDeveloperEnvironment)
 // the request-completed log line must exist even for the request that trips the exception handler,
 // carrying the SAME traceId the 500 response's problem+json puts in front of the operator — that
 // pairing is the whole point of "найди по traceId" in DEPLOY.md).
+// Code review note (US-45 p.2/§11.3): the logged RequestPath below never carries the query string, so
+// e.g. GET /api/admin/users?search=<телефон> does NOT leak a phone number here — Serilog.AspNetCore's
+// RequestLoggingOptions.IncludeQueryInRequestPath defaults to false, and it stays false; it is NOT set
+// here on purpose. Do not "fix" this by turning it on: PhoneMaskingEnricher (§11.3 point 3) only scans
+// events at Warning+ and events with an exception, and this middleware's own request-completed line is
+// logged at Information for every normal 2xx/4xx — an enabled query string would ride straight past the
+// enricher into the log in the clear. If a future need arises to see query strings, it must go through
+// the same masking as anything else with a phone in it, not through this switch.
 app.UseSerilogRequestLogging(opts =>
 {
     // Every DELIBERATE 4xx (400/402/403/404/409/429/451) logs at Information, never Warning/Error

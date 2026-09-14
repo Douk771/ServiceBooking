@@ -287,6 +287,10 @@ public class AdminController(
 
         var newOwner = await userManager.FindByIdAsync(dto.NewOwnerUserId);
         if (newOwner is null) return BadRequest("User not found");
+        // Code review finding: a deleted account is a tombstone (ARCHITECTURE.md §7.4) — no password,
+        // permanently locked out, phone/email scrubbed. Without this check SuperAdmin could hand a
+        // company to an account nobody can ever log into again.
+        if (newOwner.DeletedAtUtc is not null) return BadRequest("User account has been deleted");
 
         var oldOwnerUserId = company.OwnerUserId;
         company.OwnerUserId = newOwner.Id;

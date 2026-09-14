@@ -116,10 +116,19 @@ public class LegalController(
         var user = await userManager.FindByIdAsync(userId);
         if (user is null) return Unauthorized();
 
+        // CURRENT_STATE §6: "read then write" against a unique index is wrapped in a transaction + an
+        // advisory lock, not left as a bare check-then-act. UserConsent has a unique index on
+        // (UserId, DocumentType) — without the lock, two concurrent Accept calls from the same user
+        // (double click, two tabs) both see "no existing row", both INSERT, and the second one throws
+        // DbUpdateException -> unhandled 500 instead of the 200 both callers expect.
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"legal-consent:{user.Id}");
+
         var acceptedAt = DateTime.UtcNow;
         await UpsertConsentAsync(user.Id, LegalDocumentType.Privacy, privacyDoc.Version, acceptedAt);
         await UpsertConsentAsync(user.Id, LegalDocumentType.Terms, termsDoc.Version, acceptedAt);
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         // A new token is mandatory here, not an optimization (ARCHITECTURE.md §6.3 p.5): the claims are
         // baked in at issuance, so without a fresh one the very next request would still carry the OLD

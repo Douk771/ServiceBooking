@@ -26,7 +26,14 @@ public partial class LegalDocumentProvider
 
     private volatile LegalSnapshot? _snapshot;
     private DateTime _lastCheckedUtc = DateTime.MinValue;
-    private DateTime _lastLoadedManifestMtimeUtc = DateTime.MinValue;
+
+    // Deliberately max(mtime) over legal.json AND every content file it references, not just
+    // legal.json's own mtime. An operator fixing a typo in privacy.html without touching legal.json
+    // (no version bump, US-36 p.5 doesn't require one for an Editorial fix) used to be invisible to
+    // this check — the manifest's mtime hadn't moved, so the stale text kept being served until the
+    // next unrelated manifest edit or a restart. That's exactly the failure ARCHITECTURE.md §4.3
+    // declares excluded.
+    private DateTime _lastLoadedSourcesMtimeUtc = DateTime.MinValue;
 
     public LegalDocumentProvider(IOptions<LegalOptions> options, IWebHostEnvironment env, ILogger<LegalDocumentProvider> logger)
     {
@@ -85,13 +92,32 @@ public partial class LegalDocumentProvider
                 return;
             }
 
-            var mtimeUtc = File.GetLastWriteTimeUtc(manifestPath);
-            if (_snapshot is not null && mtimeUtc == _lastLoadedManifestMtimeUtc)
+            var json = File.ReadAllText(manifestPath);
+            var manifest = JsonSerializer.Deserialize<ManifestFile>(json, JsonOptions)
+                ?? throw new InvalidOperationException("legal.json parsed to null.");
+            var entries = manifest.Documents ?? [];
+
+            // max(mtime) over the manifest itself and every content file it references — see the field
+            // comment on _lastLoadedSourcesMtimeUtc for why legal.json's own mtime alone isn't enough.
+            // A missing/escaping file here just means "not fresher than before" for this check; the real
+            // validation (and its error) happens in LoadDocument below.
+            var sourcesMtimeUtc = File.GetLastWriteTimeUtc(manifestPath);
+            foreach (var entry in entries)
+            {
+                var candidatePath = ResolveContentPath(entry.File);
+                if (candidatePath is not null && File.Exists(candidatePath))
+                {
+                    var fileMtimeUtc = File.GetLastWriteTimeUtc(candidatePath);
+                    if (fileMtimeUtc > sourcesMtimeUtc) sourcesMtimeUtc = fileMtimeUtc;
+                }
+            }
+
+            if (_snapshot is not null && sourcesMtimeUtc == _lastLoadedSourcesMtimeUtc)
                 return; // nothing changed since the last successful load
 
-            var snapshot = LoadSnapshot(manifestPath);
+            var snapshot = LoadSnapshot(entries);
             _snapshot = snapshot;
-            _lastLoadedManifestMtimeUtc = mtimeUtc;
+            _lastLoadedSourcesMtimeUtc = sourcesMtimeUtc;
         }
         catch (Exception ex)
         {
@@ -99,14 +125,18 @@ public partial class LegalDocumentProvider
         }
     }
 
-    private LegalSnapshot LoadSnapshot(string manifestPath)
+    /// <summary>Best-effort path resolution for the freshness check only — not a substitute for the
+    /// strict containment check LoadDocument performs before ever reading a file as content.</summary>
+    private string? ResolveContentPath(string? fileName)
     {
-        var json = File.ReadAllText(manifestPath);
-        var manifest = JsonSerializer.Deserialize<ManifestFile>(json, JsonOptions)
-            ?? throw new InvalidOperationException("legal.json parsed to null.");
+        if (string.IsNullOrWhiteSpace(fileName) || fileName.Contains("..")) return null;
+        return Path.Combine(_root, fileName);
+    }
 
+    private LegalSnapshot LoadSnapshot(List<ManifestEntry> entries)
+    {
         var documents = new Dictionary<LegalDocumentType, LegalDocument>();
-        foreach (var entry in manifest.Documents ?? [])
+        foreach (var entry in entries)
         {
             var doc = LoadDocument(entry);
             documents[doc.Type] = doc;
