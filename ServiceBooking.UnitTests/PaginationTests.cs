@@ -32,6 +32,43 @@ public class PaginationTests
         pageSize.Should().Be(100);
     }
 
+    // Blocker B3: page=int.MaxValue used to flow straight through unclamped, so every call site's
+    // (page - 1) * pageSize overflowed a 32-bit int — a negative OFFSET, 500 on a public anonymous
+    // endpoint (GET /api/companies/{id}/reviews?page=2147483647). These pin the fix at the boundary.
+    [Fact]
+    public void Normalize_MaxIntPage_IsClampedToKeepOffsetComputationOverflowSafe()
+    {
+        var (page, pageSize) = Pagination.Normalize(int.MaxValue, null);
+
+        pageSize.Should().Be(Pagination.DefaultPageSize);
+        page.Should().BeLessOrEqualTo(int.MaxValue / pageSize);
+
+        // The exact computation every call site performs — must not overflow / go negative.
+        var offset = (page - 1) * pageSize;
+        offset.Should().BeGreaterOrEqualTo(0);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(1000)]
+    public void Normalize_MaxIntPage_StaysOverflowSafeForEveryPageSize(int requestedPageSize)
+    {
+        var (page, pageSize) = Pagination.Normalize(int.MaxValue, requestedPageSize);
+
+        var offset = (long)(page - 1) * pageSize;
+        offset.Should().BeInRange(0, int.MaxValue);
+        // And the int-typed computation every call site actually does must agree with the long one.
+        ((int)offset).Should().Be((page - 1) * pageSize);
+    }
+
+    [Fact]
+    public void Normalize_PageOne_IsUnaffectedByOverflowClamp()
+    {
+        var (page, _) = Pagination.Normalize(1, null);
+        page.Should().Be(1);
+    }
+
     [Fact]
     public void Create_HasNext_TrueWhenMoreRowsRemain()
     {

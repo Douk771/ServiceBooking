@@ -140,6 +140,35 @@ public class LegalDocumentProviderTests : IDisposable
         second.Should().BeSameAs(first, "a broken reload must never discard the last valid snapshot");
     }
 
+    // Code review finding: reload used to trigger only on legal.json's own mtime. An operator who fixes
+    // a typo in privacy.html WITHOUT touching legal.json (no version bump needed for that kind of edit,
+    // ARCHITECTURE.md §4.3) used to see the stale text served indefinitely — this pins that the content
+    // file's own mtime is now enough to trigger a reload.
+    [Fact]
+    public void Current_OnlyContentFileTouched_ManifestUntouched_StillReloads()
+    {
+        WriteManifest(ValidManifest());
+        WriteDoc("privacy.html", "<p>v1</p>");
+        WriteDoc("terms.html", "<p>terms</p>");
+
+        var provider = CreateProvider(reloadSeconds: 9999); // LoadAtStartup below bypasses the timer anyway
+        provider.LoadAtStartup();
+        var first = provider.Current;
+        first!.Get(LegalDocumentType.Privacy)!.ContentHtml.Should().Be("<p>v1</p>");
+
+        // Only the content file changes; legal.json itself is left untouched.
+        Thread.Sleep(10);
+        WriteDoc("privacy.html", "<p>v2 (typo fixed)</p>");
+
+        // LoadAtStartup forces an immediate reload attempt outside ReloadSeconds' cache window — same
+        // mechanism Program.cs's fail-fast startup check uses (§4.4/§13), used here only to bypass the
+        // timer, not to change what's under test (the mtime comparison itself).
+        provider.LoadAtStartup();
+        var second = provider.Current;
+        second.Should().NotBeSameAs(first, "a content-only edit must produce a fresh snapshot");
+        second!.Get(LegalDocumentType.Privacy)!.ContentHtml.Should().Be("<p>v2 (typo fixed)</p>");
+    }
+
     [Fact]
     public void LoadAtStartup_ValidManifest_PopulatesCurrentImmediately()
     {

@@ -420,6 +420,28 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    // Code review finding: a deleted account is a tombstone row (DeletedAtUtc set, no password, no
+    // way to ever log in again — US-39/ARCHITECTURE.md §7.4), not a real candidate for ownership.
+    // Before the fix, UpdateCompanyOwner accepted any existing user id, including a tombstone's,
+    // handing a company to an owner who can never authenticate to manage it.
+    [Fact, TestCase("ADM-039")]
+    public async Task UpdateCompanyOwner_TargetIsADeletedAccount_ReturnsBadRequest()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var (_, company) = await CreateOwnerWithCompanyAsync();
+
+        var deletedUser = await RegisterAsync();
+        var deleteResponse = await AuthedClient(deletedUser.Token).PostAsJsonAsync("/api/profile/delete-account",
+            new { currentPassword = "Password123!" });
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var response = await AuthedClient(admin.Token).PutAsJsonAsync(
+            $"/api/admin/companies/{company.Id}/owner", new UpdateCompanyOwnerDto(deletedUser.UserId));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "a tombstoned account must never be assignable as a company owner");
+    }
+
     [Fact, TestCase("ADM-031")]
     public async Task UpdateCompanyOwner_MovesBillingToNewOwnersPlan()
     {
