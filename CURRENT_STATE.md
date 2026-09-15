@@ -1,46 +1,46 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `1c21bca` + незакоммиченное рабочее дерево цикла B, дата: 2026-09-08.**
+**Актуально по состоянию на коммит: `7a551eb`, дата: 2026-09-15.**
 
 Документ описывает **что есть в репозитории сейчас**, без предложений по развитию.
 
-Важная оговорка про точку отсчёта. Ветка — `sanitation-cycle`, HEAD — `1c21bca`. Но **часть описанного
-здесь состояния ещё не закоммичена**: цикл B (доводка + фотофиксация работы мастера + периодические
-фоновые задачи + каноническая форма телефона) полностью реализован, прошёл три раунда code-review и
-приёмку QA, однако лежит в рабочем дереве (`git status`: 85 изменённых/удалённых файлов и 47 новых,
-часть последних — каталоги).
-Для целей этого документа цикл B считается частью текущего состояния. Диапазон изменений с прошлой
-редакции документа: `263c661..1c21bca` (цикл A, закоммичен) + рабочее дерево (цикл B).
+Точка отсчёта. Ветка — `sanitation-cycle`, HEAD — `7a551eb`, **рабочее дерево чистое: всё
+закоммичено**. Это отличие от прошлой редакции документа, где цикл B целиком лежал незакоммиченным и
+приходилось оговаривать, что часть описанного в git ещё не попала. Сейчас такой оговорки не нужно.
+
+Диапазон изменений с прошлой редакции (`1c21bca` + рабочее дерево цикла B): цикл B закоммичен
+одним коммитом `0492092`, затем выполнен **цикл C «готовность к продакшену»** — **26 коммитов**,
+`f3adc6e..7a551eb`. Внутри цикла видны два стиля: сначала мелкие коммиты по задачам
+(`T-B1`/`T-F1`/… в заголовках), затем шесть укрупнённых (`848d172` бэкенд, `75a4473` тесты,
+`45e56af` инфраструктура, `56b0448` фронтенд, `90a69b1` документы цикла, `7a551eb` пользовательская
+документация) и отдельный коммит правок по ревью `99a03b0`. Полный список:
+`git log --oneline --reverse 0492092..HEAD`.
+
+Что цикл C делал: правовой контур (политика, оферта, согласие, 451), права субъекта данных (выгрузка
+и удаление аккаунта), rate limiting на вход/регистрацию/гостевую запись/выгрузку, структурированное
+логирование с маскированием телефонов и трекер ошибок, health-эндпоинты, синхронизация Identity-ролей,
+пагинация четырёх выборок, бэкап/откат/мониторинг и security-заголовки, запуск боевого образа в CI.
+**Новых функций для салонов цикл не добавлял.** Главное, что нужно знать дальше: **живого
+развёртывания на боевом сервере так и не было** — см. §9, блок P0.
 
 Все утверждения ниже получены чтением исходников, конфигов и git-истории. Где чего-то не нашлось —
 так и написано.
 
-**Проверено фактическим запуском** (прогонял devops-engineer отдельным шагом; автор этого документа
-работает только на чтение и тесты не запускает — прогон набора пересоздаёт базу `servicebooking_test`,
-см. §7):
+**Проверено фактическим запуском** (чистый прогон 2026-09-15 после завершения работ всеми агентами;
+автор этого документа работает только на чтение и тесты не запускает — прогон набора пересоздаёт базу
+`servicebooking_test`, см. §7):
 
-| Команда | Результат | Время |
+| Команда | Результат | Было в прошлой редакции |
 |---|---|---|
-| `dotnet build ServiceBooking.sln` | **0 warnings, 0 errors** (в прошлой редакции было 2 предупреждения) | ~8 с |
-| `dotnet test ServiceBooking.UnitTests` | **115 / 115** | ~2 с |
-| `dotnet test ServiceBooking.Tests` | **344 / 344** (в прошлой редакции — 230/230) | ~65 с |
-| `npm run test:run` (в `frontend/`) | **35 / 35** — тест-раннера фронта раньше не существовало вовсе | ~1,5 с |
-| `npx tsc --noEmit` (в `frontend/`) | чисто | ~2,5 с |
-| `npm run build` (в `frontend/`) | успешно | ~3,7 с |
+| `dotnet build ServiceBooking.sln -warnaserror` | **0 warnings, 0 errors** | 0 / 0 |
+| `dotnet test ServiceBooking.UnitTests` | **204 / 204** | 115 / 115 |
+| `dotnet test ServiceBooking.Tests` | **404 / 404** | 344 / 344 |
+| `npm run test:run` (в `frontend/`) | **78 / 78** | 35 / 35 |
+| `npx tsc --noEmit` (в `frontend/`) | чисто | чисто |
+| `npm run build` (в `frontend/`) | успешно | успешно |
 
-**Базовый прогон QA (перед началом нового цикла, 2026-09-08).** Независимо перепроверено QA той же
-командой на локальном PostgreSQL 16 (Homebrew, `servicebooking_test`, пустой пароль `postgres`,
-тестовое окружение — `appsettings.Testing.json` подтверждает выключенный планировщик, боевых данных
-не затронуто). Результат идентичен таблице выше: `dotnet build` — 0/0 за ~8 с; `ServiceBooking.UnitTests`
-115/115 за ~0,5 с; `ServiceBooking.Tests` 344/344 за ~65 с (в логе шумной трассой проходит намеренный
-`DbUpdateException`/FK-нарушение из теста на обработку ошибок — это не сбой, итог теста зелёный);
-`npm run test:run` 35/35 за ~1,5 с; `tsc --noEmit` чисто; `npm run build` успешно. Предсуществующих
-падений нет — чистый baseline, регрессий фиксировать не от чего.
-
-Эти же числа подтверждены статическим подсчётом атрибутов `[Fact]`/`[Theory]`+`[InlineData]` и вызовов
-`it(...)`. Оба предупреждения сборки из прошлой редакции устранены физически: Blazor-проект
-`ServiceBooking/` удалён из solution, дубль `using` в `BookingsController` убран — поэтому в CI
-включён `-warnaserror`.
+Все три числа перепроверены **статическим подсчётом** атрибутов `[Fact]`/`[Theory]`+`[InlineData]`
+и вызовов `it(...)` при подготовке этой редакции и сходятся с прогоном точно: 204, 404, 78.
 
 ---
 
@@ -57,9 +57,14 @@
 | СУБД | PostgreSQL (в docker-compose — `postgres:16-alpine`) | `docker-compose.yml`, `docker-compose.prod.yml` |
 | Аутентификация | ASP.NET Core Identity (`IdentityDbContext<AppUser>`) + JWT Bearer 8.0.11 | `Program.cs`, `Services/TokenService.cs` |
 | Обработка изображений | **SkiaSharp 2.88.8** + `SkiaSharp.NativeAssets.Linux.NoDependencies` (цикл B) — декод, ориентация по EXIF, ресайз, ре-энкод | `ServiceBooking.API.csproj`, `Services/ImageProcessor.cs` |
-| Rate limiting | **`Microsoft.AspNetCore.RateLimiting`** (встроенный в ASP.NET Core 8), одна именованная политика `uploads` (цикл B) | `Program.cs` |
+| Rate limiting | `Microsoft.AspNetCore.RateLimiting` (встроенный в ASP.NET Core 8), ⭐ **пять** именованных политик: `uploads`, `auth-login`, `auth-register`, `booking-create`, `data-export`; глобального лимитера нет | `Program.cs`, секция `RateLimits` |
+| **Логирование** ⭐ | **Serilog.AspNetCore 8.0.3** (`CompactJsonFormatter` в stdout и `logs/app-.json`) + маскирование телефонов | `Program.cs`, `Services/LogMasking.cs`, `PhoneMaskingEnricher.cs` |
+| **Трекер ошибок** ⭐ | **Sentry.Serilog 4.13.0** — синк включается только при непустом `Sentry:Dsn`; целевой приёмник — self-hosted **GlitchTip** (Sentry-совместимый) | `ServiceBooking.API.csproj`, `docker-compose.glitchtip.yml` |
+| **Health-checks** ⭐ | встроенные `Microsoft.Extensions.Diagnostics.HealthChecks`, два анонимных эндпоинта со своим двухполевым ответом | `Program.cs`, `Services/Health/` |
 | Фоновые задачи | Свой `BackgroundService` + `IScheduledTask` (цикл B). Hangfire/Quartz **нет** | `Services/Scheduling/` |
 | Документация API | Swashbuckle.AspNetCore 6.5.0, Swagger **только в Development** (цикл A) | `Program.cs` |
+| Правовые документы | ⭐ **файлы на диске** (`App_Data/legal/legal.json` + HTML), снимок в памяти с перечитыванием по mtime; не БД и не внешний сервис | `Services/Legal/LegalDocumentProvider.cs` |
+| Стиль кода | ⭐ `.editorconfig` в корне — **описывает** уже сложившийся стиль; `dotnet format` в CI **не подключён** | `.editorconfig` |
 | Менеджер пакетов | NuGet, версии зафиксированы в `.csproj` (без `Directory.Packages.props`, без lock-файлов) | — |
 
 ### Фронтенд
@@ -76,7 +81,8 @@
 | Формы | `react-hook-form` 7.53 | `CabinetPage.tsx`, `OwnerPage.tsx`, `CompanyManagePage.tsx` |
 | Даты | `date-fns` 3.6 + локаль `ru` | все страницы с датами |
 | Стили | Tailwind CSS 3.4 + PostCSS + Autoprefixer, кастомная палитра | `frontend/tailwind.config.js`, `frontend/src/index.css` |
-| Менеджер пакетов | npm, есть `package-lock.json`, на проде — `npm ci` | `deploy/deploy-remote.sh` |
+| Линтер / форматтер | ⭐ **ESLint 9** (flat-config, `typescript-eslint` 8, плагины react/react-hooks/react-refresh, `eslint-config-prettier`) + **Prettier 3**; `npm run lint` **входит в CI** | `frontend/eslint.config.js`, `package.json` |
+| Менеджер пакетов | npm, есть `package-lock.json`; ⭐ на проде фронт **больше не собирается** — CI выкладывает артефакт `frontend-dist-<sha>` | `.github/workflows/ci.yml`, `deploy/deploy.sh` |
 
 Отдельной библиотеки валидации форм (zod/yup) нет — валидация делается правилами `react-hook-form`
 и `[Required]`/`[EmailAddress]`-атрибутами DTO на бэкенде.
@@ -87,6 +93,9 @@
   Сервер: `ServiceBooking.API/Services/CaptchaService.cs`, `POST https://smartcaptcha.cloud.yandex.ru/validate`.
   Клиент: `frontend/src/components/booking/SmartCaptcha.tsx`, скрипт `https://smartcaptcha.yandexcloud.net/captcha.js`,
   ключ из `VITE_SMARTCAPTCHA_SITEKEY` (единственная используемая `import.meta.env`-переменная во всём фронтенде).
+- ⭐ **GlitchTip (self-hosted, Sentry-совместимый)** — вторая интеграция, но **пока только на бумаге**:
+  код (`Sentry.Serilog`) и compose-файл готовы, `Sentry:Dsn` в закоммиченном конфиге пуст, сервер
+  ни разу не поднимался (§9.1).
 - **Платёжного шлюза нет.** Ни SDK, ни HTTP-вызовов — `PaymentStatus` меняется только вручную
   через `PATCH /api/bookings/{id}/mark-paid`.
 - **Почтового провайдера нет.** SMTP/SendGrid/любой другой клиент в коде отсутствует (см. §5).
@@ -121,16 +130,23 @@ docker compose up --build
 
 Прод-сборка фронта: `npm run build` = `tsc && vite build` → `frontend/dist`.
 Тесты фронта: `npm test` (watch) / `npm run test:run` (однократно).
+Линт и формат: `npm run lint` (ESLint, есть в CI) / `npm run format` (Prettier).
+⭐ На боевой сервер `dist` больше не собирается на месте — берётся артефактом из CI (§8).
 
 **Расхождение конфигов устранено (цикл B).** `ServiceBooking.API/Properties/launchSettings.json`
 приведён в порядок: профили `http`/`https` слушают `http://localhost:5000` (https дополнительно 7016),
 `launchUrl: "weatherforecast"` удалён, `launchBrowser: false`. Порт совпадает с тем, куда проксирует
 Vite и куда мапится docker-compose.
 
-**Конфигурация приложения** (`ServiceBooking.API/appsettings.json`) выросла тремя секциями цикла B:
-`Storage` (`PrivateRoot`, `PublicRoot`, `MinFreeDiskMb: 1024`), `Uploads` (`MaxFileBytes: 5242880`,
+**Конфигурация приложения** (`ServiceBooking.API/appsettings.json`). Секции цикла B: `Storage`
+(`PrivateRoot`, `PublicRoot`, `MinFreeDiskMb: 1024`), `Uploads` (`MaxFileBytes: 5242880`,
 `PerUserPerMinute: 10`), `ScheduledTasks` (`Enabled`, `TickSeconds: 60`, и по подсекции на задачу —
-сейчас одна, `photo-retention-cleanup`).
+сейчас одна, `photo-retention-cleanup`). ⭐ Цикл C добавил три: `ForwardedHeaders:TrustedNetworks`
+(пустой список в git — в Production **пустой список роняет старт**), `RateLimits` (по подсекции на
+политику: `auth-login` 10/мин, `auth-register` 5/час, `booking-create` 120/час и 10/час анонимам,
+`data-export` 3/сутки) и `Sentry` (`Dsn`, `Release` — оба пустые). Секция `Legal` (`Root`,
+`ReloadSeconds: 30`) в закоммиченном файле **отсутствует** — работают дефолты из `LegalOptions`
+(`<ContentRoot>/App_Data/legal`, 30 с). Настроек Serilog в конфиге нет — логгер сконфигурирован кодом.
 Отдельно появился **закоммиченный** `appsettings.Testing.json` (исключение из правила
 `**/appsettings.*.json` в `.gitignore`): выключает планировщик и поднимает лимит загрузок до 1000/мин,
 чтобы функциональные тесты вели себя одинаково у всех и в CI. Секретов не содержит.
@@ -140,61 +156,81 @@ Vite и куда мапится docker-compose.
 ## 2. Структура репозитория
 
 ```
-ServiceBooking.sln                  5 проектов (Blazor-проект удалён, добавлен UnitTests)
+ServiceBooking.sln                  5 проектов (+ папка Solution Items)
 ├── ServiceBooking.API/             ← точка входа, вся бизнес-логика веб-слоя
-│   ├── Program.cs                  fail-fast прод-конфига, DI, Identity, JWT (+ перечитывание ролей и проверка
-│   │                               SecurityStamp), CORS, Swagger (только Dev), exception handler, rate limiter,
+│   ├── Program.cs                  593 строки: Serilog, fail-fast прод-конфига (через DeploymentSafetyChecks),
+│   │                               DI, Identity, JWT (+ перечитывание ролей, SecurityStamp и claim'ы согласия),
+│   │                               CORS, Swagger (только Dev), exception handler, ForwardedHeaders,
+│   │                               5 политик rate limiting, глобальный LegalConsentFilter, health-эндпоинты,
 │   │                               регистрация фоновых задач, миграции, сид
-│   ├── Controllers/                13 контроллеров (14 классов — в Reviews их два)
-│   ├── DTOs/                       Auth / Bookings / ClientNotes / Companies / Services / WorkingHours
+│   ├── Controllers/                14 контроллеров (15 классов — в Reviews их два); ⭐ добавился LegalController
+│   ├── DTOs/                       Auth / Bookings / ClientNotes / ⭐ Common (PagedResult) / Companies / Services / WorkingHours
 │   ├── Services/                   SlotService+SlotCalculator, SubscriptionResolver, CaptchaService, TokenService,
-│   │                               AdvisoryLock, BookingFilters, CompanyMembership, PhoneNormalizer,
-│   │                               FileStorage, ImageSignature, ImageProcessor, ImageUploadService, PhotoQuota
+│   │   │                           AdvisoryLock, BookingFilters, CompanyMembership, PhoneNormalizer, FileStorage,
+│   │   │                           ImageSignature, ImageProcessor, ImageUploadService, PhotoQuota,
+│   │   │                           ⭐ DeploymentSafetyChecks, ⭐ IdentityRoleSync, ⭐ LogMasking, ⭐ PhoneMaskingEnricher
+│   │   ├── Legal/                  ⭐ LegalDocumentProvider, LegalConsentFilter, LegalOptions, LegalSnapshot
+│   │   ├── Health/                 ⭐ DatabaseReadyHealthCheck
 │   │   └── Scheduling/             IScheduledTask, ScheduledTaskRunner, ScheduledTaskOptions,
 │   │                               ScheduledTaskSchedule, Tasks/PhotoRetentionCleanupTask
-│   ├── App_Data/private-uploads/   приватный класс хранения (в .gitignore, локальные фото разработчика)
-│   ├── Dockerfile                  multi-stage, aspnet:8.0, EXPOSE 8080
+│   ├── App_Data/legal/             ⭐ В GIT: манифест legal.json + privacy.html + terms.html (ЧЕРНОВИК);
+│   │                               на проде перекрывается bind-mount'ом ./legal с хоста
+│   ├── App_Data/private-uploads/   приватный класс хранения (в .gitignore)
+│   ├── Dockerfile                  multi-stage, aspnet:8.0, EXPOSE 8080 (комментарий «не менять на -alpine»)
 │   └── appsettings*.json           appsettings.json и appsettings.Testing.json в git; Development/Production — в .gitignore
 ├── ServiceBooking.Core/            только сущности и перечисления, зависимость одна — Identity.EFCore
-│   ├── Entities/                   17 классов
-│   └── Enums/                      BookingStatus, PaymentStatus, PhotoRetention, UserRole
-├── ServiceBooking.Infrastructure/  AppDbContext + 22 миграции EF Core
-├── ServiceBooking.UnitTests/       ⭐ xUnit, БЕЗ БД и без HTTP — чистая логика (появился в цикле A, вырос в B)
-├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory
+│   ├── Entities/                   18 классов (⭐ +UserConsent)
+│   └── Enums/                      BookingStatus, ⭐ LegalDocumentType, PaymentStatus, PhotoRetention, UserRole
+├── ServiceBooking.Infrastructure/  AppDbContext + 26 миграций EF Core
+├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; 15 файлов, 204 запуска
+├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; 21 файл, 404 запуска
 │   ├── Infrastructure/             ApiTestBase, CustomWebApplicationFactory, TestDatabaseFixture, JsonHelpers,
-│   │                               TestCaseAttribute, TestImages
-│   └── Tests/                      14 файлов по доменам
+│   │                               TestCaseAttribute, TestImages, ⭐ LegalDocumentsTestFactory, ⭐ RateLimitTestFactory
+│   └── Tests/                      21 файл по доменам
 ├── frontend/                       React SPA
-│   ├── src/api/                    15 модулей — тонкая обёртка над axios, по одному на домен
-│   ├── src/pages/                  страницы; вложенные owner/ и admin/ — вкладки
-│   ├── src/components/             booking/, clientNotes/, layout/, review/, schedule/, ui/
-│   ├── src/hooks/                  useOverlayDismiss, useAuthedImage
+│   ├── src/api/                    16 модулей — тонкая обёртка над axios, по одному на домен (⭐ +legal.ts)
+│   ├── src/pages/                  страницы; вложенные owner/ и admin/ — вкладки;
+│   │                               ⭐ +LegalDocumentPage.tsx, +DeleteAccountPage.tsx
+│   ├── src/components/             booking/, clientNotes/, ⭐ legal/ (ConsentGate, LegalUpdateBanner),
+│   │                               layout/, review/, schedule/, ui/ (⭐ +Pagination)
+│   ├── src/hooks/                  useOverlayDismiss, useAuthedImage, ⭐ useExportData, ⭐ useDebouncedValue
 │   ├── src/store/authStore.ts      единственный zustand-стор
 │   ├── src/test/setup.ts           setup Vitest (jest-dom + cleanup Testing Library)
 │   ├── src/types/index.ts          общие TS-типы (ручная копия серверных DTO)
-│   ├── src/utils/                  10 модулей: 8 мапперов ошибок HTTP → русский текст + phone.ts; рядом *.test.ts
-│   └── design_handoff_site_redesign/  HTML-макеты редизайна (*.dc.html) + README, не участвуют в сборке
-├── .github/workflows/ci.yml        ⭐ CI: два job'а (backend с сервисом postgres, frontend)
-├── deploy/                         deploy.sh (локально), deploy-remote.sh (на VPS), nginx/ezbook.conf
+│   ├── src/utils/                  мапперы ошибок HTTP → русский текст (⭐ +authError, +legalError) + phone.ts
+│   ├── eslint.config.js            ⭐ ESLint 9 flat-config + Prettier
+│   └── design_handoff_site_redesign/  HTML-макеты редизайна, не участвуют в сборке
+├── .editorconfig                   ⭐ описывает уже сложившийся C#-стиль; в CI НЕ проверяется
+├── .github/workflows/ci.yml        CI: три job'а (backend, frontend, docker-build со смоук-прогоном образа)
+├── deploy/
+│   ├── deploy.sh / deploy-remote.sh / nginx/ezbook.conf
+│   ├── ci/smoke.sh                 ⭐ смоук живого контейнера (health, регистрация, загрузка аватара)
+│   ├── backup/                     ⭐ backup.sh + systemd .service/.timer (локальный бэкап)
+│   ├── monitor/                    ⭐ health-alert.sh + systemd .service/.timer
+│   └── rollback.sh                 ⭐ откат одной командой
 ├── docker-compose.yml              dev: postgres + api
-├── docker-compose.prod.yml         prod: postgres (без публикации порта) + api на 127.0.0.1:5000,
-│                                   два volume: api_uploads (публичный) и api_private_uploads (приватный)
-├── README.md                       ⭐ продуктовое описание + «чего пока нет» + ссылка на docs/
-├── CHANGELOG.md                    ⭐ changelog по датам циклов, самая свежая запись сверху
-├── docs/                           ⭐ пользовательская документация по ролям (см. §10)
-├── SPEC.md / ARCHITECTURE.md / API_CONTRACT.md   документы текущего (B) цикла работ
-├── API_DOCUMENTATION.md            ~208 КБ, подробный справочник эндпоинтов (рус.)
-├── TEST_CATALOG.md                 ~209 КБ, человекочитаемый каталог всех тест-кейсов (рус.)
-├── DEPLOY.md / DEPLOY-windows.md   runbook'и: reg.ru VPS (Linux+nginx+docker) и VK Cloud Windows (IIS+ARR)
+├── docker-compose.prod.yml         prod: postgres + api на 127.0.0.1:5000, два volume + ⭐ bind-mount ./legal
+├── docker-compose.glitchtip.yml    ⭐ self-hosted GlitchTip (Sentry-совместимый трекер), отдельный стек
+├── README.md                       продуктовое описание + «чего пока нет» + ⭐ запуск/секреты/CI/деплой
+├── CHANGELOG.md                    changelog по датам циклов, самая свежая запись сверху
+├── docs/                           пользовательская документация по ролям (⭐ +personal-data.md)
+├── SPEC.md / ARCHITECTURE.md / API_CONTRACT.md      документы текущего (C) цикла работ
+├── SPEC_DEFERRED_NOTIFICATIONS.md / SPEC_APPENDIX_CHANNELS.md  ⭐ спека ОТЛОЖЕННОГО цикла уведомлений
+├── API_DOCUMENTATION.md            ~237 КБ, подробный справочник эндпоинтов (рус.)
+├── TEST_CATALOG.md                 ~246 КБ, человекочитаемый каталог всех тест-кейсов (рус.)
+├── DEPLOY.md / DEPLOY-windows.md   runbook'и: reg.ru VPS (Linux+nginx+docker) и VK Cloud Windows
+│                                   (IIS+ARR — контур ВЫВЕДЕН ИЗ СКОУПА цикла C, но файл не удалён)
 └── .env.production.example, .deploy.env.example, appsettings.Production.json.example
 ```
 
-⭐ — появилось в циклах A/B, в прошлой редакции документа этого не было.
+⭐ — появилось в цикле C; отметки предыдущих циклов из этой редакции сняты, чтобы значок означал ровно одно.
 
 ### Точка входа и слои
 
 - Единственная точка входа приложения — `ServiceBooking.API/Program.cs`. **Второй процесс** в том же
   хосте — `ScheduledTaskRunner` (`BackgroundService`), тикает раз в `ScheduledTasks:TickSeconds` (60 с).
+  ⭐ Третий фоновый «житель» — `LegalDocumentProvider`: держит снимок правовых документов в памяти и
+  перечитывает манифест с диска по mtime (не чаще раза в `Legal:ReloadSeconds`).
 - **Бизнес-логика по-прежнему живёт в контроллерах.** Сервисного слоя как такового нет, но `Services/`
   заметно вырос: к слотам/тарифам/капче/токенам добавились чистые (без БД) помощники — `SlotCalculator`,
   `PhoneNormalizer`, `PhotoQuota`, `ScheduledTaskSchedule`, `BookingFilters`, `ImageSignature`,
@@ -206,7 +242,10 @@ ServiceBooking.sln                  5 проектов (Blazor-проект уд
   Репозиториев нет, контроллеры работают с `AppDbContext` напрямую.
 - Выделился слой «чистая логика без инфраструктуры» — именно он покрыт `ServiceBooking.UnitTests`:
   `SlotCalculator`, `SubscriptionResolver.Resolve` (статический), `PhoneNormalizer`, `PhotoQuota`,
-  `ScheduledTaskSchedule`, `BookingFilters`, `ImageSignature`, `ImageProcessor`, `FileStorage`, `TokenService`.
+  `ScheduledTaskSchedule`, `BookingFilters`, `ImageSignature`, `ImageProcessor`, `FileStorage`, `TokenService`,
+  ⭐ `DeploymentSafetyChecks`, `Pagination.Normalize`, `LogMasking`, `LegalDocumentProvider`,
+  `LegalConsentFilter`. Цикл C **сознательно вытаскивал логику в этот слой ради тестируемости** —
+  именно поэтому fail-fast переехал из `Program.cs` в отдельный класс.
 
 ### Мёртвый проект `ServiceBooking/` — удалён
 
@@ -225,7 +264,7 @@ Blazor Server-шаблон из первого коммита удалён це�
 
 | Сущность | Ключ | Ключевые поля | Связи |
 |---|---|---|---|
-| `AppUser : IdentityUser` | string | `FirstName`, `LastName`, `AvatarUrl`, `CreatedAt` (**`CommissionPercent` удалён** в цикле B) | 1—N: CompanyMemberships, ClientBookings, MasterBookings, MasterServices, WorkingHours |
+| `AppUser : IdentityUser` | string | `FirstName`, `LastName`, `AvatarUrl`, `CreatedAt`, ⭐ **`DeletedAtUtc?`** (надгробие удалённого аккаунта, цикл C) | 1—N: CompanyMemberships, ClientBookings, MasterBookings, MasterServices, WorkingHours |
 | `Company` | Guid | `Name`, `Slug` (**уникальный индекс**), `Description`, `LogoUrl`, `Address`, `Phone`, `Email`, `AllowSelfBooking`, `RequirePrepayment`, `ShowInPublicListing`, `IsActive`, `OwnerUserId` | N—1 Owner (`Restrict`), 1—N Members / Services / Bookings |
 | `CompanyMember` | Guid | `CompanyId`, `UserId`, `Role: UserRole`, `Bio`, **`CommissionPercent`** (переехал сюда с `AppUser` в цикле A), `JoinedAt`; **уникальный индекс `(CompanyId, UserId)`** | «многие-ко-многим» User↔Company с ролью |
 | `Service` | Guid | `CompanyId`, `Name`, `DurationMinutes`, `Price decimal(10,2)`, `ImageUrl`, `IsActive` | 1—N MasterServices, Bookings |
@@ -233,11 +272,12 @@ Blazor Server-шаблон из первого коммита удалён це�
 | `WorkingHours` | Guid | `MasterId`, `CompanyId`, **`Date: DateOnly`**, `StartTime`, `EndTime`, `IsWorking`; **уникальный индекс `(MasterId, CompanyId, Date)`** (цикл A) | 1—N `ScheduleBreak` |
 | `ScheduleBreak` | Guid | `WorkingHoursId`, `StartTime`, `EndTime` | перерывы внутри дня |
 | `WeeklyScheduleTemplate` | Guid | `MasterId`, `CompanyId`, `DayOfWeek` (ISO 1..7), `IsWorking`, `StartTime`, `EndTime`; индекс `(MasterId, CompanyId)` | шаблон, «раскатываемый» в `WorkingHours` |
-| `Booking` | Guid | `CompanyId`, `ServiceId`, `MasterId`, `ClientId?`, `GuestName/Phone/Email`, `Date`, `StartTime`, `EndTime`, **`Price` (снимок цены)**, **`CommissionPercent` (снимок комиссии, цикл A)**, `Status`, `PaymentStatus`, `Notes`, `CancellationReason` | Master `Restrict`, Client `SetNull` |
+| `Booking` | Guid | `CompanyId`, `ServiceId`, `MasterId`, `ClientId?`, `GuestName/Phone/Email`, `Date`, `StartTime`, `EndTime`, **`Price` (снимок цены)**, **`CommissionPercent` (снимок комиссии, цикл A)**, `Status`, `PaymentStatus`, `Notes`, `CancellationReason`, ⭐ **`ConsentPrivacyVersion?` / `ConsentTermsVersion?` / `ConsentAcceptedAtUtc?`** (снимок согласия, заполняет сервер, в т.ч. для гостя), ⭐ **`ClientDeleted`** | Master `Restrict`, Client `SetNull` |
 | `Review` | Guid | `BookingId` (**уникальный индекс** — 1 отзыв на запись), `CompanyId`, `MasterId`, `ClientId?`, `ReviewerName`, `Rating 1..5`, `Comment` | Booking `Cascade` |
 | `ClientNote` | Guid | `CompanyId`, `MasterId` (автор), `ClientId?` / `GuestPhone?`, `Note`, **`BookingId?`** (визит, к которому написана заметка; `SetNull`), `CreatedAt`; индексы `(CompanyId, ClientId)` и `(CompanyId, GuestPhone)` | заметки общие для компании; удалять может **автор или владелец компании** (решение Q16); 1—N `ClientNotePhoto` |
-| **`ClientNotePhoto`** ⭐ | Guid | `ClientNoteId`, `CompanyId` (денормализованная копия), `StoragePath`, `ThumbnailPath`, `ContentType`, `SizeBytes` (полный размер + миниатюра), `Width`, `Height`, `ContentHash` (SHA-256 **обработанных** байт), `UploadedByUserId?` (`SetNull`), `CreatedAt`; индексы `ClientNoteId`, `(CompanyId, CreatedAt)`, **уникальный `(ClientNoteId, ContentHash)`** | фото к заметке; каскад от заметки; ≤5 на заметку |
-| **`ScheduledTaskState`** ⭐ | string `Name` (PK) | `LastStartedAtUtc?`, `LastFinishedAtUtc?`, `LastSucceeded`, `LastDurationMs`, `LastSummary?`, `LastError?` | состояние периодической задачи, переживающее рестарт |
+| `ClientNotePhoto` | Guid | `ClientNoteId`, `CompanyId` (денормализованная копия), `StoragePath`, `ThumbnailPath`, `ContentType`, `SizeBytes` (полный размер + миниатюра), `Width`, `Height`, `ContentHash` (SHA-256 **обработанных** байт), `UploadedByUserId?` (`SetNull`), `CreatedAt`; индексы `ClientNoteId`, `(CompanyId, CreatedAt)`, **уникальный `(ClientNoteId, ContentHash)`** | фото к заметке; каскад от заметки; ≤5 на заметку |
+| **`UserConsent`** ⭐ | Guid | `UserId`, `DocumentType: LegalDocumentType`, `Version`, `AcceptedAtUtc`; **уникальный индекс `(UserId, DocumentType)`** | последняя принятая версия одного документа одним пользователем. **Журнала нет** — строка перезаписывается при повторном принятии (осознанно, SPEC §3.3) |
+| `ScheduledTaskState` | string `Name` (PK) | `LastStartedAtUtc?`, `LastFinishedAtUtc?`, `LastSucceeded`, `LastDurationMs`, `LastSummary?`, `LastError?` | состояние периодической задачи, переживающее рестарт |
 | `AccountSubscription` | Guid | `OwnerUserId` (**уникальный индекс**), `PlanConfigId?`, `PaidUntil?`, `IsActive` | подписка на **аккаунт владельца**, а не на компанию |
 | `SubscriptionPlanConfig` | Guid | `Name`, `PricePerMonth`, `MaxEmployees?`, `MaxCompanies?`, `AllowOnlineBooking`, `AllowMailing`, `AllowAnalytics`, `AllowPublicListing`, `AllowOnlinePayment`, **`PhotoQuotaMb?`** (null = без ограничения, дефолт 100), **`PhotoRetention`**, `IsActive`, `NotifyDaysBefore` | справочник тарифов |
 | `SubscriptionChangeLog` | Guid | `OwnerUserId` (индекс), `ChangedByUserId`, старые/новые план, `PaidUntil`, `IsActive`, `Comment` | аудит изменений подписки |
@@ -245,7 +285,9 @@ Blazor Server-шаблон из первого коммита удалён це�
 
 Перечисления: `BookingStatus { Pending, Confirmed, Cancelled, Completed, NoShow }`,
 `PaymentStatus { NotRequired, Pending, Paid }`, `UserRole { Client, Master, CompanyOwner, SuperAdmin }`,
-**`PhotoRetention { SixMonths = 0, TwelveMonths = 1, Forever = 2 }`** (цикл B).
+`PhotoRetention { SixMonths = 0, TwelveMonths = 1, Forever = 2 }` (цикл B),
+⭐ **`LegalDocumentType { Privacy, Terms }`** (цикл C; одноимённый дубль на стороне API был заведён и
+удалён внутри цикла, коммит `263eb55` — перечисление живёт только в `Core`).
 Сериализуются как строки (`JsonStringEnumConverter` в `Program.cs`).
 
 ### Как это связано смыслово
@@ -270,8 +312,16 @@ Blazor Server-шаблон из первого коммита удалён це�
   индексированным агрегатом, а раздача проверялась одной строкой без join'а.
 - **Квота и срок хранения фото — свойства тарифа** (`PhotoQuotaMb`, `PhotoRetention`), разрешаются тем
   же `SubscriptionResolver`; на Free-базлайне — 100 МБ и 6 месяцев.
+- ⭐ **Согласие хранится в двух видах и с разным сроком жизни.** «Текущее состояние» — `UserConsent`
+  (одна строка на пару «пользователь + документ», перезаписывается) и claim'ы в JWT, по которым
+  работает гейт без похода в БД. «Исторический факт» — снимок версий **на самой записи** (`Booking`),
+  который переживает и смену редакции документа, и удаление аккаунта, и относится в том числе к
+  гостю, у которого аккаунта нет.
+- ⭐ **Удалённый аккаунт — надгробие, а не отсутствие строки** (`AppUser.DeletedAtUtc`, §4.15).
+  Записи такого клиента остаются в истории компании анонимизированными, с флагом
+  `Booking.ClientDeleted`.
 
-### Миграции (22, все в `ServiceBooking.Infrastructure/Migrations/`)
+### Миграции (26, все в `ServiceBooking.Infrastructure/Migrations/`)
 
 Первые 13 — как раньше: `InitialCreate` → `DateBasedSchedule` → `AddSubscriptionAndCommission` →
 `AddReviewsTemplatesNotes` → `AddPromoGiftMailPlans` → `AddPrepaymentSupport` →
@@ -285,6 +335,14 @@ Blazor Server-шаблон из первого коммита удалён це�
 
 Цикл B добавил ещё пять: `AddClientNoteBookingId` → `AddClientNotePhotos` → `AddPlanPhotoLimits` →
 `AddScheduledTaskState` → **`NormalizePhoneNumbers`**.
+
+⭐ Цикл C добавил четыре: **`ResyncIdentityRoles`** → **`AddLegalConsent`** →
+**`AddUserDeletionTombstone`** → **`AddMaxLengthToConsentVersions`**.
+`ResyncIdentityRoles` — **миграция данных**: разово пересчитывает Identity-роли по строкам
+`CompanyMember` тем же правилом, что `IdentityRoleSync`, и чинит историю «роль осталась после
+удаления из компании». Её **`Down` — намеренный no-op**: откатывать пересчёт ролей бессмысленно.
+`AddMaxLengthToConsentVersions` — поздняя правка по ревью: ограничение длины строк версий
+(до неё колонки были `text` без потолка).
 
 `NormalizePhoneNumbers` — единственная **разрушительная** миграция проекта и сознательно последняя в
 цикле. Она приводит уже лежащие в БД номера к канонической форме (ручная транслитерация
@@ -310,15 +368,18 @@ Blazor Server-шаблон из первого коммита удалён це�
 
 | Метод | Путь | Доступ |
 |---|---|---|
-| POST | `/api/auth/register` | анонимно; телефон нормализуется, невалидный → 400; выдаёт роль `Client` |
-| POST | `/api/auth/login` | анонимно; поиск по канонической форме телефона, lockout после 5 попыток на 15 мин; невалидный номер даёт тот же 401, а не 400 |
+| POST | `/api/auth/register` | анонимно; телефон нормализуется, невалидный → 400; выдаёт роль `Client`; ⭐ **требует `acceptedLegal`** с версиями обоих документов (цикл C) — без принятия согласия аккаунт не создаётся; лимит `auth-register` 5/час на IP |
+| POST | `/api/auth/login` | анонимно; поиск по канонической форме телефона, lockout после 5 попыток на 15 мин; невалидный номер даёт тот же 401, а не 400; ⭐ лимит `auth-login` 10/мин на IP |
 | GET / PUT | `/api/profile` | авторизованные |
 | POST | `/api/profile/change-password` | авторизованные |
 | POST | `/api/profile/change-phone` | авторизованные; требует текущий пароль, через `SetUserNameAsync` |
-| **POST** | **`/api/profile/avatar`** ⭐ | авторизованные; свой аватар (id из токена, route-параметра нет), ≤5 МБ, rate limit `uploads`, профиль обработки `Avatar` (512 px, квадратный кроп) |
+| POST | `/api/profile/avatar` | авторизованные; свой аватар (id из токена, route-параметра нет), ≤5 МБ, rate limit `uploads`, профиль обработки `Avatar` (512 px, квадратный кроп) |
+| **GET** | **`/api/profile/export`** ⭐ | авторизованные; выгрузка своих данных, см. §4.15 |
+| **POST** | **`/api/profile/delete-account`** ⭐ | авторизованные; удаление аккаунта, см. §4.15 |
 
 JWT: HS256, срок **7 дней**, claims `sub/phone/given_name/family_name/jti/role` + **`sstamp`**
-(хеш `SecurityStamp`, цикл A).
+(хеш `SecurityStamp`, цикл A) + ⭐ **claim'ы принятых версий правовых документов** (цикл C) — именно
+по ним `LegalConsentFilter` решает, отдавать ли 451, не заглядывая в БД.
 Важные детали в `Program.cs` (`JwtBearerEvents.OnTokenValidated`), на каждом запросе:
 роли **перечитываются из БД** и подменяют claim'ы токена (отзыв роли действует немедленно), и
 **сверяется хеш `SecurityStamp`** — смена пароля или телефона инвалидирует все ранее выданные токены.
@@ -331,7 +392,7 @@ JWT: HS256, срок **7 дней**, claims `sub/phone/given_name/family_name/jt
 
 ### 4.2 Компании — работает
 
-`Controllers/CompaniesController.cs` (571 строка — самый большой контроллер)
+`Controllers/CompaniesController.cs` (635 строк — самый большой контроллер)
 
 | Метод | Путь | Доступ |
 |---|---|---|
@@ -344,7 +405,7 @@ JWT: HS256, срок **7 дней**, claims `sub/phone/given_name/family_name/jt
 | POST | `/api/companies` | авторизованные; **лимит `MaxCompanies`** под advisory lock, 402 при превышении |
 | PUT | `/api/companies/{id}` | владелец |
 | POST | `/api/companies/{id}/logo` | владелец; ≤5 МБ, rate limit `uploads`, **тип определяется по сигнатуре файла**, ре-энкод профилем `CompanyLogo` (512 px), старый файл удаляется **после** коммита нового URL |
-| **GET** | **`/api/companies/{id}/photo-usage`** ⭐ | персонал компании **или SuperAdmin**; занятый объём, число фото, квота, % и срок хранения — единственное место, где SuperAdmin получает цифры по клиентским фото (содержимое ему недоступно) |
+| GET | `/api/companies/{id}/photo-usage` | персонал компании **или SuperAdmin**; занятый объём, число фото, квота, % и срок хранения — единственное место, где SuperAdmin получает цифры по клиентским фото (содержимое ему недоступно) |
 | POST | `/api/companies/{id}/members` | владелец; **лимит `MaxEmployees`** под advisory lock, 402; телефон нормализуется; неизвестное имя роли → 400 |
 | PUT | `/api/companies/{id}/members/{memberId}/services` | владелец |
 | PUT | `/api/companies/{id}/members/{memberId}/commission` | владелец; clamp 0..100; пишет в `CompanyMember.CommissionPercent` |
@@ -449,6 +510,9 @@ rate limit `uploads`).
 - вычисленные «реально работает»: `OnlineBookingEnabled`, `PrepaymentEnabled`, `PublicListingEnabled`;
 - «сырые» возможности тарифа: `PlanAllowsOnlineBooking`, `PlanAllowsOnlinePayment`, `PlanAllowsPublicListing`, `MaxEmployees`.
 
+⭐ Цикл C добавил в `CompanyDto` поля `AverageRating` (`double?`) и `ReviewCount` — **агрегат считается
+в БД**, а не подтягиванием отзывов на клиент; витрина компании показывает рейтинг без отдельного запроса.
+
 Последняя группа добавлена коммитами `c062dd5` и `bc34db3` — чтобы UI гасил тумблер/кнопку заранее,
 а не ловил 402 после заполнения формы. Фронт: `CompanyManagePage.tsx` (SettingsTab, MembersTab),
 `CabinetPage.tsx` (скрывает вкладки «Отчёты»/«Рассылка» по `allowAnalytics`/`allowMailing`).
@@ -457,7 +521,8 @@ rate limit `uploads`).
 
 `Controllers/ReviewsController.cs`: `POST /api/reviews` (только по завершённой записи, рейтинг 1..5,
 один отзыв на бронь), `GET /api/reviews/can-review` (список ID записей, ждущих отзыва),
-`GET /api/companies/{companyId}/reviews` (публично, класс `CompanyReviewsController` в том же файле).
+`GET /api/companies/{companyId}/reviews` (публично, класс `CompanyReviewsController` в том же файле;
+⭐ **с цикла C отдаёт `PagedResult<ReviewDto>`, а не массив** — ломающее изменение).
 Цикл A закрыл дыру: проверка авторства стала строгой (`booking.ClientId != userId` → 403) — раньше
 условие `ClientId != null && …` полностью пропускало **гостевые** записи, и любой, кто узнал
 `bookingId` (а он возвращается гостю при создании), мог оставить отзыв чужому бизнесу от своего имени.
@@ -467,8 +532,11 @@ rate limit `uploads`).
 
 ### 4.8 База клиентов мастера и заметки — работает, переработано в цикле B
 
-`Controllers/MastersController.cs`: `GET /api/masters/clients?companyId`,
-`POST /api/masters/clients/notes`, `DELETE /api/masters/clients/notes/{id}`.
+`Controllers/MastersController.cs`: `GET /api/masters/clients?companyId&search&page&pageSize`
+(⭐ цикл C: **серверный поиск** — эвристика «похоже на телефон» та же, что в `AdminController.GetUsers`,
+и **`PagedResult<MasterClientDto>` вместо массива**, ломающее изменение; фильтрация и нарезка страницы
+делаются **в памяти**, см. §5.3.5), `POST /api/masters/clients/notes`,
+`DELETE /api/masters/clients/notes/{id}`.
 Доступ — только персонал компании (`CompanyMembership.IsStaffAsync`), участник с ролью `Client` больше
 не проходит. Группировка отдельно по зарегистрированным клиентам и по `GuestPhone`.
 
@@ -500,15 +568,16 @@ PhotoGallery, PhotoViewerModal}.tsx`.
 ### 4.10 Админка — работает
 
 `Controllers/AdminController.cs`, все методы `[Authorize(Roles = "SuperAdmin")]`:
-`GET /api/admin/stats`, `GET /api/admin/users?search` (поиск по телефону в любом формате —
-строка запроса нормализуется), `PUT /api/admin/users/{id}/roles`,
-`GET /api/admin/companies?search`, `PUT /api/admin/companies/{id}` (тело — `Name`, `IsActive`,
+`GET /api/admin/stats`, `GET /api/admin/users?search&page&pageSize` (поиск по телефону в любом
+формате — строка запроса нормализуется; ⭐ цикл C: `PagedResult<AdminUserDto>` **и починенный N+1** —
+роли больше не догружаются по пользователю в цикле), `PUT /api/admin/users/{id}/roles`,
+`GET /api/admin/companies?search&page&pageSize` (⭐ тоже `PagedResult<T>`), `PUT /api/admin/companies/{id}` (тело — `Name`, `IsActive`,
 `AllowSelfBooking`; блокировка/разблокировка компании доступна из UI, US-04),
 `PUT /api/admin/companies/{id}/owner`,
 `PUT /api/admin/owners/{ownerUserId}/subscription`, `GET /api/admin/owners/{ownerUserId}/subscription-history`,
 `GET /api/admin/bookings` (лимит `Take(500)`), `GET|POST|PUT|DELETE /api/admin/plans[/{id}]`
 (delete — мягкий, `IsActive = false`; **вернуть тариф в продажу теперь можно через `PUT`**, US-05),
-**`GET /api/admin/scheduled-tasks`** ⭐ (см. §4.13).
+`GET /api/admin/scheduled-tasks` (цикл B, см. §4.13).
 Из `AdminUserDto` убран `CommissionPercent` (комиссия стала per-company).
 Фронт: `pages/AdminPage.tsx` (вкладки stats/companies/users/bookings) + `pages/admin/PlansTab.tsx`
 (в редакторе тарифа появились квота на фото и срок хранения).
@@ -520,7 +589,7 @@ PhotoGallery, PhotoViewerModal}.tsx`.
 (`pages/owner/CompanyManagePage.tsx`) появился блок с готовым `<iframe …>`-сниппетом, ссылкой, кнопкой
 «Скопировать» и предпросмотром; имя компании экранируется для атрибута `title`.
 
-### 4.12 Фото к заметкам о клиентах ⭐ — новая функция цикла B
+### 4.12 Фото к заметкам о клиентах — функция цикла B
 
 `Controllers/ClientNotePhotosController.cs` (195 строк), `Services/{ImageUploadService, ImageProcessor,
 ImageSignature, FileStorage}.cs`.
@@ -553,7 +622,7 @@ ImageSignature, FileStorage}.cs`.
 (`hooks/useAuthedImage.ts`, `components/ui/AuthedImage.tsx`), с `IntersectionObserver` для ленивой
 загрузки и `staleTime: Infinity` в react-query.
 
-### 4.13 Периодические фоновые задачи ⭐ — первый фоновый процесс в продукте
+### 4.13 Периодические фоновые задачи — первый фоновый процесс в продукте (цикл B)
 
 `Services/Scheduling/`: `IScheduledTask` (контракт: `Name`, `DefaultPeriod`, `ExecuteAsync` →
 `ScheduledTaskOutcome{Scanned, Affected, BytesFreed, Summary}`), `ScheduledTaskRunner`
@@ -580,12 +649,100 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 В окружении `Testing` планировщик **выключен** (`appsettings.Testing.json`), функциональные тесты
 дёргают задачу напрямую.
 
+### 4.14 Правовой контур: документы, согласие, 451 ⭐ — новое в цикле C
+
+`Controllers/LegalController.cs`, `Services/Legal/{LegalDocumentProvider, LegalConsentFilter,
+LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущность `UserConsent`.
+
+| Метод | Путь | Доступ |
+|---|---|---|
+| GET | `/api/legal/documents` | публично; только метаданные обоих документов (тип, заголовок, версия, дата вступления, `isDraft`, `changeKind`) — без HTML, чтобы подвал и форма регистрации не тянули текст |
+| GET | `/api/legal/documents/{type}` | публично; метаданные **и** HTML одного документа; `Cache-Control: public, max-age=300` |
+| GET | `/api/legal/consent-status` | авторизованные; `{ requiresAcceptance, showBanner, documents[] }`, считается **из claim'ов токена и снимка в памяти, без запроса в БД** |
+| POST | `/api/legal/accept` | авторизованные; тело — версии обоих документов; версии **сверяются с текущим снимком** (409, если оператор успел заменить текст ещё раз), запись в `UserConsent` под транзакцией + advisory lock |
+
+Как это устроено:
+
+- **Документы — файлы, а не строки в БД.** `App_Data/legal/` содержит манифест `legal.json`
+  (`type`, `version`, `effectiveFrom`, `isDraft`, `changeKind`, `title`, `file`) и по HTML-файлу на
+  документ. `LegalDocumentProvider` держит снимок в памяти и перечитывает манифест по mtime не чаще
+  раза в `Legal:ReloadSeconds` (по умолчанию 30 с). На проде каталог **bind-mount'ится с хоста**
+  поверх запечённого в образ черновика — замена текста после юридической вычитки это
+  **эксплуатационная операция, а не релиз** (`DEPLOY.md` §2.1).
+- **`changeKind` решает, блокировать ли пользователя.** `Material` — блокирующий экран и **451
+  Unavailable For Legal Reasons** на всех защищённых вызовах; `Editorial` — только баннер.
+  `Material` перебивает `Editorial`, если ожидают оба документа.
+- **Гейт — глобальный MVC-фильтр** `LegalConsentFilter` с allow-list'ом (сами правовые эндпоинты,
+  принятие согласия и **выгрузка данных** — иначе заблокированный пользователь не смог бы ни узнать,
+  чего от него хотят, ни забрать свои данные). Анонимные запросы фильтр не трогает.
+- **Снимок согласия на записи.** У `Booking` появились `ConsentPrivacyVersion`, `ConsentTermsVersion`,
+  `ConsentAcceptedAtUtc` — их заполняет **сервер** из актуальных документов, в том числе для гостевой
+  записи и виджета, где аккаунта нет вовсе.
+- **Тексты черновые** (`isDraft: true`), fail-fast на это намеренно нет — §9.4.
+
+Фронт: страницы `/privacy` и `/terms` (`pages/LegalDocumentPage.tsx`), `components/legal/ConsentGate.tsx`
+(полноэкранный блокирующий экран на `Material`; из него **достижима выгрузка данных** — коммит
+`a115aad`), `components/legal/LegalUpdateBanner.tsx` (на `Editorial`), чекбокс со ссылками в форме
+регистрации и в форме записи, ссылки в подвале, `api/legal.ts`, `utils/legalError.ts`.
+
+### 4.15 Права субъекта данных: выгрузка и удаление аккаунта ⭐ — новое в цикле C
+
+`Controllers/ProfileController.cs`.
+
+- **`GET /api/profile/export`** (лимит `data-export` — 3 раза в сутки) отдаёт JSON с
+  `Content-Disposition: attachment`: профиль, история согласий, членства в компаниях, **записи**
+  (и как клиента, и **гостевые по каноническому телефону** — визиты, сделанные до регистрации),
+  отзывы, **метаданные** заметок и фото о себе (компания, дата, размер/количество).
+  В файл **намеренно не входят** тексты заметок сотрудников и содержимое фотографий — они признаны
+  результатом работы салона; в самом JSON лежит поле с объяснением этого пользователю.
+- **`POST /api/profile/delete-account`** (POST, а не DELETE — нужно тело с текущим паролем).
+  Два гейта: текущий пароль и **«за вами числится компания» → 409** (владелец обязан сначала передать
+  компанию). Дальше, одной транзакцией: согласия удаляются; заметки и фото **о** пользователе
+  удаляются (файлы — после коммита); записи **анонимизируются, а не удаляются** (`ClientId = null`,
+  гостевые поля и заметки очищаются, ставится `ClientDeleted = true`) — выручка и комиссия салона
+  должны уцелеть; отзывы деперсонализируются (`ReviewerName = "Удалённый пользователь"`); членства
+  снимаются, роли пересчитываются `IdentityRoleSync` под теми же advisory-локами; сам аккаунт
+  становится **надгробием** — поля затираются, `PasswordHash` очищается, ставится вечный lockout,
+  **телефон освобождается** для повторной регистрации, проставляется `AppUser.DeletedAtUtc`.
+- **Почему надгробие, а не `DELETE` строки:** четыре FK на `Restrict` (`Booking.Master`,
+  `Review.Master`, `Company.Owner`, `MailLog.SentBy`) физическое удаление просто не пропустят, а
+  пятый — `ClientNote.Master` на `Cascade` — молча снёс бы заметки этого человека **о других
+  клиентах**, то есть данные компании. Причина зафиксирована в `ARCHITECTURE.md` §19.2 и
+  комментарием на самом поле `DeletedAtUtc`.
+
+Фронт: `pages/DeleteAccountPage.tsx` (маршрут `/profile/delete`), `hooks/useExportData.ts`
+(скачивание blob'ом через тот же axios + `a[download]`), кнопки в `ProfilePage.tsx` и в `ConsentGate`.
+Пользовательское описание — `docs/personal-data.md`.
+
+### 4.16 Эксплуатационная обвязка: health, логи, лимиты, роли ⭐ — новое в цикле C
+
+- **Health-эндпоинты** (`Services/Health/DatabaseReadyHealthCheck.cs`): `GET /api/health/live` —
+  анонимный, **не касается БД** вовсе (`Predicate = _ => false`), и `GET /api/health/ready` —
+  анонимный, проверяет соединение и применённые миграции. У обоих **свой ResponseWriter на два поля**
+  (`status`, `failed`): стандартный ответ фреймворка вложил бы текст исключения и слил бы кусок
+  строки подключения на публичный эндпоинт. Rate limiting к ним намеренно **не применён** — мониторинг
+  не должен уметь залочить сам себя. `docker-compose.prod.yml` смотрит на `live`, скрипты деплоя
+  ждут `ready`.
+- **Логирование:** Serilog заменяет хост-логгер целиком, `CompactJsonFormatter` в stdout и
+  `logs/app-.json`; телефоны маскируются (`Services/LogMasking.cs`, `PhoneMaskingEnricher`), в том
+  числе в строке запроса (`?search=<телефон>`); синк в GlitchTip по протоколу Sentry
+  (`Sentry.Serilog`) включается только при непустом `Sentry:Dsn`.
+- **Rate limiting** (§6): `auth-login`, `auth-register`, `booking-create` (разные лимиты для
+  авторизованных и анонимов), `data-export` — плюс существовавший `uploads`. IP берётся после
+  `UseForwardedHeaders` со списком доверенных сетей, отсутствие которого в Production роняет старт.
+- **`Services/IdentityRoleSync.cs`** — единственный пересчёт ролей `Master`/`CompanyOwner` из строк
+  `CompanyMember`; вызывается из пяти операций (§6). Закрывает дыру цикла B: `RemoveMember` не снимал
+  Identity-роль, и человек, удалённый из единственной компании, продолжал проходить
+  `[Authorize(Roles = …)]`. Историю почистила миграция данных `ResyncIdentityRoles`.
+- **`Services/DeploymentSafetyChecks.cs`** — fail-fast прод-конфига, вынесенный из `Program.cs` в
+  чистые статические методы **ради тестируемости** (28 юнит-тестов), см. §8.
+
 ---
 
 ## 5. Что реализовано частично, заглушки и несогласованности
 
-Явных маркеров `TODO`/`FIXME`/`HACK` в коде **нет ни одного** (проверено grep'ом по `.cs`, `.ts`, `.tsx`).
-Всё ниже выявлено чтением кода.
+Явных маркеров `TODO`/`FIXME`/`HACK` в коде **нет ни одного** (перепроверено grep'ом по `.cs`, `.ts`,
+`.tsx`, включая тестовые проекты). Всё ниже выявлено чтением кода.
 
 ### 5.1 Настоящие заглушки
 
@@ -614,9 +771,18 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 5. **Клиент не видит своих фото.** Фотофиксация работает только внутрь салона: у клиента нет ни
    эндпоинта, ни экрана. Осознанное решение Q5, а не пробел.
 
-6. **Согласия клиента на фотосъёмку в интерфейсе нет.** Ни чекбокса, ни дисклеймера, ни хранения
-   факта согласия. Решение Q6 принято заказчиком осознанно, юридический риск зафиксирован в SPEC;
-   README и `docs/faq.md` про это пишут прямо.
+6. **Согласия клиента на фотосъёмку в интерфейсе по-прежнему нет.** Ни чекбокса, ни дисклеймера, ни
+   хранения факта согласия. Цикл C построил общий правовой контур (§4.14), но фотосъёмку он
+   **не покрывает**: согласие даётся на политику и оферту, отдельного согласия на съёмку нет.
+   Решение Q6 цикла B остаётся в силе, README и `docs/faq.md` про это пишут прямо.
+
+7. ⭐ **Правовые документы — черновик, и приложение это никак не проверяет.** `legal.json` помечен
+   `"isDraft": true`, версии — `2026-09-08-draft`. Fail-fast на `isDraft` в Production **намеренно
+   отсутствует** (решение заказчика: старт с черновиком разрешён), видимость обеспечивается только
+   плашкой в UI и текстом самого документа.
+
+8. ⭐ **`Booking.ClientDeleted` не доведён до интерфейса.** Бэкенд проставляет флаг, он приезжает в
+   DTO и объявлен в TS-типах — и там же заканчивается (см. §5.2).
 
 **Закрыто в цикле B** (эти пункты из прошлой редакции больше не актуальны): загрузка аватара
 (`POST /api/profile/avatar`) и картинки услуги (`POST /api/services/{id}/image`) реализованы —
@@ -641,7 +807,8 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 |---|---|
 | `ServiceBooking.API/appsettings.Production.json.example` + `.env.production.example` | оба описывают один и тот же прод — два разных способа конфигурации (файл vs env), актуален второй (`docker-compose.prod.yml`) |
 | `frontend/design_handoff_site_redesign/` | 10 HTML-макетов редизайна, в сборку не идут |
-| `components/auth/` | пустой каталог |
+| `components/auth/` | пустой каталог (не убран и в цикле C) |
+| ⭐ `Booking.ClientDeleted` во фронтенде | **фактически мёртвый флаг**: единственное упоминание во всём `frontend/src` — объявление поля в `types/index.ts:103` (проверено grep'ом). Ни одна страница его не показывает |
 
 Комментарий в `tailwind.config.js`: legacy-шкала `primary`/`accent` намеренно оставлена перекрашенной
 в новую палитру, чтобы не мигрировать вручную «ещё не перестилизованные» компоненты — то есть часть
@@ -649,7 +816,7 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 
 ### 5.3 Несогласованности бэкенда и фронтенда
 
-Из десяти пунктов прошлой редакции **восемь закрыты** циклами A и B. Что осталось:
+Из десяти пунктов позапрошлой редакции восемь закрыл цикл A/B; цикл C добавил два новых. Что есть сейчас:
 
 1. **`BookingStatus.Pending` фактически недостижим.** Это дефолт сущности, но
    `BookingsController.Create` всегда ставит `Confirmed`. Ни один эндпоинт не выставляет `Pending`.
@@ -665,7 +832,17 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
    но код продублирован.
 
 4. **Типы фронта по-прежнему копируются вручную** (`frontend/src/types/index.ts`), генерации из
-   OpenAPI нет. Именно так и возник разрыв `price`/`companySlug`, который цикл B закрыл.
+   OpenAPI нет. Именно так и возник разрыв `price`/`companySlug`, который цикл B закрыл, и так же
+   «повис» `clientDeleted` (п. выше).
+
+5. ⭐ **Пагинация `GET /api/masters/clients` — единственная из четырёх, которая считается в памяти.**
+   Контроллер материализует весь список клиентов компании, применяет `search` и режет `Skip/Take`
+   там же. Признано приемлемым ревьюером и **прокомментировано в коде**; три остальные выборки
+   (`admin/users`, `admin/companies`, публичные отзывы) пагинируются в SQL.
+
+6. ⭐ **`docs/schedule.md` — единственный файл пользовательской документации, не тронутый циклом C**
+   (последняя правка — 1 сентября). Расписание цикл C не менял, так что расхождения не видно, но
+   стилистически он отстал от остальных семи файлов.
 
 Закрыто (для истории, чтобы не искать заново): фильтр ролей в `GET /api/companies/{id}/masters`;
 права мастера на CRUD услуг; `SubscriptionResolver` теперь проверяет `PlanConfig.IsActive`;
@@ -675,15 +852,23 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 
 ### 5.4 Документация, которая может быть устаревшей
 
-- `API_DOCUMENTATION.md` (~208 КБ) обновлялся в цикле B (последняя правка 2026-09-07) и включает
-  разделы по фото, планировщику и телефону. Отдельно в нём есть §7 «Известные ограничения» — раздел,
+- `API_DOCUMENTATION.md` (~237 КБ) **обновлён в цикле C** коммитом `90a69b1`: в нём есть `/api/legal/*`,
+  `/api/profile/export`, `/api/profile/delete-account`, `/api/health/*`, `acceptedLegal` в регистрации
+  и новый §3.11 про конверт `PagedResult<T>`. Отдельно в нём есть §7 «Известные ограничения» — раздел,
   который стоит перечитывать вместе с §9 этого документа.
-- `SPEC.md`, `ARCHITECTURE.md`, `API_CONTRACT.md` в корне — документы **текущего (B) цикла**, а не
-  постоянные справочники: следующая задача их перезапишет. Соглашения об архиве
-  (`docs/history/`) в репозитории **нет** — предыдущие редакции живут только в git-истории
-  (SPEC цикла A — `git show e6b746c:SPEC.md`, ещё более ранняя — `7c86ca2`).
-- Преамбула `SPEC.md` предупреждает, что писалась против **прошлой** редакции `CURRENT_STATE.md`;
-  после настоящего обновления это предупреждение устарело.
+- ⚠️ ⭐ **`TEST_CATALOG.md` содержит устаревшее замечание о самом себе.** Его последний раздел
+  («Документация, не обновлённая вместе с кодом») утверждает, что `API_DOCUMENTATION.md` в цикле C не
+  тронут ни одной строкой. На момент написания это было правдой — документ обновили **позже**, тем
+  самым `90a69b1`, а замечание не убрали. Единственное найденное расхождение документации с кодом.
+- `SPEC.md`, `ARCHITECTURE.md`, `API_CONTRACT.md` в корне — документы **цикла C**, а не постоянные
+  справочники: следующая задача их перезапишет. Соглашения об архиве (`docs/history/`) в репозитории
+  **нет** — предыдущие редакции живут только в git-истории (SPEC цикла B — `git show 0492092:SPEC.md`,
+  цикла A — `e6b746c`, ещё более ранняя — `7c86ca2`).
+- ⭐ `SPEC_DEFERRED_NOTIFICATIONS.md` и `SPEC_APPENDIX_CHANNELS.md` — **не документы цикла C**, а
+  сохранённая спека **отложенной** темы уведомлений (MAX/SMS). Тема отложена, не отменена; на неё
+  ссылается код (`ProfileController.ChangePhone`).
+- Преамбула `SPEC.md` предупреждает, что писалась против **прошлой** редакции `CURRENT_STATE.md`
+  (`1c21bca` + цикл B); после настоящего обновления это предупреждение устарело.
 
 ---
 
@@ -715,7 +900,9 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
   **Необработанные исключения** (цикл A) вне Development ловит `app.UseExceptionHandler` и отдаёт
   `application/problem+json` с `traceId`; в Development работает developer exception page.
   **402 Payment Required — проектная конвенция для «упёрлись в тариф»** (лимит компаний, лимит
-  сотрудников, online booking, mailing, analytics). **429** — только на четырёх точках загрузки.
+  сотрудников, online booking, mailing, analytics). **429** — загрузки и четыре политики цикла C
+  (см. ниже). **451 Unavailable For Legal Reasons** — «требуется принять новую редакцию документов»
+  (цикл C, `LegalConsentFilter`); фронт обрабатывает его отдельно, разлогинивать пользователя нельзя.
 - **Авторизация — двухуровневая:** атрибут `[Authorize]`/`[Authorize(Roles=...)]` + приватный
   асинхронный предикат внутри контроллера (`CanManageCompany` / `CanManage` / `CanManageBookingAsync`).
   Приватные предикаты остались конвенцией, но их «членская» половина **обязана** идти через
@@ -740,8 +927,42 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
   фоновая уборка; строка, указывающая в никуда, недопустима.
 - **Фоновая работа — только через `IScheduledTask`.** Новая периодическая задача = класс + одна строка
   `AddScoped<IScheduledTask, …>` в `Program.cs`. Свои `BackgroundService`/таймеры заводить не нужно.
+- ⭐ **Пагинация — только через `DTOs/Common/PagedResult.cs`.** Новый список наружу отдаётся конвертом
+  `PagedResult<T>(Items, Page, PageSize, Total, HasNext)`, параметры нормализуются
+  `Pagination.Normalize(page, pageSize)` (`pageSize` по умолчанию 20, потолок 100 — **клампится, а не
+  400**; `page` клампится и снизу, и **сверху**, чтобы `(page-1)*pageSize` не переполнил `int`).
+  Свои `?page=`-раскладки в контроллерах писать нельзя: четыре существующие выборки специально сведены
+  в одну точку.
+- ⭐ **Identity-роли пересчитываются только `Services/IdentityRoleSync.cs`.** Любое изменение
+  `CompanyMember` завершается вызовом `IdentityRoleSync.SyncAsync(db, userManager, userId)` **внутри
+  той же транзакции и строго после `SaveChangesAsync`** (порядок объяснён в XML-комментарии класса).
+  Функция владеет **только** ролями `Master`/`CompanyOwner`; `Client` и `SuperAdmin` не трогает
+  никогда. Сейчас вызывается из пяти операций (`Create`, `AddMember`, `RemoveMember`,
+  `UpdateCompanyOwner` — там дважды, для нового и старого владельца, — и `DeleteAccount`), итого шесть
+  вызовов.
+- ⭐ **Правовой гейт — глобальный фильтр с allow-list, а не атрибут на действии.**
+  `LegalConsentFilter` зарегистрирован как MVC-фильтр на **все** действия; он молчит для анонимных
+  запросов и для явного allow-list (сами правовые эндпоинты, принятие согласия, выгрузка данных).
+  Новый эндпоинт по умолчанию **закрыт** гейтом — это намеренное направление ошибки.
+- ⭐ **Логирование — Serilog, и телефоны в него не попадают.** Хост-логгер заменён целиком
+  (`builder.Host.UseSerilog`), формат — `CompactJsonFormatter` в stdout и в `logs/app-.json`.
+  Маскирование — `Services/LogMasking.cs` + `PhoneMaskingEnricher`; `UseSerilogRequestLogging`
+  отдельно позаботился о том, чтобы `?search=<телефон>` не утёк в строку запроса. Синк в GlitchTip —
+  `Sentry.Serilog`, включается **только** при непустом `Sentry:Dsn`. Осознанные 4xx (400/402/403/404/
+  409/429/451) логируются на уровне Information, а не Warning/Error.
+- ⭐ **Проверки прод-конфигурации — в `Services/DeploymentSafetyChecks.cs`, чистыми статическими
+  методами.** Новую обязательную настройку добавляют туда (и покрывают юнит-тестом), а не отдельным
+  `if` в `Program.cs`.
 - **Телефон — только через `PhoneNormalizer`.** Любая новая точка входа, принимающая номер, обязана
   нормализовать его до записи и до поиска.
+- ⭐ **Rate limiting — именованные политики в `Program.cs` + `[EnableRateLimiting("…")]` на действии.**
+  Глобального лимитера **нет** (`app.UseRateLimiter()` — no-op без атрибута), поэтому «не навесил
+  атрибут» = «лимита нет»; на health-эндпоинтах это сделано намеренно. Пять политик:
+  `uploads` (10/мин на пользователя, четыре точки загрузки), `auth-login` (10/мин на IP),
+  `auth-register` (5/час на IP), `booking-create` (120/час авторизованным, 10/час анонимным),
+  `data-export` (3/сутки). Числа читаются из секции `RateLimits` конфигурации; IP берётся **после**
+  `UseForwardedHeaders` с явным списком `ForwardedHeaders:TrustedNetworks`. Тело ответа 429 пишет
+  `OnRejected` — иначе фронтовым мапперам `*Error.ts` нечего было бы показать.
 - **Комментарии — развёрнутые, объясняющие «почему», на английском.** Это заметная черта кодовой базы:
   почти каждое неочевидное решение прокомментировано абзацем (`Program.cs` про `OnTokenValidated`,
   `SlotService` про `allowWithoutSchedule`, `EffectivePlan.Free` про Free-базлайн). XML-документация
@@ -775,6 +996,15 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 - **Приватные изображения грузятся как blob,** а не через `<img src>`: `hooks/useAuthedImage.ts` +
   `components/ui/AuthedImage.tsx`, `IntersectionObserver` для ленивой загрузки, `staleTime: Infinity`
   в react-query. Публичные картинки (логотип, аватар, картинка услуги) — обычный `<img src>`.
+- ⭐ **Пагинированные списки** рисует общий `components/ui/Pagination.tsx`, поиск по серверу
+  дебаунсится общим `hooks/useDebouncedValue.ts` (см. `MasterClientsPage.tsx` как образец связки
+  «дебаунс → серверный `search` → `PagedResult`»). Скачивание файлов из защищённого API —
+  `hooks/useExportData.ts` (blob + `a[download]`), по тому же принципу, что и приватные картинки.
+- ⭐ **Линтер и форматтер есть:** ESLint 9 (flat-конфиг `frontend/eslint.config.js`,
+  `typescript-eslint`, `eslint-plugin-react`/`react-hooks`/`react-refresh`, `eslint-config-prettier`)
+  и Prettier 3. Команды — `npm run lint` и `npm run format`; `npm run lint` **входит в CI**.
+  На бэкенде аналог — `.editorconfig` в корне (описывает уже сложившийся стиль; в CI не проверяется,
+  §9.20).
 - **Тесты фронта** лежат рядом с кодом (`src/utils/phone.test.ts`,
   `src/components/clientNotes/PhotoGallery.test.tsx`), а не в отдельном каталоге.
   `globals: false` — `describe`/`it`/`expect` импортируются явно, в тон конвенции именованных экспортов.
@@ -794,9 +1024,14 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 ### Git
 
 - Сообщения коммитов — на английском, одна строка-заголовок в повелительном наклонении +
-  развёрнутое тело с объяснением «почему», трейлер `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>`.
-- Появилась вторая ветка: **`sanitation-cycle`** (циклы A и B), `master` — предыдущее состояние.
-  CI триггерится на push в обе и на любой pull request.
+  развёрнутое тело с объяснением «почему», трейлер `Co-Authored-By: Claude …` (в цикле C —
+  `Claude Opus 5`, раньше `Claude Sonnet 5`).
+- Работа идёт в ветке **`sanitation-cycle`** (циклы A, B и C), `master` — предыдущее состояние;
+  в `master` циклы **не вливались**. CI триггерится на push в обе ветки и на любой pull request.
+- Цикл C — **26 коммитов** (`f3adc6e..7a551eb`), в отличие от цикла B, уехавшего одним коммитом
+  `0492092`. Заголовки мелких коммитов несут идентификатор задачи из ARCHITECTURE (`T-B1`, `T-F5`, …)
+  и историю из SPEC (`US-42`), ломающие изменения помечены прямо в заголовке (`BREAKING #1`,
+  `BREAKING #2`). Рабочее дерево чистое.
 
 ---
 
@@ -804,40 +1039,42 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 
 ### Что есть — три набора
 
-В прошлой редакции документа набор был **один**. Сейчас их три, и это разные инструменты
-с разными предусловиями:
-
 | Набор | Проект/каталог | Нужна БД? | Команда | Объём |
 |---|---|---|---|---|
-| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | нет | `dotnet test ServiceBooking.UnitTests` | **115** запусков |
-| **Функциональные (API) тесты** | `ServiceBooking.Tests` | **да, PostgreSQL** | `dotnet test ServiceBooking.Tests` | **344** запуска |
-| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | нет | `npm run test:run` (в `frontend/`) | **35** тестов |
+| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | нет | `dotnet test ServiceBooking.UnitTests` | **204** запуска (было 115) |
+| **Функциональные (API) тесты** | `ServiceBooking.Tests` | **да, PostgreSQL** | `dotnet test ServiceBooking.Tests` | **404** запуска (было 344) |
+| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | нет | `npm run test:run` (в `frontend/`) | **78** тестов (было 35) |
 
-Количества посчитаны статически по атрибутам `[Fact]`/`[Theory]`+`[InlineData]` и вызовам `it(...)`.
+Количества посчитаны статически по атрибутам `[Fact]`/`[Theory]`+`[InlineData]` и вызовам `it(...)`
+и совпадают с фактическим прогоном 2026-09-15.
 
 ### 7.1 Юнит-тесты бэкенда — `ServiceBooking.UnitTests`
 
-Появился в цикле A, вырос в цикле B. **Ни БД, ни HTTP, ни моков** — только чистые функции.
+**Ни БД, ни HTTP, ни моков** — только чистые функции.
 
 - **Фреймворк:** xUnit 2.5.3 + FluentAssertions 6.12.1, `Microsoft.NET.Test.Sdk` 17.8.0,
   `coverlet.collector` 6.0.0. Ссылается напрямую на `ServiceBooking.API`.
-- `ServiceBooking.API.csproj` содержит `<InternalsVisibleTo Include="ServiceBooking.UnitTests" />` —
-  чтобы внутренние чистые помощники `ImageProcessor` (ориентация, кроп, ресайз) тестировались
-  синтетическими битмапами, а не подделкой EXIF-байт.
+- `ServiceBooking.API.csproj` содержит `<InternalsVisibleTo Include="ServiceBooking.UnitTests" />`.
+- Атрибут `[TestCase(...)]` здесь **не используется** — стабильные ID есть только у функционального набора.
 
-| Файл | Что покрывает | `[Fact]` / `[Theory]`(`InlineData`) |
+| Файл | Что покрывает | `[Fact]` + `[InlineData]` |
 |---|---|---|
+| **`DeploymentSafetyChecksTests.cs`** ⭐ | fail-fast прод-конфига: Jwt-ключ, пароль SuperAdmin, приватный корень внутри `wwwroot`, доверенные сети | 6 + 22 = 28 |
+| **`LegalDocumentProviderTests.cs`** ⭐ | чтение и перечитывание `legal.json`, версии, `isDraft`, `changeKind` | 9 + 11 = 20 |
+| **`PaginationTests.cs`** ⭐ | `Pagination.Normalize`: кламп снизу и **сверху** (переполнение `(page-1)*pageSize`), `HasNext` | 7 + 14 = 21 |
+| **`LogMaskingTests.cs`** ⭐ | маскирование телефонов в логах | 5 + 11 = 16 |
+| **`LegalConsentFilterTests.cs`** ⭐ | решение фильтра «требуется ли новое согласие» | 4 |
+| `BookingFiltersTests.cs` | разбор `?status=`, предикат `Upcoming` | 11 + 6 = 17 |
 | `SlotCalculatorTests.cs` | сетка слотов, перерывы, `allowWithoutSchedule`, граница суток | 15 |
 | `ImageProcessorTests.cs` | ресайз, кроп, EXIF, формат вывода | 15 |
-| `BookingFiltersTests.cs` | разбор `?status=`, предикат `Upcoming` | 11 / 2 (6) |
-| `PhoneNormalizerTests.cs` | каноническая форма, валидность | 10 / 2 (12) |
+| `PhoneNormalizerTests.cs` | каноническая форма, валидность | 10 + 12 = 22 |
 | `ScheduledTaskScheduleTests.cs` | `IsDue` / `IsOverdue` | 10 |
 | `SubscriptionResolverRulesTests.cs` | правило разрешения тарифа, включая `PlanConfig.IsActive` | 10 |
-| `PhotoQuotaTests.cs` | окно хранения, `Forever` | 8 / 1 (2) |
+| `PhotoQuotaTests.cs` | окно хранения, `Forever` | 8 + 2 = 10 |
 | `ImageSignatureTests.cs` | определение JPEG/PNG/WEBP по байтам | 7 |
 | `TokenServiceTests.cs` | claims, хеш `SecurityStamp` | 5 |
 | `FileStorageTests.cs` | containment-проверка путей, ключи vs URL | 4 |
-| **Итого** | | **95 + 5 (20) = 115 запусков** |
+| **Итого** | | **204 запуска** |
 
 ### 7.2 Функциональные (API) тесты — `ServiceBooking.Tests`
 
@@ -849,45 +1086,52 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
   `WebApplicationFactory<Program>` (`Infrastructure/CustomWebApplicationFactory.cs`, окружение `Testing`)
   и **реальная PostgreSQL-база** `servicebooking_test`. Моков нет вообще.
 - **Изоляция:** `Infrastructure/TestDatabaseFixture.cs` один раз дропает базу (`EnsureDeletedAsync`),
-  затем старт приложения сам накатывает миграции и сидит роли/SuperAdmin. Все тесты — в одной коллекции
-  `"Api"`, параллелизм отключён (`AssemblyInfo.cs`: `CollectionBehavior(DisableTestParallelization = true)`).
-  Тесты друг за собой не убирают — коллизии исключаются генераторами `Unique*` в `ApiTestBase`.
-- **Строка подключения больше не захардкожена:** берётся из переменной окружения
-  `SERVICEBOOKING_TEST_CONNECTION`, а при её отсутствии — из прежнего литерала
-  `Host=localhost;Database=servicebooking_test;Username=postgres;Password=` (пустой пароль).
-  Именно эту переменную задаёт CI.
+  затем старт приложения сам накатывает миграции и сидит роли/SuperAdmin. Основная коллекция — `"Api"`,
+  параллелизм отключён (`AssemblyInfo.cs`).
+- **Две дополнительные фабрики цикла C** (каждая поднимает **свой** хост поверх той же базы):
+  - ⭐ `Infrastructure/RateLimitTestFactory.cs` — хост с жёсткими лимитами. Основная фабрика в
+    `Testing` поднимает все `RateLimits:*` до 10000/мин именно для того, чтобы остальные сотни тестов
+    никогда не упирались в лимит; тесты `SEC-` про 429 нуждаются в обратном.
+  - ⭐ `Infrastructure/LegalDocumentsTestFactory.cs` — хост, смотрящий на **одноразовую копию**
+    `App_Data/legal`, чтобы `LEG-`-тесты переписывали `legal.json`/HTML прямо на диске (существенная
+    vs редакционная правка, «подменили файл — без пересборки»), не мешая остальным. `ReloadSeconds: 1`,
+    чтобы не спать 30 секунд на каждую смену версии.
+- **Строка подключения:** переменная окружения `SERVICEBOOKING_TEST_CONNECTION`, при её отсутствии —
+  литерал `Host=localhost;Database=servicebooking_test;Username=postgres;Password=` (пустой пароль).
 - **Окружение `Testing`** читает закоммиченный `appsettings.Testing.json`: планировщик фоновых задач
-  **выключен**, лимит загрузок поднят до 1000/мин. Тесты планировщика вызывают задачу напрямую.
-- **Хелперы:** `Infrastructure/ApiTestBase.cs` — `RegisterAsync`, `LoginAsync`,
-  `LoginAsSuperAdminAsync`, `CreateOwnerWithCompanyAsync(...)`, `AddMasterAsync`, сидирование
-  услуг/расписания/подписки. `Infrastructure/JsonHelpers.cs` — обязателен для DTO с enum'ами
-  (сервер отдаёт строки). **`Infrastructure/TestImages.cs`** ⭐ — генерация валидных JPEG/PNG/WEBP и
-  заведомо битых байт для тестов загрузки.
-- **Маркировка:** каждый тест помечен `[Fact, TestCase("PREFIX-NNN")]`
-  (`Infrastructure/TestCaseAttribute.cs`) — стабильный ID для перекрёстных ссылок из `TEST_CATALOG.md`.
-  Поиск теста по ID: `grep -rn "BK-003" ServiceBooking.Tests/`.
+  **выключен**, лимиты загрузок и rate limiting подняты.
+- **Хелперы:** `Infrastructure/ApiTestBase.cs`, `JsonHelpers.cs`, `TestImages.cs`.
+- **Маркировка:** каждый тест помечен `[Fact, TestCase("PREFIX-NNN")]` — стабильный ID для
+  перекрёстных ссылок из `TEST_CATALOG.md`. Поиск теста по ID: `grep -rn "BK-003" ServiceBooking.Tests/`.
 
-| Файл | Префикс | `[Fact]` / `[Theory]`(`InlineData`) |
+| Файл | Префикс | `[Fact]` + `[InlineData]` |
 |---|---|---|
-| `Tests/AuthTests.cs` | `AUTH-` | 12 / 1 (2) |
+| `Tests/CompaniesTests.cs` | `CO-` | 77 + 3 = 80 |
 | `Tests/BookingsFlowSmokeTests.cs` | `BK-` | 54 |
-| `Tests/CompaniesTests.cs` | `CO-` | 77 / 1 (3) |
+| `Tests/AdminTests.cs` | `ADM-` | 42 |
 | `Tests/ServicesTests.cs` | `SVC-` | 19 |
+| `Tests/MastersTests.cs` | `MC-` | 19 |
+| `Tests/ClientNotePhotosTests.cs` | `MC-` (продолжает нумерацию) | 19 |
+| `Tests/ProfileTests.cs` | `PROF-` | 18 |
 | `Tests/WorkingHoursTests.cs` | `WH-` | 17 |
 | `Tests/ScheduleTemplateTests.cs` | `ST-` | 15 |
-| `Tests/MastersTests.cs` | `MC-` | 19 |
-| **`Tests/ClientNotePhotosTests.cs`** ⭐ | `MC-` (продолжает нумерацию `MastersTests`) | 19 |
-| **`Tests/SchedulerTests.cs`** ⭐ | `SCH-` | 9 |
-| `Tests/ReviewsTests.cs` | `RV-` | 11 / 2 (6) |
-| `Tests/MailingTests.cs` | `MAIL-` | 9 |
+| **`Tests/LegalConsentTests.cs`** ⭐ | `LEG-` | 14 |
+| `Tests/AuthTests.cs` | `AUTH-` | 12 + 2 = 14 |
 | `Tests/ReportsTests.cs` | `RPT-` | 13 |
-| `Tests/ProfileTests.cs` | `PROF-` | 18 |
-| `Tests/AdminTests.cs` | `ADM-` | 41 |
-| **Итого** | | **333 + 4 (11) = 344 запуска** |
+| `Tests/ReviewsTests.cs` | `RV-` | 11 + 6 = 17 |
+| **`Tests/DataRightsTests.cs`** ⭐ | `LEG-` (выгрузка и удаление аккаунта) | 10 |
+| `Tests/MailingTests.cs` | `MAIL-` | 9 |
+| `Tests/SchedulerTests.cs` | `SCH-` | 9 |
+| **`Tests/PaginationTests.cs`** ⭐ | `PAG-` | 9 + 5 = 14 |
+| **`Tests/LegalConsentVersionChangeTests.cs`** ⭐ | `LEG-` (смена редакции на живом хосте) | 7 |
+| **`Tests/RateLimitingTests.cs`** ⭐ | `SEC-` | 6 |
+| **`Tests/HealthTests.cs`** ⭐ | `OPS-` | 4 |
+| **`Tests/IdentityRoleSyncTests.cs`** ⭐ | `SEC-` | 4 |
+| **Итого** | | **404 запуска** |
 
-Человекочитаемое описание каждого кейса — в `TEST_CATALOG.md` (~209 КБ, на русском), поддерживается
-в актуальном состоянии вместе с кодом; в нём есть отдельные разделы «Юнит-тесты (без БД)»,
-«ClientNotePhotos (US-17…US-20, цикл B)» и «Scheduler (US-21, цикл B)».
+Человекочитаемое описание каждого кейса — в `TEST_CATALOG.md` (~246 КБ, русский), §10.4.
+**Оговорка про `LEG-036`** (гонка одновременного принятия согласия): сторож **вероятностный** —
+красноту подтверждали на 20 итерациях, в репозиторий закоммичен одиночный прогон (см. §9.10).
 
 ### Как запускать (для QA — базовый прогон)
 
@@ -897,220 +1141,300 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 # База servicebooking_test создаётся/пересоздаётся автоматически (EnsureDeletedAsync на старте).
 
 cd /Users/ikolomeets/RiderProjects/ServiceBooking
-
+dotnet build ServiceBooking.sln -warnaserror   # так же, как в CI
 dotnet test ServiceBooking.UnitTests     # быстрый, без БД — прогонять первым
 dotnet test ServiceBooking.Tests         # основной функциональный набор, нужна БД
 
-cd frontend && npm run test:run          # тесты фронтенда
+cd frontend && npm ci && npm run lint && npx tsc --noEmit && npm run test:run
 ```
 
-Числа последнего фактического прогона (выполнял devops-engineer, не автор этого документа):
-`dotnet build` — **0 warnings / 0 errors**, ~8 с; `ServiceBooking.UnitTests` — **115/115**, ~2 с;
-`ServiceBooking.Tests` — **344/344**, ~65 с; `npm run test:run` — **35/35**, ~1,5 с;
-`tsc --noEmit` — ~2,5 с; `npm run build` — ~3,7 с.
+Числа последнего фактического прогона (2026-09-15, выполнял не автор этого документа):
+`dotnet build … -warnaserror` — **0 warnings / 0 errors**; `ServiceBooking.UnitTests` — **204/204**;
+`ServiceBooking.Tests` — **404/404**; `npm run test:run` — **78/78**; `tsc --noEmit` — чисто;
+`npm run build` — успешно.
 
-В выводе функционального набора шумят предупреждения
-`RequestSizeLimitFilter ... does not support IHttpRequestBodySizeFeature` — ожидаемо:
-`WebApplicationFactory` использует `TestServer`, у которого нет этой фичи; тесты на лимит размера
-файла это учитывают.
+Ожидаемый шум в выводе функционального набора, не являющийся сбоем:
+`RequestSizeLimitFilter ... does not support IHttpRequestBodySizeFeature` (у `TestServer` нет этой
+фичи — тесты на лимит размера это учитывают) и намеренный `DbUpdateException`/FK-нарушение из теста
+на обработку ошибок.
 
 Запуск подмножества:
 ```bash
-dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~BookingsFlowSmokeTests"
+dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 ```
 
-### 7.3 Тесты фронтенда — Vitest ⭐
-
-Появились в цикле B (US-23) — до этого фронт не был покрыт вообще ничем, кроме `tsc`.
+### 7.3 Тесты фронтенда — Vitest
 
 - **Раннер:** Vitest 3.2, окружение `jsdom` 25, `@testing-library/react` 16 + `jest-dom` + `user-event`.
 - **Конфиг:** `frontend/vitest.config.ts` (намеренно отдельный от `vite.config.ts`),
-  `globals: false` (явные импорты `describe`/`it`/`expect`), setup — `src/test/setup.ts`
-  (подключает `jest-dom/vitest` и вручную вызывает `cleanup()` в `afterEach`, т.к. авто-cleanup
-  Testing Library полагается на глобальный `afterEach`, которого при `globals: false` нет).
-- **Что покрыто:** `src/utils/uploadError.test.ts` (14), `src/utils/phone.test.ts` (10),
-  `src/utils/cancelError.test.ts` (6), `src/components/clientNotes/PhotoGallery.test.tsx` (5).
-  Настройка `coverage.include` ограничена `src/utils/**` и `src/components/clientNotes/**` — то есть
-  покрытие меряется только для того, что цикл B и писал.
+  `globals: false` (явные импорты `describe`/`it`/`expect`), setup — `src/test/setup.ts`.
+- **Что покрыто (78):** `utils/uploadError` (14), `utils/phone` (10), `utils/authError` (7) ⭐,
+  `utils/cancelError` (6), `utils/legalError` (6) ⭐, `pages/MasterClientsPage` (6) ⭐,
+  `pages/LegalDocumentPage` (5) ⭐, `components/clientNotes/PhotoGallery` (5),
+  `components/ui/Pagination` (4) ⭐, `components/legal/ConsentGate` (4) ⭐,
+  `components/legal/LegalUpdateBanner` (4) ⭐, `hooks/useDebouncedValue` (4) ⭐,
+  `pages/CompanyPage` (3) ⭐.
+- Впервые появились тесты на **страницы**, а не только на утилиты.
 
 ### Чего в тестах НЕТ
 
-- **Покрытие фронтенда — точечное.** 35 тестов на ~4 500+ строк TSX: покрыты мапперы ошибок,
-  форматирование телефона и одна галерея фото. Сложные модалки бронирования, календарь расписания,
-  вкладочные страницы кабинета — по-прежнему без тестов.
 - **Нет e2e-тестов через браузер.** Ни Playwright, ни Cypress. «Функциональные» здесь = API-уровень.
-- **Нет линтера/форматтера** ни на фронте (ESLint/Prettier), ни на бэке (`.editorconfig` отсутствует).
+  Ближайшее к e2e — `deploy/ci/smoke.sh`: bash + curl против **живого контейнера** (health, регистрация,
+  загрузка аватара), запускается CI-джобом `docker-build`, а не тест-раннером.
+- **Покрытие фронтенда остаётся точечным** — см. §9.13.
+- **Нет ручного стендового чек-листа** как документа (CSP на скачивании выгрузки, живой GlitchTip,
+  «ошибка → письмо») — см. §9 и §10.4.
+- **Нет шага `dotnet format`** (`.editorconfig` есть, ESLint в CI есть) — см. §9.20.
 - Не покрыты: капча с реальным ключом (в `Testing` `SmartCaptcha:SecretKey` пуст → валидация
-  пропускается), реальная загрузка файла на диск в контейнере (см. §9), миграция
-  `NormalizePhoneNumbers` на боевом объёме данных.
+  пропускается), миграции `NormalizePhoneNumbers`/`ResyncIdentityRoles` на боевом объёме данных,
+  сами скрипты `deploy/backup/*`, `deploy/rollback.sh`, `deploy/monitor/*` (bash, тестов нет и
+  вживую не запускались).
 
 ---
 
 ## 8. CI и деплой
 
-### CI — есть ⭐ (`.github/workflows/ci.yml`)
+### CI — есть (`.github/workflows/ci.yml`)
 
-Появился в цикле A, расширен в цикле B. Триггеры: push в `master` и `sanitation-cycle`, **любой**
-pull request. `concurrency` с `cancel-in-progress` — новый push отменяет предыдущий прогон той же ветки.
+Появился в цикле A, расширен в B и C. Триггеры: push в `master` и `sanitation-cycle`, **любой**
+pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `timeout-minutes: 15`.
 
 **Три независимых job'а:**
 
 | Job | Что делает |
 |---|---|
 | `backend` | сервис-контейнер `postgres:16` c health-check; `SERVICEBOOKING_TEST_CONNECTION` указывает на него; кеш `~/.nuget/packages`; `dotnet restore` → **`dotnet build … -c Release -warnaserror`** → `dotnet test ServiceBooking.UnitTests` (быстрый, без БД, идёт первым) → `dotnet test ServiceBooking.Tests` |
-| `frontend` | Node 20 c npm-кешем; `npm ci` → `npx tsc --noEmit` → `npm run test:run` → `npm run build` |
-| **`docker-build`** ⭐ | `docker build -f ServiceBooking.API/Dockerfile -t servicebooking-api:ci .` — образ **не запускается и никуда не пушится**, проверяется только сборка |
+| `frontend` | Node 20 c npm-кешем; `npm ci` → ⭐ **`npm run lint`** (ESLint) → `npx tsc --noEmit` → `npm run test:run` → `npm run build` (с `VITE_SMARTCAPTCHA_SITEKEY` из **переменной репозитория**, не секрета — site-ключ публичен) → ⭐ **выгрузка артефакта `frontend-dist-<sha>`** (только для `master`/`sanitation-cycle`, retention 30 дней) |
+| `docker-build` | ⭐ теперь **не только собирает, но и запускает**: `docker build` → поднимает `postgres:16-alpine` в отдельной docker-сети → запускает образ с `ASPNETCORE_ENVIRONMENT=Production` и полным набором переменных из `DEPLOY.md` → `deploy/ci/smoke.sh` → `docker logs` при любом исходе |
 
-Зачем отдельный `docker-build`: `SkiaSharp.NativeAssets.Linux.NoDependencies` загружается только на
-glibc-базе. Откат Dockerfile на `-alpine` или непубликация нативного ассета прошли бы мимо
-`dotnet build`/`dotnet run` и упали бы только в настоящем контейнере. В самом `ServiceBooking.API/Dockerfile`
-теперь стоит комментарий-предупреждение вверху файла: **не менять тег на `-alpine`** (musl vs glibc),
-а если Alpine всё же понадобится — сначала поменять пакет нативных ассетов SkiaSharp.
+Про `docker-build` важны две вещи, обе записаны комментариями прямо в workflow:
+- **Запуск в `Production` — намеренный.** Это одновременно проверка, что fail-fast
+  (`DeploymentSafetyChecks`) удовлетворяется **ровно тем** набором переменных, который описан в
+  `DEPLOY.md` и `.env.production.example`: добавили новую обязательную переменную и забыли про
+  документацию — job краснеет.
+- **`deploy/ci/smoke.sh` гоняет реальную загрузку изображения** по HTTP в живой контейнер, то есть
+  проверяет, что `SkiaSharp.NativeAssets.Linux.NoDependencies` действительно грузится на glibc-базе
+  и что файл потом реально отдаётся. Ни `dotnet build`, ни `dotnet run` этого поймать не могут.
+  Скрипт запускается и руками: `BASE_URL=http://localhost:5000 deploy/ci/smoke.sh`.
+  В самом `ServiceBooking.API/Dockerfile` вверху стоит предупреждение: **не менять тег на `-alpine`**.
 
-`-warnaserror` включён именно потому, что удалён Blazor-проект, который приносил своё предупреждение.
+Чего в CI нет: `dotnet format --verify-no-changes` (см. §9), сбора покрытия, автодеплоя —
+CI только проверяет и складывает артефакт фронта, деплой запускает человек.
 
-Чего в CI нет: линтера/форматтера (их нет и в проекте), сбора покрытия, публикации артефактов,
-автодеплоя — CI только проверяет, деплой остаётся ручным.
+### Деплой — настроен, задокументирован, с откатом; **вживую не выполнялся**
 
-### Деплой — настроен и задокументирован, ручной по кнопке
+**Целевая среда — Linux VPS (reg.ru), домен `ezbook.ru`.** Runbook: `DEPLOY.md` (~50 КБ, 13 разделов
++ «Если что-то пошло не так»). Windows/IIS-контур (`DEPLOY-windows.md`) **выведен из скоупа цикла C**
+решением заказчика, но из репозитория не удалён (§9.8).
 
-**Целевая среда 1 — Linux VPS (reg.ru), домен `ezbook.ru`.** Runbook: `DEPLOY.md`.
 - `docker-compose.prod.yml`: `postgres` (порт наружу не публикуется) + `api` на `127.0.0.1:5000`,
-  **два** named volume: `api_uploads` → `/app/wwwroot/uploads` (публичный класс) и
-  `api_private_uploads` → `/app/private-uploads` (приватный класс, **персональные данные — бэкапить
-  отдельно**), `Storage__PrivateRoot=/app/private-uploads` задан прямо в compose.
-  Остальные секреты — из `.env` (шаблон `.env.production.example`).
-- `deploy/nginx/ezbook.conf`: раздаёт статику из `/var/www/ezbook/dist`, проксирует `/api/` и
-  `/uploads/` на `127.0.0.1:5000`, `client_max_body_size 6M`. TLS — через `certbot --nginx`.
-  - `/swagger/` **больше не проксируется** — Swagger доступен только в Development, запрос туда
-    падает в SPA-fallback и даёт 404 от React Router.
-  - ⭐ **Анти-clickjacking:** `location /` отдаёт `X-Frame-Options: DENY` и
-    `Content-Security-Policy: frame-ancestors 'none'` (оба `always`), а `location /embed/` вынесен
-    **отдельно и намеренно без этих заголовков** — виджет записи для того и существует, чтобы его
-    встраивали в чужой сайт. Раньше security-заголовков не было вовсе.
-- `deploy/deploy.sh` (запускается локально/из Rider) → ssh → `git pull` → `deploy/deploy-remote.sh`,
-  который делает `docker compose ... up -d --build`, `npm ci && npm run build`, копирует `dist` в
-  `/var/www/ezbook/dist`, `restorecon` (SELinux), `nginx -t && systemctl reload nginx`.
-  Хост берётся из `.deploy.env` (шаблон `.deploy.env.example`, в примере — `root@31.31.197.39`).
+  два named volume — `api_uploads` → `/app/wwwroot/uploads` и `api_private_uploads` →
+  `/app/private-uploads` (**персональные данные, бэкапить отдельно**), плюс ⭐ **bind-mount
+  `./legal:/app/App_Data/legal:ro`** поверх черновика, запечённого в образ: правовые тексты меняются
+  на хосте **без пересборки и без релиза** (`DEPLOY.md` §2.1). Health-check контейнера смотрит на
+  `/api/health/live`, готовность (`ready`) проверяет скрипт деплоя.
+- `deploy/nginx/ezbook.conf`: статика из `/var/www/ezbook/current` (симлинк на релиз), прокси `/api/`
+  и `/uploads/` на `127.0.0.1:5000`, `client_max_body_size 6M`, TLS через `certbot --nginx`.
+  `/swagger/` не проксируется. Заголовки: на уровне `server` — `Strict-Transport-Security`,
+  `X-Content-Type-Options`, `Referrer-Policy`; в `location /` они **повторены намеренно** (nginx не
+  наследует `add_header` между уровнями — об этом есть комментарий прямо в конфиге) плюс
+  `X-Frame-Options: DENY` и полный `Content-Security-Policy` с исключениями под SmartCaptcha и
+  `img-src … blob:` под приватные фото и выгрузку. `location /embed/` вынесен **отдельно и намеренно
+  без анти-фрейминга** — виджет для того и существует, чтобы его встраивали.
+- ⭐ **Деплой больше не собирает фронт на боевом сервере.** `deploy/deploy.sh` (на машине
+  разработчика, требует `gh auth login`) скачивает артефакт `frontend-dist-<sha>`, который CI собрал
+  **для этого же коммита**, кладёт его на VPS новым каталогом `/var/www/ezbook/releases/<ts>/` и
+  вызывает `deploy/deploy-remote.sh`. Тот тегирует текущий образ API как `previous`, запоминает
+  текущий релиз, **атомарно переключает симлинк `current`**, пересобирает и перезапускает контейнер,
+  **ждёт `/api/health/ready`** (а не «контейнер стартовал»), и если готовность не наступила —
+  печатает следующей строкой готовую команду отката.
+- ⭐ **Откат одной командой без аргументов:** `bash deploy/rollback.sh` — возвращает фронт на
+  предыдущий релиз (или на указанный timestamp) и образ API на тег `previous`. Прямо в шапке скрипта
+  записано, чего он **не** делает: **не откатывает миграцию БД** (они применяются на старте и
+  необратимы) — на этот случай в `DEPLOY.md` §8 есть отдельный раздел.
+- ⭐ **Бэкап:** `deploy/backup/backup.sh` + `servicebooking-backup.{service,timer}` — ежесуточный
+  `pg_dump` и снимок обоих файловых хранилищ, **с хоста, а не из контейнера** (должен работать, когда
+  приложение лежит), в `/var/backups/servicebooking` — **вне** docker-томов, чтобы
+  `docker compose down -v` не унёс копии вместе с оригиналом. Хранение: 7 суточных + 4 недельных
+  (воскресные). Перед стартом проверяет свободное место (1,5× от прошлого набора).
+  **Копия локальная, внешней нет** — см. §9.2.
+- ⭐ **Мониторинг:** `deploy/monitor/health-alert.{sh,service,timer}` — systemd-таймер на том же
+  хосте дёргает `/api/health/ready`, после трёх подряд неудач шлёт письмо.
+  `docker-compose.glitchtip.yml` — self-hosted **GlitchTip** (говорит по протоколу Sentry, поэтому
+  синк `Sentry.Serilog` в API менять не нужно): четыре контейнера, отдельный стек со своими
+  postgres/redis, наружу только через nginx. Выбран вместо self-hosted Sentry осознанно (~20
+  контейнеров и 16 ГБ RAM против ~1 ГБ) — обоснование в шапке файла. **Вживую не поднимался.**
 
-**Целевая среда 2 — Windows (VK Cloud) + IIS.** Runbook: `DEPLOY-windows.md`.
-`frontend/public/web.config` попадает в `dist` при сборке и настраивает IIS URL Rewrite + ARR:
-прокси `^api/` и `^uploads/` на `localhost:5000` и SPA-fallback на `index.html`.
-**Анти-iframe-заголовков, которые получил nginx, в Windows-контуре нет** — см. §9.
-Приватный корень хранения на Windows опирается на то, что IIS по умолчанию не отдаёт `App_Data`
-(имя каталога выбрано именно ради паритета двух контуров).
+**Fail-fast прод-конфигурации** живёт теперь в `Services/DeploymentSafetyChecks.cs` (вынесен из
+`Program.cs` ради тестируемости — чистые статические методы, 28 юнит-тестов). В окружении Production
+приложение **не стартует**, если `Jwt:Key` пуст/короче 32 символов/равен плейсхолдеру; если
+`SuperAdmin:Password` пуст или равен `Admin12345`/`CHANGE_ME`; если `Storage:PrivateRoot` резолвится
+внутри `wwwroot`; ⭐ если не настроен `ForwardedHeaders:TrustedNetworks` (иначе rate limiting по IP
+считал бы всех за один адрес docker-бриджа). Предупреждение без падения — `SuperAdmin:Phone` по
+умолчанию. **На `isDraft` в `legal.json` fail-fast намеренно нет** (§9.4).
+`.dockerignore` исключает `appsettings.Development.json` и `appsettings.Production.json`.
 
-**Fail-fast прод-конфигурации** (цикл B, `Program.cs`, до `builder.Build()`): в окружении Production
-приложение **не стартует**, если `Jwt:Key` пуст, короче 32 символов или равен плейсхолдеру; если
-`SuperAdmin:Password` пуст или равен `Admin12345` / `CHANGE_ME`; если `Storage:PrivateRoot` резолвится
-внутри `wwwroot`. Отдельно печатается предупреждение (не падение), если `SuperAdmin:Phone` остался
-`+70000000000`. `.dockerignore` дополнительно исключает `appsettings.Development.json` и
-`appsettings.Production.json`, чтобы локальная сборка образа не запекла в него реальные секреты.
-
-**Секреты:** `.gitignore` исключает `**/appsettings.*.json` (кроме базового), `.env`, `.env.production`,
-`.deploy.env`. В git закоммичен только `ServiceBooking.API/appsettings.json` с плейсхолдерными
-значениями. **Но локально на машине разработчика лежат незакоммиченные
-`appsettings.Development.json` и `appsettings.Production.json` с настоящими секретами**
-(боевой пароль Postgres, JWT-ключ, серверный ключ SmartCaptcha) — их нельзя случайно `git add -f`.
+**Секреты:** `.gitignore` исключает `**/appsettings.*.json` (кроме базового и `Testing`), `.env`,
+`.env.production`, `.deploy.env` и ⭐ `/legal/` (каталог оператора на VPS; в git лежит только
+черновик `ServiceBooking.API/App_Data/legal/`). В git закоммичен только
+`ServiceBooking.API/appsettings.json` с плейсхолдерами. **Но локально на машине разработчика лежат
+незакоммиченные `appsettings.Development.json` и `appsettings.Production.json` с настоящими
+секретами** (боевой пароль Postgres, JWT-ключ, серверный ключ SmartCaptcha) — их нельзя случайно
+`git add -f`.
 
 ---
 
 ## 9. Технический долг и риски (по убыванию приоритета)
 
-Из 23 пунктов прошлой редакции **13 закрыто** циклами A и B — список закрытого приведён в конце
-раздела, чтобы никто не переоткрывал их заново.
+Из 22 пунктов прошлой редакции цикл C закрыл **семь** полностью и три — частично; список закрытого
+приведён в конце раздела, чтобы никто не переоткрывал их заново. Пункты, появившиеся или
+переформулированные в цикле C, помечены ⭐.
+
+**P0 — выглядит готовым, но вживую не проверялось**
+
+Это главный разрыв текущего состояния: цикл C сделал запуск возможным, но **не выполнил** его.
+
+1. ⭐ **Живого деплоя на VPS не было ни разу.** Весь эксплуатационный контур цикла C —
+   `deploy/deploy.sh` (скачивание артефакта CI вместо сборки на сервере), `deploy/rollback.sh`,
+   `deploy/backup/*`, `deploy/monitor/*`, `docker-compose.glitchtip.yml`, security-заголовки
+   `deploy/nginx/ezbook.conf` — написан, вычитан на трёх кругах ревью и задокументирован в `DEPLOY.md`,
+   но **на боевом сервере не выполнялся**. **GlitchTip вживую не поднимался**, цепочка
+   «ошибка в приложении → событие в GlitchTip → письмо» end-to-end **не проверялась**. Единственное,
+   что проверено машинно, — CI собирает образ, запускает его в `Production` и гоняет `deploy/ci/smoke.sh`.
+2. ⭐ **Бэкап только локальный — на той же машине, что и данные.** `deploy/backup/backup.sh` кладёт
+   дампы в `/var/backups/servicebooking` на самом VPS. Это защищает от порчи данных и ошибки
+   оператора и **не защищает от потери или блокировки самого VPS**. Внешняя копия отложена решением
+   заказчика (SPEC R13), ограничение честно записано в самом скрипте, `DEPLOY.md` §10.3 и `README.md`.
+   Тем же свойством страдает алерт: `deploy/monitor/health-alert.sh` крутится на проверяемой машине,
+   и если VPS лёг целиком, алерт не придёт.
+3. ⭐ **CSP на сценарии скачивания выгрузки живьём не проверялся.** `GET /api/profile/export` фронт
+   скачивает как blob с `a[download]` (`hooks/useExportData.ts`), а `location /` в nginx отдаёт
+   строгий `Content-Security-Policy`. Что эта пара уживается, подтверждено только **статическим
+   разбором QA** и согласием ревьюера — ни разу не открывалось в браузере через настоящий nginx.
+   Кандидат №1 в стендовый чек-лист (которого пока нет, §10.4).
+4. ⭐ **Правовые тексты — ЧЕРНОВАЯ редакция, юрист их не вычитывал.**
+   `App_Data/legal/legal.json` содержит `"isDraft": true` и версии `2026-09-08-draft`. Старт с
+   черновиком разрешён решением заказчика **осознанно**, поэтому fail-fast на `isDraft` в
+   Production **намеренно отсутствует** — приложение поднимется с черновиком и молча. Видимость
+   черновика обеспечена только плашкой в UI и первым абзацем самого текста.
 
 **P1 — влияет на безопасность или корректность данных**
 
-1. **Слабые дефолты в закоммиченном `appsettings.json` никуда не делись**
-   (`Jwt:Key = "CHANGE_ME_…"`, `SuperAdmin:Password = "Admin12345"`, `SuperAdmin:Phone = "+70000000000"`),
-   **но теперь они не могут утечь в прод незамеченными**: `Program.cs` в окружении Production
-   падает на старте на каждом из них (кроме телефона — там предупреждение).
-   Остаточный риск: в **не**-Production окружениях (например, стенд, поднятый с
+5. ⭐ **Смена номера телефона не подтверждается ничем, кроме текущего пароля.**
+   `POST /api/profile/change-phone` сразу присваивает новый номер. Риск конкретный: гостевые визиты
+   и заметки о клиенте ищутся по номеру, поэтому, указав чужой номер, можно прочитать чужую
+   гостевую историю. Отложено **до появления SMS-канала**; решение описано в
+   `SPEC_DEFERRED_NOTIFICATIONS.md` (пункт Д-1) и комментарием в `ProfileController.ChangePhone`
+   (строка 151).
+6. **Слабые дефолты в закоммиченном `appsettings.json` никуда не делись**
+   (`Jwt:Key = "CHANGE_ME_…"`, `SuperAdmin:Password = "Admin12345"`, `SuperAdmin:Phone = "+70000000000"`).
+   В цикле C fail-fast вынесен из `Program.cs` в чистый `Services/DeploymentSafetyChecks.cs`
+   (`ValidateSecrets`, `ValidateTrustedNetworksConfigured`) и **покрыт юнит-тестами** (28 запусков),
+   а CI-джоб `docker-build` стартует образ именно в `Production` — то есть проверка теперь сама под
+   тестом. Остаточный риск **прежний**: в **не**-Production окружениях (стенд с
    `ASPNETCORE_ENVIRONMENT=Staging`) проверка не срабатывает вовсе.
-2. **Полное отсутствие работы с часовыми поясами.** `Booking.Date/StartTime/EndTime` — `DateOnly`/`TimeOnly`
-   без TZ; `CreatedAt`/`PaidUntil`/`ScheduledTaskState.*` — `DateTime.UtcNow`. Сроки хранения фото и
-   окна расписания считаются в UTC. `Company.TimeZoneId` **осознанно не заводился** в цикле B (SPEC §8.1):
-   он нужен под напоминания, которых нет. Для мультирегионального SaaS это остаётся источником ошибок
-   «на границе суток».
-3. **Rate limiting покрывает только загрузки.** Политика `uploads` (10/мин на пользователя) висит на
-   четырёх эндпоинтах загрузки изображений. На `/api/auth/login`, `/api/auth/register` и гостевом
-   `POST /api/bookings` — по-прежнему **ничего**: от перебора логина частично защищает Identity lockout
-   (5 попыток / 15 мин), от спама записей — только SmartCaptcha, и только когда ключ задан.
-   Ограничитель `PermitLimit` читается из конфигурации **на каждый запрос** через
-   `ctx.RequestServices.GetRequiredService<IConfiguration>()`.
-4. **Security-заголовки закрыты только частично и только на nginx.** `X-Frame-Options`/`CSP frame-ancestors`
-   добавлены для основного приложения (и намеренно сняты для `/embed/`), но **HSTS, `X-Content-Type-Options`,
-   `Referrer-Policy` и полноценный CSP по-прежнему отсутствуют**. В **Windows/IIS-контуре**
-   (`DEPLOY-windows.md`, `frontend/public/web.config`) анти-iframe-заголовков нет вообще — если этот
-   контур используется в проде, виджет-защита там не работает.
-5. **Юридический риск фотофиксации принят, но не снят.** Фото клиента — персональные данные, фото лица
-   при ряде условий трактуется как биометрия. Согласия в интерфейсе нет (решение Q6), факт согласия не
-   хранится, ответственность переложена на компанию-салон текстом в README/`docs/faq.md`.
-   SPEC явно помечает пункт как «стоит вернуть, если продукт пойдёт в продакшен».
+7. **Полное отсутствие работы с часовыми поясами — подтверждено как решение, а не как упущение.**
+   `Booking.Date/StartTime/EndTime` — `DateOnly`/`TimeOnly` без TZ, всё остальное — `DateTime.UtcNow`.
+   Часовые пояса **осознанно не вводились** в цикле C (US-51); обоснование — в SPEC US-51,
+   эксплуатационное следствие («все контейнеры в UTC») — в `DEPLOY.md` §13 и `README.md`.
+   Для мультирегионального SaaS это остаётся источником ошибок «на границе суток».
+8. **Security-заголовки: Linux-контур закрыт, Windows-контур — нет.** `deploy/nginx/ezbook.conf`
+   теперь отдаёт `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`,
+   `X-Frame-Options: DENY` и полноценный `Content-Security-Policy` (с явными исключениями под
+   SmartCaptcha и `blob:` для приватных фото), причём `location /embed/` намеренно оставлен без
+   анти-фрейминга. В **Windows/IIS-контуре** (`frontend/public/web.config`, `DEPLOY-windows.md`)
+   заголовков нет вообще — этот контур **выведен из скоупа цикла C решением заказчика**, но
+   `DEPLOY-windows.md` из репозитория не удалён, и по нему всё ещё можно развернуть систему без защиты.
+9. **Юридический риск фотофиксации принят, но не снят.** Общий правовой контур появился (§4.14), но
+   **согласия клиента на фотосъёмку в интерфейсе по-прежнему нет** — ни чекбокса, ни дисклеймера, ни
+   хранения факта: решение Q6 цикла B остаётся в силе. Согласие на политику и оферту,
+   которое даёт клиент, фотосъёмку **не покрывает**. Ответственность переложена на компанию-салон
+   текстом в README/`docs/faq.md`.
 
 **P2 — код без тестов, на который многое завязано / хрупкие места**
 
-6. **Фронтенд покрыт точечно.** 35 тестов Vitest на ~7 000 строк TSX + ~1 150 строк TS. Покрыты мапперы ошибок,
-   `formatPhone` и `PhotoGallery`. **Не покрыты**: `BookingModal`, `ManualBookingModal`,
-   `RescheduleModal`, календарь `ScheduleTab`, вкладочные страницы кабинета и админки,
-   `useAuthedImage` (блобы, `IntersectionObserver`, `revokeObjectURL`).
-7. **Docker-образ ни разу не собирался и не запускался вручную в этой среде** (Docker локально нет) —
-   единственная проверка сборки образа сейчас это новый CI-джоб `docker-build`.
-   **Реальная загрузка фото внутри контейнера не проверялась** ни разу: нет smoke-теста
-   «в запущенном контейнере upload возвращает 201». Это существенно именно из-за SkiaSharp — нативная
-   библиотека, которая либо загрузится на glibc-базе, либо нет; юнит- и функциональные тесты идут
-   на хосте разработчика/раннера, а не в образе.
-8. **`CompaniesController` — 571 строка и 16 эндпоинтов**, включая логику подписок, загрузку файлов,
-   квоту фото и целиком сборку статистики (`GetStats`, ~70 строк агрегаций **в памяти** после
-   `ToListAsync()`). Контроллер стал больше, а не меньше.
-9. **Логика прав по-прежнему размазана по приватным копиям** `CanManageCompany`/`CanManage`, хотя их
-   «членская» половина унифицирована через `CompanyMembership`. Коммент в
-   `BookingsController.CanManageBookingAsync` фиксирует, что расхождение уже случалось однажды.
-   `MailingController` до сих пор не переведён на общий хелпер.
-10. **Двухуровневая модель ролей (Identity roles ↔ `CompanyMember.Role`) не синхронизируется в обе стороны.**
-    `AddMember` добавляет Identity-роль, `RemoveMember` — **не убирает** её. Пользователь, удалённый из
-    единственной компании, остаётся с ролью `Master`/`CompanyOwner` в Identity и продолжает проходить
-    `[Authorize(Roles = ...)]`-гейты. Явно оставлено вне цикла B (SPEC §8.2).
-11. **Перечитывание ролей и сверка `SecurityStamp` на каждом запросе** (`Program.cs`, `OnTokenValidated`) —
-    правильное решение с точки зрения безопасности, но это **дополнительный запрос к БД на каждый
-    аутентифицированный вызов** без кеша. Проверка стемпа расход не увеличила (пользователь уже загружен),
-    но сам запрос остался.
-12. **Шаг сетки слотов по-прежнему захардкожен 30 минутами** (`SlotCalculator.StepMinutes`).
-    Логика стала чистой и покрыта юнит-тестами, но настраиваемости нет: услуга длительностью 45 минут
-    предлагается в 30-минутной сетке.
-13. **Пагинации нет нигде.** `admin/users` (с N+1 по ролям), `admin/companies`, публичные отзывы
-    компании, база клиентов мастера. Заметки ограничены 50 на клиента, `admin/bookings` — `Take(500)`,
-    фото — 5 на заметку, но это точечные заглушки, а не общее решение. Явно отложено (SPEC §8.2).
-14. **Миграция `NormalizePhoneNumbers` необратима и не проверялась на реальных данных.** Она удаляет
-    аккаунты-дубли и переназначает их заметки/отзывы/журналы. Сейчас это безопасно (боевых данных нет),
-    но повторно применить её к живой базе будет нельзя.
+10. ⭐ **Сторож гонки согласия — вероятностный.** Тест `LEG-036` (`LegalConsentTests.cs`) ловит гонку
+    «одновременное принятие согласия», и его красноту подтверждали **на 20 итерациях**, а в репозиторий
+    закоммичен **одиночный прогон**. То есть зелёный LEG-036 в CI не доказывает отсутствия регрессии —
+    он лишь не поймал её в этот раз.
+11. ⭐ **`Booking.ClientDeleted` фактически мёртв в UI.** Бэкенд проставляет флаг при удалении
+    аккаунта, он доезжает до фронта и объявлен в `frontend/src/types/index.ts` (строка 103) — и это
+    **единственное** его упоминание во всём фронтенде (проверено grep'ом). Ни одна страница его не
+    отображает: персонал не видит, что клиент удалился.
+12. ⭐ **Пагинация `GET /api/masters/clients` работает в памяти.** Контроллер материализует весь
+    список клиентов компании, фильтрует по `search` и режет `Skip/Take` там же, а не в SQL.
+    Признано приемлемым ревьюером (список ограничен одной компанией) и **задокументировано
+    комментарием в коде** — но с ростом базы клиентов это первый кандидат на деградацию.
+    Остальные три выборки (`admin/users`, `admin/companies`, публичные отзывы) пагинируются в БД.
+13. **Фронтенд покрыт точечно.** 78 тестов Vitest на ~8 000 строк TSX. Покрыты мапперы ошибок,
+    `formatPhone`, `PhotoGallery`, `Pagination`, `useDebouncedValue`, правовой контур
+    (`ConsentGate`, `LegalUpdateBanner`, `LegalDocumentPage`) и по одному тесту на `CompanyPage` и
+    `MasterClientsPage`. **Не покрыты**: `BookingModal`, `ManualBookingModal`, `RescheduleModal`,
+    календарь `ScheduleTab`, вкладочные страницы кабинета и админки, `DeleteAccountPage`,
+    `useExportData`, `useAuthedImage`.
+14. **`CompaniesController` — 635 строк** (было 571) и 16 эндпоинтов, включая логику подписок,
+    загрузку файлов, квоту фото и целиком сборку статистики (`GetStats`, ~70 строк агрегаций
+    **в памяти** после `ToListAsync()`). Контроллер продолжает расти.
+15. **Логика прав по-прежнему размазана по приватным копиям** `CanManageCompany`/`CanManage`, хотя их
+    «членская» половина унифицирована через `CompanyMembership`. `MailingController` **до сих пор**
+    не переведён на общий хелпер — единственное оставшееся исключение.
+16. **Перечитывание ролей и сверка `SecurityStamp` на каждом запросе** (`Program.cs`,
+    `OnTokenValidated`) — дополнительный запрос к БД на каждый аутентифицированный вызов без кеша.
+    Цикл C добавил туда же чтение состояния согласия (claim'ы `consent_*` сверяются с актуальной
+    версией документа), то есть путь на каждом запросе стал длиннее, а не короче.
+17. **Шаг сетки слотов по-прежнему захардкожен 30 минутами** (`SlotCalculator.StepMinutes`).
+18. **Миграция `NormalizePhoneNumbers` необратима и не проверялась на реальных данных.** Сейчас это
+    безопасно (боевых данных нет), но повторно применить её к живой базе будет нельзя.
+    Рядом появилась вторая миграция с данными — `ResyncIdentityRoles`, у неё **`Down` — no-op**
+    (осознанно: откат пересчёта ролей бессмыслен).
+19. **Ограничитель `PermitLimit` читается из конфигурации на каждый запрос** через
+    `ctx.RequestServices.GetRequiredService<IConfiguration>()` — приём из цикла B сохранён и
+    распространён на четыре новые политики.
 
 **P3 — эксплуатация, гигиена, недоделки**
 
-15. **Деплой — bash + ssh + `git pull` на проде.** Нет отката, нет проверки версии, нет health-check
-    после рестарта; фронт собирается **на боевом сервере** (`npm ci && npm run build`), т.е. сбой сборки
-    оставит систему в промежуточном состоянии. CI ничего не деплоит.
-16. **Фичи, выглядящие готовыми в UI, но не работающие по сути:** «Рассылка» (писем нет — и текст
+20. ⭐ **Шага `dotnet format` в CI нет.** `.editorconfig` появился (US-50) и **описывает уже
+    существующий стиль**, а не задаёт новый, но `dotnet format --verify-no-changes` в CI не добавлен:
+    сухой прогон даёт несколько сотен предсуществующих расхождений по переносам (в основном в
+    `ServiceBooking.Tests`). Массовое переформатирование отложено отдельным коммитом — причина
+    записана комментарием в шапке самого `.editorconfig`. ESLint в CI, наоборот, **добавлен**
+    (`npm run lint` отдельным шагом).
+21. **Устаревшие зависимости фронта с известными уязвимостями (`axios`, `form-data`, `react-router`)
+    не закрыты.** Версии в `frontend/package.json` те же, что и до цикла C (`axios ^1.7.7`,
+    `react-router-dom ^6.26.2`); `npm audit fix` закрывает часть без мажора, `react-router` требует
+    мажорного апгрейда.
+22. **Фичи, выглядящие готовыми в UI, но не работающие по сути:** «Рассылка» (писем нет, текст
     «Рассылка поставлена в очередь» **осознанно оставлен вводящим в заблуждение**, решение Q9),
-    предоплата (платежей нет), `NotifyDaysBefore` в редакторе тарифов (уведомлений нет).
-    Обещание «напоминание накануне визита» на главной (`HomePage.tsx`) тоже оставлено намеренно (Q8).
-    README и `docs/faq.md` про это пишут честно — интерфейс нет.
-17. **Устаревшие зависимости фронта** (axios, form-data, react-router с известными уязвимостями) —
-    обновление явно отложено (SPEC §8.2): `react-router` требует мажорного апгрейда.
-18. **Нет линтера и форматтера.** Ни `.editorconfig`, ни ESLint/Prettier, ни шага в CI. Стиль держится
-    на дисциплине и code-review.
-19. **`frontend/design_handoff_site_redesign/`** (10 HTML-файлов макетов) лежит внутри `frontend/`, попадая
-    в область `tsconfig`-исключений только за счёт `include: ["src"]`; в сборку не идёт, но и к коду не относится.
-20. **Локальные загруженные файлы не воспроизводимы на чистом клоне.** `wwwroot/uploads/**` и
+    предоплата (платежей нет), `NotifyDaysBefore` в редакторе тарифов (уведомлений нет), обещание
+    «напоминание накануне визита» на `HomePage.tsx` (Q8). README и `docs/faq.md` про это пишут
+    честно — интерфейс нет.
+23. **Локальные загруженные файлы не воспроизводимы на чистом клоне.** `wwwroot/uploads/**` и
     `App_Data/private-uploads/**` — в `.gitignore`; на машине разработчика в приватном каталоге лежат
     ~36 папок компаний с реальными JPEG. На свежем клоне ссылки из дампа БД будут битыми.
-21. **Валидация DTO неполна** (`Slug`, `Bio`, `Comment`, `SendMailDto.Message`), нет запрета удалять
-    последнего владельца, нет проверки статуса в `MarkPaid` — явно отложено как некритичное (SPEC §8.2).
-22. **Пустой каталог `frontend/src/components/auth/`** и два `.example`-файла прод-конфига, описывающих
-    один и тот же прод двумя способами.
+24. **Валидация DTO неполна** (`Slug`, `Bio`, `Comment`, `SendMailDto.Message`), нет запрета удалять
+    последнего владельца, нет проверки статуса в `MarkPaid` — явно отложено как некритичное.
+25. **`frontend/design_handoff_site_redesign/`** (10 HTML-макетов) лежит внутри `frontend/`, в сборку
+    не идёт; **пустой каталог `frontend/src/components/auth/`** всё ещё на месте; два `.example`-файла
+    прод-конфига (`ServiceBooking.API/appsettings.Production.json.example` и `.env.production.example`)
+    описывают один и тот же прод двумя способами, актуален второй.
 
-**Закрыто циклами A и B** (не переоткрывать без причины): права мастера на CRUD услуг;
+**Закрыто циклом C** (не переоткрывать без причины):
+отсутствие политики конфиденциальности, пользовательского соглашения и записи согласия;
+отсутствие прав субъекта данных (выгрузка и удаление аккаунта);
+rate limiting только на загрузках — теперь закрыты вход, регистрация, гостевая запись и выгрузка;
+доверие `X-Forwarded-For` без списка доверенных сетей;
+отсутствие структурированного логирования и трекера ошибок (Serilog + маскирование телефонов +
+Sentry-совместимый синк) и отсутствие health-эндпоинтов;
+односторонняя синхронизация Identity-ролей (`RemoveMember` не снимал роль) — закрыто
+`IdentityRoleSync` + миграцией данных;
+отсутствие пагинации на четырёх выборках и N+1 по ролям в `admin/users`;
+отсутствие бэкапа, отката и security-заголовков в Linux-контуре как таковых;
+«образ ни разу не запускался» — CI-джоб `docker-build` теперь **запускает** контейнер и гоняет
+`deploy/ci/smoke.sh`, включая реальную загрузку изображения (то есть загрузку SkiaSharp внутри образа);
+сборка фронта на боевом сервере — перенесена в CI-артефакт;
+отсутствие `.editorconfig` и линтера на фронте.
+
+**Закрыто циклами A и B** (для истории): права мастера на CRUD услуг;
 `GET /api/workinghours` без проверки принадлежности; публичный `GET /api/bookings/occupied`;
 обход гейтов через `guestName` и `manual=true`; Swagger в Production; отсутствие глобальной обработки
 исключений; `SubscriptionResolver` и `PlanConfig.IsActive`; комиссия, привязанная к аккаунту, а не к
@@ -1124,21 +1448,21 @@ Blazor-проект и мёртвые страницы фронта; расхо�
 ## 10. Что уже существует в документации и тест-кейсах
 
 Раздел нужен, чтобы следующие агенты **дополняли существующее, а не заводили параллельные версии**.
-Всё перечисленное лежит в репозитории и обновлялось в цикле B.
+Всё перечисленное лежит в репозитории и обновлялось в цикле C.
 
 ### 10.1 Краткая продуктовая документация
 
 | Что | Путь | Формат | Структура |
 |---|---|---|---|
-| Обзор продукта | `README.md` | Markdown, русский | «О проекте» → «Для кого» / «Роли» → **«Что умеет»** (маркированный список функций) → **«Чего пока нет»** (честный список отсутствующего: платежи, письма, уведомления, самостоятельная оплата тарифа, клиентский просмотр фото, согласие на съёмку) → ссылка на `docs/README.md` |
-| Changelog | `CHANGELOG.md` | Markdown, русский, по мотивам Keep a Changelog | **По датам завершения цикла, самая свежая запись сверху**; номеров версий в проекте нет. Верхняя запись — `## 2026-09-07 — фото к работе мастера и доводка начатого`, внутри подразделы «Появилось новое», «Изменилось», и т.п. |
+| Обзор продукта | `README.md` (~19 КБ) | Markdown, русский | `## О проекте` (внутри жирными врезками «Для кого», «Роли», **«Что умеет»**, **«Чего пока нет»** — честный список отсутствующего: платежи, письма, уведомления, самостоятельная оплата тарифа, клиентский просмотр фото, согласие на съёмку) → **`## Запуск`** (`### Локально, всё в Docker`, `### Локально, без Docker для API`, `### Переменные окружения и секреты`, `### CI`, `### Деплой`). В цикле C README вырос эксплуатационной половиной: врезки «Бэкапы» (и прямо — что копия локальная) и «Часовые пояса» (UTC везде) |
+| Changelog | `CHANGELOG.md` (~49 КБ) | Markdown, русский, по мотивам Keep a Changelog | **По датам завершения цикла, самая свежая запись сверху**; номеров версий в проекте нет. Верхняя запись — `## 2026-09-15 — подготовка к запуску для реальных людей`, внутри подразделы «Появилось новое», «Изменилось» и т.п. Запись открыто говорит, что сервис **не запущен** и живого развёртывания не было |
 
 GitHub Releases / wiki в проекте не используются.
 
 ### 10.2 Развёрнутая пользовательская документация
 
 Каталог **`docs/`**, Markdown, русский, **разбита по ролям**, точка входа — `docs/README.md`
-с таблицей «кто вы → с чего начать».
+с таблицей «кто вы → с чего начать» и разделом «Что нового» со ссылкой на `CHANGELOG.md`.
 
 | Файл | О чём |
 |---|---|
@@ -1148,44 +1472,59 @@ GitHub Releases / wiki в проекте не используются.
 | `docs/owner.md` | кабинет владельца компании |
 | `docs/admin.md` | администрирование платформы |
 | `docs/accounts.md` | общая: аккаунт, телефон как логин, смена пароля/номера |
-| `docs/schedule.md` | общая: расписание, перерывы, расчёт свободного времени |
+| **`docs/personal-data.md`** ⭐ (~16 КБ, цикл C) | общая: правовые документы и **плашка «Черновая редакция»**, согласие при регистрации, что происходит при редакционной и существенной правке, «Скачать свои данные», «Удалить аккаунт» (что удаляется, что остаётся, освобождение телефона, почему владелец компании так удалиться не может, что делать, если аккаунта нет) |
+| `docs/schedule.md` | общая: расписание, перерывы, расчёт свободного времени (единственный файл `docs/`, не тронутый циклом C) |
 | `docs/faq.md` | частые вопросы **и честный список ограничений** |
 
-Отдельного сайта документации и справочного раздела внутри приложения **нет**.
+Отдельного сайта документации и справочного раздела внутри приложения **нет**. Внутри приложения
+пользователю доступны только сами правовые документы — страницы `/privacy` и `/terms`.
 
 ### 10.3 Документация API для внешних потребителей
 
 | Что | Путь | Формат | Структура |
 |---|---|---|---|
-| Справочник эндпоинтов | `API_DOCUMENTATION.md` (~208 КБ) | Markdown, русский | §1 Обзор → §2 Аутентификация → §3 Ключевые бизнес-концепции → **§4 Справочник эндпоинтов** (основной объём) → §5 Сквозные сценарии (curl-рецепты) → §6 … → **§7 Известные ограничения** |
-| Контракт текущего цикла | `API_CONTRACT.md` (~61 КБ) | Markdown, русский | документ **цикла B**: контракт новых/изменённых эндпоинтов, коды ошибок, тела ответов |
+| Справочник эндпоинтов | `API_DOCUMENTATION.md` (~237 КБ) | Markdown, русский | §1 Обзор → §2 Аутентификация → §3 Ключевые бизнес-концепции (появился **§3.11 «Конверт `PagedResult<T>`»**) → **§4 Справочник эндпоинтов** (основной объём) → §5 Сквозные сценарии (curl-рецепты) → §6 Справочник кодов ответа → **§7 Известные ограничения**. Обновлён в цикле C коммитом `90a69b1`: `/api/legal/*`, `/api/profile/export`, `/api/profile/delete-account`, `/api/health/*`, `acceptedLegal` в регистрации, пагинация |
+| Контракт текущего цикла | `API_CONTRACT.md` (~51 КБ) | Markdown, русский | документ **цикла C**: контракт новых/изменённых эндпоинтов, коды ошибок (включая 451), тела ответов |
 
 **OpenAPI/Swagger-файла в репозитории нет** — схема генерируется Swashbuckle во время работы и
 доступна только в Development (`/swagger`). Postman-коллекции нет. Генерации TS-типов из схемы нет.
 
 ### 10.4 Описания тест-кейсов
 
-**`TEST_CATALOG.md`** (~209 КБ), Markdown, русский — человекочитаемое описание **каждого**
+**`TEST_CATALOG.md`** (~246 КБ), Markdown, русский — человекочитаемое описание **каждого**
 автоматизированного кейса, отдельно от самого кода тестов.
 
 - Структура: «Как устроены ссылки на тесты» → «Префиксы по доменам» → **«Юнит-тесты (без БД)»** →
   далее раздел на домен (`Auth`, `Bookings`, `Companies`, `Services`, `WorkingHours`,
-  `ScheduleTemplate`, `Reviews`, `Mailing`, `Masters`, **`ClientNotePhotos (US-17…US-20, цикл B)`**,
-  **`Scheduler (US-21, цикл B)`**, `Admin`, `Profile`, `Reports`).
+  `ScheduleTemplate`, `Reviews`, `Mailing`, `Masters`, `ClientNotePhotos (цикл B)`, `Scheduler (цикл B)`,
+  `Admin`, `Profile`, `Reports`) и разделы цикла C: **`Legal (US-36…US-39)`**,
+  **`Security / Rate limiting (US-42, US-46)`**, **`Health (US-43)`**, **`Pagination (US-49)`**,
+  **«Регрессии продукта, найденные QA при разборе следствий пагинации — ЗАКРЫТЫ»**.
+- Разделы цикла C помечены «найдено QA» — функциональные тесты правового контура, rate limiting,
+  health и пагинации писал QA, а не разработчики.
 - Связь с кодом — через стабильный ID из атрибута `[TestCase("PREFIX-NNN")]`.
   Поиск кейса по ID: `grep -rn "BK-003" ServiceBooking.Tests/`.
-- Каталог поддерживается в актуальном состоянии **вместе с кодом**: последняя правка — 2026-09-07.
+- ⚠️ **Последний раздел каталога — «Документация, не обновлённая вместе с кодом» — устарел.** Он
+  утверждает, что `API_DOCUMENTATION.md` не тронут в цикле C ни одной строкой. На момент написания
+  раздела это было правдой; документ обновили позже, коммитом `90a69b1` (см. §10.3). Само замечание
+  из каталога не убрали.
 
 Отдельного `TESTPLAN.md`, каталога `docs/testing/` или ручных сценариев вне `TEST_CATALOG.md`
-в проекте **не найдено**.
+в проекте **не найдено**. Ручной стендовый чек-лист (CSP на скачивании выгрузки, живой GlitchTip,
+цепочка «ошибка → письмо») как документ **не существует** — эти проверки перечислены только в §9
+этого файла и в отчёте QA.
 
 ### 10.5 Документы цикла работ
 
-`SPEC.md` (~147 КБ), `ARCHITECTURE.md` (~138 КБ), `API_CONTRACT.md` — **документы текущего (B) цикла**,
-не постоянные справочники. `SPEC.md` содержит §0 «Решения заказчика» (Q5–Q18), §4–§7 истории с
-критериями приёмки, §8 границу цикла (в т.ч. §8.2 «что откладывается и почему») и приложение А
-(целиком сохранённое исследование по MAX).
+| Документ | Размер | Что это |
+|---|---|---|
+| `SPEC.md` | ~139 КБ | **цикл C** «готовность к продакшену», редакция 2 (решения заказчика внесены в §0). Истории US-36…US-52, §2.3 сквозной порядок работ, §2.4 порядок урезания |
+| `ARCHITECTURE.md` | ~135 КБ | **цикл C**. Ключевые ссылки, на которые ссылается код: §4 правовые документы, §5 модель согласий, §6.3 451 и claim'ы, §7.3/§7.4/**§19.2** (почему удаление аккаунта — надгробие, а не `DELETE`), §8 IdentityRoleSync, §9 ForwardedHeaders, §10 health, §11 логирование и GlitchTip, §12 деплой/бэкап/откат, §15.1 пагинация, §17.1/§18.2 стиль |
+| `API_CONTRACT.md` | ~51 КБ | **цикл C**, см. §10.3 |
+| **`SPEC_DEFERRED_NOTIFICATIONS.md`** ⭐ | ~90 КБ | SPEC **отложенного** цикла уведомлений клиенту по телефону (MAX/SMS). Тема **отложена решением заказчика, не отменена**. Здесь же живёт пункт **Д-1 «Подтверждение нового номера телефона при смене»**, на который ссылается комментарий в `ProfileController.ChangePhone` |
+| **`SPEC_APPENDIX_CHANNELS.md`** ⭐ | ~57 КБ | приложение к нему: исследование каналов доставки |
 
-**Соглашения об архиве (`docs/history/`) в репозитории нет**, каталога такого нет.
-Предыдущие редакции живут только в git-истории: SPEC цикла A — `git show e6b746c:SPEC.md`,
-ещё более ранняя редакция — `7c86ca2`.
+**Соглашения об архиве (`docs/history/`) в репозитории по-прежнему нет**, каталога такого нет, в
+README оно не описано — поэтому документы цикла C **оставлены в корне**, а не перенесены.
+Предыдущие редакции живут только в git-истории: SPEC цикла B — `git show 0492092:SPEC.md`,
+цикла A — `git show e6b746c:SPEC.md`, ещё более ранняя — `7c86ca2`.
