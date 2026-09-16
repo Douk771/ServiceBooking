@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
-# Runs on YOUR machine (or from Rider's Run Configuration — see DEPLOY.md §9).
+# Runs on YOUR machine (or from Rider's Run Configuration — see DEPLOY.md §9.5), as a manual fallback
+# to the GitHub Actions "push the button" workflows (deploy-staging.yml / deploy-production.yml,
+# DEPLOY.md §9.1-9.4), which are the primary way to deploy now.
+#
 # Pulls the frontend `dist` that CI already built for the commit being deployed (T-D3, US-44,
 # ARCHITECTURE.md §12.3 — the build no longer happens on the production server at all), ships it to the
-# VPS as a new timestamped release, then SSHes in to run deploy-remote.sh (which switches the release
-# symlink, rebuilds the API container, and waits for readiness).
+# target machine as a new timestamped release, then runs the deploy there — over the SAME restricted,
+# forced-command SSH key as the GitHub Actions workflows use (DEPLOY.md §1.4), not a separate
+# unrestricted one: SSH_HOST in .deploy.env should be `ezbookdeploy@<host>`, using the private half of
+# the key whose public half is in ezbookdeploy's authorized_keys with `command=...` (§1.4 step 4).
+# Because that key only accepts a fixed allowlist of commands (see deploy/ssh-deploy-wrapper.sh), this
+# script talks to the box the same way the GitHub Actions workflows do (`upload-release`, `deploy`),
+# not with arbitrary mkdir/scp/git commands — those would just be ignored by the forced command.
 #
 # Requires the GitHub CLI (`gh`), authenticated once with `gh auth login` — needed only on the machine
-# that runs this script, not on the VPS.
+# that runs this script, not on the target machine.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +32,6 @@ if [ -z "${SSH_HOST:-}" ]; then
 fi
 command -v gh >/dev/null 2>&1 || { echo "gh (GitHub CLI) is required — https://cli.github.com, then \`gh auth login\`." >&2; exit 1; }
 
-REMOTE_DIR="${REMOTE_DIR:-/opt/ezbook/app}"
 SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 SHORT_SHA="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
@@ -47,8 +54,7 @@ gh run download "$RUN_ID" -n "frontend-dist-$SHA" -D "$TMP_DIST"
 [ -f "$TMP_DIST/index.html" ] || { echo "ERROR: downloaded artifact has no index.html — something's wrong with the build." >&2; exit 1; }
 
 echo "==> Shipping release $RELEASE_TS to $SSH_HOST"
-ssh "$SSH_HOST" "mkdir -p /var/www/ezbook/releases/$RELEASE_TS"
-scp -rq "$TMP_DIST"/. "$SSH_HOST:/var/www/ezbook/releases/$RELEASE_TS/"
+tar -C "$TMP_DIST" -czf - . | ssh "$SSH_HOST" "upload-release $RELEASE_TS"
 
-echo "==> Deploying on $SSH_HOST ($REMOTE_DIR) ..."
-ssh "$SSH_HOST" "cd $REMOTE_DIR && git fetch --quiet && git checkout --quiet $SHA && bash deploy/deploy-remote.sh $RELEASE_TS"
+echo "==> Deploying commit $SHORT_SHA as release $RELEASE_TS on $SSH_HOST ..."
+ssh "$SSH_HOST" "deploy $SHA $RELEASE_TS"

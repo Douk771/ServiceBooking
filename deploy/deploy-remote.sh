@@ -58,8 +58,14 @@ echo "==> Frontend: switching release symlink"
 ln -sfn "$NEW_RELEASE_DIR" "$WEB_ROOT/current.tmp"
 mv -Tf "$WEB_ROOT/current.tmp" "$CURRENT_LINK"   # atomic rename(2) — no half-switched state (US-44 п.4)
 command -v restorecon >/dev/null 2>&1 && restorecon -R "$WEB_ROOT" >/dev/null || true
-nginx -t
-systemctl reload nginx
+# `sudo` here is intentional and load-bearing, not a leftover: this script runs as the unprivileged
+# `ezbookdeploy` deploy user (see DEPLOY.md §1.4/§9), which owns /var/www/ezbook and is in the `docker`
+# group but does NOT have a shell login or broad sudo — only these two exact commands, granted via
+# /etc/sudoers.d/ezbook-deploy (NOPASSWD, no wildcard). If you see "sudo: a password is required" here,
+# the sudoers file on this box doesn't match what DEPLOY.md §1.4 documents — fix the sudoers file, don't
+# drop the `sudo` from this script.
+sudo /usr/sbin/nginx -t
+sudo /usr/bin/systemctl reload nginx
 echo "    now serving: $RELEASE_TS"
 
 echo "==> Backend: rebuild and restart containers"

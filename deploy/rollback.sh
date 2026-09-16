@@ -37,8 +37,10 @@ echo "==> Frontend: switching release symlink back to $TARGET_RELEASE_DIR"
 ln -sfn "$TARGET_RELEASE_DIR" "$WEB_ROOT/current.tmp"
 mv -Tf "$WEB_ROOT/current.tmp" "$CURRENT_LINK"
 command -v restorecon >/dev/null 2>&1 && restorecon -R "$WEB_ROOT" >/dev/null || true
-nginx -t
-systemctl reload nginx
+# See the same comment in deploy-remote.sh: this runs as the unprivileged `ezbookdeploy` user, `sudo`
+# is scoped to exactly these two commands via /etc/sudoers.d/ezbook-deploy (DEPLOY.md §1.4).
+sudo /usr/sbin/nginx -t
+sudo /usr/bin/systemctl reload nginx
 echo "    now serving: $(basename "$TARGET_RELEASE_DIR")"
 
 echo "==> Backend: reverting to previous image (no rebuild)"
