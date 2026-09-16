@@ -101,7 +101,9 @@ jobs:
       # npm run build` on the box being served from. 30-day retention matches the number of recent
       # releases anyone would plausibly want to roll back to by hand.
       - name: Upload frontend dist
-        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/sanitation-cycle'
+        # Ветки, с которых вообще деплоят (см. модель веток в DEPLOY.md). deploy/deploy.sh
+        # скачивает этот артефакт по имени, так что ветка без него ломает локальный деплой.
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/release-candidate' || github.ref == 'refs/heads/develop'
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist-${{ github.sha }}

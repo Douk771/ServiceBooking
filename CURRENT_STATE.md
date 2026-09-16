@@ -1,11 +1,16 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `7a551eb`, дата: 2026-09-15.**
+**Актуально по состоянию на коммит: `6369266`, дата: 2026-09-17.**
 
 Документ описывает **что есть в репозитории сейчас**, без предложений по развитию.
 
-Точка отсчёта. Ветка — `sanitation-cycle`, HEAD — `7a551eb`, **рабочее дерево чистое: всё
-закоммичено**. Это отличие от прошлой редакции документа, где цикл 2 целиком лежал незакоммиченным и
+Точка отсчёта. Ветка — **`develop`**, HEAD — `6369266`, **рабочее дерево чистое: всё
+закоммичено**. Ветка сменилась после цикла 3: команда перешла на модель `master` ←
+`release-candidate` ← `develop` ← `cycle/NN-<слаг>` (см. §0.0 DEPLOY.md), `develop` стал
+интеграционным стволом и содержит циклы 1-3, а `sanitation-cycle` сохранён как есть и дублирует
+`cycle/03-production-readiness`. После `7a551eb` в `develop` легло ещё **14 коммитов**: переход на
+модель веток, адаптация раннбука под Ubuntu, деплой по кнопке из GitHub Actions и блок исправлений
+по находкам CI (раздача `/uploads`, `.dockerignore`, проверки корней хранения). Это отличие от прошлой редакции документа, где цикл 2 целиком лежал незакоммиченным и
 приходилось оговаривать, что часть описанного в git ещё не попала. Сейчас такой оговорки не нужно.
 
 Диапазон изменений с прошлой редакции (`1c21bca` + рабочее дерево цикла 2): цикл 2 закоммичен
@@ -1039,8 +1044,13 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 - Сообщения коммитов — на английском, одна строка-заголовок в повелительном наклонении +
   развёрнутое тело с объяснением «почему», трейлер `Co-Authored-By: Claude …` (в цикле 3 —
   `Claude Opus 5`, раньше `Claude Sonnet 5`).
-- Работа идёт в ветке **`sanitation-cycle`** (циклы 1, 2 и 3), `master` — предыдущее состояние;
-  в `master` циклы **не вливались**. CI триггерится на push в обе ветки и на любой pull request.
+- Работа идёт в ветке **`develop`** — интеграционном стволе модели `master` ← `release-candidate`
+  ← `develop` ← `cycle/NN-<слаг>` (§0.0 DEPLOY.md). `master` — предыдущее состояние, циклы в него
+  **не вливались**: релиза не было, на боевую машину ничего не выкатывалось. Ветки завершённых
+  циклов размечены задним числом (`cycle/01-cleanup`, `cycle/02-photos-scheduler`,
+  `cycle/03-production-readiness`), `sanitation-cycle` сохранён и дублирует третью из них.
+  CI триггерится на push в `master`, `release-candidate`, `develop`, любую ветку по маске
+  `cycle/**` и на любой pull request.
 - Цикл 3 — **26 коммитов** (`f3adc6e..7a551eb`), в отличие от цикла 2, уехавшего одним коммитом
   `0492092`. Заголовки мелких коммитов несут идентификатор задачи из ARCHITECTURE (`T-B1`, `T-F5`, …)
   и историю из SPEC (`US-42`), ломающие изменения помечены прямо в заголовке (`BREAKING #1`,
@@ -1218,7 +1228,7 @@ pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `t
 | Job | Что делает |
 |---|---|
 | `backend` | сервис-контейнер `postgres:16` c health-check; `SERVICEBOOKING_TEST_CONNECTION` указывает на него; кеш `~/.nuget/packages`; `dotnet restore` → **`dotnet build … -c Release -warnaserror`** → `dotnet test ServiceBooking.UnitTests` (быстрый, без БД, идёт первым) → `dotnet test ServiceBooking.Tests` |
-| `frontend` | Node 20 c npm-кешем; `npm ci` → ⭐ **`npm run lint`** (ESLint) → `npx tsc --noEmit` → `npm run test:run` → `npm run build` (с `VITE_SMARTCAPTCHA_SITEKEY` из **переменной репозитория**, не секрета — site-ключ публичен) → ⭐ **выгрузка артефакта `frontend-dist-<sha>`** (только для `master`/`sanitation-cycle`, retention 30 дней) |
+| `frontend` | Node 20 c npm-кешем; `npm ci` → ⭐ **`npm run lint`** (ESLint) → `npx tsc --noEmit` → `npm run test:run` → `npm run build` (с `VITE_SMARTCAPTCHA_SITEKEY` из **переменной репозитория**, не секрета — site-ключ публичен) → ⭐ **выгрузка артефакта `frontend-dist-<sha>`** (только для `master`/`release-candidate`/`develop` — веток, с которых деплоят; retention 30 дней) |
 | `docker-build` | ⭐ теперь **не только собирает, но и запускает**: `docker build` → поднимает `postgres:16-alpine` в отдельной docker-сети → запускает образ с `ASPNETCORE_ENVIRONMENT=Production` и полным набором переменных из `DEPLOY.md` → `deploy/ci/smoke.sh` → `docker logs` при любом исходе |
 
 Про `docker-build` важны две вещи, обе записаны комментариями прямо в workflow:
