@@ -23,9 +23,6 @@ frontend/.env
 frontend/.env.local
 frontend/.env.production
 
-# Docker
-.dockerignore
-
 # OS
 .DS_Store
 Thumbs.db

@@ -149,16 +149,30 @@ jobs:
       - name: Wait for Postgres to be healthy
         run: |
           deadline=$((SECONDS + 60))
-          until status=$(docker inspect --format='{{.State.Health.Status}}' pg-smoke 2>/dev/null) && [ "$status" = "healthy" ]; do
+          while true; do
+            status=$(docker inspect --format='{{.State.Health.Status}}' pg-smoke 2>/dev/null || echo unknown)
+            running=$(docker inspect --format='{{.State.Running}}' pg-smoke 2>/dev/null || echo false)
+            if [ "$status" = "healthy" ]; then
+              echo "pg-smoke is healthy"
+              break
+            fi
+            # Fail fast instead of waiting out the full 60s timeout: a container that has already
+            # exited (crashed, port conflict, broken image) or reports "unhealthy" will never become
+            # healthy on its own, so there is nothing to wait for.
+            if [ "$status" = "unhealthy" ] || [ "$running" != "true" ]; then
+              echo "::error::pg-smoke is not going to become healthy (health status: $status, running: $running)"
+              echo "---- pg-smoke logs ----"
+              docker logs pg-smoke || true
+              exit 1
+            fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::pg-smoke did not become healthy within 60s (last status: ${status:-unknown})"
+              echo "::error::pg-smoke did not become healthy within 60s (last status: $status)"
               echo "---- pg-smoke logs ----"
               docker logs pg-smoke || true
               exit 1
             fi
             sleep 1
           done
-          echo "pg-smoke is healthy"
 
       # Runs the image as ASPNETCORE_ENVIRONMENT=Production on purpose (US-41 п.5 leaves the choice to
       # the architect, ARCHITECTURE.md §12.2): this doubles as proof that the fail-fast checks (US-48)

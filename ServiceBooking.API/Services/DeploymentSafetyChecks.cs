@@ -34,8 +34,8 @@ public static class DeploymentSafetyChecks
     /// override it stays reachable, just with a foreseeable login (see Program.cs's original comment).
     /// </summary>
     /// <param name="configuration">Configuration to validate.</param>
-    /// <param name="contentRootPath">App content root, used to resolve Storage:PrivateRoot's default and
-    /// to compute wwwroot's absolute path for the containment check.</param>
+    /// <param name="contentRootPath">App content root, used to resolve Storage:PrivateRoot's and
+    /// Storage:PublicRoot's defaults and to compute wwwroot's absolute path for the containment checks.</param>
     /// <param name="warn">Sink for the non-fatal SuperAdmin:Phone warning. Defaults to
     /// <see cref="Console.WriteLine(string?)"/>, matching Program.cs; tests supply their own to assert on
     /// it without touching stdout.</param>
@@ -78,6 +78,44 @@ public static class DeploymentSafetyChecks
             throw new InvalidOperationException(
                 "Storage:PrivateRoot resolves inside wwwroot — client photos would be served by " +
                 "UseStaticFiles to anyone with the link. Set Storage__PrivateRoot to a path outside wwwroot.");
+
+        // The check above is about the DEFAULT public location; since the sanitation cycle the directory
+        // UseStaticFiles actually exposes is Storage:PublicRoot (Program.cs builds its PhysicalFileProvider
+        // over FileStorage.PublicRootFullPath), which only equals wwwroot/uploads when left unset. Pointing
+        // the public root somewhere custom and the private root inside THAT would leak client photos while
+        // the wwwroot comparison above stayed silent — so the served directory has to be compared too, not
+        // just the default one. Same duplicated default-resolution as above (no DI container yet), and
+        // equality is checked separately from containment: both roots being the very same directory is the
+        // worst case of all, and a StartsWith(root + separator) test alone does not catch it.
+        var configuredPublicRoot = configuration["Storage:PublicRoot"];
+        var publicRoot = string.IsNullOrEmpty(configuredPublicRoot)
+            ? Path.Combine(contentRootPath, "wwwroot", "uploads")
+            : configuredPublicRoot;
+        var publicRootFull = Path.GetFullPath(publicRoot).TrimEnd(Path.DirectorySeparatorChar);
+        var privateRootTrimmed = privateRootFull.TrimEnd(Path.DirectorySeparatorChar);
+        if (string.Equals(privateRootTrimmed, publicRootFull, StringComparison.Ordinal) ||
+            privateRootTrimmed.StartsWith(publicRootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "Storage:PrivateRoot resolves inside Storage:PublicRoot — client photos would be served by " +
+                "UseStaticFiles at /uploads/... to anyone with the link. Set Storage__PrivateRoot to a path " +
+                "outside the public uploads root.");
+
+        // Before the sanitation cycle, UseStaticFiles was hard-wired to wwwroot, so Storage:PublicRoot
+        // couldn't widen what got served no matter what it was set to. Now Program.cs builds its
+        // PhysicalFileProvider directly over FileStorage.PublicRootFullPath (see Program.cs's comment at
+        // the UseStaticFiles call), so a public root pointed at or above the app's own content root — a
+        // typo, or a well-meaning "make uploads work" edit — turns /uploads/... into a listing of the
+        // application itself: appsettings.Production.json, the compiled DLLs, App_Data/legal/... . Guard
+        // against that the same way the private-root checks above do: the served directory must not be
+        // the content root, and must not be an ancestor of it.
+        var contentRootFull = Path.GetFullPath(contentRootPath).TrimEnd(Path.DirectorySeparatorChar);
+        if (string.Equals(publicRootFull, contentRootFull, StringComparison.Ordinal) ||
+            contentRootFull.StartsWith(publicRootFull + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                "Storage:PublicRoot resolves to the application's content root or an ancestor of it — " +
+                "UseStaticFiles would serve the app's own files (appsettings, DLLs, App_Data) at " +
+                "/uploads/... to anyone. Set Storage__PublicRoot to a dedicated uploads directory, not the " +
+                "app folder or anything above it.");
     }
 
     /// <summary>

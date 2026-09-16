@@ -108,7 +108,11 @@
     **никогда не раздаётся статикой**, метод возвращает непрозрачный storage-key, не URL. Отдаётся
     только через `GET /api/client-notes/photos/{id}` с проверкой членства в компании.
   Корни настраиваются `Storage:PublicRoot` / `Storage:PrivateRoot`; в Production `Program.cs` **падает
-  на старте**, если приватный корень резолвится внутри `wwwroot`. Облачного стораджа нет.
+  на старте**, если приватный корень резолвится внутри `wwwroot`, ⭐ если приватный корень резолвится
+  внутри фактического `Storage:PublicRoot` (или совпадает с ним — раздача теперь следует за этой
+  настройкой, а не жёстко за `wwwroot`, см. ниже), ⭐ и если сам `Storage:PublicRoot` резолвится в
+  content root приложения или выше него (иначе `/uploads/...` отдавал бы `appsettings.Production.json`,
+  DLL-ки и `App_Data/legal/...` кому угодно). Облачного стораджа нет.
   ⭐ Цикл sanitation: `Program.cs` больше не вызывает голый `app.UseStaticFiles()` (который резолвит
   `IWebHostEnvironment.WebRootFileProvider`, т.е. буквально `wwwroot`, ОДИН раз при старте хоста —
   на чистом клоне без закоммиченного `wwwroot` это давало пустой провайдер навсегда, даже после того
@@ -1276,10 +1280,12 @@ CI только проверяет и складывает артефакт фр
   контейнеров и 16 ГБ RAM против ~1 ГБ) — обоснование в шапке файла. **Вживую не поднимался.**
 
 **Fail-fast прод-конфигурации** живёт теперь в `Services/DeploymentSafetyChecks.cs` (вынесен из
-`Program.cs` ради тестируемости — чистые статические методы, 28 юнит-тестов). В окружении Production
+`Program.cs` ради тестируемости — чистые статические методы, 35 юнит-тестов). В окружении Production
 приложение **не стартует**, если `Jwt:Key` пуст/короче 32 символов/равен плейсхолдеру; если
 `SuperAdmin:Password` пуст или равен `Admin12345`/`CHANGE_ME`; если `Storage:PrivateRoot` резолвится
-внутри `wwwroot`; ⭐ если не настроен `ForwardedHeaders:TrustedNetworks` (иначе rate limiting по IP
+внутри `wwwroot`; ⭐ если `Storage:PrivateRoot` резолвится внутри фактического `Storage:PublicRoot`
+(или совпадает с ним); ⭐ если сам `Storage:PublicRoot` резолвится в content root приложения или выше
+него (см. §5); ⭐ если не настроен `ForwardedHeaders:TrustedNetworks` (иначе rate limiting по IP
 считал бы всех за один адрес docker-бриджа). Предупреждение без падения — `SuperAdmin:Phone` по
 умолчанию. **На `isDraft` в `legal.json` fail-fast намеренно нет** (§9.4).
 `.dockerignore` исключает `appsettings.Development.json` и `appsettings.Production.json`.

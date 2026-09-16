@@ -141,6 +141,139 @@ public class DeploymentSafetyChecksTests
         act.Should().NotThrow();
     }
 
+    // ── ValidateSecrets: Storage:PrivateRoot vs Storage:PublicRoot (custom public root) ───────────────
+
+    [Fact]
+    public void ValidateSecrets_PrivateRootInsideCustomPublicRoot_Throws()
+    {
+        // Storage__PublicRoot=/srv/ezbook/uploads with Storage__PrivateRoot=/srv/ezbook/uploads/private
+        // used to pass silently before this check existed — UseStaticFiles now serves whatever
+        // Storage:PublicRoot points to (FileStorage.PublicRootFullPath), not wwwroot, so this must be
+        // caught even though it's nowhere near wwwroot.
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var customPublicRoot = Path.Combine(contentRoot, "srv-uploads");
+        var values = ValidSecrets(contentRoot);
+        values["Storage:PublicRoot"] = customPublicRoot;
+        values["Storage:PrivateRoot"] = Path.Combine(customPublicRoot, "private");
+        var config = BuildConfig(values);
+
+        var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Storage:PublicRoot*");
+    }
+
+    [Fact]
+    public void ValidateSecrets_PrivateRootEqualsPublicRoot_Throws()
+    {
+        // Both roots resolving to the very same directory is the worst case: every uploaded private
+        // file would be reachable at /uploads/<key>. A StartsWith(root + separator) containment check
+        // alone does not catch two equal paths (neither is a strict prefix of the other), so this needs
+        // its own equality branch.
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var sharedRoot = Path.Combine(contentRoot, "shared-uploads");
+        var values = ValidSecrets(contentRoot);
+        values["Storage:PublicRoot"] = sharedRoot;
+        values["Storage:PrivateRoot"] = sharedRoot;
+        var config = BuildConfig(values);
+
+        var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Storage:PublicRoot*");
+    }
+
+    [Fact]
+    public void ValidateSecrets_UnsetPublicRoot_DefaultsToWwwrootUploads_PrivateRootOutside_DoesNotThrow()
+    {
+        // The out-of-the-box configuration: Storage:PublicRoot absent resolves to
+        // {contentRoot}/wwwroot/uploads, and the default private root
+        // ({contentRoot}/App_Data/private-uploads) is neither inside it nor equal to it. This must stay
+        // safe without anyone setting Storage:PublicRoot at all — matches every configuration actually
+        // shipped in the repo (docker-compose.prod.yml, .env.production.example, appsettings.json).
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var values = ValidSecrets(contentRoot);
+        values.Remove("Storage:PublicRoot");
+        var config = BuildConfig(values);
+
+        var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateSecrets_PrivateRootInsideWwwroot_StillThrows_WithCustomPublicRootUnset()
+    {
+        // The pre-existing wwwroot-containment branch must keep working exactly as before: this is the
+        // same scenario as ValidateSecrets_PrivateRootInsideWwwroot_Throws above, just re-asserted here
+        // to pin that adding the new Storage:PublicRoot branch didn't change its behavior or the order
+        // in which the two checks run.
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var values = ValidSecrets(contentRoot);
+        values["Storage:PrivateRoot"] = Path.Combine(contentRoot, "wwwroot", "private-uploads");
+        var config = BuildConfig(values);
+
+        var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*wwwroot*");
+    }
+
+    // ── ValidateSecrets: Storage:PublicRoot vs the application's own content root ─────────────────────
+
+    [Fact]
+    public void ValidateSecrets_PublicRootEqualsContentRoot_Throws()
+    {
+        // Storage__PublicRoot=/app (a typo, or "make uploads just work") makes UseStaticFiles serve the
+        // whole application directory at /uploads/... — appsettings.Production.json, the compiled DLLs,
+        // App_Data/legal/... . Before the sanitation cycle this couldn't happen because UseStaticFiles
+        // was hard-wired to wwwroot regardless of configuration.
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var values = ValidSecrets(contentRoot);
+        // Private root must stay outside contentRoot too, otherwise setting PublicRoot to contentRoot
+        // would also make the private-vs-public check above fire (contentRoot's default private root is
+        // a descendant of contentRoot) — this test isolates the content-root check specifically.
+        values["Storage:PrivateRoot"] = Path.Combine(Path.GetTempPath(), "sb-safety-private-" + Guid.NewGuid());
+        values["Storage:PublicRoot"] = contentRoot;
+        var config = BuildConfig(values);
+
+        var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Storage:PublicRoot*content root*");
+    }
+
+    [Fact]
+    public void ValidateSecrets_PublicRootIsAncestorOfContentRoot_Throws()
+    {
+        // Pointing even higher than the content root itself (e.g. "/srv" when the app lives at
+        // "/srv/ezbook") is strictly worse than the equality case above and must be caught the same way.
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid(), "app");
+        var ancestorOfContentRoot = Path.GetDirectoryName(contentRoot)!;
+        var values = ValidSecrets(contentRoot);
+        values["Storage:PrivateRoot"] = Path.Combine(Path.GetTempPath(), "sb-safety-private-" + Guid.NewGuid());
+        values["Storage:PublicRoot"] = ancestorOfContentRoot;
+        var config = BuildConfig(values);
+
+        var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Storage:PublicRoot*content root*");
+    }
+
+    [Fact]
+    public void ValidateSecrets_CustomPublicRootOutsideContentRoot_DoesNotThrow()
+    {
+        // A dedicated uploads directory that is neither inside the app's content root nor an ancestor of
+        // it (e.g. /srv/ezbook/uploads next to an app deployed at /srv/ezbook/app) is exactly the
+        // legitimate use case Storage:PublicRoot exists for and must keep working.
+        var contentRootParent = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var contentRoot = Path.Combine(contentRootParent, "app");
+        var dedicatedPublicRoot = Path.Combine(contentRootParent, "uploads");
+        var values = ValidSecrets(contentRoot);
+        values["Storage:PublicRoot"] = dedicatedPublicRoot;
+        var config = BuildConfig(values);
+
+        var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
+
+        act.Should().NotThrow();
+    }
+
     // ── ValidateTrustedNetworksConfigured ──────────────────────────────────────────────────────────
 
     [Fact]

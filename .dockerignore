@@ -1,0 +1,47 @@
+﻿**/.dockerignore
+**/.env
+**/.git
+**/.gitignore
+# Mirrors the .gitignore secrets exclusion (see repo-root .gitignore): these files can hold real
+# local/production secrets on a developer's machine. Without this, `docker compose build` run
+# locally would bake them into the image via the Dockerfile's `COPY . .` build stage — .dockerignore
+# is evaluated independently of .gitignore, so it has to be listed here too, not just there.
+**/appsettings.Development.json
+**/appsettings.Production.json
+
+# User-uploaded files are local runtime data (mirrors the .gitignore exclusion for the same paths —
+# .dockerignore is evaluated independently of .gitignore, same reasoning as the secrets block above).
+# Without this, `docker compose build`/`docker build` on a machine where the app has actually run
+# would bake real users' photos/documents into the image via `COPY . .`, and the image would then
+# start serving other people's files in prod. App_Data/legal is deliberately NOT excluded here — those
+# are committed legal document sources that must ship in the image (see ServiceBooking.API.csproj).
+ServiceBooking.API/wwwroot/uploads/**
+ServiceBooking.API/App_Data/private-uploads/**
+
+# Serilog's rolling file sink (runtime log output) — not data or config, shouldn't be in the image.
+ServiceBooking.API/logs/**
+
+# Test run artifacts (coverage/trx output) — never needed inside the runtime image.
+**/TestResults
+
+**/.project
+**/.settings
+**/.toolstarget
+**/.vs
+**/.vscode
+**/.idea
+**/*.*proj.user
+**/*.dbmdl
+**/*.jfm
+**/azds.yaml
+**/bin
+**/charts
+**/docker-compose*
+**/Dockerfile*
+**/node_modules
+**/npm-debug.log
+**/obj
+**/secrets.dev.yaml
+**/values.dev.yaml
+LICENSE
+README.md
