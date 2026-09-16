@@ -7,7 +7,9 @@ namespace ServiceBooking.API.Services;
 public enum PublicArea { Avatars, Services, Companies }
 
 /// <summary>
-/// The only place in the solution that knows the word "wwwroot" (ARCHITECTURE.md §3.2). It serves two
+/// Owns where uploaded files live: every default path is resolved here, and DeploymentSafetyChecks
+/// validates configuration through the same helpers rather than recomputing them (ARCHITECTURE.md §3.2).
+/// It serves two
 /// deliberately different storage classes:
 ///
 /// WHY TWO CLASSES, NOT ONE CONFIGURABLE FOLDER: the public class (logo, avatar, service image) is

@@ -159,7 +159,7 @@ public class DeploymentSafetyChecksTests
 
         var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Storage:PublicRoot*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PrivateRoot resolves inside Storage:PublicRoot*");
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public class DeploymentSafetyChecksTests
 
         var act = () => DeploymentSafetyChecks.ValidateSecrets(config, contentRoot, _ => { });
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Storage:PublicRoot*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PrivateRoot resolves inside Storage:PublicRoot*");
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public class DeploymentSafetyChecksTests
         // was hard-wired to wwwroot regardless of configuration. Deliberately uses ValidSecrets'
         // default/untouched Storage:PrivateRoot ({contentRoot}/App_Data/private-uploads) rather than an
         // artificial one outside contentRoot: that private root is a descendant of the public root once
-        // Storage:PublicRoot equals contentRoot, so this is exactly the shipped Production configuration
+        // Storage:PublicRoot equals contentRoot, so this is exactly the mistyped Production configuration
         // (Storage__PublicRoot=/app, Storage__PrivateRoot=/app/private-uploads) where BOTH the
         // content-root check and the private-vs-public check would fire — proving the reordering (review
         // round 2) makes the content-root check win and report the true root cause first.

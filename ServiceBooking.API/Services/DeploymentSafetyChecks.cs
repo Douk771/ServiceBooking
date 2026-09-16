@@ -77,8 +77,10 @@ public static class DeploymentSafetyChecks
                 "UseStaticFiles to anyone with the link. Set Storage__PrivateRoot to a path outside wwwroot.");
 
         // Checked ahead of the Storage:PrivateRoot-vs-Storage:PublicRoot comparison below on purpose
-        // (reordered during the sanitation cycle's second review pass): on the shipped Production
-        // configuration (Storage__PublicRoot=/app, Storage__PrivateRoot=/app/private-uploads), the
+        // (reordered during the sanitation cycle's second review pass): on a MISTYPED Production
+        // configuration — Storage__PublicRoot=/app set by hand over the shipped
+        // Storage__PrivateRoot=/app/private-uploads; the stack itself never sets a public root, see
+        // .env.production.example — the
         // private-vs-public check below would fire FIRST and tell the operator to move
         // Storage__PrivateRoot — the wrong knob, since the actual mistake is Storage__PublicRoot
         // swallowing the app's own content root. A public root that swallows the content root is the more
