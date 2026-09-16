@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, sanitation-cycle]
+    branches: [master, release-candidate, develop, 'cycle/**']
   pull_request:
 
 concurrency:
