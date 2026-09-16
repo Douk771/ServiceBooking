@@ -363,8 +363,13 @@ docker run --rm -v ezbook_api_uploads:/from -v ezbook_api_private_uploads:/from-
 `deploy/deploy.sh` §10.4 сами создают под ним конкретный релиз при каждом деплое):
 
 ```bash
-mkdir -p /var/www/ezbook/releases
+sudo mkdir -p /var/www/ezbook/releases
+sudo chown -R "$USER" /var/www/ezbook
 ```
+
+`/var/www` принадлежит `root`, поэтому без `sudo` первая команда упадёт с `Permission denied`.
+Владельца сразу отдаём вам — иначе следующий шаг не сможет туда писать. Позже, в §8, каталог
+получит общую группу `ezbook`, чтобы в него мог писать и пользователь деплоя.
 
 **Шаг 5.2.** Убедитесь, что переменная капчи `VITE_SMARTCAPTCHA_SITEKEY` (публичный site-key, не
 секрет) задана один раз в CI: GitHub → Settings → Secrets and variables → Actions → **Variables**
