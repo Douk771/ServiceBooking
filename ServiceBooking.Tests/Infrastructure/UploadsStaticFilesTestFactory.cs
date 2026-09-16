@@ -5,7 +5,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 
 /// <summary>
 /// A dedicated, non-shared host (mirrors <see cref="RateLimitTestFactory"/>'s pattern) that can override
-/// <c>Storage:PublicRoot</c> and/or the host's own content root — the two knobs the sanitation-cycle
+/// <c>Storage:PublicRoot</c> and/or the host's own content root — the two knobs the cycle-3
 /// Program.cs bugfix (serve <c>/uploads</c> from <see cref="ServiceBooking.API.Services.FileStorage"/>'s
 /// resolved public root, not the parameterless <c>app.UseStaticFiles()</c>'s hard-wired <c>wwwroot</c>)
 /// actually depends on.

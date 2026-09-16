@@ -354,7 +354,7 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         (await second.Content.ReadAsStringAsync()).Should().Be("Too many uploads. Try again in a minute.");
     }
 
-    // ── Storage isolation (ARCHITECTURE.md §12.1, sanitation-cycle Program.cs static-files fix) ──
+    // ── Storage isolation (ARCHITECTURE.md §12.1, cycle 3 Program.cs static-files fix) ──
 
     [Fact, TestCase("MC-207")]
     public async Task UploadedPhoto_StorageKey_IsNotReachableViaAnyStaticUploadsPath()
