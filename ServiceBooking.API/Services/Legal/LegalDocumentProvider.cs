@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -141,7 +142,7 @@ public partial class LegalDocumentProvider
     /// only, and LoadDocument's own copy of this check would still reject it as content), but it would
     /// make the freshness poll silently track an unrelated file's mtime instead. One rule, not two.
     /// </summary>
-    internal static bool IsBareFilename(string? fileName) =>
+    internal static bool IsBareFilename([NotNullWhen(true)] string? fileName) =>
         !string.IsNullOrWhiteSpace(fileName)
         && !fileName.Contains('/')
         && !fileName.Contains('\\')
