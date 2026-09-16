@@ -452,7 +452,7 @@ CommissionPercent`, по умолчанию `0`), а не пользовател
 
 | | Публичный (аватар, логотип, картинка услуги) | Приватный (фото к заметке о клиенте) |
 |---|---|---|
-| Где лежит | `wwwroot/uploads/<area>/`, раздаётся `UseStaticFiles` | `Storage:PrivateRoot` — **вне** `wwwroot`, из конфигурации |
+| Где лежит | `Storage:PublicRoot` (по умолчанию `wwwroot/uploads/<area>/`), раздаётся `UseStaticFiles` с явным `PhysicalFileProvider` на `RequestPath = "/uploads"` | `Storage:PrivateRoot` — **вне** `wwwroot`, из конфигурации |
 | Что хранится в БД | URL (`/uploads/avatars/<guid>.jpg`) | ключ хранения (`<companyId>/<guid>.jpg`) — не URL, браузеру не отдаётся напрямую |
 | Кто видит | кто угодно, включая анонима | только `Master`/`CompanyOwner` этой компании, через `GET /api/client-notes/photos/{id}` |
 | Входит в квоту тарифа | нет (US-25 п.8) | да (US-24) |
@@ -460,6 +460,12 @@ CommissionPercent`, по умолчанию `0`), а не пользовател
 Файлы клиентов физически не могут попасть в раздачу `UseStaticFiles` — приватный каталог смонтирован
 вне `wwwroot`, и в Production при неверной конфигурации (`Storage:PrivateRoot` внутри `wwwroot`) сервис
 не стартует (fail-fast). См. §4.13 «ClientNotePhotos» ниже.
+
+⭐ Цикл sanitation: раздача больше не резолвится через голый `IWebHostEnvironment.WebRootFileProvider`
+(который на чистом клоне без закоммиченного `wwwroot` резолвится в пустой провайдер один раз при старте
+хоста и никогда не подхватывает файлы, созданные позже) — теперь `PhysicalFileProvider` строится явно
+поверх того же `FileStorage.PublicRootFullPath`, что использует запись, и раздаёт ровно этот каталог
+(не весь `wwwroot`), причём каталог гарантированно создаётся до конфигурации раздачи.
 
 ### 3.11. Конверт `PagedResult<T>` — **новое в цикле санации C (US-49)**
 

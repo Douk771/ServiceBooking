@@ -102,13 +102,22 @@
 - **Интеграции с мессенджерами нет.** MAX был исследован и исключён из цикла 2 решением заказчика
   (SPEC §0, приложение А) — в коде нет ничего.
 - **Хранилище файлов — локальный диск, но теперь ДВА класса хранения** (цикл 2, `Services/FileStorage.cs`):
-  - *публичный* — `wwwroot/uploads/{companies,avatars,services}`, раздаётся `app.UseStaticFiles()`,
-    метод возвращает URL вида `/uploads/<область>/<guid>.<ext>`;
+  - *публичный* — по умолчанию `wwwroot/uploads/{companies,avatars,services}` (переопределяется
+    `Storage:PublicRoot`), метод возвращает URL вида `/uploads/<область>/<guid>.<ext>`;
   - *приватный* — `App_Data/private-uploads/<companyId>/<guid>.jpg` (фото к заметкам о клиентах),
     **никогда не раздаётся статикой**, метод возвращает непрозрачный storage-key, не URL. Отдаётся
     только через `GET /api/client-notes/photos/{id}` с проверкой членства в компании.
   Корни настраиваются `Storage:PublicRoot` / `Storage:PrivateRoot`; в Production `Program.cs` **падает
   на старте**, если приватный корень резолвится внутри `wwwroot`. Облачного стораджа нет.
+  ⭐ Цикл sanitation: `Program.cs` больше не вызывает голый `app.UseStaticFiles()` (который резолвит
+  `IWebHostEnvironment.WebRootFileProvider`, т.е. буквально `wwwroot`, ОДИН раз при старте хоста —
+  на чистом клоне без закоммиченного `wwwroot` это давало пустой провайдер навсегда, даже после того
+  как первая загрузка создавала каталог). Теперь раздача идёт через явный `PhysicalFileProvider`,
+  построенный поверх того же `FileStorage.PublicRootFullPath`, что использует запись — `Storage:PublicRoot`
+  стал единственным источником правды для чтения и записи. Каталог публичного корня создаётся
+  (`Directory.CreateDirectory`) непосредственно перед конфигурацией раздачи, так что провайдер никогда
+  не строится поверх ещё не существующего каталога. Раздаётся ровно `PublicRootFullPath` под
+  `RequestPath = "/uploads"` — не весь `wwwroot` целиком.
 
 ### Как собирается и запускается
 

@@ -132,7 +132,33 @@ jobs:
           docker network create ci-smoke
           docker run -d --name pg-smoke --network ci-smoke \
             -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=servicebooking \
+            --health-cmd "pg_isready -U postgres" \
+            --health-interval 2s \
+            --health-timeout 3s \
+            --health-retries 20 \
+            --health-start-period 5s \
             postgres:16-alpine
+
+      # The API applies EF Core migrations on startup (Program.cs -> MigrateAsync(), line ~518) —
+      # if it dials Postgres before Postgres is actually accepting TCP connections (container "running"
+      # is not the same as "ready"; initdb + first-boot init can take a couple seconds), it throws
+      # Npgsql "Failed to connect" and exits. `docker run -d` only waits for the process to start, not
+      # for the --health-cmd above to report healthy — so that has to be polled explicitly here, same
+      # as docker-compose.yml/docker-compose.prod.yml already do via `depends_on: condition:
+      # service_healthy` (those aren't racy; only this job's raw `docker run` sequence was).
+      - name: Wait for Postgres to be healthy
+        run: |
+          deadline=$((SECONDS + 60))
+          until status=$(docker inspect --format='{{.State.Health.Status}}' pg-smoke 2>/dev/null) && [ "$status" = "healthy" ]; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::pg-smoke did not become healthy within 60s (last status: ${status:-unknown})"
+              echo "---- pg-smoke logs ----"
+              docker logs pg-smoke || true
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "pg-smoke is healthy"
 
       # Runs the image as ASPNETCORE_ENVIRONMENT=Production on purpose (US-41 п.5 leaves the choice to
       # the architect, ARCHITECTURE.md §12.2): this doubles as proof that the fail-fast checks (US-48)
@@ -159,4 +185,8 @@ jobs:
 
       - name: Container logs (always, so a smoke failure shows the actual crash/exception)
         if: always()
-        run: docker logs api-smoke || true
+        run: |
+          echo "---- api-smoke logs ----"
+          docker logs api-smoke || true
+          echo "---- pg-smoke logs ----"
+          docker logs pg-smoke || true

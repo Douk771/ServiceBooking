@@ -479,8 +479,29 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
-app.UseStaticFiles(); // serves wwwroot/uploads/... (company logos, avatars, service images) — the
-                       // PUBLIC storage class only; client-note photos never go through this (ARCHITECTURE.md §12.1)
+
+// Serves the public storage class (company logos, avatars, service images) at /uploads/... — the
+// PRIVATE storage class (client-note photos) never goes through this (ARCHITECTURE.md §12.1), see the
+// fail-fast check above/in DeploymentSafetyChecks that refuses to start if it would.
+//
+// Deliberately NOT the parameterless app.UseStaticFiles() (US-19/US-25 bugfix, cycle D): that overload
+// resolves its file provider from IWebHostEnvironment.WebRootFileProvider — i.e. wwwroot — which is a
+// SEPARATE piece of configuration from where FileStorage actually writes (Storage:PublicRoot, falling
+// back to the same default only by coincidence). Two independent ways of naming "the same" directory
+// meant that (a) setting Storage:PublicRoot away from the default silently broke serving with no error
+// anywhere, and (b) on a fresh checkout wwwroot doesn't exist at all — WebRootFileProvider resolves
+// ONCE at host startup, so a wwwroot created after that point (by the first upload) is never picked up,
+// no matter how many files land in it afterward. Resolving FileStorage.PublicRootFullPath here instead
+// makes it the single source of truth for both reading and writing, and creating the directory BEFORE
+// constructing the PhysicalFileProvider means the provider is never handed a directory that doesn't
+// exist yet.
+var publicUploadsRoot = app.Services.GetRequiredService<FileStorage>().PublicRootFullPath;
+Directory.CreateDirectory(publicUploadsRoot);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(publicUploadsRoot),
+    RequestPath = "/uploads"
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter(); // no global limiter configured — a no-op except where [EnableRateLimiting] is used
