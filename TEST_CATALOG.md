@@ -31,7 +31,8 @@ grep -rn "BK-003" ServiceBooking.Tests/
 | `SVC-` | `ServicesTests.cs` | 19 |
 | `WH-` | `WorkingHoursTests.cs` | 17 |
 | `ST-` | `ScheduleTemplateTests.cs` | 15 |
-| `MC-` | `MastersTests.cs` + `ClientNotePhotosTests.cs` | 36 (17 + 19) |
+| `MC-` | `MastersTests.cs` + `ClientNotePhotosTests.cs` | 37 (17 + 20) |
+| `UPL-` | `UploadsStaticFilesTests.cs` | 2 |
 | `RV-` | `ReviewsTests.cs` | 13 |
 | `MAIL-` | `MailingTests.cs` | 9 |
 | `RPT-` | `ReportsTests.cs` | 12 |
@@ -42,7 +43,16 @@ grep -rn "BK-003" ServiceBooking.Tests/
 | `SEC-` | `RateLimitingTests.cs` + `IdentityRoleSyncTests.cs` | 10 (6 + 4) |
 | `OPS-` | `HealthTests.cs` | 4 |
 | `PAG-` | `PaginationTests.cs` | 14 (9 `[Fact]` + `[Theory]` PAG-007 × 5 `InlineData`) |
-| **Итого** | | **404** запуска |
+| **Итого** | | **407** запусков |
+
+**Приёмка блока исправлений CI-находки (дельта `3ec5dc8..306c7d3` + сам `3ec5dc8`, тот же
+`sanitation-cycle`, после двух кругов code-review).** +3 запуска к прогону ниже: `UPL-001`/`UPL-002`
+(новый `UploadsStaticFilesTests.cs` — прямая, не завязанная на содержимое git, регрессия на правку
+`Program.cs`, раздающую `/uploads` с `FileStorage.PublicRootFullPath` вместо `wwwroot`, см. раздел
+«Uploads: раздача `/uploads`» ниже) и `MC-207` (изоляция приватного класса хранения от любого
+`/uploads/...`-префикса, `ClientNotePhotosTests.cs`). Обе `UPL-00x` вручную прогнаны и на откаченном
+`Program.cs` (голый `app.UseStaticFiles()`) — обе красные (`404`); на текущей версии — зелёные. Файл
+`Program.cs` после проверки не изменён (сверено `git diff`).
 
 **Финальная приёмка QA (продолжение цикла 3, тот же `sanitation-cycle`, после прохода исправлений по
 code-review).** +11 запусков к прогону выше: `PAG-007`/`008`/`009`/`010` (переполнение пагинации на
@@ -1485,6 +1495,15 @@ JPEG/PNG, сгенерированные в тесте через `TestImages` (
   настройкой, см. `ARCHITECTURE.md` §10.2) вторая загрузка подряд (тестировано через `POST
   /api/profile/avatar`, ту же политику `uploads`) → `429`, тело `Too many uploads. Try again in a minute.`
 
+### Изоляция хранения (ARCHITECTURE.md §12.1, sanitation cycle, найдено QA)
+
+- **MC-207** — загружается настоящее фото к заметке, из БД читается реальный `StoragePath`/
+  `ThumbnailPath` (`"<companyId>/<guid>.jpg"`). Анонимный `GET /uploads/{storagePath}`,
+  `GET /uploads/{thumbnailPath}` и `GET /uploads/private/{storagePath}` — все `404`. Пин на то, что
+  приватный класс хранения структурно не примонтирован ни под каким `/uploads/...` префиксом
+  (`app.UseStaticFiles(...)` в `Program.cs` монтирует только `FileStorage.PublicRootFullPath`), а не
+  просто «работает по факту, пока никто не подключил приватный корень туда же».
+
 ---
 
 ## Scheduler (US-21, цикл 2)
@@ -1864,14 +1883,49 @@ POST `/api/profile/change-phone` без токена авторизации во
 
 #### PROF-016 — Загрузка валидного изображения выставляет `avatarUrl`, файл раздаётся по прямой ссылке
 
-Публичный класс хранения — `wwwroot/uploads/avatars/`, отдаётся `UseStaticFiles` (в отличие от фото
-клиентов). Ответ — полный `ProfileDto` с непустым `avatarUrl`, начинающимся на `/uploads/avatars/`.
+Публичный класс хранения — по умолчанию `wwwroot/uploads/avatars/`, отдаётся `app.UseStaticFiles(...)`
+поверх `FileStorage.PublicRootFullPath` (в отличие от фото клиентов). Ответ — полный `ProfileDto` с
+непустым `avatarUrl`, начинающимся на `/uploads/avatars/`.
+
+**QA-находка (sanitation-cycle).** Этот тест и PROF-017 охраняют правку `Program.cs` (раздача
+`/uploads` с `FileStorage.PublicRootFullPath`, а не с жёстко зашитого параметром `wwwroot` через голый
+`app.UseStaticFiles()`) только **косвенно** — под конфигурацией `CustomWebApplicationFactory` по
+умолчанию (без `Storage:PublicRoot`, штатный content root репозитория) оба варианта резолвятся в один и
+тот же каталог, и оба теста ловят регрессию лишь потому, что `wwwroot` не закоммичен в git. Реальную
+регрессию — при откате правки — эти два теста пропускают. См. UPL-001/UPL-002 в разделе «Uploads: раздача
+`/uploads` (sanitation cycle, найдено QA)» ниже — они независимы от содержимого git и ловят откат
+напрямую.
 
 #### PROF-017 — Повторная загрузка заменяет файл, старый удаляется
 
 Второй `avatarUrl` отличается от первого; старый файл больше не отдаётся (`404`), новый отдаётся (`200`).
 
 #### PROF-018 — Содержимое не является изображением → `400`
+
+## Uploads: раздача `/uploads` (sanitation cycle, найдено QA)
+
+Файл `UploadsStaticFilesTests.cs`, отдельный `UploadsStaticFilesTestFactory` (не общая коллекция `Api`) —
+каждый тест поднимает собственный хост с переопределённым `Storage:PublicRoot` и/или content root.
+Закрывает пробел, описанный в PROF-016: PROF-016/PROF-017 охраняют правку `Program.cs` (раздача
+`/uploads` с `FileStorage.PublicRootFullPath`, каталог создаётся `Directory.CreateDirectory` ДО
+построения `PhysicalFileProvider`) только косвенно, через случайность незакоммиченного `wwwroot`. Оба
+теста ниже независимы от git: проверено вручную откатом на голый `app.UseStaticFiles()` — оба красные
+(`404`) на откате, оба зелёные на текущей версии `Program.cs`.
+
+- **UPL-001** — `Storage:PublicRoot` указывает на временный каталог ВНЕ content root. После старта хоста
+  файл записывается туда штатной загрузкой (`POST /api/profile/avatar`), а `GET` возвращённого
+  `/uploads/...` возвращает `200`. Голый `app.UseStaticFiles()` тут отдал бы `404` всегда — он раздаёт
+  `wwwroot`, а файл лежит не там.
+- **UPL-002** — content root — заведомо новый временный каталог, в котором `wwwroot` не существует.
+  Санитарная проверка (`Directory.Exists(.../wwwroot)` → `false`) выполняется ДО старта хоста, а не
+  после — сам факт появления `wwwroot` сразу при старте хоста (до первого запроса) уже часть проверяемой
+  правки. После старта файл, записанный через `POST /api/profile/avatar`, всё равно отдаётся (`200`) —
+  пин на то, что каталог публичного корня создаётся до конструирования `PhysicalFileProvider`.
+
+Обе фабрики регистрируют пользователя через `/api/auth/register`, которому для прохождения
+`LegalConsentFilter` нужен реальный `legal.json` — `UploadsStaticFilesTestFactory` при переопределении
+content root дополнительно выставляет `Legal:Root` на настоящий `ServiceBooking.API/App_Data/legal`
+(иначе регистрация упала бы по несвязанной причине).
 
 ## Reports
 

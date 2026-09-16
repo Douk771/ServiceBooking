@@ -353,4 +353,36 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         second.StatusCode.Should().Be((HttpStatusCode)429);
         (await second.Content.ReadAsStringAsync()).Should().Be("Too many uploads. Try again in a minute.");
     }
+
+    // ── Storage isolation (ARCHITECTURE.md §12.1, sanitation-cycle Program.cs static-files fix) ──
+
+    [Fact, TestCase("MC-207")]
+    public async Task UploadedPhoto_StorageKey_IsNotReachableViaAnyStaticUploadsPath()
+    {
+        // Program.cs's app.UseStaticFiles(...) mounts ONLY FileStorage's PUBLIC root at "/uploads" — the
+        // private class (client-note photos) is a structurally separate directory that middleware never
+        // touches at all, by construction (see FileStorage's class doc). This pins that guarantee
+        // directly against the storage key a real upload actually produced, rather than trusting the
+        // structural argument alone: GET /api/client-notes/photos/{id} is the only reachable path,
+        // anonymously or under "/uploads/<storageKey>" it must always 404.
+        var (_, _, master, noteId) = await SetUpNoteAsync();
+
+        var upload = await AuthedClient(master.Token).PostAsync($"/api/client-notes/{noteId}/photos", JpegUpload());
+        upload.StatusCode.Should().Be(HttpStatusCode.Created);
+        var photo = (await upload.Content.ReadJsonAsync<ClientNotePhotoDto>())!;
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var row = await db.ClientNotePhotos.SingleAsync(p => p.Id == photo.Id);
+        row.StoragePath.Should().NotBeNullOrEmpty();
+        row.ThumbnailPath.Should().NotBeNullOrEmpty();
+
+        var anonymous = AnonymousClient();
+        (await anonymous.GetAsync($"/uploads/{row.StoragePath}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await anonymous.GetAsync($"/uploads/{row.ThumbnailPath}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // Same check with the leading company-id segment stripped/reshuffled the way "/uploads/avatars/"
+        // etc. are laid out — belt-and-braces against any future refactor that starts mounting the
+        // private root under a plausible-looking public prefix.
+        (await anonymous.GetAsync($"/uploads/private/{row.StoragePath}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }
