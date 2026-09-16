@@ -224,13 +224,15 @@ public class DeploymentSafetyChecksTests
         // Storage__PublicRoot=/app (a typo, or "make uploads just work") makes UseStaticFiles serve the
         // whole application directory at /uploads/... — appsettings.Production.json, the compiled DLLs,
         // App_Data/legal/... . Before the sanitation cycle this couldn't happen because UseStaticFiles
-        // was hard-wired to wwwroot regardless of configuration.
+        // was hard-wired to wwwroot regardless of configuration. Deliberately uses ValidSecrets'
+        // default/untouched Storage:PrivateRoot ({contentRoot}/App_Data/private-uploads) rather than an
+        // artificial one outside contentRoot: that private root is a descendant of the public root once
+        // Storage:PublicRoot equals contentRoot, so this is exactly the shipped Production configuration
+        // (Storage__PublicRoot=/app, Storage__PrivateRoot=/app/private-uploads) where BOTH the
+        // content-root check and the private-vs-public check would fire — proving the reordering (review
+        // round 2) makes the content-root check win and report the true root cause first.
         var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
         var values = ValidSecrets(contentRoot);
-        // Private root must stay outside contentRoot too, otherwise setting PublicRoot to contentRoot
-        // would also make the private-vs-public check above fire (contentRoot's default private root is
-        // a descendant of contentRoot) — this test isolates the content-root check specifically.
-        values["Storage:PrivateRoot"] = Path.Combine(Path.GetTempPath(), "sb-safety-private-" + Guid.NewGuid());
         values["Storage:PublicRoot"] = contentRoot;
         var config = BuildConfig(values);
 
@@ -244,10 +246,13 @@ public class DeploymentSafetyChecksTests
     {
         // Pointing even higher than the content root itself (e.g. "/srv" when the app lives at
         // "/srv/ezbook") is strictly worse than the equality case above and must be caught the same way.
+        // Same reasoning as ValidateSecrets_PublicRootEqualsContentRoot_Throws above for keeping
+        // ValidSecrets' default Storage:PrivateRoot untouched: it stays a descendant of both contentRoot
+        // and the ancestor public root, so this also exercises the reachable, shipped-shape scenario
+        // rather than an artificial private root nobody's configuration uses.
         var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid(), "app");
         var ancestorOfContentRoot = Path.GetDirectoryName(contentRoot)!;
         var values = ValidSecrets(contentRoot);
-        values["Storage:PrivateRoot"] = Path.Combine(Path.GetTempPath(), "sb-safety-private-" + Guid.NewGuid());
         values["Storage:PublicRoot"] = ancestorOfContentRoot;
         var config = BuildConfig(values);
 

@@ -31,20 +31,35 @@ public class FileStorage
 
     public FileStorage(IConfiguration config, IWebHostEnvironment env)
     {
-        _publicRoot = config["Storage:PublicRoot"] is { Length: > 0 } publicRoot
-            ? publicRoot
-            : Path.Combine(env.ContentRootPath, "wwwroot", "uploads");
-
-        // App_Data is the one folder name IIS refuses to serve over HTTP by default; on Linux it is just
-        // a directory name with no special meaning, chosen only for parity across both deploy contours
-        // (ARCHITECTURE.md §3.3).
-        _privateRoot = config["Storage:PrivateRoot"] is { Length: > 0 } privateRoot
-            ? privateRoot
-            : Path.Combine(env.ContentRootPath, "App_Data", "private-uploads");
+        _publicRoot = ResolvePublicRoot(config, env.ContentRootPath);
+        _privateRoot = ResolvePrivateRoot(config, env.ContentRootPath);
 
         var minFreeMb = config.GetValue("Storage:MinFreeDiskMb", 1024);
         _minFreeDiskBytes = minFreeMb * 1024L * 1024L;
     }
+
+    /// <summary>
+    /// Resolves Storage:PublicRoot the same way the constructor does, but callable before a
+    /// <see cref="FileStorage"/> instance — or even the DI container — exists. Extracted (sanitation
+    /// cycle, review round 2) so DeploymentSafetyChecks.ValidateSecrets, which runs before
+    /// WebApplicationBuilder.Build(), computes the exact same default as the class that actually opens
+    /// the files, instead of keeping a second, independently-maintained copy of this logic that could
+    /// silently drift from this one.
+    /// </summary>
+    public static string ResolvePublicRoot(IConfiguration config, string contentRootPath) =>
+        config["Storage:PublicRoot"] is { Length: > 0 } publicRoot
+            ? publicRoot
+            : Path.Combine(contentRootPath, "wwwroot", "uploads");
+
+    /// <summary>Resolves Storage:PrivateRoot the same way the constructor does — see
+    /// <see cref="ResolvePublicRoot"/> for why this is a public static helper rather than
+    /// constructor-only logic. App_Data is the one folder name IIS refuses to serve over HTTP by
+    /// default; on Linux it is just a directory name with no special meaning, chosen only for parity
+    /// across both deploy contours (ARCHITECTURE.md §3.3).</summary>
+    public static string ResolvePrivateRoot(IConfiguration config, string contentRootPath) =>
+        config["Storage:PrivateRoot"] is { Length: > 0 } privateRoot
+            ? privateRoot
+            : Path.Combine(contentRootPath, "App_Data", "private-uploads");
 
     /// <summary>Absolute path of the private root, used once by Program.cs's Production fail-fast check
     /// (§3.4) — the only caller outside this class that needs the raw path rather than a key/URL.</summary>

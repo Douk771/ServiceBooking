@@ -1,5 +1,5 @@
-﻿**/.dockerignore
-**/.env
+**/.dockerignore
+**/.env*
 **/.git
 **/.gitignore
 # Mirrors the .gitignore secrets exclusion (see repo-root .gitignore): these files can hold real
@@ -45,3 +45,7 @@ ServiceBooking.API/logs/**
 **/values.dev.yaml
 LICENSE
 README.md
+# Фронтенд в образ API не входит вовсе: он собирается отдельной джобой CI и раскладывается
+# статикой хостовым nginx (T-D3). В контекст сборки он попадал только из-за `COPY . .` — это
+# лишние мегабайты и лишний способ занести на образ что-то локальное.
+frontend/

@@ -92,6 +92,53 @@ public class FileStorageTests : IDisposable
         act.Should().NotThrow();
     }
 
+    // ── ResolvePublicRoot / ResolvePrivateRoot: the shared default-resolution helpers ─────────────────
+    //
+    // DeploymentSafetyChecks.ValidateSecrets calls these same two static methods (sanitation cycle,
+    // review round 2) instead of keeping its own inline copy of "default to {contentRoot}/wwwroot/uploads
+    // / {contentRoot}/App_Data/private-uploads". Pinning their defaults here means a future edit to
+    // either default only has to change one place — and if someone edits it anyway and the two callers'
+    // behavior were ever to diverge, it would only be because one of them stopped calling this helper,
+    // which would show up as a diff on this class, not as a silent split.
+
+    [Fact]
+    public void ResolvePublicRoot_Unconfigured_DefaultsToWwwrootUploadsUnderContentRoot()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
+
+        FileStorage.ResolvePublicRoot(config, "/srv/app")
+            .Should().Be(Path.Combine("/srv/app", "wwwroot", "uploads"));
+    }
+
+    [Fact]
+    public void ResolvePublicRoot_Configured_ReturnsConfiguredValueVerbatim()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Storage:PublicRoot"] = "/srv/uploads" })
+            .Build();
+
+        FileStorage.ResolvePublicRoot(config, "/srv/app").Should().Be("/srv/uploads");
+    }
+
+    [Fact]
+    public void ResolvePrivateRoot_Unconfigured_DefaultsToAppDataPrivateUploadsUnderContentRoot()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
+
+        FileStorage.ResolvePrivateRoot(config, "/srv/app")
+            .Should().Be(Path.Combine("/srv/app", "App_Data", "private-uploads"));
+    }
+
+    [Fact]
+    public void ResolvePrivateRoot_Configured_ReturnsConfiguredValueVerbatim()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Storage:PrivateRoot"] = "/srv/private" })
+            .Build();
+
+        FileStorage.ResolvePrivateRoot(config, "/srv/app").Should().Be("/srv/private");
+    }
+
     private sealed class FakeWebHostEnvironment : IWebHostEnvironment
     {
         public string ApplicationName { get; set; } = "ServiceBooking.UnitTests";

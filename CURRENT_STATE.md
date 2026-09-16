@@ -1288,7 +1288,14 @@ CI только проверяет и складывает артефакт фр
 него (см. §5); ⭐ если не настроен `ForwardedHeaders:TrustedNetworks` (иначе rate limiting по IP
 считал бы всех за один адрес docker-бриджа). Предупреждение без падения — `SuperAdmin:Phone` по
 умолчанию. **На `isDraft` в `legal.json` fail-fast намеренно нет** (§9.4).
-`.dockerignore` исключает `appsettings.Development.json` и `appsettings.Production.json`.
+⭐ **До коммита `909dcc3` файла `.dockerignore` в репозитории вообще не было** — он сам был
+перечислен строкой в `.gitignore` и потому никогда не коммитился; любой чистый клон собирал образ
+БЕЗ единого исключения, включая исключение секретов (`appsettings.Development/Production.json`).
+Это важнее конкретного списка паттернов ниже, но для полноты: теперь `.dockerignore` закоммичен и
+исключает `appsettings.Development.json`/`appsettings.Production.json`, оба каталога загрузок
+(`ServiceBooking.API/wwwroot/uploads/**`, `ServiceBooking.API/App_Data/private-uploads/**`), рантайм-логи
+Serilog (`ServiceBooking.API/logs/**`), артефакты тестовых прогонов (`**/TestResults`) и `frontend/`
+(фронтенд собирается отдельной джобой CI, в образ API не входит).
 
 **Секреты:** `.gitignore` исключает `**/appsettings.*.json` (кроме базового и `Testing`), `.env`,
 `.env.production`, `.deploy.env` и ⭐ `/legal/` (каталог оператора на VPS; в git лежит только
