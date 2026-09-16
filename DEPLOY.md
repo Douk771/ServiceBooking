@@ -8,6 +8,12 @@
 Все команды выполняются по SSH на целевой машине, если явно не сказано «на вашей локальной
 машине».
 
+**Как копировать команды.** Копируйте из самого файла, а не из пересланного сообщения или превью
+в мессенджере: они часто оборачивают «голые» ссылки в угловые скобки (`<https://…>`) и рвут
+переносы строк. В bash `<` — это перенаправление ввода, поэтому такая вставка падает с
+`syntax error near unexpected token`. Если увидели эту ошибку — первым делом посмотрите, не
+появились ли вокруг URL угловые скобки; больше в команде менять ничего не нужно.
+
 ## Целевая машина (факты, зафиксированы заранее)
 
 | Параметр | Значение |
@@ -95,28 +101,55 @@ ssh <пользователь>@<IP-или-домен-машины>
 sudo apt update && sudo apt upgrade -y
 ```
 
-**Шаг 1.2.** Поставьте Docker из официального репозитория Docker (не snap, не `apt install
-docker.io`, не `podman-docker` — почему именно так важно, см.
-[«Почему так сделано» → Docker не из snap»](#docker-не-из-snap)):
+**Шаг 1.2.** Поставьте Docker официальным скриптом Docker. Он подключает официальный репозиторий
+Docker и ставит оттуда `docker-ce`, `containerd`, плагины `buildx` и `compose` — то есть ровно то,
+что нам нужно, но одной строкой (почему именно официальный Docker, а не snap, не `apt install
+docker.io` и не `podman-docker`, см. [«Почему так сделано» → Docker не из snap»](#docker-не-из-snap)):
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+```
+
+Затем добавьте себя в группу `docker` и включите автозапуск:
+
+```bash
+sudo usermod -aG docker "$USER" && sudo systemctl enable --now docker
+```
+
+**Перелогиньтесь** (`exit`, затем снова `ssh`) — без этого членство в группе `docker` не подхватится
+в текущей сессии, и дальнейшие шаги будут требовать `sudo` там, где раннбук его не ставит.
+
+Должно получиться:
+
+```bash
+docker --version && docker compose version
+```
+
+Обе команды выводят версию. Если `docker compose version` ругается «is not a docker command» —
+не встал плагин compose; поставьте отдельно: `sudo apt install -y docker-compose-plugin`.
+
+<details>
+<summary>Если предпочитаете подключить репозиторий вручную</summary>
+
+Результат тот же, источник тот же. Этот вариант даёт больше контроля, но команды многострочные,
+с подстановками и переносами — при копировании через мессенджер или markdown-просмотрщик они рвутся
+(перенос теряется, URL оборачивается в `<…>`, и bash падает с `syntax error near unexpected token`).
+Если пошли этим путём и `apt install docker-ce` говорит «has no installation candidate» — значит
+репозиторий не подключился; проверьте `ls -l /etc/apt/keyrings/docker.gpg` и
+`cat /etc/apt/sources.list.d/docker.list`, при необходимости удалите оба файла и вернитесь к скрипту
+выше.
 
 ```bash
 sudo apt install -y ca-certificates curl gnupg
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo systemctl enable --now docker
-
-# чтобы не писать sudo перед каждым docker-compose ниже — перелогиньтесь после этой команды
-sudo usermod -aG docker "$USER"
 ```
 
-Должно получиться: `docker --version` и `docker compose version` отрабатывают без ошибок.
+</details>
 
 **Шаг 1.3.** Поставьте nginx (пакет Ubuntu, конфиги — в `/etc/nginx/sites-available/` +
 `sites-enabled/`, используется в §6):
