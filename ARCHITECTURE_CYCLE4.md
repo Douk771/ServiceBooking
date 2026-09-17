@@ -1,0 +1,1167 @@
+# ARCHITECTURE — цикл 4 ServiceBooking: уведомления клиенту через WhatsApp (GREEN-API)
+
+> **Как этот файл соотносится с `ARCHITECTURE.md`.** `ARCHITECTURE.md` — документ цикла 3 (так он и
+> озаглавлен), он остаётся в силе целиком и здесь **не пересматривается**. Этот файл — его
+> продолжение: нумерация разделов начинается с **21**, чтобы ссылки вида «`ARCHITECTURE.md` §N» из
+> кода и из документов циклов 1–3 не поехали. При мёрже цикла содержимое этого файла вклеивается в
+> конец `ARCHITECTURE.md` как «Часть II», либо файлы остаются парой — по образцу
+> `SPEC.md` / `SPEC_CYCLE3_PRODUCTION.md`.
+
+**Вход:** `SPEC.md` цикла 4, редакция 5 (решения §0.1 — закрытые, не пересматриваются),
+`CURRENT_STATE.md` на `0e61369`, `ARCHITECTURE.md` и `API_CONTRACT.md` цикла 3.
+**Контракт цикла:** `API_CONTRACT_CYCLE4.md`.
+**Ветка:** `cycle/04-notifications-whatsapp`, отправная точка — `develop` @ `22d5878`.
+**Тип работ:** расширение существующей кодовой базы. Стек **не выбирается заново** — §22 объясняет,
+почему в цикле ноль новых серверных и ноль новых фронтовых рантайм-зависимостей.
+**Baseline, который нельзя ухудшать:** `dotnet build -warnaserror` → 0/0; `ServiceBooking.UnitTests`
+→ 215/215 без PostgreSQL и **без сети**; `ServiceBooking.Tests` → 407/407; `npm run test:run` → 78/78;
+`npx tsc --noEmit`, `npm run lint`, `npm run build` — чисто.
+
+**Читать обязательно:** §26 (отправщик — главный архитектурный вопрос цикла), §27 (как это
+тестируется с реально работающим `ScheduledTaskRunner`), §38 (расхождения со SPEC и то, что может
+закрыть только заказчик). Сводка ответов на 16 вопросов SPEC §16 — §40.
+
+---
+
+## 21. Принципы цикла 4
+
+1. **Конвенции не пересматриваются** (SPEC §12 п. 8). Primary constructors, `record`-DTO, ручной
+   `MapToDto`, приватные асинхронные предикаты прав поверх `CompanyMembership`, `pg_advisory_xact_lock`
+   для check-then-act, **402** для «упёрлись в тариф/оплату», plain-text 4xx, `PagedResult<T>` для
+   списков, проверки прод-конфига в `DeploymentSafetyChecks`, комментарии «почему» на английском.
+2. **Ни одного нового процесса, контейнера, брокера и внешней зависимости** (SPEC §12 п. 2,
+   `CURRENT_STATE.md` §9 P0-1, ~1 ГБ свободной ОЗУ). Отправщик — **две новые реализации
+   `IScheduledTask`** в уже существующем `ScheduledTaskRunner`. Пауза 5–15 с — **асинхронное ожидание**,
+   не занятый поток.
+3. **Сервисного слоя по-прежнему нет, но и «всё в контроллерах» здесь не работает.** Компромисс тот
+   же, что в циклах 2 и 3: одна новая подпапка `Services/Notifications/` (по образцу `Services/Legal/`
+   и `Services/Scheduling/`), в ней максимум **чистой, не знающей про БД логики**, покрытой юнитами;
+   контроллеры остаются тонкими и вызывают её.
+4. **Имя провайдера живёт ровно в одной папке** (US-27 п. 4). `GREEN-API`, `waInstance`, `idInstance`,
+   `apiTokenInstance`, `chatId`, `@c.us` не встречаются ни в контроллерах, ни в сущностях, ни в DTO,
+   ни во фронтенде. Проверяется грепом на ревью (§37).
+5. **Чужой секрет не покидает границу «БД → адаптер».** Ни в DTO, ни в Swagger, ни в логе, ни в
+   логируемом URL, ни в событии GlitchTip, ни в тексте исключения (§24).
+6. **Всё, что необратимо, делается в порядке «сначала БД, потом провайдер, повтор — из БД»** (§30.4).
+   Удаление инстанса — это и деньги, и привязка владельца.
+7. **Время и случайность абстрагированы** (`INotificationClock`, `IDispatchDelay`, `IPauseGenerator`):
+   без этого ни пауза 5–15 с, ни простой в 3 дня не тестируются иначе как ожиданием (SPEC §12 п. 9).
+8. **Ломающие миграции допустимы** (боевых данных нет), но в цикле их ровно одна, и она описана (§35).
+
+---
+
+## 22. Стек: что добавляется и почему ничего
+
+| Потребность | Решение | Обоснование через задачу |
+|---|---|---|
+| HTTP к провайдеру | **`IHttpClientFactory` + именованный клиент** (уже используется `CaptchaService`) | US-27 п. 10. API провайдера — семь HTTP-вызовов с JSON-телом. Официальный C#-клиент тянет чужой код ровно в тот контур, где лежат чужие секреты (R3), и ничего не экономит |
+| Ретраи | **очередь в БД, не Polly** | Ретрай уже описан в US-28 п. 9 как persisted-состояние (`AttemptCount`, `NextAttemptAtUtc`, паузы 1/5/15/60/180 мин), переживающее рестарт. Polly добавил бы **второй**, in-memory слой повторов поверх первого — а повтор на таймауте при уже принятом провайдером сообщении даёт дубль (R7). Один слой повторов, и он в БД |
+| Шифрование секретов | **`System.Security.Cryptography.AesGcm`** (BCL) | §24. Ни новой библиотеки, ни ASP.NET Data Protection |
+| Часовые пояса | **встроенный `TimeZoneInfo` + IANA-идентификаторы** | SPEC §12 п. 8 прямо. `TimeZoneConverter` **не нужен**: .NET 6+ принимает IANA-идентификаторы и на Linux, и на Windows (ICU). Вместо доверия — проверка на старте (§34.3) |
+| QR-код | **ничего** | Провайдер отдаёт готовый PNG в base64; фронт рендерит `<img src="data:image/png;base64,…">`. Библиотека генерации QR не нужна ни на бэке, ни на фронте |
+| Кэш QR и состояния | **`IMemoryCache`** (`Microsoft.Extensions.Caching.Memory`, часть shared framework) | §29.2. Нового пакета в `.csproj` не появляется |
+| Почта владельцу (US-62 п. 4) | **см. §31.3** — решение с условием | Единственное место цикла, где новая библиотека в принципе возможна, и оно режется третьим |
+| Фронтенд | **ноль новых рантайм-зависимостей** | Всё делается на React 18 + react-query + react-hook-form + Tailwind, которые уже есть. Комбобокс города — свой, доступный (SPEC §12 п. 6), а не новая библиотека селектов |
+
+### 22.1 Что библиотекой намеренно не становится
+
+- **Hangfire / Quartz / брокер** — запрещены физически (память) и не нужны: компонент периодических
+  задач уже есть и спроектирован ровно под «новая задача = класс + строка в `Program.cs`».
+- **SDK провайдера** — см. выше.
+- **Библиотека валидации шаблона** — валидация US-59 п. 4 это пять правил на длине и регулярках,
+  чистый статический класс, полностью покрытый юнитами.
+- **Трейсинг и метрики** — вне скоупа с цикла 3; наблюдаемость очереди (SPEC §12 п. 7) отдаётся
+  структурному логу и существующему `GET /api/admin/scheduled-tasks`, как и всё остальное фоновое.
+
+---
+
+## 23. Модель данных цикла (ответ на §16 пп. 2, 6, 10, 11, 13)
+
+Все сущности — в `ServiceBooking.Core/Entities/` (анемичные POCO, конвенция проекта), конфигурация
+связей и индексов — в `ServiceBooking.Infrastructure/Data/AppDbContext.cs`. Перечисления — в
+`ServiceBooking.Core/Enums/` (наружу сериализуются строками, `JsonStringEnumConverter`; **в БД лежат
+int** — это важно для фильтрованных индексов, §23.4).
+
+### 23.1 Канал и всё, что на нём висит
+
+**`NotificationChannel`** — канал = номер = инстанс = платёж (решение П12).
+
+| Поле | Тип | Смысл |
+|---|---|---|
+| `Id` | Guid | PK |
+| `OwnerUserId` | string, **индекс** | владелец-аккаунт. Тот же ключ, что у `AccountSubscription` — §33 |
+| `Transport` | `NotificationTransport` enum | `WhatsApp`. Заведён сразу, чтобы второй канал не потребовал миграции; значение пока одно |
+| `State` | `ChannelState` enum | §23.2 |
+| `PhoneNumber` | string? | **канонический** (`PhoneNormalizer`), заполняется после авторизации из `wid` (US-53 п. 6) |
+| `ProviderInstanceId` | string? | `idInstance`. Уникальный фильтрованный индекс `WHERE NOT NULL` |
+| `ProviderSecretCiphertext` | string? | §24. Никогда не покидает сервер |
+| `ProviderSecretKeyId` | string? | идентификатор ключа шифрования — задел под ротацию (§24.4) |
+| `OrphanedInstanceId` | string? | инстанс, который **обязан быть удалён у провайдера**, но подтверждения ещё нет (§30.4) |
+| `RequestedAtUtc` | DateTime? | заявка владельца (US-57 п. 2). Непустое при пустом `PaidUntilUtc` = «заявка ждёт суперадмина» |
+| `ContactEmail` | string? | email для оповещения о разрыве (US-62 п. 5) — **на канале, а не в профиле**: спрашивается при оплате, обязательным полем профиля не становится |
+| `PaidFromUtc` / `PaidUntilUtc` | DateTime? | оплаченный период. **Счётчика сообщений нет** — проверяется грепом (§37) |
+| `IsSuspendedByAdmin` | bool | «приостановлен» руками суперадмина (US-57 п. 1), отдельно от истечения срока |
+| `IdleSinceUtc` | DateTime? | **одно поле на все четыре причины простоя** (§30.3) |
+| `IdleWarningSentAtUtc` | DateTime? | антиспам предупреждения о простое (US-62 п. 6) |
+| `InstanceCreatedAtUtc` | DateTime? | для таймаута неавторизованного инстанса (US-53 п. 5) |
+| `ConnectedAtUtc` | DateTime? | когда канал впервые стал `Connected` — по нему `notAuthorized` читается как «отвалился», а не «подключается» (US-55 п. 2) |
+| `LastStateCheckAtUtc` | DateTime? | батчевый опрос `getStateInstance` (US-55 п. 5) |
+| `ConsecutiveSendFailures` | int | N подряд неуспешных → «отвалился» (US-55 п. 3, по умолчанию 5) |
+| `LastTestMessageAtUtc` | DateTime? | ограничение частоты тестовых сообщений (US-55 п. 7) |
+| `DisruptionNotifiedAtUtc` | DateTime? | антиспам оповещения о разрыве (US-62 п. 3) |
+| `RiskAcceptedAtUtc` / `RiskAcceptedVersion` | DateTime? / string? | факт принятия риска (US-53 п. 7) — по образцу `UserConsent`, **без отдельной таблицы**: экран один, канал один, версия одна |
+| `ReplacedByChannelId` | Guid? | US-63: старый канал → `Replaced`, ссылка на новый |
+| `CreatedAt` | DateTime | |
+
+Индексы: `(OwnerUserId)`; уникальный `(ProviderInstanceId) WHERE ProviderInstanceId IS NOT NULL`;
+`(State)` — для сводки суперадмина и для выборок фоновой задачи.
+
+**`ChannelCompanyAssignment`** — назначение компании на канал (US-61).
+`Id`, `ChannelId` (**индекс**, `Cascade`), `CompanyId` (**уникальный индекс** — US-61 п. 7: одна
+компания не более чем на одном канале; ограничение выражено схемой, а не проверкой в коде),
+`AssignedAtUtc`, `AssignedByUserId`.
+
+**`ChannelStateEvent`** — история разрывов (US-55 п. 4).
+`Id`, `ChannelId`, `FromState`, `ToState`, `Reason` (`ChannelStateReason` enum — код, не текст),
+`Detail` (string(500)?, **без секретов**), `OccurredAtUtc`; индекс `(ChannelId, OccurredAtUtc DESC)`.
+Русский текст события собирается на сервере при маппинге в DTO из `Reason` — по той же логике, что
+причины в журнале доставки (§23.4), чтобы фронт не держал вторую копию словаря.
+
+**`ChannelPaymentLog`** — журнал изменений оплаты (US-57 п. 5), по образцу `SubscriptionChangeLog`:
+`Id`, `ChannelId` (индекс), `ChangedByUserId`, `OldPaidUntil`, `NewPaidUntil`, `Amount decimal(10,2)?`,
+`Comment`, `ChangedAtUtc`.
+
+### 23.2 Состояния канала — восемь, из которых семь видит владелец
+
+```
+ChannelState { NotConnected, Connecting, Connected, Disconnected,
+               Blocked, DisabledByOwner, NeedsReconnect, Replaced }
+```
+
+Первые семь — ровно список US-55 п. 1. **Восьмое, `Replaced`, — терминальное состояние заменённого
+канала** (US-63 п. 2): SPEC называет его словом «заменён», но в перечень «ровно семь» не вносит. Без
+него заменённый канал пришлось бы показывать как `Blocked`, и владелец видел бы два одинаково
+красных канала без объяснения, какой из них действующий. Расхождение зафиксировано в §38.1.
+
+Состояние **по оплате** — **вычисляемое, а не хранимое** (SPEC §15.1): `NotPaid` (нет `PaidUntilUtc`)
+· `Paid` (`PaidUntilUtc >= now` и не `IsSuspendedByAdmin`) · `Suspended` (истёк или снят админом).
+Считает одна чистая статическая функция `ChannelPaymentState.Of(channel, nowUtc)` — юнит-тесты без
+БД, единственное место, где это правило записано.
+
+Так же вычисляемо и «опция включена у компании» (SPEC §4.0): чистая функция
+`NotificationGate.Evaluate(plan, assignment, channel, settings, optedOut, nowUtc, visitStartUtc)` →
+`Allowed` либо `Blocked(reason)`. Она одна обслуживает и HTTP-гейты (402), и постановку в очередь
+(`Skipped`), и показ плашек — то есть правило существует в одном экземпляре, а не в трёх.
+
+### 23.3 Настройки, шаблоны, отказы, города, параметры платформы
+
+**`CompanyNotificationSettings`** — PK `CompanyId` (1:1 с компанией, `Cascade`).
+`EnabledTypeMask int` (битовая маска по `NotificationType`, по умолчанию все включены — **пятый тип
+не потребует миграции схемы**, US-29 п. 7), `ReminderLeadMinutes int` (по умолчанию 1440, диапазон
+60…4320), `MinLeadMinutes int` (порог, по умолчанию 120, диапазон 0…720), `UpdatedAt`,
+`UpdatedByUserId`. Отсутствие строки = значения по умолчанию (строка создаётся лениво при первом
+сохранении) — так не нужен бэкфилл по всем существующим компаниям.
+
+**`NotificationTemplate`** — `Id`, `CompanyId`, `Type`, `Body` (max 1000), `UpdatedAt`,
+`UpdatedByUserId`; **уникальный `(CompanyId, Type)`**. Нет строки или пустое `Body` = текст платформы.
+**`NotificationTemplateHistory`** — `Id`, `CompanyId`, `Type`, `PreviousBody`, `ChangedByUserId`,
+`ChangedAtUtc`; индекс `(CompanyId, Type, ChangedAtUtc DESC)` (US-59 п. 8).
+
+**`NotificationOptOut`** (ответ на §16 п. 10) — **одна таблица по номеру для всех**, а не флаг у
+`AppUser` плюс таблица для гостей. `Id`, `Phone` (канонический, **уникальный индекс**),
+`UserId` (string?, справочно — кто нажал), `OptedOutAtUtc`, `Source` enum `{ Link, Cabinet }`.
+
+> **Почему по номеру, а не по аккаунту.** С цикла 2 аккаунт **и есть** канонический телефон
+> (`UserName == PhoneNumber`, US-26). Флаг у `AppUser` плюс таблица гостей — это два источника правды
+> об одном и том же номере, и они неизбежно разъедутся (гость отписался → потом зарегистрировался →
+> отказ «потерялся»). Одна таблица закрывает и требование «отказ глобальный по платформе»
+> (US-33 п. 3) буквально: отправитель делает один `Contains` по номерам пачки.
+> Следствие, которое принимается осознанно: **смена телефона пользователем отказ не переносит** —
+> отказ принадлежит номеру, в который мы пишем, а не человеку. Записывается комментарием в коде.
+
+**`City`** (§16 п. 11) — `Id int`, `Name`, `Region`, `TimeZoneId` (IANA), `IsActive`,
+`SearchName` (нормализованное: lower, `ё`→`е`, без дефисов и пробелов); индексы `(SearchName)`,
+`(Region, Name)`. ~300 строк; поиск — `LIKE 'x%'` с фолбэком на `%x%`, **без full-text, без триграмм
+и без расширений PostgreSQL**: на 300 строках последовательный проход дешевле любого индексного
+решения, и это записывается комментарием, чтобы через год никто не «оптимизировал».
+
+**`Company`** += `CityId int?` (`Restrict`), `TimeZoneId string(64)` (IANA), `TimeZoneIsManual bool`
+(US-30 п. 3: ручная правка не сбрасывается при повторном сохранении города).
+
+**`SubscriptionPlanConfig`** += `AllowNotificationChannel bool` (default `false`) — §33.
+**`CompanyMember`** += `NotifyOnBooking bool` (default `false`) — US-34, режется первым, отдельной
+миграцией последней в очереди.
+
+**`PlatformSetting`** (ответ на §16 п. 13) — **отдельная таблица key/value**, а не поле в существующей
+сущности: параметров уже два (цена опции и срок простоя N), и это прямой аргумент SPEC.
+`Key string(100)` PK, `Value string(200)`, `UpdatedAt`, `UpdatedByUserId`.
+Ключи цикла: `notifications.channel.price-per-month`, `notifications.channel.idle-days`.
+**`PlatformSettingChangeLog`** — `Id`, `Key` (индекс), `OldValue`, `NewValue`, `ChangedByUserId`,
+`ChangedAtUtc`, `Comment` (US-57 пп. 5, 6).
+Читается через тонкий `PlatformSettings` (scoped, кэш 60 с в `IMemoryCache`) с типизированными
+свойствами `ChannelPricePerMonth (decimal?)` и `ChannelIdleDays (int, default 3)`.
+Отсутствие ключа `price-per-month` = **опция не предлагается** (US-57 п. 6), а не «цена 0».
+
+> Почему не конфигурация в `appsettings` и не поле в `SubscriptionPlanConfig`: требование —
+> «менять из суперадминки без пересборки **и журналировать изменение**». Конфиг не журналируется и
+> требует перезапуска; поле в тарифе привязало бы цену канала к тарифу, чего SPEC явно не хочет
+> («одна цена на платформу»). Таблица настроек закрывает оба требования и принимает третий параметр
+> без миграции.
+
+### 23.4 Очередь исходящих и журнал доставки — одна таблица (ответ на §16 п. 6)
+
+**`OutboundNotification`.** Очередь и журнал — **одни и те же строки**: строка не удаляется после
+отправки, а меняет статус; журнал US-32 — это выборка по `CompanyId`. Двух таблиц не заводим — иначе
+появляется перекладывание между ними и второй источник правды о статусе. `MailLog` **не
+переиспользуется** (SPEC прямо): у него нет ни статуса, ни канала, ни получателя-номера, ни
+идемпотентности; он про другую, нерабочую функцию, и его схема не совпадает с нужной ни в одном поле.
+
+| Поле | Тип | Смысл |
+|---|---|---|
+| `Id` | Guid | |
+| `CompanyId` | Guid, `Restrict` | чьё сообщение (журнал, разбивка US-32 п. 4) |
+| `ChannelId` | Guid?, `Restrict` | **через какой канал** (US-28 п. 3). Null допустим только для `Skipped`-строк «канала нет» |
+| `BookingId` | Guid?, `SetNull` | к какой записи |
+| `Type` | `NotificationType` enum | `BookingConfirmed`, `Reminder`, `BookingCancelled`, `BookingRescheduled`, `StaffBookingCreated`, `StaffBookingCancelled` |
+| `RecipientPhone` | string(20) | **канонический**; в логи уходит только маскированным |
+| `RecipientName` | string? | для журнала |
+| `RecipientUserId` | string? | если получатель зарегистрирован |
+| `Body` | string(2000) | **снимок отрендеренного текста** на момент постановки (US-59 п. 7) |
+| `DueAtUtc` | DateTime | когда созревает |
+| `VisitStartUtc` | DateTime | **денормализованное время визита** — по нему приоритет и протухание |
+| `Status` | `NotificationStatus` enum | `Pending`, `Sent`, `Delivered`, `Failed`, `Expired`, `Skipped`, `Cancelled` — **ровно семь** (US-28 п. 2) |
+| `Reason` | `NotificationReason` enum? | причина итога. Код, не текст: русские формулировки US-32 п. 2 собираются в `MapToDto` |
+| `ReasonDetail` | string(300)? | техническая подробность **без секретов** |
+| `AttemptCount` | int | |
+| `LastAttemptAtUtc` | DateTime? | он же маркер «взято в работу» (§26.3) |
+| `NextAttemptAtUtc` | DateTime? | backoff 1/5/15/60/180 мин (US-28 п. 9) |
+| `ProviderMessageId` | string(100)? | `idMessage`, по нему приходит вебхук |
+| `SentAtUtc` / `DeliveredAtUtc` / `ReadAtUtc` | DateTime? | метки статусов; `SentAtUtc` — ещё и материал для ручной проверки паузы (SPEC §13 п. 6) |
+| `Generation` | int | номер перепланирования записи, §23.5 |
+| `IdempotencyKey` | string(200), **уникальный индекс** | §23.5 |
+| `CreatedAt` | DateTime | |
+
+**Индексы — четыре, и каждый отвечает за конкретный запрос:**
+
+1. `IX_OutboundNotifications_Dispatch` — **частичный**, `(VisitStartUtc, CreatedAt)`
+   `INCLUDE (DueAtUtc, ChannelId, CompanyId)` `WHERE "Status" = 0`.
+   Это и есть ответ на требование «сортировка по времени визита покрыта индексом, а не сортировкой в
+   памяти» (§16 п. 6). Порядок колонок именно такой, потому что выборка отправщика — **обход в
+   порядке приближения визита с ранним выходом**: планировщик идёт по индексу, отбрасывает строки с
+   `DueAtUtc > now` и останавливается, набрав `BatchSize`. Если бы ведущей колонкой был `DueAtUtc`,
+   пришлось бы отсортировать весь созревший набор целиком, прежде чем взять первые N.
+   Фильтр по статусу делает индекс **маленьким навсегда**: `Pending`-строк всегда единицы процентов
+   от таблицы, остальное терминально.
+   *Замечание разработчику:* enum в БД лежит **числом**, поэтому фильтр пишется
+   `.HasFilter("\"Status\" = 0")`, и `NotificationStatus.Pending` обязан остаться нулевым членом —
+   об этом комментарий прямо у объявления enum.
+2. `IX_OutboundNotifications_Company_CreatedAt` — `(CompanyId, CreatedAt DESC)`: журнал US-32 и
+   сводка за 30 дней.
+3. `IX_OutboundNotifications_ProviderMessageId` — `(ProviderMessageId) WHERE NOT NULL`: вебхук (§32).
+   **Не уникальный**: падение вебхука с 500 из-за коллизии идентификаторов между инстансами хуже,
+   чем теоретическая лишняя строка.
+4. `IX_OutboundNotifications_Channel_Status` — `(ChannelId, Status)`: три массовые операции
+   «отменить/перепривязать всё по каналу» (отвязка US-56 п. 1, замена номера US-63 п. 4, снятие
+   назначения US-61 п. 5).
+
+**Почему `VisitStartUtc` денормализован** (прямой ответ на §16 п. 6). Требование «протухание считается
+по актуальному времени визита» закрывается двумя рубежами, а не одним:
+- **основной** — `VisitStartUtc` в строке, **обновляемый в той же транзакции, что и перенос записи**
+  (`PATCH /api/bookings/{id}/reschedule` перепланирует уведомления, §25.3);
+- **страховочный** — выборка отправщика делает **один** `join` на `Bookings` **на пачку** (200 строк,
+  по первичному ключу), берёт актуальные `Date`/`StartTime` и зону компании и отбраковывает
+  протухшее одним batch-update. Это ровно та гонка «перенос во время прохода», о которой пишет
+  US-28 п. 8, и стоит она один join на проход, а не join на строку. План запроса не страдает:
+  ведущий — частичный индекс по статусу, `Bookings` подтягивается по PK.
+
+### 23.5 Ключ идемпотентности
+
+`IdempotencyKey = $"{Type}:{BookingId}:{RecipientPhone}:{Generation}"`, где `Generation` — **номер
+перепланирования записи** (0 при создании, +1 на каждый перенос). Без `Generation` перенос не смог бы
+поставить новое напоминание: старое уже занимает ключ, а «удалить и вставить» внутри той же
+транзакции — гонка с проходом отправителя. Уникальный индекс — **единственная** защита от дублей; на
+аккуратность кода не полагаемся (R7).
+
+---
+
+## 24. Шифрование чужих секретов (ответ на §16 п. 3) — US-54
+
+Механизма в проекте нет; это новое. Сравнение проводится явно, потому что решение необратимо.
+
+| | **ASP.NET Core Data Protection** | **Прямой AES-GCM с ключом из `.env`** ← выбрано |
+|---|---|---|
+| Где живут ключи | key ring; **в контейнере по умолчанию эфемерен** — при каждом передеплое новый, и все ранее зашифрованные токены перестают читаться **молча**. Чтобы этого не было, нужен персистентный key ring (bind-mount или таблица), **плюс** защита самого key ring — иначе ключи лежат в том же дампе, что и шифротекст, то есть шифрования нет | один ключ, `NOTIFICATIONS__ENCRYPTIONKEY` в `.env` рядом с `JWT_KEY`, **вне дампа БД** — ровно то, чего требует R9 и решение П7 |
+| Назначение по документации | краткоживущие полезные нагрузки (cookie, токены сброса пароля), со встроенным протуханием | долговременное хранение — наш случай |
+| Поведение при неверном ключе | исключение внутри абстракции; отличить «не тот ключ» от «повреждено» неудобно | `AuthenticationTagMismatchException` → типизированный `ChannelSecretUnavailable`; US-54 п. 7 и US-35 п. 3 закрываются буквально |
+| Объём кода | сравнимый, плюс инфраструктура key ring | ~40 строк + fail-fast |
+| Проверяемость юнитами | нужен `IDataProtectionProvider`, то есть DI | чистый статический класс, тесты без хоста — конвенция проекта |
+
+**Решение: прямое симметричное шифрование.** Data Protection проектировался под другое, а его
+«бесплатность» в контейнере оборачивается самым неприятным из возможных отказов — молчаливой потерей
+всех каналов при передеплое.
+
+### 24.1 Формат и класс
+
+`Services/Notifications/SecretProtector.cs` — чистый статический класс:
+- ключ: base64 от **32 байт** в `Notifications:EncryptionKey`;
+- шифротекст: `v1.<keyId>.<base64(nonce12 ‖ tag16 ‖ ciphertext)>`; `nonce` берётся из
+  `RandomNumberGenerator` на **каждое** шифрование (повтор nonce в GCM катастрофичен — об этом
+  комментарий в коде);
+- `keyId` — первые 8 hex-символов SHA-256 от ключа: при будущей ротации позволяет отличить «строка
+  зашифрована старым ключом» от «ключ не тот»;
+- `AAD = channelId`: шифротекст, скопированный из одной строки канала в другую, не расшифруется.
+  Стоит ноль и закрывает подмену внутри дампа.
+
+### 24.2 Fail-fast (`DeploymentSafetyChecks`, US-54 п. 2)
+
+Новые чистые статические методы, вызываемые из `Program.cs` там же, где остальные, и покрытые юнитами:
+
+`ValidateNotificationSecrets(IConfiguration config, string environmentName)`
+1. если `Notifications:Enabled` и окружение **не** developer (allow-list уже есть в классе):
+   `EncryptionKey` непустой, валидный base64, ровно 32 байта, не равен плейсхолдеру → иначе бросок;
+2. то же для `Notifications:PartnerToken` при `Provider == "green-api"`;
+3. **зеркальная проверка (US-35 п. 4): вне Production `PartnerToken` обязан быть ПУСТЫМ** — иначе
+   dev-запуск способен создать или удалить боевой инстанс живого салона (R4). Это бросок, а не
+   предупреждение.
+
+`ValidateTimeZoneDatabase()` — §34.3.
+
+В закоммиченном `appsettings.json` — плейсхолдеры; в `.env.production.example` и `DEPLOY.md` —
+новый раздел: где лежит ключ, что происходит при потере (все каналы отвязываются и привязываются QR
+заново), почему `.env` обязан попадать в восстановление (US-54 п. 6; чинит `CURRENT_STATE.md` §9 P0-3).
+
+### 24.3 Три рубежа против утечки в лог (US-54 пп. 3–4, риск R3)
+
+Самая вероятная точка утечки — **`apiTokenInstance` внутри URL**.
+1. **Логирование `HttpClient` для этого клиента выключено на уровне категории.** Именованный клиент
+   печатает URI запроса на `Information` через `System.Net.Http.HttpClient.green-api.LogicalHandler`
+   и `.ClientHandler` — в `Program.cs` обе категории получают уровень `None`. Клиента `CaptchaService`
+   это не затрагивает.
+2. **URL нигде не собирается в строку для лога.** `GreenApiUrls` возвращает пару
+   `(Uri Request, string SafeLabel)`, где `SafeLabel` = `"sendMessage waInstance{id}"` без токена;
+   логируется только `SafeLabel`.
+3. **Адаптер не выпускает наружу исключений.** Любое `HttpRequestException`/`TaskCanceledException`
+   ловится и превращается в `SendOutcome`; наружу уходит нормализованный результат с кодом причины.
+   Именно поэтому в GlitchTip никогда не попадёт стек с URL: исключения до него не доходят.
+
+Тесты: функциональный `NTF-` (грепом по ответам API) **и** юнит «строка, построенная логирующим слоем
+адаптера, не содержит подстроки токена».
+
+### 24.4 Ротация
+
+В цикле не реализуется, но описывается в `DEPLOY.md`: смена ключа = все каналы в `NeedsReconnect` и
+сканирование QR. `ProviderSecretKeyId` оставлен в схеме, чтобы будущая тихая ротация (две активные
+версии ключа) не потребовала миграции.
+
+---
+
+## 25. Слои и файлы цикла
+
+```
+ServiceBooking.Core/
+├── Entities/   NotificationChannel, ChannelCompanyAssignment, ChannelStateEvent, ChannelPaymentLog,
+│               OutboundNotification, CompanyNotificationSettings, NotificationTemplate,
+│               NotificationTemplateHistory, NotificationOptOut, City,
+│               PlatformSetting, PlatformSettingChangeLog
+└── Enums/      ChannelState, ChannelStateReason, NotificationTransport, NotificationType,
+                NotificationStatus, NotificationReason, OptOutSource
+
+ServiceBooking.Infrastructure/
+├── Data/AppDbContext.cs        + 12 DbSet, индексы §23
+└── Migrations/                 9 миграций §35
+
+ServiceBooking.API/Services/Notifications/          ← единственная новая подпапка
+├── SecretProtector.cs                 чистый; AES-GCM (§24)
+├── NotificationOptions.cs             типизированная секция Notifications
+├── INotificationTransport.cs          SendAsync + SendOutcome (§28)
+├── IChannelProvisioning.cs            create/qr/state/logout/delete/settings (§28)
+├── LoggingNotificationTransport.cs
+├── NoopChannelProvisioning.cs         ← вместе УМОЛЧАНИЕ (US-35 п. 1)
+├── GreenApi/                          GreenApiTransport, GreenApiProvisioning, GreenApiUrls,
+│                                      GreenApiResultClassifier, GreenApiWebhookParser
+│                                      ← ЕДИНСТВЕННОЕ место, где живёт имя провайдера
+├── NotificationGate.cs                чистый; «можно ли ставить/слать» → Allowed | Skipped(reason)
+├── NotificationTiming.cs              чистый; момент отправки, джиттер, протухание, порог
+├── NotificationTemplateRenderer.cs
+├── NotificationTemplateValidator.cs
+├── DefaultTemplates.cs                чистые; рендер и валидация (US-59)
+├── NotificationScheduler.cs           постановка в очередь (§25.3) — единственный, кого зовут контроллеры
+├── ChannelIdleCalculator.cs           чистый; §30.3
+├── ChannelStateMapper.cs              чистый; stateInstance → ChannelState (US-55 п. 2)
+├── ChannelPaymentState.cs             чистый; §23.2
+├── PauseGenerator.cs / IDispatchDelay.cs / INotificationClock.cs      §26, §27
+├── PlatformSettings.cs                §23.3
+└── UnsubscribeTokens.cs               чистый; подписанный токен ссылки отписки (§31.4)
+
+ServiceBooking.API/Services/Scheduling/Tasks/
+├── NotificationDispatchTask.cs        §26
+└── ChannelHealthTask.cs               §30
+
+ServiceBooking.API/Controllers/
+├── NotificationChannelsController.cs  каналы владельца, QR, назначения, замена номера
+├── CompanyNotificationsController.cs  настройки, шаблоны, журнал, сводка
+├── NotificationsController.cs         отписка (кабинет + публичная ссылка), вебхук провайдера
+├── CitiesController.cs                справочник городов
+└── AdminController.cs (дополняется)   оплата канала, параметры платформы, сводка по каналам
+```
+
+Чистых (без БД и без сети) классов — тринадцать; именно они закрывают требование SPEC §12 п. 9
+«вся новая чистая логика покрыта юнитами при остановленной PostgreSQL и без сети».
+
+### 25.3 Где ставятся уведомления в очередь (ответ на §16 п. 7)
+
+**Один небольшой сервис, а не три прямые вставки.** `NotificationScheduler` (scoped) с тремя
+методами: `OnBookingCreatedAsync`, `OnBookingCancelledAsync`, `OnBookingRescheduledAsync`.
+
+Ключевое свойство: **он не вызывает `SaveChangesAsync`**. Он получает уже отслеживаемый `Booking`,
+разрешает гейт, рендерит тексты и делает `db.OutboundNotifications.AddRange(...)` / правит статусы
+существующих строк — а коммитит их **та же транзакция контроллера**, которая создаёт запись
+(US-28 п. 4: постановка в очередь в одной транзакции с бронью, сетевых вызовов в HTTP-запросе нет).
+
+В `BookingsController` это по три строки в трёх местах:
+
+```
+try { await scheduler.OnBookingCreatedAsync(booking, ct); }
+catch (Exception ex) { logger.LogError(ex, "..."); }   // US-28 п.4: запись важнее уведомления
+```
+
+Вызов идёт **после** всех восьми гейтов `Create` и **до** `SaveChangesAsync`. Исключение до
+`SaveChanges` мусора не оставляет: добавленные сущности просто не сохраняются. Сами восемь гейтов не
+трогаются вовсе; правила уведомлений живут целиком в `NotificationGate` и `NotificationScheduler` —
+то есть логика в контроллерах не размазывается сильнее, а наоборот выносится наружу.
+
+**Рендер шаблона живёт в `NotificationTemplateRenderer` и вызывается отсюда же** — снимок текста
+делается в момент постановки (US-59 п. 7), правка шаблона `Pending`-строк не касается.
+
+Ещё две точки вызова того же сервиса, вне `BookingsController`:
+`AdminController.UpdateCompanyOwner` (US-56 п. 3 — снять назначение и перевести очередь компании в
+`Cancelled`, **в той же транзакции**, которая в этом методе уже есть) и
+`NotificationChannelsController` (отвязка канала, снятие назначения, замена номера).
+
+---
+
+## 26. Отправщик: пауза, бюджет, остаток (ответ на §16 п. 5 — главный вопрос цикла)
+
+`NotificationDispatchTask : IScheduledTask`, `Name = "notification-dispatch"`,
+`DefaultPeriod = 1 минута`, `ScheduledTasks:notification-dispatch:MaxRunMinutes = 1`.
+Регистрация — одна строка в `Program.cs` рядом с `PhotoRetentionCleanupTask`. Сам
+`ScheduledTaskRunner` **не меняется**: его advisory lock, потолок времени и запись состояния уже дают
+всё нужное (US-60 п. 3, последний подпункт).
+
+### 26.1 Форма прохода
+
+```
+budget   = min(MaxRunTime − 10 s, Notifications:Dispatch:BudgetSeconds (=50))
+deadline = clock.UtcNow + budget           // свой CTS, слинкованный с runner-ct
+```
+
+**Фаза 1 — выборка (одна короткая транзакция, ~10 мс).**
+Один запрос по индексу `IX_..._Dispatch`: `Status = Pending`, порядок `VisitStartUtc, CreatedAt`,
+ранний выход `Take(BatchSize = 200)`, предикаты `DueAtUtc <= now`,
+`(NextAttemptAtUtc == null || NextAttemptAtUtc <= now)` и
+`(LastAttemptAtUtc == null || LastAttemptAtUtc < now − InFlightGrace(5 мин))` (§26.3).
+Тем же запросом — `join` на `Bookings` за актуальным временем визита (§23.4).
+Далее **три батчевых запроса и ни одного в цикле** (US-28 п. 11): каналы пачки одним
+`Where(Contains)`; планы — `SubscriptionResolver` **по `OwnerUserId`** (§33); настройки компаний
+одним запросом; отказы — одним `Contains` по номерам пачки.
+
+**Фаза 2 — отбраковка (один `SaveChanges`).**
+Чистые `NotificationGate` и `NotificationTiming` раскладывают пачку: `Expired` (визит уже начался),
+`Skipped` (порог US-31 п. 2, отписка, тариф, истёкший период, тип выключен), «оставить `Pending`»
+(канал не `Connected` — US-55 п. 6), «отправлять». Дальше идут только последние.
+
+**Фаза 3 — отправка.**
+Строки группируются **по `ChannelId`** в памяти (пачка уже в памяти — ни одного дополнительного
+запроса). Группы обрабатываются
+`Parallel.ForEachAsync(groups, new ParallelOptions { MaxDegreeOfParallelism = MaxParallelChannels (=8), CancellationToken = linkedCt })`.
+**Внутри канала — строго последовательно**, с паузой между отправками:
+
+```
+foreach (row in group)                       // один канал — последовательно
+{
+    if (deadline reached) break;             // остаток остаётся Pending
+    await MarkAttemptAsync(row);             // короткая транзакция №1 (§26.3)
+    var outcome = await transport.SendAsync(credentials, row.RecipientPhone, row.Body, linkedCt);
+    await RecordOutcomeAsync(row, outcome);  // короткая транзакция №2
+    if (not last in group)
+        await delay.DelayAsync(pause.Next(), linkedCt);   // 5–15 с, НЕ Thread.Sleep
+}
+```
+
+### 26.2 Почему это укладывается в бюджет и не держит длинную транзакцию
+
+- **Транзакций ровно столько, сколько строк, и каждая — один `SaveChanges` на несколько
+  миллисекунд.** Долгих транзакций нет вовсе; пауза 5–15 с проходит **между** транзакциями, а не
+  внутри.
+- **Каждый параллельный воркер работает в своём DI-scope со своим `AppDbContext`** (резолвится через
+  `IServiceScopeFactory`). `DbContext` не потокобезопасен, и это самая вероятная ошибка реализации —
+  поэтому вынесено отдельным требованием и отдельным пунктом ревью. Восемь одновременных соединений
+  против пула Npgsql по умолчанию (100) — не проблема, тем более что каждое используется
+  микросекундами между длинными `await`.
+- **Транзакция, держащая advisory lock, живёт в отдельном scope и на отдельном соединении** — так
+  уже устроен `ScheduledTaskRunner.RunOneAsync` (там об этом есть комментарий), поэтому наши
+  промежуточные коммиты лок не отпускают. Цикл 4 пользуется этим свойством, а не ломает его.
+- **Бюджет соблюдается даже посреди паузы:** `Task.Delay` получает `linkedCt`, отменяемый по
+  `deadline`. `OperationCanceledException` из паузы или из `SendAsync` ловится **внутри задачи** и
+  превращается в «проход завершён частично» (`ScheduledTaskOutcome` с честной сводкой), а не в
+  падение — иначе runner записал бы задачу упавшей при совершенно нормальном исходе.
+- **Арифметика, которую надо знать заранее.** При бюджете 50 с и средней паузе 10 с один канал
+  успевает **5–6 сообщений за проход**, то есть ~330 в час — что сходится с заявленными ~360
+  (US-60 п. 2). При 8 параллельных каналах проход отправляет ~40–48 сообщений. Это **не узкое место,
+  а требование**: скорость задана антибан-паузой и «оптимизации» не подлежит (SPEC §12 п. 1).
+  `MaxParallelChannels` ограничивает не память, а число одновременных исходящих HTTP-соединений.
+
+### 26.3 Остаток, рестарт и отсутствие дублей
+
+Восьмого, внутреннего статуса «в работе» **не заводим** — статусов ровно семь (US-28 п. 2). Роль
+маркера «взято в работу» играет пара `AttemptCount`/`LastAttemptAtUtc`, записываемая **до** HTTP-вызова:
+
+- выборка следующего прохода игнорирует строки, у которых `LastAttemptAtUtc` моложе `InFlightGrace`
+  (5 мин), — значит параллельный или следующий проход не подхватит строку, которая прямо сейчас в
+  полёте, даже если advisory lock по какой-то причине не сработает;
+- **рестарт посреди прохода**: строка остаётся `Pending` с увеличенным `AttemptCount`; через 5 минут
+  она будет взята снова. Если сообщение при этом успело уйти, а результат не записался — это **один**
+  дубликат на одно падение процесса, и `AttemptCount >= MaxAttempts (5)` ограничивает это сверху.
+  **Exactly-once против HTTP-API без серверной идемпотентности недостижим**, и делать вид, что он
+  есть, вреднее, чем записать границу: мы выбираем «не более одного дубля на аварию» вместо «молча
+  потерянное сообщение». Обычный, не аварийный путь дублей не даёт вовсе — это и покрывает чек-лист
+  SPEC §13 п. 6 («перезапуск не приводит к повторной отправке уже отправленного»);
+- **остаток** просто остаётся `Pending`: следующий проход выбирает заново **в том же порядке**, и
+  строка с более близким визитом, появившаяся за эту минуту, честно обгонит остаток — приоритет
+  пересчитывается каждый проход, а не фиксируется на пачку.
+
+### 26.4 Классификация исхода (US-28 п. 9, US-27 п. 7)
+
+| `SendOutcome` | Что делаем со строкой | Что делаем с каналом |
+|---|---|---|
+| `Sent(idMessage)` | `Sent`, `SentAtUtc`, `ProviderMessageId` | `ConsecutiveSendFailures = 0` |
+| `TransientFailure` | `Pending`, `NextAttemptAtUtc = now + backoff[AttemptCount]` (1/5/15/60/180 мин); при `AttemptCount >= 5` → `Failed` | `ConsecutiveSendFailures++`; при `>= 5` → `Disconnected` + событие в историю |
+| `PermanentlyRejected(reason)` | `Failed` сразу, без ретраев | не трогаем (`noAccount` — проблема получателя, не канала) |
+| `ChannelInvalid(reason)` | **остаётся `Pending`** (US-28 п. 9) | канал → `Disconnected`/`Blocked`, событие в историю, отправка по этому каналу в текущем проходе прекращается немедленно (остальные строки группы остаются `Pending`) |
+
+---
+
+## 27. Как отправщик тестируется: `ScheduledTaskRunner` включается **под одной коллекцией**
+
+Заказчик разрешил включать раннер в окружении `Testing`. Включать его **глобально** нельзя: он тикал
+бы параллельно с 400+ функциональными тестами, делящими одну базу `servicebooking_test`, и давал бы
+мигающие падения «раз в двадцать прогонов». Выбранная форма — **отдельная фабрика хоста + отдельная
+непараллельная коллекция**, ровно по образцу уже существующего `RateLimitTestFactory` (цикл 3), где
+та же задача — «поведение, которое глобальная тестовая конфигурация сознательно глушит» — решена
+именно так. Это не изобретение, а применение сложившейся в проекте конвенции.
+
+### 27.1 Конструкция
+
+`ServiceBooking.Tests/Infrastructure/NotificationDispatchTestFactory.cs`:
+- `UseEnvironment("Testing")` + тот же набор `UseSetting`, что у `CustomWebApplicationFactory`;
+- `ScheduledTasks:Enabled = true`, `ScheduledTasks:TickSeconds = 1`;
+- `ScheduledTasks:photo-retention-cleanup:Enabled = false` — единственная существующая задача под
+  этим хостом выключена, чтобы она не удаляла ничего постороннего;
+- `ScheduledTasks:channel-health:Enabled` — параметром конструктора (тесты простоя её включают,
+  тесты отправки — нет);
+- `Notifications:Provider = "logging"` — реальных сетевых вызовов не бывает **никогда** (US-35);
+- `ConfigureServices`: подменяются три абстракции —
+  `IDispatchDelay` → `RecordingDelay` (возвращает `Task.CompletedTask` и **записывает запрошенные
+  интервалы**), `INotificationClock` → `FakeClock` (тест двигает время вручную),
+  `INotificationTransport` → `RecordingTransport` (записывает вызовы в порядке и умеет отдавать
+  заданный исход). Все три — синглтоны, доступные тесту через `factory.Services.GetRequiredService<…>()`.
+
+`[CollectionDefinition("NotificationDispatch", DisableParallelization = true)]` — коллекция не идёт
+одновременно с остальными. Плата: несколько секунд общего времени прогона. Выгода: раннер тикает
+**только** пока живёт этот хост, и ни один из 407 существующих тестов его не видит.
+
+Дополнительная страховка: даже если бы коллекции пересеклись, радиус поражения пуст — раннер этого
+хоста трогает только `OutboundNotifications`, а в остальных тестах ни у одной компании нет
+назначенного оплаченного канала, поэтому строк очереди там не возникает вовсе.
+
+### 27.2 Одна аддитивная правка существующего кода
+
+`ScheduledTaskOptions` получает **`PeriodSeconds`**, имеющий приоритет над `PeriodMinutes`
+(минимальный период сегодня — одна минута, а тесту нужен второй проход в пределах секунд). Правка
+обратно совместимая, на четыре строки, покрывается юнитом на приоритет. Это единственное изменение
+компонента планирования во всём цикле.
+
+### 27.3 Что это даёт
+
+Сквозной сценарий вместо прямого вызова метода:
+**раннер тикнул → взял advisory lock → задача выбрала пачку → сгруппировала по каналам → отправила
+через подменённый транспорт → запросила паузу → записала результат → оставила остаток `Pending` →
+записала `ScheduledTaskState`**, и всё это наблюдается через **уже существующий**
+`GET /api/admin/scheduled-tasks` (ожидание завершения — polling `LastFinishedAtUtc` с таймаутом 15 с,
+хелпер `WaitForTaskRunAsync`).
+
+Утверждения, недостижимые прямым вызовом `ExecuteAsync`:
+- пауза **запрошена** 4 раза на 5 сообщений одного канала, каждый интервал ∈ [5000; 15000] мс, и они
+  не все равны между собой — при нулевом реальном ожидании;
+- два канала разных владельцев отправляют **одновременно** (порядок вызовов транспорта чередуется),
+  то есть параллелизм по каналам действительно есть, а не нарисован в документе;
+- при исчерпании бюджета остаток остался `Pending` и **не продублировался** на следующем тике;
+- порядок разбора — по времени визита, включая случай «две компании на одном канале»;
+- простой канала: `FakeClock` двигает время на четыре дня, `channel-health` удаляет инстанс,
+  переводит канал в `NeedsReconnect`, сохраняет назначения и период — **без ожидания реальных суток**.
+
+Прямые вызовы `ExecuteAsync` остаются для дешёвых случаев (единичные переходы статусов): новая
+коллекция их дополняет, а не заменяет.
+
+---
+
+## 28. Адаптер провайдера (ответ на §16 п. 1)
+
+**Две абстракции, а не одна**, потому что у них разный секрет и разный радиус поражения:
+
+```
+public interface INotificationTransport                        // секрет КАНАЛА (салона)
+{
+    Task<SendOutcome> SendAsync(ChannelCredentials credentials, string canonicalPhone,
+                                string text, CancellationToken ct);
+}
+
+public interface IChannelProvisioning                          // ПАРТНЁРСКИЙ токен платформы
+{
+    Task<ProvisionedInstance>  CreateInstanceAsync(CancellationToken ct);
+    Task<QrSnapshot>           GetQrAsync(ChannelCredentials c, CancellationToken ct);
+    Task<ProviderChannelState> GetStateAsync(ChannelCredentials c, CancellationToken ct);
+    Task SetSendDelayAsync(ChannelCredentials c, int milliseconds, CancellationToken ct);
+    Task LogoutAsync(ChannelCredentials c, CancellationToken ct);
+    Task<InstanceDeletion> DeleteInstanceAsync(string instanceId, CancellationToken ct);
+}
+```
+
+Разделение не косметическое: `INotificationTransport` доступен фоновому отправщику и заглушается в
+тестах, а `IChannelProvisioning` — единственный потребитель партнёрского токена, и именно его вне
+Production обязана не существовать (US-35 п. 4, §24.2).
+
+- `ChannelCredentials(string InstanceId, string Token)` — **расшифрованные учётные данные, живущие
+  только в кадре стека вызова**; `ToString()` переопределён на `"ChannelCredentials(…)"`, чтобы
+  структурный логгер не сериализовал их случайно.
+- **Как передаётся канал:** явным параметром, а не через DI/ambient-контекст. Мультиарендность здесь
+  означает «один и тот же транспорт по очереди говорит от имени разных салонов», и любое состояние в
+  самом транспорте — это будущая отправка чужим номером. Транспорт **stateless**.
+- Номер приходит **только каноническим** (`PhoneNormalizer`); превращение в формат провайдера —
+  внутри адаптера (US-27 п. 1). SPEC честно отмечает, что совпадение форматов — удача: сборка
+  `chatId` вынесена в отдельный чистый метод с юнитами, и если живая проверка (SPEC §11 п. 2) покажет
+  иной формат, правится одна функция.
+- **Классификация ответов — `GreenApiResultClassifier`, чистый статический, юниты без сети**
+  (US-27 п. 11): сетевой сбой / таймаут / 5xx / 429 → `TransientFailure`; 401, 403 и признаки
+  неавторизованного инстанса → `ChannelInvalid`; `noAccount`, отказ по содержимому →
+  `PermanentlyRejected`; 200 с `idMessage` → `Sent`. **`429` — перенос, а не провал** (US-27 п. 8).
+- **Таймауты и частота — на клиенте и на канале**, не на платформе: `HttpClient.Timeout` из
+  `Notifications:GreenApi:TimeoutSeconds` (15 по умолчанию); частота — пауза §26, то есть свойство
+  цикла по каналу, а не глобальный ограничитель.
+- **Заглушка — умолчание.** `LoggingNotificationTransport` пишет одну структурную строку «компания,
+  канал, тип, маскированный номер, длина текста» и возвращает `Sent` с синтетическим `idMessage`;
+  `NoopChannelProvisioning` отдаёт фиктивный инстанс и статичный QR. Выбор реализации — по
+  `Notifications:Provider` (`"logging"` по умолчанию, `"green-api"` явно), одна фабричная регистрация
+  в `Program.cs`. **Приложение поднимается и работает без настроенных уведомлений** (US-27 п. 9), по
+  образцу `CaptchaService.IsEnforced`.
+- **Песочница (US-35 п. 5)**: `Notifications:AllowedRecipients` — список канонических номеров; при
+  непустом списке реальный транспорт отправляет только им, остальное логирует как заглушка. Один
+  `if` в `GreenApiTransport`, ноль новых сущностей.
+
+---
+
+## 29. Сценарий привязки и QR (ответ на §16 п. 4)
+
+### 29.1 Шаги
+
+1. Канал оплачен и риск принят → `POST /api/notification-channels/{id}/connect`.
+2. Сервер: `CreateInstanceAsync` (партнёрский токен) → в **одной транзакции** сохраняет
+   `ProviderInstanceId`, зашифрованный токен, `InstanceCreatedAtUtc`, `State = Connecting`; затем
+   `SetSendDelayAsync(5000)` — нижняя граница нашего диапазона, чтобы задержки провайдера и наши не
+   складывались (SPEC §2.4 п. 7). Ошибка `SetSendDelay` не критична и привязку не откатывает.
+3. Фронт открывает модалку и опрашивает `GET /api/notification-channels/{id}/qr` **раз в 3 секунды**
+   (`react-query` `refetchInterval`), пока состояние `Connecting`; на `Connected` — закрывает модалку
+   и инвалидирует список; через 15 минут останавливается сам и предлагает начать заново.
+4. Как только опрос увидел `authorized` — сервер заполняет `PhoneNumber` из `wid` (US-53 п. 6),
+   `ConnectedAtUtc`, пишет `ChannelStateEvent` и возвращает `Connected`.
+
+### 29.2 Как не устроить шторм запросов к провайдеру
+
+QR живёт ~20 с, провайдер рекомендует опрашивать раз в секунду — но между браузером и провайдером
+есть наш сервер, и **клиентский опрос развязан с провайдерским**:
+- ответ `GET …/qr` собирается из `IMemoryCache` по ключу `channel-qr:{id}` с TTL **2 секунды**; при
+  промахе — ровно один вызов провайдера, результат кладётся в кэш;
+- десять открытых вкладок, три устройства владельца и любой ретрай дают провайдеру **не более одного
+  запроса в 2 секунды на канал**, независимо от поведения фронта;
+- ответ содержит `refreshAfterSeconds`, и фронт слушается его — интервал опроса задаёт сервер, а не
+  константа в JS.
+
+`IMemoryCache` — часть shared framework, новой зависимости не появляется; расход — десятки килобайт
+на активную привязку, запись живёт 2 секунды.
+
+### 29.3 Таймаут неавторизованного инстанса и уборка мусора (US-53 п. 5)
+
+Живёт **в `ChannelHealthTask`**, не в контроллере и не в таймере: канал в `Connecting` с
+`InstanceCreatedAtUtc` старше `Notifications:UnauthorizedInstanceTimeoutMinutes` (15) → удаление
+инстанса по процедуре §30.4 и возврат в `NotConnected`. Прерванный сценарий не оставляет ни
+«наполовину созданной» строки, ни оплачиваемого пустого инстанса; повторный заход начинает с нуля и
+не создаёт дубля (проверка «у канала уже есть `ProviderInstanceId`» → 409).
+
+**Код привязки по номеру** (`GetAuthorizationCode`) в MVP **не делаем**: экран и состояния те же,
+но это второй путь с собственными отказами, а выигрыш — только для владельца, который не может
+навести камеру на собственный экран. Сознательное сокращение, §38.6.
+
+---
+
+## 30. Состояние канала, разрывы и простой (ответ на §16 пп. 15, 16)
+
+`ChannelHealthTask : IScheduledTask`, `Name = "channel-health"`, `DefaultPeriod = 15 минут` — вторая
+и последняя новая фоновая задача. Почему две задачи, а не одна: у них разные периоды (1 минута против
+15) и разные бюджеты, а компонент планирования спроектирован ровно под «задача = класс + строка
+регистрации». Одна задача с внутренним «делать это раз в N проходов» — это самодельный планировщик
+внутри планировщика.
+
+За проход делает четыре вещи, каждую **одним батчевым запросом** (US-28 п. 11, SPEC §12 п. 1).
+
+### 30.1 Опрос состояний
+
+Каналы с `State ∈ {Connecting, Connected, Disconnected}` и устаревшим `LastStateCheckAtUtc` →
+`GetStateAsync` с тем же ограниченным параллелизмом → `ChannelStateMapper.Map(stateInstance,
+hadBeenConnected)` (чистая функция; юниты на все шесть значений провайдера и на развилку
+`notAuthorized` = «подключается» против «отвалился» по `ConnectedAtUtc != null`). Каждый переход →
+`ChannelStateEvent` + правило антиспама US-62 п. 3 (`DisruptionNotifiedAtUtc`, напоминание не чаще
+24 часов, пока канал лежит).
+
+### 30.2 Гашение и оживление отправки (§16 п. 15)
+
+Гашение — **состоянием канала, а не отдельным флагом**: `NotificationGate` не пропускает ни
+постановку, ни отправку, пока канал не `Connected`; уже стоящие строки **остаются `Pending`**
+(US-55 п. 6), а запись, отмена и перенос работают как обычно. Оживление — **само по себе**: канал
+вернулся в `Connected`, ближайший проход отправщика видит те же строки в выборке. Ручного
+вмешательства нет нигде, «перезапустить очередь» кнопкой не требуется.
+
+Лавину после починки гасят **ровно два механизма, других больше нет** (потолок и прогрев отменены
+решением «Пт»): порог «до визита осталось меньше N» (US-31 п. 2) отбраковывает самое бессмысленное
+на фазе 2 прохода, а приоритет по времени визита определяет, что уйдёт первым. Всё, что не влезло,
+видно в журнале честными `Skipped`/`Expired` — молча не теряется ничего. Это и есть принятая цена
+R20, и здесь она названа, а не растворена.
+
+### 30.3 Простой: одно поле, один вычислитель, один вызывающий (§16 п. 16)
+
+**Где хранится:** `NotificationChannel.IdleSinceUtc` — **одно поле, одно состояние, одна дата**.
+
+**Как считается дёшево.** Проверенный по коду факт, сильно упрощающий задачу: «блокировка компании
+суперадмином» (`PUT /api/admin/companies/{id}` пишет `company.IsActive = dto.IsActive`) и
+«деактивация компании владельцем» — это **одно и то же поле `Company.IsActive`**. Значит четыре
+причины SPEC сводятся к двум величинам, и обе берутся **одним запросом на все каналы сразу**:
+
+```
+активных компаний у канала = COUNT(assignment JOIN company WHERE company.IsActive)   -- GROUP BY ChannelId
+период живой              = PaidUntilUtc >= now AND NOT IsSuspendedByAdmin           -- поля канала
+```
+
+Один `GroupBy` с `LEFT JOIN` возвращает `(ChannelId, ActiveCompanyCount)` для всех каналов; N+1 нет
+ни по каналам, ни по компаниям.
+
+**Кто обнуляет (и почему обнуление не размазано по четырём местам).** Ни одно из четырёх событий
+(разблокировка компании, её активация, назначение компании на канал, отметка оплаты) **не трогает
+`IdleSinceUtc`**. Они меняют только свои собственные данные. Единственная точка записи — чистая
+функция
+
+```
+ChannelIdleCalculator.Recompute(idleSinceUtc, activeCompanyCount, paidUntilUtc, isSuspended, nowUtc)
+    → null             // есть активная компания и живой период → простоя нет (ОБНУЛЕНИЕ)
+    → existing ?? now  // иначе простой идёт; дата начала ставится один раз и не «продолжается»
+```
+
+вызываемая **только из `ChannelHealthTask`**. Плата — задержка до 15 минут между событием и
+обнулением; против N = 3 суток это шум. Выигрыш — правило существует в одном экземпляре и
+проверяется юнитами по всем четырём причинам по отдельности и в комбинации (US-56 п. 7).
+
+**Что происходит по срокам.** `idleDays = PlatformSettings.ChannelIdleDays` (по умолчанию 3):
+- простой дольше `idleDays − 1` и `IdleWarningSentAtUtc == null` → **предупреждение ДО удаления**
+  (US-62 п. 6, текст «ничего не сломалось»), `IdleWarningSentAtUtc = now`;
+- простой дольше `idleDays` → процедура §30.4, канал → `NeedsReconnect`;
+- **строки очереди по такому каналу остаются `Pending`** — `Cancelled` они становятся только при
+  снятии назначения (US-61 п. 5) и отвязке канала владельцем (US-56 п. 1);
+- назначения компаний, история разрывов и `PaidUntilUtc` **не трогаются**; период не замораживается
+  и течёт как шёл.
+
+**Три исключения, удаляющие инстанс немедленно** (отвязка владельцем, удаление аккаунта владельца,
+бан номера) идут мимо этой задачи — они вызывают ту же процедуру §30.4 синхронно из своего
+обработчика. Общая причина: возвращаться некуда.
+
+### 30.4 Необратимая операция: порядок шагов и повторный запуск (§16 п. 16, третий подпункт)
+
+Правило: **сначала БД, потом провайдер, повтор — из БД.**
+
+1. **Транзакция:** `OrphanedInstanceId = ProviderInstanceId`; `ProviderInstanceId = null`;
+   `ProviderSecretCiphertext = null`; `State = <целевое>`; запись `ChannelStateEvent`. Коммит.
+   (Секрет инстанса можно стирать сразу: удаление на стороне провайдера выполняется **партнёрским**
+   токеном платформы и `idInstance`, а не токеном инстанса — это свойство партнёрского API, и оно
+   записывается комментарием, потому что от него зависит весь порядок.)
+2. `LogoutAsync` (best effort, ошибка игнорируется) → `DeleteInstanceAsync(orphanedInstanceId)`.
+3. **Транзакция:** `OrphanedInstanceId = null`. Заметное событие в лог (SPEC §12 п. 7: удаление
+   инстанса логируется всегда — это и деньги, и привязка владельца).
+
+Падение между 1 и 2 или между 2 и 3 оставляет канал с непустым `OrphanedInstanceId` — и **каждый
+проход `ChannelHealthTask` начинается с добивания таких хвостов**. `deleteInstanceAccount` по уже
+удалённому инстансу трактуется как успех (идемпотентность за счёт трактовки ответа, а не за счёт
+надежды). Обратная ситуация — «инстанс удалён, а БД считает канал живым» — конструкцией **невозможна**.
+
+---
+
+## 31. Оповещение владельца и правовой контур
+
+### 31.1 Плашки в кабинете (US-62 п. 2, не режется)
+
+Один источник: `GET /api/notification-channels` уже возвращает состояние и причину. Плашка рендерится
+компонентом `ChannelAlertBanner` в трёх местах по конвенции цикла 3 (там же, где живёт
+`LegalUpdateBanner`): раздел каналов, вкладка «Уведомления» компании, общий кабинет. Состояние
+передаётся **текстом**, а не только цветом (SPEC §12 п. 6).
+
+### 31.2 Оповещение команды — бесплатно и уже работает
+
+Разрыв, бан и удаление инстанса логируются на уровне `Warning`/`Error` с полями `ChannelId`,
+`OwnerUserId`, `Reason`; Sentry-синк доставляет их в GlitchTip, GlitchTip шлёт письмо участникам
+проекта. Нового механизма не заводим (US-62 п. 7).
+
+### 31.3 Письмо владельцу (US-62 п. 4) — режется третьим, и решение с условием
+
+Если история **не** урезана: отправщик минимальный, `System.Net.Mail.SmtpClient`, те же SMTP-данные,
+что у GlitchTip, отдельными переменными окружения; недоступность SMTP ловится и **не роняет фоновую
+задачу**. **Условие:** если под `-warnaserror` этот тип даёт предупреждение об устаревании, новая
+библиотека (MailKit) становится обоснованной — но тогда решение принимается явно, отдельным пунктом
+ревью, а не «по дороге». Проверяется первым же коммитом задачи; до проверки задача не считается
+оценённой. Второе предусловие — спайк SPEC §11 п. 6 (уходит ли SMTP с боевой машины вообще).
+
+### 31.4 Отписка (US-33) — подписанная ссылка без таблицы токенов
+
+Системная строка добавляется рендерером **после** тела шаблона и из шаблона неудалима (US-59 п. 3).
+Ссылка: `https://ezbook.ru/u/{token}`, где
+
+```
+token = Base64Url( phoneBytes ‖ HMAC-SHA256(phoneBytes, key)[..16] )
+```
+
+Номер внутри токена, подпись рядом; `UnsubscribeTokens.TryRead(token, out phone)` проверяет подпись и
+достаёт номер. Таблицы токенов нет, перебор невозможен, отзыв не нужен (действие идемпотентно).
+Страница показывает **маскированный** номер и одну кнопку. Ключ — тот же `Notifications:WebhookToken`
+в роли HMAC-ключа? **Нет**: отдельный `Notifications:UnsubscribeKey`, потому что вебхучный токен
+уезжает третьей стороне, а этот не должен уезжать никуда.
+
+### 31.5 Согласие и правовые тексты
+
+Строка под кнопкой записи и на регистрации (US-33 п. 1), дисклеймер экрана принятия риска
+(US-53 п. 7), предупреждение о рекламе у поля шаблона (US-59 п. 6) — **тексты-«рыба»**, помеченные
+как требующие вычитки юристом (Q4). Политика и оферта правятся **без пересборки** — механизм
+`App_Data/legal/` + bind-mount уже есть (цикл 3), команда только размещает текст заказчика.
+
+---
+
+## 32. Вебхук статусов (ответ на §16 п. 8)
+
+`POST /api/notifications/provider-webhook/{token}` — анонимный, **режется вторым**.
+
+- **Защита:** `{token}` сравнивается с `Notifications:WebhookToken` через
+  `CryptographicOperations.FixedTimeEquals` → несовпадение = `401` с пустым телом, ни одна строка не
+  меняется. Токен передаётся провайдеру как `webhookUrlToken` и **в логи не попадает**:
+  `UseSerilogRequestLogging` пишет `RequestPath`, поэтому в `EnrichDiagnosticContext` для этого
+  маршрута путь подменяется на `/api/notifications/provider-webhook/***`.
+- **Частота:** новая политика rate limiting `notifications-webhook` (600/мин на адрес) — шестая в
+  списке; существующие пять не трогаются.
+- **Парсинг — внутри адаптера** (`GreenApiWebhookParser`) → нейтральный
+  `ProviderCallback { Kind: DeliveryStatus | ChannelState, ProviderMessageId?, InstanceId?, Status, OccurredAtUtc }`.
+  Имя провайдера в контроллер не протекает (US-27 п. 4).
+- **Идемпотентность — через монотонность**, а не через таблицу обработанных событий:
+  `Sent < Delivered < Read` — статус только повышается, повторный или опоздавший вебхук ничего не
+  портит. `noAccount` → `Failed` с причиной «у клиента нет WhatsApp» (терминально, ретраев нет).
+- **Неизвестный `idMessage` — не ошибка:** `200 OK` + `LogDebug`. Возвращать 404 нельзя — провайдер
+  начнёт ретраить вечно.
+- Вебхук `stateInstance` (если провайдер его шлёт) обрабатывается тем же эндпоинтом и **тем же
+  `ChannelStateMapper`**, что и опрос: второй реализации маппинга не появляется.
+- Ответ всегда пустой: никаких подробностей наружу (US-32 п. 7).
+
+---
+
+## 33. Тариф и `SubscriptionResolver` (ответ на §16 п. 9)
+
+- `SubscriptionPlanConfig.AllowNotificationChannel bool` (default `false`) → новый параметр
+  позиционного `record EffectivePlan`. Мест изменения ровно три: объявление, `EffectivePlan.Free`
+  (значение `false` — умолчание Q1: на Free покупка недоступна) и `FromConfig`. Плюс правки в
+  существующих юнит-тестах резолвера, которые конструируют `EffectivePlan` позиционно, — это
+  ожидаемая, механическая часть задачи, и её надо заложить в оценку.
+- **`AllowMailing` не переиспользуется**, `NotifyDaysBefore` не переиспользуется (он про уведомление
+  о деактивации подписки) — оба факта фиксируются комментариями в коде (US-31 пп. 3, 5).
+- **Проверено в коде — SPEC просит именно проверить:** батчевое разрешение по владельцам уже
+  существует, это `SubscriptionResolver.GetEffectivePlansForOwnersAsync(IEnumerable<string>)`, но
+  объявлен он `private`. Канал и `AccountSubscription` оба на `OwnerUserId`, поэтому отправщику нужен
+  именно он, а не путь «компания → владелец → план» (тот делает лишний запрос и лишний словарь).
+  **Делаем метод `public`** — правка в одну строку, без изменения поведения;
+  `GetEffectivePlansAsync(companyIds)` остаётся как есть и продолжает пользоваться им внутри.
+
+---
+
+## 34. Часовые пояса и справочник городов (ответ на §16 пп. 11, 12)
+
+### 34.1 Расчёт
+
+`NotificationTiming` — чистый статический класс, единственное место арифметики времени:
+`VisitStartUtc = TimeZoneInfo.ConvertTimeToUtc(date + start as Unspecified, tz)` с защитой от
+`IsInvalidTime`/`IsAmbiguousTime` (в РФ перехода нет, но бросать исключение из фоновой задачи из-за
+чужой зоны нельзя); `DueAtUtc(Reminder) = VisitStartUtc − leadMinutes ± jitter(±15 мин)`, где джиттер
+**детерминирован от `Id` строки** — пересчёт даёт тот же ответ, и тест не мигает.
+Юниты: Калининград, Москва, **Барнаул**, Владивосток, переход через полночь, приоритет ручной правки
+над выведенной зоной и отдельным кейсом **`Asia/Barnaul` ≠ `Asia/Novosibirsk`** — ровно та ошибка,
+которую легко внести.
+
+### 34.2 Справочник и бэкфилл
+
+- Источник — перечень городов РФ примерно от 50 тыс. населения плюс все административные центры,
+  ~300 строк; данные попадают в миграцию **сгенерированными `InsertData`**, а не чтением файла из
+  ресурсов: миграция обязана быть самодостаточной и воспроизводимой, а `Down` — удалять ровно
+  вставленное.
+- **Порядок (прямой ответ на §16 п. 11):** миграция `SeedCities` идёт **строго раньше**
+  `AddCompanyCityAndTimeZone`, которая добавляет поля и бэкфиллит. Бэкфилл ищет город по паре
+  `(Name = 'Барнаул', Region = 'Алтайский край')` — к этому моменту строка уже существует. Зона —
+  **`Asia/Barnaul`, UTC+7**; в миграции об этом стоит комментарий с датой перехода Алтайского края
+  (2016), чтобы «исправление на Новосибирск» не прошло ревью.
+- Ручная правка зоны: `TimeZoneIsManual = true` ставится при явной передаче `timeZoneId`, отличного
+  от городского; последующее сохранение города зону **не перетирает** (US-30 п. 3).
+- Неизвестная зона: при записи → `400`; при чтении → фолбэк `Europe/Moscow` + `LogWarning`
+  (US-30 п. 7) — фоновая задача из-за одной кривой строки не падает.
+
+### 34.3 Контур деплоя (§16 п. 12)
+
+`TimeZoneConverter` **не нужен**: .NET 6+ принимает IANA-идентификаторы на всех платформах (на
+Windows — через ICU). Нужна **база зон в образе**. Поэтому:
+1. в рантайм-стадии `Dockerfile` — явная установка `tzdata` (одна строка `apt-get`; образ
+   Debian-based, менять на alpine запрещено комментарием в самом файле);
+2. `DeploymentSafetyChecks.ValidateTimeZoneDatabase()` пытается разрешить **`Asia/Barnaul`** (не
+   `Europe/Moscow`: ходовая зона может присутствовать и в урезанной базе, а нужная — нет) и бросает
+   вне developer-окружений. Проверка попадает и в смоук образа в CI (`deploy/ci/smoke.sh`), потому
+   что «зоны нет в образе» обнаруживается либо здесь, либо через месяц по жалобе владельца из
+   Барнаула.
+
+---
+
+## 35. Миграции цикла (ответ на §16 п. 14)
+
+Девять, и **порядок важен только в двух местах** — это и есть ответ про независимость.
+
+| # | Миграция | Зависит от | Ломающая | Содержимое |
+|---|---|---|---|---|
+| 1 | `SeedCities` | — | нет | `City` + ~300 строк данных |
+| 2 | `AddCompanyCityAndTimeZone` | **1** | **да** (`TimeZoneId` NOT NULL, `CityId` обязателен для новых компаний) | `Company.CityId/TimeZoneId/TimeZoneIsManual` + бэкфилл «Барнаул, Алтайский край», `Asia/Barnaul` |
+| 3 | `AddNotificationChannels` | — | нет | канал, назначения, история разрывов, журнал оплаты |
+| 4 | `AddOutboundNotifications` | **3** | нет | очередь + четыре индекса §23.4 |
+| 5 | `AddCompanyNotificationSettings` | — | нет | настройки + шаблоны + история шаблонов |
+| 6 | `AddNotificationOptOut` | — | нет | отказы по номеру |
+| 7 | `AddPlatformSettings` | — | нет | параметры платформы + их журнал |
+| 8 | `AddPlanNotificationChannelFlag` | — | нет | `SubscriptionPlanConfig.AllowNotificationChannel` |
+| 9 | `AddStaffNotificationOptIn` | — | нет | `CompanyMember.NotifyOnBooking` (US-34, **режется первым вместе с историей**) |
+
+Жёстких рёбер два: **1 → 2** и **3 → 4**. Остальные семь независимы и могут писаться и мёржиться в
+любом порядке — это прямо развязывает бэкенд-задачи (§36).
+
+`Down` реальный у всех. У миграции 1 `Down` удаляет ровно вставленные города; у миграции 2 `Down` —
+только `DropColumn` (откат данных бессмысленен, колонка всё равно исчезает), и это объясняется
+комментарием по образцу `ResyncIdentityRoles` цикла 3.
+
+**Проверка на чистой базе обязательна** (SPEC §13 п. 5) с отдельной проверкой бэкфилла: у всех
+существующих компаний зона `Asia/Barnaul`, а не `Asia/Novosibirsk`.
+
+---
+
+## 36. Порядок работ и задачи
+
+### 36.1 Что развязывает параллельность
+
+1. **`API_CONTRACT_CYCLE4.md` — единственная точка синхронизации.** Он зафиксирован до начала
+   кодирования; фронт стартует по нему в тот же день, что и бэкенд, и код друг друга они не читают.
+2. **Семь из девяти миграций независимы** (§35) — бэкенд-задачи не выстраиваются в цепочку.
+3. **Заглушка-транспорт — умолчание**, поэтому ни одна задача не ждёт партнёрского аккаунта
+   GREEN-API и результатов спайка (§38.4).
+
+### 36.2 Backend
+
+| # | Задача | Зависит от | Истории |
+|---|---|---|---|
+| **T4-B1** | `SecretProtector`, `ValidateNotificationSecrets`, `ValidateTimeZoneDatabase`, `NotificationOptions`, секция конфигурации + юниты | — | US-54, US-35 |
+| **T4-B2** | Миграции 1–2: справочник городов, город/зона у компании, бэкфилл; `CitiesController`; `cityId` в создании/правке компании; `CompanyDto` += город/зона | — | US-30 |
+| **T4-B3** | `NotificationTiming`, `NotificationGate`, `NotificationTemplateRenderer`, `Validator`, `DefaultTemplates`, `ChannelPaymentState` — **чистая логика и её юниты, без БД и без HTTP** | — | US-29, US-31, US-59 |
+| **T4-B4** | Миграция 3 + `NotificationChannelsController`: список, заявка, детали, назначения компаний, отвязка | T4-B1 | US-53, US-56, US-61 |
+| **T4-B5** | Адаптер: обе абстракции, заглушки, `GreenApi/*`, классификатор, `GreenApiUrls`, отключение логирования клиента; юниты классификации и `chatId` | T4-B1 | US-27 |
+| **T4-B6** | Привязка и QR: `connect`, `qr` с кэшем, переход в `Connected`, тестовое сообщение с ограничением частоты, сохранение факта принятия риска | T4-B4, T4-B5 | US-53, US-55 |
+| **T4-B7** | Миграции 4–5 + `NotificationScheduler` + три точки вызова в `BookingsController` + настройки и шаблоны компании (эндпоинты) | T4-B3 | US-28, US-31, US-59 |
+| **T4-B8** | **`NotificationDispatchTask`**: выборка, отбраковка, группировка, параллелизм, пауза, бюджет, backoff, исходы | T4-B5, T4-B7 | US-28, US-60 |
+| **T4-B9** | `ChannelHealthTask`: опрос состояний, разрывы, простой, удаление инстансов, уборка неавторизованных; `ScheduledTaskOptions.PeriodSeconds` | T4-B4, T4-B5 | US-55, US-56, US-62 |
+| **T4-B10** | Миграции 6–7 + журнал доставки и сводка + отписка (кабинет, публичная ссылка, `UnsubscribeTokens`) | T4-B7 | US-32, US-33 |
+| **T4-B11** | Миграция 8 + `EffectivePlan.AllowNotificationChannel` + публичный `GetEffectivePlansForOwnersAsync`; параметры платформы и админские эндпоинты (оплата, цена, срок простоя, сводка) | — | US-31, US-57 |
+| **T4-B12** | Замена номера при бане (US-63): перенос периода и назначений, перепривязка очереди | T4-B4, T4-B8 | US-63 |
+| **T4-B13** | Вебхук статусов *(режется вторым)* | T4-B5, T4-B10 | US-32 п. 7 |
+| **T4-B14** | `NotificationDispatchTestFactory` + коллекция + сквозные тесты §27 | T4-B8 | US-60 п. 8 |
+| **T4-B15** | Правовые тексты «рыбой», обновление `legal/`, дисклеймеры; `DEPLOY.md` (ключ шифрования, партнёрский токен, tzdata) | T4-B1 | US-33 п. 7, US-54 п. 6 |
+| **T4-B16** | *(режется первым)* Миграция 9 + уведомления персоналу | T4-B7 | US-34 |
+
+### 36.3 Frontend
+
+| # | Задача | Раздел контракта | Истории |
+|---|---|---|---|
+| **T4-F1** | `src/api/notificationChannels.ts`, `notifications.ts`, `cities.ts`, `platformSettings.ts`; типы в `src/types`; `src/utils/notificationError.ts` | все | все |
+| **T4-F2** | Комбобокс города (доступный, поиск по подстроке, клавиатура) + показ выведенной зоны + ручная правка; город обязателен в форме создания компании | §30 | US-30 |
+| **T4-F3** | Раздел «Уведомления → Каналы» у владельца: список, состояния текстом, срок оплаченного периода, история разрывов | §19–§21 | US-53, US-55 |
+| **T4-F4** | Экран принятия риска (отдельное осознанное действие) + блок «подключить канал» с ценой + заявка + email владельца | §21–§23 | US-53 п. 7, US-57 |
+| **T4-F5** | Модалка QR: опрос по `refreshAfterSeconds`, перевыпуск без перезагрузки, переход в «подключён», таймаут 15 минут, текстовая инструкция (a11y) | §24 | US-53 п. 3 |
+| **T4-F6** | Назначение компаний: диалог с **предупреждением из трёх пунктов** и подтверждением отдельным действием; снятие назначения | §25 | US-61 |
+| **T4-F7** | Вкладка «Уведомления» компании: тумблеры типов, время напоминания, порог, валидация «порог < времени напоминания» | §26 | US-31 |
+| **T4-F8** | Редактор шаблонов: четыре типа, кнопки плейсхолдеров, нередактируемый хвост отписки, **предупреждение о рекламе у поля**, предпросмотр *(режется пятым)*, «вернуть текст платформы» | §27 | US-59 |
+| **T4-F9** | Журнал доставки: `PagedResult`, фильтры, **`Expired` отдельно от `Failed`**, сводка за 30 дней, разбивка по компаниям, маскированный телефон | §28 | US-32 |
+| **T4-F10** | Плашки разрыва и простоя в трёх местах + сценарий замены номера при бане | §19, §29 | US-62, US-63 |
+| **T4-F11** | Админка: сводка по каналам, заявки, отметка оплаты, параметры платформы (цена, срок простоя) | §32–§34 | US-57 |
+| **T4-F12** | Отписка: тумблер в кабинете клиента + публичная страница `/u/{token}` | §31 | US-33 |
+| **T4-F13** | Строка согласия в `BookingModal` и на регистрации; компактная отметка статуса напоминания в карточке записи мастера | §26, §28 | US-33 п. 1, US-32 п. 6 |
+| **T4-F14** | *(режется первым)* тумблер уведомлений сотруднику | §35 | US-34 |
+
+### 36.4 Жёсткие последовательные связи — их мало, и это специально
+
+```
+T4-B1 ─┬─► T4-B4 ──► T4-B6 ──► T4-B12
+       └─► T4-B5 ──► T4-B8 ──► T4-B14
+T4-B3 ───► T4-B7 ──► T4-B10
+T4-B2, T4-B11, T4-B15 — ни от чего не зависят и идут первым же днём
+Фронт: T4-F1 первой, остальные тринадцать — параллельно ей и друг другу
+```
+
+Бэкенд и фронтенд не блокируют друг друга ни в одной точке: всё, что фронту нужно знать, — в
+контракте.
+
+### 36.5 Точки пересечения BE↔FE (обе стороны читают только контракт)
+
+| Что | Где зафиксировано |
+|---|---|
+| Имена и значения состояний канала (строки enum) | контракт §19 |
+| Ключ и интервал опроса QR (`refreshAfterSeconds`) | §24 |
+| Коды: 402 (тариф/оплата), 409 (нужно подтверждение / уже подключён), 429 (частота теста) | §19–§25 |
+| Имена плейсхолдеров шаблона (русские) | §27 |
+| Русские тексты причин в журнале — **собирает сервер**, фронт их не сочиняет | §28 |
+| Форма `PagedResult` журнала и отдельный эндпоинт сводки | §28 |
+| Обязательность `cityId` при создании компании (ломающее) | §30 |
+
+---
+
+## 37. Конфигурация, наблюдаемость и приёмочные грепы
+
+**Секция `Notifications` в `appsettings.json` (плейсхолдеры в git, значения из окружения):**
+`Enabled`, `Provider` (`logging`), `EncryptionKey`, `PartnerToken`, `WebhookToken`, `UnsubscribeKey`,
+`GreenApi:{ApiUrl, TimeoutSeconds}`,
+`Dispatch:{BatchSize, BudgetSeconds, MaxParallelChannels, PauseMinMs, PauseMaxMs, InFlightGraceMinutes, MaxAttempts}`,
+`ReminderJitterMinutes`, `UnauthorizedInstanceTimeoutMinutes`, `TestMessageCooldownMinutes`,
+`ConsecutiveFailureThreshold`, `AllowedRecipients`.
+**Суточного потолка и лимита сообщений в конфигурации нет** — их нет в продукте (решения «Лм», «Пт»).
+
+**Лог прохода отправщика (`Information`, SPEC §12 п. 7):** отправлено / отложено / провалено /
+протухло / пропущено, длительность, **глубина очереди и возраст самой старой `Pending`-строки**,
+сколько каналов отвалилось. **Лог прохода `channel-health`:** сколько каналов опрошено, сколько
+перешло в «отвалился», **сколько в простое и сколько инстансов удалено за проход**. Удаление
+инстанса — всегда отдельное заметное событие, в любом из четырёх случаев. Живость — существующий
+`GET /api/admin/scheduled-tasks`.
+
+**Грепы, без которых цикл не считается готовым** (SPEC §13 п. 1, US-27 п. 4):
+- `GREEN-API|green-api|waInstance|idInstance|apiTokenInstance|chatId|@c\.us` — только в
+  `Services/Notifications/GreenApi/` и в конфиге;
+- `лимит|использовано|остаток|потолок|прогрев` — ноль совпадений в коде, интерфейсе и текстах;
+- токен канала и партнёрский токен — ноль совпадений в `logs/app-*.json` после прогона, **включая
+  URL запросов**.
+
+---
+
+## 38. Расхождения со SPEC, решения сверх его буквы и что нужно от заказчика
+
+### 38.1 Восьмое состояние канала
+
+US-55 п. 1 говорит «ровно семь», US-63 п. 2 вводит терминальное «заменён». В коде состояний
+**восемь** (§23.2). Владелец по-прежнему видит семь формулировок US-55 плюс одну для заменённого
+канала. Продуктового решения это не меняет; в следующей редакции SPEC строку стоит поправить.
+Там же: §16 п. 2 упоминает «шесть состояний» — это остаток от редакции 3, устарело дважды.
+
+### 38.2 Exactly-once недостижим, и граница названа явно
+
+§26.3: при аварии процесса между «попытка записана» и «результат записан» возможен **один**
+дубликат. Альтернатива — записывать попытку после отправки — даёт бесконечный цикл повторов при
+падении, что хуже. Граница зафиксирована здесь, а не обнаруживается QA в проде.
+
+### 38.3 Обнуление простоя запаздывает до 15 минут
+
+§30.3: четыре события не трогают `IdleSinceUtc`, пересчёт делает фоновая задача. Это сознательный
+размен «одно место правды» против «мгновенность», допустимый только потому, что N измеряется сутками.
+Если заказчик когда-нибудь поставит N = 0 дней, решение придётся пересмотреть — записано здесь,
+чтобы это не стало сюрпризом.
+
+### 38.4 Спайк SPEC §11 архитектор закрыть не может
+
+Пункты 1–6 требуют доступа к боевой машине и к живому инстансу провайдера. Архитектура написана так,
+что **ни одна задача от них не заблокирована** (умолчание — заглушка), но три пункта меняют детали и
+должны быть выполнены до T4-B5 и T4-B6:
+- **п. 1 (одна команда `curl` с боевой машины)** — если `api.green-api.com` недостижим, цикл в
+  текущем виде невозможен. Делать первым, это зона devops;
+- **п. 4 (поведение при разрыве)** уточняет `GreenApiResultClassifier` и `ChannelStateMapper` — обе
+  функции чистые и правятся точечно, без переделки;
+- **п. 6 (SMTP с машины)** решает судьбу US-62 п. 4 (§31.3).
+
+### 38.5 Что нужно от заказчика (список для аналитика)
+
+1. **Q1 — на каких тарифах доступна покупка канала.** До ответа `AllowNotificationChannel = false`
+   у Free **и у всех существующих планов** (миграция 8 ставит default `false`). Значит сразу после
+   выката опция не продаётся никому, пока суперадмин не поставит флаг хотя бы одному тарифу. Это
+   безопаснее обратного умолчания, но требует одного явного действия при выпуске — заказчик должен
+   об этом знать заранее.
+2. **Цена опции (§0.3 п. 3).** Пока ключ `notifications.channel.price-per-month` не задан, раздел
+   каналов показывает «подключение временно недоступно». Это ожидаемое состояние после выката, а не
+   дефект — QA должен знать это до приёмки.
+3. **Q4 / П4 — правовая оценка.** Кодируем с «рыбой»; **выпускать функцию наружу нельзя** до ответа.
+4. **П7** — подтверждение, что мастер-ключ шифрования живёт в `.env` (вся §24 написана под это).
+5. **US-62 п. 4** — подтвердить, что письмо владельцу режется третьим, если SMTP с машины не уходит
+   (§31.3).
+
+### 38.6 Чего в цикле нет вопреки соблазну
+
+- **Кода привязки по номеру** вместо QR (§29.3) — второй путь с собственными отказами.
+- **Второго слоя ретраев** (Polly) — §22.
+- **Отдельной таблицы журнала** рядом с очередью — §23.4.
+- **Внутреннего статуса «в работе»** — §26.3.
+- **Таблицы токенов отписки** — §31.4.
+- **Проверки `checkWhatsapp` перед отправкой** — единственный метод провайдера с реальным месячным
+  потолком (30 000); опираемся на `noAccount` в вебхуке, как и советует SPEC §2.4.
+- **Глобального включения раннера в `Testing`** — §27.
+
+---
+
+## 39. Риски SPEC → ответ архитектуры цикла 4
+
+| Риск | Ответ |
+|---|---|
+| **R2** бан номера | §26: пауза как единственная антибан-мера реализована **на канал**, заново случайная на каждую отправку, проверяется юнитом на серии; `delaySendMessagesMilliseconds` выставляется в нижнюю границу (§29.1) |
+| **R3** утечка чужих секретов | §24.3: три рубежа вместо договорённости — выключенная категория логов `HttpClient`, `SafeLabel` вместо URL, адаптер не выпускает исключений наружу; плюс греп в чек-листе (§37) |
+| **R4** партнёрский токен вне Production | §24.2 п. 3: зеркальная проверка **бросает**, а не предупреждает |
+| **R7** дубли | §23.5 уникальный индекс + §26.3 маркер попытки до вызова + advisory lock раннера; остаточная граница названа в §38.2 |
+| **R10** потеря ключа шифрования | §24.4 + новый раздел `DEPLOY.md`; `.env` уже в бэкапе (цикл 3) |
+| **R11** пауза не влезает в `IScheduledTask` | §26.2: арифметика прохода посчитана заранее (5–6 сообщений на канал за проход), бюджет прерывает и паузу тоже, остаток честно остаётся `Pending` |
+| **R13** часовой пояс разъезжается | §34: один класс арифметики, юниты на четыре зоны и полночь, fail-fast на наличие `Asia/Barnaul` в образе |
+| **R16** зависимость от посредника | §28: две абстракции, имя провайдера в одной папке, вебхук парсится адаптером — второй канал не потребует трогать контроллеры |
+| **R19** владельца некому оповестить | §31.1 плашки не режутся и идут из того же ответа API; §31.2 команда узнаёт по уже работающей цепочке GlitchTip |
+| **R20** защиты от объёма нет | §30.2: названы ровно два оставшихся механизма и то, что всё несостоявшееся видно в журнале, — чтобы возвращаться к заказчику с данными, а не с мнением |
+| **R22** простой съедает привязку | §30.3: предупреждение **до** удаления, отдельное состояние `NeedsReconnect`, назначения и период не теряются, N — параметр без релиза |
+
+---
+
+## 40. Ответы на 16 вопросов SPEC §16 — карта
+
+| # | Вопрос | Где ответ |
+|---|---|---|
+| 1 | Форма адаптера, классификация, таймауты, заглушка, выбор реализации, библиотеки | §28, §22 |
+| 2 | Схема канала, состояния, где секрет, история разрывов, связь с компаниями, период, связь с очередью | §23.1, §23.2, §23.4 |
+| 3 | Чем шифруем: Data Protection против прямого AES | §24 (таблица сравнения) |
+| 4 | Сценарий привязки, опрос QR без шторма, таймаут и уборка мусорных инстансов | §29 |
+| 5 | **Пауза внутри `IScheduledTask`**: растягивание, бюджет, отсутствие длинной транзакции, остаток, тестирование | **§26, §27** |
+| 6 | Схема очереди, индексы под приоритет, идемпотентность, снимок текста, протухание, связи, почему не `MailLog` | §23.4, §23.5 |
+| 7 | Где ставятся уведомления в очередь; где живёт рендер | §25.3 |
+| 8 | Вебхук: маршрут, защита, rate limiting, идемпотентность, неизвестный `idMessage` | §32 |
+| 9 | Новое поле тарифа через `SubscriptionResolver`, батчевое разрешение по `OwnerUserId` | §33 |
+| 10 | Хранение отказа от уведомлений | §23.3 (`NotificationOptOut`) |
+| 11 | Справочник городов, сидирование, поиск, ручная правка зоны, порядок бэкфилла | §34.2, §23.3 |
+| 12 | Часовой пояс на контуре деплоя, нужен ли `TimeZoneConverter`, наличие `Asia/Barnaul` | §34.3 |
+| 13 | Где живут параметры платформы (цена, N) | §23.3 (`PlatformSetting`) |
+| 14 | Порядок миграций и их независимость | §35 |
+| 15 | Как гасится и оживает отправка без лавины | §30.2 |
+| 16 | Как считается простой: где дата, что обнуляет, дешёвый ответ «есть ли активная компания», устойчивость к падению, тестирование | §30.3, §30.4, §27.3 |
