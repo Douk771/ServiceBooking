@@ -905,6 +905,21 @@ cd /opt/ezbook/app
 docker compose -f docker-compose.glitchtip.yml --env-file .env up -d
 ```
 
+> **Машина не видит себя через белый адрес.** Роутер не разворачивает трафик внутрь сети
+> (hairpin NAT), поэтому обращение к `errors.ezbook.ru` и `ezbook.ru` изнутри уходит наружу и не
+> возвращается. Это ломает отправку событий: и приложение, и `backup.sh`, и `health-alert.sh`
+> шлют их на публичное имя. Молча — Sentry-клиент не падает из-за недоступного трекера, он теряет
+> события, и панель выглядит пустой, как будто ошибок нет.
+> Для контейнера приложения это решено в `docker-compose.prod.yml` (`extra_hosts` с
+> `host-gateway`). Для скриптов на хосте добавьте имена в `/etc/hosts` **один раз**:
+>
+> ```bash
+> echo "127.0.0.1 ezbook.ru errors.ezbook.ru" | sudo tee -a /etc/hosts
+> ```
+>
+> Проверка: `curl -sI https://errors.ezbook.ru/ | head -1` на самой машине должна вернуть
+> `HTTP/1.1 401`, а не пустоту.
+
 > **Про имя проекта.** В `docker-compose.glitchtip.yml` задано `name: glitchtip`. Без этого Docker
 > берёт имя каталога (`app`) — то же, что у стека приложения, — и сервисы с совпадающими именами
 > схлопываются: GlitchTip остаётся без своей базы, а `docker compose ... down` для одного стека

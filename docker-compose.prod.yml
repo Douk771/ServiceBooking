@@ -28,6 +28,13 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:5000:8080"   # bound to localhost only; nginx on the host proxies to it
+    # Домашний роутер не разворачивает трафик на себя (нет hairpin NAT): обращение к
+    # errors.ezbook.ru изнутри сети уходит на белый адрес и не возвращается. Sentry-клиент при этом
+    # НЕ падает — он молча теряет события, и трекер выглядит пустым, как будто ошибок нет
+    # (обнаружено при развёртывании 2026-09-17). Отправляем имя на хост, где его слушает nginx;
+    # TLS при этом валиден, потому что SNI и сертификат совпадают по имени.
+    extra_hosts:
+      - "errors.ezbook.ru:host-gateway"
     environment:
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=servicebooking;Username=postgres;Password=${POSTGRES_PASSWORD}
       - Jwt__Key=${JWT_KEY}
