@@ -773,10 +773,13 @@ systemctl status servicebooking-backup.timer
 2. `pg_dump -Fc` базы.
 3. `tar czf` обоих docker volume, без остановки приложения: `api_uploads` и
    `api_private_uploads`.
-4. Ротация: 7 ежесуточных + 4 еженедельных (воскресенье).
-5. Всё пишется в `/var/backups/servicebooking` (вне любого docker volume, права `0700`) —
+4. Копирует `.env` как `env-<метка>.txt` с правами `0600`. Без него дамп базы и тома бесполезны:
+   ключ JWT, пароль Postgres, ключи капчи и секрет GlitchTip не восстанавливаются ниоткуда, а часть
+   значений выдаётся внешними кабинетами. Если файла нет — пишет предупреждение, но прогон не валит.
+5. Ротация: 7 ежесуточных + 4 еженедельных (воскресенье).
+6. Всё пишется в `/var/backups/servicebooking` (вне любого docker volume, права `0700`) —
    `docker compose down -v` не унесёт копии вместе с оригиналами.
-6. Итог — в `journalctl -u servicebooking-backup`; неуспех дополнительно шлёт событие в GlitchTip
+7. Итог — в `journalctl -u servicebooking-backup`; неуспех дополнительно шлёт событие в GlitchTip
    (§12), если `SENTRY_DSN` задан.
 
 Посмотреть историю прогонов:
@@ -820,6 +823,16 @@ docker run --rm -v "${PROJECT}_api_uploads:/dst" -v /var/backups/servicebooking:
   sh -c "rm -rf /dst/* && cd /dst && tar xzf /src/$(basename "$LATEST_UPLOADS")"
 docker run --rm -v "${PROJECT}_api_private_uploads:/dst" -v /var/backups/servicebooking:/src alpine \
   sh -c "rm -rf /dst/* && cd /dst && tar xzf /src/$(basename "$LATEST_PRIVATE")"
+
+# 3b. Восстановить конфигурацию, ЕСЛИ восстанавливаетесь на чистой машине или .env испорчен.
+# На работающей машине этот шаг ПРОПУСКАЙТЕ: текущий .env почти наверняка свежее копии, и
+# перезапись откатит недавние правки (новый DSN, новые ключи).
+# LATEST_ENV=$(ls -t /var/backups/servicebooking/env-*.txt | head -1)
+# cp "$LATEST_ENV" /opt/ezbook/app/.env && chmod 600 /opt/ezbook/app/.env
+#
+# Если копии .env нет вовсе (машина потеряна, внешней копии не было) — значения берутся из
+# менеджера паролей оператора, см. «Инвентарь секретов» в начале документа. Дамп базы и тома без
+# .env развернуть не получится.
 
 # 4. Запустить API и дождаться готовности
 docker compose -f docker-compose.prod.yml --env-file .env up -d api
