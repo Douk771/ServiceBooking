@@ -8,8 +8,8 @@
 #
 # Runs on the SAME VPS as docker-compose.prod.yml, as a separate stack (separate `docker compose -f`
 # invocation, own postgres/redis — deliberately not sharing the app's database). Reachable only through
-# nginx, with basic-auth or on its own subdomain with TLS — see DEPLOY.md §11.1, do not publish `web`'s
-# port directly to the internet.
+# nginx on its own subdomain, TLS via certbot + basic-auth in front of GlitchTip's own login — see
+# DEPLOY.md §12 and deploy/nginx/errors.ezbook.conf, do not publish `web`'s port directly to the internet.
 services:
   postgres:
     image: postgres:16-alpine
