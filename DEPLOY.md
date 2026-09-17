@@ -920,6 +920,20 @@ docker compose -f docker-compose.glitchtip.yml --env-file .env up -d
 > Проверка: `curl -sI https://errors.ezbook.ru/ | head -1` на самой машине должна вернуть
 > `HTTP/1.1 401`, а не пустоту.
 
+> **Как забирать отдельный файл из репозитория на этой машине.** Рабочее дерево в
+> `/opt/ezbook/app` ведёт деплой: он переключает его на конкретный коммит, поэтому дерево обычно
+> вне ветки (detached HEAD), и любые локальные правки ломают следующий деплой с
+> `error: Your local changes ... would be overwritten by checkout`. Не используйте
+> `git checkout origin/develop -- <файл>` — он пишет в дерево. Берите файл, не трогая дерево:
+>
+> ```bash
+> cd /opt/ezbook/app && git fetch
+> git show origin/develop:deploy/nginx/errors.ezbook.conf | sudo tee /etc/nginx/sites-available/errors.ezbook.conf > /dev/null
+> ```
+>
+> Если дерево уже испачкано и деплой падает: `git checkout -- <файл>` вернёт его к выкаченному
+> состоянию, `git status --short` должен стать пустым.
+
 > **Про имя проекта.** В `docker-compose.glitchtip.yml` задано `name: glitchtip`. Без этого Docker
 > берёт имя каталога (`app`) — то же, что у стека приложения, — и сервисы с совпадающими именами
 > схлопываются: GlitchTip остаётся без своей базы, а `docker compose ... down` для одного стека
