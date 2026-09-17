@@ -333,7 +333,12 @@ docker compose -f docker-compose.prod.yml logs api --tail=100
 персональные данные. Автоматический бэкап настраивается в §11; разовая команда вручную:
 
 ```bash
-docker run --rm -v ezbook_api_uploads:/from -v ezbook_api_private_uploads:/from-private \
+# Имя тома = <имя проекта compose>_<имя тома>. Имя проекта — это имя каталога, в котором лежит
+# docker-compose.prod.yml, то есть `app` (/opt/ezbook/app). Не «ezbook» — на этом легко ошибиться,
+# и ошибка тихая: docker молча СОЗДАСТ пустой том с неверным именем вместо того, чтобы упасть.
+# Сверьтесь перед выполнением: docker volume ls | grep api_
+PROJECT="${SERVICEBOOKING_COMPOSE_PROJECT:-app}"
+docker run --rm -v "${PROJECT}_api_uploads:/from" -v "${PROJECT}_api_private_uploads:/from-private" \
   -v /opt/ezbook/backups:/to alpine \
   tar czf /to/uploads-$(date +%F).tar.gz -C / from from-private
 ```
@@ -768,9 +773,14 @@ docker compose -f docker-compose.prod.yml --env-file .env exec -T postgres \
 # 3. Восстановить оба volume (ВНИМАНИЕ: перезаписывает их текущее содержимое)
 LATEST_UPLOADS=$(ls -t /var/backups/servicebooking/uploads-*.tar.gz | head -1)
 LATEST_PRIVATE=$(ls -t /var/backups/servicebooking/private-uploads-*.tar.gz | head -1)
-docker run --rm -v ezbook_api_uploads:/dst -v /var/backups/servicebooking:/src alpine \
+# Тот же префикс, что использует backup.sh (SERVICEBOOKING_COMPOSE_PROJECT, по умолчанию `app`).
+# ПРОВЕРЬТЕ имена перед выполнением — при опечатке docker создаст пустой том, а не откажет,
+# и восстановление «пройдёт успешно», не восстановив ничего:
+docker volume ls | grep api_
+PROJECT="${SERVICEBOOKING_COMPOSE_PROJECT:-app}"
+docker run --rm -v "${PROJECT}_api_uploads:/dst" -v /var/backups/servicebooking:/src alpine \
   sh -c "rm -rf /dst/* && cd /dst && tar xzf /src/$(basename "$LATEST_UPLOADS")"
-docker run --rm -v ezbook_api_private_uploads:/dst -v /var/backups/servicebooking:/src alpine \
+docker run --rm -v "${PROJECT}_api_private_uploads:/dst" -v /var/backups/servicebooking:/src alpine \
   sh -c "rm -rf /dst/* && cd /dst && tar xzf /src/$(basename "$LATEST_PRIVATE")"
 
 # 4. Запустить API и дождаться готовности
