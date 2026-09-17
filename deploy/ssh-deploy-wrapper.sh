@@ -52,7 +52,25 @@ case "$cmd" in
     [ -d "$RELEASES_DIR/$ts" ] || refuse "release $ts was never uploaded — run upload-release first"
     cd "$REPO_DIR"
     git fetch --quiet origin
-    git checkout --quiet "$sha"
+    # $REPO_DIR is owned by the deploy pipeline: this must land the tree EXACTLY on $sha regardless of
+    # what an operator left behind by hand (an edit to a tracked file, or an untracked file at a path
+    # the target commit also uses) — plain `git checkout` refuses in both cases and used to abort the
+    # deploy mid-way, after the frontend release was already uploaded (see DEPLOY.md, "Не редактируйте
+    # /opt/ezbook/app вручную"). Log what is about to be discarded BEFORE forcing, so it's visible in the
+    # GitHub Actions run log afterwards — then force deterministically:
+    #   - `git checkout --force` discards local modifications to tracked files AND overwrites untracked
+    #     files that collide with a path in the target commit;
+    #   - `git clean -fd` (no -x) removes any other stray untracked files/dirs. Without -x it never
+    #     touches anything matched by .gitignore — which is exactly where .env and /legal/ live — so
+    #     neither is ever removed by this step.
+    dirty="$(git status --short)"
+    if [ -n "$dirty" ]; then
+      echo "WARNING: $REPO_DIR has local changes that this deploy is about to discard (see DEPLOY.md):" >&2
+      echo "$dirty" >&2
+    fi
+    git checkout --quiet --force "$sha"
+    echo "==> Removing stray untracked files in $REPO_DIR (ignored paths like .env and legal/ are never touched):"
+    git clean -fd
     exec bash deploy/deploy-remote.sh "$ts"
     ;;
 
