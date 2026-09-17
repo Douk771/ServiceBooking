@@ -928,13 +928,17 @@ sudo ufw status verbose                            # не режет ли ufw т
 - [x] **`fleetservice.service` на 8443 продолжает работать** после установки nginx и Docker.
       **2026-09-17, после полного разворачивания: ПРОШЛА.** `curl -k https://ezbook.ru:8443/`
       отвечает `302`, как и до начала работ. Docker, nginx и сертификат соседа не задели.
-- [ ] **Деплой по кнопке из GitHub Actions, сквозь весь путь** (§9) — ни разу не прогонялся
-      живьём. Сделать один прогон `Deploy staging (develop)` и убедиться, что: (а) форс-команда
-      `deploy/ssh-deploy-wrapper.sh` действительно ставится и отрабатывает, (б) `sudo -u
-      ezbookdeploy sudo -n systemctl status fleetservice.service` отказывает, как задумано, (в)
-      при намеренно неверном подтверждающем input'е и при ref≠tag/ref≠master
-      `deploy-production.yml` действительно отказывает, не доходя до SSH. Дописать дату и
-      результат сюда.
+- [ ] **Деплой по кнопке из GitHub Actions, сквозь весь путь** (§9).
+      **2026-09-17: прогон выполнен, пункты (а) и (б) закрыты, (в) остаётся.** `Deploy staging
+      (develop)` отработал успешно; форс-команда проверена снаружи по отдельным ключам —
+      ключ деплоя на произвольную команду отвечает `refused: command not in the allowlist`, на
+      `health` отдаёт `{"status":"Healthy"}`, личный ключ к `ezbookdeploy` не пускает вовсе.
+      Попутно найдено и исправлено: `ezbookdeploy` состоял в группе `sudo`, то есть имел
+      `(ALL : ALL) ALL` — точечные `NOPASSWD` при этом были бессмысленны; и `ssh-copy-id`,
+      выполненный по ошибке для `ezbookdeploy` вместо `server`, дописал туда личный ключ БЕЗ
+      префикса `command=`. Обе дыры закрыты, повторно проверено.
+      **Осталось (в):** при намеренно неверном подтверждающем input'е и при ref≠tag / ref≠master
+      `deploy-production.yml` должен отказывать, не доходя до SSH. Проверить и дописать дату сюда.
 - [x] **`curl -I https://ezbook.ru/embed/anything` не отдаёт `X-Frame-Options`/`frame-ancestors`**
       (Шаг 6.4). **2026-09-17, живой прод-стенд ezbook.ru: НЕ ПРОШЛА.** `/embed/test` отдавал
       `X-Frame-Options: DENY` и `frame-ancestors 'none'` — виджет не встраивался в чужой iframe
