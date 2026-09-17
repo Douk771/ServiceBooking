@@ -434,7 +434,10 @@ echo "0 3 * * * root certbot renew --quiet --deploy-hook 'systemctl reload nginx
 
 **Шаг 6.4.** Security-заголовки уже прописаны в `deploy/nginx/ezbook.conf` (HSTS, `nosniff`,
 `Referrer-Policy`, CSP, `X-Frame-Options`). Ничего дополнительно настраивать не нужно, но
-проверьте живьём после выпуска сертификата:
+проверьте живьём после выпуска сертификата — эта проверка не формальность: 2026-09-17 она уже
+один раз нашла реальный дефект на этой же машине (`/embed/` отдавал `X-Frame-Options`/CSP, хотя не
+должен был — причина и фикс в [«Почему так сделано» → фикс `/embed/` fallback от
+2026-09-17»](#фикс-embed-fallback-от-2026-09-17)):
 
 ```bash
 curl -I https://ezbook.ru/                | grep -Ei 'strict-transport|x-content-type|referrer-policy|content-security|x-frame'
@@ -932,6 +935,20 @@ sudo ufw status verbose                            # не режет ли ufw т
       при намеренно неверном подтверждающем input'е и при ref≠tag/ref≠master
       `deploy-production.yml` действительно отказывает, не доходя до SSH. Дописать дату и
       результат сюда.
+- [ ] **`curl -I https://ezbook.ru/embed/anything` не отдаёт `X-Frame-Options`/`frame-ancestors`**
+      (Шаг 6.4). **2026-09-17, живой прод-стенд ezbook.ru: НЕ ПРОШЛА.** `/embed/test` отдавал
+      `X-Frame-Options: DENY` и `frame-ancestors 'none'` — виджет не встраивался в чужой iframe
+      вообще. Причина: `try_files ... /index.html;` в `location /embed/` — это внутренний
+      редирект, и nginx пересопоставлял `/index.html` с `location /`, откуда и приезжали
+      framing-заголовки; поскольку файла `/embed/<slug>` на диске никогда нет, в этот fallback
+      уходил каждый запрос виджета без исключений. Исправлено в `deploy/nginx/ezbook.conf`
+      (fallback теперь уходит в именованный `location @embed_fallback`, который nginx не
+      пересопоставляет с `location /`). Проверено локально на `nginx/1.31.5` (brew): `/` —
+      `X-Frame-Options`/CSP на месте, `/embed/test` — их нет, HSTS/nosniff/Referrer-Policy есть
+      везде, `/api/...` не пострадал. **На боевой машине конфиг ещё со старым багом — накатить
+      исправленный `ezbook.conf` и перезагрузить nginx** (см. §6.4 и "Почему так сделано → фикс
+      `/embed/` fallback от 2026-09-17" ниже), после чего повторить эту живую проверку и
+      отметить дату здесь.
 
 ---
 
@@ -1102,7 +1119,70 @@ Yandex SmartCaptcha не требует в CSP ничего, кроме `smartca
 `X-Frame-Options: DENY` + `Content-Security-Policy: frame-ancestors 'none'` стоят только в
 `location /` — кроме `/embed/*` (виджет записи), для которого встраивание в чужой iframe — весь
 смысл существования страницы. Новый `location` в конфиге наследует поведение блока, в который
-попадёт.
+попадёт — но именно здесь есть тонкость, см. следующий пункт.
+
+### Фикс `/embed/` fallback от 2026-09-17
+
+Живая проверка на проде (Шаг 6.4 checklist §16) нашла реальный дефект: `location /embed/` был
+написан как `try_files $uri $uri/ /index.html;`, и это ломало ровно то, для чего `/embed/`
+существует. Причина в семантике nginx, которая на первый взгляд не очевидна: последний аргумент
+`try_files` — это **внутренний редирект**, а не «отдать этот файл как есть». nginx заново
+прогоняет получившийся URI (`/index.html`) через список всех `location`, и `/index.html` не
+подпадает под префикс `/embed/`, поэтому попадает в `location /` — и получает ЕГО `add_header`
+(`X-Frame-Options: DENY`, CSP с `frame-ancestors 'none'`). Так как для маршрутов виджета
+(`/embed/<slug>`, клиентская SPA-маршрутизация) файла на диске никогда не бывает, в этот fallback
+уходил буквально каждый запрос — не редкий край, а 100% трафика виджета.
+
+Исправление — увести fallback в именованный `location`:
+
+```
+location /embed/ {
+    try_files $uri $uri/ @embed_fallback;
+}
+location @embed_fallback {
+    rewrite ^ /index.html break;
+}
+```
+
+Именованные `location` — единственный вид `location`, который nginx **не** пересопоставляет по
+префиксу: URI, отданный в `@embed_fallback`, уже никогда не попадёт в `location /`. `try_files`
+по-прежнему сначала пытается отдать реальный файл/директорию под `/embed/`, если они есть, и
+только потом уходит в fallback — поведение для настоящих файлов не изменилось.
+
+Второй вариант, который тоже решает проблему (`rewrite ^ /index.html break;` прямо внутри
+`location /embed/`, без `try_files`), был отклонён, потому что тогда пришлось бы отдельно, через
+`if`, проверять наличие настоящего файла на диске — а `if` в `location` в nginx официально не
+рекомендован (непредсказуемое поведение при сочетании с другими директивами). Именованный
+`location` этой развилки не создаёт.
+
+Ни `/embed/`, ни `@embed_fallback` не объявляют собственных `add_header`, поэтому оба, как и
+раньше, наследуют HSTS/`nosniff`/`Referrer-Policy` с уровня `server` — framing-ограничения на них
+по-прежнему не действуют, но остальная часть US-47 действует.
+
+Проверено локально (`nginx/1.31.5` через brew, конфиг из `deploy/nginx/ezbook.conf` один в один,
+только `root`/`listen` подставлены под тестовый стенд): на `/` `X-Frame-Options` и CSP с
+`frame-ancestors 'none'` присутствуют вместе с HSTS/`nosniff`/`Referrer-Policy`; на `/embed/test`
+`X-Frame-Options` и CSP отсутствуют полностью, а HSTS/`nosniff`/`Referrer-Policy` есть; на `/api/`
+поведение не изменилось.
+
+**Применение на боевой машине.** Конфиг там уже отличается от репозитория — `certbot --nginx`
+дописал в него собственный `server`-блок на 443, редирект с 80 на 443 и `ssl_certificate`/
+`ssl_certificate_key`/`include options-ssl-nginx.conf`/`ssl_dhparam`. Файл нельзя просто
+перезаписать содержимым из репозитория — это снесёт то, что дописал certbot, и сайт перестанет
+отвечать по HTTPS. Правильная последовательность:
+
+1. `sudo cp /etc/nginx/sites-available/ezbook.conf /etc/nginx/sites-available/ezbook.conf.bak-$(date +%F)`
+   — на всякий случай, прежде чем трогать боевой файл.
+2. Открыть боевой `/etc/nginx/sites-available/ezbook.conf` и найти в нём блок `location /embed/`
+   (он будет в обоих `server`-блоках — на 80, если certbot оставил там копию для нешифрованного
+   доступа, и точно в блоке на 443, который реально обслуживает трафик). Заменить в каждом
+   найденном месте старый `try_files $uri $uri/ /index.html;` на новую пару `location /embed/` +
+   `location @embed_fallback` — текст один в один как в `deploy/nginx/ezbook.conf` этого репо,
+   вставляется точечно, ssl-директивы и остальной certbot'овский server-блок не трогать.
+3. `sudo nginx -t` — обязательно перед reload, чтобы не уронить прод синтаксической ошибкой.
+4. `sudo systemctl reload nginx` (не `restart` — reload не рвёт уже открытые соединения).
+5. Повторить живую проверку из Шага 6.4 (`curl -I https://ezbook.ru/embed/anything`) и отметить
+   результат и дату в чек-листе §16.
 
 ### Какую ветку катим и почему
 
