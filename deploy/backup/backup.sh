@@ -77,7 +77,7 @@ chmod 0700 "$BACKUP_ROOT"   # personal data lives in here (client-note photos) �
 # fail() reports to it) was only a matter of weeks away. Sum the newest file of each of the three kinds
 # instead — that's what one backup run is actually about to write.
 last_set_size_kb=0
-for pattern in "db-*.dump" "uploads-*.tar.gz" "private-uploads-*.tar.gz"; do
+for pattern in "db-*.dump" "uploads-*.tar.gz" "private-uploads-*.tar.gz" "env-*.txt"; do
   # shellcheck disable=SC2012
   # `|| true` is load-bearing under `set -euo pipefail`: with no matching file the glob stays literal,
   # ls exits non-zero and pipefail propagates that as the pipeline's status — which, in a bare
@@ -125,6 +125,26 @@ for vol in "${PROJECT_NAME}_api_uploads:uploads" "${PROJECT_NAME}_api_private_up
   log "volume backup OK: $(basename "${out%.tmp}") ($(du -h "${out%.tmp}" | cut -f1))"
 done
 
+# ---- 3b. .env ----
+# Конфигурация не восстанавливается ниоткуда: файл в .gitignore и генерируется на машине. Без него
+# дамп базы и тома бесполезны — нет ни ключа JWT, ни пароля Postgres, ни ключей капчи, ни секрета
+# GlitchTip, а часть значений выдаётся внешними кабинетами и заново берётся только оттуда.
+# Права 0600: внутри секреты, а каталог 0700 root-only — но лишний рубеж здесь дешевле разбирательств.
+# ВАЖНО: это НЕ защита от потери машины — копия лежит на ней же. От потери машины спасает только
+# менеджер паролей у оператора (см. DEPLOY.md, инвентарь секретов).
+if [ -f "$ENV_FILE" ]; then
+  if cp "$ENV_FILE" "$BACKUP_ROOT/env-${ts}${suffix}.txt.tmp"; then
+    chmod 600 "$BACKUP_ROOT/env-${ts}${suffix}.txt.tmp"
+    mv "$BACKUP_ROOT/env-${ts}${suffix}.txt.tmp" "$BACKUP_ROOT/env-${ts}${suffix}.txt"
+    log "env backup OK: env-${ts}${suffix}.txt"
+  else
+    rm -f "$BACKUP_ROOT/env-${ts}${suffix}.txt.tmp"
+    fail "env backup failed"
+  fi
+else
+  log "WARNING: $ENV_FILE не найден — конфигурация в копию не попала"
+fi
+
 # ---- 4. rotation ----
 # The trailing `|| true` on both pipelines is required, not defensive noise: under `set -euo pipefail`
 # a pattern with no matches makes ls exit non-zero, pipefail turns that into the pipeline's status, and
@@ -132,11 +152,11 @@ done
 # a unit that systemd reports as failed for a backup that in fact succeeded. The weekly patterns match
 # nothing at all until the first Sunday run, so this fires on ordinary days, not just in theory.
 log "rotating: keep $KEEP_DAILY daily, $KEEP_WEEKLY weekly"
-for pattern in "db-*[0-9]Z.dump" "uploads-*[0-9]Z.tar.gz" "private-uploads-*[0-9]Z.tar.gz"; do
+for pattern in "db-*[0-9]Z.dump" "uploads-*[0-9]Z.tar.gz" "private-uploads-*[0-9]Z.tar.gz" "env-*[0-9]Z.txt"; do
   # shellcheck disable=SC2012
   ls -1t "$BACKUP_ROOT"/$pattern 2>/dev/null | tail -n +$((KEEP_DAILY + 1)) | xargs -r rm -f || true
 done
-for pattern in "db-*-weekly.dump" "uploads-*-weekly.tar.gz" "private-uploads-*-weekly.tar.gz"; do
+for pattern in "db-*-weekly.dump" "uploads-*-weekly.tar.gz" "private-uploads-*-weekly.tar.gz" "env-*-weekly.txt"; do
   # shellcheck disable=SC2012
   ls -1t "$BACKUP_ROOT"/$pattern 2>/dev/null | tail -n +$((KEEP_WEEKLY + 1)) | xargs -r rm -f || true
 done
