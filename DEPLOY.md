@@ -925,9 +925,9 @@ sudo ufw status verbose                            # не режет ли ufw т
       стенде. Повторить полный цикл (бэкап → `docker compose down -v` на тестовых данных →
       восстановление → проверка `GET /api/client-notes/photos/{id}`) здесь, с реальным
       `systemd`/`pg_dump`, дописать дату сюда и в §11.2.
-- [ ] **`fleetservice.service` на 8443 продолжает работать** после установки nginx и Docker.
-      Проверить сразу после §1 и ещё раз после полного разворачивания — дёрнуть его так же, как
-      дёргали до начала работ, и сравнить с поведением до.
+- [x] **`fleetservice.service` на 8443 продолжает работать** после установки nginx и Docker.
+      **2026-09-17, после полного разворачивания: ПРОШЛА.** `curl -k https://ezbook.ru:8443/`
+      отвечает `302`, как и до начала работ. Docker, nginx и сертификат соседа не задели.
 - [ ] **Деплой по кнопке из GitHub Actions, сквозь весь путь** (§9) — ни разу не прогонялся
       живьём. Сделать один прогон `Deploy staging (develop)` и убедиться, что: (а) форс-команда
       `deploy/ssh-deploy-wrapper.sh` действительно ставится и отрабатывает, (б) `sudo -u
@@ -935,7 +935,7 @@ sudo ufw status verbose                            # не режет ли ufw т
       при намеренно неверном подтверждающем input'е и при ref≠tag/ref≠master
       `deploy-production.yml` действительно отказывает, не доходя до SSH. Дописать дату и
       результат сюда.
-- [ ] **`curl -I https://ezbook.ru/embed/anything` не отдаёт `X-Frame-Options`/`frame-ancestors`**
+- [x] **`curl -I https://ezbook.ru/embed/anything` не отдаёт `X-Frame-Options`/`frame-ancestors`**
       (Шаг 6.4). **2026-09-17, живой прод-стенд ezbook.ru: НЕ ПРОШЛА.** `/embed/test` отдавал
       `X-Frame-Options: DENY` и `frame-ancestors 'none'` — виджет не встраивался в чужой iframe
       вообще. Причина: `try_files ... /index.html;` в `location /embed/` — это внутренний
@@ -945,10 +945,11 @@ sudo ufw status verbose                            # не режет ли ufw т
       (fallback теперь уходит в именованный `location @embed_fallback`, который nginx не
       пересопоставляет с `location /`). Проверено локально на `nginx/1.31.5` (brew): `/` —
       `X-Frame-Options`/CSP на месте, `/embed/test` — их нет, HSTS/nosniff/Referrer-Policy есть
-      везде, `/api/...` не пострадал. **На боевой машине конфиг ещё со старым багом — накатить
-      исправленный `ezbook.conf` и перезагрузить nginx** (см. §6.4 и "Почему так сделано → фикс
-      `/embed/` fallback от 2026-09-17" ниже), после чего повторить эту живую проверку и
-      отметить дату здесь.
+      везде, `/api/...` не пострадал. **2026-09-17, повторная проверка на боевом стенде после
+      применения фикса: ПРОШЛА.** `curl -I https://ezbook.ru/embed/test` — ни `X-Frame-Options`,
+      ни `Content-Security-Policy`, при этом `Strict-Transport-Security`, `X-Content-Type-Options`
+      и `Referrer-Policy` на месте; страница отдаётся (200, заголовок приложения). На `/`
+      framing-заголовки по-прежнему строгие. Пункт закрыт.
 
 ---
 
