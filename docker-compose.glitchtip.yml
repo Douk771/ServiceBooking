@@ -1,3 +1,10 @@
+# ИМЯ ПРОЕКТА ЗАДАНО ЯВНО И ЭТО НЕ КОСМЕТИКА.
+# Без него docker compose берёт имя каталога — а этот стек запускают из того же /opt/ezbook/app,
+# что и docker-compose.prod.yml. Оба имеют сервисы `postgres` и оба получали проект `app`, из-за
+# чего контейнеры схлопывались по именам: GlitchTip остался без своей БД, а `down` для одного
+# стека снёс бы контейнеры другого (обнаружено при развёртывании 2026-09-17).
+name: glitchtip
+
 # Self-hosted GlitchTip (T-D4, US-45, ARCHITECTURE.md §11.4) — speaks the Sentry protocol, so the
 # Sentry.Serilog sink already wired into the API (Program.cs, appsettings.json Sentry:Dsn) needs no
 # code changes to talk to it.
