@@ -32,6 +32,26 @@ services:
     volumes:
       - glitchtip_redis_data:/data
 
+  # Схема базы GlitchTip создаётся ЗДЕСЬ и больше нигде: ни web, ни worker миграции не применяют.
+  # Без этого сервиса стек поднимается «успешно» — страницы открываются, — а первое же обращение к
+  # таблице пользователей падает с `relation "users_user" does not exist`, то есть 500 на логине
+  # (найдено при первом реальном развёртывании 2026-09-17). Одноразовый запуск: `restart: no`,
+  # контейнер отрабатывает и завершается, web ждёт именно его успешного завершения.
+  migrate:
+    image: glitchtip/glitchtip:v4.1
+    restart: "no"
+    command: ./manage.py migrate --noinput
+    environment:
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_POSTGRES_PASSWORD}@postgres:5432/glitchtip
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+      REDIS_URL: redis://redis:6379/0
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+      GLITCHTIP_DOMAIN: https://${GLITCHTIP_DOMAIN}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@localhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   web:
     image: glitchtip/glitchtip:v4.1
     restart: unless-stopped
@@ -54,6 +74,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   worker:
     image: glitchtip/glitchtip:v4.1

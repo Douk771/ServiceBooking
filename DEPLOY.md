@@ -899,6 +899,17 @@ cd /opt/ezbook/app
 docker compose -f docker-compose.glitchtip.yml --env-file .env up -d
 ```
 
+Миграции применяет одноразовый сервис `migrate`, и `web` стартует только после его успешного
+завершения. Если стек поднимался ДО добавления этого сервиса (или `migrate` почему-то не
+отработал), логин отдаёт 500 с `relation "users_user" does not exist` — схемы базы просто нет.
+Разовое лечение:
+
+```bash
+cd /opt/ezbook/app
+docker compose -f docker-compose.glitchtip.yml --env-file .env run --rm web ./manage.py migrate
+docker compose -f docker-compose.glitchtip.yml --env-file .env restart web
+```
+
 Первый вход — `https://errors.ezbook.ru/` (браузер сначала спросит basic-auth логин/пароль из
 шага 12.3, потом покажет собственную форму логина GlitchTip). Создайте организацию и проект (тип
 Node/Other — нужен только DSN). Скопируйте DSN проекта: Settings → Client Keys (DSN).
