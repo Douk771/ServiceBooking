@@ -1,0 +1,237 @@
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using ServiceBooking.API.DTOs.Notifications;
+using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
+using ServiceBooking.Infrastructure.Data;
+
+namespace ServiceBooking.API.Controllers;
+
+/// <summary>
+/// Client-facing opt-out (cabinet + public link, US-33, T4-B10) and the provider's delivery-status
+/// webhook (US-32 p.7, T4-B13 — cut second). Two very different trust levels share this controller only
+/// because API_CONTRACT_CYCLE4.md groups them under <c>/api/notifications/*</c>.
+/// </summary>
+[ApiController]
+[Route("api/notifications")]
+public class NotificationsController(AppDbContext db, IOptions<NotificationOptions> options, ILogger<NotificationsController> logger) : ControllerBase
+{
+    // ── Cabinet preferences ──────────────────────────────────────────────────────────────────────
+
+    [HttpGet("preferences")]
+    [Authorize]
+    public async Task<ActionResult<NotificationPreferencesDto>> GetPreferences()
+    {
+        var phone = await CallerCanonicalPhoneAsync();
+        if (phone is null) return Ok(new NotificationPreferencesDto(true));
+
+        var optedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone);
+        return Ok(new NotificationPreferencesDto(!optedOut));
+    }
+
+    [HttpPut("preferences")]
+    [Authorize]
+    public async Task<IActionResult> UpdatePreferences([FromBody] UpdateNotificationPreferencesDto dto)
+    {
+        var phone = await CallerCanonicalPhoneAsync();
+        if (phone is null) return NoContent();
+
+        await SetOptOutAsync(phone, optedOut: !dto.Enabled, OptOutSource.Cabinet, User.FindFirstValue(ClaimTypes.NameIdentifier));
+        return NoContent();
+    }
+
+    // ── Public unsubscribe link ──────────────────────────────────────────────────────────────────
+
+    [HttpGet("unsubscribe/{token}")]
+    public async Task<ActionResult<UnsubscribePageDto>> GetUnsubscribePage(string token)
+    {
+        if (!TryReadToken(token, out var phone)) return NotFound();
+
+        var alreadyOptedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone);
+        return Ok(new UnsubscribePageDto(PhoneDisplayMask.Mask(phone), alreadyOptedOut));
+    }
+
+    [HttpPost("unsubscribe/{token}")]
+    public async Task<IActionResult> Unsubscribe(string token)
+    {
+        if (!TryReadToken(token, out var phone)) return NotFound();
+
+        await SetOptOutAsync(phone, optedOut: true, OptOutSource.Link, userId: null);
+        return NoContent();
+    }
+
+    // ── Provider webhook ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// API_CONTRACT_CYCLE4.md §33 / ARCHITECTURE_CYCLE4.md §32. <paramref name="parser"/> is resolved
+    /// per-action (not a primary-constructor dependency) so an environment where
+    /// <c>IProviderWebhookParser</c> isn't registered yet doesn't break every OTHER action on this
+    /// controller (preferences, unsubscribe) — same reasoning as <c>AdminController.GetScheduledTasks</c>'s
+    /// <c>[FromServices]</c> use.
+    /// </summary>
+    [HttpPost("provider-webhook/{token}")]
+    [EnableRateLimiting("notifications-webhook")]
+    public async Task<IActionResult> ProviderWebhook(string token, [FromServices] IProviderWebhookParser parser)
+    {
+        var expectedToken = options.Value.WebhookToken;
+        if (string.IsNullOrEmpty(expectedToken) || !ConstantTimeEquals(token, expectedToken))
+            return Unauthorized();
+
+        string rawBody;
+        using (var reader = new StreamReader(Request.Body, Encoding.UTF8))
+            rawBody = await reader.ReadToEndAsync();
+
+        ProviderCallback? callback;
+        try
+        {
+            callback = parser.Parse(rawBody);
+        }
+        catch (Exception ex)
+        {
+            // A malformed/unexpected body must never fail the webhook with anything but 200 (§32: the
+            // provider retries forever on anything else) — log for our own visibility and move on.
+            logger.LogWarning(ex, "Failed to parse provider webhook body");
+            return Ok();
+        }
+
+        if (callback is null) return Ok();
+
+        switch (callback.Kind)
+        {
+            case ProviderCallbackKind.DeliveryStatus:
+                await ApplyDeliveryStatusAsync(callback);
+                break;
+            case ProviderCallbackKind.ChannelState:
+                await ApplyChannelStateAsync(callback);
+                break;
+        }
+
+        return Ok();
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
+
+    private async Task ApplyDeliveryStatusAsync(ProviderCallback callback)
+    {
+        if (callback.ProviderMessageId is null || callback.MessageStatus is null) return;
+
+        // Unknown idMessage is NOT an error (§32) — the row may belong to a different environment/run,
+        // or the provider may be replaying an event for a message we never actually queued.
+        var row = await db.OutboundNotifications
+            .FirstOrDefaultAsync(n => n.ProviderMessageId == callback.ProviderMessageId);
+        if (row is null)
+        {
+            logger.LogDebug("Provider webhook referenced unknown idMessage {ProviderMessageId}", callback.ProviderMessageId);
+            return;
+        }
+
+        // Monotonicity (§32): a status only ever moves forward. Failed is handled as its own
+        // unconditional terminal case — a terminal rejection can arrive instead of a delivery update at
+        // any point, so it isn't part of the Sent<Delivered<Read progression.
+        switch (callback.MessageStatus.Value)
+        {
+            case ProviderMessageStatus.Failed:
+                if (row.Status is NotificationStatus.Sent or NotificationStatus.Pending)
+                {
+                    row.Status = NotificationStatus.Failed;
+                    row.Reason = NotificationReason.RecipientHasNoWhatsApp;
+                }
+                break;
+
+            case ProviderMessageStatus.Sent:
+                if (row.Status == NotificationStatus.Pending) { row.Status = NotificationStatus.Sent; row.SentAtUtc ??= callback.OccurredAtUtc; }
+                break;
+
+            case ProviderMessageStatus.Delivered:
+                if (row.Status is NotificationStatus.Pending or NotificationStatus.Sent)
+                {
+                    row.Status = NotificationStatus.Delivered;
+                    row.DeliveredAtUtc ??= callback.OccurredAtUtc;
+                }
+                break;
+
+            case ProviderMessageStatus.Read:
+                if (row.Status is NotificationStatus.Pending or NotificationStatus.Sent or NotificationStatus.Delivered)
+                {
+                    row.Status = NotificationStatus.Delivered; // "Read" is a timestamp, not its own Status member (§23.4: exactly seven)
+                    row.DeliveredAtUtc ??= callback.OccurredAtUtc;
+                }
+                row.ReadAtUtc ??= callback.OccurredAtUtc;
+                break;
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private async Task ApplyChannelStateAsync(ProviderCallback callback)
+    {
+        if (callback.InstanceId is null || callback.ChannelState is null) return;
+
+        var channel = await db.NotificationChannels.FirstOrDefaultAsync(c => c.ProviderInstanceId == callback.InstanceId);
+        if (channel is null) return;
+
+        var mapping = ChannelStateMapper.Map(channel.State, callback.ChannelState.Value, channel.ConnectedAtUtc is not null);
+        channel.LastStateCheckAtUtc = callback.OccurredAtUtc;
+
+        if (mapping.State != channel.State && mapping.Reason is { } reason)
+        {
+            db.ChannelStateEvents.Add(new ChannelStateEvent
+            {
+                Id = Guid.NewGuid(), ChannelId = channel.Id,
+                FromState = channel.State, ToState = mapping.State, Reason = reason, OccurredAtUtc = callback.OccurredAtUtc,
+            });
+            channel.State = mapping.State;
+            if (mapping.State == ChannelState.Connected) channel.ConnectedAtUtc ??= callback.OccurredAtUtc;
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<string?> CallerCanonicalPhoneAsync()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) return null;
+        return await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.PhoneNumber).FirstOrDefaultAsync();
+    }
+
+    private bool TryReadToken(string token, out string phone)
+    {
+        phone = string.Empty;
+        var key = options.Value.UnsubscribeKey;
+        if (string.IsNullOrEmpty(key)) return false;
+        return UnsubscribeTokens.TryRead(token, Encoding.UTF8.GetBytes(key), out phone);
+    }
+
+    private async Task SetOptOutAsync(string phone, bool optedOut, OptOutSource source, string? userId)
+    {
+        var existing = await db.NotificationOptOuts.FirstOrDefaultAsync(o => o.Phone == phone);
+        if (optedOut)
+        {
+            if (existing is not null) return; // idempotent
+            db.NotificationOptOuts.Add(new NotificationOptOut { Id = Guid.NewGuid(), Phone = phone, Source = source, UserId = userId });
+        }
+        else if (existing is not null)
+        {
+            db.NotificationOptOuts.Remove(existing);
+        }
+        await db.SaveChangesAsync();
+    }
+
+    private static bool ConstantTimeEquals(string a, string b)
+    {
+        var bytesA = Encoding.UTF8.GetBytes(a);
+        var bytesB = Encoding.UTF8.GetBytes(b);
+        // CryptographicOperations.FixedTimeEquals requires equal-length spans to run in constant time;
+        // a length mismatch is itself not sensitive information here (token length isn't secret), so
+        // returning false immediately for it is the standard, accepted use of this API.
+        return bytesA.Length == bytesB.Length && CryptographicOperations.FixedTimeEquals(bytesA, bytesB);
+    }
+}

@@ -1,0 +1,256 @@
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.Extensions.Options;
+using ServiceBooking.API.Services;
+
+namespace ServiceBooking.API.Services.Notifications.GreenApi;
+
+/// <summary>Thrown by every <see cref="GreenApiProvisioning"/> call that fails — the message is always
+/// built from <c>SafeLabel</c> and the status code, never from the raw response body or the request URL,
+/// so a controller that lets this bubble into a log or a 5xx problem+json never leaks a token
+/// (ARCHITECTURE_CYCLE4.md §24.3).</summary>
+public sealed class GreenApiProvisioningException(string message, Exception? inner = null) : Exception(message, inner);
+
+/// <summary>
+/// Everything that uses the PLATFORM's own partner token (ARCHITECTURE_CYCLE4.md §28). Unlike
+/// <see cref="GreenApiTransport"/>, failures here are exceptional rather than classified into a result
+/// type — provisioning calls are rare, synchronous-with-a-human-waiting operations (the connect flow,
+/// §29), not a high-volume queue the way sending is, so there is no backoff/retry state machine that
+/// needs a closed set of outcomes to switch on.
+/// </summary>
+public sealed class GreenApiProvisioning(
+    IHttpClientFactory httpClientFactory,
+    IOptions<NotificationOptions> options,
+    ILogger<GreenApiProvisioning> logger) : IChannelProvisioning
+{
+    // GREEN-API's own recommendation for how often a device may reasonably re-poll its QR endpoint,
+    // relayed to the caller as QrSnapshot.RefreshAfterSeconds (§29.2) — the actual client-visible cache
+    // in front of this call is IMemoryCache in the connect-flow controller, not this adapter.
+    private const int QrRefreshAfterSeconds = 3;
+
+    public async Task<ProvisionedInstance> CreateInstanceAsync(CancellationToken ct)
+    {
+        var opts = options.Value;
+        var (uri, safeLabel) = GreenApiUrls.CreateInstance(opts.GreenApi.ApiUrl, opts.PartnerToken ?? string.Empty);
+        var (body, _) = await SendAsync(HttpMethod.Post, uri, safeLabel, ct);
+
+        var idInstance = ReadString(body, "idInstance") ?? ReadNumberAsString(body, "idInstance");
+        var apiTokenInstance = ReadString(body, "apiTokenInstance");
+        if (idInstance is null || apiTokenInstance is null)
+            throw new GreenApiProvisioningException($"{safeLabel}: response did not contain idInstance/apiTokenInstance.");
+
+        return new ProvisionedInstance(idInstance, apiTokenInstance);
+    }
+
+    public async Task<QrSnapshot> GetQrAsync(ChannelCredentials credentials, CancellationToken ct)
+    {
+        var opts = options.Value;
+        var (uri, safeLabel) = GreenApiUrls.GetQr(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
+        var (body, _) = await SendAsync(HttpMethod.Get, uri, safeLabel, ct);
+
+        var type = ReadString(body, "type");
+        switch (type)
+        {
+            case "qrCode":
+                return new QrSnapshot(ReadString(body, "message"), Authorized: false, QrRefreshAfterSeconds);
+
+            case "alreadyLogged":
+                // §29.1: the moment the connect flow's poll first sees Authorized is exactly the moment
+                // it needs the phone number for NotificationChannel.PhoneNumber — fetched here, from the
+                // same round trip, rather than a second provisioning call the controller would have to
+                // remember to make.
+                var phoneNumber = await TryFetchPhoneNumberAsync(credentials, ct);
+                return new QrSnapshot(null, Authorized: true, QrRefreshAfterSeconds, phoneNumber);
+
+            default:
+                // Instance still starting up (no QR produced yet) — not an error, just "try again shortly".
+                return new QrSnapshot(null, Authorized: false, QrRefreshAfterSeconds);
+        }
+    }
+
+    /// <summary>GREEN-API's own source for the authorized number: <c>getSettings</c>'s <c>wid</c> field,
+    /// shaped like <c>"79991234567@c.us"</c>. Normalized through the same <see cref="PhoneNormalizer"/>
+    /// every other phone in the system goes through (US-53 p.6) — never trusted as already-canonical.
+    /// A failure here must not fail the whole connect flow (the channel is still genuinely Connected):
+    /// <see langword="null"/> is returned, and PhoneNumber simply stays unset until a later poll succeeds.</summary>
+    private async Task<string?> TryFetchPhoneNumberAsync(ChannelCredentials credentials, CancellationToken ct)
+    {
+        try
+        {
+            var opts = options.Value;
+            var (uri, safeLabel) = GreenApiUrls.GetSettings(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
+            var (body, _) = await SendAsync(HttpMethod.Get, uri, safeLabel, ct);
+
+            var wid = ReadString(body, "wid");
+            if (string.IsNullOrEmpty(wid)) return null;
+
+            var rawPhone = wid.Split('@', 2)[0];
+            return PhoneNormalizer.TryNormalize(rawPhone, out var canonical) ? canonical : null;
+        }
+        catch (GreenApiProvisioningException ex)
+        {
+            logger.LogWarning(ex, "Failed to fetch phone number via getSettings after QR authorization, will retry on next poll");
+            return null;
+        }
+    }
+
+    public async Task<ProviderChannelState> GetStateAsync(ChannelCredentials credentials, CancellationToken ct)
+    {
+        var opts = options.Value;
+        var (uri, safeLabel) = GreenApiUrls.GetStateInstance(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
+        var (body, _) = await SendAsync(HttpMethod.Get, uri, safeLabel, ct);
+        return GreenApiStateInstanceParser.Parse(ReadString(body, "stateInstance"));
+    }
+
+    public async Task SetSendDelayAsync(ChannelCredentials credentials, int milliseconds, CancellationToken ct)
+    {
+        var opts = options.Value;
+        var (uri, safeLabel) = GreenApiUrls.SetSettings(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
+        try
+        {
+            await SendAsync(HttpMethod.Post, uri, safeLabel, ct, new { delaySendMessagesMilliseconds = milliseconds });
+        }
+        catch (GreenApiProvisioningException ex)
+        {
+            // §29.1: a failed delay setting does not roll back the connect flow — it only means the
+            // provider's own throttle stays at its default instead of our 5s floor.
+            logger.LogWarning(ex, "Setting GREEN-API send delay failed, continuing without it");
+        }
+    }
+
+    public async Task LogoutAsync(ChannelCredentials credentials, CancellationToken ct)
+    {
+        var opts = options.Value;
+        var (uri, safeLabel) = GreenApiUrls.Logout(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
+        try
+        {
+            await SendAsync(HttpMethod.Post, uri, safeLabel, ct);
+        }
+        catch (GreenApiProvisioningException ex)
+        {
+            // §30.4 step 2: best effort — an instance that is about to be deleted outright does not need
+            // a clean logout first, and a failure here must never block the delete that follows.
+            logger.LogWarning(ex, "GREEN-API logout failed, continuing with instance deletion");
+        }
+    }
+
+    public async Task<InstanceDeletion> DeleteInstanceAsync(string instanceId, CancellationToken ct)
+    {
+        var opts = options.Value;
+        var (uri, safeLabel) = GreenApiUrls.DeleteInstance(opts.GreenApi.ApiUrl, opts.PartnerToken ?? string.Empty, instanceId);
+
+        HttpStatusCode? statusCode;
+        string? body;
+        try
+        {
+            (body, statusCode) = await SendAsync(HttpMethod.Post, uri, safeLabel, ct);
+        }
+        catch (GreenApiProvisioningException)
+        {
+            return new InstanceDeletion(Success: false);
+        }
+
+        // §30.4: an instance that no longer exists at the provider is treated as successfully deleted —
+        // idempotency by interpreting the response, not by hoping the call never runs twice. A 404 here,
+        // or a body explicitly saying so, both mean "already gone", which is the outcome we wanted.
+        if (statusCode == HttpStatusCode.NotFound) return new InstanceDeletion(Success: true);
+
+        var isSuccess = ReadBool(body, "isSuccess");
+        return new InstanceDeletion(Success: isSuccess ?? statusCode is HttpStatusCode.OK);
+    }
+
+    /// <summary>Sends one request, logging duration under the redacted <c>safeLabel</c> exactly like
+    /// <see cref="GreenApiTransport"/> (§24.3/§28.1), and throws <see cref="GreenApiProvisioningException"/>
+    /// — never the raw <see cref="HttpRequestException"/>/response — for anything other than a successful
+    /// 2xx response.</summary>
+    private async Task<(string Body, HttpStatusCode StatusCode)> SendAsync(
+        HttpMethod method, Uri uri, string safeLabel, CancellationToken ct, object? jsonBody = null)
+    {
+        var client = httpClientFactory.CreateClient("green-api");
+        var stopwatch = Stopwatch.StartNew();
+        HttpResponseMessage response;
+
+        try
+        {
+            using var request = new HttpRequestMessage(method, uri);
+            if (jsonBody is not null) request.Content = JsonContent.Create(jsonBody);
+            response = await client.SendAsync(request, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            stopwatch.Stop();
+            logger.LogInformation("GREEN-API request {SafeLabel} took {DurationMs}ms, status=(network failure)",
+                safeLabel, stopwatch.ElapsedMilliseconds);
+            throw new GreenApiProvisioningException($"{safeLabel}: network failure.", ex);
+        }
+
+        using (response)
+        {
+            stopwatch.Stop();
+            var body = await response.Content.ReadAsStringAsync(ct);
+            logger.LogInformation("GREEN-API request {SafeLabel} took {DurationMs}ms, status={StatusCode}",
+                safeLabel, stopwatch.ElapsedMilliseconds, (int)response.StatusCode);
+
+            // 404 is a legitimate, meaningful response for DeleteInstance (§30.4) — let the caller decide
+            // what it means instead of turning every non-2xx into the same exception.
+            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+                throw new GreenApiProvisioningException($"{safeLabel}: provider returned {(int)response.StatusCode}.");
+
+            return (body, response.StatusCode);
+        }
+    }
+
+    private static string? ReadString(string json, string property)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object &&
+                   doc.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ReadNumberAsString(string json, string property)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object &&
+                   doc.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
+                ? value.GetRawText()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool? ReadBool(string json, string property)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty(property, out var value))
+                return null;
+            return value.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => null,
+            };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+}

@@ -95,7 +95,12 @@ public class SubscriptionResolver(AppDbContext db)
             });
     }
 
-    private async Task<Dictionary<string, EffectivePlan>> GetEffectivePlansForOwnersAsync(IEnumerable<string> ownerUserIds)
+    // Made public for ARCHITECTURE_CYCLE4.md §33's cycle-4 admin channel summary (T4-B11): both
+    // NotificationChannel and AccountSubscription key off OwnerUserId, so resolving plans for a page of
+    // channels' owners belongs here, not behind a "company -> owner -> plan" detour that would add an
+    // extra query and an extra dictionary for no reason. Public in a one-line change, no behavior change —
+    // GetEffectivePlansAsync(companyIds) still calls it the same way it always did.
+    public async Task<Dictionary<string, EffectivePlan>> GetEffectivePlansForOwnersAsync(IEnumerable<string> ownerUserIds)
     {
         var ids = ownerUserIds.Distinct().ToList();
         var now = DateTime.UtcNow;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -5,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -472,6 +474,163 @@ public class AdminController(
 
         return Ok(result);
     }
+
+    // ── Notification channels (ARCHITECTURE_CYCLE4.md §34, T4-B11) ───────────────
+
+    [HttpGet("notification-channels")]
+    public async Task<ActionResult<PagedResult<AdminChannelDto>>> GetNotificationChannels(
+        [FromQuery] ChannelState? state, [FromQuery] ChannelPaymentStatus? paymentState,
+        [FromQuery] int? page, [FromQuery] int? pageSize)
+    {
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        var query = db.NotificationChannels.AsNoTracking().Include(c => c.Assignments).AsQueryable();
+        if (state.HasValue) query = query.Where(c => c.State == state);
+
+        // Payment state is computed, not stored (ChannelPaymentState.Of) — filtering by it means
+        // pulling candidates in state-shaped buckets rather than a single indexed WHERE. At this row
+        // count (one row per channel, not per message) a full materialize-then-filter is acceptable; see
+        // ChannelPaymentState's own doc comment for why this can never become a stored column.
+        var nowUtc = DateTime.UtcNow;
+        var all = await query.ToListAsync();
+        var filtered = paymentState.HasValue
+            ? all.Where(c => ChannelPaymentState.Of(c, nowUtc) == paymentState.Value).ToList()
+            : all;
+
+        var total = filtered.Count;
+        var page1 = filtered.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
+
+        var ownerIds = page1.Select(c => c.OwnerUserId).Distinct().ToList();
+        var owners = await db.Users.AsNoTracking().Where(u => ownerIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u);
+
+        var items = page1.Select(c =>
+        {
+            var owner = owners.GetValueOrDefault(c.OwnerUserId);
+            return new AdminChannelDto(
+                c.Id, c.State, ChannelPaymentState.Of(c, nowUtc),
+                owner is null ? "" : $"{owner.FirstName} {owner.LastName}",
+                owner?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(owner.PhoneNumber),
+                c.PaidFromUtc, c.PaidUntilUtc, c.Assignments.Count, c.IdleSinceUtc, c.RequestedAtUtc);
+        }).ToList();
+
+        return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
+    }
+
+    [HttpGet("notification-channels/summary")]
+    public async Task<ActionResult<AdminChannelSummaryDto>> GetNotificationChannelsSummary()
+    {
+        var channels = await db.NotificationChannels.AsNoTracking().ToListAsync();
+        var nowUtc = DateTime.UtcNow;
+        var in7Days = nowUtc.AddDays(7);
+
+        return Ok(new AdminChannelSummaryDto(
+            Connected: channels.Count(c => c.State == ChannelState.Connected),
+            Connecting: channels.Count(c => c.State == ChannelState.Connecting),
+            Disconnected: channels.Count(c => c.State == ChannelState.Disconnected),
+            Blocked: channels.Count(c => c.State == ChannelState.Blocked),
+            NeedsReconnect: channels.Count(c => c.State == ChannelState.NeedsReconnect),
+            Idle: channels.Count(c => c.IdleSinceUtc is not null),
+            ExpiringIn7Days: channels.Count(c => c.PaidUntilUtc is { } paidUntil && paidUntil >= nowUtc && paidUntil <= in7Days),
+            PendingRequests: channels.Count(c => c.RequestedAtUtc is not null && c.PaidUntilUtc is null)));
+    }
+
+    [HttpPost("notification-channels/{id:guid}/payment")]
+    public async Task<ActionResult<AdminChannelDto>> RecordChannelPayment(Guid id, [FromBody] AdminChannelPaymentDto dto)
+    {
+        var channel = await db.NotificationChannels.Include(c => c.Assignments).FirstOrDefaultAsync(c => c.Id == id);
+        if (channel is null) return NotFound();
+
+        var paidFromUtc = DateTime.SpecifyKind(dto.PaidFrom.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var paidUntilUtc = DateTime.SpecifyKind(dto.PaidUntil.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        if (paidUntilUtc <= paidFromUtc) return BadRequest("paidUntil must be after paidFrom");
+
+        var oldPaidUntil = channel.PaidUntilUtc;
+        db.ChannelPaymentLogs.Add(new ChannelPaymentLog
+        {
+            Id = Guid.NewGuid(),
+            ChannelId = channel.Id,
+            ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+            OldPaidUntil = oldPaidUntil,
+            NewPaidUntil = paidUntilUtc,
+            Amount = dto.Amount,
+            Comment = dto.Comment,
+        });
+
+        channel.PaidFromUtc = paidFromUtc;
+        channel.PaidUntilUtc = paidUntilUtc;
+        // API_CONTRACT_CYCLE4.md §34.3: marking payment clears idleness — ChannelHealthTask's own next
+        // pass would clear it anyway (a live paid period with an active company means "not idle"), but
+        // clearing it here means an admin doesn't have to explain a 15-minute lag to an owner watching.
+        channel.IdleSinceUtc = null;
+        channel.IdleWarningSentAtUtc = null;
+
+        await db.SaveChangesAsync();
+
+        var idleDays = await HttpContext.RequestServices.GetRequiredService<Services.Notifications.PlatformSettings>().GetChannelIdleDaysAsync();
+        return Ok(MapAdminChannelDto(channel, idleDays));
+    }
+
+    [HttpPost("notification-channels/{id:guid}/suspend")]
+    public Task<IActionResult> SuspendChannel(Guid id, [FromBody] AdminChannelSuspendDto dto) => SetSuspendedAsync(id, true, dto.Comment);
+
+    [HttpPost("notification-channels/{id:guid}/resume")]
+    public Task<IActionResult> ResumeChannel(Guid id, [FromBody] AdminChannelSuspendDto dto) => SetSuspendedAsync(id, false, dto.Comment);
+
+    private async Task<IActionResult> SetSuspendedAsync(Guid id, bool suspended, string? comment)
+    {
+        var channel = await db.NotificationChannels.FindAsync(id);
+        if (channel is null) return NotFound();
+
+        channel.IsSuspendedByAdmin = suspended;
+        db.ChannelPaymentLogs.Add(new ChannelPaymentLog
+        {
+            Id = Guid.NewGuid(),
+            ChannelId = channel.Id,
+            ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!,
+            OldPaidUntil = channel.PaidUntilUtc,
+            NewPaidUntil = channel.PaidUntilUtc,
+            Comment = comment is null ? (suspended ? "suspended" : "resumed") : $"{(suspended ? "suspended" : "resumed")}: {comment}",
+        });
+
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpGet("platform-settings")]
+    public async Task<ActionResult<AdminPlatformSettingsDto>> GetPlatformSettings(
+        [FromServices] Services.Notifications.PlatformSettings platformSettings)
+    {
+        var price = await platformSettings.GetChannelPricePerMonthAsync();
+        var idleDays = await platformSettings.GetChannelIdleDaysAsync();
+        return Ok(new AdminPlatformSettingsDto(price, idleDays));
+    }
+
+    [HttpPut("platform-settings")]
+    public async Task<ActionResult<AdminPlatformSettingsDto>> UpdatePlatformSettings(
+        [FromBody] AdminPlatformSettingsDto dto, [FromServices] Services.Notifications.PlatformSettings platformSettings)
+    {
+        if (dto.ChannelIdleDays is < 0 or > 60) return BadRequest("channelIdleDays must be between 0 and 60");
+        if (dto.ChannelPricePerMonth is < 0) return BadRequest("channelPricePerMonth must not be negative");
+
+        var oldPrice = await platformSettings.GetChannelPricePerMonthAsync();
+        var oldIdleDays = await platformSettings.GetChannelIdleDaysAsync();
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+        await PlatformSettingsWriter.WriteAsync(
+            db, PlatformSettingsWriter.PriceKey, oldPrice?.ToString(CultureInfo.InvariantCulture),
+            dto.ChannelPricePerMonth?.ToString(CultureInfo.InvariantCulture) ?? "", userId);
+        await PlatformSettingsWriter.WriteAsync(
+            db, PlatformSettingsWriter.IdleDaysKey, oldIdleDays.ToString(CultureInfo.InvariantCulture),
+            dto.ChannelIdleDays.ToString(CultureInfo.InvariantCulture), userId);
+
+        await db.SaveChangesAsync();
+        return Ok(dto);
+    }
+
+    private static AdminChannelDto MapAdminChannelDto(NotificationChannel channel, int idleDays) => new(
+        channel.Id, channel.State, ChannelPaymentState.Of(channel, DateTime.UtcNow), "", null,
+        channel.PaidFromUtc, channel.PaidUntilUtc, channel.Assignments.Count, channel.IdleSinceUtc, channel.RequestedAtUtc);
 }
 
 // ── DTOs ───────────────────────────────────────────────────────────────────────
@@ -507,3 +666,20 @@ public record ScheduledTaskStatusDto(
     string Name, bool Enabled, int PeriodMinutes,
     DateTime? LastStartedAt, DateTime? LastFinishedAt, int LastDurationMs,
     bool LastSucceeded, string? LastSummary, string? LastError, bool IsOverdue);
+
+// ── Notification channels (API_CONTRACT_CYCLE4.md §34, T4-B11) ────────────────
+
+public record AdminChannelDto(
+    Guid Id, ChannelState State, ChannelPaymentStatus PaymentState,
+    string OwnerName, string? OwnerPhoneMasked,
+    DateTime? PaidFrom, DateTime? PaidUntil, int CompanyCount, DateTime? IdleSince, DateTime? RequestedAt);
+
+public record AdminChannelSummaryDto(
+    int Connected, int Connecting, int Disconnected, int Blocked,
+    int NeedsReconnect, int Idle, int ExpiringIn7Days, int PendingRequests);
+
+public record AdminChannelPaymentDto(DateOnly PaidFrom, DateOnly PaidUntil, decimal? Amount, string? Comment);
+
+public record AdminChannelSuspendDto(string? Comment);
+
+public record AdminPlatformSettingsDto(decimal? ChannelPricePerMonth, int ChannelIdleDays);

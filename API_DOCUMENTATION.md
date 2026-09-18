@@ -2529,6 +2529,80 @@ curl http://localhost:5000/api/health/ready
 
 ---
 
+### 4.15. Notifications (WhatsApp) — **новое в цикле 4, доступно с версии cycle/04-notifications-whatsapp (unreleased до мёржа в `develop`/деплоя)**
+
+Полный контракт запрос/ответ, коды ошибок и формы DTO — в `API_CONTRACT_CYCLE4.md` §19–§34; здесь —
+только справочная сводка того, что реально реализовано этим разработчиком (контроллеры, не фоновые
+задачи и не адаптер провайдера — те в этом цикле пишет второй backend-разработчик параллельно, и на
+момент этой записи ещё не смёржены).
+
+**Доступ и права** — как в `API_CONTRACT_CYCLE4.md` §19.3: владелец салона (`CompanyMembership.IsOwnerAsync`
+хотя бы по одной компании) для каналов и настроек; персонал компании (`IsStaffAsync`) для журнала
+доставки; `SuperAdmin` — только для админских эндпоинтов, к владельческим каналам доступа не имеет.
+
+#### Каналы владельца (`/api/notification-channels`)
+
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET | `/api/notification-channels` | список каналов владельца |
+| GET | `/api/notification-channels/offer` | цена опции, срок простоя, разрешает ли тариф |
+| POST | `/api/notification-channels` | заявка на подключение (тело игнорируется) |
+| GET | `/api/notification-channels/{id}` | один канал (чужой — 404, неотличим от несуществующего) |
+| POST | `/api/notification-channels/{id}/accept-risk` | принятие риска, версия текста сверяется |
+| POST | `/api/notification-channels/{id}/connect` | создаёт инстанс у провайдера, → `Connecting` |
+| GET | `/api/notification-channels/{id}/qr` | QR, кэш 2 с, `refreshAfterSeconds` |
+| POST | `/api/notification-channels/{id}/test-message` | тестовое сообщение на свой номер, не чаще раза в 5 мин |
+| DELETE | `/api/notification-channels/{id}` | отвязка, оплаченный период сохраняется |
+| POST | `/api/notification-channels/{id}/companies` | назначение компании, `warningAcknowledged` для второй и далее |
+| DELETE | `/api/notification-channels/{id}/companies/{companyId}` | снятие назначения |
+
+`POST .../replace` (замена номера после бана, US-63) в этот список **не входит** — отдельная задача
+второго backend-разработчика (T4-B12), на момент этой записи не реализована.
+
+#### Настройки и шаблоны компании (`/api/companies/{id}/notification-*`)
+
+| Метод | Путь |
+|---|---|
+| GET / PUT | `/api/companies/{id}/notification-settings` |
+| GET | `/api/companies/{id}/notification-templates` |
+| PUT | `/api/companies/{id}/notification-templates/{type}` |
+| POST | `/api/companies/{id}/notification-templates/{type}/preview` |
+
+#### Журнал доставки и отметка в записи
+
+| Метод | Путь |
+|---|---|
+| GET | `/api/companies/{id}/notifications` (`PagedResult`, фильтры `status`/`type`/`from`/`to`) |
+| GET | `/api/companies/{id}/notifications/summary?days=30` |
+| — | `GET /api/bookings/master`, `GET /api/bookings/{id}` получили аддитивное поле `reminderStatus` |
+
+#### Отписка и вебхук (`/api/notifications`)
+
+| Метод | Путь |
+|---|---|
+| GET / PUT | `/api/notifications/preferences` (кабинет, `[Authorize]`) |
+| GET / POST | `/api/notifications/unsubscribe/{token}` (публично, подписанная ссылка без таблицы токенов) |
+| POST | `/api/notifications/provider-webhook/{token}` (анонимно, токен через `FixedTimeEquals`, rate limit `notifications-webhook`) |
+
+#### Админка (`/api/admin`, `SuperAdmin`)
+
+| Метод | Путь |
+|---|---|
+| GET | `/api/admin/notification-channels` (`PagedResult`, фильтры `state`/`paymentState`) |
+| GET | `/api/admin/notification-channels/summary` |
+| POST | `/api/admin/notification-channels/{id}/payment` |
+| POST | `/api/admin/notification-channels/{id}/suspend` · `/resume` |
+| GET / PUT | `/api/admin/platform-settings` |
+
+**Известное на момент записи:** город/зона компании (`cityId`/`timeZoneId`, ломающее изменение
+`POST /api/companies`) и `GET /api/cities` — реализованы другим разработчиком раньше в этом же цикле,
+уже в `CompaniesController`/`CitiesController`. Фоновые задачи (`NotificationDispatchTask`,
+`ChannelHealthTask`) и сам адаптер GREEN-API — параллельная работа второго backend-разработчика; без
+них канал можно завести и настроить, но реальная отправка идёт через заглушку
+(`Notifications:Provider=logging`, US-35).
+
+---
+
 ## 5. Сквозные сценарии использования
 
 Во всех примерах используется базовый адрес `http://localhost:5000`. Переменные вида `$TOKEN`, `$OWNER_TOKEN` и т.д. — это токены, полученные из предыдущих шагов сценария (в реальном терминале их нужно либо вручную скопировать, либо извлечь через `jq -r .token`).

@@ -245,6 +245,10 @@ builder.Services.AddCors(opt =>
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<SlotService>();
 builder.Services.AddScoped<SubscriptionResolver>();
+// Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
+// directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
+// this developer's file this cycle.
+builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
 builder.Services.AddHttpClient<CaptchaService>();
 
 // Image uploads (US-19, US-25): FileStorage holds no per-request state (just the two configured roots),
@@ -262,12 +266,57 @@ builder.Services.AddSingleton<LegalDocumentProvider>();
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
     builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.NotificationOptions.SectionName));
 
+// §29.2 (QR response cache) and §23.3 (PlatformSettings' 60s cache) both need IMemoryCache — neither
+// AddControllers nor AddMvc registers it by default, unlike (say) AddResponseCaching.
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PlatformSettings>();
+
+// The webhook parser (§32) is registered unconditionally, independent of Notifications:Provider — it is
+// pure translation with no secret/network access of its own, and NotificationsController.ProviderWebhook
+// resolves it via [FromServices] regardless of which transport is active, so a "logging"-provider
+// deployment that nonetheless receives a stray webhook still parses (and safely 200s) it rather than
+// throwing on a missing DI registration. The interface (IProviderWebhookParser) lives in
+// Services/ProviderWebhookParsing.cs, not Services/Notifications/ — see that file's doc comment.
+builder.Services.AddSingleton<ServiceBooking.API.Services.IProviderWebhookParser,
+    ServiceBooking.API.Services.Notifications.GreenApi.GreenApiWebhookParser>();
+
+// The dispatcher's abstractions over time, delay and pause randomness (§21 p.7, §26, §27) — production
+// defaults everywhere except the dedicated dispatch-test host, which overrides all three with recording/
+// fake implementations (NotificationDispatchTestFactory).
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationClock,
+    ServiceBooking.API.Services.Notifications.SystemNotificationClock>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IDispatchDelay,
+    ServiceBooking.API.Services.Notifications.SystemDispatchDelay>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IPauseGenerator,
+    ServiceBooking.API.Services.Notifications.PauseGenerator>();
+
+// The "green-api" named client (§24.3, §28.1): request/URL logging for THIS client only is silenced at
+// the category level (rung 1 of the three-rung defence against a token reaching a log — GreenApiUrls'
+// SafeLabel, logged explicitly by the adapter itself, is rung 2), and its primary handler is the
+// keep-alive + IPv4-first-ConnectCallback SocketsHttpHandler built by GreenApiHandlerFactory. Registered
+// unconditionally (not inside the switch below) — CaptchaService's own named client follows the same
+// "always registered, only used when configured" shape, and it means changing Notifications:Provider at
+// runtime-config level, without a rebuild, never needs a different DI graph.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.green-api.LogicalHandler", LogLevel.None);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.green-api.ClientHandler", LogLevel.None);
+builder.Services.AddHttpClient("green-api", client =>
+    {
+        var greenApiOptions = builder.Configuration.GetSection("Notifications:GreenApi").Get<
+            ServiceBooking.API.Services.Notifications.NotificationOptions.GreenApiOptions>() ?? new();
+        client.Timeout = TimeSpan.FromSeconds(greenApiOptions.TimeoutSeconds);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var greenApiOptions = builder.Configuration.GetSection("Notifications:GreenApi").Get<
+            ServiceBooking.API.Services.Notifications.NotificationOptions.GreenApiOptions>() ?? new();
+        return ServiceBooking.API.Services.Notifications.GreenApi.GreenApiHandlerFactory.Create(greenApiOptions);
+    });
+
 // Transport/provisioning selection by Notifications:Provider (§28). "logging" — the default, safe in
-// every environment — is the only implementation this cycle ships; a live GreenApi adapter is scaffolded
-// (interfaces, classifier, chatId builder — T4-B5) but not wired up yet. Selecting "green-api" therefore
-// fails LOUD at startup rather than silently falling back to the logging stub, which would otherwise be
-// the one way a Production deployment could believe notifications are really going out over WhatsApp
-// when nothing is.
+// every environment — never makes a network call at all (US-27 p.9). "green-api" is the real adapter
+// (T4-B5); an unrecognised value fails LOUD at startup rather than silently falling back to the logging
+// stub, which would otherwise be the one way a Production deployment could believe notifications are
+// really going out over WhatsApp when nothing is.
 var notificationsProvider = builder.Configuration["Notifications:Provider"];
 switch (notificationsProvider)
 {
@@ -278,10 +327,26 @@ switch (notificationsProvider)
             ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
         break;
     case "green-api":
-        throw new InvalidOperationException(
-            "Notifications:Provider=green-api has no implementation registered yet (the GreenApi HTTP " +
-            "adapter — T4-B5 — is not part of this build). Set Notifications__Provider=logging, or leave " +
-            "it unset, until the adapter lands.");
+        // INotificationTransport uses a CHANNEL's own token (a salon's), safe to wire up in any
+        // environment — sandbox mode (Notifications:AllowedRecipients) is the guard against it reaching
+        // a real customer.
+        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport,
+            ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
+
+        // IChannelProvisioning uses the PLATFORM's own partner token, which can create/delete a live
+        // salon's instance — IChannelProvisioning's own doc comment is explicit that DI must make this
+        // implementation structurally NOT EXIST outside Production (§28, US-35 p.4), not merely fail at
+        // call time because ValidateNotificationSecrets' rule 3 already forces PartnerToken empty there.
+        // A developer who sets Provider=green-api locally (PartnerToken necessarily empty, or startup
+        // would already have refused) still gets the harmless no-op rather than a real adapter with
+        // nothing to call.
+        if (builder.Environment.IsProduction())
+            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
+                ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>();
+        else
+            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
+                ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+        break;
     default:
         throw new InvalidOperationException($"Unknown Notifications:Provider '{notificationsProvider}'.");
 }
@@ -415,6 +480,10 @@ builder.Services.AddHealthChecks()
 // implementations are registered — adding a second task later is exactly one more line like this one,
 // the runner itself never changes (ARCHITECTURE.md §8.1).
 builder.Services.AddScoped<IScheduledTask, PhotoRetentionCleanupTask>();
+// Cycle 4 (ARCHITECTURE_CYCLE4.md §26, §30): the dispatcher (1-minute period, its own internal budget)
+// and channel health (15-minute period — polling, idle detection, orphaned-instance cleanup).
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.NotificationDispatchTask>();
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelHealthTask>();
 builder.Services.AddHostedService<ScheduledTaskRunner>();
 
 var app = builder.Build();
