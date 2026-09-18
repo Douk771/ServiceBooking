@@ -340,6 +340,15 @@ export function BookingModal({ service, company, onClose }: Props) {
                   </Link>
                 </p>
               )}
+              {/* US-33 п. 1 — service messages about the booking need no separate opt-in checkbox, but
+                  the client must be told they'll arrive in WhatsApp from the salon (guest path included). */}
+              <p className="text-center text-xs text-muted -mt-1.5">
+                Оставляя номер телефона, вы получите сервисные сообщения о записи в WhatsApp от салона. Подробнее — в{' '}
+                <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
+                  политике обработки персональных данных
+                </Link>
+                .
+              </p>
 
               {mutation.isError && (
                 <p className="text-sm text-danger text-center">{getBookingErrorMessage(mutation.error)}</p>

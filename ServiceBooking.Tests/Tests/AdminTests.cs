@@ -643,7 +643,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var secondSlug = Unique("branch-");
         var secondResponse = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto($"Branch {secondSlug}", secondSlug, null, null, null, null));
+            new CreateCompanyDto($"Branch {secondSlug}", secondSlug, null, null, null, null, await AnyCityIdAsync(), null));
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var secondCompany = (await secondResponse.Content.ReadFromJsonAsync<CompanyDto>())!;
 

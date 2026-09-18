@@ -24,13 +24,15 @@ public class CompaniesController(
         var companies = await db.Companies.Where(c => c.IsActive).ToListAsync();
         var plans = await subscriptionResolver.GetEffectivePlansAsync(companies.Select(c => c.Id));
         var ratings = await GetReviewAggregatesAsync(companies.Select(c => c.Id));
+        var cities = await GetCitiesAsync(companies.Select(c => c.CityId));
 
         // The public directory additionally requires both the owner's own opt-in (ShowInPublicListing)
         // and the tariff's AllowPublicListing — unlike GetMy/GetMemberOf/GetBySlug, which show the
         // company to people who already know about it regardless of directory placement.
         return Ok(companies
             .Where(c => c.ShowInPublicListing && plans[c.Id].AllowPublicListing)
-            .Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount)));
+            .Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
+                c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null)));
     }
 
     [HttpGet("my")]
@@ -44,9 +46,11 @@ public class CompaniesController(
             .ToListAsync();
         var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
         var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
+        var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
 
         return Ok(memberships.Select(cm =>
-            MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount)));
+            MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount,
+                cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null)));
     }
 
     // Returns all companies where the current user is a member (any role)
@@ -61,9 +65,11 @@ public class CompaniesController(
             .ToListAsync();
         var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
         var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
+        var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
 
         return Ok(memberships.Select(cm =>
-            MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount)));
+            MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount,
+                cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null)));
     }
 
     [HttpGet("{slug}")]
@@ -78,7 +84,8 @@ public class CompaniesController(
         // GET /api/companies/{companyId}/reviews happens to have loaded (which visibly changed as the
         // caller paged through reviews — ARCHITECTURE.md §11.2/§21.5 pagination note).
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(c.Id);
-        return Ok(MapToDto(c, plan, averageRating, reviewCount));
+        var city = c.CityId.HasValue ? await db.Cities.FindAsync(c.CityId.Value) : null;
+        return Ok(MapToDto(c, plan, averageRating, reviewCount, city));
     }
 
     // Public: list masters for a company, optionally filtered by serviceId
@@ -182,6 +189,22 @@ public class CompaniesController(
         if (await db.Companies.AnyAsync(c => c.Slug == dto.Slug))
             return Conflict("Slug already taken");
 
+        // Cycle 4, API_CONTRACT_CYCLE4.md §31.2 (breaking change): every new company needs a city, so
+        // a derived time zone exists for reminder timing. Validated before touching the advisory lock
+        // below — no point serializing on the owner-companies lock for a request that's going to 400.
+        if (dto.CityId is null)
+            return BadRequest("Укажите город салона");
+
+        var city = await db.Cities.FindAsync(dto.CityId.Value);
+        if (city is null || !city.IsActive)
+            return BadRequest("Город не найден");
+
+        if (!string.IsNullOrWhiteSpace(dto.TimeZoneId) &&
+            !TimeZoneOffset.TryGetUtcOffsetMinutes(dto.TimeZoneId, DateTime.UtcNow, out _))
+            return BadRequest("Неизвестный часовой пояс");
+
+        var (timeZoneId, timeZoneIsManual) = CompanyTimeZoneResolver.ForNewCompany(city.TimeZoneId, dto.TimeZoneId);
+
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
         // Branch limit: the account plan caps how many companies this owner may create. Without a plan
@@ -213,7 +236,10 @@ public class CompaniesController(
             Email = dto.Email,
             AllowSelfBooking = dto.AllowSelfBooking,
             ShowInPublicListing = dto.ShowInPublicListing,
-            OwnerUserId = userId
+            OwnerUserId = userId,
+            CityId = city.Id,
+            TimeZoneId = timeZoneId,
+            TimeZoneIsManual = timeZoneIsManual
         };
 
         var member = new CompanyMember
@@ -239,7 +265,7 @@ public class CompaniesController(
         // reflects the owner's real plan (e.g. their existing paid plan when opening a 2nd+ branch),
         // instead of assuming Free.
         // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
-        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, MapToDto(company, plan, null, 0));
+        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, MapToDto(company, plan, null, 0, city));
     }
 
     [HttpPut("{id:guid}")]
@@ -259,11 +285,44 @@ public class CompaniesController(
         if (dto.RequirePrepayment is not null) company.RequirePrepayment = dto.RequirePrepayment.Value;
         if (dto.ShowInPublicListing is not null) company.ShowInPublicListing = dto.ShowInPublicListing.Value;
 
+        // Cycle 4 (API_CONTRACT_CYCLE4.md §31.3, US-30 p.3): city and time zone. cityChanged tracks
+        // whether THIS request moves CityId, since CompanyTimeZoneResolver.ForUpdate needs to know that
+        // to decide whether a zone that isn't a manual override should follow the new city.
+        var cityChanged = false;
+        var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
+        if (dto.CityId is not null && dto.CityId != company.CityId)
+        {
+            var newCity = await db.Cities.FindAsync(dto.CityId.Value);
+            if (newCity is null || !newCity.IsActive)
+                return BadRequest("Город не найден");
+
+            company.CityId = newCity.Id;
+            city = newCity;
+            cityChanged = true;
+        }
+
+        if (dto.TimeZoneId is { IsSpecified: true, Value: { } requestedTimeZoneId } &&
+            !TimeZoneOffset.TryGetUtcOffsetMinutes(requestedTimeZoneId, DateTime.UtcNow, out _))
+            return BadRequest("Неизвестный часовой пояс");
+
+        if (city is not null)
+        {
+            var (timeZoneId, timeZoneIsManual) = CompanyTimeZoneResolver.ForUpdate(
+                effectiveCityTimeZoneId: city.TimeZoneId,
+                cityChanged: cityChanged,
+                timeZoneIdFieldProvided: dto.TimeZoneId.IsSpecified,
+                requestedTimeZoneId: dto.TimeZoneId.Value,
+                currentTimeZoneId: company.TimeZoneId,
+                currentIsManual: company.TimeZoneIsManual);
+            company.TimeZoneId = timeZoneId;
+            company.TimeZoneIsManual = timeZoneIsManual;
+        }
+
         await db.SaveChangesAsync();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
-        return Ok(MapToDto(company, plan, averageRating, reviewCount));
+        return Ok(MapToDto(company, plan, averageRating, reviewCount, city));
     }
 
     // Uploads/replaces the company's logo. US-25 p.6: moved onto the same ImageUploadService every other
@@ -305,7 +364,8 @@ public class CompaniesController(
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
-        return Ok(MapToDto(company, plan, averageRating, reviewCount));
+        var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
+        return Ok(MapToDto(company, plan, averageRating, reviewCount, city));
     }
 
     // US-24 p.4 / US-19 p.7: the only place a company's client-photo storage usage is exposed. NOT
@@ -578,22 +638,39 @@ public class CompaniesController(
 
     // Single source of truth for building a CompanyDto from an entity + its resolved plan, so the
     // combined flags (OnlineBookingEnabled, PublicListingEnabled, PrepaymentEnabled) can't drift between
-    // the seven call sites that return a CompanyDto.
-    private static CompanyDto MapToDto(Company c, EffectivePlan plan, double? averageRating, int reviewCount) => new(
-        c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email,
-        c.AllowSelfBooking, c.RequirePrepayment,
-        c.AllowSelfBooking && plan.AllowOnlineBooking,
-        plan.AllowAnalytics,
-        plan.AllowMailing,
-        c.ShowInPublicListing,
-        c.ShowInPublicListing && plan.AllowPublicListing,
-        c.RequirePrepayment && plan.AllowOnlinePayment,
-        plan.AllowOnlineBooking,
-        plan.AllowOnlinePayment,
-        plan.AllowPublicListing,
-        plan.MaxEmployees,
-        averageRating,
-        reviewCount);
+    // the seven call sites that return a CompanyDto. `city` is the resolved City row for c.CityId, or
+    // null when CityId is null (pre-cycle-4 edge case, §31.4's doc comment) — resolved by the caller,
+    // batched via GetCitiesAsync for the three list endpoints, so this stays a pure mapping function.
+    private static CompanyDto MapToDto(Company c, EffectivePlan plan, double? averageRating, int reviewCount, City? city)
+    {
+        TimeZoneOffset.TryGetUtcOffsetMinutes(c.TimeZoneId, DateTime.UtcNow, out var utcOffsetMinutes);
+        return new(
+            c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email,
+            c.AllowSelfBooking, c.RequirePrepayment,
+            c.AllowSelfBooking && plan.AllowOnlineBooking,
+            plan.AllowAnalytics,
+            plan.AllowMailing,
+            c.ShowInPublicListing,
+            c.ShowInPublicListing && plan.AllowPublicListing,
+            c.RequirePrepayment && plan.AllowOnlinePayment,
+            plan.AllowOnlineBooking,
+            plan.AllowOnlinePayment,
+            plan.AllowPublicListing,
+            plan.MaxEmployees,
+            averageRating,
+            reviewCount,
+            c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes);
+    }
+
+    // Cycle 4: batched City lookup for the three list endpoints (GetAll, GetMy, GetMemberOf) — same
+    // pattern as GetReviewAggregatesAsync, one round trip instead of one query per company.
+    private async Task<Dictionary<int, City>> GetCitiesAsync(IEnumerable<int?> cityIds)
+    {
+        var ids = cityIds.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<int, City>();
+        var cities = await db.Cities.Where(c => ids.Contains(c.Id)).ToListAsync();
+        return cities.ToDictionary(c => c.Id);
+    }
 
     // QA cycle C regression fix: the public company page showed an average rating computed from
     // whatever single page of reviews GET /api/companies/{companyId}/reviews had loaded — it visibly

@@ -345,4 +345,257 @@ public class DeploymentSafetyChecksTests
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*TrustedNetworks*");
     }
+
+    // ── ValidateNotificationSecrets (cycle 4, US-54/US-35, ARCHITECTURE_CYCLE4.md §24.2) ──────────
+
+    private static string ValidBase64Key() =>
+        Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+
+    [Fact]
+    public void ValidateNotificationSecrets_DisabledInProduction_DoesNotThrow()
+    {
+        // Enabled=false means the whole feature is off — no encryption key needed yet.
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:Enabled"] = "false" });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EnabledInTesting_SkipsKeyValidation()
+    {
+        // Developer environments are exempt from rules 1–2 (unlike rule 3 below).
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:Enabled"] = "true" });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Testing");
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("CHANGE_ME")]
+    [InlineData("not-valid-base64!!!")]
+    public void ValidateNotificationSecrets_EnabledInProduction_MissingOrPlaceholderKey_Throws(string? key)
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Enabled"] = "true",
+            ["Notifications:EncryptionKey"] = key
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*EncryptionKey*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EnabledInProduction_WrongKeyLength_Throws()
+    {
+        var shortKey = Convert.ToBase64String(new byte[16]);
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Enabled"] = "true",
+            ["Notifications:EncryptionKey"] = shortKey
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*32 bytes*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EnabledInProduction_ValidKey_GreenApiWithoutPartnerToken_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Enabled"] = "true",
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PartnerToken*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EnabledInProduction_LoggingProviderWithoutPartnerToken_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Enabled"] = "true",
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "logging"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EnabledInProduction_ValidGreenApiConfig_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Enabled"] = "true",
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    [InlineData("Staging")]
+    public void ValidateNotificationSecrets_PartnerTokenSetOutsideProduction_Throws(string environmentName)
+    {
+        // Rule 3 (§24.2 p.3) is a mirror-image safety rule and is NOT exempted for developer
+        // environments: a real partner token on a dev machine could delete a live salon's instance.
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:PartnerToken"] = "a-real-partner-token"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, environmentName);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PartnerToken*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_PartnerTokenSetInProduction_DoesNotTriggerRule3()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Enabled"] = "true",
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EmptyPartnerTokenOutsideProduction_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:PartnerToken"] = "" });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Development");
+
+        act.Should().NotThrow();
+    }
+
+    // ── ValidateChannelKeyFingerprint (cycle 4, US-54, ARCHITECTURE_CYCLE4.md §24.5) ────────────────
+
+    [Fact]
+    public void ValidateChannelKeyFingerprint_Disabled_DoesNotTouchFileSystem()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:Enabled"] = "false" });
+
+        var act = () => DeploymentSafetyChecks.ValidateChannelKeyFingerprint(config, "Production", contentRoot);
+
+        act.Should().NotThrow();
+        Directory.Exists(contentRoot).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ValidateChannelKeyFingerprint_EnabledInTesting_IsNoOp()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Enabled"] = "true",
+            ["Notifications:EncryptionKey"] = ValidBase64Key()
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateChannelKeyFingerprint(config, "Testing", contentRoot);
+
+        act.Should().NotThrow();
+        Directory.Exists(contentRoot).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ValidateChannelKeyFingerprint_FirstRunInProduction_WritesFingerprintFile()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        try
+        {
+            var config = BuildConfig(new Dictionary<string, string?>
+            {
+                ["Notifications:Enabled"] = "true",
+                ["Notifications:EncryptionKey"] = ValidBase64Key()
+            });
+
+            DeploymentSafetyChecks.ValidateChannelKeyFingerprint(config, "Production", contentRoot);
+
+            var expectedPath = Path.Combine(contentRoot, "App_Data", "state", ".notifications-key-fingerprint");
+            File.Exists(expectedPath).Should().BeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(contentRoot)) Directory.Delete(contentRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ValidateChannelKeyFingerprint_KeyChangedWithoutAck_ThrowsAndLeavesFileUntouched()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        try
+        {
+            var firstKeyConfig = BuildConfig(new Dictionary<string, string?>
+            {
+                ["Notifications:Enabled"] = "true",
+                ["Notifications:EncryptionKey"] = ValidBase64Key()
+            });
+            DeploymentSafetyChecks.ValidateChannelKeyFingerprint(firstKeyConfig, "Production", contentRoot);
+
+            var secondKeyConfig = BuildConfig(new Dictionary<string, string?>
+            {
+                ["Notifications:Enabled"] = "true",
+                ["Notifications:EncryptionKey"] = ValidBase64Key() // a DIFFERENT random key
+            });
+
+            var act = () => DeploymentSafetyChecks.ValidateChannelKeyFingerprint(secondKeyConfig, "Production", contentRoot);
+
+            act.Should().Throw<InvalidOperationException>().WithMessage("*NOTIFICATIONS_ENCRYPTION_KEY*");
+        }
+        finally
+        {
+            if (Directory.Exists(contentRoot)) Directory.Delete(contentRoot, recursive: true);
+        }
+    }
+
+    // ── ValidateTimeZoneDatabase (cycle 4, US-30, ARCHITECTURE_CYCLE4.md §34.3) ────────────────────
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public void ValidateTimeZoneDatabase_DeveloperEnvironment_DoesNotThrow(string environmentName)
+    {
+        var act = () => DeploymentSafetyChecks.ValidateTimeZoneDatabase(environmentName);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateTimeZoneDatabase_Production_ResolvesAsiaBarnaul_OnThisMachine()
+    {
+        // Documents the requirement rather than faking a broken tzdata (that would need mocking
+        // TimeZoneInfo, which isn't practical) — the real assertion this check protects against is
+        // exercised in deploy/ci/smoke.sh against the actual runtime image (§34.3).
+        var act = () => DeploymentSafetyChecks.ValidateTimeZoneDatabase("Production");
+        act.Should().NotThrow();
+    }
 }

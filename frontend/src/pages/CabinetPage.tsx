@@ -10,12 +10,19 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
+import { CityCombobox } from '../components/ui/CityCombobox'
 import { ScheduleTab } from './owner/ScheduleTab'
 import { DashboardTab } from './owner/DashboardTab'
 import { MailingTab } from './owner/MailingTab'
+import { NotificationsSection } from './owner/NotificationsSection'
 import { MasterClientsPage } from './MasterClientsPage'
+import { notificationChannelsApi } from '../api/notificationChannels'
+import { ChannelBreachBanner } from '../components/notifications/ChannelBreachBanner'
+import { getChannelBannerKind } from '../utils/channelBanner'
 import { useAuthStore } from '../store/authStore'
 import { getCreateCompanyErrorMessage } from '../utils/companyError'
+import { formatCityTimeZone } from '../utils/timezone'
+import type { City } from '../types'
 
 function slugify(str: string) {
   return str
@@ -94,6 +101,8 @@ function CompanyChips({
 
 function MyCompaniesTab() {
   const [showCreate, setShowCreate] = useState(false)
+  const [city, setCity] = useState<City | null>(null)
+  const [cityError, setCityError] = useState('')
   const qc = useQueryClient()
   const { data: companies, isLoading } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
 
@@ -120,6 +129,7 @@ function MyCompaniesTab() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['my-companies'] })
       setShowCreate(false)
+      setCity(null)
       reset()
     },
   })
@@ -185,11 +195,19 @@ function MyCompaniesTab() {
           title="Создать компанию"
           onClose={() => {
             setShowCreate(false)
+            setCity(null)
             reset()
           }}
         >
           <form
-            onSubmit={handleSubmit((d) =>
+            onSubmit={handleSubmit((d) => {
+              // US-30 п. 5: city is required for new companies (400 "Укажите город салона" otherwise) —
+              // checked client-side so the owner sees it before submitting, not as a server round trip.
+              if (!city) {
+                setCityError('Укажите город салона')
+                return
+              }
+              setCityError('')
               create.mutate({
                 name: d.name,
                 slug: d.slug || slugify(d.name),
@@ -199,8 +217,9 @@ function MyCompaniesTab() {
                 email: d.email || undefined,
                 allowSelfBooking: d.allowSelfBooking,
                 showInPublicListing: d.showInPublicListing,
-              }),
-            )}
+                cityId: city.id,
+              })
+            })}
             className="flex flex-col gap-4"
           >
             <Input
@@ -218,6 +237,20 @@ function MyCompaniesTab() {
               error={errors.slug?.message}
               {...register('slug', { required: true })}
             />
+            <CityCombobox
+              label="Город *"
+              value={city}
+              onChange={(c) => {
+                setCity(c)
+                if (c) setCityError('')
+              }}
+              error={cityError}
+            />
+            {city && (
+              <p className="text-xs text-muted -mt-2.5">
+                Часовой пояс: {formatCityTimeZone(city.label, city.utcOffsetMinutes, city.timeZoneId)}
+              </p>
+            )}
             <div className="flex flex-col gap-1.5">
               <label className="text-[13px] font-medium text-[#4A4038]">Описание</label>
               <textarea
@@ -247,6 +280,7 @@ function MyCompaniesTab() {
                 className="flex-1"
                 onClick={() => {
                   setShowCreate(false)
+                  setCity(null)
                   reset()
                 }}
               >
@@ -481,7 +515,16 @@ export function CabinetPage() {
   const hasAnalytics = !!companiesForTabs?.some((c) => c.allowAnalytics)
   const hasMailing = !!companiesForTabs?.some((c) => c.allowMailing)
 
-  type Tab = 'dashboard' | 'companies' | 'schedule' | 'clients' | 'reports' | 'mailing'
+  // US-62 п. 2 — the cabinet header is one of the three places the breach banner must live, so it
+  // shows regardless of which tab is open, not just inside the Notifications tab.
+  const { data: ownerChannels } = useQuery({
+    queryKey: ['notification-channels'],
+    queryFn: notificationChannelsApi.list,
+    enabled: isOwner,
+  })
+  const brokenChannels = (ownerChannels ?? []).filter((c) => getChannelBannerKind(c.state, c.idleDeadline))
+
+  type Tab = 'dashboard' | 'companies' | 'schedule' | 'clients' | 'reports' | 'mailing' | 'notifications'
   const tabs: { key: Tab; label: string; show: boolean }[] = [
     { key: 'dashboard', label: 'Дашборд', show: isOwner },
     { key: 'companies', label: 'Мои компании', show: isOwner },
@@ -489,6 +532,9 @@ export function CabinetPage() {
     { key: 'clients', label: 'Клиенты', show: isMaster },
     { key: 'reports', label: 'Отчёты', show: isOwner && hasAnalytics },
     { key: 'mailing', label: 'Рассылка', show: isOwner && hasMailing },
+    // Not gated the way Reports/Mailing are: this tab must show even before a channel exists — it's
+    // where the owner discovers and buys the option in the first place (US-53 п. 1).
+    { key: 'notifications', label: 'Уведомления', show: isOwner },
   ]
   const visible = tabs.filter((t) => t.show)
   const [tab, setTab] = useState<Tab>(visible[0]?.key ?? 'schedule')
@@ -496,6 +542,19 @@ export function CabinetPage() {
   return (
     <div className="max-w-[1080px] mx-auto px-8 pt-11 pb-24">
       <h1 className="font-serif text-[30px] font-medium text-ink mb-6">Кабинет</h1>
+      {brokenChannels.length > 0 && (
+        <div className="flex flex-col gap-3 mb-6">
+          {brokenChannels.map((c) => (
+            <ChannelBreachBanner
+              key={c.id}
+              state={c.state}
+              stateText={c.stateText}
+              idleSince={c.idleSince}
+              idleDeadline={c.idleDeadline}
+            />
+          ))}
+        </div>
+      )}
       <div className="flex gap-1 bg-cream-deep p-1 rounded-full mb-8 w-fit flex-wrap">
         {visible.map((t) => (
           <button
@@ -513,6 +572,7 @@ export function CabinetPage() {
       {tab === 'clients' && <ClientsSection />}
       {tab === 'reports' && <ReportsTab />}
       {tab === 'mailing' && <MailingSection />}
+      {tab === 'notifications' && <NotificationsSection />}
     </div>
   )
 }

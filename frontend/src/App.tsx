@@ -15,6 +15,7 @@ import { CompanyManagePage } from './pages/owner/CompanyManagePage'
 import { ProfilePage } from './pages/ProfilePage'
 import { AdminPage } from './pages/AdminPage'
 import { LegalDocumentPage } from './pages/LegalDocumentPage'
+import { UnsubscribePage } from './pages/UnsubscribePage'
 import { DeleteAccountPage } from './pages/DeleteAccountPage'
 import { Footer } from './components/layout/Footer'
 import { ConsentGate } from './components/legal/ConsentGate'
@@ -33,7 +34,7 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
 // Routes reachable while a "Material" legal-document change is pending acceptance (US-37 п. 4,
 // US-39 п. 9) — the same set the backend allow-lists in API_CONTRACT.md §0.4, minus the auth/health
 // endpoints that have no frontend page of their own.
-const CONSENT_GATE_BYPASS_PATHS = ['/privacy', '/terms', '/profile/delete']
+const CONSENT_GATE_BYPASS_PATHS = ['/privacy', '/terms', '/profile/delete', '/u/']
 
 /**
  * Owns the single `legal-consent-status` query for the whole authenticated session (T-F2). Renders
@@ -149,6 +150,7 @@ export default function App() {
                         </ProtectedRoute>
                       }
                     />
+                    <Route path="/u/:token" element={<UnsubscribePage />} />
                     <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
                     <Route path="/terms" element={<LegalDocumentPage type="Terms" />} />
                     {/* Legacy redirects */}

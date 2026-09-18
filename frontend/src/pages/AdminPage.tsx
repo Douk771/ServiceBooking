@@ -5,6 +5,7 @@ import { ru } from 'date-fns/locale'
 import { adminApi, type AdminUser, type AdminCompany } from '../api/admin'
 import { plansApi } from '../api/plans'
 import { PlansTab } from './admin/PlansTab'
+import { NotificationsAdminTab } from './admin/NotificationsAdminTab'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -653,7 +654,7 @@ function AllBookingsTab() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'stats' | 'companies' | 'users' | 'bookings' | 'plans'
+type Tab = 'stats' | 'companies' | 'users' | 'bookings' | 'plans' | 'notifications'
 
 export function AdminPage() {
   const [tab, setTab] = useState<Tab>('stats')
@@ -664,6 +665,7 @@ export function AdminPage() {
     { key: 'users', label: 'Пользователи' },
     { key: 'bookings', label: 'Записи' },
     { key: 'plans', label: 'Тарифы' },
+    { key: 'notifications', label: 'Каналы уведомлений' },
   ]
 
   return (
@@ -685,6 +687,7 @@ export function AdminPage() {
       {tab === 'users' && <UsersTab />}
       {tab === 'bookings' && <AllBookingsTab />}
       {tab === 'plans' && <PlansTab />}
+      {tab === 'notifications' && <NotificationsAdminTab />}
     </div>
   )
 }

@@ -97,12 +97,28 @@ if (!isDeveloperEnvironment)
     DeploymentSafetyChecks.ValidateSecrets(builder.Configuration, builder.Environment.ContentRootPath);
 }
 
+// Cycle 4 (US-54, US-35, US-30 — ARCHITECTURE_CYCLE4.md §24.2, §24.5, §34.3): all three are pure
+// config/filesystem checks with no dependency on the DI container, so — like ValidateSecrets above —
+// they run here, before Build(). Each is self-gated on environment/Enabled internally (unlike
+// ValidateSecrets they are NOT wrapped in `if (!isDeveloperEnvironment)`: ValidateNotificationSecrets'
+// rule 3 must run even in Development, and the other two are no-ops there anyway).
+DeploymentSafetyChecks.ValidateNotificationSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+DeploymentSafetyChecks.ValidateChannelKeyFingerprint(
+    builder.Configuration, builder.Environment.EnvironmentName, builder.Environment.ContentRootPath);
+DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentName);
+
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
         // LegalDocumentProvider is resolved from DI per-request rather than requiring a service-locator
         // pattern here.
         options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>())
-    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+    .AddJsonOptions(o =>
+    {
+        o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        // Cycle 4: lets a DTO property distinguish "omitted from the request" from "present and
+        // explicitly null" — see ServiceBooking.API.DTOs.Common.Optional<T>'s doc comment.
+        o.JsonSerializerOptions.Converters.Add(new ServiceBooking.API.DTOs.Common.OptionalJsonConverterFactory());
+    });
 builder.Services.AddEndpointsApiExplorer();
 
 // Swagger / OpenAPI — Development only (US-10): the API surface, including auth flows, shouldn't be
@@ -241,6 +257,34 @@ builder.Services.AddScoped<ImageUploadService>();
 // request instead of re-parsed per scope — the whole point of the ReloadSeconds cache (§4.3).
 builder.Services.Configure<LegalOptions>(builder.Configuration.GetSection("Legal"));
 builder.Services.AddSingleton<LegalDocumentProvider>();
+
+// WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
+builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.NotificationOptions.SectionName));
+
+// Transport/provisioning selection by Notifications:Provider (§28). "logging" — the default, safe in
+// every environment — is the only implementation this cycle ships; a live GreenApi adapter is scaffolded
+// (interfaces, classifier, chatId builder — T4-B5) but not wired up yet. Selecting "green-api" therefore
+// fails LOUD at startup rather than silently falling back to the logging stub, which would otherwise be
+// the one way a Production deployment could believe notifications are really going out over WhatsApp
+// when nothing is.
+var notificationsProvider = builder.Configuration["Notifications:Provider"];
+switch (notificationsProvider)
+{
+    case null or "" or "logging":
+        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport,
+            ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
+        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
+            ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+        break;
+    case "green-api":
+        throw new InvalidOperationException(
+            "Notifications:Provider=green-api has no implementation registered yet (the GreenApi HTTP " +
+            "adapter — T4-B5 — is not part of this build). Set Notifications__Provider=logging, or leave " +
+            "it unset, until the adapter lands.");
+    default:
+        throw new InvalidOperationException($"Unknown Notifications:Provider '{notificationsProvider}'.");
+}
 
 // ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
 // gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.Infrastructure.Data;
 
@@ -26,6 +27,20 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
 
+    // Cycle 4 — WhatsApp notifications (ARCHITECTURE_CYCLE4.md §23, §25).
+    public DbSet<City> Cities => Set<City>();
+    public DbSet<NotificationChannel> NotificationChannels => Set<NotificationChannel>();
+    public DbSet<ChannelCompanyAssignment> ChannelCompanyAssignments => Set<ChannelCompanyAssignment>();
+    public DbSet<ChannelStateEvent> ChannelStateEvents => Set<ChannelStateEvent>();
+    public DbSet<ChannelPaymentLog> ChannelPaymentLogs => Set<ChannelPaymentLog>();
+    public DbSet<OutboundNotification> OutboundNotifications => Set<OutboundNotification>();
+    public DbSet<CompanyNotificationSettings> CompanyNotificationSettings => Set<CompanyNotificationSettings>();
+    public DbSet<NotificationTemplate> NotificationTemplates => Set<NotificationTemplate>();
+    public DbSet<NotificationTemplateHistory> NotificationTemplateHistories => Set<NotificationTemplateHistory>();
+    public DbSet<NotificationOptOut> NotificationOptOuts => Set<NotificationOptOut>();
+    public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
+    public DbSet<PlatformSettingChangeLog> PlatformSettingChangeLogs => Set<PlatformSettingChangeLog>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -34,6 +49,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasIndex(c => c.Slug).IsUnique();
             e.HasOne(c => c.Owner).WithMany().HasForeignKey(c => c.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
+            // Cycle 4 (§23.3, §35 migration 2): Restrict — a city referenced by a company can't be
+            // deleted from the directory out from under it. City.Id starts at 1, so 0 stays unused and
+            // NULL means "not migrated yet" is unambiguous during the backfill.
+            e.HasOne(c => c.City).WithMany().HasForeignKey(c => c.CityId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(c => c.TimeZoneId).HasMaxLength(64);
         });
 
         builder.Entity<Service>(e =>
@@ -161,6 +181,126 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<MailLog>(e => {
             e.HasOne(m => m.Company).WithMany().HasForeignKey(m => m.CompanyId);
             e.HasOne(m => m.SentBy).WithMany().HasForeignKey(m => m.SentById).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Cycle 4: WhatsApp notifications (ARCHITECTURE_CYCLE4.md §23) ───────────────────────────
+
+        builder.Entity<City>(e =>
+        {
+            e.Property(c => c.Name).HasMaxLength(200);
+            e.Property(c => c.Region).HasMaxLength(200);
+            e.Property(c => c.TimeZoneId).HasMaxLength(64);
+            e.Property(c => c.SearchName).HasMaxLength(200);
+            e.HasIndex(c => c.SearchName);
+            e.HasIndex(c => new { c.Region, c.Name });
+        });
+
+        builder.Entity<NotificationChannel>(e =>
+        {
+            e.HasOne(c => c.Owner).WithMany().HasForeignKey(c => c.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(c => c.OwnerUserId);
+            // Filtered unique index: a channel with no instance yet has ProviderInstanceId == null, and
+            // there is exactly one live column value we must never see twice.
+            e.HasIndex(c => c.ProviderInstanceId).IsUnique().HasFilter("\"ProviderInstanceId\" IS NOT NULL");
+            e.HasIndex(c => c.State);
+            e.HasOne(c => c.ReplacedByChannel).WithMany()
+                .HasForeignKey(c => c.ReplacedByChannelId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ChannelCompanyAssignment>(e =>
+        {
+            e.HasOne(a => a.Channel).WithMany(c => c.Assignments)
+                .HasForeignKey(a => a.ChannelId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(a => a.Company).WithMany().HasForeignKey(a => a.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(a => a.ChannelId);
+            // US-61 p.7: a company may be assigned to at most one channel — a hard DB guarantee, not
+            // application-level check-then-act.
+            e.HasIndex(a => a.CompanyId).IsUnique();
+        });
+
+        builder.Entity<ChannelStateEvent>(e =>
+        {
+            e.HasOne(ev => ev.Channel).WithMany().HasForeignKey(ev => ev.ChannelId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(ev => ev.Detail).HasMaxLength(500);
+            e.HasIndex(ev => new { ev.ChannelId, ev.OccurredAtUtc });
+        });
+
+        builder.Entity<ChannelPaymentLog>(e =>
+        {
+            e.HasOne(l => l.Channel).WithMany().HasForeignKey(l => l.ChannelId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(l => l.Amount).HasColumnType("decimal(10,2)");
+            e.HasIndex(l => l.ChannelId);
+        });
+
+        builder.Entity<OutboundNotification>(e =>
+        {
+            e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(n => n.Channel).WithMany().HasForeignKey(n => n.ChannelId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(n => n.Booking).WithMany().HasForeignKey(n => n.BookingId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(n => n.RecipientPhone).HasMaxLength(20);
+            e.Property(n => n.Body).HasMaxLength(2000);
+            e.Property(n => n.ReasonDetail).HasMaxLength(300);
+            e.Property(n => n.ProviderMessageId).HasMaxLength(100);
+            e.Property(n => n.IdempotencyKey).HasMaxLength(200);
+            e.HasIndex(n => n.IdempotencyKey).IsUnique();
+
+            // §23.4 index 1 — the dispatcher's ONLY read path. Partial on Status = Pending (the enum's
+            // int value, NOT its name — see NotificationStatus's doc comment for why Pending must stay
+            // 0 and why this filter is written as a raw literal rather than translated from the enum).
+            e.HasIndex(n => new { n.VisitStartUtc, n.CreatedAt })
+                .HasDatabaseName("IX_OutboundNotifications_Dispatch")
+                .HasFilter("\"Status\" = 0")
+                .IncludeProperties(n => new { n.DueAtUtc, n.ChannelId, n.CompanyId });
+
+            // §23.4 index 2 — delivery log (US-32) and the 30-day summary.
+            e.HasIndex(n => new { n.CompanyId, n.CreatedAt })
+                .HasDatabaseName("IX_OutboundNotifications_Company_CreatedAt");
+
+            // §23.4 index 3 — webhook lookup. Deliberately NOT unique (a 500 on a rare id collision
+            // between provider instances is worse than a theoretical extra row).
+            e.HasIndex(n => n.ProviderMessageId)
+                .HasDatabaseName("IX_OutboundNotifications_ProviderMessageId")
+                .HasFilter("\"ProviderMessageId\" IS NOT NULL");
+
+            // §23.4 index 4 — the three bulk "cancel/reassign everything on this channel" operations.
+            e.HasIndex(n => new { n.ChannelId, n.Status })
+                .HasDatabaseName("IX_OutboundNotifications_Channel_Status");
+        });
+
+        builder.Entity<CompanyNotificationSettings>(e =>
+        {
+            e.HasKey(s => s.CompanyId);
+            e.HasOne(s => s.Company).WithMany().HasForeignKey(s => s.CompanyId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<NotificationTemplate>(e =>
+        {
+            e.HasOne(t => t.Company).WithMany().HasForeignKey(t => t.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(t => t.Body).HasMaxLength(1000);
+            e.HasIndex(t => new { t.CompanyId, t.Type }).IsUnique();
+        });
+
+        builder.Entity<NotificationTemplateHistory>(e =>
+        {
+            e.HasIndex(h => new { h.CompanyId, h.Type, h.ChangedAtUtc });
+        });
+
+        builder.Entity<NotificationOptOut>(e =>
+        {
+            e.Property(o => o.Phone).HasMaxLength(20);
+            e.HasIndex(o => o.Phone).IsUnique();
+        });
+
+        builder.Entity<PlatformSetting>(e =>
+        {
+            e.HasKey(s => s.Key);
+            e.Property(s => s.Key).HasMaxLength(100);
+            e.Property(s => s.Value).HasMaxLength(200);
+        });
+
+        builder.Entity<PlatformSettingChangeLog>(e =>
+        {
+            e.HasIndex(l => l.Key);
         });
     }
 }

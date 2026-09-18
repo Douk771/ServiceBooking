@@ -1,3 +1,4 @@
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.DTOs.Companies;
@@ -47,7 +48,16 @@ public record CompanyDto(
     // which is paginated (§11) and would make the number visibly shift as a caller pages through
     // reviews. Null/0 when the company has no reviews yet.
     double? AverageRating,
-    int ReviewCount
+    int ReviewCount,
+    // Cycle 4 (ARCHITECTURE_CYCLE4.md §31.4): five additive fields. CityId is null only for companies
+    // created before the AddCompanyCityAndTimeZone migration that somehow slipped the backfill — the
+    // frontend treats a null city the same as "not set yet" and prompts the owner to pick one.
+    int? CityId,
+    string? CityName,
+    string? CityRegion,
+    string TimeZoneId,
+    bool TimeZoneIsManual,
+    int UtcOffsetMinutes
 );
 
 public record CreateCompanyDto(
@@ -57,6 +67,13 @@ public record CreateCompanyDto(
     string? Address,
     string? Phone,
     string? Email,
+    // Required (API_CONTRACT_CYCLE4.md §31.2, breaking change) — a company without a city has no
+    // derivable time zone, and reminder timing needs one. Nullable in the DTO (rather than a plain
+    // `int`) so a request that omits it entirely gets the specific "Укажите город салона" message
+    // instead of a generic model-binding 400.
+    int? CityId,
+    // Optional override — see CompanyTimeZoneResolver.ForNewCompany.
+    string? TimeZoneId,
     bool AllowSelfBooking = true,
     bool ShowInPublicListing = true
 );
@@ -78,7 +95,15 @@ public record UpdateCompanyDto(
     string? Email,
     bool? AllowSelfBooking,
     bool? RequirePrepayment,
-    bool? ShowInPublicListing
+    bool? ShowInPublicListing,
+    // If provided (non-null CityId), changes the company's city. Plain nullable, matching every other
+    // field's "omitted or null → don't touch" convention — unlike TimeZoneId below, the contract does
+    // not define a distinct meaning for an explicit `cityId: null`.
+    int? CityId = null,
+    // Optional<T> because the three cases in API_CONTRACT_CYCLE4.md §31.3 need to be told apart: field
+    // omitted (leave the zone as-is), field explicitly null (revert to the city's own zone), field set
+    // to a value (manual override) — see CompanyTimeZoneResolver.ForUpdate.
+    Optional<string?> TimeZoneId = default
 );
 
 // US-24 p.4 / US-19 p.7 — GET /api/companies/{id}/photo-usage.

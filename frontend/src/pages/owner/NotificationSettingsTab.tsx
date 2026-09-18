@@ -1,0 +1,185 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { notificationsApi } from '../../api/notifications'
+import { Card } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Icon } from '../../components/ui/Icon'
+import { ChannelBreachBanner } from '../../components/notifications/ChannelBreachBanner'
+import { getNotificationErrorMessage } from '../../utils/notificationError'
+import type { NotificationType } from '../../types'
+
+const TYPE_LABELS: Record<NotificationType, string> = {
+  BookingConfirmed: 'Подтверждение записи',
+  Reminder: 'Напоминание о визите',
+  BookingCancelled: 'Отмена записи',
+  BookingRescheduled: 'Перенос записи',
+  StaffBookingCreated: 'Новая запись (персоналу)',
+  StaffBookingCancelled: 'Отмена записи (персоналу)',
+}
+const CLIENT_TYPES: NotificationType[] = ['BookingConfirmed', 'Reminder', 'BookingCancelled', 'BookingRescheduled']
+
+/** US-31 — company-level notification settings, каналонезависимые (SPEC §4.0). */
+export function NotificationSettingsTab({ companyId }: { companyId: string }) {
+  const qc = useQueryClient()
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['notification-settings', companyId],
+    queryFn: () => notificationsApi.getSettings(companyId),
+  })
+
+  const [enabledTypes, setEnabledTypes] = useState<Set<NotificationType>>(new Set(CLIENT_TYPES))
+  const [reminderLeadMinutes, setReminderLeadMinutes] = useState(1440)
+  const [minLeadMinutes, setMinLeadMinutes] = useState(120)
+  const [validationError, setValidationError] = useState('')
+
+  useEffect(() => {
+    if (!data) return
+    setEnabledTypes(new Set(data.enabledTypes))
+    setReminderLeadMinutes(data.reminderLeadMinutes)
+    setMinLeadMinutes(data.minLeadMinutes)
+  }, [data])
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      notificationsApi.updateSettings(companyId, {
+        enabledTypes: [...enabledTypes],
+        reminderLeadMinutes,
+        minLeadMinutes,
+      }),
+    onSuccess: (res) => {
+      setValidationError('')
+      qc.setQueryData(['notification-settings', companyId], res)
+    },
+  })
+
+  const toggleType = (t: NotificationType) =>
+    setEnabledTypes((prev) => {
+      const next = new Set(prev)
+      if (next.has(t)) next.delete(t)
+      else next.add(t)
+      return next
+    })
+
+  const onSave = () => {
+    // Mirrors the server's 400 (§28.2) client-side so the owner doesn't wait for a round trip to find
+    // out the combination can never fire.
+    if (minLeadMinutes >= reminderLeadMinutes) {
+      setValidationError('Напоминание за 1 час при пороге 2 часа не уйдёт никогда')
+      return
+    }
+    setValidationError('')
+    saveMut.mutate()
+  }
+
+  if (isLoading) return <div className="h-64 bg-cream-deep rounded-2xl animate-pulse" />
+  if (isError || !data)
+    return (
+      <Card className="p-10 text-center text-muted">
+        <Icon name="alert-circle" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+        <p>Не удалось загрузить настройки уведомлений.</p>
+      </Card>
+    )
+
+  // Trois-level gate convention (CURRENT_STATE.md §4.6, SPEC US-31 п. 4): tariff off → upsell stub;
+  // no/unpaid/disconnected channel → "connect a channel" stub; only then does the real form render.
+  if (!data.planAllowsChannel) {
+    return (
+      <Card className="p-10 text-center text-muted">
+        <Icon name="settings" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+        <p>Уведомления клиентам через WhatsApp доступны на более высоком тарифе</p>
+      </Card>
+    )
+  }
+
+  if (!data.channel?.assigned || data.channel.paymentState !== 'Paid') {
+    return (
+      <Card className="p-10 text-center text-muted">
+        <Icon name="megaphone" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+        <p className="mb-3">{data.blockedReason ?? 'Салон не привязан к каналу'}</p>
+        <Link to="/cabinet">
+          <Button size="sm" variant="secondary">
+            Перейти к разделу «Уведомления → Каналы»
+          </Button>
+        </Link>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* API_CONTRACT_CYCLE4.md §28.1 doesn't include the channel's full stateText here (only `state`
+          and `blockedReason`), so blockedReason stands in for it — it's the same "channel is broken"
+          episode already covered in the channel list, just approximated with what this endpoint sends.
+          Flagged to architect/backend as a contract gap in the cycle report. */}
+      {data.channel.state && (
+        <ChannelBreachBanner state={data.channel.state} stateText={data.blockedReason ?? ''} idleDeadline={null} />
+      )}
+
+      {!data.effectiveEnabled && data.blockedReason && (
+        <div className="rounded-xl bg-warning-bg text-warning text-sm px-4 py-3 flex items-start gap-2">
+          <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
+          <span>{data.blockedReason}</span>
+        </div>
+      )}
+
+      <Card className="p-6">
+        <h2 className="text-lg font-semibold text-ink mb-4">Какие уведомления отправлять</h2>
+        <div className="grid gap-2 mb-6">
+          {CLIENT_TYPES.map((t) => (
+            <label key={t} className="flex items-center justify-between gap-3 py-1.5 cursor-pointer">
+              <span className="text-sm text-ink-soft">{TYPE_LABELS[t]}</span>
+              <input
+                type="checkbox"
+                className="w-4 h-4 accent-gold rounded"
+                checked={enabledTypes.has(t)}
+                onChange={() => toggleType(t)}
+              />
+            </label>
+          ))}
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4 mb-2">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-medium text-[#4A4038]">За сколько часов напоминать</label>
+            <input
+              type="number"
+              min={1}
+              max={72}
+              value={Math.round(reminderLeadMinutes / 60)}
+              onChange={(e) => setReminderLeadMinutes(Math.max(1, Math.min(72, Number(e.target.value))) * 60)}
+              className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold bg-white text-ink"
+            />
+            <p className="text-xs text-muted">1–72 часа, по умолчанию 24</p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-medium text-[#4A4038]">Не слать, если до визита осталось меньше</label>
+            <input
+              type="number"
+              min={0}
+              max={12}
+              value={Math.round(minLeadMinutes / 60)}
+              onChange={(e) => setMinLeadMinutes(Math.max(0, Math.min(12, Number(e.target.value))) * 60)}
+              className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold bg-white text-ink"
+            />
+            <p className="text-xs text-muted">0–12 часов, по умолчанию 2 — страховка от выброса очереди после починки канала</p>
+          </div>
+        </div>
+
+        {(validationError || saveMut.isError) && (
+          <p className="text-sm text-danger mt-2">
+            {validationError || getNotificationErrorMessage(saveMut.error)}
+          </p>
+        )}
+        {saveMut.isSuccess && !validationError && (
+          <p className="text-sm text-success mt-2 flex items-center gap-1.5">
+            <Icon name="check" size={14} strokeWidth={2} /> Сохранено
+          </p>
+        )}
+
+        <Button className="mt-4" loading={saveMut.isPending} onClick={onSave}>
+          Сохранить
+        </Button>
+      </Card>
+    </div>
+  )
+}

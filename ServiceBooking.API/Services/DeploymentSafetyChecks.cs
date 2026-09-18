@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using ServiceBooking.API.Services.Notifications;
 
 namespace ServiceBooking.API.Services;
 
@@ -139,5 +140,140 @@ public static class DeploymentSafetyChecks
                 "under nginx's own address instead of the real client IP, which is a denial-of-service " +
                 "footgun, not a limiter. Set FORWARDEDHEADERS__TRUSTEDNETWORKS__0 in .env (the docker bridge " +
                 "subnet — see DEPLOY.md).");
+    }
+
+    /// <summary>
+    /// Cycle 4, US-54/US-35 (ARCHITECTURE_CYCLE4.md §24.2). Two independent rules, gated differently on
+    /// purpose:
+    ///
+    /// 1–2. When notifications are enabled and this is not a developer environment, the encryption key
+    ///    and (if the provider is GREEN-API) the partner token must be present and not placeholders —
+    ///    a misconfigured Production deployment must never finish starting with notifications silently
+    ///    unusable.
+    /// 3. Outside Production — including Development and Testing, unlike rules 1–2 — the GREEN-API
+    ///    partner token must be EMPTY. This is a mirror-image safety rule: a real partner token on a
+    ///    developer's machine can create or delete a live salon's WhatsApp instance, which is exactly the
+    ///    kind of accident a "skip checks in Development" exemption must not enable.
+    /// </summary>
+    public static void ValidateNotificationSecrets(IConfiguration configuration, string environmentName)
+    {
+        var enabled = configuration.GetValue("Notifications:Enabled", false);
+        var isDeveloperEnvironment = IsDeveloperEnvironment(environmentName);
+        var isProduction = string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase);
+
+        if (enabled && !isDeveloperEnvironment)
+        {
+            ValidateEncryptionKeyFormat(configuration["Notifications:EncryptionKey"]);
+
+            var provider = configuration["Notifications:Provider"];
+            if (string.Equals(provider, "green-api", StringComparison.OrdinalIgnoreCase))
+            {
+                var partnerToken = configuration["Notifications:PartnerToken"];
+                if (string.IsNullOrWhiteSpace(partnerToken) || partnerToken == "CHANGE_ME")
+                    throw new InvalidOperationException(
+                        "Notifications:Provider is 'green-api' but Notifications:PartnerToken is missing " +
+                        "or still a placeholder. Set NOTIFICATIONS_PARTNER_TOKEN in .env.");
+            }
+        }
+
+        if (!isProduction)
+        {
+            var partnerToken = configuration["Notifications:PartnerToken"];
+            if (!string.IsNullOrWhiteSpace(partnerToken))
+                throw new InvalidOperationException(
+                    "Notifications:PartnerToken is set outside Production. A real GREEN-API partner token " +
+                    "here could create or delete a live salon's WhatsApp instance from a dev/test run. " +
+                    "Clear NOTIFICATIONS_PARTNER_TOKEN outside Production.");
+        }
+    }
+
+    private static void ValidateEncryptionKeyFormat(string? keyBase64)
+    {
+        if (string.IsNullOrWhiteSpace(keyBase64) || keyBase64 == "CHANGE_ME")
+            throw new InvalidOperationException(
+                "Notifications:EncryptionKey is missing or still a placeholder while notifications are " +
+                "enabled. Set NOTIFICATIONS_ENCRYPTION_KEY in .env to a base64-encoded 32-byte key " +
+                "(openssl rand -base64 32).");
+
+        byte[] keyBytes;
+        try
+        {
+            keyBytes = Convert.FromBase64String(keyBase64);
+        }
+        catch (FormatException)
+        {
+            throw new InvalidOperationException(
+                "Notifications:EncryptionKey is not valid base64. Set NOTIFICATIONS_ENCRYPTION_KEY in " +
+                ".env to a base64-encoded 32-byte key (openssl rand -base64 32).");
+        }
+
+        if (keyBytes.Length != 32)
+            throw new InvalidOperationException(
+                $"Notifications:EncryptionKey must decode to exactly 32 bytes, got {keyBytes.Length}. Set " +
+                "NOTIFICATIONS_ENCRYPTION_KEY in .env to a base64-encoded 32-byte key (openssl rand -base64 32).");
+    }
+
+    /// <summary>
+    /// Cycle 4, US-54 (ARCHITECTURE_CYCLE4.md §24.5, risk R10). Fail-fast if the key this process was
+    /// started with does not match the fingerprint recorded on a previous start, unless the mismatch was
+    /// acknowledged as a deliberate rotation — see <see cref="ChannelKeyFingerprint"/> for the decision
+    /// table. Gated the same way as <see cref="ValidateNotificationSecrets"/>'s rules 1–2 (enabled AND
+    /// not a developer environment): if notifications are off, there is nothing to protect yet; on a
+    /// developer machine, the key is expected to churn freely. Must be called AFTER
+    /// <see cref="ValidateNotificationSecrets"/> — it assumes the key already passed the format check.
+    /// </summary>
+    public static void ValidateChannelKeyFingerprint(IConfiguration configuration, string environmentName, string contentRootPath)
+    {
+        var enabled = configuration.GetValue("Notifications:Enabled", false);
+        if (!enabled || IsDeveloperEnvironment(environmentName)) return;
+
+        var keyBytes = SecretProtector.DecodeKey(configuration["Notifications:EncryptionKey"]);
+        var rotationAck = configuration["Notifications:KeyRotationAck"];
+
+        var configuredPath = configuration["Notifications:KeyFingerprintPath"];
+        var relativePath = string.IsNullOrWhiteSpace(configuredPath)
+            ? Path.Combine("App_Data", "state", ".notifications-key-fingerprint")
+            : configuredPath;
+        var fullPath = Path.IsPathRooted(relativePath) ? relativePath : Path.Combine(contentRootPath, relativePath);
+
+        ChannelKeyFingerprint.ValidateAndPersist(
+            keyBytes,
+            rotationAck,
+            fullPath,
+            File.Exists,
+            File.ReadAllText,
+            (path, content) =>
+            {
+                var directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+                File.WriteAllText(path, content);
+            },
+            Console.WriteLine);
+    }
+
+    /// <summary>
+    /// Cycle 4, US-30 (ARCHITECTURE_CYCLE4.md §34.3). Resolves the least-common IANA zone the cycle
+    /// depends on — <c>Asia/Barnaul</c>, not <c>Europe/Moscow</c>, deliberately: a widely-used zone can
+    /// be present in a stripped-down tzdata image while a less common one is missing, so checking the
+    /// common one would pass on exactly the image that fails a company in Barnaul. .NET 6+ resolves IANA
+    /// ids from the OS time zone database on Linux (no <c>TimeZoneConverter</c> package needed), so this
+    /// is really a check that the runtime image installed <c>tzdata</c> at all.
+    /// </summary>
+    public static void ValidateTimeZoneDatabase(string environmentName)
+    {
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        try
+        {
+            TimeZoneInfo.FindSystemTimeZoneById("Asia/Barnaul");
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            throw new InvalidOperationException(
+                "The 'Asia/Barnaul' IANA time zone could not be resolved — the OS time zone database " +
+                "(tzdata) is missing or incomplete in this image. Companies whose city resolves to this " +
+                "zone would get wrong visit/reminder times. Install tzdata in the runtime stage of the " +
+                "Dockerfile.", ex);
+        }
     }
 }
