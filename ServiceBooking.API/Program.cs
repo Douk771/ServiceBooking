@@ -282,6 +282,7 @@ builder.Services.Configure<ServiceBooking.API.Services.Notifications.Notificatio
 // AddControllers nor AddMvc registers it by default, unlike (say) AddResponseCaching.
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PlatformSettings>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Billing.PricingCatalogCache>();
 
 // The webhook parser (§32) is registered unconditionally, independent of Notifications:Provider — it is
 // pure translation with no secret/network access of its own, and NotificationsController.ProviderWebhook
