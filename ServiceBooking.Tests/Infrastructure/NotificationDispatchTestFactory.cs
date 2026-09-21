@@ -54,7 +54,11 @@ public sealed class NotificationDispatchTestFactory(bool channelHealthEnabled = 
         builder.UseSetting("ScheduledTasks:photo-retention-cleanup:Enabled", "false");
 
         // §27.2: PeriodSeconds (not PeriodMinutes, whose smallest unit is a minute) — a fast, repeatable
-        // dispatch pass.
+        // dispatch pass. Enabled is set EXPLICITLY (rather than relying on ScheduledTaskOptions.For's own
+        // "true" default) — appsettings.Testing.json now disables notification-dispatch/channel-health by
+        // default for every OTHER Testing host, precisely so this factory is the one deliberate place
+        // that opts back in, not an accident of the per-task default outrunning the file's own setting.
+        builder.UseSetting("ScheduledTasks:notification-dispatch:Enabled", "true");
         builder.UseSetting("ScheduledTasks:notification-dispatch:PeriodSeconds", "1");
         builder.UseSetting("ScheduledTasks:notification-dispatch:MaxRunMinutes", "1");
         builder.UseSetting("ScheduledTasks:channel-health:Enabled", channelHealthEnabled ? "true" : "false");

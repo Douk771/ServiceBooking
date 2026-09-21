@@ -41,7 +41,13 @@ public sealed class NoopChannelProvisioning : IChannelProvisioning
     public Task<ProviderChannelState> GetStateAsync(ChannelCredentials credentials, CancellationToken ct) =>
         Task.FromResult(ProviderChannelState.Authorized);
 
+    public Task<string?> GetPhoneNumberAsync(ChannelCredentials credentials, CancellationToken ct) =>
+        Task.FromResult<string?>(null);
+
     public Task SetSendDelayAsync(ChannelCredentials credentials, int milliseconds, CancellationToken ct) =>
+        Task.CompletedTask;
+
+    public Task ConfigureWebhookAsync(ChannelCredentials credentials, string webhookUrl, CancellationToken ct) =>
         Task.CompletedTask;
 
     public Task LogoutAsync(ChannelCredentials credentials, CancellationToken ct) => Task.CompletedTask;

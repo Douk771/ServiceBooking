@@ -7,6 +7,15 @@ using ServiceBooking.API.Services;
 
 namespace ServiceBooking.API.Services.Notifications.GreenApi;
 
+/// <summary>The <c>Notifications:Provider</c> config value this adapter answers to. A single named
+/// constant, defined here rather than repeated as a string literal at every comparison site (§37's
+/// acceptance grep: the provider's name is only allowed to appear inside this folder or in config) —
+/// <see cref="DeploymentSafetyChecks"/> references this instead of writing the literal itself.</summary>
+public static class GreenApiProviderName
+{
+    public const string Value = "green-api";
+}
+
 /// <summary>Thrown by every <see cref="GreenApiProvisioning"/> call that fails — the message is always
 /// built from <c>SafeLabel</c> and the status code, never from the raw response body or the request URL,
 /// so a controller that lets this bubble into a log or a 5xx problem+json never leaks a token
@@ -61,7 +70,7 @@ public sealed class GreenApiProvisioning(
                 // it needs the phone number for NotificationChannel.PhoneNumber — fetched here, from the
                 // same round trip, rather than a second provisioning call the controller would have to
                 // remember to make.
-                var phoneNumber = await TryFetchPhoneNumberAsync(credentials, ct);
+                var phoneNumber = await GetPhoneNumberAsync(credentials, ct);
                 return new QrSnapshot(null, Authorized: true, QrRefreshAfterSeconds, phoneNumber);
 
             default:
@@ -75,7 +84,7 @@ public sealed class GreenApiProvisioning(
     /// every other phone in the system goes through (US-53 p.6) — never trusted as already-canonical.
     /// A failure here must not fail the whole connect flow (the channel is still genuinely Connected):
     /// <see langword="null"/> is returned, and PhoneNumber simply stays unset until a later poll succeeds.</summary>
-    private async Task<string?> TryFetchPhoneNumberAsync(ChannelCredentials credentials, CancellationToken ct)
+    public async Task<string?> GetPhoneNumberAsync(ChannelCredentials credentials, CancellationToken ct)
     {
         try
         {
@@ -120,13 +129,44 @@ public sealed class GreenApiProvisioning(
         }
     }
 
+    public async Task ConfigureWebhookAsync(ChannelCredentials credentials, string webhookUrl, CancellationToken ct)
+    {
+        var opts = options.Value;
+        var (uri, safeLabel) = GreenApiUrls.SetSettings(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
+        try
+        {
+            // I2: `webhookUrl` already carries our own path token — `webhookUrlToken` is deliberately
+            // NOT set (see cycle report). `outgoingAPIMessageWebhook` is delivery-status callbacks for
+            // messages sent via `sendMessage` (what NotificationDispatchTask does) specifically, as
+            // opposed to `outgoingMessageWebhook` (messages sent from the linked phone itself) — the
+            // former is the one this cycle needs. `stateWebhook` is the `stateInstance` push
+            // (ChannelStateMapper's second entry point, §32). Incoming-message webhooks stay off: this
+            // cycle never reads client replies.
+            await SendAsync(HttpMethod.Post, uri, safeLabel, ct, new
+            {
+                webhookUrl,
+                outgoingAPIMessageWebhook = "yes",
+                stateWebhook = "yes",
+                incomingWebhook = "no",
+            });
+        }
+        catch (GreenApiProvisioningException ex)
+        {
+            // §29.1/I2: best effort, same as SetSendDelayAsync — a failure here must not roll back an
+            // otherwise-successful Connect. ChannelHealthTask's own poll remains the fallback path for
+            // state changes even if the webhook is never actually delivered for this instance.
+            logger.LogWarning(ex, "Setting GREEN-API webhook failed, continuing without it");
+        }
+    }
+
     public async Task LogoutAsync(ChannelCredentials credentials, CancellationToken ct)
     {
         var opts = options.Value;
         var (uri, safeLabel) = GreenApiUrls.Logout(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
         try
         {
-            await SendAsync(HttpMethod.Post, uri, safeLabel, ct);
+            // B7 / reviewer note: GREEN-API's logout is a GET, not a POST.
+            await SendAsync(HttpMethod.Get, uri, safeLabel, ct);
         }
         catch (GreenApiProvisioningException ex)
         {
@@ -141,11 +181,17 @@ public sealed class GreenApiProvisioning(
         var opts = options.Value;
         var (uri, safeLabel) = GreenApiUrls.DeleteInstance(opts.GreenApi.ApiUrl, opts.PartnerToken ?? string.Empty, instanceId);
 
+        // B7: idInstance travels as a NUMBER in the JSON body for deleteInstanceAccount, not appended to
+        // the path — the path that used to carry it (/partner/deleteInstance/{token}/{id}) doesn't exist
+        // at the provider, which is exactly why every call used to 404 and get misread as "already gone".
+        if (!long.TryParse(instanceId, out var numericInstanceId))
+            throw new GreenApiProvisioningException($"{safeLabel}: instance id \"{instanceId}\" is not numeric.");
+
         HttpStatusCode? statusCode;
         string? body;
         try
         {
-            (body, statusCode) = await SendAsync(HttpMethod.Post, uri, safeLabel, ct);
+            (body, statusCode) = await SendAsync(HttpMethod.Post, uri, safeLabel, ct, new { idInstance = numericInstanceId });
         }
         catch (GreenApiProvisioningException)
         {
@@ -153,12 +199,27 @@ public sealed class GreenApiProvisioning(
         }
 
         // §30.4: an instance that no longer exists at the provider is treated as successfully deleted —
-        // idempotency by interpreting the response, not by hoping the call never runs twice. A 404 here,
-        // or a body explicitly saying so, both mean "already gone", which is the outcome we wanted.
-        if (statusCode == HttpStatusCode.NotFound) return new InstanceDeletion(Success: true);
+        // idempotency by interpreting the response, not by hoping the call never runs twice. B7: with the
+        // path now correct, a 404 is a genuinely rare case — trust it ONLY when the body itself says the
+        // instance is gone (rather than any 404, which is how the old, wrong path silently "succeeded" at
+        // deleting nothing).
+        var isSuccess = ReadBool(body, "isSuccess") ?? ReadBool(body, "result");
+        if (statusCode == HttpStatusCode.NotFound)
+            return new InstanceDeletion(Success: BodyIndicatesInstanceAlreadyGone(body));
 
-        var isSuccess = ReadBool(body, "isSuccess");
         return new InstanceDeletion(Success: isSuccess ?? statusCode is HttpStatusCode.OK);
+    }
+
+    /// <summary>B7: the ONLY thing that makes a 404 count as a successful deletion — a body that GREEN-API
+    /// actually uses to say "no such instance", rather than treating any 404 (e.g. from a wrong path) as
+    /// success. Checked against the error message property partner endpoints use for this.</summary>
+    private static bool BodyIndicatesInstanceAlreadyGone(string? body)
+    {
+        var message = ReadString(body ?? string.Empty, "message") ?? ReadString(body ?? string.Empty, "error");
+        return message is not null &&
+               (message.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("instance not exists", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Sends one request, logging duration under the redacted <c>safeLabel</c> exactly like

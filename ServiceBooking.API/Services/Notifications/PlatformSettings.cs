@@ -54,4 +54,11 @@ public sealed class PlatformSettings(AppDbContext db, IMemoryCache cache)
         cache.Set(cacheKey, value, CacheDuration);
         return value;
     }
+
+    /// <summary>Reviewer note: the admin PUT endpoint (<see cref="PlatformSettingsWriter"/>) wrote a new
+    /// value straight to the database without ever calling this — the 60s cache above kept serving the
+    /// OLD price/idle-days for up to a minute after a superadmin saved a change, with no way to tell
+    /// (from the API response, which reads straight from the DB write) that the read side hadn't caught
+    /// up yet. Called once per changed key, right after <see cref="PlatformSettingsWriter.WriteAsync"/>.</summary>
+    public void InvalidateCache(string key) => cache.Remove($"platform-setting:{key}");
 }

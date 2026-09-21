@@ -11,7 +11,7 @@ namespace ServiceBooking.API.Services;
 /// different sentences about the same event (the discrepancy the frontend flagged and this cycle's
 /// contract fix, §19.5, closes). Pure: no DB, no HTTP — every fact it needs is a parameter.
 ///
-/// Texts for the seven owner-visible states are copied verbatim from SPEC.md §4.3 p.2 (the GREEN-API
+/// Texts for the seven owner-visible states are copied verbatim from SPEC.md §4.3 p.2 (the provider's
 /// state mapping table) and p.2's <c>NeedsReconnect</c> paragraph — this is the one place those
 /// sentences live; nothing else in the codebase should hardcode them again.
 ///
@@ -21,7 +21,8 @@ namespace ServiceBooking.API.Services;
 /// </summary>
 public static class ChannelPresentation
 {
-    public static string StateText(ChannelState state, string? phoneMasked, int idleDays, DateTime? paidUntilUtc) => state switch
+    public static string StateText(
+        ChannelState state, string? phoneMasked, int idleDays, DateTime? paidUntilUtc, ChannelStateReason? lastReason = null) => state switch
     {
         ChannelState.NotConnected => "Канал не подключён",
         ChannelState.Connecting => "Канал запускается",
@@ -33,6 +34,11 @@ public static class ChannelPresentation
         ChannelState.Blocked =>
             "WhatsApp заблокировал этот номер. Восстановить его нельзя — подключите другой номер, оплаченный период сохранится",
         ChannelState.DisabledByOwner => "Канал отключён вами",
+        // I1: SecretUnavailable is a platform-side incident (encryption key rotated/lost), not something
+        // the owner did or can read anything about "N days unused" into — a different sentence entirely,
+        // so nobody is told to change a habit that was never the cause.
+        ChannelState.NeedsReconnect when lastReason == ChannelStateReason.SecretUnavailable =>
+            "Требуется повторная привязка после технических работ на платформе. Назначенные салоны и оплаченный период сохранены — подключите номер заново, повторная оплата не потребуется",
         ChannelState.NeedsReconnect => paidUntilUtc is { } paidUntil
             ? $"Номер был отключён, потому что каналом {idleDays} {DaysWord(idleDays)} никто не пользовался. " +
               $"Назначенные салоны и оплаченный период до {paidUntil:dd.MM} сохранены — подключите номер заново, " +
@@ -60,9 +66,13 @@ public static class ChannelPresentation
     /// starting points: never bound yet, or bound and then reclaimed by idle cleanup — both go through
     /// the same <c>connect</c> endpoint. A paid, risk-accepted channel already <c>Connecting</c> or
     /// <c>Connected</c> would 409 (§24.1); the button is gated off before the click, not after.</summary>
+    // I10 / SPEC US-56 п. 2: a channel the OWNER disconnected must be reconnectable again within the
+    // same paid period — "отключил, потом передумал" is not the same event as a ban/idle-deletion, and
+    // the paid period is explicitly preserved on Disconnect (API_CONTRACT_CYCLE4.md §26) precisely so
+    // this path exists.
     public static bool CanConnect(ChannelState state, ChannelPaymentStatus paymentState, bool riskAccepted) =>
         riskAccepted && paymentState == ChannelPaymentStatus.Paid &&
-        (state == ChannelState.NotConnected || state == ChannelState.NeedsReconnect);
+        (state == ChannelState.NotConnected || state == ChannelState.NeedsReconnect || state == ChannelState.DisabledByOwner);
 
     /// <summary>"Replace number" only makes sense for a banned channel (API_CONTRACT_CYCLE4.md §27's
     /// 409 rule) — every other state either doesn't need a replacement or isn't terminal yet.</summary>

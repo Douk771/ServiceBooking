@@ -83,7 +83,12 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
     {
         var expectedToken = options.Value.WebhookToken;
         if (string.IsNullOrEmpty(expectedToken) || !ConstantTimeEquals(token, expectedToken))
-            return Unauthorized();
+            // Reviewer note / API_CONTRACT_CYCLE4.md §19.2: 401 here must be an EMPTY body. Plain
+            // Unauthorized() would come back as a ProblemDetails JSON body — [ApiController]'s
+            // ClientErrorResultFilter rewrites any IClientErrorActionResult with no content into one
+            // automatically. StatusCodeResult (via StatusCode(...)) does not implement that interface, so
+            // the filter leaves it alone.
+            return StatusCode(StatusCodes.Status401Unauthorized);
 
         string rawBody;
         using (var reader = new StreamReader(Request.Body, Encoding.UTF8))
@@ -159,12 +164,17 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
                 break;
 
             case ProviderMessageStatus.Read:
+                // Reviewer note: ReadAtUtc used to be stamped unconditionally, even on a row that had
+                // already gone Failed/Cancelled/Expired by the time a late/out-of-order "read" event
+                // arrived — a terminal row picking up a later timestamp field looks like it was still
+                // live after the terminal status was recorded. Moved inside the same monotonicity guard
+                // as the Status/DeliveredAtUtc update above it.
                 if (row.Status is NotificationStatus.Pending or NotificationStatus.Sent or NotificationStatus.Delivered)
                 {
                     row.Status = NotificationStatus.Delivered; // "Read" is a timestamp, not its own Status member (§23.4: exactly seven)
                     row.DeliveredAtUtc ??= callback.OccurredAtUtc;
+                    row.ReadAtUtc ??= callback.OccurredAtUtc;
                 }
-                row.ReadAtUtc ??= callback.OccurredAtUtc;
                 break;
         }
 
@@ -189,7 +199,25 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
                 FromState = channel.State, ToState = mapping.State, Reason = reason, OccurredAtUtc = callback.OccurredAtUtc,
             });
             channel.State = mapping.State;
-            if (mapping.State == ChannelState.Connected) channel.ConnectedAtUtc ??= callback.OccurredAtUtc;
+            channel.LastStateReason = reason;
+            if (mapping.State == ChannelState.Connected)
+            {
+                channel.ConnectedAtUtc ??= callback.OccurredAtUtc;
+                channel.ConsecutiveSendFailures = 0; // I8: same reset NotificationChannelsController's QR path and ChannelStateTransition.Apply do
+            }
+
+            // B8 / SPEC US-56 п. 6, US-63 п. 1: a ban must not wait for the N-day idle grace period —
+            // §30.4 database-first step only (orphan the id, blank the channel's own credentials); the
+            // actual provider delete is left to ChannelHealthTask's orphan-retry sweep (which runs first
+            // thing every pass, at most a few minutes away) rather than a synchronous provider call from
+            // inside a webhook handler, which must stay fast and always answer 200 (§32).
+            if (mapping.State == ChannelState.Blocked && channel.ProviderInstanceId is { } bannedInstanceId)
+            {
+                channel.OrphanedInstanceId = bannedInstanceId;
+                channel.ProviderInstanceId = null;
+                channel.ProviderSecretCiphertext = null;
+                channel.ProviderSecretKeyId = null;
+            }
         }
 
         await db.SaveChangesAsync();

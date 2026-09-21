@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Notifications.GreenApi;
 
 namespace ServiceBooking.API.Services;
 
@@ -147,33 +148,62 @@ public static class DeploymentSafetyChecks
     /// purpose:
     ///
     /// 1–2. When notifications are enabled and this is not a developer environment, the encryption key
-    ///    and (if the provider is GREEN-API) the partner token must be present and not placeholders —
+    ///    and (if the provider requires one, per NotificationOptions.PartnerToken) the partner token
+    ///    must be present and not placeholders —
     ///    a misconfigured Production deployment must never finish starting with notifications silently
     ///    unusable.
-    /// 3. Outside Production — including Development and Testing, unlike rules 1–2 — the GREEN-API
+    /// 3. Outside Production — including Development and Testing, unlike rules 1–2 — the provider
     ///    partner token must be EMPTY. This is a mirror-image safety rule: a real partner token on a
     ///    developer's machine can create or delete a live salon's WhatsApp instance, which is exactly the
     ///    kind of accident a "skip checks in Development" exemption must not enable.
     /// </summary>
     public static void ValidateNotificationSecrets(IConfiguration configuration, string environmentName)
     {
-        var enabled = configuration.GetValue("Notifications:Enabled", false);
+        // Matches NotificationOptions.Provider's own default — an absent key must read the same way here
+        // as it does everywhere else that binds this section, not as "not logging" by accident.
+        var provider = configuration["Notifications:Provider"] ?? "logging";
+        // I4: gated on the PROVIDER, not Notifications:Enabled — Enabled ships false in
+        // appsettings.json and, since T4-B10, does nothing else at all (it stopped being read by
+        // NotificationGate/the scheduled tasks; see the cycle report). Gating fail-fast on a flag that no
+        // longer gates anything meant a Production box with a real provider configured started up completely
+        // unchecked — no encryption key, no partner token, no key-fingerprint protection — as long as
+        // nobody had also flipped Enabled=true. "logging" is the one provider that can never reach a real
+        // WhatsApp account or need a real secret, so it is the one value exempt from these checks.
+        var isRealProvider = !string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase);
         var isDeveloperEnvironment = IsDeveloperEnvironment(environmentName);
         var isProduction = string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase);
 
-        if (enabled && !isDeveloperEnvironment)
+        if (isRealProvider && !isDeveloperEnvironment)
         {
             ValidateEncryptionKeyFormat(configuration["Notifications:EncryptionKey"]);
 
-            var provider = configuration["Notifications:Provider"];
-            if (string.Equals(provider, "green-api", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(provider, GreenApiProviderName.Value, StringComparison.OrdinalIgnoreCase))
             {
                 var partnerToken = configuration["Notifications:PartnerToken"];
                 if (string.IsNullOrWhiteSpace(partnerToken) || partnerToken == "CHANGE_ME")
                     throw new InvalidOperationException(
-                        "Notifications:Provider is 'green-api' but Notifications:PartnerToken is missing " +
+                        $"Notifications:Provider is '{GreenApiProviderName.Value}' but Notifications:PartnerToken is missing " +
                         "or still a placeholder. Set NOTIFICATIONS_PARTNER_TOKEN in .env.");
             }
+
+            // I4: an empty UnsubscribeKey doesn't fail loudly anywhere downstream — NotificationScheduler
+            // just silently omits the mandatory opt-out line (US-33, US-59 п. 3) from every message it
+            // renders, which is a legal-compliance problem, not a crash, and would otherwise ship
+            // unnoticed until someone reads message bodies by hand.
+            if (string.IsNullOrWhiteSpace(configuration["Notifications:UnsubscribeKey"]))
+                throw new InvalidOperationException(
+                    "Notifications:UnsubscribeKey is missing while a real notification provider is " +
+                    "configured — every outgoing message would ship without the mandatory unsubscribe " +
+                    "line (US-33/US-59 п. 3). Set NOTIFICATIONS_UNSUBSCRIBE_KEY in .env.");
+
+            // I4: an empty WebhookToken doesn't crash either — ProviderWebhook just 401s every call
+            // forever (ConstantTimeEquals against an empty expected token never matches), so delivery
+            // status and channel-state pushes silently never arrive.
+            if (string.IsNullOrWhiteSpace(configuration["Notifications:WebhookToken"]))
+                throw new InvalidOperationException(
+                    "Notifications:WebhookToken is missing while a real notification provider is " +
+                    "configured — the provider webhook would 401 every call forever. Set " +
+                    "NOTIFICATIONS_WEBHOOK_TOKEN in .env.");
         }
 
         if (!isProduction)
@@ -181,7 +211,7 @@ public static class DeploymentSafetyChecks
             var partnerToken = configuration["Notifications:PartnerToken"];
             if (!string.IsNullOrWhiteSpace(partnerToken))
                 throw new InvalidOperationException(
-                    "Notifications:PartnerToken is set outside Production. A real GREEN-API partner token " +
+                    "Notifications:PartnerToken is set outside Production. A real provider partner token " +
                     "here could create or delete a live salon's WhatsApp instance from a dev/test run. " +
                     "Clear NOTIFICATIONS_PARTNER_TOKEN outside Production.");
         }
@@ -222,10 +252,24 @@ public static class DeploymentSafetyChecks
     /// developer machine, the key is expected to churn freely. Must be called AFTER
     /// <see cref="ValidateNotificationSecrets"/> — it assumes the key already passed the format check.
     /// </summary>
-    public static void ValidateChannelKeyFingerprint(IConfiguration configuration, string environmentName, string contentRootPath)
+    /// <param name="configuration">Configuration to validate.</param>
+    /// <param name="environmentName">Current <c>ASPNETCORE_ENVIRONMENT</c>.</param>
+    /// <param name="contentRootPath">App content root, used to resolve <c>Notifications:KeyFingerprintPath</c>'s default.</param>
+    /// <param name="warn">Sink for the non-fatal rotation-acknowledgement warning (§24.4/§24.5's
+    /// decision table, last row). Reviewer note: previously hardcoded to <see cref="Console.WriteLine(string?)"/>,
+    /// which never reaches Serilog/GlitchTip at all — same fix as <see cref="ValidateSecrets"/>'s own
+    /// <paramref name="warn"/> parameter, for the same reason. Defaults to <see cref="Console.WriteLine(string?)"/>
+    /// only so existing callers that don't pass one keep working; Program.cs passes a Serilog-backed sink.</param>
+    public static void ValidateChannelKeyFingerprint(
+        IConfiguration configuration, string environmentName, string contentRootPath, Action<string>? warn = null)
     {
-        var enabled = configuration.GetValue("Notifications:Enabled", false);
-        if (!enabled || IsDeveloperEnvironment(environmentName)) return;
+        warn ??= Console.WriteLine;
+
+        // I4: same gating fix as ValidateNotificationSecrets — Provider, not the no-longer-load-bearing
+        // Notifications:Enabled flag.
+        var provider = configuration["Notifications:Provider"] ?? "logging";
+        var isRealProvider = !string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase);
+        if (!isRealProvider || IsDeveloperEnvironment(environmentName)) return;
 
         var keyBytes = SecretProtector.DecodeKey(configuration["Notifications:EncryptionKey"]);
         var rotationAck = configuration["Notifications:KeyRotationAck"];
@@ -248,7 +292,7 @@ public static class DeploymentSafetyChecks
                 if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
                 File.WriteAllText(path, content);
             },
-            Console.WriteLine);
+            warn);
     }
 
     /// <summary>

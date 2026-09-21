@@ -39,7 +39,11 @@ public class NotificationChannelsController(
     public async Task<ActionResult<ChannelListDto>> GetAll()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        if (!await IsAnyCompanyOwnerAsync(userId)) return Forbid();
+        // B9: access to a channel you already OWN must never depend on still owning a company — a former
+        // owner (company handed to someone else, or simply no companies left) can still see and disconnect
+        // a channel they are paying for. Company ownership only gates the "nothing to show yet" path.
+        if (!await IsAnyCompanyOwnerAsync(userId) && !await db.NotificationChannels.AnyAsync(c => c.OwnerUserId == userId))
+            return Forbid();
 
         var channels = await db.NotificationChannels.AsNoTracking()
             .Include(c => c.Assignments).ThenInclude(a => a.Company)
@@ -129,8 +133,16 @@ public class NotificationChannelsController(
     [HttpPost("{id:guid}/connect")]
     public async Task<IActionResult> Connect(Guid id)
     {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
         if (channel is null) return NotFound();
+
+        // Reviewer note / SPEC US-31 п. 7: the plan could have downgraded since the channel was
+        // purchased (channel and AccountSubscription are billed independently, §33) — Connect must not
+        // let a since-downgraded owner keep reconnecting a channel their current plan no longer allows.
+        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(userId);
+        if (!plan.AllowNotificationChannel)
+            return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
 
         var nowUtc = DateTime.UtcNow;
         var paymentState = ChannelPaymentState.Of(channel, nowUtc);
@@ -144,17 +156,6 @@ public class NotificationChannelsController(
         if (!canConnect || channel.ProviderInstanceId is not null)
             return Conflict("Номер уже подключается");
 
-        ProvisionedInstance instance;
-        try
-        {
-            instance = await provisioning.CreateInstanceAsync(HttpContext.RequestAborted);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to create a provider instance for channel {ChannelId}", channel.Id);
-            return StatusCode(503, "Сервис подключения временно недоступен, попробуйте позже");
-        }
-
         var encryptionKey = options.Value.EncryptionKey;
         if (string.IsNullOrEmpty(encryptionKey))
         {
@@ -166,11 +167,52 @@ public class NotificationChannelsController(
             return StatusCode(503, "Сервис подключения временно недоступен, попробуйте позже");
         }
 
+        // I3: a double-click (or a retried request racing the original) must not create two paid
+        // instances — the SECOND SaveChanges below used to be the only guard, and it just silently
+        // overwrote the first request's ProviderInstanceId, orphaning that instance forever (nothing
+        // left pointing at it to ever clean it up). Fixed by recording intent — State flips to
+        // Connecting — BEFORE the network call, inside its own short transaction serialized by an
+        // advisory lock keyed on this channel: the second request blocks until the first commits, then
+        // re-reads State as Connecting and is rejected by the SAME canConnect/409 check above, instead of
+        // racing it.
+        await using (var lockTransaction = await db.Database.BeginTransactionAsync())
+        {
+            await AdvisoryLock.AcquireAsync(db, $"channel-connect:{id}");
+
+            var currentState = await db.NotificationChannels.Where(c => c.Id == id)
+                .Select(c => new { c.State, c.ProviderInstanceId }).FirstAsync();
+            if (!ChannelPresentation.CanConnect(currentState.State, paymentState, riskAccepted: true) || currentState.ProviderInstanceId is not null)
+            {
+                await lockTransaction.RollbackAsync();
+                return Conflict("Номер уже подключается");
+            }
+
+            channel.State = ChannelState.Connecting;
+            channel.InstanceCreatedAtUtc = nowUtc;
+            await db.SaveChangesAsync();
+            await lockTransaction.CommitAsync();
+        }
+
+        ProvisionedInstance instance;
+        try
+        {
+            instance = await provisioning.CreateInstanceAsync(HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to create a provider instance for channel {ChannelId}", channel.Id);
+            // Revert the intent marker — otherwise the channel is stuck in Connecting with no instance
+            // to ever clean up (ChannelHealthTask's stuck-in-Connecting timeout only acts on a channel
+            // that HAS a ProviderInstanceId) and the owner can never retry.
+            channel.State = ChannelState.NotConnected;
+            channel.InstanceCreatedAtUtc = null;
+            await db.SaveChangesAsync();
+            return StatusCode(503, "Сервис подключения временно недоступен, попробуйте позже");
+        }
+
         channel.ProviderInstanceId = instance.InstanceId;
         channel.ProviderSecretCiphertext = SecretProtector.Encrypt(instance.Token, encryptionKey, channel.Id);
         channel.ProviderSecretKeyId = SecretProtector.ComputeKeyId(SecretProtector.DecodeKey(encryptionKey));
-        channel.InstanceCreatedAtUtc = nowUtc;
-        channel.State = ChannelState.Connecting;
         await db.SaveChangesAsync();
 
         // Lower bound of our own antiban pause range (§29.1 step 2) — best effort, a failure here must
@@ -184,6 +226,24 @@ public class NotificationChannelsController(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "SetSendDelay failed for channel {ChannelId} (non-critical)", channel.Id);
+        }
+
+        // I2: without this, the provider never calls back at all (§32) — best effort, same reasoning as
+        // SetSendDelayAsync above. Skipped when no webhook token is configured (dev/test with the
+        // logging provider, or Production before T4-D2 wires the .env variable) rather than registering
+        // a callback URL nobody can authenticate against.
+        if (!string.IsNullOrEmpty(options.Value.WebhookToken))
+        {
+            var webhookUrl = $"https://{NotificationTemplateValidator.OwnDomain}/api/notifications/provider-webhook/{options.Value.WebhookToken}";
+            try
+            {
+                await provisioning.ConfigureWebhookAsync(
+                    new ChannelCredentials(instance.InstanceId, instance.Token), webhookUrl, HttpContext.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "ConfigureWebhook failed for channel {ChannelId} (non-critical)", channel.Id);
+            }
         }
 
         return Accepted(new ConnectResponseDto(ChannelState.Connecting, RefreshAfterSeconds: 3));
@@ -225,7 +285,9 @@ public class NotificationChannelsController(
         if (snapshot.Authorized)
         {
             channel.State = ChannelState.Connected;
+            channel.LastStateReason = ChannelStateReason.Authorized;
             channel.ConnectedAtUtc = DateTime.UtcNow;
+            channel.ConsecutiveSendFailures = 0; // I8: a fresh QR reconnect must not inherit the old disconnect-threshold count
             // The provider only learns which number scanned the QR at this moment, so this is the one
             // place the channel can find out its own number; null means the lookup failed, not "no number".
             if (snapshot.PhoneNumber is not null)
@@ -292,19 +354,71 @@ public class NotificationChannelsController(
         var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
         if (channel is null) return NotFound();
 
+        // I10: pending-row cancellation now happens INSIDE DecommissionInstanceAsync's own DB-first
+        // SaveChanges (§30.4 step 1) — previously a second, separate SaveChanges after it returned,
+        // which meant a crash between the two left the channel decommissioned but its queue still full
+        // of Pending rows for a channel that will never send them.
         await DecommissionInstanceAsync(channel, ChannelState.DisabledByOwner, ChannelStateReason.DisconnectedByOwner);
 
+        return NoContent();
+    }
+
+    /// <summary>B8 / API_CONTRACT_CYCLE4.md §27, US-63 — replacing a banned number. No re-payment: the
+    /// paid period and company assignments move to a fresh channel row; the old one becomes terminal
+    /// (<see cref="ChannelState.Replaced"/>) with a pointer forward. The owner then goes through the
+    /// ordinary accept-risk/connect/QR flow (§24) on the new channel — this endpoint only does the move.</summary>
+    [HttpPost("{id:guid}/replace")]
+    public async Task<ActionResult<ReplaceChannelResponseDto>> Replace(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
+        if (channel is null) return NotFound();
+
+        if (!ChannelPresentation.CanReplace(channel.State))
+            return Conflict("Канал не заблокирован");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"channel-assignment:{id}");
+
+        var newChannel = new NotificationChannel
+        {
+            Id = Guid.NewGuid(),
+            OwnerUserId = userId,
+            State = ChannelState.NotConnected,
+            RequestedAtUtc = DateTime.UtcNow,
+            PaidFromUtc = channel.PaidFromUtc,
+            PaidUntilUtc = channel.PaidUntilUtc,
+        };
+        db.NotificationChannels.Add(newChannel);
+
+        // Company assignments move wholesale — the unique index on CompanyId means these rows are
+        // updated in place, not deleted+recreated, so AssignedByUserId/history on the assignment itself
+        // survives the swap.
+        var assignments = await db.ChannelCompanyAssignments.Where(a => a.ChannelId == id).ToListAsync();
+        foreach (var assignment in assignments)
+            assignment.ChannelId = newChannel.Id;
+
+        // Pending queue rows re-bind to the new channel (§27: "Expired не воскрешаются" — this WHERE only
+        // ever touches Pending, so an already-Expired/Failed/Sent row is untouched by construction).
         var pending = await db.OutboundNotifications
-            .Where(n => n.ChannelId == channel.Id && n.Status == NotificationStatus.Pending)
+            .Where(n => n.ChannelId == id && n.Status == NotificationStatus.Pending)
             .ToListAsync();
         foreach (var row in pending)
-        {
-            row.Status = NotificationStatus.Cancelled;
-            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-        }
-        await db.SaveChangesAsync();
+            row.ChannelId = newChannel.Id;
 
-        return NoContent();
+        channel.ReplacedByChannelId = newChannel.Id;
+        channel.State = ChannelState.Replaced;
+        channel.LastStateReason = ChannelStateReason.ReplacedAfterBan;
+        db.ChannelStateEvents.Add(new ChannelStateEvent
+        {
+            Id = Guid.NewGuid(), ChannelId = channel.Id,
+            FromState = ChannelState.Blocked, ToState = ChannelState.Replaced, Reason = ChannelStateReason.ReplacedAfterBan,
+        });
+
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        return StatusCode(201, new ReplaceChannelResponseDto(newChannel.Id, newChannel.PaidUntilUtc, assignments.Count));
     }
 
     [HttpPost("{id:guid}/companies")]
@@ -396,22 +510,68 @@ public class NotificationChannelsController(
         var instanceId = channel.ProviderInstanceId;
         var fromState = channel.State;
 
+        // I10: best-effort logout with the CHANNEL's own (still valid at the provider) credentials,
+        // captured BEFORE they're blanked below — same reasoning and same swallow-independently-of-the-
+        // delete pattern as ChannelHealthTask.DeleteInstanceAsync. A decrypt failure here must never
+        // block the decommission itself.
+        ChannelCredentials? credentials = null;
+        if (instanceId is not null && channel.ProviderSecretCiphertext is { } ciphertextForLogout)
+        {
+            try
+            {
+                var encryptionKey = options.Value.EncryptionKey ?? string.Empty;
+                var token = SecretProtector.Decrypt(ciphertextForLogout, encryptionKey, channel.Id);
+                credentials = new ChannelCredentials(instanceId, token);
+            }
+            catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
+            {
+                logger.LogDebug(ex, "Could not decrypt channel secret for a best-effort logout before decommission, skipping logout: channelId={ChannelId}", channel.Id);
+            }
+        }
+
         channel.OrphanedInstanceId = instanceId;
         channel.ProviderInstanceId = null;
         channel.ProviderSecretCiphertext = null;
         channel.ProviderSecretKeyId = null;
         channel.State = targetState;
+        channel.LastStateReason = reason;
         db.ChannelStateEvents.Add(new ChannelStateEvent
         {
             Id = Guid.NewGuid(), ChannelId = channel.Id, FromState = fromState, ToState = targetState, Reason = reason,
         });
+
+        // I10: cancelling Pending rows moved INTO this DB-first step (was a second, separate SaveChanges
+        // after this method returned) — one transaction, not two, so a crash in between can't leave a
+        // decommissioned channel with a queue still full of rows it will never send.
+        var pending = await db.OutboundNotifications
+            .Where(n => n.ChannelId == channel.Id && n.Status == NotificationStatus.Pending)
+            .ToListAsync();
+        foreach (var row in pending)
+        {
+            row.Status = NotificationStatus.Cancelled;
+            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
+        }
+
         await db.SaveChangesAsync();
+
+        if (credentials is not null)
+        {
+            try
+            {
+                await provisioning.LogoutAsync(credentials, HttpContext.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Best-effort logout before instance deletion failed, continuing: channelId={ChannelId}", channel.Id);
+            }
+        }
 
         if (instanceId is null) return;
 
+        InstanceDeletion deletion;
         try
         {
-            await provisioning.DeleteInstanceAsync(instanceId, HttpContext.RequestAborted);
+            deletion = await provisioning.DeleteInstanceAsync(instanceId, HttpContext.RequestAborted);
         }
         catch (Exception ex)
         {
@@ -419,6 +579,17 @@ public class NotificationChannelsController(
             // background task, but the field it drains is shared schema, so failing loudly here (rather
             // than swallowing silently) keeps the failure visible without duplicating the retry logic.
             logger.LogError(ex, "Failed to delete provider instance {InstanceId} for channel {ChannelId}; left orphaned for retry",
+                instanceId, channel.Id);
+            return;
+        }
+
+        // B6: DeleteInstanceAsync can fail WITHOUT throwing (InstanceDeletion.Success == false) — that
+        // result was previously ignored, so a failed deletion got logged and billed as if it had
+        // succeeded, and OrphanedInstanceId (the only thing that makes ChannelHealthTask retry it) was
+        // cleared with nothing left to retry.
+        if (!deletion.Success)
+        {
+            logger.LogError("Provider instance deletion did not confirm success for {InstanceId} on channel {ChannelId}; left orphaned for retry",
                 instanceId, channel.Id);
             return;
         }
@@ -461,7 +632,7 @@ public class NotificationChannelsController(
         var nowUtc = DateTime.UtcNow;
         var paymentState = ChannelPaymentState.Of(channel, nowUtc);
         var phoneMasked = channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber);
-        var stateText = ChannelPresentation.StateText(channel.State, phoneMasked, idleDays, channel.PaidUntilUtc);
+        var stateText = ChannelPresentation.StateText(channel.State, phoneMasked, idleDays, channel.PaidUntilUtc, channel.LastStateReason);
         var riskAccepted = channel.RiskAcceptedAtUtc is not null;
 
         return new ChannelDto(

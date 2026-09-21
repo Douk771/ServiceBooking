@@ -58,6 +58,7 @@ public sealed class NotificationDispatchTask(
         var sent = 0;
         var failed = 0;
         var partial = false;
+        var perGroupResults = new System.Collections.Concurrent.ConcurrentBag<(int Sent, int Failed)>();
 
         try
         {
@@ -154,23 +155,36 @@ public sealed class NotificationDispatchTask(
                 .Select(g => (ChannelId: g.Key, RowIds: g.Select(r => r.Id).ToList()))
                 .ToList();
 
-            var perGroupResults = new System.Collections.Concurrent.ConcurrentBag<(int Sent, int Failed)>();
-
             if (groups.Count > 0)
             {
+                // B5/I7: the group action itself must not observe linkedCt as ITS cancellation token — if
+                // it did, `Parallel.ForEachAsync` would throw the group out of the results collection the
+                // instant the budget expired mid-send, and a message the provider had already accepted
+                // would never get recorded (§26.1: budget must not cancel a send already in flight, only
+                // gate whether a NEW row starts). `ct` (this pass's own runner/shutdown token, NOT linked
+                // to the budget deadline) is threaded through for the parts that must never be budget-
+                // cancelled; `linkedCt` is threaded through separately, only for the loop-top "start a new
+                // row?" check and the inter-row pause.
                 await Parallel.ForEachAsync(groups, new ParallelOptions
                 {
                     MaxDegreeOfParallelism = opts.MaxParallelChannels,
-                    CancellationToken = linkedCt,
-                }, async (group, groupCt) =>
+                    CancellationToken = CancellationToken.None,
+                }, async (group, _) =>
                 {
-                    var result = await ProcessChannelGroupAsync(group.ChannelId, group.RowIds, opts, groupCt);
+                    var result = await ProcessChannelGroupAsync(group.ChannelId, group.RowIds, opts, budgetCt: linkedCt, runnerCt: ct);
                     perGroupResults.Add(result);
                 });
             }
 
+            // I7: summed unconditionally, AFTER the loop — even a group interrupted mid-pause by the
+            // budget still contributes whatever it had already sent/failed before returning, instead of a
+            // Parallel.ForEachAsync-thrown OperationCanceledException wiping every group's contribution
+            // from perGroupResults (which is how a partial pass used to report "sent 0" while messages had
+            // actually gone out).
             sent = perGroupResults.Sum(r => r.Sent);
             failed = perGroupResults.Sum(r => r.Failed);
+
+            if (linkedCt.IsCancellationRequested && !ct.IsCancellationRequested) partial = true;
         }
         catch (OperationCanceledException) when (linkedCt.IsCancellationRequested && !ct.IsCancellationRequested)
         {
@@ -178,6 +192,10 @@ public sealed class NotificationDispatchTask(
             // shutdown) — §26.2: this is a normal outcome for a queue with more due work than fits in one
             // pass. Everything already committed (the phase-2 SaveChanges, and every already-finished
             // channel group's short transactions) stands; the remainder stays Pending for the next pass.
+            // Summarized here too (rather than left at zero) for the same reason as the try block above —
+            // selection-phase (phases 1-2) cancellation still leaves per-group results, if any ran.
+            sent = perGroupResults.Sum(r => r.Sent);
+            failed = perGroupResults.Sum(r => r.Failed);
             partial = true;
         }
 
@@ -265,17 +283,23 @@ public sealed class NotificationDispatchTask(
     /// exactly the most likely implementation bug this architecture calls out by name.
     /// </summary>
     private async Task<(int Sent, int Failed)> ProcessChannelGroupAsync(
-        Guid channelId, IReadOnlyList<Guid> rowIds, NotificationOptions.DispatchOptions opts, CancellationToken ct)
+        Guid channelId, IReadOnlyList<Guid> rowIds, NotificationOptions.DispatchOptions opts,
+        CancellationToken budgetCt, CancellationToken runnerCt)
     {
         using var scope = scopeFactory.CreateScope();
         var scopedDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var transport = scope.ServiceProvider.GetRequiredService<INotificationTransport>();
+        var provisioning = scope.ServiceProvider.GetRequiredService<IChannelProvisioning>();
         var pause = scope.ServiceProvider.GetRequiredService<IPauseGenerator>();
         var delay = scope.ServiceProvider.GetRequiredService<IDispatchDelay>();
         var scopedClock = scope.ServiceProvider.GetRequiredService<INotificationClock>();
         var encryptionKey = scope.ServiceProvider.GetRequiredService<IOptions<NotificationOptions>>().Value.EncryptionKey;
 
-        var channel = await scopedDb.NotificationChannels.FirstOrDefaultAsync(c => c.Id == channelId, ct);
+        // B5: the channel lookup itself, and every subsequent read/write below, is done with `runnerCt`
+        // (host shutdown only) — `budgetCt` (this pass's own time budget, §26.1) is consulted in exactly
+        // two places: the loop-top "start a new row?" check, and the inter-row pause. Once a row has been
+        // decided on, nothing about sending it or recording its outcome is allowed to be budget-cancelled.
+        var channel = await scopedDb.NotificationChannels.FirstOrDefaultAsync(c => c.Id == channelId, runnerCt);
         if (channel is null) return (0, 0); // deleted/reassigned between phase 1 and now — nothing to do here
 
         var sentCount = 0;
@@ -283,9 +307,9 @@ public sealed class NotificationDispatchTask(
 
         for (var i = 0; i < rowIds.Count; i++)
         {
-            if (ct.IsCancellationRequested) break; // budget exhausted mid-channel — remainder stays Pending
+            if (budgetCt.IsCancellationRequested) break; // budget exhausted mid-channel — remainder stays Pending
 
-            var row = await scopedDb.OutboundNotifications.FirstOrDefaultAsync(n => n.Id == rowIds[i], ct);
+            var row = await scopedDb.OutboundNotifications.FirstOrDefaultAsync(n => n.Id == rowIds[i], runnerCt);
             // Defensive only: another pass/process could in principle have already taken this row (§26.3
             // tolerates at most one duplicate on an aborted process, never more, and this check costs
             // nothing on the ordinary path).
@@ -294,7 +318,7 @@ public sealed class NotificationDispatchTask(
             // Transaction #1 — mark the attempt BEFORE the network call (§26.3's in-flight marker).
             row.AttemptCount++;
             row.LastAttemptAtUtc = scopedClock.UtcNow;
-            await scopedDb.SaveChangesAsync(ct);
+            await scopedDb.SaveChangesAsync(runnerCt);
 
             ChannelCredentials credentials;
             try
@@ -304,18 +328,50 @@ public sealed class NotificationDispatchTask(
             }
             catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
             {
-                // §24.4 point 6: a channel whose secret can no longer be decrypted (lost/rotated key,
-                // corrupted ciphertext) needs reconnecting — same handling as a provider-reported
-                // ChannelInvalid outcome (§26.4): the row stays Pending, the channel stops being usable,
-                // and this channel's group ends immediately rather than repeating the same failure for
-                // every remaining row.
+                // I1: an unreadable secret (rotated/lost key, corrupted ciphertext) gets ITS OWN reason —
+                // ChannelStateReason.SecretUnavailable — rather than being folded into
+                // ProviderReportsUnauthorized. The two need to read differently to an owner: "your number
+                // was logged out at WhatsApp" is actionable by the owner; "our encryption key changed
+                // under you" is a platform incident. And unlike ProviderReportsUnauthorized, leaving
+                // ProviderInstanceId set here would leave Connect permanently 409ing (it refuses to start
+                // while an instance id is on file) with no poll ever able to clear it (nothing can prove
+                // the instance's own state without the very token that's unreadable) — so the instance is
+                // decommissioned outright, §30.4 style: database first (orphan id, blank the channel's own
+                // credentials, transition), then a best-effort partner-token delete (no channel token
+                // needed for that call), with ChannelHealthTask's orphan sweep as the retry path if this
+                // attempt itself fails. The row stays Pending; this channel's group ends immediately.
+                var instanceId = channel.ProviderInstanceId;
+                channel.OrphanedInstanceId = instanceId;
+                channel.ProviderInstanceId = null;
+                channel.ProviderSecretCiphertext = null;
+                channel.ProviderSecretKeyId = null;
                 ChannelStateTransition.Apply(scopedDb, channel, ChannelState.NeedsReconnect,
-                    ChannelStateReason.ProviderReportsUnauthorized, "channel secret unavailable", scopedClock.UtcNow);
-                await scopedDb.SaveChangesAsync(ct);
+                    ChannelStateReason.SecretUnavailable, "channel secret unavailable", scopedClock.UtcNow);
+                await scopedDb.SaveChangesAsync(runnerCt);
+
+                if (instanceId is not null)
+                {
+                    try
+                    {
+                        var deletion = await provisioning.DeleteInstanceAsync(instanceId, runnerCt);
+                        if (deletion.Success)
+                        {
+                            channel.OrphanedInstanceId = null;
+                            await scopedDb.SaveChangesAsync(runnerCt);
+                        }
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        logger.LogWarning(deleteEx,
+                            "notification-dispatch: best-effort instance deletion after secret-unavailable failed, left orphaned for retry: channelId={ChannelId}",
+                            channel.Id);
+                    }
+                }
+
                 return (sentCount, failedCount);
             }
 
-            var outcome = await transport.SendAsync(credentials, row.RecipientPhone, row.Body, ct);
+            var outcome = await transport.SendAsync(credentials, row.RecipientPhone, row.Body, runnerCt);
 
             switch (outcome)
             {
@@ -363,19 +419,22 @@ public sealed class NotificationDispatchTask(
                     // remaining row would fail identically for the same reason (§26.4).
                     ChannelStateTransition.Apply(scopedDb, channel, ChannelState.Disconnected,
                         ChannelStateReason.ProviderReportsUnauthorized, invalid.Detail, scopedClock.UtcNow);
-                    await scopedDb.SaveChangesAsync(ct);
+                    await scopedDb.SaveChangesAsync(runnerCt);
                     return (sentCount, failedCount);
 
                 default:
                     throw new InvalidOperationException($"Unhandled {nameof(SendOutcome)} subtype: {outcome.GetType().Name}");
             }
 
-            // Transaction #2 — the outcome, including the channel's own counters/state.
-            await scopedDb.SaveChangesAsync(ct);
+            // Transaction #2 — the outcome, including the channel's own counters/state. B5: never
+            // budget-cancelled — a send the provider already accepted must always get recorded.
+            await scopedDb.SaveChangesAsync(runnerCt);
 
+            // B5: the ONE place besides the loop-top check where the budget is actually consulted
+            // (§26.1) — between rows, during the antiban pause, never mid-send.
             var isLastInGroup = i == rowIds.Count - 1;
             if (!isLastInGroup)
-                await delay.DelayAsync(pause.Next(opts.PauseMinMs, opts.PauseMaxMs), ct);
+                await delay.DelayAsync(pause.Next(opts.PauseMinMs, opts.PauseMaxMs), budgetCt);
         }
 
         return (sentCount, failedCount);

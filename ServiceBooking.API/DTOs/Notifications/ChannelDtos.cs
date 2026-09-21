@@ -42,3 +42,6 @@ public record TestMessageResponseDto(bool Delivered, string Message);
 
 /// <summary>API_CONTRACT_CYCLE4.md §25.1 — POST .../companies.</summary>
 public record AssignCompanyDto(Guid CompanyId, bool WarningAcknowledged);
+
+/// <summary>API_CONTRACT_CYCLE4.md §27 — POST .../replace (B8, US-63).</summary>
+public record ReplaceChannelResponseDto(Guid NewChannelId, DateTime? PaidUntil, int CompaniesMoved);

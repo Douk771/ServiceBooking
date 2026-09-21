@@ -34,10 +34,14 @@ public static class GreenApiUrls
         (new Uri($"{Trim(apiUrl)}/partner/createInstance/{Uri.EscapeDataString(partnerToken)}"), "createInstance");
 
     /// <summary>Partner-token call — deletes a specific instance. §30.4: this uses the PLATFORM's
-    /// partner token and the bare instance id, never a channel's own (possibly already-blank) token.</summary>
+    /// partner token and the bare instance id, never a channel's own (possibly already-blank) token.
+    /// B7: the partner method is <c>deleteInstanceAccount</c>, not <c>deleteInstance</c> — the latter
+    /// path doesn't exist and returned 404 for every call, which the caller then (wrongly) treated as
+    /// "already deleted", so no instance was ever actually removed. <c>idInstance</c> is sent as a NUMBER
+    /// in the JSON body, not appended to the path.</summary>
     public static (Uri Request, string SafeLabel) DeleteInstance(string apiUrl, string partnerToken, string instanceId) =>
-        (new Uri($"{Trim(apiUrl)}/partner/deleteInstance/{Uri.EscapeDataString(partnerToken)}/{Uri.EscapeDataString(instanceId)}"),
-            $"deleteInstance waInstance{instanceId}");
+        (new Uri($"{Trim(apiUrl)}/partner/deleteInstanceAccount/{Uri.EscapeDataString(partnerToken)}"),
+            $"deleteInstanceAccount waInstance{instanceId}");
 
     /// <summary>
     /// The one place a canonical phone number becomes a GREEN-API <c>chatId</c> (US-27 p.1). SPEC is

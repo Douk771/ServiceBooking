@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
@@ -248,6 +249,26 @@ public class ProfileController(
             booking.ClientDeleted = true;
         }
 
+        // I9: queued-but-not-yet-sent notification rows carry their own snapshot of the recipient's
+        // phone/name/rendered text (§23.4), independent of the booking row anonymized above — cancelling
+        // the booking does NOT touch these. Left alone, a deleted account keeps receiving reminders and
+        // keeps its personal data sitting in Body/RecipientName/RecipientPhone. Cancelled and scrubbed
+        // the same way Disconnect/UnassignCompany already cancel Pending rows elsewhere in this cycle;
+        // NotificationOptOut rows are deliberately NOT touched here — they are what stops the platform
+        // from ever messaging this phone again, which is the opposite of what this endpoint should undo.
+        var pendingNotifications = await db.OutboundNotifications
+            .Where(n => n.Status == NotificationStatus.Pending &&
+                        (n.RecipientUserId == userId || (canonicalPhone != null && n.RecipientPhone == canonicalPhone)))
+            .ToListAsync();
+        foreach (var notification in pendingNotifications)
+        {
+            notification.Status = NotificationStatus.Cancelled;
+            notification.Reason = NotificationReason.BookingOrAssignmentCancelled;
+            notification.RecipientName = null;
+            notification.RecipientPhone = "deleted";
+            notification.Body = string.Empty;
+        }
+
         // Step 4: reviews are depersonalized, not deleted — the review is about the salon, and the
         // rating/text remain meaningful without the author's identity attached.
         var reviewsToDeperson = await db.Reviews.Where(r => r.ClientId == userId).ToListAsync();
@@ -255,6 +276,48 @@ public class ProfileController(
         {
             review.ClientId = null;
             review.ReviewerName = "Удалённый пользователь";
+        }
+
+        // I10 / SPEC US-56 п. 5: this person's own WhatsApp channels (they may own one even without
+        // owning a company — gate #2 above only blocks deletion while a COMPANY is still theirs) must be
+        // decommissioned too, not left running and billed forever with nobody left who can ever log in
+        // to disconnect them. §30.4 database-first only, same as the webhook's ban handling above in this
+        // cycle's report (I2/B8): orphan the instance id, blank the channel's own credentials, cancel its
+        // Pending rows — the actual provider delete is picked up by ChannelHealthTask's orphan-retry
+        // sweep rather than a synchronous provider call inside this already-long transaction.
+        var ownedChannels = await db.NotificationChannels
+            .Where(c => c.OwnerUserId == userId && c.State != ChannelState.Replaced)
+            .ToListAsync();
+        foreach (var ownedChannel in ownedChannels)
+        {
+            var instanceId = ownedChannel.ProviderInstanceId;
+            if (instanceId is not null)
+            {
+                ownedChannel.OrphanedInstanceId = instanceId;
+                ownedChannel.ProviderInstanceId = null;
+                ownedChannel.ProviderSecretCiphertext = null;
+                ownedChannel.ProviderSecretKeyId = null;
+            }
+
+            if (ownedChannel.State != ChannelState.DisabledByOwner)
+            {
+                db.ChannelStateEvents.Add(new ChannelStateEvent
+                {
+                    Id = Guid.NewGuid(), ChannelId = ownedChannel.Id, FromState = ownedChannel.State,
+                    ToState = ChannelState.DisabledByOwner, Reason = ChannelStateReason.DisconnectedByOwner,
+                });
+                ownedChannel.State = ChannelState.DisabledByOwner;
+                ownedChannel.LastStateReason = ChannelStateReason.DisconnectedByOwner;
+            }
+
+            var channelPending = await db.OutboundNotifications
+                .Where(n => n.ChannelId == ownedChannel.Id && n.Status == NotificationStatus.Pending)
+                .ToListAsync();
+            foreach (var row in channelPending)
+            {
+                row.Status = NotificationStatus.Cancelled;
+                row.Reason = NotificationReason.BookingOrAssignmentCancelled;
+            }
         }
 
         // Step 5: company memberships are removed and Identity roles resynced — same lock this person's

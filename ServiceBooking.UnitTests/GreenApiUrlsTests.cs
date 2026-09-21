@@ -58,7 +58,15 @@ public class GreenApiUrlsTests
         safeLabel.Should().NotContain(PartnerToken);
         safeLabel.Should().Contain(InstanceId);
         uri.ToString().Should().Contain(PartnerToken);
-        uri.ToString().Should().Contain(InstanceId);
+    }
+
+    [Fact]
+    public void DeleteInstance_Url_UsesDeleteInstanceAccountMethod_AndDoesNotPutInstanceIdInThePath()
+    {
+        // B7: idInstance travels as a number in the JSON body, per GREEN-API's deleteInstanceAccount —
+        // the previous /partner/deleteInstance/{token}/{id} path doesn't exist at the provider at all.
+        var (uri, _) = GreenApiUrls.DeleteInstance(ApiUrl, PartnerToken, InstanceId);
+        uri.ToString().Should().Be($"{ApiUrl}/partner/deleteInstanceAccount/{PartnerToken}");
     }
 
     [Fact]

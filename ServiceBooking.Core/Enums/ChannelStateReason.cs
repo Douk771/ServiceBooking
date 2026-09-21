@@ -35,4 +35,11 @@ public enum ChannelStateReason
 
     /// <summary>Number banned; owner attached a replacement number in the same paid period (US-63).</summary>
     ReplacedAfterBan,
+
+    /// <summary>I1: the channel's stored secret could no longer be decrypted (encryption key rotated or
+    /// lost, ciphertext corrupted) — distinct from <see cref="ProviderReportsUnauthorized"/>, which means
+    /// the OWNER's own action (or WhatsApp) logged the number out. This is a platform-side incident, not
+    /// something the owner did, and needs its own wording (§24.5, §26.4) and its own recovery path: the
+    /// instance is decommissioned outright (nothing usable was ever readable again) so Connect reopens.</summary>
+    SecretUnavailable,
 }

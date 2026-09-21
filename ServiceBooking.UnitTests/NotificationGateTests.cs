@@ -110,6 +110,31 @@ public class NotificationGateTests
         result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
     }
 
+    // B3 / SPEC US-31 п. 2: the minimum-lead-time threshold is a reminder-only safety valve; a salon
+    // that confirms, cancels or reschedules a visit 90 minutes out must still notify the client even
+    // when MinLeadMinutes is much larger than that.
+    [Theory]
+    [InlineData(NotificationType.BookingConfirmed)]
+    [InlineData(NotificationType.BookingCancelled)]
+    [InlineData(NotificationType.BookingRescheduled)]
+    [InlineData(NotificationType.StaffBookingCreated)]
+    [InlineData(NotificationType.StaffBookingCancelled)]
+    public void Evaluate_BelowMinimumLeadTime_NonReminderType_StillAllowed(NotificationType type)
+    {
+        var settings = new CompanyNotificationSettings { MinLeadMinutes = 120 };
+        var result = Evaluate(type: type, settings: settings, visitStart: Now.AddMinutes(30));
+        result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
+    }
+
+    [Fact]
+    public void Evaluate_BelowMinimumLeadTime_ReminderType_Blocked()
+    {
+        var settings = new CompanyNotificationSettings { MinLeadMinutes = 120 };
+        var result = Evaluate(type: NotificationType.Reminder, settings: settings, visitStart: Now.AddMinutes(30));
+        result.Outcome.Should().Be(NotificationGateOutcome.Blocked);
+        result.Reason.Should().Be(NotificationReason.BelowMinimumLeadTime);
+    }
+
     [Fact]
     public void Evaluate_NoSettingsRow_UsesDefaults()
     {

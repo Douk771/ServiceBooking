@@ -306,19 +306,13 @@ public class SchedulerTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
                 builder.UseSetting("ScheduledTasks:Enabled", "true");
                 builder.UseSetting("ScheduledTasks:TickSeconds", "1");
                 builder.UseSetting("Storage:PrivateRoot", isolatedPrivateRoot);
-                // Cycle 4 flagged fix (backend, notification-dispatch/channel-health developer): this test
-                // predates cycle 4's two new IScheduledTask registrations, both global (Program.cs registers
-                // them unconditionally, same as photo-retention-cleanup). Left enabled here, a 1-second tick
-                // for up to 20 real seconds would run BOTH against the shared "servicebooking_test" database
-                // while 300+ OTHER functional tests race it concurrently — exactly the flakiness
-                // ARCHITECTURE_CYCLE4.md §27 warns a global tick would cause, just triggered by a
-                // pre-existing test this cycle didn't anticipate rather than by the cycle's own
-                // NotificationDispatchTestFactory (which is why that factory disables photo-retention-cleanup
-                // and never enables channel-health/notification-dispatch by default — see its own comment).
-                // Disabled here for the same reason: this test's assertions are only about
-                // photo-retention-cleanup and ThrowingScheduledTask.
-                builder.UseSetting("ScheduledTasks:notification-dispatch:Enabled", "false");
-                builder.UseSetting("ScheduledTasks:channel-health:Enabled", "false");
+                // Cycle 4 review fix: notification-dispatch/channel-health no longer need disabling HERE —
+                // ServiceBooking.API/appsettings.Testing.json now disables both by default (same file this
+                // host's config already loads via ASPNETCORE_ENVIRONMENT=Testing), so any test host built
+                // this way is safe by construction, including hosts a future developer adds without knowing
+                // about this specific test. Only NotificationDispatchTestFactory opts notification-dispatch
+                // back in, explicitly, for its own tests (see its own comment) — this test's assertions are
+                // only about photo-retention-cleanup and ThrowingScheduledTask, so it does not.
                 builder.ConfigureServices(services => services.AddScoped<IScheduledTask, ThrowingScheduledTask>());
             });
 

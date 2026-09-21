@@ -48,6 +48,34 @@ public class ChannelStateMapperTests
         result.Reason.Should().BeNull();
     }
 
+    // B4: a channel that already reached Connected/Disconnected/Blocked must never regress to Connecting
+    // on a transient "starting" (or NotAuthorized-before-hadBeenConnected, covered above) answer.
+    [Fact]
+    public void Map_Starting_HadBeenConnectedBefore_Connected_DoesNotRegressToConnecting()
+    {
+        var result = ChannelStateMapper.Map(ChannelState.Connected, ProviderChannelState.Starting, hadBeenConnected: true);
+        result.State.Should().Be(ChannelState.Connected);
+        result.Reason.Should().BeNull();
+    }
+
+    [Fact]
+    public void Map_Starting_HadBeenConnectedBefore_Disconnected_DoesNotRegressToConnecting()
+    {
+        var result = ChannelStateMapper.Map(ChannelState.Disconnected, ProviderChannelState.Starting, hadBeenConnected: true);
+        result.State.Should().Be(ChannelState.Disconnected);
+        result.Reason.Should().BeNull();
+    }
+
+    [Fact]
+    public void Map_NotAuthorized_HadBeenConnectedBefore_Disconnected_StaysDisconnected_DoesNotThrow()
+    {
+        // Same fork as Map_NotAuthorized_HadBeenConnectedBefore_IsDisconnected above, but starting from
+        // Disconnected rather than Connected — no state change, so no Reason is required either.
+        var result = ChannelStateMapper.Map(ChannelState.Disconnected, ProviderChannelState.NotAuthorized, hadBeenConnected: true);
+        result.State.Should().Be(ChannelState.Disconnected);
+        result.Reason.Should().Be(ChannelStateReason.ProviderReportsUnauthorized);
+    }
+
     [Fact]
     public void Map_Unknown_NeverRegressesAConnectedChannel()
     {

@@ -32,6 +32,19 @@ public static class ChannelStateTransition
             OccurredAtUtc = nowUtc,
         });
         channel.State = targetState;
+        channel.LastStateReason = reason;
+
+        // B4: ConnectedAtUtc is what ChannelStateMapper's hadBeenConnected fork keys on (§30.1) — it has
+        // to be set on EVERY path into Connected, not just the QR-scan controller's, or a channel that
+        // authorized purely through polling can never be told apart from one still mid-QR-flow.
+        // I8: ConsecutiveSendFailures was previously reset only on a successful Sent outcome — a channel
+        // that just got disconnected by the threshold and then reconnected would still carry the OLD
+        // count, so a single transient error right after reconnecting immediately disconnected it again.
+        if (targetState == ChannelState.Connected)
+        {
+            channel.ConnectedAtUtc ??= nowUtc;
+            channel.ConsecutiveSendFailures = 0;
+        }
     }
 
     // ChannelStateEvent.Detail is string(500) — never secret material (§23.1), just a technical note.

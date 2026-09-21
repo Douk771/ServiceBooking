@@ -75,6 +75,13 @@ public sealed class ChannelHealthTask(
         var encryptionKey = options.Value.EncryptionKey ?? string.Empty;
         var maxParallel = Math.Max(1, options.Value.Dispatch.MaxParallelChannels);
         var polledStates = new System.Collections.Concurrent.ConcurrentDictionary<Guid, ProviderChannelState?>();
+        // I1: kept separate from polledStates — a secret-unavailable channel is NOT a provider answer at
+        // all (ChannelStateMapper has no vocabulary for it), so it must never be routed through the
+        // mapper's Unknown case. Unknown means "don't regress, stay whatever we were" — right for a
+        // transient network hiccup, wrong here: this channel can never be usefully polled again until it
+        // is decommissioned and reconnected, so silently doing nothing every pass forever would leave an
+        // owner paying for an instance that can never come back on its own.
+        var secretUnavailableChannelIds = new System.Collections.Concurrent.ConcurrentBag<Guid>();
 
         await Parallel.ForEachAsync(channels, new ParallelOptions { MaxDegreeOfParallelism = maxParallel, CancellationToken = ct },
             async (channel, innerCt) =>
@@ -93,11 +100,9 @@ public sealed class ChannelHealthTask(
                 }
                 catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
                 {
-                    // §24.4 point 6: unreadable secret — ambiguous from the provider's point of view, but
-                    // ChannelStateMapper's Unknown case means "don't regress", which is correct here too:
-                    // the secret problem is surfaced through the SEND path (NotificationDispatchTask),
-                    // which is where it actually blocks something.
-                    polledStates[channel.Id] = ProviderChannelState.Unknown;
+                    // I1 (§24.4 point 6): unreadable secret — handled by the single-threaded loop below,
+                    // not folded into a provider-state answer.
+                    secretUnavailableChannelIds.Add(channel.Id);
                 }
                 catch (Exception ex)
                 {
@@ -107,23 +112,83 @@ public sealed class ChannelHealthTask(
             });
 
         var transitioned = 0;
+        var secretUnavailableSet = secretUnavailableChannelIds.ToHashSet();
         foreach (var channel in channels)
         {
             channel.LastStateCheckAtUtc = now;
+
+            if (secretUnavailableSet.Contains(channel.Id))
+            {
+                // I1: decommission outright, §30.4 style (same procedure as an idle/unauthorized-timeout
+                // deletion) — nothing at the provider is ever readable again through this channel's own
+                // token, so there is nothing to gain by leaving the instance billed and un-decommissioned.
+                await DeleteInstanceAsync(channel, ChannelState.NeedsReconnect, ChannelStateReason.SecretUnavailable, now, ct);
+                transitioned++;
+                continue;
+            }
+
             if (!polledStates.TryGetValue(channel.Id, out var providerState) || providerState is null) continue;
 
             var mapping = ChannelStateMapper.Map(channel.State, providerState.Value, channel.ConnectedAtUtc != null);
             if (mapping.State != channel.State)
             {
-                ChannelStateTransition.Apply(db, channel, mapping.State, mapping.Reason!.Value, null, now);
-                transitioned++;
+                // B4: the mapper's own contract is "Reason is non-null whenever State changes" — defended
+                // here rather than trusted blindly with `!.Value`, because an unguarded null-forgiving
+                // dereference threw mid-loop on a prior bug and failed the WHOLE pass (every channel after
+                // the offending one, in memory, unsaved) instead of just skipping the one bad mapping.
+                if (mapping.Reason is not { } reason)
+                {
+                    logger.LogError(
+                        "channel-health: ChannelStateMapper returned a state change with no reason, skipping this channel this pass: channelId={ChannelId} from={FromState} to={ToState}",
+                        channel.Id, channel.State, mapping.State);
+                }
+                else
+                {
+                    ChannelStateTransition.Apply(db, channel, mapping.State, reason, null, now);
+                    transitioned++;
+                }
             }
+
+            if (mapping.State == ChannelState.Connected && channel.PhoneNumber is null)
+                await BackfillPhoneNumberAsync(channel, encryptionKey, ct);
+
+            // B8 / SPEC US-56 п. 6, US-63 п. 1: a banned number is deleted at the provider IMMEDIATELY,
+            // not after the N-day idle grace period every other "no active company" case gets — a banned
+            // instance cannot come back regardless of how soon someone reconnects it, so there is no
+            // "insurance against an extra QR" reason left to keep paying for it. DeleteInstanceAsync
+            // no-ops the state transition (already applied above) and just does the decommission.
+            if (mapping.State == ChannelState.Blocked && channel.ProviderInstanceId is not null)
+                await DeleteInstanceAsync(channel, ChannelState.Blocked, ChannelStateReason.ProviderReportsBlocked, now, ct);
 
             ApplyDisruptionNotificationAntiSpam(channel, mapping.State, now);
         }
 
         await db.SaveChangesAsync(ct);
         return (channels.Count, transitioned);
+    }
+
+    /// <summary>B4: a channel that authorized via polling (rather than the QR-scan controller path,
+    /// which already records the phone number) would otherwise never get one — <c>getSettings</c> is the
+    /// one call that returns it. One extra provider call per pass, only for channels that just became (or
+    /// already are) Connected and still have no number on file.</summary>
+    private async Task BackfillPhoneNumberAsync(NotificationChannel channel, string encryptionKey, CancellationToken ct)
+    {
+        if (channel.ProviderInstanceId is not { } instanceId || channel.ProviderSecretCiphertext is not { } ciphertext) return;
+
+        try
+        {
+            var token = SecretProtector.Decrypt(ciphertext, encryptionKey, channel.Id);
+            var phoneNumber = await provisioning.GetPhoneNumberAsync(new ChannelCredentials(instanceId, token), ct);
+            if (!string.IsNullOrEmpty(phoneNumber)) channel.PhoneNumber = phoneNumber;
+        }
+        catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
+        {
+            logger.LogDebug(ex, "channel-health: could not decrypt channel secret to backfill phone number: channelId={ChannelId}", channel.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "channel-health: GetPhoneNumberAsync failed for channel {ChannelId}", channel.Id);
+        }
     }
 
     /// <summary>US-62 p.3: a Warning-level "still disrupted" log (→ GlitchTip, §31.2) at most once every

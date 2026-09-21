@@ -3,7 +3,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.Core.Entities;
 
 /// <summary>
-/// A WhatsApp channel: one GREEN-API instance = one number = one payment (ARCHITECTURE_CYCLE4.md §23.1,
+/// A WhatsApp channel: one provider instance = one number = one payment (ARCHITECTURE_CYCLE4.md §23.1,
 /// decision "variant B"). Owned by a platform account (<see cref="OwnerUserId"/>, same key as
 /// <see cref="AccountSubscription"/>); companies are assigned to it via <see cref="ChannelCompanyAssignment"/>.
 /// </summary>
@@ -20,8 +20,8 @@ public class NotificationChannel
     // Canonical (PhoneNormalizer), filled from `wid` after authorization (US-53 p.6).
     public string? PhoneNumber { get; set; }
 
-    // GREEN-API's idInstance. Unique among non-null values (a deleted instance's id is not reused
-    // outright, but the slot must be free for a fresh CreateInstanceAsync at the same channel row).
+    // The provider's own instance id. Unique among non-null values (a deleted instance's id is not
+    // reused outright, but the slot must be free for a fresh CreateInstanceAsync at the same channel row).
     public string? ProviderInstanceId { get; set; }
 
     // §24: never leaves the server. See SecretProtector for the ciphertext format.
@@ -53,6 +53,13 @@ public class NotificationChannel
     public DateTime? InstanceCreatedAtUtc { get; set; }
     public DateTime? ConnectedAtUtc { get; set; }
     public DateTime? LastStateCheckAtUtc { get; set; }
+
+    // I1: mirrors the most recent ChannelStateEvent.Reason for THIS channel, kept on the row itself so
+    // ChannelPresentation.StateText can tell "needs reconnecting because nobody used it" apart from
+    // "needs reconnecting because the platform's own encryption key changed under it" without a second
+    // query per channel on every list/detail read. History of every reason still lives in
+    // ChannelStateEvent — this is a cache, not a second source of truth.
+    public ChannelStateReason? LastStateReason { get; set; }
     public int ConsecutiveSendFailures { get; set; }
     public DateTime? LastTestMessageAtUtc { get; set; }
     public DateTime? DisruptionNotifiedAtUtc { get; set; }

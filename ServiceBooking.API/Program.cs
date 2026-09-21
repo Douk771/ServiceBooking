@@ -103,8 +103,20 @@ if (!isDeveloperEnvironment)
 // ValidateSecrets they are NOT wrapped in `if (!isDeveloperEnvironment)`: ValidateNotificationSecrets'
 // rule 3 must run even in Development, and the other two are no-ops there anyway).
 DeploymentSafetyChecks.ValidateNotificationSecrets(builder.Configuration, builder.Environment.EnvironmentName);
-DeploymentSafetyChecks.ValidateChannelKeyFingerprint(
-    builder.Configuration, builder.Environment.EnvironmentName, builder.Environment.ContentRootPath);
+{
+    // Reviewer note: this check's one non-fatal warning (a key rotation ack that's about to be
+    // consumed, §24.4/§24.5) used to go through Console.WriteLine, which never reaches Serilog/GlitchTip
+    // at all. The full pipeline (builder.Host.UseSerilog(...) above) is only wired up once the host is
+    // actually built, which is AFTER this call by design (fail-fast before Build(), same as
+    // ValidateSecrets) — so this is a minimal bootstrap logger, console-only, JUST for this one warning,
+    // disposed immediately after. It intentionally does not duplicate the file/GlitchTip sinks above.
+    using var bootstrapLogger = new LoggerConfiguration()
+        .WriteTo.Console(new CompactJsonFormatter())
+        .CreateLogger();
+    DeploymentSafetyChecks.ValidateChannelKeyFingerprint(
+        builder.Configuration, builder.Environment.EnvironmentName, builder.Environment.ContentRootPath,
+        warn: message => bootstrapLogger.Warning(message));
+}
 DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentName);
 
 builder.Services.AddControllers(options =>
@@ -422,6 +434,11 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // notifications-webhook: the provider calls this anonymously and per-address, keyed the same way
+    // as auth-login/auth-register (ARCHITECTURE_CYCLE4.md §32) — 600/min is generous enough for normal
+    // delivery-status traffic while still bounding a misbehaving/compromised caller.
+    o.AddPolicy("notifications-webhook", ctx => IpWindowPolicy(ctx, "notifications-webhook", defaultPermitLimit: 600, defaultWindowMinutes: 1));
+
     // data-export: keyed by user id only — the endpoint requires [Authorize], there is no anonymous case.
     o.AddPolicy("data-export", ctx =>
     {
@@ -449,6 +466,7 @@ builder.Services.AddRateLimiter(o =>
             "auth-register" => "Слишком много регистраций с этого адреса. Повторите позже.",
             "booking-create" => "Слишком много записей с этого адреса. Повторите позже.",
             "data-export" => "Выгрузка доступна не чаще трёх раз в сутки.",
+            "notifications-webhook" => "Too many requests.",
             _ => "Too many uploads. Try again in a minute."
         };
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
@@ -468,6 +486,24 @@ static RateLimitPartition<string> IpWindowPolicy(
         Window = TimeSpan.FromMinutes(config.GetValue($"RateLimits:{policyName}:WindowMinutes", defaultWindowMinutes)),
         QueueLimit = 0
     });
+}
+
+// B2/I5: mask the {token} segment of the two notification routes that embed a secret in the URL, so
+// the request-completed log line (Information) never carries it. Returns null for every other path —
+// callers only override RequestPath when this returns non-null.
+static string? MaskSensitiveRequestPath(string? path)
+{
+    if (string.IsNullOrEmpty(path)) return null;
+
+    const string webhookPrefix = "/api/notifications/provider-webhook/";
+    const string unsubscribePrefix = "/api/notifications/unsubscribe/";
+
+    if (path.StartsWith(webhookPrefix, StringComparison.Ordinal) && path.Length > webhookPrefix.Length)
+        return webhookPrefix + "***";
+    if (path.StartsWith(unsubscribePrefix, StringComparison.Ordinal) && path.Length > unsubscribePrefix.Length)
+        return unsubscribePrefix + "***";
+
+    return null;
 }
 
 // Health checks (US-43, ARCHITECTURE.md §10): "live" never touches anything and always answers 200 —
@@ -545,6 +581,14 @@ app.UseSerilogRequestLogging(opts =>
         // "найди по traceId" in DEPLOY.md stops working, which is the whole point of this line existing.
         diagnosticContext.Set("traceId", Activity.Current?.Id ?? httpContext.TraceIdentifier);
         diagnosticContext.Set("userId", httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier));
+
+        // §32/§24 + B2/I5: both {token} path segments below embed recoverable secrets — the webhook
+        // token, and (for unsubscribe) a base64url phone number signed by UnsubscribeTokens. Left alone
+        // they'd sit in every request-completed line at Information, upstream of PhoneMaskingEnricher
+        // (which only scans Warning+). Setting "RequestPath" here overrides the template-bound value —
+        // Serilog's ForContext/diagnostic-context properties win over same-named template properties.
+        var maskedPath = MaskSensitiveRequestPath(httpContext.Request.Path.Value);
+        if (maskedPath is not null) diagnosticContext.Set("RequestPath", maskedPath);
     };
 });
 

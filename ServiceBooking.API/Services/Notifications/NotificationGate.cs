@@ -53,9 +53,16 @@ public static class NotificationGate
         if ((enabledTypeMask & (1 << (int)type)) == 0)
             return NotificationGateResult.Block(NotificationReason.TypeDisabledByCompany);
 
-        var minLeadMinutes = settings?.MinLeadMinutes ?? new CompanyNotificationSettings().MinLeadMinutes;
-        if (NotificationTiming.IsBelowMinimumLeadTime(visitStartUtc, nowUtc, minLeadMinutes))
-            return NotificationGateResult.Block(NotificationReason.BelowMinimumLeadTime);
+        // B3 / SPEC US-31 п. 2: the "less than N minutes before the visit" threshold is a safety valve
+        // against dumping an accumulated reminder queue after a reconnect — it does NOT apply to
+        // confirmation, cancellation or reschedule, which are reactions to the salon's own action right
+        // now and must go out regardless of how close the visit is.
+        if (type == NotificationType.Reminder)
+        {
+            var minLeadMinutes = settings?.MinLeadMinutes ?? new CompanyNotificationSettings().MinLeadMinutes;
+            if (NotificationTiming.IsBelowMinimumLeadTime(visitStartUtc, nowUtc, minLeadMinutes))
+                return NotificationGateResult.Block(NotificationReason.BelowMinimumLeadTime);
+        }
 
         return NotificationGateResult.Allow;
     }

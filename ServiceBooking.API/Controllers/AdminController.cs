@@ -321,6 +321,28 @@ public class AdminController(
         else
             membership.Role = UserRole.CompanyOwner;
 
+        // B9 / SPEC US-56 п. 3: a WhatsApp channel is bound to the OWNER's account, not the company —
+        // handing the company to someone else must not leave it (and its clients' replies) going through
+        // the previous owner's personal number. §25.3 names this exact call site. Same transaction as the
+        // ownership move: no window where the assignment survives a committed owner change.
+        if (oldOwnerUserId != newOwner.Id)
+        {
+            var assignment = await db.ChannelCompanyAssignments.FirstOrDefaultAsync(a => a.CompanyId == id);
+            if (assignment is not null)
+            {
+                db.ChannelCompanyAssignments.Remove(assignment);
+
+                var pending = await db.OutboundNotifications
+                    .Where(n => n.CompanyId == id && n.Status == NotificationStatus.Pending)
+                    .ToListAsync();
+                foreach (var row in pending)
+                {
+                    row.Status = NotificationStatus.Cancelled;
+                    row.Reason = NotificationReason.BookingOrAssignmentCancelled;
+                }
+            }
+        }
+
         await db.SaveChangesAsync();
         // US-46: recompute roles for BOTH the new owner (gains CompanyOwner) and the old one (may lose
         // it, unless they still hold it via another company — SyncAsync recomputes from ALL of their
@@ -617,12 +639,25 @@ public class AdminController(
         var oldIdleDays = await platformSettings.GetChannelIdleDaysAsync();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
-        await PlatformSettingsWriter.WriteAsync(
-            db, PlatformSettingsWriter.PriceKey, oldPrice?.ToString(CultureInfo.InvariantCulture),
-            dto.ChannelPricePerMonth?.ToString(CultureInfo.InvariantCulture) ?? "", userId);
-        await PlatformSettingsWriter.WriteAsync(
-            db, PlatformSettingsWriter.IdleDaysKey, oldIdleDays.ToString(CultureInfo.InvariantCulture),
-            dto.ChannelIdleDays.ToString(CultureInfo.InvariantCulture), userId);
+        // Reviewer note: previously wrote (and journaled) both keys unconditionally, even when the
+        // request left one of them unchanged — a no-op "save" produced a change-log row that recorded no
+        // actual change, and every PUT (again, even a no-op one) went stale-for-60s on the read side.
+        // Guarded per key now; cache invalidated only for the key(s) that actually moved.
+        if (oldPrice != dto.ChannelPricePerMonth)
+        {
+            await PlatformSettingsWriter.WriteAsync(
+                db, PlatformSettingsWriter.PriceKey, oldPrice?.ToString(CultureInfo.InvariantCulture),
+                dto.ChannelPricePerMonth?.ToString(CultureInfo.InvariantCulture) ?? "", userId);
+            platformSettings.InvalidateCache(PlatformSettingsWriter.PriceKey);
+        }
+
+        if (oldIdleDays != dto.ChannelIdleDays)
+        {
+            await PlatformSettingsWriter.WriteAsync(
+                db, PlatformSettingsWriter.IdleDaysKey, oldIdleDays.ToString(CultureInfo.InvariantCulture),
+                dto.ChannelIdleDays.ToString(CultureInfo.InvariantCulture), userId);
+            platformSettings.InvalidateCache(PlatformSettingsWriter.IdleDaysKey);
+        }
 
         await db.SaveChangesAsync();
         return Ok(dto);

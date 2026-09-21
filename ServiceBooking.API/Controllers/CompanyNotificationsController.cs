@@ -301,7 +301,7 @@ public class CompanyNotificationsController(
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         var stateText = channel is null ? null : ChannelPresentation.StateText(
             channel.State, channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber),
-            idleDays, channel.PaidUntilUtc);
+            idleDays, channel.PaidUntilUtc, channel.LastStateReason);
 
         var channelDto = new SettingsChannelDto(channel is not null, channel?.Id, channel?.State, stateText, paymentState, channel?.PaidUntilUtc);
 

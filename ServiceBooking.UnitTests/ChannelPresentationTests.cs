@@ -52,6 +52,7 @@ public class ChannelPresentationTests
     [Theory]
     [InlineData(ChannelState.NotConnected, ChannelPaymentStatus.Paid, true, true)]
     [InlineData(ChannelState.NeedsReconnect, ChannelPaymentStatus.Paid, true, true)]
+    [InlineData(ChannelState.DisabledByOwner, ChannelPaymentStatus.Paid, true, true)] // I10: owner reconnects within the same paid period
     [InlineData(ChannelState.Connected, ChannelPaymentStatus.Paid, true, false)] // already connected
     [InlineData(ChannelState.NotConnected, ChannelPaymentStatus.NotPaid, true, false)] // unpaid
     [InlineData(ChannelState.NotConnected, ChannelPaymentStatus.Paid, false, false)] // risk not accepted

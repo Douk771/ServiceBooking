@@ -4,7 +4,7 @@ namespace ServiceBooking.API.Services;
 
 /// <summary>
 /// The DI seam between <c>NotificationsController</c>'s webhook action (this cycle's T4-B13, owned by
-/// this developer) and the GREEN-API adapter's own parsing (<c>GreenApiWebhookParser</c>, T4-B5, owned by
+/// this developer) and the provider adapter's own parsing (<c>GreenApiWebhookParser</c>, T4-B5, owned by
 /// the other backend developer working this cycle in parallel). Both sides share the neutral
 /// <see cref="ProviderCallback"/>/<see cref="ProviderCallbackKind"/> shape, which lives in
 /// <c>Services/Notifications/</c> — not the <c>GreenApi/</c> subfolder — precisely so it can be

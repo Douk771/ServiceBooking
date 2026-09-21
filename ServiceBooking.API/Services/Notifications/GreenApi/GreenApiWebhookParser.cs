@@ -61,15 +61,19 @@ public sealed class GreenApiWebhookParser : ServiceBooking.API.Services.IProvide
             ProviderCallbackKind.ChannelState, ProviderMessageId: null, instanceId, MessageStatus: null, state, occurredAtUtc);
     }
 
-    // GREEN-API's own outgoingMessageStatus values: "sent", "delivered", "read", "noAccount". Anything
-    // else (a status value this cycle doesn't know about yet) is deliberately unmapped rather than
-    // guessed at.
+    // GREEN-API's own outgoingMessageStatus values: "sent", "delivered", "read", "noAccount", "failed".
+    // Reviewer note: "failed" (a terminal delivery failure for a reason OTHER than "no WhatsApp account",
+    // e.g. the recipient blocked the sender) was previously left unmapped — the event fell through to
+    // `status is null => nothing to act on`, so the row just sat Pending until AttemptCount's own retries
+    // exhausted it instead of failing immediately on the provider's own terminal signal. Anything else (a
+    // status value this cycle doesn't know about yet) is still deliberately unmapped rather than guessed at.
     private static ProviderMessageStatus? ParseMessageStatus(string? raw) => raw switch
     {
         "sent" => ProviderMessageStatus.Sent,
         "delivered" => ProviderMessageStatus.Delivered,
         "read" => ProviderMessageStatus.Read,
         "noAccount" => ProviderMessageStatus.Failed,
+        "failed" => ProviderMessageStatus.Failed,
         _ => null,
     };
 

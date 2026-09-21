@@ -41,8 +41,16 @@ public static class ChannelStateMapper
             ProviderChannelState.NotAuthorized =>
                 new ChannelStateMapping(ChannelState.Disconnected, ChannelStateReason.ProviderReportsUnauthorized),
 
-            ProviderChannelState.Starting =>
+            // B4: "starting" (and the yellowCard/sleepMode variants folded into it upstream) means
+            // "still setting up" ONLY for a channel that has never been authorized. For a channel that
+            // had already reached Connected/Disconnected/Blocked, a transient "starting" answer must not
+            // regress it to Connecting — same ambiguous-answer reasoning as ProviderChannelState.Unknown
+            // below, and the same contract NotAuthorized already follows two cases up.
+            ProviderChannelState.Starting when !hadBeenConnected =>
                 new ChannelStateMapping(ChannelState.Connecting, null),
+
+            ProviderChannelState.Starting =>
+                new ChannelStateMapping(currentState, null),
 
             // Ambiguous/transient provider answer — never act on it. A channel that was Connected a
             // moment ago must not flip to Disconnected on a single unclear poll response; the next pass
