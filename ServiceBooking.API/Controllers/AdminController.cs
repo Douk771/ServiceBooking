@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
@@ -18,7 +19,8 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/admin")]
 [Authorize(Roles = "SuperAdmin")]
 public class AdminController(
-    AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager) : ControllerBase
+    AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager,
+    PricingCatalogCache pricingCatalogCache) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -401,10 +403,14 @@ public class AdminController(
         // the row exists, the same way every other tariff validation in this controller does (US-24 p.3).
         if (dto.PhotoQuotaMb is < 0) return BadRequest("Photo quota must not be negative.");
 
+        var systemFreeError = await ValidateSystemFreeAsync(dto, existingPlanId: null);
+        if (systemFreeError is not null) return systemFreeError;
+
         dto.Id = Guid.NewGuid();
         dto.CreatedAt = DateTime.UtcNow;
         db.SubscriptionPlanConfigs.Add(dto);
         await db.SaveChangesAsync();
+        pricingCatalogCache.Invalidate();
         return Ok(dto);
     }
 
@@ -415,6 +421,10 @@ public class AdminController(
 
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
+
+        var systemFreeError = await ValidateSystemFreeAsync(dto, existingPlanId: id);
+        if (systemFreeError is not null) return systemFreeError;
+
         plan.Name = dto.Name;
         plan.PricePerMonth = dto.PricePerMonth;
         plan.MaxEmployees = dto.MaxEmployees;
@@ -428,6 +438,12 @@ public class AdminController(
         plan.PhotoRetention = dto.PhotoRetention;
         plan.Description = dto.Description;
         plan.NotifyDaysBefore = dto.NotifyDaysBefore;
+        // Cycle 5 additions (ARCHITECTURE_CYCLE5.md §43.4) — omitted from the original PUT, which meant
+        // a plan published via POST could never be re-ordered, re-worded or unpublished again.
+        plan.Highlights = dto.Highlights;
+        plan.IsPublic = dto.IsPublic;
+        plan.SortOrder = dto.SortOrder;
+        plan.IsSystemFree = dto.IsSystemFree;
 
         // Deactivating through this endpoint has exactly the effect DeletePlan refuses below: the
         // resolver treats PlanConfig.IsActive == false as Free, so every subscriber silently loses
@@ -442,6 +458,7 @@ public class AdminController(
         plan.IsActive = dto.IsActive;
 
         await db.SaveChangesAsync();
+        pricingCatalogCache.Invalidate();
         return Ok(plan);
     }
 
@@ -460,7 +477,26 @@ public class AdminController(
 
         plan.IsActive = false;
         await db.SaveChangesAsync();
+        pricingCatalogCache.Invalidate();
         return NoContent();
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE5.md §43.4: exactly one row may have <c>IsSystemFree == true</c>, and
+    /// that row's price must be 0 — validated here so a violation surfaces as 400/409 instead of the
+    /// partial unique index throwing a raw <c>DbUpdateException</c> (500) on save.</summary>
+    private async Task<IActionResult?> ValidateSystemFreeAsync(SubscriptionPlanConfig dto, Guid? existingPlanId)
+    {
+        if (!dto.IsSystemFree) return null;
+
+        if (dto.PricePerMonth != 0)
+            return BadRequest("The system free plan must have PricePerMonth = 0.");
+
+        var otherSystemFreeExists = await db.SubscriptionPlanConfigs
+            .AnyAsync(p => p.IsSystemFree && p.Id != (existingPlanId ?? Guid.Empty));
+        if (otherSystemFreeExists)
+            return Conflict("Another plan is already marked as the system free plan.");
+
+        return null;
     }
 
     // ── Scheduled tasks ────────────────────────────────────────────────────────
