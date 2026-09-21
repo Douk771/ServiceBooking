@@ -83,12 +83,16 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
     {
         var expectedToken = options.Value.WebhookToken;
         if (string.IsNullOrEmpty(expectedToken) || !ConstantTimeEquals(token, expectedToken))
-            // Reviewer note / API_CONTRACT_CYCLE4.md §19.2: 401 here must be an EMPTY body. Plain
-            // Unauthorized() would come back as a ProblemDetails JSON body — [ApiController]'s
-            // ClientErrorResultFilter rewrites any IClientErrorActionResult with no content into one
-            // automatically. StatusCodeResult (via StatusCode(...)) does not implement that interface, so
-            // the filter leaves it alone.
-            return StatusCode(StatusCodes.Status401Unauthorized);
+        {
+            // API_CONTRACT_CYCLE4.md §19.2: 401 here must be an EMPTY body — the caller is a provider,
+            // not a browser, and ProblemDetails tells an unauthenticated caller more than it needs.
+            // Neither Unauthorized() nor StatusCode(401) does that: both return StatusCodeResult, which
+            // DOES implement IClientErrorActionResult, so [ApiController]'s ClientErrorResultFilter
+            // rewrites them into ProblemDetails (an earlier comment here claimed otherwise; NTF-W002
+            // caught it). EmptyResult is outside that interface, so the filter leaves it alone.
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return new EmptyResult();
+        }
 
         string rawBody;
         using (var reader = new StreamReader(Request.Body, Encoding.UTF8))

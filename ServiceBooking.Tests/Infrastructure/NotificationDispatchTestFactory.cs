@@ -23,7 +23,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// alone already guarantees that — the substitution exists to make sends OBSERVABLE and instant, not to
 /// make them safe (they already were).
 /// </summary>
-public sealed class NotificationDispatchTestFactory(bool channelHealthEnabled = false) : WebApplicationFactory<Program>
+public sealed class NotificationDispatchTestFactory(bool channelHealthEnabled = false, int? budgetSecondsOverride = null) : WebApplicationFactory<Program>
 {
     public RecordingDelay Delay { get; } = new();
     public FakeClock Clock { get; } = new();
@@ -75,6 +75,13 @@ public sealed class NotificationDispatchTestFactory(bool channelHealthEnabled = 
         builder.UseSetting("Notifications:EncryptionKey", TestEncryptionKeyBase64);
         builder.UseSetting("Notifications:Dispatch:PauseMinMs", "5000");
         builder.UseSetting("Notifications:Dispatch:PauseMaxMs", "15000");
+        // QA cycle 4 addition: lets a test shrink the pass budget (production default 50s,
+        // appsettings.json) down to something a real-clock test can actually exhaust without waiting 50
+        // real seconds — RecordingDelay never actually sleeps, so with the production default a deep
+        // queue's whole pass finishes near-instantly regardless of depth, and the "budget ran out mid-
+        // pass" branch (§26.1.1) is otherwise unreachable from a functional test.
+        if (budgetSecondsOverride is { } budgetSeconds)
+            builder.UseSetting("Notifications:Dispatch:BudgetSeconds", budgetSeconds.ToString());
 
         builder.ConfigureServices(services =>
         {
