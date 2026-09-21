@@ -16,7 +16,7 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 public class BookingsController(
-    AppDbContext db, SlotService slotService, CaptchaService captchaService,
+    AppDbContext db, SlotService slotService, AvailabilityService availabilityService, CaptchaService captchaService,
     SubscriptionResolver subscriptionResolver, LegalDocumentProvider legalProvider,
     NotificationScheduler notificationScheduler, ILogger<BookingsController> logger) : ControllerBase
 {
@@ -85,6 +85,55 @@ public class BookingsController(
             : ScheduleFallback.None;
         var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, serviceId, date, fallback);
         return Ok(slots);
+    }
+
+    /// <summary>
+    /// US-65 (ARCHITECTURE_CYCLE6.md §45): the whole-month state in one anonymous request, instead of
+    /// one GetSlots call per day. Same trust/validation shape as GetSlots — manual/extendedHours are
+    /// only honored for staff of this company; everyone else always gets ScheduleFallback.None.
+    /// </summary>
+    [HttpGet("availability")]
+    [EnableRateLimiting("availability")]
+    public async Task<ActionResult<AvailabilityDto>> GetAvailability(
+        [FromQuery] Guid companyId,
+        [FromQuery] string masterId,
+        [FromQuery] Guid serviceId,
+        [FromQuery] DateOnly from,
+        [FromQuery] DateOnly to,
+        [FromQuery] bool manual = false)
+    {
+        if (to < from) return BadRequest("to must not be before from");
+        if (to.DayNumber - from.DayNumber > 30) return BadRequest("Диапазон не может превышать 31 день");
+
+        var todayUtc = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (from < todayUtc.AddDays(-1)) return BadRequest("from is too far in the past");
+
+        var company = await db.Companies.FindAsync(companyId);
+        if (company is null) return NotFound("Company not found");
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var isStaff = userId is not null &&
+            (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, companyId, userId));
+        var honorManual = manual && isStaff;
+
+        var horizonDays = BookingHorizon.Normalize(company.BookingHorizonDays);
+        var horizonLastDate = BookingHorizon.LastBookableDate(todayUtc, horizonDays);
+        if (!honorManual && to > horizonLastDate)
+            return BadRequest($"Записаться можно не дальше чем на {horizonDays} дней вперёд");
+
+        var service = await db.Services.FindAsync(serviceId);
+        if (service is null) return NotFound("Service not found");
+        if (service.CompanyId != companyId) return BadRequest("Service does not belong to this company");
+        if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
+            return BadRequest("Master does not work for this company");
+
+        var fallback = honorManual ? ScheduleFallback.DefaultWindow : ScheduleFallback.None;
+        var (defaultStart, defaultEnd) = slotService.GetDefaultWindow();
+        var days = await availabilityService.GetAvailabilityAsync(
+            companyId, masterId, service.DurationMinutes, from, to, fallback, defaultStart, defaultEnd);
+
+        return Ok(new AvailabilityDto(from, to, service.DurationMinutes, SlotCalculator.StepMinutes,
+            horizonDays, horizonLastDate, days));
     }
 
     [HttpPost]

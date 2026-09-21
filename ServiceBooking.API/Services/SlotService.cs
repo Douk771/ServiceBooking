@@ -12,7 +12,10 @@ public class SlotService(AppDbContext db, IConfiguration configuration)
     // lives in DeploymentSafetyChecks (pure, unit-testable); an unparsable/inverted value throws at
     // first use rather than silently falling back to a whole day.
     private (TimeOnly Start, TimeOnly End)? _defaultWindow;
-    private (TimeOnly Start, TimeOnly End) DefaultWindow =>
+
+    /// <summary>Public so <see cref="AvailabilityService"/> and BookingsController's callers use the
+    /// exact same parsed config value instead of re-parsing it themselves.</summary>
+    public (TimeOnly Start, TimeOnly End) GetDefaultWindow() =>
         _defaultWindow ??= DeploymentSafetyChecks.ParseDefaultWorkWindow(configuration);
 
     // `fallback` lets a staff member creating a manual booking on a client's behalf pick a free slot
@@ -45,7 +48,7 @@ public class SlotService(AppDbContext db, IConfiguration configuration)
 
         var breaks = workingHours?.Breaks.Select(b => new TimeRange(b.StartTime, b.EndTime)).ToList() ?? [];
 
-        var (defaultStart, defaultEnd) = DefaultWindow;
+        var (defaultStart, defaultEnd) = GetDefaultWindow();
         return SlotCalculator.Calculate(
             service.DurationMinutes,
             workingHours?.StartTime, workingHours?.EndTime,

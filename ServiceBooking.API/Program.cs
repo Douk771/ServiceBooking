@@ -256,6 +256,7 @@ builder.Services.AddCors(opt =>
 // Services
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<SlotService>();
+builder.Services.AddScoped<AvailabilityService>();
 builder.Services.AddScoped<SubscriptionResolver>();
 // Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
 // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
@@ -434,6 +435,11 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // availability: GET /api/bookings/availability is anonymous (guest booking needs it), so it gets
+    // its own IP-keyed limit (ARCHITECTURE_CYCLE6.md §45.6) — 60/min is one request per client per
+    // month-view, generous for legitimate calendar navigation.
+    o.AddPolicy("availability", ctx => IpWindowPolicy(ctx, "availability", defaultPermitLimit: 60, defaultWindowMinutes: 1));
+
     // notifications-webhook: the provider calls this anonymously and per-address, keyed the same way
     // as auth-login/auth-register (ARCHITECTURE_CYCLE4.md §32) — 600/min is generous enough for normal
     // delivery-status traffic while still bounding a misbehaving/compromised caller.
@@ -465,6 +471,7 @@ builder.Services.AddRateLimiter(o =>
             "auth-login" => "Слишком много попыток входа. Повторите через минуту.",
             "auth-register" => "Слишком много регистраций с этого адреса. Повторите позже.",
             "booking-create" => "Слишком много записей с этого адреса. Повторите позже.",
+            "availability" => "Слишком много запросов. Повторите через минуту.",
             "data-export" => "Выгрузка доступна не чаще трёх раз в сутки.",
             "notifications-webhook" => "Too many requests.",
             _ => "Too many uploads. Try again in a minute."
