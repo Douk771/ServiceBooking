@@ -45,6 +45,12 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
             new AddNoteRequest(company.Id, clientUser.UserId, null, Unique("Note ")));
         addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var note = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!;
+
+        // CYCLE5-BREAKING (API_CONTRACT_CYCLE5.md §44.3, US-76): photo upload now 400s without a prior,
+        // staff-confirmed photo consent for this client+company pair — grant it here so every test in
+        // this file that isn't ITSELF testing that precondition (MC-1xx/2xx/3xx below) doesn't have to.
+        await GrantPhotoConsentAsync(master.Token, company.Id, clientUser.UserId);
+
         return (owner, company, master, note.Id);
     }
 
@@ -78,6 +84,39 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         var response = await AuthedClient(strangerOwner.Token).PostAsync($"/api/client-notes/{noteId}/photos", JpegUpload());
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    // LGL-076-01 (SPEC.md §9.1 US-76 п.6/п.7, API_CONTRACT_CYCLE5.md §44.3). Uploading WITHOUT the
+    // staff-confirmed photo consent must 400 — and, per US-76 п.6/US-67 п.4, everything else about
+    // serving the client (the note, the booking) must keep working regardless.
+    [Fact, TestCase("LGL-076-01")]
+    public async Task Upload_WithoutPhotoConsent_ReturnsBadRequest_ButNoteAndBookingStillWork()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        var clientUser = await RegisterAsync();
+        (await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
+                company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var addResponse = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
+            new AddNoteRequest(company.Id, clientUser.UserId, null, Unique("Note ")));
+        addResponse.StatusCode.Should().Be(HttpStatusCode.Created, "no consent is required to write the note itself");
+        var noteId = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!.Id;
+
+        // No GrantPhotoConsentAsync call here — this is the precondition itself under test.
+        var uploadResponse = await AuthedClient(master.Token).PostAsync($"/api/client-notes/{noteId}/photos", JpegUpload());
+        uploadResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await uploadResponse.Content.ReadAsStringAsync()).Should().Contain("согласие",
+            "the 400 body must explain WHY, not just fail silently");
+
+        // The rest of the client's service must be entirely unaffected (US-67 п.4: refusing an optional
+        // consent never closes access to the service itself).
+        (await AuthedClient(clientUser.Token).GetAsync("/api/profile")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact, TestCase("MC-103")]
@@ -160,6 +199,18 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        // ClientConsentsController.ResolveClientAsync requires an existing booking behind the guest
+        // phone (same invariant MastersController.AddNote's own client-list assumes) — the photo-consent
+        // endpoint 404s on a guest phone that never booked, so grant the consent AFTER a real guest
+        // booking exists for it, same as a real salon workflow would.
+        (await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings",
+            new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
+                company.Id, service.Id, master.UserId, date, new TimeOnly(8, 0), null, "Walk-in", "+79990009999", null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
         // Zero MB quota: even the first (small) upload has nowhere to fit.
         var zeroQuotaPlan = await CreateTestPlanConfigAsync(photoQuotaMb: 0);
         await SetSubscriptionAsync(company.Id, planConfigId: zeroQuotaPlan);
@@ -167,6 +218,7 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         var addResponse = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(company.Id, null, "+79990009999", Unique("Note ")));
         var noteId = (await addResponse.Content.ReadJsonAsync<ClientNoteDto>())!.Id;
+        await GrantPhotoConsentAsync(master.Token, company.Id, "phone:79990009999");
 
         var response = await AuthedClient(master.Token).PostAsync($"/api/client-notes/{noteId}/photos", JpegUpload());
 

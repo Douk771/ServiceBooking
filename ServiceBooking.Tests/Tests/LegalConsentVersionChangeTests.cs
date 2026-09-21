@@ -2,8 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Auth;
+using ServiceBooking.API.DTOs.Companies;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -44,11 +47,20 @@ public class LegalConsentVersionChangeTests : IAsyncLifetime
         return $"+79{new string(digits).PadRight(9, '0')}";
     }
 
+    // CYCLE5-BREAKING: `acceptedLegal: true` replaced by the `legal` object (API_CONTRACT_CYCLE5.md
+    // §40.1) — versions read from this factory's OWN manifest (via LegalDocumentProvider), not hardcoded,
+    // so a version bump from ResetToDefault()/WriteManifest() never desyncs this helper.
     private async Task<AuthResponseDto> RegisterAsync()
     {
+        using var scope = _factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        var legal = new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
+
         var response = await Anon().PostAsJsonAsync("/api/auth/register", new
         {
-            firstName = "Т", lastName = "Т", phone = UniquePhone(), password = "Password123!", acceptedLegal = true
+            firstName = "Т", lastName = "Т", phone = UniquePhone(), password = "Password123!", legal
         });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
@@ -156,17 +168,16 @@ public class LegalConsentVersionChangeTests : IAsyncLifetime
         var oldClient = Authed(user.Token);
         (await oldClient.GetAsync("/api/companies/my")).StatusCode.Should().Be((HttpStatusCode)451);
 
-        // CYCLE5-BREAKING (compile-only rename, LegalDocumentListDto → LegalManifestDto) — this whole
-        // file's fixture (LegalDocumentsTestFactory) still seeds a two-document, "Terms"-typed manifest
-        // that no longer satisfies LegalDocumentProvider's five-type/six-uiTexts-key requirement
-        // (ARCHITECTURE_CYCLE5.md §43.3); every test in this class needs a substantive rewrite, left for
-        // QA (see the cycle report) — not touched further here.
+        // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §43.3, API_CONTRACT_CYCLE5.md §39.5): the manifest now
+        // has five documents ("Terms" renamed "TermsClient"), and /api/legal/accept takes a LIST of
+        // {type, version} items, not two fixed fields.
         var docs = await (await Anon().GetAsync("/api/legal/documents")).Content
             .ReadFromJsonAsync<LegalManifestDto>();
         var privacy = docs!.Documents.First(d => d.Type == "Privacy").Version;
-        var terms = docs.Documents.First(d => d.Type == "Terms").Version;
+        var terms = docs.Documents.First(d => d.Type == "TermsClient").Version;
 
-        var acceptResponse = await oldClient.PostAsJsonAsync("/api/legal/accept", new { privacyVersion = privacy, termsVersion = terms });
+        var acceptResponse = await oldClient.PostAsJsonAsync("/api/legal/accept", new AcceptLegalRequestDto(
+            [new AcceptLegalItemDto("Privacy", privacy), new AcceptLegalItemDto("TermsClient", terms)]));
         acceptResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var accepted = await acceptResponse.Content.ReadFromJsonAsync<AcceptLegalResponseDto>();
 

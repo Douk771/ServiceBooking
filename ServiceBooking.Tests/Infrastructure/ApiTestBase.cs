@@ -371,4 +371,54 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
             date = date.AddDays(1);
         return date;
     }
+
+    // ── Cycle 5 consent helpers (ARCHITECTURE_CYCLE5.md §44, §45, §41) ─────────────────────────
+
+    /// <summary>The current version of an interface text (GET /api/legal/texts/{key}) — read from the
+    /// live manifest via DI, same reasoning as <see cref="CurrentRegisterLegalDto"/>.</summary>
+    protected string CurrentTextVersion(string key)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        return scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>()
+            .Current!.GetText(key)!.Version;
+    }
+
+    /// <summary>US-76/T5-B7: records staff-confirmed photo consent for one client of one company — the
+    /// precondition <c>POST /api/client-notes/{id}/photos</c> now enforces (API_CONTRACT_CYCLE5.md
+    /// §44.3). <paramref name="clientKey"/> is either a registered client's userId or
+    /// <c>phone:&lt;canonical&gt;</c> for a guest (ClientKey's own format).</summary>
+    protected async Task GrantPhotoConsentAsync(string staffToken, Guid companyId, string clientKey)
+    {
+        var response = await AuthedClient(staffToken).PostAsJsonAsync(
+            $"/api/companies/{companyId}/clients/{clientKey}/photo-consent",
+            new { textVersion = CurrentTextVersion("PhotoConsent"), confirmed = true });
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>US-77/T5-B6: records staff-confirmed health-data consent for one client of one company —
+    /// the precondition <c>PUT .../health-note</c> enforces (API_CONTRACT_CYCLE5.md §45.2).</summary>
+    protected async Task GrantHealthConsentAsync(string staffToken, Guid companyId, string clientKey)
+    {
+        var response = await AuthedClient(staffToken).PostAsJsonAsync(
+            $"/api/companies/{companyId}/clients/{clientKey}/health-consent",
+            new { textVersion = CurrentTextVersion("HealthDataConsent"), confirmed = true });
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>US-68/T5-B3: grants the registered account holder's own PdnConsent/ProviderDelivery
+    /// purpose — required under the shipped <c>AccountsOnly</c> gate mode (ARCHITECTURE_CYCLE5.md §52.3)
+    /// for a queued notification to actually reach <c>Pending</c> instead of being blocked with
+    /// <c>NoProviderDeliveryConsent</c>. A guest never needs this (the gate treats "no account" as
+    /// automatically satisfied) — only call this for a client who registered via RegisterAsync.</summary>
+    protected async Task GrantProviderDeliveryConsentAsync(string clientToken)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var pdnVersion = provider.Current!.Get(LegalDocumentType.PdnConsent)!.Version;
+
+        var response = await AuthedClient(clientToken).PostAsJsonAsync("/api/profile/consents",
+            new { documentKey = "PdnConsent", version = pdnVersion, purposes = new[] { "ProviderDelivery" } });
+        response.EnsureSuccessStatusCode();
+    }
 }

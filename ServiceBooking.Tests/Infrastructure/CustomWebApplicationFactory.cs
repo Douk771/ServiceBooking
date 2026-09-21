@@ -29,6 +29,14 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseSetting("SmartCaptcha:SecretKey", "");
         builder.UseSetting("SmartCaptcha:SiteKey", "");
 
+        // CYCLE5 (ARCHITECTURE_CYCLE5.md §48.1): HealthNoteProtector deliberately reuses
+        // Notifications:EncryptionKey (cycle 4's channel-secret AES-GCM key) rather than a second key —
+        // which means PUT .../health-note now 500s on THIS shared host too, not only the dedicated
+        // NotificationTestFactory, the moment any test in the "Api" collection touches it. Same fixed,
+        // deterministic 32-byte key NotificationTestFactory/NotificationDispatchTestFactory already use,
+        // so a row encrypted under one factory type is readable by tests seeded via another.
+        builder.UseSetting("Notifications:EncryptionKey", NotificationDispatchTestFactory.TestEncryptionKeyBase64);
+
         // Quiet EF Core's per-query SQL logging — it drowns out `dotnet test` output otherwise.
         builder.UseSetting("Logging:LogLevel:Microsoft.EntityFrameworkCore", "Warning");
     }

@@ -33,9 +33,22 @@ public class SchedulerTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         // SixMonths retention (the plan default) — a photo backdated past the cutoff must be swept.
         await SetSubscriptionAsync(company.Id);
 
+        // CYCLE5-BREAKING (API_CONTRACT_CYCLE5.md §44.3): note-photo upload now requires a prior
+        // staff-confirmed photo consent for this client+company pair — and ClientConsentsController's
+        // own resolution requires a booking behind the guest phone (see ClientNotePhotosTests' own note
+        // on the same constraint), so a booking comes first.
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        (await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings",
+            new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
+                company.Id, service.Id, master.UserId, date, new TimeOnly(8, 0), null, "Walk-in", "+79990001111", null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
         var addNote = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(company.Id, null, "+79990001111", Unique("Note ")));
         var noteId = (await addNote.Content.ReadJsonAsync<ClientNoteDto>())!.Id;
+        await GrantPhotoConsentAsync(master.Token, company.Id, "phone:79990001111");
 
         using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(TestImages.SolidJpeg());
@@ -78,22 +91,32 @@ public class SchedulerTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         }
     }
 
+    // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §44.7/§13 п.4, SPEC.md §7 п.10, Q-L6 🔴): `PhotoRetention.
+    // Forever` is REMOVED from the model — "«бессрочно» не может быть сроком хранения" — so this test's
+    // original premise (a photo that is never swept, no matter how old) no longer exists to test at all;
+    // reproducing it as-is would mean asserting a legal gap on purpose. Repurposed to the closest thing
+    // that IS still true and still matters (§16 п.14 "не удалило лишнего"): a photo backdated to WITHIN
+    // its plan's window must survive the sweep. Method name kept per §55.3 (git blame stays legible).
     [Fact, TestCase("SCH-002")]
     public async Task PhotoRetentionCleanupTask_ForeverRetention_LeavesOldPhotoUntouched()
     {
-        // CYCLE5-BREAKING (compile-only swap — ARCHITECTURE_CYCLE5.md §44.7): was PhotoRetention.Forever,
-        // removed along with the enum member. This test's whole premise (a photo that is NEVER swept) no
-        // longer has an equivalent — TwelveMonths keeps it compiling, but the 5-year-backdated photo
-        // below will now legitimately get deleted by the cleanup task, so the final assertion is expected
-        // to fail. Left for QA to either repurpose or replace (see the cycle report).
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
-        var foreverPlan = await CreateTestPlanConfigAsync(photoRetention: PhotoRetention.TwelveMonths);
-        await SetSubscriptionAsync(company.Id, planConfigId: foreverPlan);
+        var twelveMonthPlan = await CreateTestPlanConfigAsync(photoRetention: PhotoRetention.TwelveMonths);
+        await SetSubscriptionAsync(company.Id, planConfigId: twelveMonthPlan);
+
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+        (await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings",
+            new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
+                company.Id, service.Id, master.UserId, date, new TimeOnly(8, 30), null, "Walk-in", "+79990002222", null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
 
         var addNote = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",
             new AddNoteRequest(company.Id, null, "+79990002222", Unique("Note ")));
         var noteId = (await addNote.Content.ReadJsonAsync<ClientNoteDto>())!.Id;
+        await GrantPhotoConsentAsync(master.Token, company.Id, "phone:79990002222");
 
         using var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(TestImages.SolidJpeg());
@@ -106,7 +129,7 @@ public class SchedulerTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var row = await db.ClientNotePhotos.SingleAsync(p => p.Id == photo.Id);
-            row.CreatedAt = DateTime.UtcNow.AddYears(-5);
+            row.CreatedAt = DateTime.UtcNow.AddMonths(-7); // within the TwelveMonths window — must survive
             await db.SaveChangesAsync();
         }
 

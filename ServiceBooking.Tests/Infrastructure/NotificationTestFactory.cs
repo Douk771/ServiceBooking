@@ -49,5 +49,15 @@ public sealed class NotificationTestFactory : WebApplicationFactory<Program>
         builder.UseSetting("Notifications:EncryptionKey", TestEncryptionKeyBase64);
         builder.UseSetting("Notifications:WebhookToken", TestWebhookToken);
         builder.UseSetting("Notifications:UnsubscribeKey", TestUnsubscribeKey);
+
+        // CYCLE5 (ARCHITECTURE_CYCLE5.md §52.1, US-71): the production default leaves
+        // InstanceCreationEnabled false and ServerCountry empty until ПЛ1 is confirmed with the provider
+        // — POST /connect fail-closed 409s unconditionally at that default, same "behavior the shared
+        // Testing configuration deliberately glues shut" reasoning as this class's own doc comment gives
+        // for EncryptionKey/WebhookToken/UnsubscribeKey above. Provider transport stays "logging" (no
+        // network call), so enabling instance creation here only unlocks the CONTROLLER'S OWN gate for
+        // the pre-existing QR/connect surface this factory already exists to test.
+        builder.UseSetting("Notifications:GreenApi:ServerCountry", "Russia");
+        builder.UseSetting("Notifications:GreenApi:InstanceCreationEnabled", "true");
     }
 }
