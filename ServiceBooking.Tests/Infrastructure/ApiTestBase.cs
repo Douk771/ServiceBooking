@@ -53,17 +53,21 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
 
     // ── Identity ─────────────────────────────────────────────────────────────
 
-    // acceptedLegal defaults to true (cycle C, BREAKING № 1, API_CONTRACT.md §5): almost every existing
-    // scenario in this suite predates the legal consent requirement and only cares about the OTHER
-    // effects of registering, so the default keeps every call site that doesn't care about consent
-    // unchanged. Tests that specifically exercise the consent gate pass acceptedLegal explicitly.
+    // CYCLE5-BREAKING (compile-only adaptation — ARCHITECTURE_CYCLE5.md §46.2, API_CONTRACT_CYCLE5.md
+    // §40.1): `acceptedLegal: bool` is gone from RegisterDto, replaced by a `Legal` object carrying the
+    // versions actually being accepted, read here from the live manifest. `acceptedLegal` is KEPT as this
+    // helper's own parameter name/meaning ("build a request that will pass the legal gate, or one that
+    // won't") so every existing call site in this suite keeps compiling unchanged; whether the RESULTING
+    // behavior (and status code) still matches each test's assertions is exactly the kind of judgment
+    // call this cycle's backend implementer left to QA (see the cycle report) — not touched here.
     protected async Task<AuthResponseDto> RegisterAsync(
         string? phone = null, string password = "Password123!", string firstName = "Test", string lastName = "User",
         string? email = null, bool acceptedLegal = true)
     {
         phone ??= UniquePhone();
         var client = AnonymousClient();
-        var response = await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, acceptedLegal));
+        var legal = acceptedLegal ? CurrentRegisterLegalDto() : null;
+        var response = await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, legal));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }
@@ -73,7 +77,21 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         string? email = null, bool acceptedLegal = true)
     {
         var client = AnonymousClient();
-        return await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, acceptedLegal));
+        var legal = acceptedLegal ? CurrentRegisterLegalDto() : null;
+        return await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, legal));
+    }
+
+    /// <summary>The Legal object a registration call needs to pass the gate right now — read from the
+    /// live manifest via DI, not hardcoded, so a version bump in App_Data/legal never desyncs this
+    /// helper from what the server actually expects (same reasoning as <see cref="AnyCityIdAsync"/>).</summary>
+    protected RegisterLegalDto CurrentRegisterLegalDto()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        return new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version,
+            snapshot.Get(LegalDocumentType.TermsClient)!.Version);
     }
 
     protected async Task<AuthResponseDto> LoginAsync(string phone, string password)

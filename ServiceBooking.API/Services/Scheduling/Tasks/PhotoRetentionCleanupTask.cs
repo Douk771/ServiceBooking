@@ -60,9 +60,10 @@ public sealed class PhotoRetentionCleanupTask(
         var plans = await subscriptionResolver.GetEffectivePlansAsync(companyIds);
         var nowUtc = DateTime.UtcNow;
 
+        // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §44.7): the `!= Forever` filter that used to live here
+        // is gone along with the enum member itself — every bucket now has a cutoff and gets swept.
         var buckets = companyIds
             .GroupBy(id => plans[id].PhotoRetention)
-            .Where(g => g.Key != Core.Enums.PhotoRetention.Forever) // US-21 p.8: never touched
             .ToList();
 
         var scanned = 0;

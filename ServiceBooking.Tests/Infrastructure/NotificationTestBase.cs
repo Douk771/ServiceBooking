@@ -62,11 +62,19 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         return $"+79{suffix[..9]}";
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): Legal object
+    // read from the live manifest instead of a bool.
     protected async Task<AuthResponseDto> RegisterAsync(string? phone = null)
     {
         phone ??= UniquePhone();
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        var legal = new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
+
         var response = await AnonymousClient().PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "Owner", phone, "Password123!", null, true));
+            new RegisterDto("Test", "Owner", phone, "Password123!", null, legal));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }

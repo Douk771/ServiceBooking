@@ -552,7 +552,10 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         created.MaxCompanies = 3;
         created.AllowAnalytics = true;
         created.PhotoQuotaMb = 2048;
-        created.PhotoRetention = PhotoRetention.Forever;
+        // CYCLE5-BREAKING (compile-only swap — ARCHITECTURE_CYCLE5.md §44.7): was PhotoRetention.Forever,
+        // removed along with the enum member. TwelveMonths keeps this update round-trip test meaningful;
+        // it no longer exercises "Forever" specifically, which QA should decide whether to cover another way.
+        created.PhotoRetention = PhotoRetention.TwelveMonths;
         var updateResponse = await adminClient.PutAsJsonAsync($"/api/admin/plans/{created.Id}", created);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await updateResponse.Content.ReadJsonAsync<SubscriptionPlanConfig>();
@@ -562,7 +565,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         updated.MaxCompanies.Should().Be(3);
         updated.AllowAnalytics.Should().BeTrue();
         updated.PhotoQuotaMb.Should().Be(2048);
-        updated.PhotoRetention.Should().Be(PhotoRetention.Forever);
+        updated.PhotoRetention.Should().Be(PhotoRetention.TwelveMonths);
 
         // Soft-delete: sets IsActive = false but GetPlans does NOT filter by IsActive, so it still shows up.
         var deleteResponse = await adminClient.DeleteAsync($"/api/admin/plans/{created.Id}");

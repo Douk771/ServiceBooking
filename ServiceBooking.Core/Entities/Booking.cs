@@ -40,7 +40,10 @@ public class Booking
     // snapshot in effect at creation time, ONLY on the guest booking path — never from the request body,
     // and never rewritten after creation. Staff manual bookings and authenticated-client bookings leave
     // these null: staff collected consent outside the product, and an authenticated client's consent
-    // already lives in UserConsent.
+    // already lives in the ConsentRecord journal (ARCHITECTURE_CYCLE5.md §44.2, formerly UserConsent).
+    // ConsentTermsVersion keeps its cycle-3 name on purpose (ARCHITECTURE_CYCLE5.md §44.5): it now holds
+    // the TermsClient version, exactly what it always held — renaming the column would only cost exports
+    // and admin queries for zero benefit.
     public string? ConsentPrivacyVersion { get; set; }
     public string? ConsentTermsVersion { get; set; }
     public DateTime? ConsentAcceptedAtUtc { get; set; }

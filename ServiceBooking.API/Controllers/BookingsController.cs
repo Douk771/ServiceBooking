@@ -191,7 +191,8 @@ public class BookingsController(
         // US-37 p.3, ARCHITECTURE.md §5.2/§6.2: the consent snapshot is filled by the SERVER, from the
         // legal documents in effect right now, and ONLY on the guest path — never from the request body
         // (CreateBookingDto gets no new fields for this), and never on a staff manual booking or an
-        // authenticated client's own booking (their consent already lives in UserConsent). If the
+        // authenticated client's own booking (their consent already lives in the ConsentRecord journal,
+        // ARCHITECTURE_CYCLE5.md §44.2). If the
         // manifest happens to be unavailable (only possible outside Production), the booking still goes
         // through — a guest's ability to book must not depend on the legal text provider being up —
         // just without a consent snapshot on this one booking.
@@ -201,7 +202,7 @@ public class BookingsController(
         {
             var legalSnapshot = legalProvider.Current;
             var privacyDoc = legalSnapshot?.Get(LegalDocumentType.Privacy);
-            var termsDoc = legalSnapshot?.Get(LegalDocumentType.Terms);
+            var termsDoc = legalSnapshot?.Get(LegalDocumentType.TermsClient);
             if (privacyDoc is not null && termsDoc is not null)
             {
                 consentPrivacyVersion = privacyDoc.Version;

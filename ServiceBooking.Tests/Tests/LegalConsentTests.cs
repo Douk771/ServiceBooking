@@ -16,6 +16,13 @@ namespace ServiceBooking.Tests.Tests;
 /// App_Data/legal/legal.json — good enough for everything that does NOT need to change the document
 /// version mid-test. Scenarios that need a version bump (material/editorial mismatch, live file
 /// replacement) are in LegalConsentVersionChangeTests, against a dedicated factory.
+///
+/// CYCLE5-BREAKING: only made to COMPILE against the cycle 5 backend (renamed/reshaped DTOs:
+/// LegalManifestDto, AcceptLegalRequestDto/AcceptLegalItemDto, ConsentRecords) — assertions are
+/// otherwise UNCHANGED and many are now simply wrong (two documents vs. five, "Terms" vs.
+/// "TermsClient", a no-longer-existing unique index behind LEG-036, PdnConsent no longer blocking
+/// registration per §59.2, etc.). This whole file needs a substantive rewrite against
+/// ARCHITECTURE_CYCLE5.md §44–§46 — left for QA, see the cycle report.
 /// </summary>
 public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
@@ -27,7 +34,7 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
         var response = await AnonymousClient().GetAsync("/api/legal/documents");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var body = await response.Content.ReadJsonAsync<LegalDocumentListDto>();
+        var body = await response.Content.ReadJsonAsync<LegalManifestDto>();
         body!.Documents.Should().HaveCount(2);
         body.Documents.Should().Contain(d => d.Type == "Privacy");
         body.Documents.Should().Contain(d => d.Type == "Terms");
@@ -91,7 +98,7 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
 
         status!.RequiresAcceptance.Should().BeFalse();
         status.Documents.Should().HaveCount(2);
-        status.Documents.Should().OnlyContain(d => d.AcceptedVersion == d.Version);
+        status.Documents.Should().OnlyContain(d => d.AcceptedVersion == d.CurrentVersion);
     }
 
     // ── GET /api/legal/consent-status — US-37 ────────────────────────────────
@@ -110,7 +117,7 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
     {
         var user = await RegisterAsync();
         var response = await AuthedClient(user.Token).PostAsJsonAsync("/api/legal/accept",
-            new AcceptLegalDto("not-a-real-version", "also-not-real"));
+            new AcceptLegalRequestDto([new AcceptLegalItemDto("Privacy", "not-a-real-version"), new AcceptLegalItemDto("TermsClient", "also-not-real")]));
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
@@ -119,7 +126,7 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
     {
         var user = await RegisterAsync();
         var response = await AuthedClient(user.Token).PostAsJsonAsync("/api/legal/accept",
-            new AcceptLegalDto(null, null));
+            new AcceptLegalRequestDto([]));
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
@@ -128,12 +135,12 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
     {
         var user = await RegisterAsync();
         var docs = await (await AnonymousClient().GetAsync("/api/legal/documents"))
-            .Content.ReadJsonAsync<LegalDocumentListDto>();
+            .Content.ReadJsonAsync<LegalManifestDto>();
         var privacy = docs!.Documents.First(d => d.Type == "Privacy").Version;
         var terms = docs.Documents.First(d => d.Type == "Terms").Version;
 
         var response = await AuthedClient(user.Token).PostAsJsonAsync("/api/legal/accept",
-            new AcceptLegalDto(privacy, terms));
+            new AcceptLegalRequestDto([new AcceptLegalItemDto("Privacy", privacy), new AcceptLegalItemDto("TermsClient", terms)]));
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadJsonAsync<AcceptLegalResponseDto>();
@@ -152,7 +159,7 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
         var currentPrivacy = (await (await AnonymousClient().GetAsync("/api/legal/documents"))
-            .Content.ReadJsonAsync<LegalDocumentListDto>())!.Documents.First(d => d.Type == "Privacy").Version;
+            .Content.ReadJsonAsync<LegalManifestDto>())!.Documents.First(d => d.Type == "Privacy").Version;
 
         var response = await AnonymousClient().PostAsJsonAsync("/api/bookings", new CreateBookingDto(
             company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null,
@@ -228,7 +235,7 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
     {
         var user = await RegisterAsync();
         var docs = await (await AnonymousClient().GetAsync("/api/legal/documents"))
-            .Content.ReadJsonAsync<LegalDocumentListDto>();
+            .Content.ReadJsonAsync<LegalManifestDto>();
         var privacy = docs!.Documents.First(d => d.Type == "Privacy").Version;
         var terms = docs.Documents.First(d => d.Type == "Terms").Version;
 
@@ -237,16 +244,16 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
-            var rows = db.UserConsents.Where(c => c.UserId == user.UserId);
-            db.UserConsents.RemoveRange(rows);
+            var rows = db.ConsentRecords.Where(c => c.UserId == user.UserId);
+            db.ConsentRecords.RemoveRange(rows);
             await db.SaveChangesAsync();
         }
 
         var client1 = AuthedClient(user.Token);
         var client2 = AuthedClient(user.Token);
 
-        var call1 = client1.PostAsJsonAsync("/api/legal/accept", new AcceptLegalDto(privacy, terms));
-        var call2 = client2.PostAsJsonAsync("/api/legal/accept", new AcceptLegalDto(privacy, terms));
+        var call1 = client1.PostAsJsonAsync("/api/legal/accept", new AcceptLegalRequestDto([new AcceptLegalItemDto("Privacy", privacy), new AcceptLegalItemDto("TermsClient", terms)]));
+        var call2 = client2.PostAsJsonAsync("/api/legal/accept", new AcceptLegalRequestDto([new AcceptLegalItemDto("Privacy", privacy), new AcceptLegalItemDto("TermsClient", terms)]));
         var results = await Task.WhenAll(call1, call2);
 
         results.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK,
@@ -256,6 +263,6 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
         var status = await (await AuthedClient(user.Token).GetAsync("/api/legal/consent-status"))
             .Content.ReadJsonAsync<ConsentStatusDto>();
         status!.RequiresAcceptance.Should().BeFalse();
-        status.Documents.Should().OnlyContain(d => d.AcceptedVersion == d.Version);
+        status.Documents.Should().OnlyContain(d => d.AcceptedVersion == d.CurrentVersion);
     }
 }

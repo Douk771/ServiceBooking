@@ -2,39 +2,52 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
-using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
 
 [ApiController]
 [Route("api/legal")]
 public class LegalController(
-    LegalDocumentProvider provider, AppDbContext db, UserManager<AppUser> userManager, TokenService tokenService)
+    LegalDocumentProvider provider, ConsentLedger ledger, UserManager<AppUser> userManager, TokenService tokenService)
     : ControllerBase
 {
     private const string UnavailableMessage = "Правовые документы временно недоступны.";
 
-    // Public. Metadata for both documents — enough for the footer, the registration form and version
-    // comparison, without shipping the (potentially large) HTML text (ARCHITECTURE.md §1, API_CONTRACT §1).
+    // The SPA route each document reads from (ARCHITECTURE_CYCLE5.md §43.4) — the footer and the
+    // GetDocuments response build their links off this, never a hand-written literal per call site.
+    private static readonly IReadOnlyDictionary<LegalDocumentType, string> Urls = new Dictionary<LegalDocumentType, string>
+    {
+        [LegalDocumentType.Privacy] = "/privacy",
+        [LegalDocumentType.TermsClient] = "/terms",
+        [LegalDocumentType.TermsOwner] = "/terms-owner",
+        [LegalDocumentType.PdnConsent] = "/pdn-consent",
+        [LegalDocumentType.ChannelRiskNotice] = "/channel-risk",
+    };
+
+    // Public. Metadata for all five documents and all six interface texts — enough for the footer, the
+    // registration form and version comparison, without shipping the (potentially large) HTML text
+    // (API_CONTRACT_CYCLE5.md §39.1). `purposes` is the source of truth for the PdnConsent form — the
+    // frontend builds it from here, never from a hardcoded array (§39.1's "если юрист изменит набор
+    // целей, форма подстроится без релиза фронта").
     [HttpGet("documents")]
-    public ActionResult<LegalDocumentListDto> GetDocuments()
+    public ActionResult<LegalManifestDto> GetDocuments()
     {
         var snapshot = provider.Current;
         if (snapshot is null)
             return StatusCode(StatusCodes.Status503ServiceUnavailable, UnavailableMessage);
 
-        return Ok(new LegalDocumentListDto(snapshot.Documents.Values
-            .OrderBy(d => d.Type)
-            .Select(MapToMetaDto)
-            .ToList()));
+        var documents = snapshot.Documents.Values.OrderBy(d => d.Type).Select(MapToMetaDto).ToList();
+        var uiTexts = snapshot.UiTexts.Values.OrderBy(t => t.Key, StringComparer.Ordinal)
+            .Select(t => new LegalUiTextMetaDto(t.Key, t.Version, t.IsDraft)).ToList();
+
+        return Ok(new LegalManifestDto(documents, uiTexts));
     }
 
-    // Public. Metadata AND text for one document.
+    // Public. Metadata AND text for one document. {type} now accepts five values; unknown → 404 (not 500).
     [HttpGet("documents/{type}")]
     public ActionResult<LegalDocumentDto> GetDocument(string type)
     {
@@ -56,13 +69,34 @@ public class LegalController(
 
         return Ok(new LegalDocumentDto(
             doc.Type.ToString(), doc.Title, doc.Version, doc.EffectiveFrom, doc.IsDraft,
-            doc.ChangeKind.ToString(), doc.ContentHtml));
+            doc.ChangeKind.ToString(), doc.Gate.ToString(), Urls.GetValueOrDefault(doc.Type, ""),
+            doc.Purposes.Count == 0 ? null : doc.Purposes.Select(p => new LegalPurposeDto(p.Key.ToString(), p.Title)).ToList(),
+            doc.ContentHtml));
+    }
+
+    // Public, NEW (API_CONTRACT_CYCLE5.md §39.3). An interface text (D5, D7, D8, D10–D12) — versioned
+    // like a document, but never gates access (§43.1): there is deliberately no claim, no 451 branch,
+    // nothing in consent-status for these keys.
+    [HttpGet("texts/{key}")]
+    public ActionResult<LegalUiTextDto> GetText(string key)
+    {
+        var snapshot = provider.Current;
+        if (snapshot is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, UnavailableMessage);
+
+        var text = snapshot.GetText(key);
+        if (text is null)
+            return NotFound();
+
+        Response.Headers.CacheControl = "public, max-age=300";
+        return Ok(new LegalUiTextDto(text.Key, text.Version, text.IsDraft, text.ContentHtml));
     }
 
     // Requires auth, but IS in LegalConsentFilter's allow-list — a caller blocked by 451 elsewhere must
     // still be able to ask "what exactly is required of me" (API_CONTRACT.md §0.4, §3). Computed purely
     // from the token's claims and the in-memory snapshot: no database query (ARCHITECTURE.md §6.3,
-    // SPEC §7 p.1).
+    // SPEC §7 p.1). Only documents with `gate != None` are reported — PdnConsent/ChannelRiskNotice never
+    // block anything, and don't belong in a "what's blocking me" answer (API_CONTRACT_CYCLE5.md §39.4).
     [HttpGet("consent-status")]
     [Authorize]
     public ActionResult<ConsentStatusDto> GetConsentStatus()
@@ -70,109 +104,147 @@ public class LegalController(
         var snapshot = provider.Current;
         var documents = new List<ConsentStatusDocumentDto>();
         var requiresAcceptance = false;
+        var ownerActionBlocked = false;
         var hasEditorialMismatch = false;
 
         if (snapshot is not null)
         {
-            foreach (var doc in snapshot.Documents.Values.OrderBy(d => d.Type))
+            foreach (var doc in snapshot.Documents.Values.Where(d => d.Gate != LegalGate.None).OrderBy(d => d.Type))
             {
-                var acceptedVersion = User.FindFirst(LegalConsentFilter.ClaimNameFor(doc.Type))?.Value;
-                documents.Add(new ConsentStatusDocumentDto(doc.Type.ToString(), doc.Version, acceptedVersion, doc.ChangeKind.ToString()));
+                var claimName = LegalConsentFilter.ClaimNameFor(doc.Type);
+                var acceptedVersion = claimName is null ? null : User.FindFirst(claimName)?.Value;
+                documents.Add(new ConsentStatusDocumentDto(doc.Type.ToString(), doc.Version, acceptedVersion, doc.ChangeKind.ToString(), doc.Gate.ToString()));
 
                 if (acceptedVersion == doc.Version) continue;
-                if (doc.ChangeKind == LegalChangeKind.Material) requiresAcceptance = true;
-                else hasEditorialMismatch = true;
+
+                if (doc.ChangeKind != LegalChangeKind.Material)
+                {
+                    hasEditorialMismatch = true;
+                    continue;
+                }
+
+                if (doc.Gate == LegalGate.Global) requiresAcceptance = true;
+                else if (doc.Gate == LegalGate.OwnerScope) ownerActionBlocked = true;
             }
         }
 
         // Material always wins over Editorial (ARCHITECTURE.md §6.3 table) — the two flags are never
-        // both true in the response.
+        // both true in the response for the same document, but a Global mismatch on one document and an
+        // Editorial mismatch on another can coexist; showBanner only reflects documents that aren't
+        // ALSO the reason for a hard block.
         var showBanner = !requiresAcceptance && hasEditorialMismatch;
 
-        return Ok(new ConsentStatusDto(requiresAcceptance, showBanner, documents));
+        return Ok(new ConsentStatusDto(requiresAcceptance, ownerActionBlocked, showBanner, documents));
     }
 
     // Requires auth, in the allow-list — otherwise a caller blocked by 451 could never reach the one
     // endpoint that lifts the block. Body versions are compared against the CURRENT snapshot, not
     // merely recorded: closes the race where the operator replaces the text again while the user is
-    // mid-read (API_CONTRACT.md §4).
+    // mid-read (API_CONTRACT.md §4). Accepts any subset of {Privacy, TermsClient, TermsOwner} in one
+    // call — a list, not two fixed fields, so a sixth blocking document would be an addition, not a
+    // breaking change (API_CONTRACT_CYCLE5.md §39.5).
     [HttpPost("accept")]
     [Authorize]
-    public async Task<ActionResult<AcceptLegalResponseDto>> Accept([FromBody] AcceptLegalDto dto)
+    public async Task<ActionResult<AcceptLegalResponseDto>> Accept([FromBody] AcceptLegalRequestDto dto)
     {
-        if (string.IsNullOrWhiteSpace(dto.PrivacyVersion) || string.IsNullOrWhiteSpace(dto.TermsVersion))
-            return BadRequest("Обе версии документов обязательны.");
+        if (dto.Accept is not { Count: > 0 })
+            return BadRequest("Список принимаемых документов не может быть пустым.");
 
         var snapshot = provider.Current;
-        var privacyDoc = snapshot?.Get(LegalDocumentType.Privacy);
-        var termsDoc = snapshot?.Get(LegalDocumentType.Terms);
-        if (privacyDoc is null || termsDoc is null)
+        if (snapshot is null)
             return StatusCode(StatusCodes.Status503ServiceUnavailable, UnavailableMessage);
-
-        if (dto.PrivacyVersion != privacyDoc.Version || dto.TermsVersion != termsDoc.Version)
-            return Conflict("Документы были обновлены ещё раз — перечитайте и примите новую редакцию.");
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var user = await userManager.FindByIdAsync(userId);
         if (user is null) return Unauthorized();
+        var subject = ConsentSubject.ForUser(user.Id);
 
-        // CURRENT_STATE §6: "read then write" against a unique index is wrapped in a transaction + an
-        // advisory lock, not left as a bare check-then-act. UserConsent has a unique index on
-        // (UserId, DocumentType) — without the lock, two concurrent Accept calls from the same user
-        // (double click, two tabs) both see "no existing row", both INSERT, and the second one throws
-        // DbUpdateException -> unhandled 500 instead of the 200 both callers expect.
-        await using var transaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"legal-consent:{user.Id}");
+        var toAccept = new List<(LegalDocumentType Type, LegalDocument Doc)>();
+        foreach (var item in dto.Accept)
+        {
+            if (!Enum.TryParse<LegalDocumentType>(item.Type, ignoreCase: true, out var type))
+                return BadRequest($"Неизвестный тип документа '{item.Type}'.");
+
+            var doc = snapshot.Get(type);
+            if (doc is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, UnavailableMessage);
+
+            // Only gate-bearing documents are accepted through this endpoint — PdnConsent is a separate,
+            // purpose-scoped call (POST /api/profile/consents, §41.2); accepting it here would blur the
+            // "recorded separately from other documents" guarantee Art. 9 needs (§46.2).
+            if (doc.Gate == LegalGate.None)
+                return BadRequest($"Документ '{item.Type}' принимается не здесь.");
+
+            if (item.Version != doc.Version)
+                return Conflict("Документы были обновлены ещё раз — перечитайте и примите новую редакцию.");
+
+            toAccept.Add((type, doc));
+        }
 
         var acceptedAt = DateTime.UtcNow;
-        await UpsertConsentAsync(user.Id, LegalDocumentType.Privacy, privacyDoc.Version, acceptedAt);
-        await UpsertConsentAsync(user.Id, LegalDocumentType.Terms, termsDoc.Version, acceptedAt);
-        await db.SaveChangesAsync();
-        await transaction.CommitAsync();
+        foreach (var (type, doc) in toAccept)
+        {
+            var act = type == LegalDocumentType.Privacy ? ConsentAct.Acknowledged : ConsentAct.Accepted;
+            await ledger.GrantAsync(new ConsentGrant(
+                subject, doc.Type.ToString(), doc.Version, doc.ContentHash, Purpose: null, act, ConsentSource.ReAcceptance,
+                IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()));
+        }
 
         // A new token is mandatory here, not an optimization (ARCHITECTURE.md §6.3 p.5): the claims are
         // baked in at issuance, so without a fresh one the very next request would still carry the OLD
-        // version and get 451 again.
+        // version and get 451 again. Every claim-bearing document is re-resolved (not just the ones in
+        // THIS call) so the new token is complete regardless of which subset was just accepted.
         var roles = await userManager.GetRolesAsync(user);
-        var token = tokenService.GenerateToken(user, roles, privacyDoc.Version, termsDoc.Version);
+        var privacyVersion = await CurrentClaimVersionAsync(subject, snapshot, LegalDocumentType.Privacy);
+        var termsVersion = await CurrentClaimVersionAsync(subject, snapshot, LegalDocumentType.TermsClient);
+        var ownerTermsVersion = await CurrentClaimVersionAsync(subject, snapshot, LegalDocumentType.TermsOwner);
+        var token = tokenService.GenerateToken(user, roles, privacyVersion, termsVersion, ownerTermsVersion);
 
         return Ok(new AcceptLegalResponseDto(token, acceptedAt));
     }
 
-    private async Task UpsertConsentAsync(string userId, LegalDocumentType type, string version, DateTime acceptedAtUtc)
+    /// <summary>Current non-revoked grant version for one claim-bearing document type, or null if the
+    /// subject never accepted it (a non-owner has no TermsOwner grant, for instance).</summary>
+    private async Task<string?> CurrentClaimVersionAsync(ConsentSubject subject, LegalSnapshot snapshot, LegalDocumentType type)
     {
-        var existing = await db.UserConsents.FirstOrDefaultAsync(c => c.UserId == userId && c.DocumentType == type);
-        if (existing is null)
-        {
-            db.UserConsents.Add(new UserConsent
-            {
-                Id = Guid.NewGuid(), UserId = userId, DocumentType = type, Version = version, AcceptedAtUtc = acceptedAtUtc
-            });
-        }
-        else
-        {
-            existing.Version = version;
-            existing.AcceptedAtUtc = acceptedAtUtc;
-        }
+        var doc = snapshot.Get(type);
+        if (doc is null) return null;
+        var state = await ledger.CurrentAsync(subject, type.ToString(), purpose: null);
+        return state?.DocumentVersion;
     }
 
     private static LegalDocumentMetaDto MapToMetaDto(LegalDocument d) =>
-        new(d.Type.ToString(), d.Title, d.Version, d.EffectiveFrom, d.IsDraft, d.ChangeKind.ToString());
+        new(d.Type.ToString(), d.Title, d.Version, d.EffectiveFrom, d.IsDraft, d.ChangeKind.ToString(), d.Gate.ToString(),
+            Urls.GetValueOrDefault(d.Type, ""),
+            d.Purposes.Count == 0 ? null : d.Purposes.Select(p => new LegalPurposeDto(p.Key.ToString(), p.Title)).ToList());
 }
 
+public record LegalPurposeDto(string Key, string Title);
+
 public record LegalDocumentMetaDto(
-    string Type, string Title, string Version, DateOnly EffectiveFrom, bool IsDraft, string ChangeKind);
+    string Type, string Title, string Version, DateOnly EffectiveFrom, bool IsDraft, string ChangeKind, string Gate,
+    string Url, List<LegalPurposeDto>? Purposes);
 
-public record LegalDocumentListDto(List<LegalDocumentMetaDto> Documents);
+public record LegalUiTextMetaDto(string Key, string Version, bool IsDraft);
 
+public record LegalManifestDto(List<LegalDocumentMetaDto> Documents, List<LegalUiTextMetaDto> UiTexts);
+
+// CYCLE5-BREAKING: gate/url/purposes added, matching LegalDocumentMetaDto's shape (API_CONTRACT_CYCLE5.md
+// §39.2 "без изменений по форме" relative to §39.1 — code-reviewer/frontend feedback: the two responses
+// had drifted, this closes the gap by extending the single-document shape rather than narrowing the list).
 public record LegalDocumentDto(
     string Type, string Title, string Version, DateOnly EffectiveFrom, bool IsDraft, string ChangeKind,
-    string ContentHtml);
+    string Gate, string Url, List<LegalPurposeDto>? Purposes, string ContentHtml);
 
-public record ConsentStatusDocumentDto(string Type, string Version, string? AcceptedVersion, string ChangeKind);
+public record LegalUiTextDto(string Key, string Version, bool IsDraft, string ContentHtml);
 
-public record ConsentStatusDto(bool RequiresAcceptance, bool ShowBanner, List<ConsentStatusDocumentDto> Documents);
+// CYCLE5-BREAKING: field renamed Version → CurrentVersion (API_CONTRACT_CYCLE5.md §39.4's
+// `currentVersion`/`acceptedVersion` pair) — frontend feedback during integration: a lone `version` next
+// to `acceptedVersion` doesn't read as "current vs. accepted" unambiguously, `currentVersion` does.
+public record ConsentStatusDocumentDto(string Type, string CurrentVersion, string? AcceptedVersion, string ChangeKind, string Gate);
 
-public record AcceptLegalDto(string? PrivacyVersion, string? TermsVersion);
+public record ConsentStatusDto(bool RequiresAcceptance, bool OwnerActionBlocked, bool ShowBanner, List<ConsentStatusDocumentDto> Documents);
 
+public record AcceptLegalItemDto(string Type, string Version);
+public record AcceptLegalRequestDto(List<AcceptLegalItemDto> Accept);
 public record AcceptLegalResponseDto(string Token, DateTime AcceptedAt);

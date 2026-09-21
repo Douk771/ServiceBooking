@@ -118,6 +118,7 @@ DeploymentSafetyChecks.ValidateNotificationSecrets(builder.Configuration, builde
         warn: message => bootstrapLogger.Warning(message));
 }
 DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentName);
+DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(builder.Configuration);
 
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
@@ -273,6 +274,10 @@ builder.Services.AddScoped<ImageUploadService>();
 // request instead of re-parsed per scope — the whole point of the ReloadSeconds cache (§4.3).
 builder.Services.Configure<LegalOptions>(builder.Configuration.GetSection("Legal"));
 builder.Services.AddSingleton<LegalDocumentProvider>();
+
+// Consent journal (cycle 5, ARCHITECTURE_CYCLE5.md §45.1) — scoped: it only wraps AppDbContext queries,
+// unlike LegalDocumentProvider above it holds no snapshot of its own to share across requests.
+builder.Services.AddScoped<ConsentLedger>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
@@ -545,9 +550,10 @@ if (!isDeveloperEnvironment)
     legalProvider.LoadAtStartup();
     if (legalProvider.Current is null)
         throw new InvalidOperationException(
-            "Legal documents (App_Data/legal/legal.json) failed to load — without a valid Privacy and " +
-            "Terms document the service cannot legally accept registrations. Check the container logs " +
-            "above for the specific validation error and fix legal.json or the mounted files.");
+            "Legal documents (App_Data/legal/legal.json) failed to load — without all five document " +
+            "types and all six interface texts (ARCHITECTURE_CYCLE5.md §43.3) the service cannot legally " +
+            "accept registrations. Check the container logs above for the specific validation error and " +
+            "fix legal.json or the mounted files.");
 }
 
 // One line per request (US-45, ARCHITECTURE.md §11.1) — method, path, status, duration for free, plus
@@ -705,6 +711,7 @@ using (var scope = app.Services.CreateScope())
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var legalDocumentProvider = scope.ServiceProvider.GetRequiredService<LegalDocumentProvider>();
+    var consentLedger = scope.ServiceProvider.GetRequiredService<ConsentLedger>();
 
     await db.Database.MigrateAsync();
 
@@ -749,14 +756,16 @@ using (var scope = app.Services.CreateScope())
             // the manifest is fixed.
             var legalSnapshot = legalDocumentProvider.Current;
             var seededPrivacyDoc = legalSnapshot?.Get(LegalDocumentType.Privacy);
-            var seededTermsDoc = legalSnapshot?.Get(LegalDocumentType.Terms);
+            var seededTermsDoc = legalSnapshot?.Get(LegalDocumentType.TermsClient);
             if (seededPrivacyDoc is not null && seededTermsDoc is not null)
             {
-                var acceptedAt = DateTime.UtcNow;
-                db.UserConsents.AddRange(
-                    new UserConsent { Id = Guid.NewGuid(), UserId = admin.Id, DocumentType = LegalDocumentType.Privacy, Version = seededPrivacyDoc.Version, AcceptedAtUtc = acceptedAt },
-                    new UserConsent { Id = Guid.NewGuid(), UserId = admin.Id, DocumentType = LegalDocumentType.Terms, Version = seededTermsDoc.Version, AcceptedAtUtc = acceptedAt });
-                await db.SaveChangesAsync();
+                var seedSubject = ServiceBooking.API.Services.Legal.ConsentSubject.ForUser(admin.Id);
+                await consentLedger.GrantAsync(new ServiceBooking.API.Services.Legal.ConsentGrant(
+                    seedSubject, LegalDocumentType.Privacy.ToString(), seededPrivacyDoc.Version, seededPrivacyDoc.ContentHash,
+                    Purpose: null, ConsentAct.Acknowledged, ConsentSource.Registration));
+                await consentLedger.GrantAsync(new ServiceBooking.API.Services.Legal.ConsentGrant(
+                    seedSubject, LegalDocumentType.TermsClient.ToString(), seededTermsDoc.Version, seededTermsDoc.ContentHash,
+                    Purpose: null, ConsentAct.Accepted, ConsentSource.Registration));
             }
         }
     }

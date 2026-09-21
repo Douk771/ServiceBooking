@@ -217,6 +217,27 @@ public static class DeploymentSafetyChecks
         }
     }
 
+    /// <summary>
+    /// T-24 (ARCHITECTURE_CYCLE5.md §52.3): <c>Notifications:ProviderDeliveryConsent</c> must be one of
+    /// <c>Strict</c>/<c>AccountsOnly</c>/<c>Off</c> (case-insensitive) — an unrecognized value fails loud
+    /// at startup, the same convention <c>Notifications:Provider</c> already follows (an operator typo
+    /// here would otherwise silently fall back to whichever branch <c>Enum.Parse</c> happens to default
+    /// to, and this value governs a legal gate, not a cosmetic setting). Runs in every environment,
+    /// unconditionally — unlike most of this class's checks, there is no "safe in Development" carve-out:
+    /// a misconfigured value is just as wrong on a laptop as in Production, and the whole point of this
+    /// flag being config (not code) is that it is cheap to get right everywhere.
+    /// </summary>
+    public static void ValidateProviderDeliveryConsentMode(IConfiguration configuration)
+    {
+        var raw = configuration["Notifications:ProviderDeliveryConsent"];
+        if (string.IsNullOrWhiteSpace(raw)) return; // absent → NotificationOptions' own default (AccountsOnly)
+
+        if (!Enum.TryParse<Core.Enums.ProviderDeliveryConsentMode>(raw, ignoreCase: true, out _))
+            throw new InvalidOperationException(
+                $"Notifications:ProviderDeliveryConsent is '{raw}', which is not one of Strict/AccountsOnly/Off. " +
+                "Fix the configured value — see ARCHITECTURE_CYCLE5.md §52.3/§52.4 for what each means and costs.");
+    }
+
     private static void ValidateEncryptionKeyFormat(string? keyBase64)
     {
         if (string.IsNullOrWhiteSpace(keyBase64) || keyBase64 == "CHANGE_ME")

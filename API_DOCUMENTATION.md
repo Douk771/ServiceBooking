@@ -74,7 +74,7 @@ Swagger был доступен всегда, включая боевой сер
 | `phone` | string | да | идентификатор аккаунта, должен быть уникален |
 | `password` | string | да | минимум 8 символов (см. правила пароля ниже) |
 | `email` | string? | нет | если передан — должен быть валидным email (`[EmailAddress]`) |
-| `acceptedLegal` | bool | **да — новое, цикл санации C (US-37)** | должно быть `true`, иначе `400 Bad Request`; фиксирует согласие с текущими на момент регистрации версиями Политики конфиденциальности и Условий использования (см. §2.6) |
+| `legal` | object | **да — изменено в цикле 5 (US-65)** | `{ "privacyAcknowledgedVersion": "...", "termsAcceptedVersion": "..." }` — версии, действующие **на момент запроса** (сверяются с манифестом, см. §2.6); поле `acceptedLegal` (bool) из циклов 3–4 **удалено** |
 
 **Пример запроса:**
 
@@ -87,13 +87,20 @@ curl -X POST http://localhost:5000/api/auth/register \
         "phone": "+79991234567",
         "password": "Passw0rd1",
         "email": "ivan.petrov@example.com",
-        "acceptedLegal": true
+        "legal": { "privacyAcknowledgedVersion": "2026-09-21-draft", "termsAcceptedVersion": "2026-09-21-draft" }
       }'
 ```
 
-**Цикл санации C, US-37 — BREAKING.** Регистрация без `acceptedLegal: true` теперь отдаёт `400 Bad
-Request`. При успехе пишутся две строки согласия (Privacy + Terms) с версией, действовавшей на момент
-регистрации — см. §2.6.
+**Цикл 5 (US-65, §46.2 ARCHITECTURE_CYCLE5.md) — BREAKING.** `acceptedLegal: true` больше не
+принимается: тело без `legal` (или с неполным `legal`) отдаёт `400 Bad Request` с текстом `"Consent to
+the Terms of Service and the Privacy Policy is required."`. Версии, не совпадающие с действующими
+(документ обновили, пока форма была открыта), дают `409 Conflict`. При успехе пишутся две строки в
+журнал согласий (Privacy + TermsClient) с версией, IP и User-Agent — см. §2.6.
+
+🆕 **Регистрация НЕ требует согласия на обработку персональных данных (`PdnConsent`).** Это отдельное,
+необязательное, негранулярное согласие — отправляется отдельным вызовом `POST /api/profile/consents`
+**после** успешной регистрации (§2.6); отказ от него не влияет ни на регистрацию, ни на последующую
+запись к мастеру.
 
 **Успешный ответ `200 OK`** (`AuthResponseDto`) — `email` может быть `null`, если не передавался:
 
@@ -114,7 +121,9 @@ Request`. При успехе пишутся две строки согласи�
 | Код | Причина |
 |---|---|
 | `400 Bad Request` | Не пройдена модельная валидация (пустой `firstName`/`lastName`/`phone`, `password` короче 8 символов, либо передан некорректный по формату `email`) — стандартный ASP.NET Core `ValidationProblemDetails` |
+| `400 Bad Request` | `legal` отсутствует или неполон — plain text, см. выше |
 | `400 Bad Request` | Телефон уже занят другим пользователем, либо пароль не проходит встроенные правила ASP.NET Identity — тело ответа: массив объектов Identity-ошибок вида `{"code": "DuplicateUserName", "description": "..."}` (дубликат телефона приходит именно как `DuplicateUserName`, т.к. `UserName == phone`) |
+| `409 Conflict` | Версия `privacyAcknowledgedVersion`/`termsAcceptedVersion` не совпадает с действующей — plain text |
 
 ### 2.2. Вход — `POST /api/auth/login`
 
@@ -179,18 +188,38 @@ curl http://localhost:5000/api/bookings/my \
 
 Если заголовок отсутствует или токен некорректен/просрочен — `401 Unauthorized`. Если пользователь авторизован, но не обладает нужной ролью для конкретного эндпоинта (`[Authorize(Roles = "...")]`) — `403 Forbidden`.
 
-### 2.6. Правовые документы (`/api/legal`) — **новое в цикле санации C (US-36, US-37)**
+### 2.6. Правовые документы и согласия (`/api/legal`, `/api/profile/consents`) — **переработано в цикле 5**
 
-Согласие с Политикой конфиденциальности и Условиями использования обязательно с этого цикла
-(`acceptedLegal: true` при регистрации, см. §2.1). Версии документов хранятся в
-`App_Data/legal/legal.json` (плюс `privacy.html`/`terms.html`) и грузятся в память при старте
-приложения — вне Development/Testing приложение **не запускается**, если манифест не проходит
-валидацию (`LegalDocumentProvider`, US-48).
+**Цикл 5 (ARCHITECTURE_CYCLE5.md §43–§46) переделывает контур согласий цикла 3 целиком.** Вместо двух
+документов (`Privacy`, `Terms`) манифест несёт **пять версионируемых документов** и **шесть текстов
+интерфейса** (не версионируемых как документ, никогда не блокируют доступ). Журнал согласий —
+неизменяемая таблица событий (`ConsentRecords`), а не «текущее состояние» — повторное согласие
+добавляет новую строку, а не перезаписывает старую.
+
+Манифест лежит в `App_Data/legal/legal.json` (плюс HTML-файлы текстов) и грузится в память при старте
+— вне Development/Testing приложение **не запускается**, если манифест не проходит валидацию (все пять
+типов документов и все шесть ключей текстов обязаны присутствовать; документ с `isDraft: false` не
+может содержать нерешённый плейсхолдер `{{...}}`).
+
+**Пять типов документов** (`LegalDocumentType`, сериализуется как строка в JSON):
+
+| Тип | Что это | `gate` (кого блокирует смена версии) |
+|---|---|---|
+| `Privacy` | Политика обработки персональных данных | `Global` — блокирует всех авторизованных |
+| `TermsClient` | Пользовательское соглашение (было `Terms` в циклах 3–4 — **переименовано**, числовое значение сохранено) | `Global` |
+| `TermsOwner` | Соглашение с владельцем салона (включает условия платного канала уведомлений) | `OwnerScope` — блокирует только *owner*-действия конкретного владельца, не блокирует его как обычного клиента |
+| `PdnConsent` | Согласие на обработку персональных данных, гранулярное по целям | `None` — никогда не блокирует |
+| `ChannelRiskNotice` | Уведомление о рисках доставки через WhatsApp | `None` |
+
+**Шесть ключей текстов интерфейса** (`LegalTextKey`, строка, НЕ входит в `LegalDocumentType`):
+`BookingNotice`, `TemplateAdWarning`, `UnsubscribePage`, `PhotoConsent`, `HealthDataConsent`,
+`GuardianConfirmation`. Эти тексты **никогда** не участвуют в гейте `451`.
 
 #### `GET /api/legal/documents`
 
-**Доступ:** анонимный. Метаданные обоих документов (без текста) — для подвала сайта, формы
-регистрации, сравнения версий.
+**Доступ:** анонимный. Метаданные всех пяти документов и всех шести текстов — для подвала сайта, формы
+регистрации, сравнения версий. **Форма ответа изменилась** (был плоский массив, стал объект с двумя
+массивами).
 
 ```bash
 curl http://localhost:5000/api/legal/documents
@@ -201,34 +230,66 @@ curl http://localhost:5000/api/legal/documents
 ```json
 {
   "documents": [
-    { "type": "Privacy", "title": "Политика обработки персональных данных", "version": "2026-09-15", "effectiveFrom": "2026-09-15", "isDraft": false, "changeKind": "Material" },
-    { "type": "Terms", "title": "Пользовательское соглашение", "version": "2026-09-15", "effectiveFrom": "2026-09-15", "isDraft": false, "changeKind": "Material" }
+    { "type": "Privacy", "title": "Политика обработки персональных данных", "version": "2026-09-21-draft",
+      "effectiveFrom": "2026-09-21", "isDraft": true, "changeKind": "Material", "gate": "Global",
+      "url": "/privacy", "purposes": null },
+    { "type": "TermsClient", "title": "Пользовательское соглашение", "...": "...", "gate": "Global", "url": "/terms" },
+    { "type": "TermsOwner", "...": "...", "gate": "OwnerScope", "url": "/terms-owner" },
+    { "type": "PdnConsent", "...": "...", "gate": "None", "url": "/pdn-consent",
+      "purposes": [
+        { "key": "ProviderDelivery", "title": "Передача привлекаемым лицам для доставки уведомлений" },
+        { "key": "WorkPhotos", "title": "Фотофиксация выполненной работы" },
+        { "key": "HealthData", "title": "Обработка сведений о состоянии здоровья" }
+      ] },
+    { "type": "ChannelRiskNotice", "...": "...", "gate": "None", "url": "/channel-risk" }
+  ],
+  "uiTexts": [
+    { "key": "BookingNotice", "version": "2026-09-21-draft", "isDraft": true },
+    { "key": "TemplateAdWarning", "...": "..." }, { "key": "UnsubscribePage", "...": "..." },
+    { "key": "PhotoConsent", "...": "..." }, { "key": "HealthDataConsent", "...": "..." },
+    { "key": "GuardianConfirmation", "...": "..." }
   ]
 }
 ```
 
 `changeKind` — `"Material"` (существенная правка, требует повторного согласия) или `"Editorial"`
 (редакционная, не требует). `isDraft: true` — сервер помечает документ черновым, фронт рисует плашку.
+`purposes` — только у `PdnConsent`; фронт строит форму согласия из этого списка, а не из зашитого
+массива. `url` — маршрут SPA, по которому лежит читаемый текст (используется подвалом).
 
 **Ошибки:** `503 Service Unavailable` (`text/plain`) — манифест не загрузился; в Production это
 недостижимо, приложение fail-fast'нулось бы на старте (см. выше).
 
 #### `GET /api/legal/documents/{type}`
 
-**Доступ:** анонимный. `{type}` — `privacy` или `terms` (без учёта регистра). Metadata + `contentHtml`
-(санитайзенный фрагмент HTML — без `<script>`/`on*=`, годится для прямой вставки в контейнер).
+**Доступ:** анонимный. `{type}` — один из пяти типов выше (без учёта регистра). Та же форма, что и
+элемент массива `documents` из предыдущего эндпоинта, плюс `contentHtml` (санитайзенный фрагмент HTML —
+без `<script>`/`on*=`, годится для прямой вставки в контейнер).
 
 ```bash
 curl http://localhost:5000/api/legal/documents/privacy
+curl http://localhost:5000/api/legal/documents/termsowner   # без учёта регистра
 ```
 
-**Ошибки:** `404 Not Found` — `{type}` не `privacy`/`terms`; `503` — как выше.
+**Ошибки:** `404 Not Found` — `{type}` не входит в пятёрку; `503` — как выше.
+
+#### `GET /api/legal/texts/{key}` — 🆕 новое в цикле 5
+
+**Доступ:** анонимный. Один из шести текстов интерфейса. Та же форма, что у документа, но без
+`changeKind`/`gate`/`url`/`purposes`.
+
+```bash
+curl http://localhost:5000/api/legal/texts/BookingNotice
+```
+
+**Ответ `200 OK`**: `{ "key": "BookingNotice", "version": "...", "isDraft": true, "contentHtml": "<p>…</p>" }`.
+**Ошибки:** `404 Not Found` — неизвестный ключ; `503` — манифест не загружен.
 
 #### `GET /api/legal/consent-status`
 
 **Доступ:** аутентифицированный — **но доступен даже пользователю с непринятой существенной
 редакцией** (allow-list эндпоинтов ниже). Считается из claim'ов текущего JWT и снимка документов в
-памяти — без обращения к БД.
+памяти — без обращения к БД. Показывает только документы с `gate != "None"` (три из пяти).
 
 ```bash
 curl http://localhost:5000/api/legal/consent-status -H "Authorization: Bearer $TOKEN"
@@ -239,47 +300,113 @@ curl http://localhost:5000/api/legal/consent-status -H "Authorization: Bearer $T
 ```json
 {
   "requiresAcceptance": true,
+  "ownerActionBlocked": false,
   "showBanner": false,
   "documents": [
-    { "type": "Privacy", "version": "2026-10-01", "acceptedVersion": "2026-09-15", "changeKind": "Material" },
-    { "type": "Terms", "version": "2026-09-15", "acceptedVersion": "2026-09-15", "changeKind": "Material" }
+    { "type": "Privacy", "currentVersion": "2026-10-01", "acceptedVersion": "2026-09-15", "changeKind": "Material", "gate": "Global" },
+    { "type": "TermsClient", "currentVersion": "2026-09-15", "acceptedVersion": "2026-09-15", "changeKind": "Material", "gate": "Global" },
+    { "type": "TermsOwner", "currentVersion": "2026-09-21", "acceptedVersion": null, "changeKind": "Material", "gate": "OwnerScope" }
   ]
 }
 ```
 
 `requiresAcceptance: true` → фронт показывает блокирующий экран (`ConsentGate`) — сервер в этом
-состоянии отвечает `451` на любой другой защищённый эндпоинт (см. ниже). `showBanner: true` →
-ненавязчивый баннер «документы обновлены» (только для `changeKind: "Editorial"`). Оба поля никогда не
-`true` одновременно.
+состоянии отвечает `451` на любой другой защищённый эндпоинт (см. ниже). 🆕 `ownerActionBlocked: true`
+→ владелец не принял действующую редакцию `TermsOwner`: блокируются только его *owner*-действия
+(создание/изменение компании, участники, подключение канала уведомлений и т.п.), не чтение и не его
+собственные записи как клиента. `showBanner: true` → ненавязчивый баннер «документы обновлены» (только
+для `changeKind: "Editorial"`). `requiresAcceptance` и `showBanner` никогда не `true` одновременно; поле
+называется `currentVersion` (не `version`), чтобы однозначно читаться в паре с `acceptedVersion`.
 
 #### `POST /api/legal/accept`
 
 **Доступ:** аутентифицированный, тоже в allow-list. Записывает согласие с **действующими на момент
-запроса** версиями и выдаёт новый JWT (версии согласия зашиты в claim'ы, старый токен продолжает
-нести старые значения).
+запроса** версиями и выдаёт новый JWT. **Форма тела изменилась** — список вместо двух фиксированных
+полей, чтобы добавление документов не требовало нового формата.
 
-**Тело запроса:** `{ "privacyVersion": "...", "termsVersion": "..." }` — обе версии обязательны и
-сверяются с текущими действующими; если пока пользователь читал документ версия успела смениться
-ещё раз — `409 Conflict`, а не тихая запись согласия на редакцию, которую он не видел.
+**Тело запроса:** `{ "accept": [ { "type": "Privacy", "version": "..." }, { "type": "TermsClient", "version": "..." } ] }`.
+Принимаются только документы с `gate != "None"` (`Privacy`, `TermsClient`, `TermsOwner`) — `PdnConsent`
+через этот эндпоинт не принимается вообще (см. `POST /api/profile/consents` ниже).
 
 ```bash
 curl -X POST http://localhost:5000/api/legal/accept \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{ "privacyVersion": "2026-10-01", "termsVersion": "2026-09-15" }'
+  -d '{ "accept": [ { "type": "Privacy", "version": "2026-10-01" }, { "type": "TermsClient", "version": "2026-09-15" } ] }'
 ```
 
 **Ответ `200 OK`**: `{ "token": "eyJ...", "acceptedAt": "2026-10-02T08:41:12.447Z" }` — **новый токен
-обязательно кладётся в `authStore`**, иначе следующий запрос снова получит `451`.
+обязательно кладётся в `authStore`**, иначе следующий запрос снова получит `451`. Новый токен несёт
+актуальные значения claim'ов `lcp`/`lct`/`lco` для ВСЕХ трёх документов, даже если в этом вызове
+принимался только один из них.
 
-**Ошибки:** `400` — пустое поле версии; `401` — нет токена; `409` — версия в теле не совпадает с
-действующей; `503` — документы не загружены.
+**Ошибки:** `400` — пустой список, либо тип с `gate: "None"` (например, `PdnConsent`); `401` — нет
+токена; `409` — версия в теле не совпадает с действующей; `503` — документы не загружены.
+
+#### `GET /api/profile/consents` и `POST /api/profile/consents` — 🆕 новое в цикле 5
+
+**Доступ:** аутентифицированный, в allow-list (доступны даже при `451`). Единственный способ дать или
+посмотреть согласие `PdnConsent` — гранулярное, по целям, **никогда не блокирующее** ни регистрацию,
+ни использование сервиса.
+
+`GET` возвращает метаданные документа, текущие (последние неотозванные) согласия по каждой цели,
+признак `versionOutdated` (действующая версия новее той, на которую соглашались) и полную историю всех
+согласий этого пользователя (не только `PdnConsent`):
+
+```bash
+curl http://localhost:5000/api/profile/consents -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "document": { "type": "PdnConsent", "version": "2026-09-21-draft", "isDraft": true,
+                "purposes": [ { "key": "ProviderDelivery", "title": "…" }, "…" ] },
+  "granted": [
+    { "purpose": "ProviderDelivery", "version": "2026-09-21-draft", "grantedAt": "…", "revokedAt": null }
+  ],
+  "versionOutdated": false,
+  "history": [ { "id": "…", "documentKey": "Privacy", "documentVersion": "…", "purpose": null,
+                 "act": "Acknowledged", "source": "Registration", "companyId": null,
+                 "grantedAt": "…", "revokedAt": null, "revokeReason": null }, "…" ]
+}
+```
+
+`POST` записывает согласие. Пустой `purposes: []` — **валидный** запрос («ознакомился, согласия не
+даю»), не является ошибкой:
+
+```bash
+curl -X POST http://localhost:5000/api/profile/consents \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "documentKey": "PdnConsent", "version": "2026-09-21-draft", "purposes": ["ProviderDelivery", "WorkPhotos"] }'
+```
+
+**Ошибки:** `400` — неизвестный ключ документа (принимается только `"PdnConsent"`) или цель; `409` —
+версия устарела; `503` — манифест не загружен.
+
+🚧 **`POST /api/profile/consents/revoke` и `GET /api/profile/consents/revoke-preview` — предусмотрены
+архитектурой (US-68) и зарегистрированы в allow-list гейта, но ещё НЕ реализованы на момент этой
+редакции документа.** Отзыв согласия (с каскадным удалением фото/сведений о здоровье и остановкой
+уведомлений при отзыве `ProviderDelivery`) — незакрытая часть цикла 5, см. отчёт цикла.
+
+#### T-24 — режим проверки согласия на передачу привлекаемым лицам
+
+Конфигурация `Notifications:ProviderDeliveryConsent` (`Strict` | `AccountsOnly` | `Off`, по умолчанию
+**`AccountsOnly`**) управляет тем, требуется ли действующее согласие `PdnConsent`/`ProviderDelivery`
+для постановки уведомления в очередь (`NotificationScheduler` → `NotificationGate`). При `AccountsOnly`
+гости (без аккаунта) никогда не блокируются; у зарегистрированного клиента без согласия (или после
+отзыва) сервисные уведомления **не ставятся** в очередь — строка `OutboundNotification` получает
+`status: "Skipped"`, `reason: "NoProviderDeliveryConsent"`. Значение цели предъявляется и пишется в
+журнал согласий при любом значении флага — флаг влияет только на применение, не на сбор.
 
 #### 451 — непринятая существенная редакция
 
-Если действующая версия хотя бы одного документа сменилась **существенно** (`changeKind: "Material"`)
+Если действующая версия `Privacy`/`TermsClient` сменилась **существенно** (`changeKind: "Material"`)
 после того, как пользователь в последний раз соглашался, **любой** защищённый эндпоинт, кроме
 allow-list (`/api/legal/*`, `GET /api/profile`, `GET /api/profile/export`,
-`POST /api/profile/delete-account`), отвечает `451` до вызова `POST /api/legal/accept`.
+`GET/POST /api/profile/consents`, `POST /api/profile/delete-account`), отвечает `451` (`text/plain`) до
+вызова `POST /api/legal/accept`. Смена `TermsOwner` **не** использует этот глобальный гейт — она
+блокирует только конкретные owner-действия и отвечает `451` с телом `application/json` вида
+`{ "reason": "OwnerTermsNotAccepted", "documentType": "TermsOwner", "version": "..." }` (различать по
+`Content-Type`, единственное место, где `451` несёт JSON).
 
 ---
 
@@ -2288,8 +2415,11 @@ curl http://localhost:5000/api/admin/plans -H "Authorization: Bearer $ADMIN_TOKE
 ```
 
 **Новое в цикле санации B (US-24).** `photoQuotaMb` (int?, мегабайты; `null` = без ограничения) и
-`photoRetention` (строка-enum: `"SixMonths"` / `"TwelveMonths"` / `"Forever"`) — квота и срок хранения
-фото клиентов для этого тарифа. Сущность сериализуется напрямую (отдельного DTO нет), поэтому оба поля
+`photoRetention` (строка-enum: `"SixMonths"` / `"TwelveMonths"`) — квота и срок хранения фото клиентов
+для этого тарифа. 🆕 **Цикл 5 (ARCHITECTURE_CYCLE5.md §44.7, Q-L6, BREAKING):** значение `"Forever"`
+**удалено** из перечисления — бессрочное хранение персональных данных не может быть сроком хранения
+(ч. 7 ст. 5 152-ФЗ); миграция переписала все существующие строки со значением `Forever` на
+`TwelveMonths`. Сущность сериализуется напрямую (отдельного DTO нет), поэтому оба поля
 автоматически участвуют во всех трёх методах ниже без изменения контроллера. Free-базлайн (аккаунт без
 подписки, с просроченной или на деактивированном плане) — `photoQuotaMb: 100, photoRetention:
 "SixMonths"`, разрешается тем же `SubscriptionResolver`, что и остальные возможности (см. §3.1).
@@ -2313,7 +2443,7 @@ curl -X POST http://localhost:5000/api/admin/plans \
         "allowPublicListing": true,
         "allowOnlinePayment": true,
         "photoQuotaMb": null,
-        "photoRetention": "Forever",
+        "photoRetention": "TwelveMonths",
         "description": "Для сетей салонов",
         "isActive": true,
         "notifyDaysBefore": 14
@@ -2613,7 +2743,7 @@ curl http://localhost:5000/api/health/ready
 # 1. Регистрация владельца
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{ "firstName": "Наталья", "lastName": "Гриценко", "email": "natalia@mirage.example", "password": "Passw0rd1", "phone": "+380671112233", "acceptedLegal": true }'
+  -d '{ "firstName": "Наталья", "lastName": "Гриценко", "email": "natalia@mirage.example", "password": "Passw0rd1", "phone": "+380671112233", "legal": { "privacyAcknowledgedVersion": "2026-09-21-draft", "termsAcceptedVersion": "2026-09-21-draft" } }'
 # → сохранить .token как $OWNER_TOKEN, .userId как $OWNER_ID
 
 # 2. Создание компании (автоматически присваивает роль CompanyOwner)
@@ -2668,7 +2798,7 @@ curl -X POST "http://localhost:5000/api/schedule-template/apply?masterId=$MASTER
 # 1. Регистрация клиента (можно пропустить и бронировать как гость — см. §5.4)
 curl -X POST http://localhost:5000/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{ "firstName": "Иван", "lastName": "Петров", "email": "ivan.petrov@example.com", "password": "Passw0rd1", "phone": "+79991234567", "acceptedLegal": true }'
+  -d '{ "firstName": "Иван", "lastName": "Петров", "email": "ivan.petrov@example.com", "password": "Passw0rd1", "phone": "+79991234567", "legal": { "privacyAcknowledgedVersion": "2026-09-21-draft", "termsAcceptedVersion": "2026-09-21-draft" } }'
 # → сохранить .token как $CLIENT_TOKEN
 
 # 2. Просмотр доступных слотов на дату
@@ -2806,7 +2936,7 @@ curl -X POST http://localhost:5000/api/admin/plans \
 | `500 Internal Server Error` | Необработанное исключение — единственная стабильно воспроизводимая точка: `SuperAdmin` создаёт услугу (`POST /api/services`) в несуществующей `companyId` (падает FK). **Изменено в цикле санации A**: тело теперь всегда `application/problem+json` с полями `type`/`title`/`status`/`traceId` (глобальный обработчик исключений, `Program.cs`) — раньше было пустое тело/страница разработчика. Формат deliberate 400/402/403/404/409 не затронут — `ProblemDetails` используется **только** для необработанных исключений |
 | `413 Payload Too Large` | **Новое в цикле санации B.** Тело запроса превышает `[RequestSizeLimit(5 МБ)]` на одном из четырёх эндпоинтов загрузки изображений (§3.10) — тело пустое, обрывается до контроллера |
 | `429 Too Many Requests` | **Новое в цикле санации B, расширено в цикле санации C (US-42).** Превышен лимит частоты — политика `uploads` (10/мин, §3.10), плюс с цикла 3: `auth-login` (10/мин по IP), `auth-register` (5/60 мин по IP), `booking-create` (10/60 мин аноним, 120/60 мин авторизован), `data-export` (3/1440 мин по пользователю, `GET /api/profile/export`). Тело — `text/plain`, свой текст на русском для каждой политики (например, `"Слишком много попыток входа. Попробуйте позже."`) |
-| `451 Unavailable For Legal Reasons` | **Новое в цикле санации C (US-37).** Действующая версия хотя бы одного правового документа сменилась **существенно** (`changeKind: "Material"`) после последнего согласия пользователя — глобальный фильтр (`LegalConsentFilter`) блокирует любой защищённый эндпоинт, кроме allow-list (§2.6), до `POST /api/legal/accept` |
+| `451 Unavailable For Legal Reasons` | Действующая версия `Privacy`/`TermsClient` сменилась **существенно** (`changeKind: "Material"`) после последнего согласия пользователя — глобальный фильтр (`LegalConsentFilter`) блокирует любой защищённый эндпоинт, кроме allow-list (§2.6), до `POST /api/legal/accept`; тело `text/plain`. 🆕 **Цикл 5:** отдельно — owner-действие без принятой редакции `TermsOwner`, тело `application/json`, различать по `Content-Type` (§2.6) |
 | `503 Service Unavailable` | Правовые документы не загружены — `/api/legal/*` (§2.6), `text/plain`; недоступна БД или есть неприменённые миграции — `GET /api/health/ready` (§4.14), тело `application/json` с полем `failed` |
 
 ---

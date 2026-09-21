@@ -56,24 +56,12 @@ public class PhotoQuotaTests
         PhotoQuota.IsExpired(createdAt, PhotoRetention.TwelveMonths, Now).Should().BeFalse();
     }
 
-    // ── Forever ──────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void IsExpired_Forever_VeryOldPhoto_IsNeverExpired()
-    {
-        var createdAt = Now.AddYears(-20);
-        PhotoQuota.IsExpired(createdAt, PhotoRetention.Forever, Now).Should().BeFalse();
-    }
-
-    [Fact]
-    public void CutoffUtc_Forever_Throws()
-    {
-        // Forever has no cutoff by definition — calling code must branch on the retention value before
-        // reaching for a cutoff, exactly as PhotoRetentionCleanupTask does (skips the Forever bucket
-        // entirely rather than computing a cutoff for it).
-        var act = () => PhotoQuota.CutoffUtc(PhotoRetention.Forever, Now);
-        act.Should().Throw<InvalidOperationException>();
-    }
+    // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §44.7, §59.1, Q-L6): `PhotoRetention.Forever` is REMOVED,
+    // not renamed — "kept forever" cannot be a retention period for personal data, so there is no
+    // replacement behavior to assert here. IsExpired_Forever_VeryOldPhoto_IsNeverExpired and
+    // CutoffUtc_Forever_Throws (both formerly here) tested a case that no longer exists; removed rather
+    // than rewritten, since §55.3's "rewrite under new behavior, keep the name" only applies where new
+    // behavior exists to describe.
 
     [Theory]
     [InlineData(PhotoRetention.SixMonths, -6)]

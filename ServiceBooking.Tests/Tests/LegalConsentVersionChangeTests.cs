@@ -156,8 +156,13 @@ public class LegalConsentVersionChangeTests : IAsyncLifetime
         var oldClient = Authed(user.Token);
         (await oldClient.GetAsync("/api/companies/my")).StatusCode.Should().Be((HttpStatusCode)451);
 
+        // CYCLE5-BREAKING (compile-only rename, LegalDocumentListDto → LegalManifestDto) — this whole
+        // file's fixture (LegalDocumentsTestFactory) still seeds a two-document, "Terms"-typed manifest
+        // that no longer satisfies LegalDocumentProvider's five-type/six-uiTexts-key requirement
+        // (ARCHITECTURE_CYCLE5.md §43.3); every test in this class needs a substantive rewrite, left for
+        // QA (see the cycle report) — not touched further here.
         var docs = await (await Anon().GetAsync("/api/legal/documents")).Content
-            .ReadFromJsonAsync<LegalDocumentListDto>();
+            .ReadFromJsonAsync<LegalManifestDto>();
         var privacy = docs!.Documents.First(d => d.Type == "Privacy").Version;
         var terms = docs.Documents.First(d => d.Type == "Terms").Version;
 

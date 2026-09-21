@@ -110,12 +110,24 @@ public class NotificationDispatchTests
 
     // ── Seeding helpers ──────────────────────────────────────────────────────────────────────────
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): reads the
+    // live manifest through the same factory the registration call itself targets, so this stays correct
+    // even if a future test class points its factory at a non-default Legal:Root.
+    internal static RegisterLegalDto CurrentRegisterLegalDto(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        return new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
+    }
+
     private static async Task<(string OwnerUserId, NotificationChannel Channel, Company Company)> SeedConnectedChannelAsync(
         NotificationDispatchTestFactory factory, AppDbContext db)
     {
         var phone = UniquePhone();
         var registerResponse = await factory.CreateClient().PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "Owner", phone, "Password123!", null, true));
+            new RegisterDto("Test", "Owner", phone, "Password123!", null, CurrentRegisterLegalDto(factory)));
         registerResponse.EnsureSuccessStatusCode();
         var auth = (await registerResponse.Content.ReadFromJsonAsync<AuthResponseDto>())!;
 

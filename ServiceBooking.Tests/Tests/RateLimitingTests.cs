@@ -19,6 +19,18 @@ public class RateLimitingTests
         return $"+79{new string(digits).PadRight(9, '1')}";
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): the anonymous
+    // registration payloads below need a `legal` object now, read from the same host they're posting to.
+    private static async Task<object> CurrentLegalPayloadAsync(HttpClient client)
+    {
+        var manifest = await client.GetFromJsonAsync<ServiceBooking.API.Controllers.LegalManifestDto>("/api/legal/documents");
+        return new
+        {
+            privacyAcknowledgedVersion = manifest!.Documents.First(d => d.Type == "Privacy").Version,
+            termsAcceptedVersion = manifest.Documents.First(d => d.Type == "TermsClient").Version
+        };
+    }
+
     // ── auth-login: basic trip ───────────────────────────────────────────────
 
     [Fact, TestCase("SEC-040")]
@@ -141,19 +153,20 @@ public class RateLimitingTests
     {
         await using var factory = new RateLimitTestFactory(authRegisterPermitLimit: 2, trustedNetworks: ["127.0.0.1/32"]);
         var client = factory.CreateClient();
+        var legal = await CurrentLegalPayloadAsync(client);
 
         for (var i = 0; i < 2; i++)
         {
             var response = await client.PostAsJsonAsync("/api/auth/register", new
             {
-                firstName = "Т", lastName = "Т", phone = RandomNumericPhone(), password = "Password123!", acceptedLegal = true
+                firstName = "Т", lastName = "Т", phone = RandomNumericPhone(), password = "Password123!", legal
             });
             response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         }
 
         var third = await client.PostAsJsonAsync("/api/auth/register", new
         {
-            firstName = "Т", lastName = "Т", phone = RandomNumericPhone(), password = "Password123!", acceptedLegal = true
+            firstName = "Т", lastName = "Т", phone = RandomNumericPhone(), password = "Password123!", legal
         });
         third.StatusCode.Should().Be((HttpStatusCode)429);
     }

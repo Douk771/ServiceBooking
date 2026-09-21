@@ -34,10 +34,21 @@ public class UploadsStaticFilesTests
         return $"+79{new string(digits).PadRight(9, '2')}";
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): only an
+    // HttpClient is available here (no DI scope), so the manifest is read over HTTP from the same host
+    // the registration call itself targets.
+    private static async Task<RegisterLegalDto> CurrentRegisterLegalDtoAsync(HttpClient client)
+    {
+        var manifest = await client.GetFromJsonAsync<LegalManifestDto>("/api/legal/documents");
+        return new RegisterLegalDto(
+            manifest!.Documents.First(d => d.Type == "Privacy").Version,
+            manifest.Documents.First(d => d.Type == "TermsClient").Version);
+    }
+
     private static async Task<string> RegisterAndGetTokenAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "User", RandomPhone(), "Password123!", null, true));
+            new RegisterDto("Test", "User", RandomPhone(), "Password123!", null, await CurrentRegisterLegalDtoAsync(client)));
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
         return dto!.Token;

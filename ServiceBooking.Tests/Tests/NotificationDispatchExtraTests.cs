@@ -213,7 +213,7 @@ public class NotificationDispatchExtraTests
     {
         var phone = UniquePhone();
         var registerResponse = await (client ?? factory.CreateClient()).PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "Owner", phone, "Password123!", null, true));
+            new RegisterDto("Test", "Owner", phone, "Password123!", null, NotificationDispatchTests.CurrentRegisterLegalDto(factory)));
         registerResponse.EnsureSuccessStatusCode();
         var auth = (await registerResponse.Content.ReadFromJsonAsync<AuthResponseDto>())!;
 

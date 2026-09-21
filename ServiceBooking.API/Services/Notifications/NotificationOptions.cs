@@ -67,6 +67,13 @@ public sealed class NotificationOptions
     /// canonical phone numbers and logs everything else as if it were the logging stub.</summary>
     public string[] AllowedRecipients { get; set; } = [];
 
+    /// <summary>T-24 (ARCHITECTURE_CYCLE5.md §52.3) — raw string, parsed by
+    /// <see cref="Core.Enums.ProviderDeliveryConsentMode"/> and validated at startup by
+    /// <see cref="DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode"/> (an unrecognized value
+    /// fails loud, same convention as <see cref="Provider"/>). Default matches the customer's decision
+    /// (§52.3.1) — "AccountsOnly" is not a placeholder, it is the value this cycle actually ships with.</summary>
+    public string ProviderDeliveryConsent { get; set; } = "AccountsOnly";
+
     public sealed class GreenApiOptions
     {
         public string ApiUrl { get; set; } = "https://api.green-api.com";

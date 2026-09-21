@@ -338,7 +338,7 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         var client = throttledFactory.CreateClient();
 
         var registerResponse = await client.PostAsJsonAsync("/api/auth/register",
-            new ServiceBooking.API.DTOs.Auth.RegisterDto("Rate", "Limited", UniquePhone(), "Password123!", null, AcceptedLegal: true));
+            new ServiceBooking.API.DTOs.Auth.RegisterDto("Rate", "Limited", UniquePhone(), "Password123!", null, CurrentRegisterLegalDto()));
         var user = (await registerResponse.Content.ReadFromJsonAsync<ServiceBooking.API.DTOs.Auth.AuthResponseDto>())!;
         var authedClient = throttledFactory.CreateClient();
         authedClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", user.Token);

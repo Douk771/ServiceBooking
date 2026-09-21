@@ -81,9 +81,14 @@ public class SchedulerTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("SCH-002")]
     public async Task PhotoRetentionCleanupTask_ForeverRetention_LeavesOldPhotoUntouched()
     {
+        // CYCLE5-BREAKING (compile-only swap — ARCHITECTURE_CYCLE5.md §44.7): was PhotoRetention.Forever,
+        // removed along with the enum member. This test's whole premise (a photo that is NEVER swept) no
+        // longer has an equivalent — TwelveMonths keeps it compiling, but the 5-year-backdated photo
+        // below will now legitimately get deleted by the cleanup task, so the final assertion is expected
+        // to fail. Left for QA to either repurpose or replace (see the cycle report).
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
-        var foreverPlan = await CreateTestPlanConfigAsync(photoRetention: PhotoRetention.Forever);
+        var foreverPlan = await CreateTestPlanConfigAsync(photoRetention: PhotoRetention.TwelveMonths);
         await SetSubscriptionAsync(company.Id, planConfigId: foreverPlan);
 
         var addNote = await AuthedClient(master.Token).PostAsJsonAsync("/api/masters/clients/notes",

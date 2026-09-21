@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -15,7 +16,8 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/profile")]
 [Authorize]
 public class ProfileController(
-    UserManager<AppUser> userManager, AppDbContext db, ImageUploadService imageUploadService, FileStorage storage)
+    UserManager<AppUser> userManager, AppDbContext db, ImageUploadService imageUploadService, FileStorage storage,
+    LegalDocumentProvider legalProvider, ConsentLedger ledger)
     : ControllerBase
 {
     [HttpGet]
@@ -47,10 +49,12 @@ public class ProfileController(
         var user = await userManager.FindByIdAsync(userId);
         if (user is null) return NotFound();
 
-        var consent = await db.UserConsents
-            .Where(c => c.UserId == userId)
-            .Select(c => new ExportConsentDto(c.DocumentType.ToString(), c.Version, c.AcceptedAtUtc))
-            .ToListAsync();
+        // ARCHITECTURE_CYCLE5.md §44.2/§50.2: reads the journal, not a "current state" row — the FULL
+        // history for this subject, exactly what GET /api/profile/consents' `history` field shows,
+        // because an export is a legal artifact and a revoked/superseded grant is still something the
+        // subject did.
+        var consentHistory = await ledger.HistoryAsync(ConsentSubject.ForUser(userId));
+        var consent = consentHistory.Select(ToExportConsentDto).ToList();
 
         var memberships = await db.CompanyMembers
             .Include(cm => cm.Company)
@@ -98,14 +102,19 @@ public class ProfileController(
             .Select(p => new ExportPhotoMetaDto(p.ClientNote.Company.Name, p.CreatedAt, p.SizeBytes))
             .ToListAsync();
 
+        // ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49: "признаны результатом работы салона"
+        // is removed — it is not a valid ground for refusal (ч. 8 ст. 14 152-ФЗ is exhaustive and does not
+        // list it). Replaced with routing to the actual operator of that data, the company itself.
+        // T5-B11 (the `operators`/`notifications`/`optOut`/`healthNotes` sections this same task adds) is
+        // NOT part of this pass — see the cycle report — this fixes only the wording, which has its own
+        // grep-based acceptance check (§57) independent of those sections.
         var export = new ProfileExportDto(
             DateTime.UtcNow,
             new ExportProfileDto(user.FirstName, user.LastName, user.PhoneNumber, user.Email, user.AvatarUrl, user.CreatedAt),
             consent, memberships, bookings, reviews, notesAboutMe, photosOfMe,
-            "В файл не входят: текст заметок сотрудников салона о вас и содержимое фотографий, " +
-            "загруженных салоном. Эти материалы принадлежат салону как результат его работы; запросить " +
-            "их можно у салона напрямую. По вопросам обработки ваших данных платформой обращайтесь в " +
-            "поддержку сервиса.");
+            "Оператором заметок, фотографий и сведений, внесённых сотрудниками компании, является сама " +
+            "компания. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
+            "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.");
 
         Response.Headers.ContentDisposition =
             $"attachment; filename=\"servicebooking-export-{DateOnly.FromDateTime(DateTime.UtcNow):yyyy-MM-dd}.json\"";
@@ -215,11 +224,13 @@ public class ProfileController(
 
         await using var transaction = await db.Database.BeginTransactionAsync();
 
-        // Step 1: consent records are this person's own data about their own acceptance — deleted
-        // outright, unlike everything below which is either company data (kept) or this person's
-        // participation in company data (anonymized, not erased).
-        var consents = await db.UserConsents.Where(c => c.UserId == userId).ToListAsync();
-        db.UserConsents.RemoveRange(consents);
+        // Step 1 used to delete UserConsent rows outright here. CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md
+        // §44.2 p.5, §55.1 R6): the consent journal now OUTLIVES account deletion — a ConsentRecord is
+        // evidence the OPERATOR needs to prove what was consented to (ч. 1 ст. 9: "доказывает оператор"),
+        // not personal convenience data the subject can erase on demand. All three of ConsentRecord's FKs
+        // are NO ACTION specifically so this can't silently regress even if this comment goes stale — the
+        // rows physically cannot be removed by cascading `user` below. Retention (§49.1, not built by
+        // this task) is what eventually ages them out, at a minimum of three years, never on request.
 
         // Step 2: notes ABOUT this person (by ClientId, or by guest phone for pre-registration visits) —
         // gather photo storage keys before the cascade delete removes the ClientNotePhoto rows, since
@@ -452,6 +463,109 @@ public class ProfileController(
     private async Task<ProfileDto> MapToDtoAsync(AppUser u, IList<string> roles) =>
         new(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, [.. roles],
             await GetPlanInfoAsync(u.Id, roles));
+
+    private static ExportConsentDto ToExportConsentDto(ConsentState s) =>
+        new(s.Id, s.DocumentKey, s.DocumentVersion, s.Purpose?.ToString(), s.Act.ToString(), s.Source.ToString(),
+            s.CompanyId, s.GrantedAtUtc, s.RevokedAtUtc, s.RevokeReason);
+
+    // ── Consents (ARCHITECTURE_CYCLE5.md §41, API_CONTRACT_CYCLE5.md §41) ──────────────────────────
+    //
+    // All three are [Authorize] but allow-listed in LegalConsentFilter (a caller blocked by a pending
+    // Privacy/TermsClient redaction must still be able to manage the ONE consent that is never itself a
+    // reason to block, US-68 p.5). Every read/write here goes through ConsentLedger — this controller
+    // never touches ConsentRecords directly, so "what counts as current" is answered in exactly one place.
+
+    [HttpGet("consents")]
+    public async Task<ActionResult<ConsentsDto>> GetConsents()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var doc = legalProvider.Current?.Get(LegalDocumentType.PdnConsent);
+        if (doc is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+
+        return Ok(await BuildConsentsDtoAsync(userId, doc));
+    }
+
+    [HttpPost("consents")]
+    public async Task<ActionResult<ConsentsDto>> PostConsents([FromBody] SubmitConsentDto dto)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        // §41.2: this endpoint accepts ONLY PdnConsent — Privacy/TermsClient/TermsOwner go through
+        // POST /api/legal/accept, which is what keeps "recorded separately from other documents" a
+        // protocol-level guarantee (ARCHITECTURE_CYCLE5.md §46.2) rather than a convention two different
+        // request shapes could quietly drift away from.
+        if (dto.DocumentKey != LegalDocumentType.PdnConsent.ToString())
+            return BadRequest($"Через этот вызов принимается только '{LegalDocumentType.PdnConsent}'.");
+
+        var doc = legalProvider.Current?.Get(LegalDocumentType.PdnConsent);
+        if (doc is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+
+        if (dto.Version != doc.Version)
+            return Conflict("Документ был обновлён ещё раз — перечитайте и подтвердите свой выбор заново.");
+
+        var purposes = dto.Purposes ?? [];
+        var parsedPurposes = new List<ConsentPurpose>();
+        foreach (var key in purposes)
+        {
+            if (!Enum.TryParse<ConsentPurpose>(key, ignoreCase: true, out var purpose) || doc.Purposes.All(p => p.Key != purpose))
+                return BadRequest($"Неизвестная цель '{key}'.");
+            parsedPurposes.Add(purpose);
+        }
+
+        var subject = ConsentSubject.ForUser(userId);
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        if (parsedPurposes.Count == 0)
+        {
+            // A valid, deliberate answer: "shown the form, granted nothing" — one row with Purpose: null
+            // records that the form was actually presented, distinct from never having called this
+            // endpoint at all (API_CONTRACT_CYCLE5.md §41.2).
+            await ledger.GrantAsync(new ConsentGrant(
+                subject, doc.Type.ToString(), doc.Version, doc.ContentHash, Purpose: null,
+                ConsentAct.Consented, ConsentSource.Profile, ipAddress, userAgent));
+        }
+        else
+        {
+            foreach (var purpose in parsedPurposes)
+            {
+                await ledger.GrantAsync(new ConsentGrant(
+                    subject, doc.Type.ToString(), doc.Version, doc.ContentHash, purpose,
+                    ConsentAct.Consented, ConsentSource.Profile, ipAddress, userAgent));
+            }
+        }
+
+        return Ok(await BuildConsentsDtoAsync(userId, doc));
+    }
+
+    private async Task<ConsentsDto> BuildConsentsDtoAsync(string userId, LegalDocument pdnDoc)
+    {
+        var subject = ConsentSubject.ForUser(userId);
+        var history = await ledger.HistoryAsync(subject);
+
+        // "granted" is the latest row per purpose UNDER PdnConsent specifically, revoked or not — a
+        // revoked purpose still needs to show up (with revokedAt set) so the profile screen can render
+        // it as "revoked" rather than making it look like it was never granted (API_CONTRACT_CYCLE5.md
+        // §41.1). Deliberately NOT ConsentLedger.CurrentAllAsync, which only ever returns non-revoked
+        // rows — that method answers a different question ("what currently applies"), used for gating
+        // decisions elsewhere, not for this audit-style view.
+        var granted = history
+            .Where(s => s.DocumentKey == LegalDocumentType.PdnConsent.ToString() && s.Purpose is not null)
+            .GroupBy(s => s.Purpose)
+            .Select(g => g.First()) // history is already newest-first
+            .OrderBy(s => s.GrantedAtUtc)
+            .Select(s => new ConsentGrantedDto(s.Purpose!.Value.ToString(), s.DocumentVersion, s.GrantedAtUtc, s.RevokedAtUtc))
+            .ToList();
+
+        var versionOutdated = granted.Any(g => g.RevokedAt is null && g.Version != pdnDoc.Version);
+
+        var documentDto = new ConsentDocumentDto(
+            pdnDoc.Type.ToString(), pdnDoc.Version, pdnDoc.IsDraft,
+            pdnDoc.Purposes.Select(p => new LegalPurposeDto(p.Key.ToString(), p.Title)).ToList());
+
+        return new ConsentsDto(documentDto, granted, versionOutdated, history.Select(ToExportConsentDto).ToList());
+    }
 }
 
 // CommissionPercent removed (US-22): commission became per-company (CompanyMember.CommissionPercent)
@@ -462,6 +576,14 @@ public record ProfileDto(string Id, string Phone, string? Email, string FirstNam
 public record ProfilePlanDto(
     string PlanName, decimal PricePerMonth, bool IsActive, DateTime? PaidUntil, bool IsExpired,
     bool AllowOnlineBooking, bool AllowMailing, bool AllowAnalytics, int? MaxEmployees, int? MaxCompanies);
+
+// API_CONTRACT_CYCLE5.md §41 — GET/POST /api/profile/consents. LegalPurposeDto is the same record
+// LegalController's GET /api/legal/documents uses (same namespace) — one shape for "what a purpose is",
+// so the frontend never has to reconcile two slightly different purpose objects from two endpoints.
+public record ConsentDocumentDto(string Type, string Version, bool IsDraft, List<LegalPurposeDto> Purposes);
+public record ConsentGrantedDto(string Purpose, string Version, DateTime GrantedAt, DateTime? RevokedAt);
+public record ConsentsDto(ConsentDocumentDto Document, List<ConsentGrantedDto> Granted, bool VersionOutdated, List<ExportConsentDto> History);
+public record SubmitConsentDto(string DocumentKey, string Version, List<string>? Purposes);
 
 public record UpdateProfileDto(string FirstName, string LastName);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
@@ -478,7 +600,14 @@ public record ProfileExportDto(
     List<ExportNoteMetaDto> NotesAboutMe, List<ExportPhotoMetaDto> PhotosOfMe, string Notice);
 
 public record ExportProfileDto(string FirstName, string LastName, string? Phone, string? Email, string? AvatarUrl, DateTime CreatedAt);
-public record ExportConsentDto(string Document, string Version, DateTime AcceptedAt);
+
+// CYCLE5-BREAKING: was (Document, Version, AcceptedAt) — a single "current state" triple, matching
+// cycle 3's UserConsent. Now the full §38.4 journal-row shape: the export shows EVERY consent event,
+// including superseded/revoked ones, not just a snapshot of the latest (ARCHITECTURE_CYCLE5.md §44.2).
+public record ExportConsentDto(
+    Guid Id, string DocumentKey, string DocumentVersion, string? Purpose, string Act, string Source,
+    Guid? CompanyId, DateTime GrantedAt, DateTime? RevokedAt, string? RevokeReason);
+
 public record ExportMembershipDto(string Company, string Role, DateTime JoinedAt);
 
 public record ExportBookingDto(
