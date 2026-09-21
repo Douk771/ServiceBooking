@@ -1,50 +1,52 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `0e61369`, дата: 2026-09-17.**
+**Актуально по состоянию на коммит: `7a36543`, дата: 2026-09-21.**
 
 Документ описывает **что есть в репозитории сейчас**, без предложений по развитию.
 
-Точка отсчёта. Ветка — **`develop`**, HEAD — `0e61369`, рабочее дерево чистое (кроме самого этого файла в момент его правки).
+Точка отсчёта. Ветка — **`develop`**, HEAD — `7a36543`, рабочее дерево чистое (кроме самого этого файла в момент его правки).
 Модель веток прежняя: `master` ← `release-candidate` ← `develop` ← `cycle/NN-<слаг>`
 (см. §0.0 DEPLOY.md). `develop` — интеграционный ствол и одновременно **та самая ветка, которая
 развёрнута на боевой машине**: `master` отстаёт, тегов нет, релиз формально не объявлен.
 
-Диапазон изменений с прошлой редакции (`6369266`): **20 коммитов**, `6369266..0e61369`, полный
-список — `git log --oneline 6369266..HEAD`. Изменения почти целиком **эксплуатационные**: кода
-приложения они не касаются вовсе (в диапазоне менялись две строки в тестовой инфраструктуре),
-остальное — `DEPLOY.md` (переписан целиком, +424 строки), nginx-конфиги, compose-файлы,
-форс-командный враппер деплоя и фильтр веток в CI.
+Диапазон изменений с прошлой редакции (`0e61369`): **18 коммитов**, `0e61369..7a36543`, полный
+список — `git log --oneline 0e61369..HEAD`. Это **весь цикл 4** (ветка `cycle/04-notifications-whatsapp`,
+смёржена коммитом `2a11d07`), плюс два коммита починки CI уже на `develop` и один коммит
+документации (`d4137dd`), закрывший расхождение README/CHANGELOG с фактом развёртывания.
+Объём: **+25 082 / −1 197** строк, 176 файлов.
 
-**Главное отличие от прошлой редакции: проект впервые в своей истории развёрнут и работает.**
-Домен `ezbook.ru` отвечает по HTTPS (сертификат Let's Encrypt), виджет встраивается в чужой iframe,
-трекер ошибок поднят на `errors.ezbook.ru` и цепочка «ошибка → issue → письмо» замкнута, деплой и
-откат выполняются по кнопке из GitHub Actions. Прошлая редакция открывалась блоком «выглядит
-готовым, но вживую не проверялось» — он больше не описывает реальность и переписан (§9). Чек-лист
-первого запуска (`DEPLOY.md` §16, семь пунктов) закрыт **полностью**, незакрытых пунктов ноль; по
-ходу закрытия найдено и исправлено девять дефектов эксплуатационного контура, каждый — отдельным
-коммитом (§8).
+**Главное отличие от прошлой редакции: в продукте впервые появился канал сообщений наружу —
+уведомления клиенту о записи в WhatsApp, отправляемые от имени салона с его собственного номера
+через GREEN-API.** Сюда же входят: справочник городов и часовые пояса компаний, первое в проекте
+шифрование чужих секретов (AES-GCM), две новые фоновые задачи, админский контур оплаты канала и
+параметров платформы, раздел «Уведомления» в кабинете владельца.
+
+⚠️ **Функция не выпущена наружу и после выката никому не предлагается** — тарифный флаг
+`AllowNotificationChannel` выключен у всех планов, цена опции не задана. Это **ожидаемое состояние,
+а не дефект** (подробнее — §9, блок P0). Провайдер по умолчанию — `logging`, то есть в закоммиченной
+конфигурации приложение не делает ни одного сетевого вызова к GREEN-API.
 
 Все утверждения ниже получены чтением исходников, конфигов и git-истории. Где чего-то не нашлось —
 так и написано.
 
-**Числа прогонов на `0e61369`** (автор этого документа работает только на чтение и тесты не
+**Числа прогонов на `7a36543`** (автор этого документа работает только на чтение и тесты не
 запускает — прогон функционального набора пересоздаёт базу `servicebooking_test`, см. §7; числа
-получены от исполнявшего прогон):
+получены от исполнявшего прогон, зафиксированы в теле мерж-коммита `2a11d07`):
 
 | Команда | Результат | Было в прошлой редакции |
 |---|---|---|
 | `dotnet build ServiceBooking.sln -warnaserror` | **0 warnings, 0 errors** | 0 / 0 |
-| `dotnet test ServiceBooking.UnitTests` | **215 / 215** | 204 / 204 |
-| `dotnet test ServiceBooking.Tests` | **407 / 407** | 404 / 404 |
-| `npm run test:run` (в `frontend/`) | **78 / 78** | 78 / 78 |
+| `dotnet test ServiceBooking.UnitTests` | **488 / 488** | 215 / 215 |
+| `dotnet test ServiceBooking.Tests` | **449 / 449** | 407 / 407 |
+| `npm run test:run` (в `frontend/`) | **100 / 100** | 78 / 78 |
 | `npx tsc --noEmit` (в `frontend/`) | чисто | чисто |
 | `npm run build` (в `frontend/`) | успешно | успешно |
 
 Числа перепроверены **статическим подсчётом** при подготовке этой редакции и сходятся точно:
-`[Fact]`+`[InlineData]` — 137+78 = **215** в `ServiceBooking.UnitTests`, 391+16 = **407** в
-`ServiceBooking.Tests` (там атрибуты идут парой `[Fact, TestCase("ID")]`), вызовов `it(...)` в
-`frontend/src` — **78**. Прошлая редакция называла 204/404 — расхождение не от изменений этого
-диапазона, а от того, что числа снимались раньше даты в шапке.
+`[Fact]`+`[InlineData]` — **488** в `ServiceBooking.UnitTests`, **449** в `ServiceBooking.Tests`
+(там атрибуты идут парой `[Fact, TestCase("ID")]`), вызовов `it(...)` в `frontend/src` — **100**.
+Функциональный набор прогонялся **дважды подряд без пересоздания базы** — идемпотентность
+подтверждена (запись в `2a11d07`).
 
 ---
 
@@ -61,11 +63,14 @@
 | СУБД | PostgreSQL (в docker-compose — `postgres:16-alpine`) | `docker-compose.yml`, `docker-compose.prod.yml` |
 | Аутентификация | ASP.NET Core Identity (`IdentityDbContext<AppUser>`) + JWT Bearer 8.0.11 | `Program.cs`, `Services/TokenService.cs` |
 | Обработка изображений | **SkiaSharp 2.88.8** + `SkiaSharp.NativeAssets.Linux.NoDependencies` (цикл 2) — декод, ориентация по EXIF, ресайз, ре-энкод | `ServiceBooking.API.csproj`, `Services/ImageProcessor.cs` |
-| Rate limiting | `Microsoft.AspNetCore.RateLimiting` (встроенный в ASP.NET Core 8), ⭐ **пять** именованных политик: `uploads`, `auth-login`, `auth-register`, `booking-create`, `data-export`; глобального лимитера нет | `Program.cs`, секция `RateLimits` |
+| Rate limiting | `Microsoft.AspNetCore.RateLimiting` (встроенный в ASP.NET Core 8), 🆕 **шесть** именованных политик: `uploads`, `auth-login`, `auth-register`, `booking-create`, `data-export`, 🆕 `notifications-webhook` (600/мин на IP); глобального лимитера нет | `Program.cs`, секция `RateLimits` |
+| 🆕 **Шифрование секретов** | **AES-GCM напрямую** (`System.Security.Cryptography`), мастер-ключ из конфигурации (`Notifications:EncryptionKey`, 32 байта base64). ASP.NET Core Data Protection **отвергнут осознанно** — его key ring в контейнере эфемерен и молча перестал бы читать ранее зашифрованные токены после передеплоя. Формат шифротекста `v1.<keyId>.<base64(nonce12‖tag16‖ct)>`, AAD — id канала | `Services/Notifications/SecretProtector.cs`, `ChannelKeyFingerprint.cs` |
+| 🆕 **HTTP-клиент наружу** | `IHttpClientFactory`, именованный клиент `green-api` с keep-alive и **IPv4-first `ConnectCallback`**; логирование этого клиента заглушено на уровне категорий (токен в URL) | `Program.cs`, `Services/Notifications/GreenApi/GreenApiHandlerFactory.cs`, `PreferIPv4.cs` |
+| 🆕 Кеш в памяти | `IMemoryCache` (`AddMemoryCache`) — кеш QR-ответа и 60-секундный кеш `PlatformSettings` | `Program.cs` |
 | **Логирование** ⭐ | **Serilog.AspNetCore 8.0.3** (`CompactJsonFormatter` в stdout и `logs/app-.json`) + маскирование телефонов | `Program.cs`, `Services/LogMasking.cs`, `PhoneMaskingEnricher.cs` |
 | **Трекер ошибок** ⭐ | **Sentry.Serilog 4.13.0** — синк включается только при непустом `Sentry:Dsn`; целевой приёмник — self-hosted **GlitchTip** (Sentry-совместимый) | `ServiceBooking.API.csproj`, `docker-compose.glitchtip.yml` |
 | **Health-checks** ⭐ | встроенные `Microsoft.Extensions.Diagnostics.HealthChecks`, два анонимных эндпоинта со своим двухполевым ответом | `Program.cs`, `Services/Health/` |
-| Фоновые задачи | Свой `BackgroundService` + `IScheduledTask` (цикл 2). Hangfire/Quartz **нет** | `Services/Scheduling/` |
+| Фоновые задачи | Свой `BackgroundService` + `IScheduledTask` (цикл 2). Hangfire/Quartz **нет**. 🆕 Задач стало **три** (добавились `notification-dispatch` и `channel-health`), сам раннер при этом не менялся | `Services/Scheduling/` |
 | Документация API | Swashbuckle.AspNetCore 6.5.0, Swagger **только в Development** (цикл 1) | `Program.cs` |
 | Правовые документы | ⭐ **файлы на диске** (`App_Data/legal/legal.json` + HTML), снимок в памяти с перечитыванием по mtime; не БД и не внешний сервис | `Services/Legal/LegalDocumentProvider.cs` |
 | Стиль кода | ⭐ `.editorconfig` в корне — **описывает** уже сложившийся стиль; `dotnet format` в CI **не подключён** | `.editorconfig` |
@@ -93,11 +98,21 @@
 
 ### Внешние сервисы
 
-- **Yandex SmartCaptcha** — единственная реальная внешняя интеграция.
+- 🆕 **GREEN-API (WhatsApp)** — третья реальная интеграция, **появилась в цикле 4 и в закоммиченной
+  конфигурации выключена**. `Notifications:Provider` по умолчанию `"logging"` — транспорт-заглушка,
+  которая не делает ни одного сетевого вызова (`Services/Notifications/LoggingNotificationTransport.cs`,
+  `NoopChannelProvisioning`). Реальный адаптер включается значением `"green-api"`; **нераспознанное
+  значение роняет старт**, чтобы прод не мог тихо «отправлять» в никуда.
+  Код адаптера — `Services/Notifications/GreenApi/` (`GreenApiTransport`, `GreenApiProvisioning`,
+  `GreenApiUrls`, `GreenApiResultClassifier`, `GreenApiWebhookParser`, `GreenApiStateInstanceParser`,
+  `GreenApiHandlerFactory`), базовый адрес `https://api.green-api.com`.
+  Модель: **один экземпляр провайдера = один номер = одна оплата**, номер принадлежит салону,
+  платформа платит провайдеру партнёрским токеном. **Партнёрского аккаунта GREEN-API пока нет** (§9).
+- **Yandex SmartCaptcha** — вторая реальная внешняя интеграция.
   Сервер: `ServiceBooking.API/Services/CaptchaService.cs`, `POST https://smartcaptcha.cloud.yandex.ru/validate`.
   Клиент: `frontend/src/components/booking/SmartCaptcha.tsx`, скрипт `https://smartcaptcha.yandexcloud.net/captcha.js`,
   ключ из `VITE_SMARTCAPTCHA_SITEKEY` (единственная используемая `import.meta.env`-переменная во всём фронтенде).
-- **GlitchTip (self-hosted, Sentry-совместимый)** — вторая реальная интеграция, ⭐ **поднята и
+- **GlitchTip (self-hosted, Sentry-совместимый)** — ещё одна реальная интеграция, ⭐ **поднята и
   работает**: `https://errors.ezbook.ru` (nginx + TLS от certbot + basic-auth перед собственной
   формой логина GlitchTip), стек `docker-compose.glitchtip.yml` с явным `name: glitchtip`.
   `Sentry:Dsn` в **закоммиченном** конфиге по-прежнему пуст — боевое значение живёт только в `.env`
@@ -107,8 +122,11 @@
 - **Платёжного шлюза нет.** Ни SDK, ни HTTP-вызовов — `PaymentStatus` меняется только вручную
   через `PATCH /api/bookings/{id}/mark-paid`.
 - **Почтового провайдера нет.** SMTP/SendGrid/любой другой клиент в коде отсутствует (см. §5).
-- **Интеграции с мессенджерами нет.** MAX был исследован и исключён из цикла 2 решением заказчика
-  (SPEC §0, приложение А) — в коде нет ничего.
+- **Почтового провайдера по-прежнему нет.** Письмо владельцу о разрыве канала было в спеке цикла 4
+  и **вырезано решением заказчика** (SPEC §0, редакция 6) — единственный канал оповещения владельца
+  это плашка в кабинете. SMTP-клиента в коде нет.
+- ~~Интеграции с мессенджерами нет~~ — закрыто циклом 4 (см. GREEN-API выше). MAX, исследованный в
+  цикле 2, так и не реализован; выбран WhatsApp.
 - **Хранилище файлов — локальный диск, но теперь ДВА класса хранения** (цикл 2, `Services/FileStorage.cs`):
   - *публичный* — по умолчанию `wwwroot/uploads/{companies,avatars,services}` (переопределяется
     `Storage:PublicRoot`), метод возвращает URL вида `/uploads/<область>/<guid>.<ext>`;
@@ -171,6 +189,21 @@ Vite и куда мапится docker-compose.
 Отдельно появился **закоммиченный** `appsettings.Testing.json` (исключение из правила
 `**/appsettings.*.json` в `.gitignore`): выключает планировщик и поднимает лимит загрузок до 1000/мин,
 чтобы функциональные тесты вели себя одинаково у всех и в CI. Секретов не содержит.
+🆕 Цикл 4 добавил туда же явное выключение двух новых задач
+(`ScheduledTasks:notification-dispatch:Enabled=false`, `channel-health:Enabled=false`) — поверх общего
+`ScheduledTasks:Enabled=false`, чтобы специализированная фабрика могла включать ровно одну из них.
+
+🆕 **Секция `Notifications` (цикл 4)** — самая большая новая секция `appsettings.json`:
+`Provider` (`logging` по умолчанию), `EncryptionKey` (пусто в git), `KeyRotationAck`,
+`KeyFingerprintPath` (`App_Data/state/.notifications-key-fingerprint`), `PartnerToken`,
+`WebhookToken`, `UnsubscribeKey`, подсекция `GreenApi` (`ApiUrl`, `TimeoutSeconds: 15`,
+`ConnectPreference: IPv4First`, `ConnectTimeoutSeconds: 5`, `PerAddressConnectTimeoutSeconds: 2`),
+подсекция `Dispatch` (`BatchSize: 200`, `BudgetSeconds: 50`, `MaxParallelChannels: 8`,
+`PauseMinMs: 5000`, `PauseMaxMs: 15000`, `InFlightGraceMinutes: 5`, `MaxAttempts: 5`),
+а также `ReminderJitterMinutes: 15`, `UnauthorizedInstanceTimeoutMinutes: 15`,
+`TestMessageCooldownMinutes: 5`, `ConsecutiveFailureThreshold: 5`, `AllowedRecipients: []`
+(белый список получателей для обкатки). Все секреты этой секции в git **пустые** — боевые значения
+живут только в `.env` на машине (§8).
 
 ---
 
@@ -179,46 +212,74 @@ Vite и куда мапится docker-compose.
 ```
 ServiceBooking.sln                  5 проектов (+ папка Solution Items)
 ├── ServiceBooking.API/             ← точка входа, вся бизнес-логика веб-слоя
-│   ├── Program.cs                  593 строки: Serilog, fail-fast прод-конфига (через DeploymentSafetyChecks),
+│   ├── Program.cs                  🆕 784 строки: Serilog, fail-fast прод-конфига (через DeploymentSafetyChecks),
 │   │                               DI, Identity, JWT (+ перечитывание ролей, SecurityStamp и claim'ы согласия),
 │   │                               CORS, Swagger (только Dev), exception handler, ForwardedHeaders,
 │   │                               5 политик rate limiting, глобальный LegalConsentFilter, health-эндпоинты,
 │   │                               регистрация фоновых задач, миграции, сид
-│   ├── Controllers/                14 контроллеров (15 классов — в Reviews их два); ⭐ добавился LegalController
-│   ├── DTOs/                       Auth / Bookings / ClientNotes / ⭐ Common (PagedResult) / Companies / Services / WorkingHours
+│   ├── Controllers/                🆕 18 контроллеров (19 классов — в Reviews их два); цикл 4 добавил
+│   │                               CitiesController, NotificationChannelsController, NotificationsController,
+│   │                               CompanyNotificationsController
+│   ├── DTOs/                       Auth / Bookings / ⭐ Common (PagedResult, 🆕 Optional<T>) / 🆕 Cities /
+│   │                               ClientNotes / Companies / 🆕 Notifications (Channel/Log/Settings/Template/Unsubscribe) /
+│   │                               Services / WorkingHours
 │   ├── Services/                   SlotService+SlotCalculator, SubscriptionResolver, CaptchaService, TokenService,
 │   │   │                           AdvisoryLock, BookingFilters, CompanyMembership, PhoneNormalizer, FileStorage,
 │   │   │                           ImageSignature, ImageProcessor, ImageUploadService, PhotoQuota,
-│   │   │                           ⭐ DeploymentSafetyChecks, ⭐ IdentityRoleSync, ⭐ LogMasking, ⭐ PhoneMaskingEnricher
+│   │   │                           ⭐ DeploymentSafetyChecks, ⭐ IdentityRoleSync, ⭐ LogMasking, ⭐ PhoneMaskingEnricher,
+│   │   │                           🆕 NotificationScheduler (постановка в очередь), 🆕 NotificationTexts,
+│   │   │                           🆕 NotificationRiskText, 🆕 ChannelPresentation, 🆕 CompanyTimeZone,
+│   │   │                           🆕 CitySearch, 🆕 PhoneDisplayMask, 🆕 UnsubscribeTokens,
+│   │   │                           🆕 PlatformSettingsWriter, 🆕 ProviderWebhookParsing
 │   │   ├── Legal/                  ⭐ LegalDocumentProvider, LegalConsentFilter, LegalOptions, LegalSnapshot
 │   │   ├── Health/                 ⭐ DatabaseReadyHealthCheck
+│   │   ├── Notifications/          🆕 SecretProtector, ChannelKeyFingerprint, NotificationOptions, NotificationGate,
+│   │   │   │                       NotificationTiming, NotificationTemplateRenderer/Validator, DefaultTemplates,
+│   │   │   │                       ChannelStateMapper/Transition, ChannelIdleCalculator, ChannelPaymentState,
+│   │   │   │                       PlatformSettings, PauseGenerator, PreferIPv4, ProviderCallback,
+│   │   │   │                       INotificationTransport/IChannelProvisioning/INotificationClock/IDispatchDelay,
+│   │   │   │                       LoggingNotificationTransport
+│   │   │   └── GreenApi/           🆕 адаптер провайдера: Transport, Provisioning, Urls, ResultClassifier,
+│   │   │                           WebhookParser, StateInstanceParser, HandlerFactory
 │   │   └── Scheduling/             IScheduledTask, ScheduledTaskRunner, ScheduledTaskOptions,
-│   │                               ScheduledTaskSchedule, Tasks/PhotoRetentionCleanupTask
+│   │                               ScheduledTaskSchedule, Tasks/{PhotoRetentionCleanupTask,
+│   │                               🆕 NotificationDispatchTask, 🆕 ChannelHealthTask}
 │   ├── App_Data/legal/             ⭐ В GIT: манифест legal.json + privacy.html + terms.html (ЧЕРНОВИК);
 │   │                               на проде перекрывается bind-mount'ом ./legal с хоста
 │   ├── App_Data/private-uploads/   приватный класс хранения (в .gitignore)
 │   ├── Dockerfile                  multi-stage, aspnet:8.0, EXPOSE 8080 (комментарий «не менять на -alpine»)
 │   └── appsettings*.json           appsettings.json и appsettings.Testing.json в git; Development/Production — в .gitignore
 ├── ServiceBooking.Core/            только сущности и перечисления, зависимость одна — Identity.EFCore
-│   ├── Entities/                   18 классов (⭐ +UserConsent)
-│   └── Enums/                      BookingStatus, ⭐ LegalDocumentType, PaymentStatus, PhotoRetention, UserRole
-├── ServiceBooking.Infrastructure/  AppDbContext + 26 миграций EF Core
-├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; 15 файлов, 204 запуска
-├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; 21 файл, 404 запуска
+│   ├── Entities/                   🆕 30 классов (⭐ +UserConsent; 🆕 +12 сущностей цикла 4, см. §3)
+│   └── Enums/                      BookingStatus, ⭐ LegalDocumentType, PaymentStatus, PhotoRetention, UserRole,
+│                                   🆕 +7: ChannelState, ChannelStateReason, ChannelPaymentStatus,
+│                                   NotificationStatus, NotificationReason, NotificationType,
+│                                   NotificationTransport, OptOutSource
+├── ServiceBooking.Infrastructure/  AppDbContext + 🆕 28 миграций EF Core
+├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; 🆕 37 файлов, 488 запусков
+├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; 🆕 28 файлов, 449 запусков
 │   ├── Infrastructure/             ApiTestBase, CustomWebApplicationFactory, TestDatabaseFixture, JsonHelpers,
-│   │                               TestCaseAttribute, TestImages, ⭐ LegalDocumentsTestFactory, ⭐ RateLimitTestFactory
-│   └── Tests/                      21 файл по доменам
+│   │                               TestCaseAttribute, TestImages, ⭐ LegalDocumentsTestFactory, ⭐ RateLimitTestFactory,
+│   │                               🆕 NotificationTestBase, NotificationTestFactory, NotificationDispatchTestFactory
+│   └── Tests/                      🆕 28 файлов по доменам
 ├── frontend/                       React SPA
-│   ├── src/api/                    16 модулей — тонкая обёртка над axios, по одному на домен (⭐ +legal.ts)
+│   ├── src/api/                    🆕 20 модулей — тонкая обёртка над axios, по одному на домен
+│   │                               (⭐ +legal.ts; 🆕 +cities.ts, +notifications.ts, +notificationChannels.ts,
+│   │                               +platformSettings.ts)
 │   ├── src/pages/                  страницы; вложенные owner/ и admin/ — вкладки;
-│   │                               ⭐ +LegalDocumentPage.tsx, +DeleteAccountPage.tsx
+│   │                               ⭐ +LegalDocumentPage.tsx, +DeleteAccountPage.tsx;
+│   │                               🆕 +UnsubscribePage.tsx, owner/{NotificationsSection, NotificationSettingsTab,
+│   │                               NotificationTemplatesTab, NotificationLogTab}.tsx, admin/NotificationsAdminTab.tsx
 │   ├── src/components/             booking/, clientNotes/, ⭐ legal/ (ConsentGate, LegalUpdateBanner),
-│   │                               layout/, review/, schedule/, ui/ (⭐ +Pagination)
+│   │                               layout/, review/, schedule/, ui/ (⭐ +Pagination, 🆕 +CityCombobox),
+│   │                               🆕 notifications/ (QrModal, AssignCompanyDialog, RiskAcceptanceModal,
+│   │                               ChannelBreachBanner)
 │   ├── src/hooks/                  useOverlayDismiss, useAuthedImage, ⭐ useExportData, ⭐ useDebouncedValue
 │   ├── src/store/authStore.ts      единственный zustand-стор
 │   ├── src/test/setup.ts           setup Vitest (jest-dom + cleanup Testing Library)
 │   ├── src/types/index.ts          общие TS-типы (ручная копия серверных DTO)
-│   ├── src/utils/                  мапперы ошибок HTTP → русский текст (⭐ +authError, +legalError) + phone.ts
+│   ├── src/utils/                  мапперы ошибок HTTP → русский текст (⭐ +authError, +legalError,
+│   │                               🆕 +notificationError) + phone.ts, 🆕 timezone.ts, 🆕 channelBanner.ts
 │   ├── eslint.config.js            ⭐ ESLint 9 flat-config + Prettier
 │   └── design_handoff_site_redesign/  HTML-макеты редизайна, не участвуют в сборке
 ├── .editorconfig                   ⭐ описывает уже сложившийся C#-стиль; в CI НЕ проверяется
@@ -239,14 +300,19 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 │   └── rollback.sh                 откат одной командой
 ├── docker-compose.yml              dev: postgres + api
 ├── docker-compose.prod.yml         prod: postgres + api на 127.0.0.1:5000, два volume + ⭐ bind-mount ./legal
+│                                   + 🆕 ЗАПИСЫВАЕМЫЙ bind-mount ./state (отпечаток ключа шифрования)
 ├── docker-compose.glitchtip.yml    ⭐ self-hosted GlitchTip (Sentry-совместимый трекер), отдельный стек
 ├── README.md                       продуктовое описание + «чего пока нет» + ⭐ запуск/секреты/CI/деплой
 ├── CHANGELOG.md                    changelog по датам циклов, самая свежая запись сверху
 ├── docs/                           пользовательская документация по ролям (⭐ +personal-data.md)
-├── SPEC.md / ARCHITECTURE.md / API_CONTRACT.md      документы текущего (C) цикла работ
+├── SPEC.md                         🆕 ~276 КБ, спека ЦИКЛА 4 (уведомления WhatsApp), редакция 6
+├── ARCHITECTURE.md / API_CONTRACT.md                документы ЦИКЛА 3 (не перезаписаны!)
+├── ARCHITECTURE_CYCLE4.md / API_CONTRACT_CYCLE4.md  🆕 документы цикла 4 — ПРОДОЛЖЕНИЯ прежних
+│                                   (разделы 21–40 и 19–37, нумерация не пересекается)
+├── SPEC_CYCLE3_PRODUCTION.md       🆕 сохранённая спека цикла 3 (SPEC.md занят циклом 4)
 ├── SPEC_DEFERRED_NOTIFICATIONS.md / SPEC_APPENDIX_CHANNELS.md  ⭐ спека ОТЛОЖЕННОГО цикла уведомлений
-├── API_DOCUMENTATION.md            ~237 КБ, подробный справочник эндпоинтов (рус.)
-├── TEST_CATALOG.md                 ~246 КБ, человекочитаемый каталог всех тест-кейсов (рус.)
+├── API_DOCUMENTATION.md            ~247 КБ, подробный справочник эндпоинтов (рус.)
+├── TEST_CATALOG.md                 ~270 КБ, человекочитаемый каталог всех тест-кейсов (рус.)
 ├── DEPLOY.md                       🚀 ~111 КБ, ПЕРЕПИСАН ЦЕЛИКОМ под фактическую машину
 │                                   (Ubuntu 24.04 desktop, не VPS): 16 разделов + «Почему так сделано»
 │                                   + §16 чек-лист первого запуска с датами и результатами
@@ -255,12 +321,15 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 ```
 
 ⭐ — появилось в цикле 3. 🚀 — появилось/изменилось при первом реальном развёртывании
-(диапазон `6369266..0e61369`).
+(диапазон `6369266..0e61369`). 🆕 — появилось в **цикле 4** (диапазон `0e61369..7a36543`).
 
 ### Точка входа и слои
 
-- Единственная точка входа приложения — `ServiceBooking.API/Program.cs`. **Второй процесс** в том же
-  хосте — `ScheduledTaskRunner` (`BackgroundService`), тикает раз в `ScheduledTasks:TickSeconds` (60 с).
+- Единственная точка входа приложения — `ServiceBooking.API/Program.cs` (🆕 вырос до **784 строк**).
+  **Второй процесс** в том же
+  хосте — `ScheduledTaskRunner` (`BackgroundService`), тикает раз в `ScheduledTasks:TickSeconds` (60 с);
+  🆕 задач в нём теперь три, но сам раннер цикл 4 **не менял** — это прямое подтверждение, что
+  расширение через `IScheduledTask` работает как задумано.
   ⭐ Третий фоновый «житель» — `LegalDocumentProvider`: держит снимок правовых документов в памяти и
   перечитывает манифест с диска по mtime (не чаще раза в `Legal:ReloadSeconds`).
 - **Бизнес-логика по-прежнему живёт в контроллерах.** Сервисного слоя как такового нет, но `Services/`
@@ -278,6 +347,17 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
   ⭐ `DeploymentSafetyChecks`, `Pagination.Normalize`, `LogMasking`, `LegalDocumentProvider`,
   `LegalConsentFilter`. Цикл 3 **сознательно вытаскивал логику в этот слой ради тестируемости** —
   именно поэтому fail-fast переехал из `Program.cs` в отдельный класс.
+  🆕 **Цикл 4 продолжил эту линию агрессивнее всех предыдущих:** почти вся его логика — чистые
+  классы, покрытые юнит-тестами (`SecretProtector`, `ChannelKeyFingerprint`, `NotificationGate`,
+  `NotificationTiming`, `NotificationTemplateRenderer/Validator`, `ChannelStateMapper`,
+  `ChannelIdleCalculator`, `ChannelPaymentState`, `ChannelPresentation`, `CompanyTimeZoneResolver`,
+  `CitySearch`, `PhoneDisplayMask`, `UnsubscribeTokens`, `PauseGenerator`, `PreferIPv4`,
+  `GreenApiUrls/ResultClassifier/WebhookParser/StateInstanceParser`, `NotificationTexts`,
+  `Optional<T>`). Именно поэтому юнит-набор вырос с 215 до 488, а функциональный — только на 42.
+- 🆕 **Файлы цикла 4 поделены между двумя бэкенд-разработчиками:** `Services/Notifications/**` —
+  один, `Services/Notification*.cs` в корне `Services/` (`NotificationScheduler`, `NotificationTexts`,
+  `NotificationRiskText`) — другой. Это объясняет, почему презентационный код лежит не рядом с
+  кодами причин, которые он переводит (объяснено комментарием в самих файлах).
 
 ### Мёртвый проект `ServiceBooking/` — удалён
 
@@ -297,7 +377,7 @@ Blazor Server-шаблон из первого коммита удалён це�
 | Сущность | Ключ | Ключевые поля | Связи |
 |---|---|---|---|
 | `AppUser : IdentityUser` | string | `FirstName`, `LastName`, `AvatarUrl`, `CreatedAt`, ⭐ **`DeletedAtUtc?`** (надгробие удалённого аккаунта, цикл 3) | 1—N: CompanyMemberships, ClientBookings, MasterBookings, MasterServices, WorkingHours |
-| `Company` | Guid | `Name`, `Slug` (**уникальный индекс**), `Description`, `LogoUrl`, `Address`, `Phone`, `Email`, `AllowSelfBooking`, `RequirePrepayment`, `ShowInPublicListing`, `IsActive`, `OwnerUserId` | N—1 Owner (`Restrict`), 1—N Members / Services / Bookings |
+| `Company` | Guid | `Name`, `Slug` (**уникальный индекс**), `Description`, `LogoUrl`, `Address`, `Phone`, `Email`, `AllowSelfBooking`, `RequirePrepayment`, `ShowInPublicListing`, `IsActive`, `OwnerUserId`, 🆕 **`CityId?`** (FK `Restrict`), 🆕 **`TimeZoneId`** (IANA, дефолт `Europe/Moscow`), 🆕 **`TimeZoneIsManual`** | N—1 Owner (`Restrict`), 🆕 N—1 City (`Restrict`), 1—N Members / Services / Bookings |
 | `CompanyMember` | Guid | `CompanyId`, `UserId`, `Role: UserRole`, `Bio`, **`CommissionPercent`** (переехал сюда с `AppUser` в цикле 1), `JoinedAt`; **уникальный индекс `(CompanyId, UserId)`** | «многие-ко-многим» User↔Company с ролью |
 | `Service` | Guid | `CompanyId`, `Name`, `DurationMinutes`, `Price decimal(10,2)`, `ImageUrl`, `IsActive` | 1—N MasterServices, Bookings |
 | `MasterService` | Guid | `MasterId`, `ServiceId` | связка «мастер умеет услугу» |
@@ -314,6 +394,24 @@ Blazor Server-шаблон из первого коммита удалён це�
 | `SubscriptionPlanConfig` | Guid | `Name`, `PricePerMonth`, `MaxEmployees?`, `MaxCompanies?`, `AllowOnlineBooking`, `AllowMailing`, `AllowAnalytics`, `AllowPublicListing`, `AllowOnlinePayment`, **`PhotoQuotaMb?`** (null = без ограничения, дефолт 100), **`PhotoRetention`**, `IsActive`, `NotifyDaysBefore` | справочник тарифов |
 | `SubscriptionChangeLog` | Guid | `OwnerUserId` (индекс), `ChangedByUserId`, старые/новые план, `PaidUntil`, `IsActive`, `Comment` | аудит изменений подписки |
 | `MailLog` | Guid | `CompanyId`, `Subject`, `Message`, `SentById`, `RecipientCount`, `SentAt` | журнал «рассылок» |
+| `SubscriptionPlanConfig` | — | 🆕 **`AllowNotificationChannel`** (по умолчанию `false` **у всех планов, включая новые** — решение заказчика Q1) | см. выше |
+
+#### 🆕 Сущности цикла 4 (12 новых)
+
+| Сущность | Ключ | Ключевые поля | Смысл |
+|---|---|---|---|
+| **`City`** | int | `Name`, `Region`, `TimeZoneId` (IANA), `IsActive`, `SearchName` (нормализованное: строчные, ё→е, без дефисов/пробелов) | справочник городов, **91 строка сидится миграцией**. Поиск — обычный `LIKE` по `SearchName`, без full-text и trigram: на таком объёме seq scan дешевле, и это **явно закомментированное решение**, а не недосмотр |
+| **`NotificationChannel`** | Guid | `OwnerUserId` (владелец **аккаунта**, тот же ключ, что у `AccountSubscription`), `Transport`, `State`, `PhoneNumber?` (канонический), `ProviderInstanceId?` (**уникальный среди непустых**), `ProviderSecretCiphertext?` + `ProviderSecretKeyId?`, `OrphanedInstanceId?`, `RequestedAtUtc?`, `ContactEmail?` (**зарезервировано, в цикле 4 не используется — письма вырезаны**), `PaidFromUtc?`/`PaidUntilUtc?`, `IsSuspendedByAdmin`, `IdleSinceUtc?`/`IdleWarningSentAtUtc?`, `InstanceCreatedAtUtc?`, `ConnectedAtUtc?`, `LastStateCheckAtUtc?`, `LastStateReason?`, `ConsecutiveSendFailures`, `LastTestMessageAtUtc?`, `DisruptionNotifiedAtUtc?`, `RiskAcceptedAtUtc?`/`RiskAcceptedVersion?`, `ReplacedByChannelId?` | **один экземпляр провайдера = один номер = одна оплата**. Канал принадлежит аккаунту владельца, а **не** компании |
+| **`ChannelCompanyAssignment`** | Guid | `ChannelId`, `CompanyId` (**уникальный индекс** — компания не может быть на двух каналах), `AssignedAtUtc`, `AssignedByUserId` | назначение компаний на канал; правило держится **индексом**, а не проверкой в коде |
+| **`ChannelStateEvent`** | Guid | `ChannelId`, `FromState`, `ToState`, `Reason`, `Detail?`, `OccurredAtUtc` | история переходов состояния. `Detail` — техническая заметка, **никогда не секрет провайдера** |
+| **`ChannelPaymentLog`** | Guid | `ChannelId`, `ChangedByUserId`, `OldPaidUntil?`/`NewPaidUntil?`, `Amount?`, `Comment?`, `ChangedAtUtc` | журнал оплат канала суперадмином, по форме — копия `SubscriptionChangeLog` |
+| **`CompanyNotificationSettings`** | **`CompanyId` (PK)** | `EnabledTypeMask` (битовая маска по `NotificationType`, дефолт — все биты), `ReminderLeadMinutes` (60..4320, дефолт 1440), `MinLeadMinutes` (0..720, дефолт 120), `UpdatedAt`, `UpdatedByUserId?` | настройки принадлежат **компании, а не каналу**. Отсутствие строки = дефолты, поэтому backfill существующим компаниям не нужен |
+| **`NotificationTemplate`** | Guid | `CompanyId`, `Type`, `Body` (≤1000), `UpdatedAt`, `UpdatedByUserId?` | переопределение платформенного текста. Нет строки или пустой `Body` = платформенный дефолт |
+| **`NotificationTemplateHistory`** | Guid | `CompanyId`, `Type`, `PreviousBody`, `ChangedByUserId`, `ChangedAtUtc` | снимок **предыдущего** текста при каждой правке |
+| **`OutboundNotification`** | Guid | `CompanyId`, `ChannelId?`, `BookingId?`, `Type`, `RecipientPhone`/`RecipientName?`/`RecipientUserId?`, `Body` (**снимок отрендеренного текста на момент постановки**), `DueAtUtc`, `VisitStartUtc` (денормализовано), `Status`, `Reason?`, `ReasonDetail?`, `AttemptCount`, `LastAttemptAtUtc?` (**он же маркер «в полёте»**), `NextAttemptAtUtc?`, `ProviderMessageId?`, `SentAtUtc?`/`DeliveredAtUtc?`/`ReadAtUtc?`, `Generation` (поколение переносов), `IdempotencyKey` | **одна строка — и очередь, и вечный журнал**: строки никогда не удаляются, меняется только статус |
+| **`NotificationOptOut`** | Guid | `Phone` (канонический, **уникальный**), `UserId?` (информационно), `OptedOutAtUtc`, `Source` | одна таблица на всю платформу **по номеру**, а не флаг на `AppUser` + таблица для гостей. Следствие **намеренное**: отписка принадлежит номеру, смена телефона её с собой не уносит |
+| **`PlatformSetting`** | **`Key` (PK, ≤100)** | `Value` (≤200), `UpdatedAt`, `UpdatedByUserId?` | параметры платформы, правимые суперадмином без пересборки и с журналом. Ключи цикла 4: `notifications.channel.price-per-month`, `notifications.channel.idle-days`. **Отсутствие ключа цены = опция не предлагается**, а не «цена 0» |
+| **`PlatformSettingChangeLog`** | Guid | `Key`, `OldValue?`, `NewValue?`, `ChangedByUserId`, `ChangedAtUtc`, `Comment?` | журнал правок параметров платформы |
 
 Перечисления: `BookingStatus { Pending, Confirmed, Cancelled, Completed, NoShow }`,
 `PaymentStatus { NotRequired, Pending, Paid }`, `UserRole { Client, Master, CompanyOwner, SuperAdmin }`,
@@ -321,6 +419,18 @@ Blazor Server-шаблон из первого коммита удалён це�
 ⭐ **`LegalDocumentType { Privacy, Terms }`** (цикл 3; одноимённый дубль на стороне API был заведён и
 удалён внутри цикла, коммит `263eb55` — перечисление живёт только в `Core`).
 Сериализуются как строки (`JsonStringEnumConverter` в `Program.cs`).
+
+🆕 **Семь перечислений цикла 4:**
+
+| Перечисление | Члены | Важное |
+|---|---|---|
+| `ChannelState` | `NotConnected, Connecting, Connected, Disconnected, Blocked, DisabledByOwner, NeedsReconnect, Replaced` | первые семь — ровно то, что видит владелец по SPEC; **восьмое (`Replaced`) — сознательное отступление от буквы спеки**, задокументировано в `ARCHITECTURE_CYCLE4.md` §38.1 |
+| `ChannelStateReason` | 11 членов (`Authorized`, `ProviderReportsUnauthorized`, `ProviderReportsBlocked`, `ConsecutiveSendFailuresExceeded`, `DisconnectedByOwner`, `SuspendedByAdmin`, `UnauthorizedInstanceTimedOut`, `IdleInstanceDeleted`, `ReplacedAfterBan`, `SecretUnavailable`) | русский текст для владельца собирается **на сервере** из этого кода, в одном месте |
+| `ChannelPaymentStatus` | `NotPaid, Paid, Suspended` | **никогда не хранится** — вычисляется `ChannelPaymentState.Of` |
+| `NotificationStatus` | `Pending = 0, Sent, Delivered, Failed, Expired, Skipped, Cancelled` | ⚠️ **`Pending` обязан остаться 0**: частичный индекс диспетчера объявлен сырым SQL-фильтром `"Status" = 0`. Перестановка членов **молча** ломает индекс — он остаётся, но перестаёт совпадать с запросом, и тот сваливается в full scan. Добавлять только в конец |
+| `NotificationType` | `BookingConfirmed, Reminder, BookingCancelled, BookingRescheduled, StaffBookingCreated, StaffBookingCancelled` | используется как **позиция бита** в `EnabledTypeMask` → значения тоже append-only. Два последних члена **никем не ставятся в очередь** — US-34 не реализована (§5.1) |
+| `NotificationTransport` | `WhatsApp` | один член; заведено enum'ом заранее, чтобы второй транспорт был новым членом + адаптером, а не миграцией |
+| `NotificationReason` | 11 членов (`Delivered`, `RecipientHasNoWhatsApp`, `RejectedByProvider`, `RetriesExhausted`, `VisitAlreadyStarted`, `RecipientOptedOut`, `NotOnPaidPlan`, `NoUsableChannel`, `TypeDisabledByCompany`, `BelowMinimumLeadTime`, `BookingOrAssignmentCancelled`) | русский текст журнала доставки собирает сервер (`NotificationTexts`) |
 
 ### Как это связано смыслово
 
@@ -352,8 +462,20 @@ Blazor Server-шаблон из первого коммита удалён це�
 - ⭐ **Удалённый аккаунт — надгробие, а не отсутствие строки** (`AppUser.DeletedAtUtc`, §4.15).
   Записи такого клиента остаются в истории компании анонимизированными, с флагом
   `Booking.ClientDeleted`.
+- 🆕 **Канал принадлежит аккаунту владельца, компания — только назначается на него.** Это та же
+  ось, что у подписки (`AccountSubscription.OwnerUserId`): один номер обслуживает все филиалы
+  владельца. Компания при этом может быть назначена **максимум на один канал** (уникальный индекс).
+- 🆕 **Часовой пояс компании выводится из города, но может быть перебит вручную.**
+  `TimeZoneIsManual` существует ровно для того, чтобы последующее сохранение города **не сбрасывало**
+  ручную правку обратно на зону города. Логика — чистый `CompanyTimeZoneResolver`
+  (`ForNewCompany` / `ForUpdate`).
+- 🆕 **`OutboundNotification` — очередь и журнал в одной таблице.** Идемпотентность даёт
+  `IdempotencyKey` с участием `Generation` (поколение переносов), так что перенос записи может
+  поставить новое напоминание, не столкнувшись со старым. `LastAttemptAtUtc` пишется **до** исходящего
+  HTTP-вызова и работает маркером «в полёте» на `InFlightGraceMinutes`.
+- 🆕 **Отписка живёт по номеру телефона, а не по человеку** — см. комментарий на `NotificationOptOut`.
 
-### Миграции (26, все в `ServiceBooking.Infrastructure/Migrations/`)
+### Миграции (🆕 28, все в `ServiceBooking.Infrastructure/Migrations/`)
 
 Первые 13 — как раньше: `InitialCreate` → `DateBasedSchedule` → `AddSubscriptionAndCommission` →
 `AddReviewsTemplatesNotes` → `AddPromoGiftMailPlans` → `AddPrepaymentSupport` →
@@ -384,6 +506,21 @@ Blazor Server-шаблон из первого коммита удалён це�
 **переназначаются** победителю, остальное каскадно удаляется вместе с аккаунтом. Если проигравший
 владеет компанией или имеет записи как мастер — миграция **останавливается с описательной ошибкой**,
 а не молча меняет данные. Проект не в продакшене, боевых данных нет.
+
+🆕 **Цикл 4 добавил две:**
+
+1. **`20260918051815_AddNotificationChannels`** — вся схема цикла одним файлом, **собранным блоками**:
+   таблица `Cities` + сид **91 города** (Калининград → Камчатка, с IANA-зонами) → колонки
+   `CityId`/`TimeZoneId`/`TimeZoneIsManual` на `Companies` → **backfill существующих компаний на
+   Барнаул / `Asia/Barnaul`** (UTC+7, **отдельная зона, не новосибирская**) → одиннадцать таблиц
+   уведомлений и каналов → `AllowNotificationChannel` на планах → индексы, включая **частичный
+   `IX_OutboundNotifications_Dispatch` с сырым фильтром `"Status" = 0`**.
+2. **`20260921082526_AddChannelLastStateReason`** — поздняя правка по ревью: колонка
+   `NotificationChannels.LastStateReason` (кеш последней причины перехода, чтобы список каналов не
+   делал второй запрос на строку).
+
+⚠️ **Правило, действующее с момента мёржа цикла 4:** первую из этих двух миграций **не редактировать**.
+Она уже применена, и всё новое оформляется **новыми** миграциями — как это и сделала вторая.
 
 История по-прежнему видна прямо в названиях: промокоды и подарочные сертификаты были добавлены и затем
 **удалены целиком**, а подписка переехала с компании на аккаунт владельца. Остатков этих фич в коде нет.
@@ -434,8 +571,8 @@ JWT: HS256, срок **7 дней**, claims `sub/phone/given_name/family_name/jt
 | GET | `/api/companies/{slug}` | публично |
 | GET | `/api/companies/{id}/masters?serviceId=` | публично; **фильтр по ролям `Master`/`CompanyOwner`** (цикл 1) |
 | GET | `/api/companies/{id}/members` | владелец/SuperAdmin |
-| POST | `/api/companies` | авторизованные; **лимит `MaxCompanies`** под advisory lock, 402 при превышении |
-| PUT | `/api/companies/{id}` | владелец |
+| POST | `/api/companies` | авторизованные; **лимит `MaxCompanies`** под advisory lock, 402 при превышении. 🆕 **ЛОМАЮЩЕЕ: `cityId` обязателен** — без него 400. Опционально `timeZoneId` (перебивает зону города и ставит `TimeZoneIsManual`) |
+| PUT | `/api/companies/{id}` | владелец; 🆕 принимает `cityId` и `timeZoneId`, разрешает их через `CompanyTimeZoneResolver.ForUpdate` (ручная зона переживает смену города) |
 | POST | `/api/companies/{id}/logo` | владелец; ≤5 МБ, rate limit `uploads`, **тип определяется по сигнатуре файла**, ре-энкод профилем `CompanyLogo` (512 px), старый файл удаляется **после** коммита нового URL |
 | GET | `/api/companies/{id}/photo-usage` | персонал компании **или SuperAdmin**; занятый объём, число фото, квота, % и срок хранения — единственное место, где SuperAdmin получает цифры по клиентским фото (содержимое ему недоступно) |
 | POST | `/api/companies/{id}/members` | владелец; **лимит `MaxEmployees`** под advisory lock, 402; телефон нормализуется; неизвестное имя роли → 400 |
@@ -670,16 +807,32 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 исчерпание — **штатный** исход, уже закоммиченное сохраняется, остальное доедет следующим запуском.
 Упавшая задача помечается неуспешной и повторяется **по обычному расписанию**, без backoff.
 
-Единственная задача сейчас — `photo-retention-cleanup` (период по умолчанию — сутки): удаляет фото,
-пережившие срок хранения своего тарифа (`Forever` не трогается), батчами по 200; затем подметает
-осиротевшие файлы на диске старше 24 часов.
+🆕 **Задач теперь три** (раннер при этом не менялся ни строкой):
+
+1. `photo-retention-cleanup` (период — сутки): удаляет фото, пережившие срок хранения своего тарифа
+   (`Forever` не трогается), батчами по 200; затем подметает осиротевшие файлы на диске старше 24 часов.
+2. 🆕 **`notification-dispatch`** (период — **1 минута**, `MaxRunMinutes: 2`) — отправщик очереди,
+   `Services/Scheduling/Tasks/NotificationDispatchTask.cs` (~464 строки, «главный архитектурный вопрос
+   цикла»). Один проход: выборка батча по частичному индексу → классификация по гейтам/таймингам
+   **одним `SaveChanges`** → отправка, сгруппированная по каналам, с ограниченным параллелизмом
+   **между** каналами и строго последовательно **внутри** канала, с паузой 5–15 с между отправками.
+   Собственный бюджет = `min(MaxRunTime − 10 с, Dispatch:BudgetSeconds)` — задача останавливает себя
+   раньше, чем сработает жёсткая отмена раннера. Backoff повторов — `[1, 5, 15, 60, 180]` минут,
+   потолок `MaxAttempts: 5`. **Пауза принципиально не может держать транзакцию** — это и было главным
+   ограничением дизайна.
+3. 🆕 **`channel-health`** (период — **15 минут**, `MaxRunMinutes: 10`) —
+   `Services/Scheduling/Tasks/ChannelHealthTask.cs` (~405 строк), четыре работы в одном проходе, каждая
+   одним батч-запросом: опрос состояния каналов (`Connecting`/`Connected`/`Disconnected`), детекция
+   простоя и удаление простаивающего экземпляра, таймаут неавторизованного экземпляра, повтор удаления
+   «осиротевших» экземпляров у провайдера (`OrphanedInstanceId`).
 
 `GET /api/admin/scheduled-tasks` (SuperAdmin) отдаёт по каждой задаче: `enabled`, `periodMinutes`,
 `lastStartedAt`, `lastFinishedAt`, `lastDurationMs`, `lastSucceeded`, `lastSummary`, `lastError`,
 `isOverdue` (не финишировала дольше двух своих периодов). Зависимости резолвятся `[FromServices]` в
 самом действии, а не в primary-конструкторе контроллера, — чтобы остальные админские вызовы за это не платили.
 В окружении `Testing` планировщик **выключен** (`appsettings.Testing.json`), функциональные тесты
-дёргают задачу напрямую.
+дёргают задачу напрямую. 🆕 Исключение — специализированная фабрика `NotificationDispatchTestFactory`,
+которая поднимает **свой** хост с реально тикающим раннером (§7.2).
 
 ### 4.14 Правовой контур: документы, согласие, 451 ⭐ — новое в цикле 3
 
@@ -767,14 +920,85 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
   Identity-роль, и человек, удалённый из единственной компании, продолжал проходить
   `[Authorize(Roles = …)]`. Историю почистила миграция данных `ResyncIdentityRoles`.
 - **`Services/DeploymentSafetyChecks.cs`** — fail-fast прод-конфига, вынесенный из `Program.cs` в
-  чистые статические методы **ради тестируемости** (28 юнит-тестов), см. §8.
+  чистые статические методы **ради тестируемости** (🆕 теперь **59 юнит-тестов**), см. §8.
+
+### 4.17 🆕 Уведомления клиенту в WhatsApp — функция цикла 4, код есть, наружу не выпущена
+
+Самый крупный блок цикла. **Код реализован, протестирован и смёржен, но выключен тарифно** — см.
+предупреждение в преамбуле и §9.
+
+**Контроллеры и эндпоинты** (выписаны из атрибутов):
+
+`Controllers/NotificationChannelsController.cs` (~652 строки, `[Route("api/notification-channels")]`,
+весь класс под `[Authorize]`):
+
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET | `/api/notification-channels` | список каналов владельца (`ChannelListDto`) |
+| GET | `/api/notification-channels/offer` | что вообще предлагается: цена из `PlatformSetting`, тариф, текст риска и его версия. **Если цена не задана или тариф не разрешает — опция не предлагается** |
+| POST | `/api/notification-channels` | заявка на канал (`RequestedAtUtc`), оплату проставляет суперадмин |
+| GET | `/api/notification-channels/{id}` | карточка канала |
+| POST | `/api/notification-channels/{id}/accept-risk` | принятие текста о рисках; версия сверяется с `NotificationRiskText.CurrentVersion`, устаревшая → 400 |
+| POST | `/api/notification-channels/{id}/connect` | создание экземпляра у провайдера, переход в `Connecting` |
+| GET | `/api/notification-channels/{id}/qr` | QR для привязки номера (ответ кешируется в `IMemoryCache`); при успешной авторизации фиксирует `Authorized` и заполняет номер из `wid` |
+| POST | `/api/notification-channels/{id}/test-message` | тестовое сообщение, кулдаун `TestMessageCooldownMinutes` |
+| DELETE | `/api/notification-channels/{id}` | отключение канала владельцем |
+| POST | `/api/notification-channels/{id}/replace` | замена номера после бана в том же оплаченном периоде (старый канал → `Replaced`) |
+| POST | `/api/notification-channels/{id}/companies` | назначить компанию на канал |
+| DELETE | `/api/notification-channels/{id}/companies/{companyId}` | снять компанию с канала |
+
+`Controllers/CompanyNotificationsController.cs` (`[Route("api/companies/{companyId:guid}")]`, `[Authorize]`):
+`GET|PUT /notification-settings`, `GET /notification-templates`, `PUT /notification-templates/{type}`,
+`POST /notification-templates/{type}/preview`, `GET /notifications` (журнал доставки,
+`PagedResult<NotificationLogItemDto>`), `GET /notifications/summary?days=`.
+
+`Controllers/NotificationsController.cs` (`[Route("api/notifications")]`, класс **без** `[Authorize]`):
+`GET|PUT /preferences` (`[Authorize]` — переключатель у клиента в профиле),
+`GET|POST /unsubscribe/{token}` (**анонимно**, токен подписан `UnsubscribeKey`),
+`POST /provider-webhook/{token}` (**анонимно**, политика лимита `notifications-webhook`, парсер
+резолвится через `[FromServices]`).
+
+`Controllers/CitiesController.cs`: `GET /api/cities?search=&take=` — **публично**, справочник городов.
+
+`Controllers/AdminController.cs` (всё под `SuperAdmin`): 🆕 `GET /api/admin/notification-channels`
+(`PagedResult<AdminChannelDto>`), `GET /api/admin/notification-channels/summary`,
+`POST /api/admin/notification-channels/{id}/payment` (проставить оплаченный период + сумму + комментарий),
+`POST .../{id}/suspend`, `POST .../{id}/resume`, `GET|PUT /api/admin/platform-settings`
+(цена канала и число дней простоя).
+
+**Шифрование чужих секретов — впервые в проекте** (`Services/Notifications/SecretProtector.cs`,
+`ChannelKeyFingerprint.cs`): AES-GCM напрямую, мастер-ключ из `.env`
+(`NOTIFICATIONS_ENCRYPTION_KEY`, 32 байта base64), формат `v1.<keyId>.<base64(nonce12‖tag16‖ct)>`,
+AAD — id канала (шифротекст, перенесённый в чужую строку, не расшифруется), **новый случайный nonce
+на каждый вызов**. Отпечаток ключа пишется в файл рядом с `.env`
+(`App_Data/state/.notifications-key-fingerprint`, записываемый bind-mount `./state`), и при
+расхождении **приложение не стартует**. Невозможность расшифровать секрет — отдельная причина
+`ChannelStateReason.SecretUnavailable` (это инцидент платформы, а не действие владельца), экземпляр
+при этом выводится из эксплуатации, и Connect открывается заново.
+
+**Постановка в очередь** — `Services/NotificationScheduler.cs`, вызывается **напрямую из
+`BookingsController`** на создание / отмену / перенос записи. Решение «слать или нет» — чистый
+`NotificationGate`; когда слать — чистый `NotificationTiming` (с джиттером `ReminderJitterMinutes`).
+
+**Три рубежа против попадания токена в лог:** заглушено логирование HTTP-клиента `green-api` на
+уровне категорий; `GreenApiUrls.SafeLabel` для того, что адаптер логирует сам; маскирование
+токена в access-логе nginx (§8).
+
+Фронт: раздел «Уведомления» в кабинете владельца (`pages/owner/NotificationsSection.tsx` +
+вкладки `NotificationSettingsTab` / `NotificationTemplatesTab` / `NotificationLogTab`), привязка по
+QR (`components/notifications/QrModal.tsx`), назначение компаний (`AssignCompanyDialog`), принятие
+рисков (`RiskAcceptanceModal`), плашка о разрыве (`ChannelBreachBanner`), админский экран
+(`pages/admin/NotificationsAdminTab.tsx`), выбор города (`components/ui/CityCombobox.tsx`),
+публичная страница отписки `/u/:token` (`pages/UnsubscribePage.tsx` — **добавлена в
+`CONSENT_GATE_BYPASS_PATHS`**, иначе заблокированный согласием пользователь не смог бы отписаться),
+переключатель уведомлений в `ProfilePage.tsx`.
 
 ---
 
 ## 5. Что реализовано частично, заглушки и несогласованности
 
-Явных маркеров `TODO`/`FIXME`/`HACK` в коде **нет ни одного** (перепроверено grep'ом по `.cs`, `.ts`,
-`.tsx`, включая тестовые проекты). Всё ниже выявлено чтением кода.
+Явных маркеров `TODO`/`FIXME`/`HACK` в коде **нет ни одного** (🆕 перепроверено grep'ом заново на
+`7a36543` по всем четырём проектам и `frontend/src`). Всё ниже выявлено чтением кода.
 
 ### 5.1 Настоящие заглушки
 
@@ -789,12 +1013,21 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 2. **Предоплата не проводится.** `RequirePrepayment` / `PaymentStatus.Pending` — организационный флаг.
    Платёж подтверждается вручную (`PATCH /api/bookings/{id}/mark-paid`). Интеграции нет.
 
-3. **Уведомлений по-прежнему нет.** Инфраструктура периодических задач появилась (§4.13), но
-   уведомлений на ней не построено: ни email, ни SMS, ни мессенджеров.
-   `SubscriptionPlanConfig.NotifyDaysBefore` сохраняется, редактируется в
-   `pages/admin/PlansTab.tsx` и подписан «Уведомление за N дн. до деактивации» — но **никем не читается**
-   в бизнес-логике (единственное использование в бэкенде — присваивание в `AdminController.UpdatePlan`;
-   проверено grep'ом заново).
+3. 🆕 **Уведомления клиенту реализованы, но выключены; уведомлений персоналу нет вовсе.**
+   - Клиентские уведомления в WhatsApp (§4.17) **написаны и покрыты тестами**, но
+     `AllowNotificationChannel = false` у всех тарифов и цена опции не задана — после выката опция
+     **никому не предлагается**. Провайдер по умолчанию `logging` — сетевых вызовов нет.
+   - **US-34 «уведомления персоналу» не реализована** — отложена осознанно, была первой в порядке
+     урезания цикла. Следы в коде есть и они **мёртвые**: члены `NotificationType.StaffBookingCreated`
+     / `StaffBookingCancelled` существуют, для них есть тексты (`NotificationTexts`) и дефолтные
+     шаблоны (`DefaultTemplates`), но **ни одна строка кода их в очередь не ставит** (проверено
+     grep'ом). Эндпоинт `PUT /api/companies/{id}/members/{memberId}/notifications` из
+     `API_CONTRACT_CYCLE4.md` §35 **не существует**.
+   - Email/SMS по-прежнему нет. Письмо владельцу о разрыве канала **вырезано решением заказчика**,
+     единственный канал оповещения владельца — плашка в кабинете.
+   - `SubscriptionPlanConfig.NotifyDaysBefore` сохраняется, редактируется в
+     `pages/admin/PlansTab.tsx` и подписан «Уведомление за N дн. до деактивации» — но **никем не читается**
+     в бизнес-логике (единственное использование в бэкенде — присваивание в `AdminController.UpdatePlan`).
 
 4. **Самостоятельной покупки тарифа нет.** Подписку может выставить только SuperAdmin через
    `PUT /api/admin/owners/{ownerUserId}/subscription`. Экрана «оплатить тариф» на фронте нет —
@@ -815,6 +1048,17 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 
 8. ⭐ **`Booking.ClientDeleted` не доведён до интерфейса.** Бэкенд проставляет флаг, он приезжает в
    DTO и объявлен в TS-типах — и там же заканчивается (см. §5.2).
+
+9. 🆕 **Текст о рисках подключения WhatsApp — «рыба».** `Services/NotificationRiskText.cs`,
+   единственная константа `CurrentVersion = "2026-09-18-draft"`, содержательный текст ждёт вычитки
+   юристом. Механика при этом **настоящая**: владелец обязан принять текст, версия сохраняется в
+   `NotificationChannel.RiskAcceptedVersion`, устаревшая версия отвергается 400. Полноценного
+   провайдера документов (как в цикле 3) для одного абзаца заводить не стали — это осознанно.
+   Правовые документы `App_Data/legal/` при этом **не менялись** и остаются на `2026-09-08-draft`.
+
+10. 🆕 **`NotificationChannel.ContactEmail` — зарезервированное, сознательно неиспользуемое поле.**
+    Сбор email при оплате канала и письмо о разрыве вырезаны решением заказчика; колонка оставлена в
+    схеме, чтобы возврат функции не требовал миграции. Ни в одном DTO не отдаётся.
 
 **Закрыто в цикле 2** (эти пункты из прошлой редакции больше не актуальны): загрузка аватара
 (`POST /api/profile/avatar`) и картинки услуги (`POST /api/services/{id}/image`) реализованы —
@@ -865,7 +1109,9 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 
 4. **Типы фронта по-прежнему копируются вручную** (`frontend/src/types/index.ts`), генерации из
    OpenAPI нет. Именно так и возник разрыв `price`/`companySlug`, который цикл 2 закрыл, и так же
-   «повис» `clientDeleted` (п. выше).
+   «повис» `clientDeleted` (п. выше). 🆕 Цикл 4 добавил в этот файл **+177 строк** ручных копий
+   (каналы, состояния, шаблоны, журнал, города) — поверхность расхождения выросла заметнее, чем в
+   любом предыдущем цикле.
 
 5. ⭐ **Пагинация `GET /api/masters/clients` — единственная из четырёх, которая считается в памяти.**
    Контроллер материализует весь список клиентов компании, применяет `search` и режет `Skip/Take`
@@ -884,7 +1130,21 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 
 ### 5.4 Документация, которая может быть устаревшей
 
-- `API_DOCUMENTATION.md` (~237 КБ) **обновлён в цикле 3** коммитом `90a69b1`: в нём есть `/api/legal/*`,
+- 🆕 **Расхождение README/CHANGELOG с фактом развёртывания, бывшее «самым крупным» в прошлой
+  редакции, ЗАКРЫТО** коммитом `d4137dd` (в начале этого диапазона): README теперь пишет, где сервис
+  работает и почему это стенд, а в CHANGELOG появился верхний раздел **«Не выпущено»** — то, что
+  принято командой, но ещё не выкачено. Содержимое цикла 4 в оба файла вносится **параллельно
+  product-analyst'ом**, этим документом не описывается.
+- 🆕 **`ARCHITECTURE.md` и `API_CONTRACT.md` в корне — это документы ЦИКЛА 3, а не текущего.**
+  Цикл 4 их **не перезаписывал**: он положил рядом `ARCHITECTURE_CYCLE4.md` (разделы **21–40**) и
+  `API_CONTRACT_CYCLE4.md` (разделы **19–37**) — продолжения с непересекающейся нумерацией. Ссылка
+  вида «§26» без указания файла **неоднозначна**: смотреть надо на номер (≥21 / ≥19 — цикл 4).
+  `SPEC.md`, наоборот, **перезаписан** циклом 4, а прошлая спека сохранена как
+  `SPEC_CYCLE3_PRODUCTION.md`.
+- 🆕 **`API_CONTRACT_CYCLE4.md` §35 описывает эндпоинт, которого нет** —
+  `PUT /api/companies/{id}/members/{memberId}/notifications` (US-34). В самом контракте он помечен
+  «режется первым», и он действительно был срезан; раздел из документа не убран.
+- `API_DOCUMENTATION.md` (🆕 ~247 КБ) **обновлён в цикле 3** коммитом `90a69b1`: в нём есть `/api/legal/*`,
   `/api/profile/export`, `/api/profile/delete-account`, `/api/health/*`, `acceptedLegal` в регистрации
   и новый §3.11 про конверт `PagedResult<T>`. Отдельно в нём есть §7 «Известные ограничения» — раздел,
   который стоит перечитывать вместе с §9 этого документа.
@@ -892,27 +1152,23 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
   («Документация, не обновлённая вместе с кодом») утверждает, что `API_DOCUMENTATION.md` в цикле 3 не
   тронут ни одной строкой. На момент написания это было правдой — документ обновили **позже**, тем
   самым `90a69b1`, а замечание не убрали.
-- 🚀 ⚠️ **`README.md` и `CHANGELOG.md` отстали от факта развёртывания.** `README.md` (строка 87)
-  утверждает, что сервис «пока не запущен для реальных клиентов»; верхняя запись `CHANGELOG.md` —
-  что трекер ошибок вживую не поднимался и что поведение защитных заголовков на скачивании выгрузки
-  вживую не проверено. Оба утверждения перестали быть верными 2026-09-17, но ни один из файлов в
-  диапазоне `6369266..0e61369` не менялся. **Это самое крупное расхождение документации с
-  реальностью в проекте на сегодня.**
-- 🚀 ⚠️ **`DEPLOY.md` §11.1 неполно описывает собственный бэкап** — перечисляет шесть шагов из семи,
-  пропуская копирование `.env` (шаг 3b `backup.sh`); §11.2 «Восстановление» `.env` не восстанавливает;
-  комментарий в `backup.sh` ссылается на несуществующий раздел «инвентарь секретов» (§9.3).
-- 🚀 Преамбула `ARCHITECTURE.md` всё ещё называет baseline цикла 3 (`344/344`, `115/115`, `35/35`) —
-  это исторические числа на момент начала цикла, а не текущие (`407`/`215`/`78`, §7). Ветка в
-  преамбуле обновлена (коммит в диапазоне), числа — нет.
-- `SPEC.md`, `ARCHITECTURE.md`, `API_CONTRACT.md` в корне — документы **цикла 3**, а не постоянные
-  справочники: следующая задача их перезапишет. Соглашения об архиве (`docs/history/`) в репозитории
-  **нет** — предыдущие редакции живут только в git-истории (SPEC цикла 2 — `git show 0492092:SPEC.md`,
-  цикла 1 — `e6b746c`, ещё более ранняя — `7c86ca2`).
-- ⭐ `SPEC_DEFERRED_NOTIFICATIONS.md` и `SPEC_APPENDIX_CHANNELS.md` — **не документы цикла 3**, а
-  сохранённая спека **отложенной** темы уведомлений (MAX/SMS). Тема отложена, не отменена; на неё
-  ссылается код (`ProfileController.ChangePhone`).
-- Преамбула `SPEC.md` предупреждает, что писалась против **прошлой** редакции `CURRENT_STATE.md`
-  (`1c21bca` + цикл 2); после настоящего обновления это предупреждение устарело.
+- 🆕 **`DEPLOY.md` дополнен в цикле 4** (+192 строки): раздел «Инвентарь секретов» (на который раньше
+  ссылался `backup.sh` вникуда) появился, `.env` в бэкапе описан, рядом — процедура ротации ключа
+  шифрования и создание каталога `state/` до первого `docker compose up`. Прежняя претензия
+  «§11.1 перечисляет шесть шагов из семи» в этой редакции **снята**.
+- 🚀 Преамбула `ARCHITECTURE.md` (цикл 3) называет baseline **цикла 3** — исторические числа на
+  момент начала того цикла, а не текущие (`488`/`449`/`100`, §7). Преамбула
+  `ARCHITECTURE_CYCLE4.md` аналогично называет baseline цикла 4 (`215`/`407`/`78`).
+- 🆕 Соглашения об архиве (`docs/history/`) в репозитории **по-прежнему нет**, каталога такого нет,
+  в README оно не описано. Цикл 4 решил проблему иначе — **суффиксом в имени файла**
+  (`*_CYCLE4.md`, `SPEC_CYCLE3_PRODUCTION.md`), а не переносом в архив. Поэтому документы двух
+  последних циклов **одновременно лежат в корне**. Более ранние редакции живут только в git-истории
+  (SPEC цикла 2 — `git show 0492092:SPEC.md`, цикла 1 — `e6b746c`, ещё более ранняя — `7c86ca2`).
+- ⭐ `SPEC_DEFERRED_NOTIFICATIONS.md` и `SPEC_APPENDIX_CHANNELS.md` — сохранённая спека **отложенной**
+  темы уведомлений по телефону (MAX/SMS). 🆕 Цикл 4 закрыл эту тему **другим каналом** (WhatsApp), но
+  файлы остались: на них ссылается код (`ProfileController.ChangePhone` — пункт Д-1 о подтверждении
+  номера, он **не реализован и сейчас**), и исследование каналов доставки из приложения сохраняет
+  ценность. Читать их как «план работ» уже нельзя.
 
 ---
 
@@ -999,6 +1255,32 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
   `if` в `Program.cs`.
 - **Телефон — только через `PhoneNormalizer`.** Любая новая точка входа, принимающая номер, обязана
   нормализовать его до записи и до поиска.
+- 🆕 **Секреты чужих аккаунтов — только через `SecretProtector`.** Никакого хранения токена
+  провайдера в открытом виде, никакого Data Protection, никакого своего AES. Нарушение расшифровки
+  бросает `ChannelSecretUnavailableException`, и вызывающий обязан перевести это в «каналу нужно
+  переподключение», а **не** дать `CryptographicException` или его текст дойти до лога/ответа.
+- 🆕 **Русский текст статусов и причин собирает сервер, в одном месте.** `ChannelStateReason` и
+  `NotificationReason` — машиночитаемые коды; формулировки живут в `Services/NotificationTexts.cs` и
+  `Services/ChannelPresentation.cs`. Фронт их **не сочиняет** и не собирает из кусочков.
+- 🆕 **Параметры платформы, правимые суперадмином, — таблица `PlatformSetting`, а не `appsettings`
+  и не поле на тарифе.** Чтение — `Services/Notifications/PlatformSettings` (кеш 60 с), запись —
+  `Services/PlatformSettingsWriter` (пишет журнал). **Отсутствие ключа ≠ значение по умолчанию:**
+  отсутствие цены означает «опция не предлагается», а не «бесплатно».
+- 🆕 **«Поле не прислали» и «прислали null» различаются через `DTOs/Common/Optional<T>`** (+ свой
+  `OptionalJsonConverterFactory`, зарегистрирован в `Program.cs`). Для частичных обновлений
+  (например, снять ручной часовой пояс) писать отдельные флаги `xxxSpecified` не нужно.
+- 🆕 **Абстракции над временем, задержкой и случайностью обязательны для всего, что «ждёт»:**
+  `INotificationClock`, `IDispatchDelay`, `IPauseGenerator`. Прода это не меняет, но делает
+  отправщик тестируемым мгновенно (§7.2). `DateTime.UtcNow` и `Task.Delay` прямо в такой логике —
+  регресс.
+- 🆕 **Внешний провайдер — за интерфейсом с заглушкой по умолчанию.** `INotificationTransport` /
+  `IChannelProvisioning`, дефолт — `logging`/no-op, реальный адаптер включается строкой конфигурации,
+  **нераспознанное значение роняет старт** (тихий откат на заглушку в проде недопустим).
+- 🆕 **Миграции: первую миграцию смёрженного цикла не редактируют.** Всё новое — новой миграцией
+  (образец — `AddChannelLastStateReason`, добавленная поверх по итогам ревью).
+- 🆕 **Значения `enum`, участвующие в SQL-фильтрах индексов или в битовых масках, — append-only.**
+  Касается `NotificationStatus` (частичный индекс диспетчера с сырым фильтром `"Status" = 0`) и
+  `NotificationType` (позиции битов в `EnabledTypeMask`). Перестановка ломает **молча**.
 - ⭐ **Rate limiting — именованные политики в `Program.cs` + `[EnableRateLimiting("…")]` на действии.**
   Глобального лимитера **нет** (`app.UseRateLimiter()` — no-op без атрибута), поэтому «не навесил
   атрибут» = «лимита нет»; на health-эндпоинтах это сделано намеренно. Пять политик:
@@ -1032,9 +1314,10 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 - **Клиентское состояние — только `authStore`** (zustand + persist). Другого глобального стора нет,
   локальное состояние — `useState`.
 - **Формы:** `react-hook-form` там, где полей много (создание компании, услуги), иначе — управляемые `useState`.
-- **Ошибки HTTP → текст пользователю** через `src/utils/*Error.ts` — сейчас их восемь
-  (`bookingError`, `cancelError`, `companyError`, `companyAdminError`, `companyManageError`,
-  `memberError`, `planError`, `scheduleError`, `uploadError`) — `switch` по `status` с явной обработкой
+- **Ошибки HTTP → текст пользователю** через `src/utils/*Error.ts` — 🆕 сейчас их двенадцать
+  (`authError`, `bookingError`, `cancelError`, `companyError`, `companyAdminError`, `companyManageError`,
+  `legalError`, `memberError`, `planError`, `scheduleError`, `uploadError`, 🆕 `notificationError`)
+  — `switch` по `status` с явной обработкой
   402/403/409/429. Это устоявшийся паттерн: новый пользовательский сценарий с гейтом должен получить
   свой маппер, а не строить текст на месте.
 - **Приватные изображения грузятся как blob,** а не через `<img src>`: `hooks/useAuthedImage.ts` +
@@ -1077,6 +1360,15 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
   `cycle/03-production-readiness`), `sanitation-cycle` сохранён и дублирует третью из них.
   CI триггерится на push в `master`, `release-candidate`, `develop`, любую ветку по маске
   `cycle/**` и на любой pull request.
+  🆕 **Цикл 4 — первый, прошедший модель веток целиком по назначению:** работа шла в
+  `cycle/04-notifications-whatsapp`, влилась в `develop` мерж-коммитом `2a11d07` **с сохранением
+  истории ветки** (не squash), и в теле мержа записан результат приёмки: числа прогонов, два
+  пройденных ревью и **явный список того, почему релиз не готов**. Это удобная точка отсчёта —
+  `git log --oneline 0e61369..2a11d07` показывает весь цикл, а два коммита после мержа
+  (`aae3541`, `7a36543`) — только починку CI.
+- 🆕 Цикл 4 — **15 коммитов** в ветке цикла (`560526c..85ad781`) плюс мерж и две починки CI.
+  Заголовки — в том же повествовательном стиле, что и раньше; тело объясняет «почему», трейлер
+  `Co-Authored-By: Claude Opus 5` (у мерж-коммита — `Claude Sonnet 5`).
 - Цикл 3 — **26 коммитов** (`f3adc6e..7a551eb`), в отличие от цикла 2, уехавшего одним коммитом
   `0492092`. Заголовки мелких коммитов несут идентификатор задачи из ARCHITECTURE (`T-B1`, `T-F5`, …)
   и историю из SPEC (`US-42`), ломающие изменения помечены прямо в заголовке (`BREAKING #1`,
@@ -1090,13 +1382,16 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 
 | Набор | Проект/каталог | Нужна БД? | Команда | Объём |
 |---|---|---|---|---|
-| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | нет | `dotnet test ServiceBooking.UnitTests` | **215** запусков (было 204) |
-| **Функциональные (API) тесты** | `ServiceBooking.Tests` | **да, PostgreSQL** | `dotnet test ServiceBooking.Tests` | **407** запусков (было 404) |
-| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | нет | `npm run test:run` (в `frontend/`) | **78** тестов (без изменений) |
+| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | нет | `dotnet test ServiceBooking.UnitTests` | 🆕 **488** запусков (было 215) |
+| **Функциональные (API) тесты** | `ServiceBooking.Tests` | **да, PostgreSQL** | `dotnet test ServiceBooking.Tests` | 🆕 **449** запусков (было 407) |
+| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | нет | `npm run test:run` (в `frontend/`) | 🆕 **100** тестов (было 78) |
 
 Количества посчитаны статически по атрибутам `[Fact]`/`[Theory]`+`[InlineData]` и вызовам `it(...)`
-и совпадают с фактическим прогоном на `0e61369`. В `ServiceBooking.Tests` атрибуты идут парой
+и совпадают с фактическим прогоном на `7a36543`. В `ServiceBooking.Tests` атрибуты идут парой
 `[Fact, TestCase("ID")]` — голого `[Fact]` там не встретить, искать надо `[Fact`.
+
+🆕 **Пропорция роста важна сама по себе:** юнит-набор вырос более чем вдвое (+273), функциональный —
+на 42. Цикл 4 писался «чистой логикой наружу», и основная проверка его правил живёт **без БД**.
 
 ### 7.1 Юнит-тесты бэкенда — `ServiceBooking.UnitTests`
 
@@ -1107,9 +1402,12 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 - `ServiceBooking.API.csproj` содержит `<InternalsVisibleTo Include="ServiceBooking.UnitTests" />`.
 - Атрибут `[TestCase(...)]` здесь **не используется** — стабильные ID есть только у функционального набора.
 
+🆕 **Цикл 4 добавил 22 файла** (перечислены ниже отдельным блоком) — юнит-набор стал основным
+носителем правил этого цикла.
+
 | Файл | Что покрывает | `[Fact]` + `[InlineData]` |
 |---|---|---|
-| **`DeploymentSafetyChecksTests.cs`** ⭐ | fail-fast прод-конфига: Jwt-ключ, пароль SuperAdmin, приватный корень внутри `wwwroot`, доверенные сети | 6 + 22 = 28 |
+| **`DeploymentSafetyChecksTests.cs`** ⭐🆕 | fail-fast прод-конфига: Jwt-ключ, пароль SuperAdmin, приватный корень внутри `wwwroot`, доверенные сети, 🆕 секреты уведомлений, отпечаток ключа, наличие tzdata | **59** (было 28) |
 | **`LegalDocumentProviderTests.cs`** ⭐ | чтение и перечитывание `legal.json`, версии, `isDraft`, `changeKind` | 9 + 11 = 20 |
 | **`PaginationTests.cs`** ⭐ | `Pagination.Normalize`: кламп снизу и **сверху** (переполнение `(page-1)*pageSize`), `HasNext` | 7 + 14 = 21 |
 | **`LogMaskingTests.cs`** ⭐ | маскирование телефонов в логах | 5 + 11 = 16 |
@@ -1123,8 +1421,36 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 | `PhotoQuotaTests.cs` | окно хранения, `Forever` | 8 + 2 = 10 |
 | `ImageSignatureTests.cs` | определение JPEG/PNG/WEBP по байтам | 7 |
 | `TokenServiceTests.cs` | claims, хеш `SecurityStamp` | 5 |
-| `FileStorageTests.cs` | containment-проверка путей, ключи vs URL | 4 |
-| **Итого** | | **204 запуска** |
+| `FileStorageTests.cs` | containment-проверка путей, ключи vs URL | 8 |
+
+🆕 **Файлы цикла 4** (22 новых, суммарно ~273 запуска):
+
+| Файл | Что покрывает | Запусков |
+|---|---|---|
+| `ChannelKeyFingerprintTests.cs` | отпечаток мастер-ключа, расхождение, подтверждение ротации | 18 |
+| `NotificationGateTests.cs` | решение «слать или нет»: тариф, канал, тип, отписка, минимальный запас | 18 |
+| `SecretProtectorTests.cs` | AES-GCM, AAD на id канала, порча шифротекста, чужой ключ | 15 |
+| `GreenApiResultClassifierTests.cs` | постоянная ошибка vs временная, «нет WhatsApp» | 15 |
+| `CompanyTimeZoneResolverTests.cs` | вывод зоны из города, ручное переопределение, смена города | 15 |
+| `NotificationTemplateTests.cs` | рендер и валидация шаблонов, плейсхолдеры | 23 |
+| `ChannelPresentationTests.cs` | русские формулировки состояния канала | 23 |
+| `NotificationTimingTests.cs` | когда ставить напоминание, джиттер, границы | 19 |
+| `NotificationTextsTests.cs` | русские формулировки журнала доставки | 12 |
+| `GreenApiUrlsTests.cs` | сборка URL и `SafeLabel` (токен не должен попасть в лог) | 11 |
+| `GreenApiWebhookParserTests.cs` | разбор вебхука статусов | 11 |
+| `ChannelStateMapperTests.cs` | состояние провайдера → `ChannelState` | 10 |
+| `CitySearchTests.cs` | нормализация поисковой строки (ё→е, дефисы) | 9 |
+| `ChannelIdleCalculatorTests.cs` | расчёт простоя канала | 8 |
+| `GreenApiStateInstanceParserTests.cs` | разбор ответа о состоянии экземпляра | 8 |
+| `UnsubscribeTokensTests.cs` | подпись и разбор токена отписки | 8 |
+| `ChannelPaymentStateTests.cs` | вычисление `ChannelPaymentStatus` | 5 |
+| `PreferIPv4Tests.cs` | упорядочивание адресов, IPv4 первым | 5 |
+| `ScheduledTaskOptionsTests.cs` | чтение подсекций новых задач | 5 |
+| `PauseGeneratorTests.cs` | пауза 5–15 с между отправками | 4 |
+| `PhoneDisplayMaskTests.cs` | маска номера для показа владельцу | 4 |
+| `OptionalTests.cs` | «не прислали» vs «прислали null» | 3 |
+
+| **Итого** | | 🆕 **488 запусков** |
 
 ### 7.2 Функциональные (API) тесты — `ServiceBooking.Tests`
 
@@ -1138,14 +1464,28 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 - **Изоляция:** `Infrastructure/TestDatabaseFixture.cs` один раз дропает базу (`EnsureDeletedAsync`),
   затем старт приложения сам накатывает миграции и сидит роли/SuperAdmin. Основная коллекция — `"Api"`,
   параллелизм отключён (`AssemblyInfo.cs`).
-- **Две дополнительные фабрики цикла 3** (каждая поднимает **свой** хост поверх той же базы):
+- **Дополнительные фабрики** (каждая поднимает **свой** хост поверх той же базы):
   - ⭐ `Infrastructure/RateLimitTestFactory.cs` — хост с жёсткими лимитами. Основная фабрика в
     `Testing` поднимает все `RateLimits:*` до 10000/мин именно для того, чтобы остальные сотни тестов
     никогда не упирались в лимит; тесты `SEC-` про 429 нуждаются в обратном.
   - ⭐ `Infrastructure/LegalDocumentsTestFactory.cs` — хост, смотрящий на **одноразовую копию**
     `App_Data/legal`, чтобы `LEG-`-тесты переписывали `legal.json`/HTML прямо на диске (существенная
     vs редакционная правка, «подменили файл — без пересборки»), не мешая остальным. `ReloadSeconds: 1`,
-    чтобы не спать 30 секунд на каждую смену версии.
+    чтобы не спать 30 секунд на каждую смену версии. 🆕 **Получила собственного суперадмина**
+    (коммит `7a36543`) — см. §9 про урок общих ресурсов.
+  - 🆕 `Infrastructure/NotificationTestFactory.cs` — хост на тест для тестов каналов.
+  - 🆕 `Infrastructure/NotificationTestBase.cs` — общая база в **той же** коллекции `"Api"`.
+  - 🆕 **`Infrastructure/NotificationDispatchTestFactory.cs` — первая в проекте тестовая
+    инфраструктура с РЕАЛЬНО тикающим `ScheduledTaskRunner`.** До цикла 4 раннер в тестах был выключен
+    целиком, и его собственное поведение (advisory lock, бюджет, частичный проход) проверить было
+    нечем. Фабрика включает его обратно на своём хосте и подменяет три абстракции на
+    записывающие/фейковые: `IDispatchDelay` → `RecordingDelay`, `INotificationClock` → `FakeClock`,
+    `INotificationTransport` → `RecordingTransport` (регистрируются **после** `Program.cs` — побеждает
+    последняя). Экземпляр **на каждый тест**, не общий. Реальный сетевой вызов через этот хост
+    невозможен и без подмены — `Notifications:Provider=logging` уже это гарантирует; подмена нужна
+    для наблюдаемости и мгновенности, а не для безопасности.
+    Тесты этой фабрики вынесены в **отдельную коллекцию** `"NotificationDispatch"` с
+    `DisableParallelization = true`.
 - **Строка подключения:** переменная окружения `SERVICEBOOKING_TEST_CONNECTION`, при её отсутствии —
   литерал `Host=localhost;Database=servicebooking_test;Username=postgres;Password=` (пустой пароль).
 - **Окружение `Testing`** читает закоммиченный `appsettings.Testing.json`: планировщик фоновых задач
@@ -1177,7 +1517,14 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
 | **`Tests/RateLimitingTests.cs`** ⭐ | `SEC-` | 6 |
 | **`Tests/HealthTests.cs`** ⭐ | `OPS-` | 4 |
 | **`Tests/IdentityRoleSyncTests.cs`** ⭐ | `SEC-` | 4 |
-| **Итого** | | **404 запуска** |
+| `Tests/UploadsStaticFilesTests.cs` | — | 2 |
+| 🆕 **`Tests/NotificationChannelsTests.cs`** | `NTF-C001…C018` (свой `NotificationTestFactory` на тест) | 18 |
+| 🆕 **`Tests/NotificationWebhookUnsubscribeTests.cs`** | `NTF-W*`, `NTF-U*`, `NTF-L*` | 9 |
+| 🆕 **`Tests/NotificationCitiesTimeZoneTests.cs`** | `NTF-G001…G006` (коллекция `"Api"`) | 6 |
+| 🆕 **`Tests/NotificationQueueingTests.cs`** | `NTF-Q001…Q004` (коллекция `"Api"`) | 4 |
+| 🆕 **`Tests/NotificationDispatchExtraTests.cs`** | `NTF-D03…D05` (коллекция `"NotificationDispatch"`) | 3 |
+| 🆕 **`Tests/NotificationDispatchTests.cs`** | `NTF-D01…D02` (коллекция `"NotificationDispatch"`) | 2 |
+| **Итого** | | 🆕 **449 запусков** |
 
 Человекочитаемое описание каждого кейса — в `TEST_CATALOG.md` (~246 КБ, русский), §10.4.
 **Оговорка про `LEG-036`** (гонка одновременного принятия согласия): сторож **вероятностный** —
@@ -1198,11 +1545,16 @@ dotnet test ServiceBooking.Tests         # основной функционал
 cd frontend && npm ci && npm run lint && npx tsc --noEmit && npm run test:run
 ```
 
-Числа последнего фактического прогона (на `0e61369`, выполнял не автор этого документа):
-`dotnet build … -warnaserror` — **0 warnings / 0 errors**; `ServiceBooking.UnitTests` — **215/215**;
-`ServiceBooking.Tests` — **407/407**; `npm run test:run` — **78/78**; `tsc --noEmit` — чисто;
+Числа последнего фактического прогона (на `7a36543`, выполнял не автор этого документа):
+`dotnet build … -warnaserror` — **0 warnings / 0 errors**; `ServiceBooking.UnitTests` — **488/488**;
+`ServiceBooking.Tests` — **449/449** (🆕 два прогона подряд **без пересоздания базы** — идемпотентность
+подтверждена); `npm run test:run` — **100/100**; `tsc --noEmit` — чисто;
 `npm run build` — успешно. Отдельного набора e2e/браузерных тестов в проекте **нет** — базовый
 прогон QA это `ServiceBooking.Tests` (xUnit + `WebApplicationFactory` + реальная PostgreSQL).
+
+🆕 **Важно для QA, прогоняющего базовый набор:** сетевых вызовов наружу функциональный набор не
+делает — `Notifications:Provider` в `Testing` остаётся `logging`, транспорт-заглушка. Ни одного
+сообщения в WhatsApp при прогоне не уходит.
 
 Ожидаемый шум в выводе функционального набора, не являющийся сбоем:
 `RequestSizeLimitFilter ... does not support IHttpRequestBodySizeFeature` (у `TestServer` нет этой
@@ -1219,12 +1571,15 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 - **Раннер:** Vitest 3.2, окружение `jsdom` 25, `@testing-library/react` 16 + `jest-dom` + `user-event`.
 - **Конфиг:** `frontend/vitest.config.ts` (намеренно отдельный от `vite.config.ts`),
   `globals: false` (явные импорты `describe`/`it`/`expect`), setup — `src/test/setup.ts`.
-- **Что покрыто (78):** `utils/uploadError` (14), `utils/phone` (10), `utils/authError` (7) ⭐,
-  `utils/cancelError` (6), `utils/legalError` (6) ⭐, `pages/MasterClientsPage` (6) ⭐,
-  `pages/LegalDocumentPage` (5) ⭐, `components/clientNotes/PhotoGallery` (5),
-  `components/ui/Pagination` (4) ⭐, `components/legal/ConsentGate` (4) ⭐,
-  `components/legal/LegalUpdateBanner` (4) ⭐, `hooks/useDebouncedValue` (4) ⭐,
-  `pages/CompanyPage` (3) ⭐.
+- **Что покрыто (🆕 100):** `utils/uploadError` (14), `utils/phone` (10), 🆕 `utils/notificationError` (9),
+  🆕 `utils/channelBanner` (8), `utils/authError` (7), `utils/cancelError` (6), `utils/legalError` (6),
+  `pages/MasterClientsPage` (6), 🆕 `utils/timezone` (5), `pages/LegalDocumentPage` (5),
+  `components/clientNotes/PhotoGallery` (5), `components/ui/Pagination` (4),
+  `components/legal/ConsentGate` (4), `components/legal/LegalUpdateBanner` (4),
+  `hooks/useDebouncedValue` (4), `pages/CompanyPage` (3).
+- 🆕 **Весь прирост цикла 4 (+22) — это утилиты.** Ни один из новых экранов уведомлений
+  (`NotificationsSection` и три его вкладки, `QrModal`, `AssignCompanyDialog`, `RiskAcceptanceModal`,
+  `NotificationsAdminTab`, `UnsubscribePage`, `CityCombobox`) тестами **не покрыт**.
 - Впервые появились тесты на **страницы**, а не только на утилиты.
 
 ### Чего в тестах НЕТ
@@ -1241,6 +1596,12 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
   данных, сами скрипты `deploy/backup/*`, `deploy/rollback.sh`, `deploy/monitor/*` (bash, тестов
   нет). 🚀 Последние три, в отличие от прошлой редакции, **прогонялись вручную на живой машине**
   2026-09-17 — это не покрытие тестом, но и не «никогда не запускалось».
+- 🆕 **Реальный GREEN-API не проверялся ничем.** Адаптер покрыт юнит-тестами на разбор ответов и
+  сборку URL, но живого вызова к провайдеру не делал ни один тест и ни один человек — партнёрского
+  аккаунта нет. Привязка по QR, реальная доставка сообщения, реальный вебхук статусов и поведение при
+  бане номера существуют только в виде кода и тестов против заглушек.
+- 🆕 `TEST_CATALOG.md` содержит **явный раздел «Не покрыто функциональными тестами этого прогона»** —
+  это зафиксированный, а не скрытый пробел.
 
 ---
 
@@ -1264,7 +1625,8 @@ pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `t
 - **Запуск в `Production` — намеренный.** Это одновременно проверка, что fail-fast
   (`DeploymentSafetyChecks`) удовлетворяется **ровно тем** набором переменных, который описан в
   `DEPLOY.md` и `.env.production.example`: добавили новую обязательную переменную и забыли про
-  документацию — job краснеет.
+  документацию — job краснеет. 🆕 Цикл 4 добавил туда шесть обязательных `NOTIFICATIONS_*`
+  переменных — этот механизм их и держит.
 - **`deploy/ci/smoke.sh` гоняет реальную загрузку изображения** по HTTP в живой контейнер, то есть
   проверяет, что `SkiaSharp.NativeAssets.Linux.NoDependencies` действительно грузится на glibc-базе
   и что файл потом реально отдаётся. Ни `dotnet build`, ни `dotnet run` этого поймать не могут.
@@ -1348,6 +1710,13 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
   `./legal:/app/App_Data/legal:ro`** поверх черновика, запечённого в образ: правовые тексты меняются
   на хосте **без пересборки и без релиза** (`DEPLOY.md` §2.1). Health-check контейнера смотрит на
   `/api/health/live`, готовность (`ready`) проверяет скрипт деплоя.
+  🆕 **Цикл 4 добавил сюда шесть `Notifications__*` переменных** (`EncryptionKey`, `KeyRotationAck`,
+  `Provider`, `PartnerToken`, `WebhookToken`, `UnsubscribeKey`) и **записываемый** bind-mount
+  `./state:/app/App_Data/state` (в отличие от `./legal`, который `:ro`). Именно туда приложение
+  пишет отпечаток мастер-ключа и сверяется с ним на каждом старте. Named volume здесь **не годится
+  намеренно**: `deploy-remote.sh` пересоздаёт контейнер на каждом деплое. Каталог `./state`
+  (0700) должен существовать **до** первого `docker compose up`; `/state/` добавлен в `.gitignore`
+  тем же правилом, что `/legal/` и `.env`.
 - `deploy/nginx/ezbook.conf`: статика из `/var/www/ezbook/current` (симлинк на релиз), прокси `/api/`
   и `/uploads/` на `127.0.0.1:5000`, `client_max_body_size 6M`, TLS через `certbot --nginx`.
   `/swagger/` не проксируется. Заголовки: на уровне `server` — `Strict-Transport-Security`,
@@ -1361,6 +1730,14 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
   пересопоставляет с `location /` и оттуда притаскивает framing-заголовки (коммит `017567b`).
   Обе стороны проверены живьём 2026-09-17: на `/` framing-заголовки строгие, на `/embed/test` их
   нет, HSTS/`nosniff`/`Referrer-Policy` есть везде.
+  🆕 **Цикл 4 добавил маскирование токенов в access-логе nginx.** Два маршрута несут секрет прямо в
+  пути: `/api/notifications/provider-webhook/{token}` (токен вебхука) и
+  `/api/notifications/unsubscribe/{token}` (из него восстанавливается телефон клиента, то есть это
+  ПДн, а не только креденшл). nginx пишет путь в лог **до** того, как запрос дойдёт до приложения,
+  поэтому маскирование на стороне .NET его не покрывает. Сделано `map` + отдельный `log_format`
+  (`notifications_masked`) и два отдельных `location` с тем же `proxy_pass` — **не** `access_log off`:
+  выключение стёрло бы коды ответа и тайминги вебхука, а это единственный сигнал, когда сбоит сам
+  GREEN-API.
 - ⭐ **Деплой больше не собирает фронт на боевом сервере.** `deploy/deploy.sh` (на машине
   разработчика, требует `gh auth login`) скачивает артефакт `frontend-dist-<sha>`, который CI собрал
   **для этого же коммита**, кладёт его на машину новым каталогом `/var/www/ezbook/releases/<ts>/` и
@@ -1377,6 +1754,12 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
   приложение лежит), в `/var/backups/servicebooking` — **вне** docker-томов, чтобы
   `docker compose down -v` не унёс копии вместе с оригиналом. Хранение: 7 суточных + 4 недельных
   (воскресные). Перед стартом проверяет свободное место (1,5× от прошлого набора).
+  🆕 **В набор добавлен файл отпечатка ключа шифрования** (`notifications-key-fingerprint-<ts>.txt`)
+  — он обязан ехать **в том же наборе, что и `.env`**: если восстановленный `.env` попадёт на машину
+  без файла отпечатка, приложение просто запишет новый на первом старте, и защита «этот `.env` не от
+  этой базы» **молча перестанет работать**. 🆕 `DEPLOY.md` §11.2 теперь **описывает восстановление
+  `.env` и отпечатка** (шаг 3b) — прежняя претензия к раннбуку снята, но копия всё так же локальная
+  (§9).
   ⚠️ **В копию входит и `.env`** (шаг 3b скрипта, файл `env-<ts>.txt`, права 0600) — без него дамп
   базы и тома бесполезны. Но: `DEPLOY.md` §11.1 в списке «что делает каждый прогон» этот шаг **не
   называет** (перечислено 6 шагов из 7), процедура восстановления §11.2 `.env` **не восстанавливает**,
@@ -1402,7 +1785,7 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
   события копятся, а письма не уходят.
 
 **Fail-fast прод-конфигурации** живёт теперь в `Services/DeploymentSafetyChecks.cs` (вынесен из
-`Program.cs` ради тестируемости — чистые статические методы, 35 юнит-тестов). В окружении Production
+`Program.cs` ради тестируемости — чистые статические методы, 🆕 **59 юнит-тестов**). В окружении Production
 приложение **не стартует**, если `Jwt:Key` пуст/короче 32 символов/равен плейсхолдеру; если
 `SuperAdmin:Password` пуст или равен `Admin12345`/`CHANGE_ME`; если `Storage:PrivateRoot` резолвится
 внутри `wwwroot`; ⭐ если `Storage:PrivateRoot` резолвится внутри фактического `Storage:PublicRoot`
@@ -1410,6 +1793,22 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
 него (см. §5); ⭐ если не настроен `ForwardedHeaders:TrustedNetworks` (иначе rate limiting по IP
 считал бы всех за один адрес docker-бриджа). Предупреждение без падения — `SuperAdmin:Phone` по
 умолчанию. **На `isDraft` в `legal.json` fail-fast намеренно нет** (§9.7).
+
+🆕 **Три новые проверки цикла 4**, все выполняются **до `Build()`** (чистые проверки конфигурации и
+файловой системы, без DI):
+- `ValidateNotificationSecrets` — при `Notifications:Provider=green-api` в Production обязаны быть
+  заданы `EncryptionKey`, `PartnerToken`, `WebhookToken`, `UnsubscribeKey`; **нераспознанный
+  `Provider` роняет старт всегда**. Часть правил работает даже в Development.
+- `ValidateChannelKeyFingerprint` — сверяет отпечаток текущего мастер-ключа с файлом в
+  `Notifications:KeyFingerprintPath`; **расхождение = отказ старта**, осознанная ротация
+  подтверждается переменной `NOTIFICATIONS_KEY_ROTATION_ACK`. Единственное некритичное предупреждение
+  этой проверки пишется **минимальным bootstrap-логгером Serilog** (консоль, JSON), потому что
+  полный конвейер логирования на этот момент ещё не построен — раньше тут был `Console.WriteLine`,
+  который не доходил ни до файла, ни до GlitchTip.
+- `ValidateTimeZoneDatabase` — резолвит `Asia/Barnaul` (намеренно не более снисходительный
+  `Europe/Moscow`); отсутствие tzdata в образе станет пойманным отказом деплоя, а не загадкой в
+  рантайме. Параллельно в `Dockerfile` **явно доустановлен `tzdata`** — не потому, что базового
+  образа не хватает сегодня, а чтобы не зависеть от того, что Microsoft его не вырежет.
 ⭐ **До коммита `909dcc3` файла `.dockerignore` в репозитории вообще не было** — он сам был
 перечислен строкой в `.gitignore` и потому никогда не коммитился; любой чистый клон собирал образ
 БЕЗ единого исключения, включая исключение секретов (`appsettings.Development/Production.json`).
@@ -1427,8 +1826,15 @@ Serilog (`ServiceBooking.API/logs/**`), артефакты тестовых пр
 секретами** (боевой пароль Postgres, JWT-ключ, серверный ключ SmartCaptcha) — их нельзя случайно
 `git add -f`. 🚀 Появился второй носитель боевых секретов — **`.env` в `/opt/ezbook/app` на самой
 машине** (`POSTGRES_PASSWORD`, `JWT_KEY`, `SUPERADMIN_PASSWORD`, `SMARTCAPTCHA_SECRET_KEY`, `SENTRY_DSN`,
-`GLITCHTIP_*`). В GitHub он не попадает никогда; в локальный бэкап попадает; вне машины
+`GLITCHTIP_*`, 🆕 `NOTIFICATIONS_ENCRYPTION_KEY`, `NOTIFICATIONS_KEY_ROTATION_ACK`,
+`NOTIFICATIONS_PROVIDER`, `NOTIFICATIONS_PARTNER_TOKEN`, `NOTIFICATIONS_WEBHOOK_TOKEN`,
+`NOTIFICATIONS_UNSUBSCRIBE_KEY`). В GitHub он не попадает никогда; в локальный бэкап попадает; вне машины
 существует только в менеджере паролей оператора (§9.3).
+🆕 ⚠️ **`NOTIFICATIONS_ENCRYPTION_KEY` — не рядовой секрет.** Остальные значения можно
+перевыпустить (`openssl rand`), заплатив разлогиниванием пользователей или перевыпуском ключа во
+внешнем кабинете. Этот — **нет**: он расшифровывает токены WhatsApp-экземпляров **чужих салонов**,
+его потеря необратимо уносит все подключённые каналы. Поэтому в `DEPLOY.md` он вынесен **отдельной
+строкой** инвентаря секретов, а не в общий список ротируемых.
 
 ---
 
@@ -1440,6 +1846,60 @@ Serilog (`ServiceBooking.API/logs/**`), артефакты тестовых пр
 надо перечитывать с учётом сдвига.
 🚀 — пункт появился, переформулирован или закрыт по итогам первого реального развёртывания
 (`6369266..0e61369`).
+
+🆕 **Нумерация 1–30 ниже СОХРАНЕНА от прошлой редакции** — цикл 4 добавил свой блок с буквенными
+номерами (P0-A…P0-E), чтобы ссылки вида «§9.17» из других документов остались валидными.
+
+---
+
+**🆕 P0-цикл-4 — почему функция уведомлений написана, но не выпущена**
+
+**A. Функция выключена тарифно и наружу не предлагается.** `AllowNotificationChannel = false` у всех
+планов, включая новые (решение заказчика Q1); цена опции (`notifications.channel.price-per-month`)
+не задана, а её отсутствие означает «опция не предлагается», а не «бесплатно». Суперадмин включает
+флаг вручную при выпуске. **Для QA: сразу после выката «опция никому не предлагается» — ожидаемое
+состояние, а не дефект.** Что блокирует выпуск:
+  1. **правовая оценка по 41-ФЗ** не проведена;
+  2. **партнёрского аккаунта GREEN-API нет** — реального экземпляра не создавалось ни разу;
+  3. **P0-3 (восстановление `.env` из бэкапа)** — см. ниже, цена вопроса выросла качественно;
+  4. **справочник городов неполон (91 запись) и нет админского способа добавить город** —
+     единственный путь сейчас новая миграция.
+
+**B. US-34 «уведомления персоналу» не реализована** — отложена осознанно, была **первой в порядке
+урезания**. В коде остались члены перечисления, тексты и дефолтные шаблоны для
+`StaffBookingCreated`/`StaffBookingCancelled`, но никто их не ставит в очередь (§5.1); эндпоинт из
+`API_CONTRACT_CYCLE4.md` §35 не существует.
+
+**C. Правовые тексты — заглушки.** Текст о рисках подключения WhatsApp — «рыба» с версией
+`2026-09-18-draft` (`Services/NotificationRiskText.cs`), ждёт вычитки юристом. Механика принятия
+версии при этом настоящая и работает. Отдельно: политика и оферта в `App_Data/legal/` остаются
+черновиком `2026-09-08-draft` (§9.7) и **уведомления в WhatsApp никак не покрывают** — про отправку
+сообщений клиенту в них ничего не сказано.
+
+**D. Задача T4-D3 не выполнена: сетевой контур на боевой машине после выката не проверялся.**
+Спайк показал, что `api.green-api.com` с машины достижим, но **глобального IPv6 на ней нет**, и без
+keep-alive и упорядочивания адресов каждое новое соединение стоит ~5 секунд. Лечение **в коде есть**
+(`GreenApiHandlerFactory` — keep-alive, `PreferIPv4` — IPv4-first `ConnectCallback`, настройки
+`ConnectPreference`/`ConnectTimeoutSeconds`/`PerAddressConnectTimeoutSeconds`), покрыто юнит-тестами,
+но **живой проверки после выката не было**.
+
+**E. 🧠 Урок про тестовую инфраструктуру — записан, чтобы не повторять.** Три падения CI подряд в
+конце цикла (коммиты `aae3541`, `7a36543`) вызваны **молча общими ресурсами между тестами**, и все
+три давали зелёное локально и красное в CI:
+  1. **база, не пересоздававшаяся под новую коллекцию** — `TestDatabaseFixture` чистит её один раз,
+     а новая коллекция `"NotificationDispatch"` поднимает свой хост поверх той же базы;
+  2. **счётчик отправок, считавший чужие строки** — `RecordingTransport` регистрируется один раз на
+     хост, а соседние тесты оставляли в общей базе pending-строки, и проход уносил чужую за бюджет;
+     исправлено фильтрацией по своему номеру телефона (приём, который соседний тест уже применял);
+  3. **аккаунт суперадмина, «застолбленный» фабрикой правовых тестов** — она смотрела на одноразовый
+     манифест со случайной версией, но **использовала тот же телефон суперадмина**, что и все
+     остальные фабрики; чья коллекция стартовала первой на чистой базе, та и решала, с какой версией
+     документов согласен общий суперадмин — после чего **весь остальной набор** получал 451. Какой
+     именно тест за это платил, зависело только от порядка.
+  Попутно: две проверки сравнивали `DateTime` на точное равенство со значением, прошедшим через
+  Postgres (микросекунды против тиков) — на машине разработчика совпадало, в CI нет.
+
+---
 
 **P0 — эксплуатационные ограничения работающей системы**
 
@@ -1465,16 +1925,18 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
    (пожар, кража, смерть диска — диск ещё и **не зашифрован**, LUKS нет). Решение заказчика
    (SPEC R13), в `backup.sh` есть готовая заглушка `upload_offsite()` под будущую доработку. Тем же
    свойством страдает мониторинг: `health-alert.sh` крутится на проверяемой машине.
-3. 🚀 **Конфигурация (`.env`) при потере машины невосстановима — и процедура восстановления её не
-   восстанавливает.** Формально `.env` **входит** в локальный бэкап (шаг 3b `backup.sh`,
-   `env-<ts>.txt`, 0600) — но: (а) копия лежит на той же машине, то есть от её потери не спасает;
-   (б) `DEPLOY.md` §11.1 в перечне «что делает каждый прогон» этот шаг не называет, а §11.2
-   «Восстановление» его не использует — оператор, идущий строго по раннбуку, восстановит базу и
-   тома, но не конфигурацию; (в) комментарий в скрипте отсылает к «DEPLOY.md, инвентарь секретов»,
-   **такого раздела в `DEPLOY.md` нет**. В `.env` лежат `Jwt:Key` (его потеря = разлогинивание всех),
-   пароль Postgres, пароль и секрет GlitchTip, серверный ключ SmartCaptcha; **часть значений выдаётся
-   внешними кабинетами и заново берётся только оттуда**. Единственный реальный носитель — менеджер
-   паролей оператора, и то, что он заполнен, документом не подтверждается.
+3. 🚀🆕 **Конфигурация (`.env`) при потере машины невосстановима — и теперь от неё зависят учётные
+   данные ЧУЖИХ аккаунтов WhatsApp.** 🆕 **Цена вопроса выросла качественно, и это прямо названо
+   блокирующим выпуск функции уведомлений (P0-цикл-4, пункт A).** Что изменилось к лучшему: раздел
+   «Инвентарь секретов» в `DEPLOY.md` **появился** (раньше `backup.sh` ссылался вникуда), §11.2
+   теперь **описывает восстановление `.env` и файла отпечатка ключа** (шаг 3b, с предупреждением
+   восстанавливать их **одним набором**), а сам отпечаток попал в бэкап. Что **не** изменилось:
+   **копия по-прежнему лежит на той же машине**, внешней нет. В `.env` лежат `Jwt:Key` (его потеря =
+   разлогинивание всех), пароль Postgres, пароль и секрет GlitchTip, серверный ключ SmartCaptcha и
+   🆕 **`NOTIFICATIONS_ENCRYPTION_KEY`, потеря которого необратимо уносит WhatsApp-каналы всех
+   салонов**. **Часть значений выдаётся внешними кабинетами и заново берётся только оттуда.**
+   Единственный реальный носитель вне машины — менеджер паролей оператора, и то, что он заполнен,
+   документом не подтверждается.
 4. 🚀 **RDP торчит в интернет: порты 3389/3390 открыты в `ufw` и проброшены роутером.** Это
    пред-существующая настройка машины (заказчик пользуется удалённым рабочим столом), риск принят
    **осознанно**, но до этой редакции нигде как принятый риск зафиксирован не был — `DEPLOY.md`
@@ -1528,11 +1990,16 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
    а CI-джоб `docker-build` стартует образ именно в `Production` — то есть проверка теперь сама под
    тестом. Остаточный риск **прежний**: в **не**-Production окружениях (стенд с
    `ASPNETCORE_ENVIRONMENT=Staging`) проверка не срабатывает вовсе.
-12. **Полное отсутствие работы с часовыми поясами — подтверждено как решение, а не как упущение.**
-   `Booking.Date/StartTime/EndTime` — `DateOnly`/`TimeOnly` без TZ, всё остальное — `DateTime.UtcNow`.
-   Часовые пояса **осознанно не вводились** в цикле 3 (US-51); обоснование — в SPEC US-51,
-   эксплуатационное следствие («все контейнеры в UTC») — в `DEPLOY.md` §13 и `README.md`.
-   Для мультирегионального SaaS это остаётся источником ошибок «на границе суток».
+12. 🆕 **Часовые пояса введены ЧАСТИЧНО — только там, где без них не работали уведомления.**
+   Прежняя формулировка «полное отсутствие работы с часовыми поясами» больше не верна: у компании
+   появились `CityId`, `TimeZoneId` и `TimeZoneIsManual`, есть справочник городов и чистый
+   `CompanyTimeZoneResolver`, а расчёт «когда слать напоминание» (`NotificationTiming`) считает в
+   зоне компании. **Но сама модель записи не изменилась:** `Booking.Date/StartTime/EndTime` — всё те
+   же `DateOnly`/`TimeOnly` без TZ, слоты и расписание считаются без зоны, все контейнеры живут в UTC
+   (`DEPLOY.md` §13, `README.md`). То есть зона сейчас — **свойство уведомлений, а не свойство
+   расписания**, и источник ошибок «на границе суток» в ядре бронирования остаётся.
+   Побочное следствие: **справочник городов неполон (91 запись) и пополняется только миграцией** —
+   админского способа добавить город нет.
 13. **Security-заголовки: Linux-контур закрыт, Windows-контур — нет.** `deploy/nginx/ezbook.conf`
    теперь отдаёт `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`,
    `X-Frame-Options: DENY` и полноценный `Content-Security-Policy` (с явными исключениями под
@@ -1561,12 +2028,15 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     Признано приемлемым ревьюером (список ограничен одной компанией) и **задокументировано
     комментарием в коде** — но с ростом базы клиентов это первый кандидат на деградацию.
     Остальные три выборки (`admin/users`, `admin/companies`, публичные отзывы) пагинируются в БД.
-18. **Фронтенд покрыт точечно.** 78 тестов Vitest на ~8 000 строк TSX. Покрыты мапперы ошибок,
-    `formatPhone`, `PhotoGallery`, `Pagination`, `useDebouncedValue`, правовой контур
-    (`ConsentGate`, `LegalUpdateBanner`, `LegalDocumentPage`) и по одному тесту на `CompanyPage` и
-    `MasterClientsPage`. **Не покрыты**: `BookingModal`, `ManualBookingModal`, `RescheduleModal`,
-    календарь `ScheduleTab`, вкладочные страницы кабинета и админки, `DeleteAccountPage`,
-    `useExportData`, `useAuthedImage`.
+18. **Фронтенд покрыт точечно.** 🆕 100 тестов Vitest на ~10 000 строк TSX, и **весь прирост цикла 4
+    (+22) — это утилиты**, ни одного теста на новые экраны. Покрыты мапперы ошибок,
+    `formatPhone`, `timezone`, `channelBanner`, `PhotoGallery`, `Pagination`, `useDebouncedValue`,
+    правовой контур (`ConsentGate`, `LegalUpdateBanner`, `LegalDocumentPage`) и по одному тесту на
+    `CompanyPage` и `MasterClientsPage`. **Не покрыты**: `BookingModal`, `ManualBookingModal`,
+    `RescheduleModal`, календарь `ScheduleTab`, вкладочные страницы кабинета и админки,
+    `DeleteAccountPage`, `useExportData`, `useAuthedImage`, 🆕 **весь раздел уведомлений**
+    (`NotificationsSection` и три вкладки, `QrModal`, `AssignCompanyDialog`, `RiskAcceptanceModal`,
+    `ChannelBreachBanner`, `NotificationsAdminTab`, `UnsubscribePage`, `CityCombobox`).
 19. **`CompaniesController` — 635 строк** (было 571) и 16 эндпоинтов, включая логику подписок,
     загрузку файлов, квоту фото и целиком сборку статистики (`GetStats`, ~70 строк агрегаций
     **в памяти** после `ToListAsync()`). Контроллер продолжает расти.
@@ -1586,6 +2056,36 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     `ctx.RequestServices.GetRequiredService<IConfiguration>()` — приём из цикла 2 сохранён и
     распространён на четыре новые политики.
 
+🆕 **P2, добавленное циклом 4:**
+
+24a. **Отправщик — самый большой новый код, никогда не работавший против настоящего провайдера.**
+    `NotificationDispatchTask` (~464 строки) и `ChannelHealthTask` (~405) покрыты тестами против
+    заглушек и фейковых часов; живого GREEN-API не видел ни один прогон. Всё, что касается реальных
+    таймаутов, реальных кодов ошибок и реального поведения WhatsApp при бане, **проверено только по
+    документации провайдера**.
+
+24b. **Два перечисления стали хрупкими по своим числовым значениям.** `NotificationStatus.Pending`
+    обязан остаться `0` (частичный индекс диспетчера объявлен сырым SQL `"Status" = 0`), а значения
+    `NotificationType` — позиции битов в `EnabledTypeMask`. Перестановка члена не ломает сборку и не
+    роняет тест на ровном месте: индекс останется, запрос молча уедет в full scan, а маска молча
+    сменит смысл. Оба риска **зафиксированы XML-комментариями прямо на перечислениях** — но держатся
+    только на том, что их прочитают.
+
+24c. **Мастер-ключ шифрования — единственная точка отказа для всей функции.** Его потеря или подмена
+    не деградирует систему частично: все сохранённые токены становятся нечитаемы, каналы уходят в
+    `NeedsReconnect` с причиной `SecretUnavailable`, и каждому салону придётся заново проходить
+    привязку по QR. Защит две (отпечаток + отказ старта, обязательное подтверждение ротации), обе
+    **обнаруживают** проблему, но ни одна её не **восстанавливает**.
+
+24d. **Тесты уведомлений делят ту же базу `servicebooking_test`, что и остальные 400+.** Отдельная
+    коллекция `"NotificationDispatch"` отключает параллелизм у себя, но база одна на весь прогон, и
+    новая фабрика поднимает поверх неё свой хост. Именно это уже дало три падения CI (P0-цикл-4,
+    пункт E). Конструкция осталась — изменились только тесты, которые стали фильтровать своё.
+
+24e. **`AdminController` и `CompaniesController` продолжили расти:** админский контроллер получил
+    +211 строк (каналы, оплаты, параметры платформы), компании — +125 (города и зоны). Сервисного
+    слоя по-прежнему нет.
+
 **P3 — эксплуатация, гигиена, недоделки**
 
 25. ⭐ **Шага `dotnet format` в CI нет.** `.editorconfig` появился (US-50) и **описывает уже
@@ -1604,6 +2104,10 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     предоплата (платежей нет), `NotifyDaysBefore` в редакторе тарифов (уведомлений нет), обещание
     «напоминание накануне визита» на `HomePage.tsx` (Q8). README и `docs/faq.md` про это пишут
     честно — интерфейс нет.
+    🆕 **Уведомления в этот список не попадают, и это важное отличие:** они не «выглядят рабочими, но
+    не работают», а **не показываются вовсе**, пока суперадмин не включит тарифный флаг и не задаст
+    цену. Обещание «напоминание накануне визита» на `HomePage.tsx` теперь имеет за собой код — но до
+    выпуска опции оно по-прежнему невыполнимо.
 28. **Локальные загруженные файлы не воспроизводимы на чистом клоне.** `wwwroot/uploads/**` и
     `App_Data/private-uploads/**` — в `.gitignore`; на машине разработчика в приватном каталоге лежат
     ~36 папок компаний с реальными JPEG. На свежем клоне ссылки из дампа БД будут битыми.
@@ -1624,6 +2128,14 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
 форс-команды снаружи по отдельным ключам). Побочно закрыты две дыры доступа, найденные при этом:
 `ezbookdeploy` состоял в группе `sudo` (то есть имел `ALL : ALL`, и точечные `NOPASSWD` были
 бессмысленны), и в его `authorized_keys` по ошибке попал личный ключ **без** префикса `command=`.
+
+🆕 **Закрыто циклом 4** (не переоткрывать без причины): «интеграции с мессенджерами нет»;
+«полное отсутствие часовых поясов» — закрыто **частично и только для уведомлений** (см. §9.12,
+формулировка изменена, а не снята); «`DEPLOY.md` §11.1 не называет копирование `.env`, а §11.2 его
+не восстанавливает» и «`backup.sh` ссылается на несуществующий раздел инвентаря секретов» — раздел
+появился, процедура восстановления `.env` и отпечатка описана; «README и CHANGELOG отстали от факта
+развёртывания» — закрыто коммитом `d4137dd`; «раннер `ScheduledTaskRunner` в тестах выключен
+целиком, его собственное поведение проверить нечем» — закрыто `NotificationDispatchTestFactory`.
 
 **Закрыто циклом 3** (не переоткрывать без причины):
 отсутствие политики конфиденциальности, пользовательского соглашения и записи согласия;
@@ -1655,32 +2167,37 @@ Blazor-проект и мёртвые страницы фронта; расхо�
 ## 10. Что уже существует в документации и тест-кейсах
 
 Раздел нужен, чтобы следующие агенты **дополняли существующее, а не заводили параллельные версии**.
-Всё перечисленное лежит в репозитории и обновлялось в цикле 3.
+Всё перечисленное лежит в репозитории.
 
-🚀 **Важное расхождение: продуктовая документация отстала от факта развёртывания.** В диапазоне
-`6369266..0e61369` `README.md`, `CHANGELOG.md` и `docs/**` **не менялись ни разу**, поэтому
-`README.md` (строка 87) по-прежнему утверждает: «Сервис функционально готов и подготовлен к запуску,
-но **пока не запущен для реальных клиентов**», а верхняя запись `CHANGELOG.md` — что трекер ошибок
-«вживую не поднимался» и поведение защитных заголовков на скачивании выгрузки «вживую не проверено».
-Всё это перестало быть правдой 2026-09-17. Фактура о развёртывании существует только в `DEPLOY.md`
-и в этом файле.
+🆕 **Расхождение продуктовой документации с фактом развёртывания, о котором предупреждала прошлая
+редакция, ЗАКРЫТО** коммитом `d4137dd`. Продуктовое описание цикла 4 вносится в `README.md` и
+`CHANGELOG.md` **параллельно, product-analyst'ом**, и этим документом не фиксируется — актуальное
+состояние этих двух файлов смотреть прямо в них.
 
 ### 10.1 Краткая продуктовая документация
 
 | Что | Путь | Формат | Структура |
 |---|---|---|---|
 | Обзор продукта | `README.md` (~19 КБ) | Markdown, русский | `## О проекте` (внутри жирными врезками «Для кого», «Роли», **«Что умеет»**, **«Чего пока нет»** — честный список отсутствующего: платежи, письма, уведомления, самостоятельная оплата тарифа, клиентский просмотр фото, согласие на съёмку) → **`## Запуск`** (`### Локально, всё в Docker`, `### Локально, без Docker для API`, `### Переменные окружения и секреты`, `### CI`, `### Деплой`). В цикле 3 README вырос эксплуатационной половиной: врезки «Бэкапы» (и прямо — что копия локальная) и «Часовые пояса» (UTC везде) |
-| Changelog | `CHANGELOG.md` (~49 КБ) | Markdown, русский, по мотивам Keep a Changelog | **По датам завершения цикла, самая свежая запись сверху**; номеров версий в проекте нет. Верхняя запись — `## 2026-09-15 — подготовка к запуску для реальных людей`, внутри подразделы «Появилось новое», «Изменилось» и т.п. Запись открыто говорит, что сервис **не запущен** и живого развёртывания не было |
+| Changelog | `CHANGELOG.md` (🆕 ~58 КБ) | Markdown, русский, по мотивам Keep a Changelog | **По датам завершения цикла, самая свежая запись сверху**; номеров версий в проекте нет. 🆕 **Самый верхний раздел — `## Не выпущено`**: туда кладётся принятое командой, но не выкаченное на работающий адрес; дату раздел получает в момент фактического выката. Сейчас там — уведомления в WhatsApp, с оговоркой «функцию нельзя включить сейчас, и после выката она никому не предлагается — это ожидаемое состояние, а не дефект». Ниже — датированные записи (`2026-09-17 — сервис впервые развёрнут`, `2026-09-15`, `2026-09-07`, …) |
 
-GitHub Releases / wiki в проекте не используются. 🚀 Оба файла **не обновлялись** после
-развёртывания и в этой части устарели (§5.4).
+GitHub Releases / wiki в проекте не используются. 🆕 Оба файла приведены в соответствие с
+реальностью коммитом `d4137dd` и **дополняются product-analyst'ом прямо сейчас** — считать их
+устаревшими больше нельзя, но и опираться на конкретные формулировки из этой редакции не стоит.
 
-Отдельно, не продуктовая, но постоянно нужная документация: **`DEPLOY.md`** (~111 КБ, markdown,
+🆕 Пользовательская документация в `docs/**` циклом 4 **не менялась** — раздела про уведомления в
+WhatsApp там пока нет (проверено: в диапазоне ни один файл `docs/` не тронут).
+
+Отдельно, не продуктовая, но постоянно нужная документация: **`DEPLOY.md`** (🆕 ~129 КБ, markdown,
 русский) — эксплуатационный раннбук машины. Структура: «Целевая машина (факты)» → «Чек-лист всей
 установки» → §0…§15 пошаговые разделы (каждый шаг с блоком «Должно получиться») → **§16 чек-лист
 первого запуска с датами и вердиктами** → **«Почему так сделано»** (объяснительная часть, вынесена
 в конец: почему docker не из snap, почему бэкап локальный, почему `ezbookdeploy` не root, почему
 CSP устроена так, какую ветку катим и почему AlmaLinux-вариант не сохранён параллельно).
+🆕 Цикл 4 дописал сюда (+192 строки): раздел **«Принятые риски и где лежат секреты»** с подразделом
+**«Инвентарь секретов»** (§55), отдельную строку про `NOTIFICATIONS_ENCRYPTION_KEY` и процедуру его
+ротации, создание каталога `state/` до первого запуска и шаг 3b восстановления `.env` + отпечатка
+ключа в §11.2.
 
 ### 10.2 Развёрнутая пользовательская документация
 
@@ -1706,16 +2223,26 @@ CSP устроена так, какую ветку катим и почему Al
 
 | Что | Путь | Формат | Структура |
 |---|---|---|---|
-| Справочник эндпоинтов | `API_DOCUMENTATION.md` (~237 КБ) | Markdown, русский | §1 Обзор → §2 Аутентификация → §3 Ключевые бизнес-концепции (появился **§3.11 «Конверт `PagedResult<T>`»**) → **§4 Справочник эндпоинтов** (основной объём) → §5 Сквозные сценарии (curl-рецепты) → §6 Справочник кодов ответа → **§7 Известные ограничения**. Обновлён в цикле 3 коммитом `90a69b1`: `/api/legal/*`, `/api/profile/export`, `/api/profile/delete-account`, `/api/health/*`, `acceptedLegal` в регистрации, пагинация |
-| Контракт текущего цикла | `API_CONTRACT.md` (~51 КБ) | Markdown, русский | документ **цикла 3**: контракт новых/изменённых эндпоинтов, коды ошибок (включая 451), тела ответов |
+| Справочник эндпоинтов | `API_DOCUMENTATION.md` (🆕 ~247 КБ) | Markdown, русский | §1 Обзор → §2 Аутентификация → §3 Ключевые бизнес-концепции (**§3.11 «Конверт `PagedResult<T>`»**) → **§4 Справочник эндпоинтов** (основной объём) → §5 Сквозные сценарии (curl-рецепты) → §6 Справочник кодов ответа → **§7 Известные ограничения**. 🆕 **Обновлён в цикле 4**: добавлены `§4.3a GET /api/cities` и большой **§4.15 «Notifications (WhatsApp)»** с подразделами «Каналы владельца», «Настройки и шаблоны компании», «Журнал доставки и отметка в записи», «Отписка и вебхук», «Админка». Оба новых раздела **явно помечены «недоступно в текущем релизе»** |
+| Контракт цикла 3 | `API_CONTRACT.md` (~51 КБ) | Markdown, русский | разделы **до 19**: контракт цикла 3, коды ошибок (включая 451) |
+| 🆕 Контракт цикла 4 | **`API_CONTRACT_CYCLE4.md`** (~40 КБ) | Markdown, русский | **разделы 19–37, продолжение предыдущего файла, нумерация не пересекается**. §19 общее для всех эндпоинтов цикла → §20–27 каналы → §28–30 настройки/шаблоны/журнал → §31 город и часовой пояс → §32–33 отписка и вебхук → §34 админка → §35 (эндпоинт US-34, **срезан, в коде его нет**) → §36 сводка новых и изменённых эндпоинтов → §37 чек-лист согласования BE↔FE |
 
 **OpenAPI/Swagger-файла в репозитории нет** — схема генерируется Swashbuckle во время работы и
 доступна только в Development (`/swagger`). Postman-коллекции нет. Генерации TS-типов из схемы нет.
 
 ### 10.4 Описания тест-кейсов
 
-**`TEST_CATALOG.md`** (~246 КБ), Markdown, русский — человекочитаемое описание **каждого**
+**`TEST_CATALOG.md`** (🆕 ~270 КБ), Markdown, русский — человекочитаемое описание **каждого**
 автоматизированного кейса, отдельно от самого кода тестов.
+
+🆕 **Цикл 4 добавил раздел `## Notifications (US-27…US-63)`** с подразделами по файлам и указанием
+**коллекции**, в которой живёт каждый набор (это существенно — см. §9, урок про общие ресурсы):
+`NotificationChannelsTests` (`NTF-C001…C018`, своя фабрика на тест), `NotificationQueueingTests`
+(`NTF-Q001…Q004`, коллекция `"Api"`), `NotificationWebhookUnsubscribeTests`
+(`NTF-W*`/`NTF-U*`/`NTF-L*`), `NotificationDispatchTests` и `NotificationDispatchExtraTests`
+(`NTF-D01…D05`, коллекция `"NotificationDispatch"`), `NotificationCitiesTimeZoneTests`
+(`NTF-G001…G006`). В конце раздела — **явный подраздел «Не покрыто функциональными тестами этого
+прогона (зафиксировано, не блокер)»**.
 
 - Структура: «Как устроены ссылки на тесты» → «Префиксы по доменам» → **«Юнит-тесты (без БД)»** →
   далее раздел на домен (`Auth`, `Bookings`, `Companies`, `Services`, `WorkingHours`,
@@ -1727,10 +2254,11 @@ CSP устроена так, какую ветку катим и почему Al
   health и пагинации писал QA, а не разработчики.
 - Связь с кодом — через стабильный ID из атрибута `[TestCase("PREFIX-NNN")]`.
   Поиск кейса по ID: `grep -rn "BK-003" ServiceBooking.Tests/`.
-- ⚠️ **Последний раздел каталога — «Документация, не обновлённая вместе с кодом» — устарел.** Он
-  утверждает, что `API_DOCUMENTATION.md` не тронут в цикле 3 ни одной строкой. На момент написания
-  раздела это было правдой; документ обновили позже, коммитом `90a69b1` (см. §10.3). Само замечание
-  из каталога не убрали.
+- ⚠️ **Раздел каталога «Документация, не обновлённая вместе с кодом» (строка 2237) устарел дважды.**
+  Он утверждает, что `API_DOCUMENTATION.md` не тронут «в этом цикле» ни одной строкой. Речь про
+  **цикл 3**, и уже тогда это перестало быть правдой (коммит `90a69b1`); 🆕 в цикле 4 справочник
+  обновлён ещё раз (+116 строк). Замечание из каталога так и не убрали — читать его как
+  актуальное нельзя.
 
 Отдельного `TESTPLAN.md`, каталога `docs/testing/` или ручных сценариев вне `TEST_CATALOG.md`
 в проекте **не найдено**.
@@ -1747,13 +2275,21 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 
 | Документ | Размер | Что это |
 |---|---|---|
-| `SPEC.md` | ~139 КБ | **цикл 3** «готовность к продакшену», редакция 2 (решения заказчика внесены в §0). Истории US-36…US-52, §2.3 сквозной порядок работ, §2.4 порядок урезания |
-| `ARCHITECTURE.md` | ~135 КБ | **цикл 3**. Ключевые ссылки, на которые ссылается код: §4 правовые документы, §5 модель согласий, §6.3 451 и claim'ы, §7.3/§7.4/**§19.2** (почему удаление аккаунта — надгробие, а не `DELETE`), §8 IdentityRoleSync, §9 ForwardedHeaders, §10 health, §11 логирование и GlitchTip, §12 деплой/бэкап/откат, §15.1 пагинация, §17.1/§18.2 стиль |
-| `API_CONTRACT.md` | ~51 КБ | **цикл 3**, см. §10.3 |
+| 🆕 **`SPEC.md`** | ~276 КБ | **ЦИКЛ 4** «уведомления клиенту о записи через WhatsApp (GREEN-API), отправитель — салон, платит платформа», **редакция 6**. Истории US-27…US-63, §0 решения заказчика, §3 порядок урезания (US-34 была первой), §11 спайк сетевого контура, §15.1 вычисляемый статус оплаты, §16 шестнадцать вопросов архитектору |
+| 🆕 **`ARCHITECTURE_CYCLE4.md`** | ~165 КБ | **ЦИКЛ 4, разделы 21–40** — продолжение `ARCHITECTURE.md`. Ключевые ссылки из кода: §23 модель данных цикла, **§24 шифрование чужих секретов**, §25 слои и файлы, **§26 отправщик (главный вопрос цикла)**, §27 как отправщик тестируется, §28 адаптер провайдера, §29 QR, §30 состояние канала и простой, §31 оповещение владельца, §32 вебхук, §33 тариф, **§34 часовые пояса и города**, §35 миграции, §36 порядок работ, §37 конфигурация и «приёмочные грепы», **§38 расхождения со SPEC**, §39 риски, §40 карта ответов на §16 SPEC |
+| 🆕 **`API_CONTRACT_CYCLE4.md`** | ~40 КБ | **ЦИКЛ 4, разделы 19–37**, см. §10.3 |
+| `SPEC_CYCLE3_PRODUCTION.md` 🆕 | ~139 КБ | **сохранённая спека цикла 3** «готовность к продакшену» — переехала сюда, потому что `SPEC.md` занят циклом 4 |
+| `ARCHITECTURE.md` | ~135 КБ | **цикл 3**, разделы **до 21**. Ключевые ссылки, на которые ссылается код: §4 правовые документы, §5 модель согласий, §6.3 451 и claim'ы, §7.3/§7.4/**§19.2** (почему удаление аккаунта — надгробие, а не `DELETE`), §8 IdentityRoleSync, §9 ForwardedHeaders, §10 health, §11 логирование и GlitchTip, §12 деплой/бэкап/откат, §15.1 пагинация, §17.1/§18.2 стиль |
+| `API_CONTRACT.md` | ~51 КБ | **цикл 3**, разделы до 19, см. §10.3 |
 | **`SPEC_DEFERRED_NOTIFICATIONS.md`** ⭐ | ~90 КБ | SPEC **отложенного** цикла уведомлений клиенту по телефону (MAX/SMS). Тема **отложена решением заказчика, не отменена**. Здесь же живёт пункт **Д-1 «Подтверждение нового номера телефона при смене»**, на который ссылается комментарий в `ProfileController.ChangePhone` |
 | **`SPEC_APPENDIX_CHANNELS.md`** ⭐ | ~57 КБ | приложение к нему: исследование каналов доставки |
 
 **Соглашения об архиве (`docs/history/`) в репозитории по-прежнему нет**, каталога такого нет, в
-README оно не описано — поэтому документы цикла 3 **оставлены в корне**, а не перенесены.
+README оно не описано. 🆕 **Цикл 4 решил задачу иначе — суффиксом в имени файла**
+(`*_CYCLE4.md`, `SPEC_CYCLE3_PRODUCTION.md`), так что документы **двух последних циклов
+одновременно лежат в корне**, а `SPEC.md`/`ARCHITECTURE.md`/`API_CONTRACT.md` без суффикса означают
+разные циклы (4 и 3 соответственно). Это следует иметь в виду при любой ссылке «см. SPEC».
+Документы цикла 4 **никуда не переносились** — в том числе поэтому эта редакция `CURRENT_STATE.md`
+их не архивировала.
 Предыдущие редакции живут только в git-истории: SPEC цикла 2 — `git show 0492092:SPEC.md`,
 цикла 1 — `git show e6b746c:SPEC.md`, ещё более ранняя — `7c86ca2`.
