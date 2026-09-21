@@ -1,0 +1,1060 @@
+openapi: 3.0.3
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 6 («Доработка сценария записи на услуги»).
+#
+# Это ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса между backend и frontend на время цикла.
+# Смысловые правила, которые схемой не выражаются («уважается только для персонала», «повторить
+# с подтверждением», «дата обязательна, когда выбран план»), живут в API_CONTRACT_CYCLE6.md —
+# он читается вместе с этим файлом.
+#
+# РЕДАКЦИЯ 2 (2026-09-22) — приведено в соответствие с ответами заказчика (SPEC.md §0.1):
+#   Q2  дата окончания подписки обязательна при заданном плане  → UpdateSubscriptionRequest, 400
+#   Q4  только российские номера, правило действует на сервере  → POST /api/auth/register, 400
+#   Q5  горизонт записи — настройка компании (по умолчанию 90)  → PUT /api/companies/{id},
+#                                                                 AvailabilityResponse.horizonDays,
+#                                                                 400 у POST /api/bookings
+#   Q1  код ответа на логин — 401; его отдают ТРИ исхода, среди них lockout (401 vs 423)
+#
+# ОБЛАСТЬ ОХВАТА. Описаны только эндпоинты, которых цикл 6 касается: новые, изменённые и те
+# существующие, на которые опирается сценарий записи. Остальной API (18 контроллеров) цикл не
+# трогает — он описан в API_DOCUMENTATION.md и в контрактах циклов 3 и 4.
+#
+# КАК ЭТИМ ПОЛЬЗОВАТЬСЯ (готовые инструменты, тесты писать руками не нужно):
+#   npx @redocly/cli lint openapi-cycle6.yaml
+#   pipx run schemathesis run openapi-cycle6.yaml --base-url http://localhost:5000 --checks all
+#   npx openapi-diff openapi-cycle6.yaml http://localhost:5000/swagger/v1/swagger.json
+#   npx openapi-typescript openapi-cycle6.yaml -o /tmp/api-cycle6.d.ts   (+ npx tsc --noEmit)
+#   npx @stoplight/prism-cli mock openapi-cycle6.yaml -p 4010            (мок для фронтенда)
+#
+# ВАЖНО ПРО ТЕЛА ОШИБОК: осознанные 4xx в этом продукте отдают ГОЛУЮ СТРОКУ (text/plain), а не
+# ProblemDetails; 401/403 — пустое тело (кроме /api/auth/login, который и раньше слал строку).
+# Это конвенция проекта, а не упущение схемы.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+info:
+  title: ServiceBooking API — cycle 6 (booking flow fixes)
+  version: "6.1.0"
+  description: |
+    Контракт цикла 6: US-60 (вход), US-61 (телефон, только +7), US-62 (признак «оказывает услуги»),
+    US-63 (применение тарифа, дата обязательна), US-64 (один специалист), US-65 (календарь дней +
+    горизонт записи в настройках компании), US-66 (рабочие часы в кабинете), US-67 (несколько услуг
+    за визит).
+    Базовая ревизия — `develop` @ 7ab28b2. Ломающих изменений формы нет: всё новое — необязательные
+    поля и новые коды ошибок на существующих эндпоинтах.
+
+servers:
+  - url: http://localhost:5000
+    description: локальный запуск бэкенда
+  - url: https://ezbook.ru
+    description: стенд (ветка develop)
+
+tags:
+  - name: auth
+    description: US-60 — вход и различимые причины отказа; US-61 — страновая проверка номера
+  - name: companies
+    description: US-62/US-64 — состав списка специалистов; US-65/Q5 — горизонт записи в настройках
+  - name: bookings
+    description: US-65/US-66/US-67 — слоты, доступность дней, создание визита
+  - name: admin
+    description: US-63 — назначение тарифа и его диагностика
+
+paths:
+
+  # ── US-60 ─────────────────────────────────────────────────────────────────────────────────────
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Вход по телефону и паролю
+      description: |
+        Телефон принимается в любом виде (`+7…`, `8…`, слитно, со скобками) — сервер приводит его
+        к канонической форме. Страновая проверка US-61 здесь НЕ применяется: вход обязан пускать
+        аккаунты, зарегистрированные до цикла, в том числе с не-российскими номерами.
+
+        Ответы на «номер не найден» и «неверный пароль» обязаны быть неразличимыми (оба — 401 с тем
+        же телом). Блокировка аккаунта, которая сегодня прячется в том же 401, выносится в 423.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Успешный вход
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401':
+          description: Неверный телефон или пароль (два случая неразличимы намеренно)
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Invalid credentials
+        '403':
+          description: Вход в аккаунт не разрешён (SignInResult.IsNotAllowed)
+        '423':
+          description: |
+            НОВОЕ В ЦИКЛЕ 6. Аккаунт временно заблокирован Identity после 5 неудачных попыток
+            (15 минут). Сегодня этот случай неотличим от 401 — `CheckPasswordSignInAsync` вызывается
+            с `lockoutOnFailure: true`, но `IsLockedOut` отдельно не проверяется.
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Account temporarily locked
+        '429':
+          description: Превышен лимит политики `auth-login` (10 попыток в минуту с IP)
+          content:
+            text/plain:
+              schema: { type: string }
+
+  # ── US-61 (редакция 2) ────────────────────────────────────────────────────────────────────────
+  /api/auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация клиента по телефону
+      description: |
+        ДОБАВЛЕН В СХЕМУ В РЕДАКЦИИ 2. Форма запроса и успешного ответа не менялась — изменилась
+        причина 400: после ответа заказчика по Q4 принимаются ТОЛЬКО российские номера
+        (канон `7` + 10 цифр). Правило живёт в одном предикате `PhoneNormalizer.IsRussian` и
+        применяется ещё в трёх точках записи номера, форма которых не меняется и поэтому здесь
+        не описана (API_CONTRACT_CYCLE6.md §44.2): `POST /api/profile/change-phone`,
+        `POST /api/companies/{id}/members`, `guestPhone` в `POST /api/bookings`.
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '200':
+          description: Аккаунт создан, выдан токен
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400':
+          description: |
+            Не-российский номер (US-61), согласие с документами не принято, слабый пароль или
+            занятый номер. Тело — голая строка.
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Введите номер телефона в формате +7 (900) 000-00-00
+        '503':
+          description: Правовые документы временно недоступны (манифест не читается)
+          content:
+            text/plain:
+              schema: { type: string }
+
+  # ── US-62 / US-64 ─────────────────────────────────────────────────────────────────────────────
+  /api/companies/{id}/masters:
+    get:
+      tags: [companies]
+      summary: Список специалистов компании (публично)
+      description: |
+        ИЗМЕНЕНИЕ ПОВЕДЕНИЯ (форма та же): участники с `providesServices == false` в ответ не
+        попадают. Это единственный источник истины о списке специалистов — по длине этого массива
+        клиент решает, показывать ли шаг выбора мастера (US-64): 0 — «записаться нельзя»,
+        1 — шаг пропускается, ≥2 — шаг показывается.
+      operationId: getCompanyMasters
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: serviceId
+          in: query
+          required: false
+          description: Фильтр «умеет эту услугу». Если для услуги нет ни одной привязки — её умеют все.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Специалисты, к которым можно записаться
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MasterPublic' }
+
+  /api/companies/{id}/members:
+    get:
+      tags: [companies]
+      summary: Сотрудники компании (владелец или SuperAdmin)
+      operationId: getCompanyMembers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Список участников
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Member' }
+        '403': { description: Не владелец компании }
+
+  /api/companies/{id}/members/{memberId}/provides-services:
+    put:
+      tags: [companies]
+      summary: Включить или выключить признак «оказывает услуги» (US-62)
+      description: |
+        НОВЫЙ ЭНДПОИНТ. Признак живёт на участии человека в конкретной компании, а не на аккаунте.
+        Меняет только состав GET /api/companies/{id}/masters — прав, расписания, отчётов и уже
+        созданных записей не касается. Выключение при наличии будущих записей требует повторного
+        запроса с `confirm: true` (сначала 409 с количеством в тексте).
+      operationId: setMemberProvidesServices
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: memberId
+          in: path
+          required: true
+          description: Идентификатор строки членства (CompanyMember.Id), не идентификатор пользователя
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetProvidesServicesRequest' }
+      responses:
+        '204': { description: Применено }
+        '403': { description: Не владелец этой компании (мастер себе признак не меняет) }
+        '404': { description: Компании или участника нет }
+        '409':
+          description: Выключение при наличии будущих записей без подтверждения
+          content:
+            text/plain:
+              schema: { type: string }
+              example: >-
+                У специалиста 3 будущие записи. Они останутся в силе и в расписании, но клиенты
+                перестанут видеть его при записи. Повторите с подтверждением.
+
+  # ── US-65 / Q5: горизонт записи в настройках компании (редакция 2) ────────────────────────────
+  /api/companies/{id}:
+    put:
+      tags: [companies]
+      summary: Изменить настройки компании (владелец или SuperAdmin)
+      description: |
+        ДОБАВЛЕН В СХЕМУ В РЕДАКЦИИ 2 ради одного нового поля — `bookingHorizonDays` (ответ Q5).
+        Остальные поля эндпоинта существуют с цикла 3/4 и здесь не переопределяются: схемы запроса
+        и ответа НАМЕРЕННО частичные (`additionalProperties: true`), полный список полей —
+        API_DOCUMENTATION.md и API_CONTRACT_CYCLE4.md §31.3.
+
+        Семантика `bookingHorizonDays`: поле отсутствует или null — не трогать; 0 — сбросить к
+        значению по умолчанию (90); 1..365 — новое значение; вне диапазона — 400.
+      operationId: updateCompany
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCompanyRequest' }
+      responses:
+        '200':
+          description: Обновлённая компания
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Company' }
+        '400':
+          description: Горизонт записи вне диапазона 1..365, неизвестный город или часовой пояс
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Горизонт записи — от 1 до 365 дней
+        '403': { description: Не владелец этой компании }
+        '404': { description: Компании нет }
+
+  # ── US-65 / US-66 / US-67 ─────────────────────────────────────────────────────────────────────
+  /api/bookings/slots:
+    get:
+      tags: [bookings]
+      summary: Свободные слоты мастера на одну дату
+      description: |
+        ИЗМЕНЕНИЕ ПОВЕДЕНИЯ (форма та же): при `manual=true` и отсутствии строки расписания на дату
+        возвращается рабочее окно по умолчанию (09:00–21:00), а НЕ сутки 00:00–24:00. Прежнее
+        поведение доступно явным `extendedHours=true`. Оба флага уважаются только для персонала
+        этой компании; всем остальным они молча игнорируются, и день без расписания даёт пустой
+        список. Длительность слота = сумма длительностей запрошенных услуг (US-67).
+        Горизонт записи здесь не проверяется — эндпоинт про один конкретный день.
+      operationId: getSlots
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdQuery'
+        - $ref: '#/components/parameters/MasterIdQuery'
+        - $ref: '#/components/parameters/ServiceIdQuery'
+        - $ref: '#/components/parameters/ServiceIdsQuery'
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: manual
+          in: query
+          required: false
+          description: Режим ручной записи персоналом. Уважается только для персонала этой компании.
+          schema: { type: boolean, default: false }
+        - name: extendedHours
+          in: query
+          required: false
+          description: Показать часы вне рабочего окна (00:00–24:00). Уважается только вместе с `manual`.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Свободные слоты
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TimeSlot' }
+        '400':
+          $ref: '#/components/responses/PlainTextBadRequest'
+        '404':
+          description: Услуга не найдена
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/bookings/availability:
+    get:
+      tags: [bookings]
+      summary: Состояние всех дней диапазона одним запросом (US-65)
+      description: |
+        НОВЫЙ ЭНДПОИНТ. Отдаёт по каждому дню диапазона одно из трёх состояний. Раскрывается ровно
+        «можно / нельзя / выходной», время последнего свободного слота и горизонт записи компании —
+        ни чужих записей, ни имён, ни времени чужих визитов. Прошедшие дни сервер НЕ помечает:
+        локальную дату знает браузер (часовых поясов в расписании продукта нет).
+        Анонимный доступ, политика лимитирования `availability` (60 запросов в минуту с IP).
+
+        РЕДАКЦИЯ 2 (Q5): верхняя граница диапазона — не константа 90, а `Company.bookingHorizonDays`;
+        ответ несёт `horizonDays` и `horizonLastDate`, чтобы календарь отключал переход на месяц за
+        горизонтом без второго запроса. При `manual=true` (персонал) горизонт не применяется.
+      operationId: getAvailability
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdQuery'
+        - $ref: '#/components/parameters/MasterIdQuery'
+        - $ref: '#/components/parameters/ServiceIdQuery'
+        - $ref: '#/components/parameters/ServiceIdsQuery'
+        - name: from
+          in: query
+          required: true
+          description: Начало диапазона. Не раньше вчерашнего дня.
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          description: >-
+            Конец диапазона включительно. Диапазон ≤ 31 дня;
+            `to` ≤ сегодня + Company.bookingHorizonDays (по умолчанию 90).
+          schema: { type: string, format: date }
+        - name: manual
+          in: query
+          required: false
+          description: Как в /api/bookings/slots — уважается только для персонала этой компании.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Состояние дней диапазона
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AvailabilityResponse' }
+        '400':
+          description: |
+            Нарушены границы запроса: `to < from`, диапазон длиннее 31 дня, `from` раньше вчера,
+            `to` за горизонтом записи компании, услуг больше пяти или повтор услуги, услуга не
+            принадлежит компании, мастер не работает в компании. Тело — голая строка.
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Записаться можно не дальше чем на 90 дней вперёд
+        '404':
+          description: Услуга не найдена
+          content:
+            text/plain:
+              schema: { type: string }
+        '429':
+          description: Превышен лимит политики `availability`
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/bookings:
+    post:
+      tags: [bookings]
+      summary: Создать запись (гость, клиент или персонал)
+      description: |
+        Форма расширена одним необязательным полем `serviceIds` (US-67): 1..5 услуг, без повторов,
+        все принадлежат компании и активны, мастер умеет все, `serviceId` обязан совпадать с
+        `serviceIds[0]`. Восемь существующих гейтов (AllowSelfBooking, капча, тариф, предоплата,
+        конфликт слота, снимки цены и комиссии) не меняются.
+
+        РЕДАКЦИЯ 2: два новых повода для 400 —
+        (Q5) дата дальше горизонта компании, ТОЛЬКО для клиента и гостя: у персонала при ручной
+        записи горизонта нет;
+        (Q4) `guestPhone` не в российском формате.
+      operationId: createBooking
+      security:
+        - bearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBookingRequest' }
+      responses:
+        '201':
+          description: Запись создана
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '400':
+          description: |
+            Валидация: услуга не принадлежит компании или неактивна, мастер не в компании, услуг
+            больше пяти или повтор, мастер не умеет услугу, дата за горизонтом записи компании
+            (клиент/гость), `guestPhone` не в российском формате. Тело — голая строка.
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Записаться можно не дальше чем на 90 дней вперёд
+        '402':
+          description: Тариф компании не включает онлайн-запись
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Online booking requires a paid subscription.
+        '403':
+          description: Салон выключил онлайн-запись (Company.AllowSelfBooking == false)
+        '404':
+          description: Компании или услуги нет
+          content:
+            text/plain:
+              schema: { type: string }
+        '409':
+          description: Слот занят или время в прошлом
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Time slot is no longer available
+        '429':
+          description: Превышен лимит политики `booking-create`
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/bookings/{id}:
+    get:
+      tags: [bookings]
+      summary: Запись по идентификатору (владелец записи или персонал)
+      operationId: getBookingById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Запись
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '403': { description: Чужая запись }
+        '404': { description: Записи нет }
+
+  /api/bookings/{id}/reschedule:
+    patch:
+      tags: [bookings]
+      summary: Перенести запись (персонал)
+      description: |
+        Форма не меняется; длительность берётся из суммы услуг визита (US-67). Горизонт записи
+        здесь не применяется — эндпоинт доступен только персоналу.
+      operationId: rescheduleBooking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RescheduleRequest' }
+      responses:
+        '204': { description: Перенесено }
+        '403': { description: Нет прав на эту запись }
+        '404': { description: Записи нет }
+        '409':
+          description: Слот занят или время в прошлом
+          content:
+            text/plain:
+              schema: { type: string }
+
+  # ── US-63 ─────────────────────────────────────────────────────────────────────────────────────
+  /api/admin/owners/{ownerUserId}/subscription:
+    put:
+      tags: [admin]
+      summary: Назначить тариф владельцу (SuperAdmin)
+      description: |
+        УТОЧНЕНИЕ СМЫСЛА ПОЛЕЙ (форма та же):
+        `isActive` отсутствует или null → true (раньше молча давало false и роняло владельца во Free);
+        `paidUntil` без времени суток означает КОНЕЦ этого дня.
+
+        РЕДАКЦИЯ 2 (ответ Q2): `paidUntil` ОБЯЗАТЕЛЕН, когда `planConfigId` не null — иначе 400
+        «Укажите дату окончания подписки», и подписка не создаётся и не изменяется. Условная
+        обязательность не выражается средствами OpenAPI 3.0, поэтому поле помечено nullable, а
+        правило зафиксировано здесь и в API_CONTRACT_CYCLE6.md §42.1. При `planConfigId: null`
+        (снятие тарифа) дата не требуется.
+      operationId: updateSubscription
+      parameters:
+        - $ref: '#/components/parameters/OwnerUserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSubscriptionRequest' }
+      responses:
+        '204': { description: Применено }
+        '400':
+          description: План снят с продажи либо не указана дата окончания подписки
+          content:
+            text/plain:
+              schema: { type: string }
+              example: Укажите дату окончания подписки
+        '404':
+          description: Владельца или плана нет
+          content:
+            text/plain:
+              schema: { type: string }
+    get:
+      tags: [admin]
+      summary: Диагностика тарифа владельца (SuperAdmin)
+      description: |
+        НОВЫЙ ЭНДПОИНТ. Отвечает на вопрос «тариф назначен — почему не работает» одним запросом:
+        сырая строка подписки, разрешённый эффективный план, код и русский текст состояния и
+        причина по каждой компании владельца.
+      operationId: getSubscriptionDiagnostics
+      parameters:
+        - $ref: '#/components/parameters/OwnerUserIdPath'
+      responses:
+        '200':
+          description: Фактическое состояние тарифа
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionDiagnostics' }
+        '404': { description: Владельца нет }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyIdQuery:
+      name: companyId
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+    MasterIdQuery:
+      name: masterId
+      in: query
+      required: true
+      schema: { type: string }
+    ServiceIdQuery:
+      name: serviceId
+      in: query
+      required: false
+      description: Одна услуга (прежняя форма). Обязателен, если не передан `serviceIds`.
+      schema: { type: string, format: uuid }
+    ServiceIdsQuery:
+      name: serviceIds
+      in: query
+      required: false
+      description: |
+        Несколько услуг визита (US-67), повторяемый параметр: `?serviceIds=a&serviceIds=b`.
+        1..5 значений, без повторов. Если передан вместе с `serviceId`, первый элемент обязан
+        совпасть с ним.
+      explode: true
+      style: form
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 5
+        items: { type: string, format: uuid }
+    OwnerUserIdPath:
+      name: ownerUserId
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    PlainTextBadRequest:
+      description: Ошибка валидации — голая строка, а не ProblemDetails
+      content:
+        text/plain:
+          schema: { type: string }
+          example: Service does not belong to this company
+
+  schemas:
+
+    # ── US-60 / US-61 ────────────────────────────────────────────────────────────────────────
+    LoginRequest:
+      type: object
+      required: [phone, password]
+      properties:
+        phone:
+          type: string
+          description: В любом виде — сервер нормализует. Страновая проверка US-61 здесь не применяется.
+          example: "+7 (999) 000-00-00"
+        password:
+          type: string
+          format: password
+          example: "secret123"
+
+    RegisterRequest:
+      type: object
+      required: [firstName, lastName, phone, password, acceptedLegal]
+      properties:
+        firstName: { type: string, example: "Иван" }
+        lastName: { type: string, example: "Иванов" }
+        phone:
+          type: string
+          description: |
+            РЕДАКЦИЯ 2 (US-61, ответ Q4): принимается только российский номер — канон `7` + 10 цифр.
+            Ввод в любом виде (`+7…`, `8…`, слитно); всё, что после нормализации не выглядит как
+            `7XXXXXXXXXX`, отвергается кодом 400.
+          example: "+7 (999) 000-00-00"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          pattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$'
+          description: |
+            РЕДАКЦИЯ 3 (US-60, ответ Q6): требования к паролю задаются политикой ASP.NET Core Identity
+            и ЗДЕСЬ ТОЛЬКО ДОКУМЕНТИРУЮТСЯ — не менее 8 символов, хотя бы одна строчная буква, хотя бы
+            одна заглавная и хотя бы одна цифра. Неалфавитный символ НЕ требуется
+            (`RequireNonAlphanumeric = false`, единственное послабление относительно умолчаний Identity).
+
+            Почему это записано так подробно: в первой реализации цикла схема говорила `minLength: 8`
+            и больше ничего, контрактная проверка нашла расхождение с реальным поведением, и оно было
+            «исправлено» ослаблением политики (коммит `1615e8f`) — то есть схема, описывавшая продукт
+            неверно, изменила сам продукт. Заказчик такого решения не принимал (ответ на Q6 — вариант
+            «а»: политику не трогать, показать требования человеку). Коммит откачен, схема приведена
+            к фактическому поведению. При расхождении схемы и политики впредь правится схема, если
+            только заказчик не решил иначе явно.
+
+            Отказ по любому из требований возвращает 400 с телом-МАССИВОМ ошибок Identity
+            (см. §5.4 API_CONTRACT.md), а не строкой — клиент обязан разбирать эту форму.
+          example: "Secret123"
+        email: { type: string, nullable: true, example: null }
+        acceptedLegal:
+          type: boolean
+          description: Должно быть true (US-37) — иначе 400.
+          example: true
+
+    AuthResponse:
+      type: object
+      required: [token, userId, phone, roles]
+      properties:
+        token: { type: string, example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
+        userId: { type: string, example: "9f1c2b1e-…" }
+        phone: { type: string, description: Каноническая форма (только цифры), example: "79990000000" }
+        email: { type: string, nullable: true, example: null }
+        firstName: { type: string, example: "Иван" }
+        lastName: { type: string, example: "Иванов" }
+        roles:
+          type: array
+          items: { type: string, enum: [Client, Master, CompanyOwner, SuperAdmin] }
+          example: [Client]
+
+    # ── US-62 / US-64 ────────────────────────────────────────────────────────────────────────
+    MasterPublic:
+      type: object
+      required: [userId, firstName, lastName]
+      properties:
+        userId: { type: string, example: "3a7c…" }
+        firstName: { type: string, example: "Анна" }
+        lastName: { type: string, example: "Петрова" }
+        avatarUrl: { type: string, nullable: true, example: null }
+        bio: { type: string, nullable: true, example: "Колорист" }
+
+    Member:
+      type: object
+      required: [id, userId, firstName, lastName, phone, role, serviceIds, commissionPercent, providesServices]
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string }
+        firstName: { type: string, example: "Анна" }
+        lastName: { type: string, example: "Петрова" }
+        phone: { type: string, description: Каноническая форма, example: "79990000000" }
+        email: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        role: { type: string, enum: [Client, Master, CompanyOwner, SuperAdmin], example: Master }
+        bio: { type: string, nullable: true }
+        serviceIds:
+          type: array
+          items: { type: string, format: uuid }
+        commissionPercent: { type: number, format: double, example: 40 }
+        providesServices:
+          type: boolean
+          description: |
+            НОВОЕ В ЦИКЛЕ 6 (US-62). Оказывает ли этот человек услуги в ЭТОЙ компании. Управляет
+            только тем, предлагается ли он клиенту как специалист. У существующих участников после
+            миграции — true.
+          example: true
+
+    SetProvidesServicesRequest:
+      type: object
+      required: [providesServices]
+      properties:
+        providesServices: { type: boolean, example: false }
+        confirm:
+          type: boolean
+          default: false
+          description: Подтверждение выключения при наличии будущих записей (иначе 409).
+          example: false
+
+    # ── US-65 / Q5: компания и горизонт записи (редакция 2) ──────────────────────────────────
+    Company:
+      type: object
+      description: |
+        ЧАСТИЧНАЯ проекция CompanyDto — перечислены только поля, которых касается цикл 6.
+        Остальные поля существуют и приходят в ответе (additionalProperties: true); их полный
+        список — API_DOCUMENTATION.md и API_CONTRACT_CYCLE4.md §31.
+      additionalProperties: true
+      required: [id, name, slug, allowSelfBooking, onlineBookingEnabled, bookingHorizonDays]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: "Салон на Ленина" }
+        slug: { type: string, example: "salon-na-lenina" }
+        allowSelfBooking: { type: boolean, example: true }
+        onlineBookingEnabled: { type: boolean, example: true }
+        bookingHorizonDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 90
+          description: |
+            НОВОЕ В ЦИКЛЕ 6 (US-65, ответ Q5). На сколько дней вперёд клиент может записаться.
+            В базе всегда 1..365 (ноль на входе нормализуется в 90). У компаний, существовавших до
+            миграции, — 90.
+          example: 90
+
+    UpdateCompanyRequest:
+      type: object
+      description: |
+        ЧАСТИЧНАЯ проекция UpdateCompanyDto — описано только поле цикла 6. Остальные поля
+        (name, description, address, phone, email, allowSelfBooking, requirePrepayment,
+        showInPublicListing, cityId, timeZoneId) принимаются как раньше и здесь не переопределяются.
+        Общая конвенция: поле отсутствует или null — значение не меняется.
+      additionalProperties: true
+      properties:
+        bookingHorizonDays:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 365
+          description: |
+            НОВОЕ В ЦИКЛЕ 6 (ответ Q5). null/отсутствует — не трогать; 0 — сбросить к значению по
+            умолчанию (90); 1..365 — новое значение; вне диапазона — 400 «Горизонт записи — от 1 до
+            365 дней».
+          example: 60
+
+    # ── US-65 / US-66 / US-67 ────────────────────────────────────────────────────────────────
+    TimeSlot:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string, example: "10:00:00" }
+        end: { type: string, example: "11:30:00" }
+
+    DayAvailabilityStatus:
+      type: string
+      description: |
+        Available — есть свободный слот под суммарную длительность;
+        FullyBooked — рабочий день, свободных слотов нет («всё занято»);
+        DayOff — расписания на дату нет («выходной»).
+        Прошедший день сервер не помечает — это делает браузер по локальной дате.
+      enum: [Available, FullyBooked, DayOff]
+
+    DayAvailability:
+      type: object
+      required: [date, status, lastFreeSlotStart]
+      properties:
+        date: { type: string, format: date, example: "2026-10-01" }
+        status: { $ref: '#/components/schemas/DayAvailabilityStatus' }
+        lastFreeSlotStart:
+          type: string
+          nullable: true
+          description: Начало последнего свободного слота дня; null, если свободных нет.
+          example: "18:30:00"
+
+    AvailabilityResponse:
+      type: object
+      required: [from, to, totalDurationMinutes, stepMinutes, horizonDays, horizonLastDate, days]
+      properties:
+        from: { type: string, format: date, example: "2026-10-01" }
+        to: { type: string, format: date, example: "2026-10-31" }
+        totalDurationMinutes:
+          type: integer
+          description: Сумма длительностей запрошенных услуг — эхо запроса.
+          example: 90
+        stepMinutes:
+          type: integer
+          description: Шаг сетки слотов (в продукте жёстко 30).
+          example: 30
+        horizonDays:
+          type: integer
+          description: |
+            НОВОЕ В РЕДАКЦИИ 2 (Q5). Горизонт записи ЭТОЙ компании в днях
+            (Company.bookingHorizonDays).
+          example: 90
+        horizonLastDate:
+          type: string
+          format: date
+          description: |
+            НОВОЕ В РЕДАКЦИИ 2 (Q5). Последняя дата, на которую клиент может записаться
+            (сегодня по UTC + horizonDays). Календарь по ней отключает переход на следующий месяц.
+          example: "2026-12-20"
+        days:
+          type: array
+          description: Каждая дата диапазона ровно один раз, по возрастанию.
+          items: { $ref: '#/components/schemas/DayAvailability' }
+          example:
+            - { date: "2026-10-01", status: Available, lastFreeSlotStart: "18:30:00" }
+            - { date: "2026-10-02", status: DayOff, lastFreeSlotStart: null }
+            - { date: "2026-10-03", status: FullyBooked, lastFreeSlotStart: null }
+
+    BookingServiceLine:
+      type: object
+      required: [serviceId, name, durationMinutes, price]
+      properties:
+        serviceId: { type: string, format: uuid }
+        name: { type: string, description: Снимок названия на момент записи, example: "Стрижка" }
+        durationMinutes: { type: integer, example: 60 }
+        price: { type: number, format: double, description: Снимок цены на момент записи, example: 2000 }
+
+    CreateBookingRequest:
+      type: object
+      required: [companyId, serviceId, masterId, date, startTime]
+      properties:
+        companyId: { type: string, format: uuid }
+        serviceId:
+          type: string
+          format: uuid
+          description: Главная (первая) услуга визита. Обязана совпадать с `serviceIds[0]`, если тот передан.
+        serviceIds:
+          type: array
+          description: US-67. 1..5 услуг, без повторов, все умеет выбранный мастер.
+          minItems: 1
+          maxItems: 5
+          items: { type: string, format: uuid }
+        masterId: { type: string }
+        date:
+          type: string
+          format: date
+          description: |
+            РЕДАКЦИЯ 2 (Q5): для клиента и гостя — не дальше `сегодня + Company.bookingHorizonDays`,
+            иначе 400. Для персонала при ручной записи граница не применяется.
+          example: "2026-10-05"
+        startTime: { type: string, example: "10:00:00" }
+        notes: { type: string, nullable: true, maxLength: 2000 }
+        guestName: { type: string, nullable: true, maxLength: 200 }
+        guestPhone:
+          type: string
+          nullable: true
+          maxLength: 32
+          description: |
+            В любом виде — сервер нормализует до канонической формы.
+            РЕДАКЦИЯ 2 (Q4): принимается только российский номер (канон `7` + 10 цифр), иначе 400.
+        guestEmail: { type: string, nullable: true, maxLength: 256 }
+        captchaToken: { type: string, nullable: true }
+
+    Booking:
+      type: object
+      required:
+        [id, companyId, companyName, companySlug, serviceId, serviceName, masterId, masterName,
+         clientName, date, startTime, endTime, status, paymentStatus, price, createdAt,
+         clientDeleted, services, totalDurationMinutes]
+      properties:
+        id: { type: string, format: uuid }
+        companyId: { type: string, format: uuid }
+        companyName: { type: string, example: "Салон на Ленина" }
+        companySlug: { type: string, example: "salon-na-lenina" }
+        serviceId:
+          type: string
+          format: uuid
+          description: Первая услуга визита (совместимость — остаётся как раньше).
+        serviceName: { type: string, example: "Стрижка" }
+        masterId: { type: string }
+        masterName: { type: string, example: "Анна Петрова" }
+        clientId: { type: string, nullable: true }
+        clientName: { type: string, example: "Иван Иванов" }
+        clientPhone: { type: string, nullable: true, example: "79990000000" }
+        clientEmail: { type: string, nullable: true }
+        date: { type: string, format: date, example: "2026-10-05" }
+        startTime: { type: string, example: "10:00:00" }
+        endTime: { type: string, example: "11:30:00" }
+        status:
+          type: string
+          enum: [Pending, Confirmed, Cancelled, Completed, NoShow]
+          example: Confirmed
+        paymentStatus:
+          type: string
+          enum: [NotRequired, Pending, Paid]
+          example: NotRequired
+        price:
+          type: number
+          format: double
+          description: ИТОГ визита — сумма строк `services`.
+          example: 4500
+        totalDurationMinutes:
+          type: integer
+          description: НОВОЕ В ЦИКЛЕ 6. Сумма длительностей строк `services`.
+          example: 90
+        services:
+          type: array
+          description: |
+            НОВОЕ В ЦИКЛЕ 6. Всегда непустой — записи, созданные до цикла, отдают один элемент,
+            поэтому клиенту не нужно различать «до» и «после».
+          minItems: 1
+          items: { $ref: '#/components/schemas/BookingServiceLine' }
+        cancellationReason: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        consentPrivacyVersion: { type: string, nullable: true }
+        consentTermsVersion: { type: string, nullable: true }
+        consentAcceptedAt: { type: string, format: date-time, nullable: true }
+        clientDeleted: { type: boolean, example: false }
+        reminderStatus:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ReminderStatus'
+
+    ReminderStatus:
+      type: object
+      description: Аддитивное поле цикла 4, видно только персоналу; здесь приведено для полноты формы.
+      required: [status, text]
+      properties:
+        status:
+          type: string
+          enum: [Pending, Sent, Delivered, Failed, Expired, Skipped, Cancelled]
+        text: { type: string }
+
+    RescheduleRequest:
+      type: object
+      required: [date, startTime]
+      properties:
+        date: { type: string, format: date, example: "2026-10-06" }
+        startTime: { type: string, example: "12:00:00" }
+
+    # ── US-63 ────────────────────────────────────────────────────────────────────────────────
+    UpdateSubscriptionRequest:
+      type: object
+      properties:
+        planConfigId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null — снять тариф (Free); в этом случае `paidUntil` не требуется.
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            РЕДАКЦИЯ 2 (ответ Q2): ОБЯЗАТЕЛЬНО, когда `planConfigId` не null — иначе 400
+            «Укажите дату окончания подписки». Условная обязательность не выражается в OpenAPI 3.0,
+            поэтому здесь поле nullable; правило проверяет сервер.
+            Дата без времени суток означает КОНЕЦ этого дня (23:59:59.999Z).
+          example: "2026-12-31"
+        isActive:
+          type: boolean
+          nullable: true
+          default: true
+          description: Отсутствует или null — считается true.
+        comment: { type: string, nullable: true, example: "оплата за декабрь" }
+
+    EffectivePlan:
+      type: object
+      required:
+        [allowOnlineBooking, allowMailing, allowAnalytics, allowPublicListing, allowOnlinePayment]
+      properties:
+        allowOnlineBooking: { type: boolean, example: true }
+        allowMailing: { type: boolean, example: false }
+        allowAnalytics: { type: boolean, example: true }
+        allowPublicListing: { type: boolean, example: true }
+        allowOnlinePayment: { type: boolean, example: false }
+        maxEmployees: { type: integer, nullable: true, example: 5 }
+        maxCompanies: { type: integer, nullable: true, example: 2 }
+
+    PlanNotAppliedReason:
+      type: string
+      description: Почему именно эта компания не принимает онлайн-записи.
+      enum:
+        - None
+        - NoSubscription
+        - SubscriptionInactive
+        - SubscriptionExpired
+        - PlanRetired
+        - PlanDisallowsOnlineBooking
+        - SelfBookingDisabledByOwner
+
+    SubscriptionCompanyState:
+      type: object
+      required: [companyId, name, allowSelfBooking, onlineBookingEnabled, blockingReason]
+      properties:
+        companyId: { type: string, format: uuid }
+        name: { type: string, example: "Салон на Ленина" }
+        allowSelfBooking: { type: boolean, example: true }
+        onlineBookingEnabled: { type: boolean, example: true }
+        blockingReason: { $ref: '#/components/schemas/PlanNotAppliedReason' }
+
+    SubscriptionDiagnostics:
+      type: object
+      required: [ownerUserId, planName, isActive, planIsActive, status, statusText, effective, companies]
+      properties:
+        ownerUserId: { type: string }
+        ownerName: { type: string, example: "Иван Иванов" }
+        planConfigId: { type: string, format: uuid, nullable: true }
+        planName: { type: string, example: "Стандарт" }
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            null только при status == NoSubscription. После миграции BackfillSubscriptionPaidUntil
+            (редакция 2, §43.5 архитектуры) существующих подписок с пустой датой не остаётся, а
+            новые не создаются.
+          example: "2026-12-31T23:59:59.999Z"
+        isActive: { type: boolean, example: true }
+        planIsActive:
+          type: boolean
+          description: Не снят ли сам тариф с продажи (SubscriptionPlanConfig.IsActive).
+          example: true
+        status:
+          type: string
+          enum: [NoSubscription, Active, Expired, Deactivated, PlanRetired]
+          example: Active
+        statusText:
+          type: string
+          description: Русский текст состояния — собирает СЕРВЕР, фронт его не сочиняет.
+          example: "Тариф «Стандарт» действует до 31 декабря 2026"
+        effective: { $ref: '#/components/schemas/EffectivePlan' }
+        companies:
+          type: array
+          items: { $ref: '#/components/schemas/SubscriptionCompanyState' }
+
+security:
+  - bearerAuth: []
