@@ -264,15 +264,27 @@ public class NotificationChannelsController(
                 "GREEN-API server country mismatch for channel {ChannelId}: expected {ExpectedCountry}, provider reported {ReportedCountry}",
                 channel.Id, options.Value.GreenApi.ServerCountry, reportedCountry);
 
+            // Code review В7: the instance already exists at the provider (created, billed) by the
+            // CreateInstanceAsync call above — discarding `instance.InstanceId` here, as an earlier
+            // version did, would leak it: nothing would ever reference it again, so it would go on
+            // living, billing, and sitting in the wrong jurisdiction with no way to shut it down. §30.4's
+            // established "database first" orphan pattern applies exactly here, the same as
+            // ChannelHealthTask.DeleteInstanceAsync uses for every other forced decommission: record
+            // OrphanedInstanceId now (so the id itself, and the fact that it needs cleanup, survive this
+            // request even if the process crashes right after), and let ChannelHealthTask's existing
+            // orphan-retry sweep (RetryOrphanDeletionForAsync) delete it at the provider on its next
+            // pass — reusing tested infrastructure instead of a second, ad hoc deletion call here that
+            // would have no retry if it failed.
             channel.State = ChannelState.Disconnected;
             channel.LastStateReason = ChannelStateReason.ServerCountryMismatch;
             channel.InstanceCreatedAtUtc = null;
+            channel.OrphanedInstanceId = instance.InstanceId;
             db.ChannelStateEvents.Add(new ChannelStateEvent
             {
                 Id = Guid.NewGuid(), ChannelId = channel.Id,
                 FromState = ChannelState.Connecting, ToState = ChannelState.Disconnected,
                 Reason = ChannelStateReason.ServerCountryMismatch,
-                Detail = $"expected={options.Value.GreenApi.ServerCountry} reported={reportedCountry}",
+                Detail = $"expected={options.Value.GreenApi.ServerCountry} reported={reportedCountry} orphanedInstanceId={instance.InstanceId}",
             });
             await db.SaveChangesAsync();
             return StatusCode(503, "Требуется вмешательство платформы для восстановления канала.");

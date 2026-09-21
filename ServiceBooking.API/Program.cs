@@ -449,8 +449,12 @@ builder.Services.AddRateLimiter(o =>
 
     // subject-request: US-74/§50.1 asks for BOTH a 3/hour and a 10/day cap; this rate limiter middleware
     // only supports one fixed window per named policy (every other policy in this file has the same
-    // shape), so the HOURLY limit — the stricter, more immediately protective one — is what's actually
-    // enforced here. 🟡 Known, disclosed simplification: see the cycle report.
+    // shape), so only the HOURLY limit is actually enforced here.
+    // Code review, "заодно": this is honestly a WEAKER guarantee than the daily cap alone would be, not
+    // a stricter one — 3/hour, sustained, adds up to 72/day, well past the 10/day ceiling §50.1 asks
+    // for. The daily cap is simply not enforced by this policy at all; nothing here catches a caller who
+    // spaces requests out to stay under the hourly limit. 🟡 Known, disclosed simplification: see the
+    // cycle report.
     o.AddPolicy("subject-request", ctx => IpWindowPolicy(ctx, "subject-request", defaultPermitLimit: 3, defaultWindowMinutes: 60));
 
     // notifications-webhook: the provider calls this anonymously and per-address, keyed the same way

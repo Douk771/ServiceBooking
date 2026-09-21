@@ -53,7 +53,9 @@ public class ProfileController(
         // history for this subject, exactly what GET /api/profile/consents' `history` field shows,
         // because an export is a legal artifact and a revoked/superseded grant is still something the
         // subject did.
-        var consentHistory = await ledger.HistoryAsync(ConsentSubject.ForUser(userId));
+        // knownPhone (code review В3): pulls in salon-recorded PhotoConsent/HealthDataConsent rows too —
+        // see ConsentLedger.HistoryAsync's doc comment.
+        var consentHistory = await ledger.HistoryAsync(ConsentSubject.ForUser(userId), user.PhoneNumber);
         var consent = consentHistory.Select(ToExportConsentDto).ToList();
 
         var memberships = await db.CompanyMembers
@@ -115,7 +117,12 @@ public class ProfileController(
         var photoCompanyIds = await db.ClientNotePhotos
             .Where(p => p.ClientNote.ClientId == userId || (canonicalPhone != null && p.ClientNote.GuestPhone == canonicalPhone))
             .Select(p => p.CompanyId).Distinct().ToListAsync();
-        var healthNoteRows = await db.ClientHealthNotes.Where(n => n.ClientId == userId).ToListAsync();
+        // Code review В4: was ClientId-only, unlike every neighboring section above — a health note filed
+        // while this person was still a guest (booked, then registered later) is stored by GuestPhone,
+        // exactly like ClientNote/ClientNotePhoto, and the export silently omitted it.
+        var healthNoteRows = await db.ClientHealthNotes
+            .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+            .ToListAsync();
 
         var whatIsStoredByCompany = new Dictionary<Guid, List<string>>();
         void Tag(IEnumerable<Guid> companyIds, string kind)
@@ -169,8 +176,11 @@ public class ProfileController(
             DateTime.UtcNow,
             new ExportProfileDto(user.FirstName, user.LastName, user.PhoneNumber, user.Email, user.AvatarUrl, user.CreatedAt),
             consent, memberships, bookings, reviews, notesAboutMe, photosOfMe,
+            // Code review, "заодно": names the section by key, not just by description — the reader
+            // must not have to guess which of several sections in this same file "compan(ies) below" refers to.
             "Оператором заметок, фотографий и сведений, внесённых сотрудниками компании, является сама " +
-            "компания. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
+            "компания — контакты и адрес каждой такой компании перечислены в разделе «operators» этой " +
+            "выгрузки. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
             "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.",
             operators, notifications, optOut, healthNotesExport);
 
@@ -301,6 +311,19 @@ public class ProfileController(
         var photoKeysToDelete = notesAboutMe.SelectMany(n => n.Photos)
             .Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
         db.ClientNotes.RemoveRange(notesAboutMe); // cascades ClientNotePhotos (AppDbContext)
+
+        // Step 2b (code review, Б1): ClientHealthNote is a SEPARATE table from ClientNote (deliberately,
+        // §44.3 — no navigation property between them at all), with a NO ACTION FK, so it does not
+        // cascade with the ClientNotes.RemoveRange above and was missing here entirely until this fix.
+        // Left alone, the row was unreachable by ANY product path after this method ran: ResolveClientAsync
+        // (ClientConsentsController) looks the subject up by ClientId OR canonical GuestPhone, and this
+        // method has just cleared user.PhoneNumber — so DELETE health-note would 404 forever, and the
+        // row would sit until the retention sweep aged it out three years later. Same double condition as
+        // notesAboutMe above.
+        var healthNotesAboutMe = await db.ClientHealthNotes
+            .Where(h => h.ClientId == userId || (canonicalPhone != null && h.GuestPhone == canonicalPhone))
+            .ToListAsync();
+        db.ClientHealthNotes.RemoveRange(healthNotesAboutMe);
 
         // Step 3: bookings are anonymized, never deleted — the salon's revenue/commission history for a
         // completed visit must stay intact (US-39 p.3). Matches both the client path and the guest path
@@ -605,8 +628,21 @@ public class ProfileController(
     [HttpPost("consents/revoke")]
     public async Task<ActionResult<RevokeConsentResponseDto>> RevokeConsent([FromBody] RevokeConsentDto dto)
     {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+        // Code review В3: §44.4 describes a revoke mechanism for the SALON-recorded PhotoConsent/
+        // HealthDataConsent rows too (ClientConsentsController's PostPhotoConsent/PostHealthConsent) —
+        // until now this endpoint only ever accepted PdnConsent, so a person had no way to withdraw a
+        // consent a company's staff recorded on their behalf. These two are phone+company scoped
+        // (ConsentSubject.ForPhoneInCompany), not user scoped, so a companyId is required to say WHICH
+        // salon's record is being withdrawn — deliberately a separate branch from PdnConsent below
+        // rather than one that silently reinterprets `purpose`, which has no meaning for these two keys.
+        if (dto.DocumentKey is LegalTextKey.PhotoConsent or LegalTextKey.HealthDataConsent)
+            return await RevokeSalonConsentAsync(userId, dto);
+
         if (dto.DocumentKey != LegalDocumentType.PdnConsent.ToString())
-            return BadRequest($"Через этот вызов отзывается только '{LegalDocumentType.PdnConsent}'.");
+            return BadRequest($"Через этот вызов отзывается только '{LegalDocumentType.PdnConsent}', " +
+                               $"'{LegalTextKey.PhotoConsent}' или '{LegalTextKey.HealthDataConsent}'.");
 
         ConsentPurpose? purpose = null;
         if (dto.Purpose is not null)
@@ -616,7 +652,6 @@ public class ProfileController(
             purpose = parsed;
         }
 
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var subject = ConsentSubject.ForUser(userId);
 
         // §47.3: idempotent — "0 revoked" is a legitimate, non-error outcome (revoking an already-revoked
@@ -625,6 +660,61 @@ public class ProfileController(
         var revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose, dto.Reason);
         var effects = await ApplyOrPreviewRevokeEffectsAsync(userId, purpose, apply: true);
 
+        return Ok(new RevokeConsentResponseDto(revoked, effects));
+    }
+
+    /// <summary>The salon-scoped half of RevokeConsent (code review В3) — withdraws a PhotoConsent or
+    /// HealthDataConsent recorded by ONE company's staff, and (§44.4: "удаляет фото необратимо" / mirrors
+    /// PutHealthNote's own consent-gated write) deletes whatever that consent was covering AT THAT
+    /// COMPANY specifically, never account-wide (unlike the PdnConsent WorkPhotos/HealthData purposes,
+    /// which are account-wide by construction).</summary>
+    private async Task<ActionResult<RevokeConsentResponseDto>> RevokeSalonConsentAsync(string userId, RevokeConsentDto dto)
+    {
+        if (dto.CompanyId is null || dto.CompanyId == Guid.Empty)
+            return BadRequest("Для отзыва согласия, записанного сотрудником компании, укажите companyId.");
+
+        var phone = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.PhoneNumber).FirstOrDefaultAsync();
+        if (string.IsNullOrEmpty(phone))
+            return BadRequest("У аккаунта нет подтверждённого номера телефона — отзывать нечего.");
+
+        var subject = ConsentSubject.ForPhoneInCompany(phone, dto.CompanyId.Value);
+        var revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
+
+        var photosDeleted = 0;
+        var healthNotesDeleted = 0;
+        if (dto.DocumentKey == LegalTextKey.PhotoConsent)
+        {
+            var photos = await db.ClientNotePhotos.Include(p => p.ClientNote)
+                .Where(p => p.CompanyId == dto.CompanyId
+                            && (p.ClientNote.ClientId == userId || p.ClientNote.GuestPhone == phone))
+                .ToListAsync();
+            photosDeleted = photos.Count;
+            if (photos.Count > 0)
+            {
+                var paths = photos.Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
+                db.ClientNotePhotos.RemoveRange(photos);
+                await db.SaveChangesAsync();
+                foreach (var (full, thumb) in paths)
+                {
+                    storage.DeletePrivate(full);
+                    storage.DeletePrivate(thumb);
+                }
+            }
+        }
+        else // HealthDataConsent
+        {
+            var healthNotes = await db.ClientHealthNotes
+                .Where(n => n.CompanyId == dto.CompanyId && (n.ClientId == userId || n.GuestPhone == phone))
+                .ToListAsync();
+            healthNotesDeleted = healthNotes.Count;
+            if (healthNotes.Count > 0)
+            {
+                db.ClientHealthNotes.RemoveRange(healthNotes);
+                await db.SaveChangesAsync();
+            }
+        }
+
+        var effects = new RevokeEffectsDto(photosDeleted, healthNotesDeleted, [], 0);
         return Ok(new RevokeConsentResponseDto(revoked, effects));
     }
 
@@ -656,6 +746,24 @@ public class ProfileController(
         var healthNotesDeleted = 0;
         var queuedNotificationsCancelled = 0;
         var profileFieldsCleared = new List<string>();
+        // Code review В4: only the health-notes branch below was missing this — every neighboring
+        // section (Export, above) already matches both halves of the subject.
+        var canonicalPhone = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.PhoneNumber).FirstOrDefaultAsync();
+
+        // Code review, "заодно": the four sections below used to run as four independent SaveChangesAsync
+        // calls with no shared transaction — a crash between any two of them left a partially-applied
+        // revoke (e.g. photos gone but the pending-notification cancellation never happened). One
+        // transaction for the whole apply pass, same pattern DeleteAccount already uses to mix
+        // db.SaveChangesAsync and userManager calls (both go through this same AppDbContext/connection).
+        // Preview (apply == false) writes nothing at all, so it opens no transaction.
+        await using var transaction = apply ? await db.Database.BeginTransactionAsync() : null;
+        // Files (photo pair + avatar) are collected here and only actually deleted AFTER the transaction
+        // below commits (ARCHITECTURE.md §1.4: "row goes first") — now that all four sections share one
+        // transaction, deleting a file mid-pass (as an earlier version did, right after that section's
+        // own SaveChanges) would leave an orphaned-on-disk file with no row if a LATER section made the
+        // whole transaction roll back.
+        var photoPathsToDelete = new List<(string Full, string Thumb)>();
+        string? avatarUrlToDelete = null;
 
         if (wholeDocument || purpose == ConsentPurpose.WorkPhotos)
         {
@@ -666,21 +774,17 @@ public class ProfileController(
             photosDeleted = photos.Count;
             if (apply && photos.Count > 0)
             {
-                var paths = photos.Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
+                photoPathsToDelete.AddRange(photos.Select(p => (p.StoragePath, p.ThumbnailPath)));
                 db.ClientNotePhotos.RemoveRange(photos);
                 await db.SaveChangesAsync();
-                // Files only after the row commit (ARCHITECTURE.md §1.4) — same ordering DeleteAccount uses.
-                foreach (var (full, thumb) in paths)
-                {
-                    storage.DeletePrivate(full);
-                    storage.DeletePrivate(thumb);
-                }
             }
         }
 
         if (wholeDocument || purpose == ConsentPurpose.HealthData)
         {
-            var healthNotes = await db.ClientHealthNotes.Where(n => n.ClientId == userId).ToListAsync();
+            var healthNotes = await db.ClientHealthNotes
+                .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+                .ToListAsync();
             healthNotesDeleted = healthNotes.Count;
             if (apply && healthNotes.Count > 0)
             {
@@ -717,14 +821,23 @@ public class ProfileController(
                 if (!string.IsNullOrEmpty(user.AvatarUrl)) profileFieldsCleared.Add("avatarUrl");
                 if (apply && profileFieldsCleared.Count > 0)
                 {
-                    var oldAvatarUrl = user.AvatarUrl;
+                    avatarUrlToDelete = user.AvatarUrl;
                     user.Email = null;
                     user.AvatarUrl = null;
                     await userManager.UpdateAsync(user);
-                    storage.DeletePublic(oldAvatarUrl);
                 }
             }
         }
+
+        if (transaction is not null) await transaction.CommitAsync();
+
+        // Only after the commit succeeds (ARCHITECTURE.md §1.4) — see the comment above the transaction.
+        foreach (var (full, thumb) in photoPathsToDelete)
+        {
+            storage.DeletePrivate(full);
+            storage.DeletePrivate(thumb);
+        }
+        if (avatarUrlToDelete is not null) storage.DeletePublic(avatarUrlToDelete);
 
         return new RevokeEffectsDto(photosDeleted, healthNotesDeleted, profileFieldsCleared, queuedNotificationsCancelled);
     }
@@ -732,7 +845,10 @@ public class ProfileController(
     private async Task<ConsentsDto> BuildConsentsDtoAsync(string userId, LegalDocument pdnDoc)
     {
         var subject = ConsentSubject.ForUser(userId);
-        var history = await ledger.HistoryAsync(subject);
+        // knownPhone (code review В3): "Мои согласия" must also show salon-recorded PhotoConsent/
+        // HealthDataConsent rows — see ConsentLedger.HistoryAsync's doc comment.
+        var knownPhone = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.PhoneNumber).FirstOrDefaultAsync();
+        var history = await ledger.HistoryAsync(subject, knownPhone);
 
         // "granted" is the latest row per purpose UNDER PdnConsent specifically, revoked or not — a
         // revoked purpose still needs to show up (with revokedAt set) so the profile screen can render
@@ -774,7 +890,10 @@ public record ConsentDocumentDto(string Type, string Version, bool IsDraft, List
 public record ConsentGrantedDto(string Purpose, string Version, DateTime GrantedAt, DateTime? RevokedAt);
 public record ConsentsDto(ConsentDocumentDto Document, List<ConsentGrantedDto> Granted, bool VersionOutdated, List<ExportConsentDto> History);
 public record SubmitConsentDto(string DocumentKey, string Version, List<string>? Purposes);
-public record RevokeConsentDto(string DocumentKey, string? Purpose, string? Reason);
+// CompanyId appended (code review В3): required only for the salon-scoped DocumentKeys
+// (LegalTextKey.PhotoConsent/HealthDataConsent) — default null keeps every existing PdnConsent caller
+// compiling and behaving exactly as before.
+public record RevokeConsentDto(string DocumentKey, string? Purpose, string? Reason, Guid? CompanyId = null);
 public record RevokeEffectsDto(int PhotosDeleted, int HealthNotesDeleted, List<string> ProfileFieldsCleared, int QueuedNotificationsCancelled);
 public record RevokeConsentResponseDto(int Revoked, RevokeEffectsDto Effects);
 

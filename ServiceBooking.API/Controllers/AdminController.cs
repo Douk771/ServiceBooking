@@ -63,12 +63,16 @@ public class AdminController(
         var nowUtc = DateTime.UtcNow;
         if (!string.IsNullOrWhiteSpace(dueState))
         {
+            // Code review, "заодно": an unrecognized value used to fall through to `_ => query` — the
+            // filter silently did nothing instead of telling the caller their query string was wrong.
+            if (dueState is not ("Overdue" or "DueSoon" or "OnTime"))
+                return BadRequest($"Неизвестное значение dueState '{dueState}'. Ожидается Overdue, DueSoon или OnTime.");
+
             query = dueState switch
             {
                 "Overdue" => query.Where(r => r.DueAtUtc < nowUtc && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected),
                 "DueSoon" => query.Where(r => r.DueAtUtc >= nowUtc && r.DueAtUtc < nowUtc.AddDays(2) && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected),
-                "OnTime" => query.Where(r => r.DueAtUtc >= nowUtc.AddDays(2) || r.Status == SubjectRequestStatus.Answered || r.Status == SubjectRequestStatus.Rejected),
-                _ => query
+                _ => query.Where(r => r.DueAtUtc >= nowUtc.AddDays(2) || r.Status == SubjectRequestStatus.Answered || r.Status == SubjectRequestStatus.Rejected),
             };
         }
 
@@ -105,9 +109,14 @@ public class AdminController(
             return BadRequest("Для этого статуса нужно указать резолюцию.");
 
         request.Status = dto.Status;
-        request.Resolution = dto.Resolution;
+        // Code review, "заодно": Resolution/AnsweredAtUtc/HandlerUserId are only ever WRITTEN when moving
+        // TO a terminal status — an earlier version wrote dto.Resolution unconditionally, so moving an
+        // already-Answered request back to a non-terminal status (e.g. reopening it for more work) wiped
+        // the resolution that was already on record, even though dto.Resolution is null for that call
+        // (the BadRequest check above only requires it for the terminal statuses).
         if (dto.Status is SubjectRequestStatus.Answered or SubjectRequestStatus.Rejected)
         {
+            request.Resolution = dto.Resolution;
             request.AnsweredAtUtc = DateTime.UtcNow;
             request.HandlerUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         }
@@ -617,7 +626,8 @@ public class AdminController(
                 c.Id, c.State, ChannelPaymentState.Of(c, nowUtc),
                 owner is null ? "" : $"{owner.FirstName} {owner.LastName}",
                 owner?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(owner.PhoneNumber),
-                c.PaidFromUtc, c.PaidUntilUtc, c.Assignments.Count, c.IdleSinceUtc, c.RequestedAtUtc);
+                c.PaidFromUtc, c.PaidUntilUtc, c.Assignments.Count, c.IdleSinceUtc, c.RequestedAtUtc,
+                c.Inn, c.LegalEntityForm);
         }).ToList();
 
         return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
@@ -749,7 +759,8 @@ public class AdminController(
 
     private static AdminChannelDto MapAdminChannelDto(NotificationChannel channel, int idleDays) => new(
         channel.Id, channel.State, ChannelPaymentState.Of(channel, DateTime.UtcNow), "", null,
-        channel.PaidFromUtc, channel.PaidUntilUtc, channel.Assignments.Count, channel.IdleSinceUtc, channel.RequestedAtUtc);
+        channel.PaidFromUtc, channel.PaidUntilUtc, channel.Assignments.Count, channel.IdleSinceUtc, channel.RequestedAtUtc,
+        channel.Inn, channel.LegalEntityForm);
 
     // ── Retention policy (T5-B8/B9, ARCHITECTURE_CYCLE5.md §49.5) ────────────────
 
@@ -813,10 +824,14 @@ public record ScheduledTaskStatusDto(
 
 // ── Notification channels (API_CONTRACT_CYCLE4.md §34, T4-B11) ────────────────
 
+// Inn/LegalEntityForm appended (code review, "заодно"): the owner-facing channel read already exposes
+// both (NotificationChannelsController); SuperAdmin — who has to reconcile the same channel against
+// invoicing/compliance — was the one reader who couldn't see either.
 public record AdminChannelDto(
     Guid Id, ChannelState State, ChannelPaymentStatus PaymentState,
     string OwnerName, string? OwnerPhoneMasked,
-    DateTime? PaidFrom, DateTime? PaidUntil, int CompanyCount, DateTime? IdleSince, DateTime? RequestedAt);
+    DateTime? PaidFrom, DateTime? PaidUntil, int CompanyCount, DateTime? IdleSince, DateTime? RequestedAt,
+    string? Inn = null, LegalEntityForm? LegalEntityForm = null);
 
 // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.5) — the actual configured retention values, for publication in
 // the platform's privacy policy and for the lawyer's own periodic check (US-73 п. 7, US-80 п. 5).

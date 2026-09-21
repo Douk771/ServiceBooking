@@ -117,6 +117,16 @@ public class LegalController(
 
                 if (acceptedVersion == doc.Version) continue;
 
+                // Code review В1: a MISSING claim (acceptedVersion is null — this account has simply
+                // never touched TermsOwner, e.g. an ordinary client who never created a company) is not
+                // the same fact as a STALE claim (a real version string that no longer matches). Every
+                // account has Privacy/TermsClient claims from registration, so Global's null case never
+                // legitimately happens — but OwnerScope's null case is the common case, and until now
+                // this loop treated it exactly like a stale claim, disagreeing with
+                // RequiresOwnerTermsFilter's own `if (acceptedVersion is null) return;` (missing claim =
+                // not yet applicable, not a block). Two places reading the same claim must agree.
+                if (acceptedVersion is null && doc.Gate == LegalGate.OwnerScope) continue;
+
                 if (doc.ChangeKind != LegalChangeKind.Material)
                 {
                     hasEditorialMismatch = true;

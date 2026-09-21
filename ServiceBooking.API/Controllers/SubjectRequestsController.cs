@@ -31,6 +31,13 @@ public class SubjectRequestsController(
             return BadRequest("Укажите корректный номер телефона.");
         if (string.IsNullOrWhiteSpace(dto.ContactValue))
             return BadRequest("Укажите контакт для ответа.");
+        // Code review, "заодно": ContactValue's column is string(200) (§44.4) but, unlike Message below,
+        // had no corresponding length check — an over-length value reached SaveChangesAsync and failed
+        // there as a raw DbUpdateException (500), which is also a response-shape a caller could use to
+        // distinguish "over 200 chars" from every other 400 this endpoint returns — the one thing §50.1
+        // insists must never be distinguishable by response shape.
+        if (dto.ContactValue.Length > 200)
+            return BadRequest("Контакт для ответа не должен превышать 200 символов.");
         if (string.IsNullOrWhiteSpace(dto.Message))
             return BadRequest("Опишите обращение.");
         if (dto.Message.Length > 4000)

@@ -89,10 +89,10 @@ public sealed class InactiveAccountRule(AppDbContext db, FileStorage storage) : 
                 await db.SaveChangesAsync(ct);
                 foreach (var avatarUrl in avatarsToDelete) storage.DeletePublic(avatarUrl);
             }
-            else
-            {
-                db.ChangeTracker.Clear();
-            }
+
+            // Code review В6: cleared every batch, real mode included — see RetentionRuleRunner's own
+            // fix for why an uncleared tracker degrades a long real-mode run batch over batch.
+            db.ChangeTracker.Clear();
 
             affected += batch.Count;
             cursorId = batch[^1].Id;

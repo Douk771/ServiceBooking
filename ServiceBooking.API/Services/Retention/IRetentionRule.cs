@@ -27,5 +27,14 @@ public readonly record struct RetentionContext(DateTime NowUtc, RetentionPeriods
 
 /// <summary>Result of one rule's pass — the numbers the per-rule log line and <c>ScheduledTaskState.LastSummary</c>
 /// are built from. Never carries subject content (§49.2: "телефонов, текстов, идентификаторов субъектов —
-/// никогда").</summary>
+/// никогда").
+///
+/// <see cref="Affected"/> deliberately always equals <see cref="Scanned"/> in this codebase's rules
+/// (code review, "заодно"): every one of them selects EXACTLY the rows it is about to mutate, with no
+/// further filtering after the query runs — there is no rule shaped like "scanned 500, only 300 turned
+/// out to need changing". That is exactly what makes a dry-run's "Affected" a true, literal answer to
+/// "how many rows would this change if run for real right now" (§49.2), not an approximation. Kept as
+/// two separate fields anyway, not collapsed into one: a future rule with a genuine two-step
+/// select-then-filter shape (none exists today) would then have a place to report the distinction
+/// without a breaking change to this struct.</summary>
 public readonly record struct RetentionOutcome(string Name, int Scanned, int Affected, string Summary);

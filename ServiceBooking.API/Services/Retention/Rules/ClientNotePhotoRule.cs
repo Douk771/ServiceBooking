@@ -55,10 +55,10 @@ public sealed class ClientNotePhotoRule(AppDbContext db, FileStorage storage) : 
                     storage.DeletePrivate(thumb);
                 }
             }
-            else
-            {
-                db.ChangeTracker.Clear();
-            }
+
+            // Code review В6: cleared every batch, real mode included — see RetentionRuleRunner's own
+            // fix for why an uncleared tracker degrades a long real-mode run batch over batch.
+            db.ChangeTracker.Clear();
 
             affected += batch.Count;
             cursorId = batch[^1].Id;

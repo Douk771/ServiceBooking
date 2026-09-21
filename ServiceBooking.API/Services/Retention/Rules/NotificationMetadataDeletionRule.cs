@@ -13,6 +13,17 @@ namespace ServiceBooking.API.Services.Retention.Rules;
 /// the row itself is removed. The <c>ContentRedactedAtUtc IS NOT NULL</c> guard is a deliberate ordering
 /// invariant: a row can only ever become eligible for deletion AFTER it has already been redacted, never
 /// before — this rule can never be the first thing to touch a row that still has personal data in it.
+///
+/// Code review В5: the cutoff is measured from the SAME reference point as
+/// <see cref="NotificationBodyRedactionRule"/> — COALESCE(SentAtUtc, LastAttemptAtUtc, DueAtUtc) — not
+/// from <c>ContentRedactedAtUtc</c> (redaction time). An earlier version used the latter, which meant the
+/// declared <see cref="RetentionPeriods.NotificationMetadataDays"/> (default 365) understated the actual
+/// age by however long <see cref="RetentionPeriods.NotificationBodyDays"/> is (default 30) — a row was
+/// really kept 30+365 days, not 365, exactly the declared-vs-actual mismatch
+/// `GET /api/admin/retention/policy` exists to make impossible (§49.5). The
+/// <c>ContentRedactedAtUtc IS NOT NULL</c> ordering guard still applies on top, so a misconfiguration
+/// where NotificationMetadataDays &lt; NotificationBodyDays simply defers deletion to the next pass after
+/// redaction happens, rather than deleting a row that still has personal data in it.
 /// </summary>
 public sealed class NotificationMetadataDeletionRule(AppDbContext db) : IRetentionRule
 {
@@ -23,13 +34,14 @@ public sealed class NotificationMetadataDeletionRule(AppDbContext db) : IRetenti
         var cutoff = RetentionPlan.CutoffsFor(ctx.NowUtc, ctx.Periods).NotificationMetadata;
 
         IQueryable<Core.Entities.OutboundNotification> Query(Guid cursor) => db.OutboundNotifications
-            .Where(n => n.Id > cursor && n.ContentRedactedAtUtc != null && n.ContentRedactedAtUtc < cutoff)
+            .Where(n => n.Id > cursor && n.ContentRedactedAtUtc != null
+                        && (n.SentAtUtc ?? n.LastAttemptAtUtc ?? n.DueAtUtc) < cutoff)
             .OrderBy(n => n.Id);
 
         return RetentionRuleRunner.RunAsync(
             Name, Query, n => n.Id,
             mutate: n => db.OutboundNotifications.Remove(n),
             ctx, db, ct,
-            dateOf: n => n.ContentRedactedAtUtc!.Value);
+            dateOf: n => n.SentAtUtc ?? n.LastAttemptAtUtc ?? n.DueAtUtc);
     }
 }

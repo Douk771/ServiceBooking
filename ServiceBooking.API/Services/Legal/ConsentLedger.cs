@@ -87,15 +87,42 @@ public class ConsentLedger(AppDbContext db)
     /// <summary>The FULL journal for one subject — every row, revoked or not, newest first. Used where a
     /// human needs to see everything they ever did (API_CONTRACT_CYCLE5.md §41.1 `history`, §49
     /// `consents` export section), never for an access-control decision (that's CurrentAsync/
-    /// CurrentAllAsync above — a revoked row must never look "current" to anything but this audit view).</summary>
-    public async Task<IReadOnlyList<ConsentState>> HistoryAsync(ConsentSubject subject, CancellationToken ct = default)
+    /// CurrentAllAsync above — a revoked row must never look "current" to anything but this audit view).
+    ///
+    /// Code review В3: for a <see cref="ConsentSubject.ForUser"/> subject, <paramref name="knownPhone"/>
+    /// (the account's current canonical phone, when known) additionally pulls in every row recorded
+    /// about this SAME real person while a company's staff dealt with them by phone — salon-recorded
+    /// `PhotoConsent`/`HealthDataConsent` rows (`UserId == null`, `SubjectPhone` + `CompanyId` set,
+    /// ClientConsentsController). Without this, "Мои согласия" (§41.1: "человек видит всё, что
+    /// подписывал") silently omitted every consent a salon ever recorded on their behalf — the two rows
+    /// share no `UserId`, only the same phone number, so a plain `UserId` filter can never find them.
+    /// Optional and defaults to null (no salon rows pulled) so every OTHER caller of this method —
+    /// ForPhoneInCompany reads, and any ForUser read that has no phone to offer — keeps its exact prior
+    /// behavior.</summary>
+    public async Task<IReadOnlyList<ConsentState>> HistoryAsync(ConsentSubject subject, string? knownPhone = null, CancellationToken ct = default)
     {
-        var query = subject.UserId is not null
-            ? db.ConsentRecords.Where(c => c.UserId == subject.UserId)
-            : db.ConsentRecords.Where(c => c.SubjectPhone == subject.Phone && c.CompanyId == subject.CompanyId);
+        List<ConsentRecord> records;
+        if (subject.UserId is not null)
+        {
+            var byUser = await db.ConsentRecords.Where(c => c.UserId == subject.UserId).ToListAsync(ct);
+            if (string.IsNullOrEmpty(knownPhone))
+            {
+                records = byUser;
+            }
+            else
+            {
+                var byPhone = await db.ConsentRecords
+                    .Where(c => c.UserId == null && c.SubjectPhone == knownPhone).ToListAsync(ct);
+                records = byUser.Concat(byPhone).ToList();
+            }
+        }
+        else
+        {
+            records = await db.ConsentRecords
+                .Where(c => c.SubjectPhone == subject.Phone && c.CompanyId == subject.CompanyId).ToListAsync(ct);
+        }
 
-        var records = await query.OrderByDescending(c => c.GrantedAtUtc).ToListAsync(ct);
-        return records.Select(ToState).ToList();
+        return records.OrderByDescending(c => c.GrantedAtUtc).Select(ToState).ToList();
     }
 
     /// <summary>

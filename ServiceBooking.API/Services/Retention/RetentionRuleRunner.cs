@@ -58,12 +58,14 @@ public static class RetentionRuleRunner
             {
                 await db.SaveChangesAsync(ct);
             }
-            else
-            {
-                // Nothing is sent to the database at all in dry-run — the mutated in-memory values are
-                // simply discarded. This is the one and only branch point between the two modes.
-                db.ChangeTracker.Clear();
-            }
+
+            // Code review В6: cleared after EVERY batch, real mode included — an earlier version only
+            // cleared it in the dry-run branch. Left uncleared, tracked entities accumulate across every
+            // batch of the whole pass; DbContext.ChangeTracker.DetectChanges (which SaveChangesAsync
+            // calls internally on every invocation) is not O(1) in the number of tracked entities, so a
+            // long run degrades batch-over-batch until MaxRunMinutes cuts it off — on a large enough
+            // table, the tail of it would never be reached by ANY pass, ever, real mode included.
+            db.ChangeTracker.Clear();
 
             affected += batch.Count;
             cursor = idOf(batch[^1]);
