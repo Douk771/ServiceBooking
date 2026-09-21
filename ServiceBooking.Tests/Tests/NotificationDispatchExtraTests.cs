@@ -76,18 +76,34 @@ public class NotificationDispatchExtraTests
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var (_, channel, company) = await SeedConnectedChannelAsync(baseFactory, db, client: webFactory.CreateClient());
 
-        var row1 = NewPendingNotification(company.Id, channel.Id, "79990000201");
-        var row2 = NewPendingNotification(company.Id, channel.Id, "79990000202");
-        var row3 = NewPendingNotification(company.Id, channel.Id, "79990000203");
+        string[] ownPhones = ["79990000201", "79990000202", "79990000203"];
+        var row1 = NewPendingNotification(company.Id, channel.Id, ownPhones[0]);
+        var row2 = NewPendingNotification(company.Id, channel.Id, ownPhones[1]);
+        var row3 = NewPendingNotification(company.Id, channel.Id, ownPhones[2]);
         db.OutboundNotifications.AddRange(row1, row2, row3);
         await db.SaveChangesAsync();
 
-        // First pass: exactly 2 of the 3 same-channel rows fit in the ~900ms budget at 500ms/send.
-        await WaitForAsync(() => slowTransport.Calls.Count >= 2, timeoutSeconds: 20);
-        // Give the pass a moment to actually hit the budget boundary and stop (rather than racing ahead
-        // into row 3 before the next assertion runs).
-        await Task.Delay(400);
-        slowTransport.Calls.Count.Should().Be(2, "the budget must stop the group after the 2nd send, before the 3rd starts");
+        // CI-flake fix: `webFactory`'s background runner scans Pending rows PLATFORM-WIDE
+        // (ARCHITECTURE_CYCLE4.md §27.1), same as every other test in this file — `slowTransport`, being
+        // registered once for the whole host, records EVERY send that host makes, not just this test's
+        // own 3 rows. A run against the shared "servicebooking_test" database can have other channels
+        // still Connected with their own Pending rows left by other tests' factories (each with its own
+        // background loop that doesn't necessarily stop the instant its own test method returns) — those
+        // sends land in `slowTransport.Calls` too. The original `slowTransport.Calls.Count.Should().Be(2)`
+        // counted ALL of them, so it could read anywhere from fewer than 2 (another host's dispatcher won
+        // the race and sent OUR rows through ITS OWN transport first) to more than 2 (an unrelated row
+        // got sent through THIS host in the same pass) — neither has anything to do with whether the
+        // budget correctly stopped THIS test's own group after 2 sends. Filtered to `ownPhones`, exactly
+        // like Priority_ByVisitTime above does for the same reason, the assertion is back to testing the
+        // actual invariant instead of a shared, unfiltered call log.
+        Func<int> ownCallCount = () => slowTransport.Calls.Count(c => ownPhones.Contains(c.CanonicalPhone));
+
+        // First pass: exactly 2 of the 3 same-channel rows fit in the ~900ms budget at 500ms/send. The
+        // budget cutoff is deterministic within a single pass: two full 550ms sends already sum to
+        // 1100ms, past the 1000ms budget, so row 3's loop-top check (or the antiban pause right after row
+        // 2) is guaranteed to already be past the deadline by the time this pass could even consider it.
+        await WaitForAsync(() => ownCallCount() >= 2, timeoutSeconds: 20);
+        ownCallCount().Should().Be(2, "the budget must stop the group after the 2nd send, before the 3rd starts");
 
         await using (var pollScope = webFactory.Services.CreateAsyncScope())
         {
@@ -97,10 +113,11 @@ public class NotificationDispatchExtraTests
         }
 
         // Second pass (fresh budget): must finish the remainder, WITHOUT re-sending rows 1/2.
-        await WaitForAsync(() => slowTransport.Calls.Count >= 3, timeoutSeconds: 20);
-        slowTransport.Calls.Select(c => c.CanonicalPhone).Should()
+        await WaitForAsync(() => ownCallCount() >= 3, timeoutSeconds: 20);
+        var ownCalls = slowTransport.Calls.Where(c => ownPhones.Contains(c.CanonicalPhone)).ToList();
+        ownCalls.Select(c => c.CanonicalPhone).Should()
             .OnlyHaveUniqueItems("no row may ever be sent twice across passes, even one interrupted by budget");
-        slowTransport.Calls.Select(c => c.CanonicalPhone).Should().Contain(["79990000201", "79990000202", "79990000203"]);
+        ownCalls.Select(c => c.CanonicalPhone).Should().Contain(ownPhones);
     }
 
     [Fact, TestCase("NTF-D05")]
@@ -172,7 +189,14 @@ public class NotificationDispatchExtraTests
         var finalDb = finalScope.ServiceProvider.GetRequiredService<AppDbContext>();
         var finalChannel = await finalDb.NotificationChannels.AsNoTracking().FirstAsync(x => x.Id == channel.Id);
         finalChannel.State.Should().Be(ChannelState.NeedsReconnect);
-        finalChannel.PaidUntilUtc.Should().Be(paidUntilBefore, "the paid period must survive an idle deletion");
+        // CI-flake fix: Postgres' timestamp column is microsecond-precision, .NET DateTime is 100ns-tick
+        // precision — a value written, then read back through a real round trip (unlike this test's other
+        // in-memory `paidUntilBefore` capture), can lose its 7th significant digit. Exact .Be(...) compares
+        // ticks bit-for-bit and is flaky depending on what random sub-microsecond tick the seed happened to
+        // land on; a 1ms tolerance is generous for round-trip truncation and still tight enough to catch a
+        // real bug (e.g. the period being recalculated instead of carried through unchanged).
+        finalChannel.PaidUntilUtc.Should().BeCloseTo(paidUntilBefore!.Value, TimeSpan.FromMilliseconds(1),
+            "the paid period must survive an idle deletion");
 
         var assignmentStillThere = await finalDb.ChannelCompanyAssignments.AsNoTracking()
             .AnyAsync(a => a.ChannelId == channel.Id && a.CompanyId == company.Id);

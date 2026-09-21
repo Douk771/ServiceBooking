@@ -268,7 +268,12 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var result = (await response.Content.ReadJsonAsync<ReplaceChannelResponseDto>())!;
         result.CompaniesMoved.Should().Be(1);
-        result.PaidUntil.Should().Be(paidUntilBefore);
+        // CI-flake fix: `paidUntilBefore` is captured from an in-process DateTime (100ns ticks);
+        // `result.PaidUntil` came back through Postgres (microsecond precision) and JSON — an exact
+        // .Be(...) compares ticks bit-for-bit and is flaky depending on where the seed's random tick
+        // landed. 1ms tolerance is generous for round-trip truncation, still tight enough to catch a real
+        // "period got recalculated instead of carried through" bug.
+        result.PaidUntil.Should().BeCloseTo(paidUntilBefore!.Value, TimeSpan.FromMilliseconds(1));
 
         using (var scope = Factory.Services.CreateScope())
         {
