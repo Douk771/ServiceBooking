@@ -42,6 +42,12 @@ public class NotificationChannel
     // migration; not exposed in any DTO.
     public string? ContactEmail { get; set; }
 
+    // T5-B4 (ARCHITECTURE_CYCLE5.md §54 row 13, API_CONTRACT_CYCLE5.md §50.1, US-82). Collected once, at
+    // the request, never re-validated against ЕГРЮЛ/ЕГРИП (ПЛ5 — formal checksum only). Never exposed to
+    // anyone but the owner and SuperAdmin (§50.2).
+    public LegalEntityForm? LegalEntityForm { get; set; }
+    public string? Inn { get; set; }
+
     public DateTime? PaidFromUtc { get; set; }
     public DateTime? PaidUntilUtc { get; set; }
     public bool IsSuspendedByAdmin { get; set; }

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -16,7 +17,8 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/[controller]")]
 public class CompaniesController(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
-    ImageUploadService imageUploadService, FileStorage storage) : ControllerBase
+    ImageUploadService imageUploadService, FileStorage storage,
+    LegalDocumentProvider legalProvider, ConsentLedger ledger, TokenService tokenService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<CompanyDto>>> GetAll()
@@ -184,10 +186,23 @@ public class CompaniesController(
 
     [HttpPost]
     [Authorize]
-    public async Task<ActionResult<CompanyDto>> Create(CreateCompanyDto dto)
+    [RequiresOwnerTerms]
+    public async Task<ActionResult<CreateCompanyResponseDto>> Create(CreateCompanyDto dto)
     {
         if (await db.Companies.AnyAsync(c => c.Slug == dto.Slug))
             return Conflict("Slug already taken");
+
+        // ARCHITECTURE_CYCLE5.md §42.1, API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3). Checked by hand
+        // (RegisterDto.Legal's own note explains why), before anything else touches the database — an
+        // unaccepted company creation must never create a row to begin with.
+        if (string.IsNullOrWhiteSpace(dto.OwnerTerms?.Version))
+            return BadRequest("Для создания компании нужно принять соглашение с владельцем.");
+
+        var ownerTermsDoc = legalProvider.Current?.Get(LegalDocumentType.TermsOwner);
+        if (ownerTermsDoc is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+        if (dto.OwnerTerms.Version != ownerTermsDoc.Version)
+            return Conflict("Соглашение было обновлено ещё раз — перечитайте и примите новую редакцию.");
 
         // Cycle 4, API_CONTRACT_CYCLE4.md §31.2 (breaking change): every new company needs a city, so
         // a derived time zone exists for reminder timing. Validated before touching the advisory lock
@@ -261,15 +276,36 @@ public class CompaniesController(
         await IdentityRoleSync.SyncAsync(db, userManager, userId);
         await limitTransaction.CommitAsync();
 
+        // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance itself, recorded AFTER the company/membership
+        // commit above (nothing before this point can fail because of it, and a failure here must not
+        // undo an otherwise-successful company creation — best-effort would be wrong here though: US-66
+        // needs this row to exist, so it's still inside the overall request, just its own grant/lock).
+        var ownerSubject = ConsentSubject.ForUser(userId);
+        await ledger.GrantAsync(new ConsentGrant(
+            ownerSubject, LegalDocumentType.TermsOwner.ToString(), ownerTermsDoc.Version, ownerTermsDoc.ContentHash,
+            Purpose: null, ConsentAct.Accepted, ConsentSource.CompanyCreation,
+            IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()));
+
+        // A fresh token, carrying the new "lco" claim — see CreateCompanyResponseDto's own doc comment
+        // for why this is mandatory, not an optimization. Privacy/TermsClient claims are re-resolved the
+        // same way AuthController.Login does, so this token is complete, not just augmented.
+        var user = await userManager.FindByIdAsync(userId);
+        var roles = await userManager.GetRolesAsync(user!);
+        var privacyState = await ledger.CurrentAsync(ownerSubject, LegalDocumentType.Privacy.ToString(), purpose: null);
+        var termsState = await ledger.CurrentAsync(ownerSubject, LegalDocumentType.TermsClient.ToString(), purpose: null);
+        var token = tokenService.GenerateToken(user!, roles, privacyState?.DocumentVersion, termsState?.DocumentVersion, ownerTermsDoc.Version);
+
         // `plan` was already resolved above for the MaxCompanies check — reuse it so the response
         // reflects the owner's real plan (e.g. their existing paid plan when opening a 2nd+ branch),
         // instead of assuming Free.
         // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
-        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, MapToDto(company, plan, null, 0, city));
+        var companyDto = MapToDto(company, plan, null, 0, city);
+        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, new CreateCompanyResponseDto(companyDto, token));
     }
 
     [HttpPut("{id:guid}")]
     [Authorize]
+    [RequiresOwnerTerms]
     public async Task<ActionResult<CompanyDto>> Update(Guid id, UpdateCompanyDto dto)
     {
         var company = await db.Companies.FindAsync(id);
@@ -399,6 +435,7 @@ public class CompaniesController(
 
     [HttpPost("{id:guid}/members")]
     [Authorize]
+    [RequiresOwnerTerms]
     public async Task<ActionResult<MemberDto>> AddMember(Guid id, AddMemberDto dto)
     {
         if (!await CanManageCompany(id)) return Forbid();
@@ -505,6 +542,7 @@ public class CompaniesController(
 
     [HttpDelete("{id:guid}/members/{memberId:guid}")]
     [Authorize]
+    [RequiresOwnerTerms]
     public async Task<IActionResult> RemoveMember(Guid id, Guid memberId)
     {
         if (!await CanManageCompany(id)) return Forbid();

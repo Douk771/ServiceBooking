@@ -211,6 +211,33 @@ public class BookingsController(
             }
         }
 
+        // ARCHITECTURE_CYCLE5.md §44.5, API_CONTRACT_CYCLE5.md §46.1 (BREAKING № 5). BookingNoticeVersion
+        // is filled unconditionally — the ст. 18 notice (D5) is shown on the booking form regardless of
+        // who's filling it out, unlike the guest-only consent snapshot above. A manifest that isn't
+        // loaded (only possible outside Production) simply leaves it null, same "booking must not depend
+        // on the legal text provider being up" rule as the consent snapshot.
+        var bookingNoticeVersion = legalProvider.Current?.GetText(LegalTextKey.BookingNotice)?.Version;
+
+        // US-78 п. 1: applies only to the self-booking paths (client, guest, /embed — all the same
+        // endpoint) — a staff manual booking is the staff member's own tool, recording who's actually in
+        // front of them; there is no "someone else" to confirm authority over.
+        DateTime? guardianConfirmedAtUtc = null;
+        string? guardianConfirmationVersion = null;
+        if (!isStaffManualBooking && dto.BookedForOther)
+        {
+            if (dto.GuardianConfirmation is not { Confirmed: true })
+                return BadRequest("Для записи другого человека нужно подтвердить полномочия.");
+
+            var guardianText = legalProvider.Current?.GetText(LegalTextKey.GuardianConfirmation);
+            if (guardianText is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+            if (dto.GuardianConfirmation.TextVersion != guardianText.Version)
+                return Conflict("Текст подтверждения был обновлён — перечитайте и подтвердите заново.");
+
+            guardianConfirmedAtUtc = DateTime.UtcNow;
+            guardianConfirmationVersion = guardianText.Version;
+        }
+
         var booking = new Booking
         {
             Id = Guid.NewGuid(),
@@ -232,6 +259,10 @@ public class BookingsController(
             ConsentPrivacyVersion = consentPrivacyVersion,
             ConsentTermsVersion = consentTermsVersion,
             ConsentAcceptedAtUtc = consentAcceptedAtUtc,
+            BookingNoticeVersion = bookingNoticeVersion,
+            BookedForOther = !isStaffManualBooking && dto.BookedForOther,
+            GuardianConfirmedAtUtc = guardianConfirmedAtUtc,
+            GuardianConfirmationVersion = guardianConfirmationVersion,
             Status = BookingStatus.Confirmed,
             PaymentStatus = requiresPrepayment ? PaymentStatus.Pending : PaymentStatus.NotRequired,
             Price = service.Price,
@@ -582,7 +613,8 @@ public class BookingsController(
             b.GuestPhone ?? b.Client?.PhoneNumber, b.GuestEmail ?? b.Client?.Email,
             b.Date, b.StartTime, b.EndTime, b.Status, b.PaymentStatus, b.Price, b.CancellationReason,
             b.Notes, b.CreatedAt,
-            b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus);
+            b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus,
+            b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc);
 
     // API_CONTRACT_CYCLE4.md §30.3. Picks the highest-Generation Reminder row for a booking (§23.5: a
     // reschedule supersedes the previous generation's row rather than mutating it), so a rescheduled

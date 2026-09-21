@@ -15,10 +15,19 @@ public sealed class PlatformSettings(AppDbContext db, IMemoryCache cache)
 {
     public const string ChannelPricePerMonthKey = "notifications.channel.price-per-month";
     public const string ChannelIdleDaysKey = "notifications.channel.idle-days";
+    // T5-B12 (ARCHITECTURE_CYCLE5.md §51.2, US-70 п. 1) — comma-separated, edited by SuperAdmin without a
+    // release (PlatformSettingsWriter already exists, its own change-log too). PlatformSetting.Value was
+    // widened to 2000 chars specifically because this list didn't fit in the old 200 (§44.7).
+    public const string AdMarkersKey = "notifications.template.ad-markers";
 
     /// <summary>US-62 p.6, §30.3 default — used whenever the key is absent, which is the ordinary case
     /// (the key exists only once a superadmin has ever changed it away from the default).</summary>
     public const int DefaultChannelIdleDays = 3;
+
+    /// <summary>The starting dictionary (ARCHITECTURE_CYCLE5.md §51.2's own example list) — used only
+    /// when a superadmin has never set the key, exactly like <see cref="DefaultChannelIdleDays"/> above.</summary>
+    public static readonly IReadOnlyList<string> DefaultAdMarkers =
+        ["скидк", "акци", "промо", "дарим", "подар", "спецпредлож", "%", "бесплатн", "приводи", "успей", "только до"];
 
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(60);
 
@@ -39,6 +48,17 @@ public sealed class PlatformSettings(AppDbContext db, IMemoryCache cache)
     {
         var raw = await GetRawAsync(ChannelIdleDaysKey, ct);
         return raw is not null && int.TryParse(raw, out var days) && days >= 0 ? days : DefaultChannelIdleDays;
+    }
+
+    /// <summary>Split on commas, trimmed, empty entries dropped — <see cref="DefaultAdMarkers"/> when the
+    /// key is absent.</summary>
+    public async Task<IReadOnlyList<string>> GetAdMarkersAsync(CancellationToken ct = default)
+    {
+        var raw = await GetRawAsync(AdMarkersKey, ct);
+        if (raw is null) return DefaultAdMarkers;
+
+        var markers = raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return markers.Length > 0 ? markers : DefaultAdMarkers;
     }
 
     private async Task<string?> GetRawAsync(string key, CancellationToken ct)

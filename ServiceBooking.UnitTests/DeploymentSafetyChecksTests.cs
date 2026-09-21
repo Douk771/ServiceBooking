@@ -638,4 +638,78 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateTimeZoneDatabase("Production");
         act.Should().NotThrow();
     }
+
+    // ── ValidateProviderDeliveryConsentMode (cycle 5, T-24, ARCHITECTURE_CYCLE5.md §52.3) ──────────
+
+    [Theory]
+    [InlineData("Strict")]
+    [InlineData("AccountsOnly")]
+    [InlineData("Off")]
+    [InlineData("strict")] // case-insensitive
+    [InlineData(null)]     // absent → NotificationOptions' own AccountsOnly default
+    [InlineData("")]
+    public void ValidateProviderDeliveryConsentMode_RecognizedOrAbsentValue_DoesNotThrow(string? value)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:ProviderDeliveryConsent"] = value });
+        var act = () => DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(config);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateProviderDeliveryConsentMode_UnrecognizedValue_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:ProviderDeliveryConsent"] = "Nonsense" });
+        var act = () => DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(config);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ProviderDeliveryConsent*");
+    }
+
+    // ── ValidateGreenApiServerCountry (cycle 5, T5-B13, ARCHITECTURE_CYCLE5.md §52.1) ───────────────
+
+    [Fact]
+    public void ValidateGreenApiServerCountry_CreationDisabled_EmptyCountry_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApi:InstanceCreationEnabled"] = "false",
+            ["Notifications:GreenApi:ServerCountry"] = ""
+        });
+        var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateGreenApiServerCountry_CreationEnabled_EmptyCountry_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApi:InstanceCreationEnabled"] = "true",
+            ["Notifications:GreenApi:ServerCountry"] = ""
+        });
+        var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ServerCountry*");
+    }
+
+    [Fact]
+    public void ValidateGreenApiServerCountry_CreationEnabled_CountrySet_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApi:InstanceCreationEnabled"] = "true",
+            ["Notifications:GreenApi:ServerCountry"] = "RU"
+        });
+        var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateGreenApiServerCountry_CreationEnabled_WhitespaceCountry_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApi:InstanceCreationEnabled"] = "true",
+            ["Notifications:GreenApi:ServerCountry"] = "   "
+        });
+        var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
+        act.Should().Throw<InvalidOperationException>();
+    }
 }

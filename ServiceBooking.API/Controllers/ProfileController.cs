@@ -17,7 +17,7 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class ProfileController(
     UserManager<AppUser> userManager, AppDbContext db, ImageUploadService imageUploadService, FileStorage storage,
-    LegalDocumentProvider legalProvider, ConsentLedger ledger)
+    LegalDocumentProvider legalProvider, ConsentLedger ledger, HealthNoteProtector healthNoteProtector)
     : ControllerBase
 {
     [HttpGet]
@@ -102,19 +102,77 @@ public class ProfileController(
             .Select(p => new ExportPhotoMetaDto(p.ClientNote.Company.Name, p.CreatedAt, p.SizeBytes))
             .ToListAsync();
 
+        // T5-B11 (ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49). "Без N+1": three cheap
+        // id-only queries (one per source — bookings/notes/photos already scoped to this subject exactly
+        // like the sections above) build BOTH the company-id union and the "what is stored" tags in one
+        // pass, then ONE second query fetches the company cards themselves — never one query per company.
+        var bookingCompanyIds = await db.Bookings
+            .Where(b => b.ClientId == userId || (canonicalPhone != null && b.GuestPhone == canonicalPhone))
+            .Select(b => b.CompanyId).Distinct().ToListAsync();
+        var noteCompanyIds = await db.ClientNotes
+            .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+            .Select(n => n.CompanyId).Distinct().ToListAsync();
+        var photoCompanyIds = await db.ClientNotePhotos
+            .Where(p => p.ClientNote.ClientId == userId || (canonicalPhone != null && p.ClientNote.GuestPhone == canonicalPhone))
+            .Select(p => p.CompanyId).Distinct().ToListAsync();
+        var healthNoteRows = await db.ClientHealthNotes.Where(n => n.ClientId == userId).ToListAsync();
+
+        var whatIsStoredByCompany = new Dictionary<Guid, List<string>>();
+        void Tag(IEnumerable<Guid> companyIds, string kind)
+        {
+            foreach (var id in companyIds)
+            {
+                if (!whatIsStoredByCompany.TryGetValue(id, out var list)) whatIsStoredByCompany[id] = list = [];
+                if (!list.Contains(kind)) list.Add(kind);
+            }
+        }
+        Tag(bookingCompanyIds, "bookings");
+        Tag(noteCompanyIds, "notes");
+        Tag(photoCompanyIds, "photos");
+        Tag(healthNoteRows.Select(n => n.CompanyId), "healthNotes");
+
+        var operatorCompanyIds = whatIsStoredByCompany.Keys.ToList();
+        var operators = operatorCompanyIds.Count == 0 ? []
+            : await db.Companies.AsNoTracking().Where(c => operatorCompanyIds.Contains(c.Id))
+                .Select(c => new ExportOperatorDto(c.Id, c.Name, c.Address, c.Phone, c.Email, whatIsStoredByCompany[c.Id]))
+                .ToListAsync();
+
+        // US-75 — sent notifications and opt-out status. bodyAvailable reflects §51's затирание: a row
+        // past its retention window has ContentRedactedAtUtc set, and the export must say so plainly
+        // rather than showing an empty string that looks like "nothing was ever sent".
+        var notifications = await db.OutboundNotifications.AsNoTracking()
+            .Include(n => n.Company)
+            .Where(n => n.RecipientUserId == userId)
+            .OrderByDescending(n => n.CreatedAt)
+            .Select(n => new ExportNotificationDto(
+                n.SentAtUtc, n.Type.ToString(), n.Status.ToString(), n.Company.Name, n.ContentRedactedAtUtc == null))
+            .ToListAsync();
+        var optOutRow = canonicalPhone is null ? null
+            : await db.NotificationOptOuts.AsNoTracking().FirstOrDefaultAsync(o => o.Phone == canonicalPhone);
+        var optOut = new ExportOptOutDto(optOutRow is not null, optOutRow?.OptedOutAtUtc);
+
+        // US-77 — decrypted explicitly (HealthNoteProtector's own doc comment: never via a transparent
+        // converter), same subject-key convention ClientConsentsController uses (userId as SubjectKey for
+        // a registered client — this export only ever runs for the account holder themselves).
+        var companyNameById = operators.ToDictionary(o => o.CompanyId, o => o.Name);
+        var healthNotesExport = new List<ExportHealthNoteDto>();
+        foreach (var note in healthNoteRows)
+        {
+            var value = healthNoteProtector.Unprotect(note.Ciphertext, note.CompanyId, userId);
+            healthNotesExport.Add(new ExportHealthNoteDto(companyNameById.GetValueOrDefault(note.CompanyId, ""), value, note.UpdatedAt));
+        }
+
         // ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49: "признаны результатом работы салона"
-        // is removed — it is not a valid ground for refusal (ч. 8 ст. 14 152-ФЗ is exhaustive and does not
-        // list it). Replaced with routing to the actual operator of that data, the company itself.
-        // T5-B11 (the `operators`/`notifications`/`optOut`/`healthNotes` sections this same task adds) is
-        // NOT part of this pass — see the cycle report — this fixes only the wording, which has its own
-        // grep-based acceptance check (§57) independent of those sections.
+        // is removed — it is not a valid ground for refusal (ч. 8 ст. 14 152-ФЗ is exhaustive). Replaced
+        // with routing to the actual operator of that data — see `operators` above.
         var export = new ProfileExportDto(
             DateTime.UtcNow,
             new ExportProfileDto(user.FirstName, user.LastName, user.PhoneNumber, user.Email, user.AvatarUrl, user.CreatedAt),
             consent, memberships, bookings, reviews, notesAboutMe, photosOfMe,
             "Оператором заметок, фотографий и сведений, внесённых сотрудниками компании, является сама " +
             "компания. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
-            "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.");
+            "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.",
+            operators, notifications, optOut, healthNotesExport);
 
         Response.Headers.ContentDisposition =
             $"attachment; filename=\"servicebooking-export-{DateOnly.FromDateTime(DateTime.UtcNow):yyyy-MM-dd}.json\"";
@@ -539,6 +597,138 @@ public class ProfileController(
         return Ok(await BuildConsentsDtoAsync(userId, doc));
     }
 
+    // T5-B5 (ARCHITECTURE_CYCLE5.md §47.1, API_CONTRACT_CYCLE5.md §41.3). Both endpoints share the SAME
+    // selection queries (§49.2's "sухой прогон тем же запросом выборки" principle, applied here too,
+    // even though this cascade isn't the retention sweep itself) — revoke-preview differs from revoke
+    // only in whether SaveChanges/file deletion actually happen.
+
+    [HttpPost("consents/revoke")]
+    public async Task<ActionResult<RevokeConsentResponseDto>> RevokeConsent([FromBody] RevokeConsentDto dto)
+    {
+        if (dto.DocumentKey != LegalDocumentType.PdnConsent.ToString())
+            return BadRequest($"Через этот вызов отзывается только '{LegalDocumentType.PdnConsent}'.");
+
+        ConsentPurpose? purpose = null;
+        if (dto.Purpose is not null)
+        {
+            if (!Enum.TryParse<ConsentPurpose>(dto.Purpose, ignoreCase: true, out var parsed))
+                return BadRequest($"Неизвестная цель '{dto.Purpose}'.");
+            purpose = parsed;
+        }
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var subject = ConsentSubject.ForUser(userId);
+
+        // §47.3: idempotent — "0 revoked" is a legitimate, non-error outcome (revoking an already-revoked
+        // or never-granted purpose), and the cascade below still runs against whatever it finds (which,
+        // for an already-clean subject, is nothing — also legitimate, not an error).
+        var revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose, dto.Reason);
+        var effects = await ApplyOrPreviewRevokeEffectsAsync(userId, purpose, apply: true);
+
+        return Ok(new RevokeConsentResponseDto(revoked, effects));
+    }
+
+    [HttpGet("consents/revoke-preview")]
+    public async Task<ActionResult<RevokeEffectsDto>> RevokeConsentPreview([FromQuery] string? purpose)
+    {
+        ConsentPurpose? parsedPurpose = null;
+        if (purpose is not null)
+        {
+            if (!Enum.TryParse<ConsentPurpose>(purpose, ignoreCase: true, out var parsed))
+                return BadRequest($"Неизвестная цель '{purpose}'.");
+            parsedPurpose = parsed;
+        }
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var effects = await ApplyOrPreviewRevokeEffectsAsync(userId, parsedPurpose, apply: false);
+        return Ok(effects);
+    }
+
+    /// <summary>
+    /// The cascade table from ARCHITECTURE_CYCLE5.md §47.1, computed once for both the real revoke and
+    /// its preview. `purpose: null` means "the whole PdnConsent document" — every cascade below applies,
+    /// plus the optional profile fields (§47.1's fourth row). A specific purpose applies only its own row.
+    /// </summary>
+    private async Task<RevokeEffectsDto> ApplyOrPreviewRevokeEffectsAsync(string userId, ConsentPurpose? purpose, bool apply)
+    {
+        var wholeDocument = purpose is null;
+        var photosDeleted = 0;
+        var healthNotesDeleted = 0;
+        var queuedNotificationsCancelled = 0;
+        var profileFieldsCleared = new List<string>();
+
+        if (wholeDocument || purpose == ConsentPurpose.WorkPhotos)
+        {
+            // "About the user" — every photo on a note filed against THEIR account, in any company
+            // (§47.1's "во всех компаниях"), never a guest-path note (that has no ClientId to match).
+            var photos = await db.ClientNotePhotos.Include(p => p.ClientNote)
+                .Where(p => p.ClientNote.ClientId == userId).ToListAsync();
+            photosDeleted = photos.Count;
+            if (apply && photos.Count > 0)
+            {
+                var paths = photos.Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
+                db.ClientNotePhotos.RemoveRange(photos);
+                await db.SaveChangesAsync();
+                // Files only after the row commit (ARCHITECTURE.md §1.4) — same ordering DeleteAccount uses.
+                foreach (var (full, thumb) in paths)
+                {
+                    storage.DeletePrivate(full);
+                    storage.DeletePrivate(thumb);
+                }
+            }
+        }
+
+        if (wholeDocument || purpose == ConsentPurpose.HealthData)
+        {
+            var healthNotes = await db.ClientHealthNotes.Where(n => n.ClientId == userId).ToListAsync();
+            healthNotesDeleted = healthNotes.Count;
+            if (apply && healthNotes.Count > 0)
+            {
+                db.ClientHealthNotes.RemoveRange(healthNotes);
+                await db.SaveChangesAsync();
+            }
+        }
+
+        if (wholeDocument || purpose == ConsentPurpose.ProviderDelivery)
+        {
+            // §47.1: not skipped silently at send time — CANCELLED now, with a reason, so the delivery
+            // log shows why (§55.1 R11's "новая ветка гейта" is the mirror of this: NEW rows stop being
+            // queued at all via NotificationGate/T-24, ARCHITECTURE_CYCLE5.md §52.3).
+            var pending = await db.OutboundNotifications
+                .Where(n => n.RecipientUserId == userId && n.Status == NotificationStatus.Pending).ToListAsync();
+            queuedNotificationsCancelled = pending.Count;
+            if (apply && pending.Count > 0)
+            {
+                foreach (var row in pending)
+                {
+                    row.Status = NotificationStatus.Cancelled;
+                    row.Reason = NotificationReason.NoProviderDeliveryConsent;
+                }
+                await db.SaveChangesAsync();
+            }
+        }
+
+        if (wholeDocument)
+        {
+            var user = await userManager.FindByIdAsync(userId);
+            if (user is not null)
+            {
+                if (!string.IsNullOrEmpty(user.Email)) profileFieldsCleared.Add("email");
+                if (!string.IsNullOrEmpty(user.AvatarUrl)) profileFieldsCleared.Add("avatarUrl");
+                if (apply && profileFieldsCleared.Count > 0)
+                {
+                    var oldAvatarUrl = user.AvatarUrl;
+                    user.Email = null;
+                    user.AvatarUrl = null;
+                    await userManager.UpdateAsync(user);
+                    storage.DeletePublic(oldAvatarUrl);
+                }
+            }
+        }
+
+        return new RevokeEffectsDto(photosDeleted, healthNotesDeleted, profileFieldsCleared, queuedNotificationsCancelled);
+    }
+
     private async Task<ConsentsDto> BuildConsentsDtoAsync(string userId, LegalDocument pdnDoc)
     {
         var subject = ConsentSubject.ForUser(userId);
@@ -584,6 +774,9 @@ public record ConsentDocumentDto(string Type, string Version, bool IsDraft, List
 public record ConsentGrantedDto(string Purpose, string Version, DateTime GrantedAt, DateTime? RevokedAt);
 public record ConsentsDto(ConsentDocumentDto Document, List<ConsentGrantedDto> Granted, bool VersionOutdated, List<ExportConsentDto> History);
 public record SubmitConsentDto(string DocumentKey, string Version, List<string>? Purposes);
+public record RevokeConsentDto(string DocumentKey, string? Purpose, string? Reason);
+public record RevokeEffectsDto(int PhotosDeleted, int HealthNotesDeleted, List<string> ProfileFieldsCleared, int QueuedNotificationsCancelled);
+public record RevokeConsentResponseDto(int Revoked, RevokeEffectsDto Effects);
 
 public record UpdateProfileDto(string FirstName, string LastName);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
@@ -594,10 +787,21 @@ public record DeleteAccountDto(string CurrentPassword);
 // BookingDto/etc.: the export is a legal artifact with its own contract (no ids of other people's
 // entities, no hashes), and coupling it to DTOs used elsewhere would mean a change made for an
 // unrelated screen could silently change what leaves the product in a data export.
+// CYCLE5-BREAKING: `Consent`→`Consents` and `Notice`→`Explanation` to match API_CONTRACT_CYCLE5.md §49's
+// field names exactly (cycle 3 used different names for the same two fields); four sections added
+// (T5-B11, §50.2): `Operators` (which companies hold data about this subject — the routing §50.2
+// replaces "результат работы салона" with), `Notifications`/`OptOut` (US-75), `HealthNotes` (US-77).
 public record ProfileExportDto(
-    DateTime GeneratedAt, ExportProfileDto Profile, List<ExportConsentDto> Consent,
+    DateTime GeneratedAt, ExportProfileDto Profile, List<ExportConsentDto> Consents,
     List<ExportMembershipDto> Memberships, List<ExportBookingDto> Bookings, List<ExportReviewDto> Reviews,
-    List<ExportNoteMetaDto> NotesAboutMe, List<ExportPhotoMetaDto> PhotosOfMe, string Notice);
+    List<ExportNoteMetaDto> NotesAboutMe, List<ExportPhotoMetaDto> PhotosOfMe, string Explanation,
+    List<ExportOperatorDto> Operators, List<ExportNotificationDto> Notifications, ExportOptOutDto OptOut,
+    List<ExportHealthNoteDto> HealthNotes);
+
+public record ExportOperatorDto(Guid CompanyId, string Name, string? Address, string? Phone, string? Email, List<string> WhatIsStored);
+public record ExportNotificationDto(DateTime? SentAt, string Type, string Status, string CompanyName, bool BodyAvailable);
+public record ExportOptOutDto(bool OptedOut, DateTime? OptedOutAt);
+public record ExportHealthNoteDto(string CompanyName, string? Value, DateTime UpdatedAt);
 
 public record ExportProfileDto(string FirstName, string LastName, string? Phone, string? Email, string? AvatarUrl, DateTime CreatedAt);
 

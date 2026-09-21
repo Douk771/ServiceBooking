@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
+using ServiceBooking.API.DTOs.Legal;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Scheduling;
@@ -36,7 +37,90 @@ public class AdminController(
             .Select(g => g.Sum(b => b.Price))
             .FirstOrDefaultAsync();
 
-        return Ok(new AdminStatsDto(totalCompanies, totalUsers, totalBookings, completedBookings, revenueByService));
+        // §50.1: visible without opening the subject-requests section — a one-person, no-shift-rotation
+        // operator (Р8) must see this without remembering to go looking for it.
+        var nowUtc = DateTime.UtcNow;
+        var overdueSubjectRequests = await db.SubjectRequests.CountAsync(r =>
+            r.DueAtUtc < nowUtc && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected);
+
+        return Ok(new AdminStatsDto(totalCompanies, totalUsers, totalBookings, completedBookings, revenueByService, overdueSubjectRequests));
+    }
+
+    // ── Subject requests (T5-B10, ARCHITECTURE_CYCLE5.md §50.1, US-74) ─────────────────────────────
+
+    [HttpGet("subject-requests")]
+    public async Task<ActionResult<PagedResult<SubjectRequestDto>>> GetSubjectRequests(
+        [FromQuery] SubjectRequestStatus? status, [FromQuery] SubjectRequestKind? kind, [FromQuery] string? dueState,
+        [FromQuery] int? page, [FromQuery] int? pageSize)
+    {
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        var query = db.SubjectRequests.AsNoTracking().AsQueryable();
+        if (status is not null) query = query.Where(r => r.Status == status);
+        if (kind is not null) query = query.Where(r => r.Kind == kind);
+
+        // dueState is computed server-side (ARCHITECTURE_CYCLE5.md §50.1: "считает сервер, не фронт") —
+        // filtered here the same way, not left to the frontend to derive from raw dates.
+        var nowUtc = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(dueState))
+        {
+            query = dueState switch
+            {
+                "Overdue" => query.Where(r => r.DueAtUtc < nowUtc && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected),
+                "DueSoon" => query.Where(r => r.DueAtUtc >= nowUtc && r.DueAtUtc < nowUtc.AddDays(2) && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected),
+                "OnTime" => query.Where(r => r.DueAtUtc >= nowUtc.AddDays(2) || r.Status == SubjectRequestStatus.Answered || r.Status == SubjectRequestStatus.Rejected),
+                _ => query
+            };
+        }
+
+        var total = await query.CountAsync();
+        // Urgent-first, always — §50.1: "самое горящее сверху", not a caller-chosen sort.
+        var rows = await query.OrderBy(r => r.DueAtUtc)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
+            .ToListAsync();
+
+        var handlerIds = rows.Where(r => r.HandlerUserId is not null).Select(r => r.HandlerUserId!).Distinct().ToList();
+        var handlerNames = handlerIds.Count == 0 ? new Dictionary<string, string>()
+            : await db.Users.Where(u => handlerIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+
+        var items = rows.Select(r => new SubjectRequestDto(
+            r.Id, r.Reference, r.Kind.ToString(), r.Status.ToString(), PhoneDisplayMask.Mask(r.SubjectPhone),
+            r.ContactValue, r.Message, r.ReceivedAtUtc, r.DueAtUtc, ComputeDueState(r, nowUtc),
+            r.AnsweredAtUtc, r.HandlerUserId is not null ? handlerNames.GetValueOrDefault(r.HandlerUserId) : null,
+            r.Resolution)).ToList();
+
+        return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
+    }
+
+    [HttpPost("subject-requests/{id:guid}/status")]
+    public async Task<IActionResult> UpdateSubjectRequestStatus(Guid id, [FromBody] UpdateSubjectRequestStatusDto dto)
+    {
+        var request = await db.SubjectRequests.FindAsync(id);
+        if (request is null) return NotFound();
+
+        // §48.3: a terminal status without a resolution would leave the journal unable to prove what was
+        // actually done — the same "doesn't count as evidence" reasoning behind ConsentRecord's own
+        // required fields.
+        if (dto.Status is SubjectRequestStatus.Answered or SubjectRequestStatus.Rejected && string.IsNullOrWhiteSpace(dto.Resolution))
+            return BadRequest("Для этого статуса нужно указать резолюцию.");
+
+        request.Status = dto.Status;
+        request.Resolution = dto.Resolution;
+        if (dto.Status is SubjectRequestStatus.Answered or SubjectRequestStatus.Rejected)
+        {
+            request.AnsweredAtUtc = DateTime.UtcNow;
+            request.HandlerUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        }
+
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    private static string ComputeDueState(SubjectRequest r, DateTime nowUtc)
+    {
+        if (r.Status is SubjectRequestStatus.Answered or SubjectRequestStatus.Rejected) return "OnTime";
+        if (r.DueAtUtc < nowUtc) return "Overdue";
+        return r.DueAtUtc < nowUtc.AddDays(2) ? "DueSoon" : "OnTime";
     }
 
     // ── Users ──────────────────────────────────────────────────────────────────
@@ -670,7 +754,11 @@ public class AdminController(
 
 // ── DTOs ───────────────────────────────────────────────────────────────────────
 
-public record AdminStatsDto(int TotalCompanies, int TotalUsers, int TotalBookings, int CompletedBookings, decimal TotalRevenue);
+// T5-B10 (ARCHITECTURE_CYCLE5.md §50.1: "счётчик просроченных попадает в существующую админскую
+// сводку") — appended at the end with a default so any existing positional construction keeps compiling.
+public record AdminStatsDto(
+    int TotalCompanies, int TotalUsers, int TotalBookings, int CompletedBookings, decimal TotalRevenue,
+    int OverdueSubjectRequests = 0);
 
 // CommissionPercent removed (US-22): commission became per-company (CompanyMember.CommissionPercent)
 // back in cycle A; this account-level field means nothing any more and AdminPage.tsx never showed it.

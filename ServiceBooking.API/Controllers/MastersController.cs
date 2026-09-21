@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.ClientNotes;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -173,6 +174,7 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
     }
 
     [HttpPost("clients/notes")]
+    [RequiresOwnerTerms]
     public async Task<IActionResult> AddNote([FromBody] AddNoteRequest request)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;

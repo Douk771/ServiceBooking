@@ -28,6 +28,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     // Cycle 5 — consent journal (ARCHITECTURE_CYCLE5.md §44.2), replaces cycle 3's UserConsent.
     public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
+    public DbSet<ClientHealthNote> ClientHealthNotes => Set<ClientHealthNote>();
+    public DbSet<SubjectRequest> SubjectRequests => Set<SubjectRequest>();
 
     // Cycle 4 — WhatsApp notifications (ARCHITECTURE_CYCLE4.md §23, §25).
     public DbSet<City> Cities => Set<City>();
@@ -114,6 +116,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // unbounded `text` before this fix (code review finding).
             e.Property(b => b.ConsentPrivacyVersion).HasMaxLength(64);
             e.Property(b => b.ConsentTermsVersion).HasMaxLength(64);
+            e.Property(b => b.GuardianConfirmationVersion).HasMaxLength(64);
+            e.Property(b => b.BookingNoticeVersion).HasMaxLength(64);
             e.HasOne(b => b.Company).WithMany(c => c.Bookings).HasForeignKey(b => b.CompanyId);
             e.HasOne(b => b.Service).WithMany(s => s.Bookings).HasForeignKey(b => b.ServiceId);
             e.HasOne(b => b.Master).WithMany(u => u.MasterBookings).HasForeignKey(b => b.MasterId).OnDelete(DeleteBehavior.Restrict);
@@ -212,6 +216,37 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(c => c.GrantedAtUtc).HasDatabaseName("IX_ConsentRecords_Retention");
         });
 
+        builder.Entity<SubjectRequest>(e =>
+        {
+            e.Property(r => r.Reference).HasMaxLength(16);
+            e.HasIndex(r => r.Reference).IsUnique();
+            e.Property(r => r.SubjectPhone).HasMaxLength(20);
+            e.Property(r => r.ContactValue).HasMaxLength(200);
+            e.Property(r => r.Message).HasMaxLength(4000);
+            e.Property(r => r.Resolution).HasMaxLength(2000);
+            e.HasIndex(r => r.SubjectPhone);
+            e.HasIndex(r => new { r.Status, r.DueAtUtc });
+        });
+
+        builder.Entity<ClientHealthNote>(e =>
+        {
+            e.Property(n => n.GuestPhone).HasMaxLength(20);
+            e.Property(n => n.Ciphertext).HasColumnType("text");
+            e.Property(n => n.KeyId).HasMaxLength(16);
+            e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            // NO ACTION, not SetNull/Cascade — same reasoning as ConsentRecord (§44.2 p.5): the row is
+            // this company's own record, not personal convenience data that should vanish quietly if the
+            // client's account is (never physically, but the schema must not rely on that) removed.
+            e.HasOne(n => n.Client).WithMany()
+                .HasForeignKey(n => n.ClientId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(n => n.UpdatedByUser).WithMany()
+                .HasForeignKey(n => n.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            // §44.3: "one health note per client per company" — a hard DB guarantee, not an application-
+            // level find-or-create, mirroring ClientNotePhoto's idempotency-by-index convention.
+            e.HasIndex(n => new { n.CompanyId, n.ClientId }).IsUnique().HasFilter("\"ClientId\" IS NOT NULL");
+            e.HasIndex(n => new { n.CompanyId, n.GuestPhone }).IsUnique().HasFilter("\"GuestPhone\" IS NOT NULL");
+        });
+
         builder.Entity<MailLog>(e => {
             e.HasOne(m => m.Company).WithMany().HasForeignKey(m => m.CompanyId);
             e.HasOne(m => m.SentBy).WithMany().HasForeignKey(m => m.SentById).OnDelete(DeleteBehavior.Restrict);
@@ -233,6 +268,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasOne(c => c.Owner).WithMany().HasForeignKey(c => c.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(c => c.OwnerUserId);
+            e.Property(c => c.Inn).HasMaxLength(12); // T5-B4: 10 (Company) or 12 (Ip/SelfEmployed) digits
             // Filtered unique index: a channel with no instance yet has ProviderInstanceId == null, and
             // there is exactly one live column value we must never see twice.
             e.HasIndex(c => c.ProviderInstanceId).IsUnique().HasFilter("\"ProviderInstanceId\" IS NOT NULL");
@@ -317,6 +353,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<NotificationTemplateHistory>(e =>
         {
             e.HasIndex(h => new { h.CompanyId, h.Type, h.ChangedAtUtc });
+            e.Property(h => h.NewBody).HasMaxLength(1000); // matches NotificationTemplateValidator.MaxLength
+            e.Property(h => h.WarningVersion).HasMaxLength(64);
+            e.Property(h => h.AdMarkersHit).HasMaxLength(200);
         });
 
         builder.Entity<NotificationOptOut>(e =>
@@ -329,7 +368,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasKey(s => s.Key);
             e.Property(s => s.Key).HasMaxLength(100);
-            e.Property(s => s.Value).HasMaxLength(200);
+            // T5-B12/M7 (ARCHITECTURE_CYCLE5.md §44.7): 200 → 2000 — the ad-markers dictionary
+            // (PlatformSettings.AdMarkersKey) is a comma-separated list that doesn't fit in 200.
+            e.Property(s => s.Value).HasMaxLength(2000);
         });
 
         builder.Entity<PlatformSettingChangeLog>(e =>

@@ -230,15 +230,32 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         return config.Id;
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see RegisterAsync's own note — ARCHITECTURE_CYCLE5.md
+    // §42.1, API_CONTRACT_CYCLE5.md §42.1 BREAKING № 3): CreateCompanyDto needs an `ownerTerms` object
+    // now, and the response is an envelope `{ company, token }`, not a bare CompanyDto — unwrapped here
+    // so every one of this helper's ~50 existing call sites keeps compiling AND keeps getting a real
+    // CompanyDto back unchanged.
     protected async Task<CompanyDto> CreateCompanyAsync(string ownerToken, string? name = null, string? slug = null, bool allowSelfBooking = true)
     {
         slug ??= Unique("company-");
         name ??= $"Company {slug}";
         var client = AuthedClient(ownerToken);
         var response = await client.PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto(name, slug, null, null, null, null, await AnyCityIdAsync(), null, allowSelfBooking));
+            new CreateCompanyDto(name, slug, null, null, null, null, await AnyCityIdAsync(), null, allowSelfBooking,
+                OwnerTerms: CurrentOwnerTermsDto()));
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<CompanyDto>())!;
+        var envelope = await response.Content.ReadFromJsonAsync<CreateCompanyResponseDto>();
+        return envelope!.Company;
+    }
+
+    /// <summary>The OwnerTerms object a company-creation call needs to pass the owner gate right now —
+    /// read from the live manifest, same reasoning as CurrentRegisterLegalDto.</summary>
+    protected OwnerTermsDto CurrentOwnerTermsDto()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        return new OwnerTermsDto(snapshot.Get(LegalDocumentType.TermsOwner)!.Version);
     }
 
     // Cycle 4 (API_CONTRACT_CYCLE4.md §31.2): CreateCompanyDto.CityId is required. Tests that don't care

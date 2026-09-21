@@ -645,10 +645,14 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         await SetSubscriptionAsync(firstCompany.Id, configId);
 
         var secondSlug = Unique("branch-");
+        // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.CreateCompanyAsync's own note):
+        // OwnerTerms is now required, and the response is an envelope, not a bare CompanyDto.
         var secondResponse = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto($"Branch {secondSlug}", secondSlug, null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto($"Branch {secondSlug}", secondSlug, null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        var secondCompany = (await secondResponse.Content.ReadFromJsonAsync<CompanyDto>())!;
+        var secondEnvelope = (await secondResponse.Content.ReadFromJsonAsync<CreateCompanyResponseDto>())!;
+        var secondCompany = secondEnvelope.Company;
 
         // Search matches company name/email (not owner email), so fetch a large page and pick the two by
         // id — pageSize=500 (cycle C pagination, US-49) comfortably covers what this shared-database

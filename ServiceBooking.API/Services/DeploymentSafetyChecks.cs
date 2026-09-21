@@ -238,6 +238,26 @@ public static class DeploymentSafetyChecks
                 "Fix the configured value — see ARCHITECTURE_CYCLE5.md §52.3/§52.4 for what each means and costs.");
     }
 
+    /// <summary>
+    /// T5-B13 (ARCHITECTURE_CYCLE5.md §52.1, US-71 п. 6, ч. 5 ст. 18 152-ФЗ): if instance creation is
+    /// turned on, the server country MUST be set — "the provider decides" is not an acceptable default
+    /// for a data-localization requirement. Runs unconditionally, same reasoning as
+    /// <see cref="ValidateProviderDeliveryConsentMode"/>: this is a config-consistency check, not an
+    /// environment-gated secret check, so there is no "safe in Development" carve-out for it either.
+    /// </summary>
+    public static void ValidateGreenApiServerCountry(IConfiguration configuration)
+    {
+        var creationEnabled = configuration.GetValue<bool>("Notifications:GreenApi:InstanceCreationEnabled");
+        if (!creationEnabled) return;
+
+        var serverCountry = configuration["Notifications:GreenApi:ServerCountry"];
+        if (string.IsNullOrWhiteSpace(serverCountry))
+            throw new InvalidOperationException(
+                "Notifications:GreenApi:InstanceCreationEnabled is true but Notifications:GreenApi:ServerCountry " +
+                "is empty. Set NOTIFICATIONS_GREEN_API_SERVER_COUNTRY in .env — creating real WhatsApp instances " +
+                "without a known server location risks violating ч. 5 ст. 18 152-ФЗ (data localization).");
+    }
+
     private static void ValidateEncryptionKeyFormat(string? keyBase64)
     {
         if (string.IsNullOrWhiteSpace(keyBase64) || keyBase64 == "CHANGE_ME")

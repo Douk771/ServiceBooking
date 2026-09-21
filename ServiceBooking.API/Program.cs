@@ -119,6 +119,7 @@ DeploymentSafetyChecks.ValidateNotificationSecrets(builder.Configuration, builde
 }
 DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentName);
 DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(builder.Configuration);
+DeploymentSafetyChecks.ValidateGreenApiServerCountry(builder.Configuration);
 
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
@@ -263,6 +264,10 @@ builder.Services.AddScoped<SubscriptionResolver>();
 // this developer's file this cycle.
 builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
 builder.Services.AddHttpClient<CaptchaService>();
+// T5-B10 (ARCHITECTURE_CYCLE5.md §50.1, US-74) — reuses the existing CaptchaService/rate-limiting
+// machinery, no new infrastructure.
+builder.Services.Configure<ServiceBooking.API.Controllers.SubjectRequestOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Controllers.SubjectRequestOptions.SectionName));
 
 // Image uploads (US-19, US-25): FileStorage holds no per-request state (just the two configured roots),
 // so it's a singleton; ImageUploadService is scoped only because everything else in this layer is —
@@ -278,6 +283,8 @@ builder.Services.AddSingleton<LegalDocumentProvider>();
 // Consent journal (cycle 5, ARCHITECTURE_CYCLE5.md §45.1) — scoped: it only wraps AppDbContext queries,
 // unlike LegalDocumentProvider above it holds no snapshot of its own to share across requests.
 builder.Services.AddScoped<ConsentLedger>();
+// T5-B6 (ARCHITECTURE_CYCLE5.md §48.1) — reuses Notifications:EncryptionKey, no new secret to provision.
+builder.Services.AddScoped<HealthNoteProtector>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
@@ -439,6 +446,12 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // subject-request: US-74/§50.1 asks for BOTH a 3/hour and a 10/day cap; this rate limiter middleware
+    // only supports one fixed window per named policy (every other policy in this file has the same
+    // shape), so the HOURLY limit — the stricter, more immediately protective one — is what's actually
+    // enforced here. 🟡 Known, disclosed simplification: see the cycle report.
+    o.AddPolicy("subject-request", ctx => IpWindowPolicy(ctx, "subject-request", defaultPermitLimit: 3, defaultWindowMinutes: 60));
+
     // notifications-webhook: the provider calls this anonymously and per-address, keyed the same way
     // as auth-login/auth-register (ARCHITECTURE_CYCLE4.md §32) — 600/min is generous enough for normal
     // delivery-status traffic while still bounding a misbehaving/compromised caller.
@@ -471,6 +484,7 @@ builder.Services.AddRateLimiter(o =>
             "auth-register" => "Слишком много регистраций с этого адреса. Повторите позже.",
             "booking-create" => "Слишком много записей с этого адреса. Повторите позже.",
             "data-export" => "Выгрузка доступна не чаще трёх раз в сутки.",
+            "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
             "notifications-webhook" => "Too many requests.",
             _ => "Too many uploads. Try again in a minute."
         };

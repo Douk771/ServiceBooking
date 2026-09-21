@@ -53,6 +53,17 @@ public class Booking
     // empty GuestName would otherwise look identical to corruption).
     public bool ClientDeleted { get; set; }
 
+    // US-78, US-65 п. 7 (ARCHITECTURE_CYCLE5.md §44.5). BookedForOther/GuardianConfirmed* apply only to
+    // the client/guest/embed self-booking paths (never a staff manual booking, §46 API_CONTRACT_CYCLE5.md) —
+    // "false"/nulls is the default and requires no confirmation, matching today's behavior exactly.
+    // BookingNoticeVersion is filled unconditionally by the server, from the snapshot in effect at
+    // creation time — the ст. 18 notice (D5) is shown on every booking form, staff included, so it is
+    // recorded on every booking, unlike the guest-only ConsentPrivacyVersion/ConsentTermsVersion pair above.
+    public bool BookedForOther { get; set; }
+    public DateTime? GuardianConfirmedAtUtc { get; set; }
+    public string? GuardianConfirmationVersion { get; set; }
+    public string? BookingNoticeVersion { get; set; }
+
     public Company Company { get; set; } = null!;
     public Service Service { get; set; } = null!;
     public AppUser Master { get; set; } = null!;
