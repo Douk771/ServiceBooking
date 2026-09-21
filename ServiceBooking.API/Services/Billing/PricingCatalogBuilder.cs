@@ -28,7 +28,7 @@ public static class PricingCatalogBuilder
         var publicPlans = plans
             .Where(p => p.IsActive && p.IsPublic)
             .OrderBy(p => p.SortOrder)
-            .ThenBy(p => p.Name, StringComparer.Ordinal)
+            .ThenBy(p => p.PricePerMonth)
             .Select(ToPlanDto)
             .ToList();
 
@@ -37,7 +37,7 @@ public static class PricingCatalogBuilder
             // published never appear, regardless of what a plan's availability rule would say.
             .Where(o => o.IsActive && o.IsPublic && o.PricePerMonth is not null)
             .OrderBy(o => o.SortOrder)
-            .ThenBy(o => o.Name, StringComparer.Ordinal)
+            .ThenBy(o => o.PricePerMonth)
             .Select(ToOptionDto)
             .ToList();
 

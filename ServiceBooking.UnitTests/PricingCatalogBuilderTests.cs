@@ -72,7 +72,7 @@ public class PricingCatalogBuilderTests
     }
 
     [Fact]
-    public void Build_SortsPlansAndOptionsBySortOrderThenName()
+    public void Build_SortsPlansBySortOrder()
     {
         var plans = new[]
         {
@@ -83,6 +83,35 @@ public class PricingCatalogBuilderTests
         var result = PricingCatalogBuilder.Build("v1", plans, [], legalNotice: null);
 
         result.Plans.Select(p => p.Name).Should().Equal("А", "Б");
+    }
+
+    [Fact]
+    public void Build_TiedSortOrder_PlansFallBackToPrice()
+    {
+        // API_CONTRACT_CYCLE5.md §39: "по sortOrder, затем по цене" — not by name.
+        var plans = new[]
+        {
+            Plan(name: "Я", price: 500, sortOrder: 0),
+            Plan(name: "А", price: 1500, sortOrder: 0),
+        };
+
+        var result = PricingCatalogBuilder.Build("v1", plans, [], legalNotice: null);
+
+        result.Plans.Select(p => p.Name).Should().Equal("Я", "А");
+    }
+
+    [Fact]
+    public void Build_TiedSortOrder_OptionsFallBackToPrice()
+    {
+        var options = new[]
+        {
+            Option(name: "Я", price: 100, sortOrder: 0),
+            Option(name: "А", price: 900, sortOrder: 0),
+        };
+
+        var result = PricingCatalogBuilder.Build("v1", [], options, legalNotice: null);
+
+        result.Options.Select(o => o.Name).Should().Equal("Я", "А");
     }
 
     [Fact]
