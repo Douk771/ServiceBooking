@@ -18,7 +18,8 @@ public class AuthController(
     SignInManager<AppUser> signInManager,
     TokenService tokenService,
     LegalDocumentProvider legalProvider,
-    AppDbContext db) : ControllerBase
+    AppDbContext db,
+    ILogger<AuthController> logger) : ControllerBase
 {
     [HttpPost("register")]
     [EnableRateLimiting("auth-register")]
@@ -87,11 +88,20 @@ public class AuthController(
         var canonicalPhone = PhoneNormalizer.Normalize(dto.Phone);
         var user = await userManager.FindByNameAsync(canonicalPhone);
         if (user is null)
+        {
+            logger.LogInformation("Login outcome {Outcome} for {Phone}", LoginOutcome.UserNotFound, LogMasking.Phone(canonicalPhone));
             return Unauthorized("Invalid credentials");
+        }
 
         var result = await signInManager.CheckPasswordSignInAsync(user, dto.Password, lockoutOnFailure: true);
-        if (!result.Succeeded)
-            return Unauthorized("Invalid credentials");
+        var outcome = LoginOutcomeMapper.FromSignInResult(result);
+        if (outcome != LoginOutcome.Success)
+        {
+            logger.LogInformation("Login outcome {Outcome} for {Phone}", outcome, LogMasking.Phone(canonicalPhone));
+            return LoginOutcomeMapper.ToErrorResponse(outcome);
+        }
+
+        logger.LogInformation("Login outcome {Outcome} for {Phone}", LoginOutcome.Success, LogMasking.Phone(canonicalPhone));
 
         var roles = await userManager.GetRolesAsync(user);
 
