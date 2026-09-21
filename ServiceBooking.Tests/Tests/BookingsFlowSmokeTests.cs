@@ -682,8 +682,12 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
     // trusted to pick any free time. The `manual` flag opens up a full-day range when no WorkingHours
     // row exists, but only for an authenticated caller; guest self-booking never sends it.
 
+    // US-66 (ARCHITECTURE_CYCLE6.md §46, API_CONTRACT_CYCLE6.md §41.1): a date with no WorkingHours row
+    // no longer opens up the full 00:00-24:00 range by default — it falls back to the configured
+    // default working window (09:00-21:00, appsettings.json Slots:DefaultWindow). The whole-day range is
+    // still reachable, but only via the explicit extendedHours=true (see the test right below).
     [Fact, TestCase("BK-024")]
-    public async Task GetSlots_WithManualFlag_ReturnsFullDayRange_WhenNoWorkingHoursSetForThatDate()
+    public async Task GetSlots_WithManualFlag_ReturnsDefaultWorkingWindow_WhenNoWorkingHoursSetForThatDate()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
@@ -693,6 +697,35 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         var response = await AuthedClient(owner.Token).GetAsync(
             $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
+        // Default window is 09:00-21:00 — nothing before it and nothing after it.
+        slots.Should().Contain(s => s.Start == new TimeOnly(9, 0));
+        // 60-minute service inside a 09:00-21:00 window: the last slot that fits starts at 20:00.
+        slots.Should().Contain(s => s.Start == new TimeOnly(20, 0));
+        slots.Should().NotContain(s => s.Start < new TimeOnly(9, 0));
+        slots.Should().NotContain(s => s.Start > new TimeOnly(20, 0));
+        slots.Should().NotContain(s => s.End > new TimeOnly(21, 0));
+        // The old whole-day behavior must be gone by default, not just "also present".
+        slots.Should().NotContain(s => s.Start == new TimeOnly(0, 0));
+        slots.Should().NotContain(s => s.Start == new TimeOnly(22, 30));
+    }
+
+    // The previous, pre-US-66 behavior (whole day, 00:00-24:00) is still available, but only when the
+    // caller explicitly asks for it via extendedHours=true alongside manual=true (ARCHITECTURE_CYCLE6.md
+    // §46.3/§46.4) — this is the "show remaining hours" escape hatch, not the default any more.
+    [Fact, TestCase("BK-057")]
+    public async Task GetSlots_WithManualFlagAndExtendedHours_ReturnsFullDayRange_WhenNoWorkingHoursSetForThatDate()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        // Deliberately not calling SetWorkingDayAsync — no WorkingHours row exists for this date.
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true&extendedHours=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
