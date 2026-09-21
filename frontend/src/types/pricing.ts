@@ -10,7 +10,9 @@
 export interface PricingPlanDto {
   id: string
   name: string
-  description: string
+  /** Nullable per contract (openapi-cycle5.yaml, PricingPlanDto.description) and on the wire from a
+   * plan whose `Description` column is `NULL` — code rendering this must not assume non-null. */
+  description: string | null
   pricePerMonth: number
   highlights: string[]
   /** null = без ограничения. */
@@ -25,7 +27,8 @@ export type PricingOptionKind = 'Quantity' | 'Toggle'
 export interface PricingOptionDto {
   id: string
   name: string
-  description?: string
+  /** Nullable per contract (openapi-cycle5.yaml, PricingOptionDto.description), not just optional. */
+  description: string | null
   kind: PricingOptionKind
   pricePerMonth: number
   /** Nullable per contract — Toggle options have no per-unit name. */

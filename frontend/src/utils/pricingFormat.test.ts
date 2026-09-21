@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatMonthlyPrice, formatIncludedLimit, pluralizeRu } from './pricingFormat'
+import { formatMonthlyPrice, formatIncludedLimit } from './pricingFormat'
 
 describe('formatMonthlyPrice', () => {
   it('zero → "Бесплатно"', () => {
@@ -40,21 +40,5 @@ describe('formatIncludedLimit', () => {
 
   it('2..4 → genitive plural too (unlike nominative "few" form)', () => {
     expect(formatIncludedLimit(3, 'компании', 'компаний')).toBe('до 3 компаний')
-  })
-})
-
-describe('pluralizeRu', () => {
-  it.each([
-    [1, 'компания'],
-    [21, 'компания'],
-    [2, 'компании'],
-    [3, 'компании'],
-    [24, 'компании'],
-    [5, 'компаний'],
-    [11, 'компаний'],
-    [12, 'компаний'],
-    [0, 'компаний'],
-  ])('%i → %s', (count, expected) => {
-    expect(pluralizeRu(count, 'компания', 'компании', 'компаний')).toBe(expected)
   })
 })

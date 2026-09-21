@@ -15,7 +15,7 @@ export function PricingTeaser() {
     queryKey: ['public-pricing'],
     queryFn: pricingApi.getPublicPricing,
     retry: false,
-    staleTime: 60_000,
+    staleTime: 20_000,
   })
 
   if (!isSuccess || !data) return null

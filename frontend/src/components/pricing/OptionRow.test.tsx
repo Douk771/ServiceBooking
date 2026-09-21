@@ -6,6 +6,7 @@ import type { PricingOptionDto } from '../../types/pricing'
 const baseOption: PricingOptionDto = {
   id: 'opt-1',
   name: 'SMS-напоминания',
+  description: null,
   kind: 'Quantity',
   pricePerMonth: 3,
   unitName: 'сообщение',
