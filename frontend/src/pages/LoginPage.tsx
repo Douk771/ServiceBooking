@@ -1,6 +1,5 @@
 import { useForm } from 'react-hook-form'
 import { useQueryClient } from '@tanstack/react-query'
-import { AxiosError } from 'axios'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
@@ -49,12 +48,10 @@ export function LoginPage() {
       )
       navigate('/')
     } catch (e: unknown) {
-      // 429 (US-42 `auth-login` policy) gets its own text; every other failure on this endpoint is a
-      // wrong-credentials 401, which the server sends with an empty body (API_CONTRACT.md §0.2) —
-      // authError's generic fallback would be misleadingly vague there, so it's only consulted for 429.
-      setError(
-        e instanceof AxiosError && e.response?.status === 429 ? getAuthErrorMessage(e) : 'Неверный телефон или пароль',
-      )
+      // getAuthErrorMessage now tells 401 (wrong credentials), 423 (lockout), 403 (sign-in not
+      // allowed), 429 (rate limit), 5xx and "no response" apart (ARCHITECTURE_CYCLE6.md §42.3.3) —
+      // this screen used to collapse everything but 429 into "wrong phone or password".
+      setError(getAuthErrorMessage(e))
     } finally {
       setLoading(false)
     }
