@@ -50,6 +50,29 @@ public class AuthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    // US-60 (API_CONTRACT_CYCLE6.md §39.6): this is the exact scenario the cycle exists for — a
+    // password rejected by Identity's policy must come back as a JSON ARRAY of {code, description}
+    // objects, not the plain-text 400 every other validation failure on this endpoint uses. Before this
+    // cycle the whole suite only ever registered with valid passwords, so nothing exercised this branch
+    // at all (CURRENT_STATE.md notes this gap explicitly as what let the underlying bug reach the stand).
+    [Fact, TestCase("AUTH-014")]
+    public async Task Register_WithAllDigitPassword_ReturnsBadRequestArrayOfIdentityErrors()
+    {
+        var response = await RegisterRawAsync(UniquePhone(), "12345678");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json",
+            "Identity-rejected passwords/logins are the ONE 400 shape on this endpoint that is JSON, " +
+            "not text/plain (API_CONTRACT_CYCLE6.md §39.6) — the client must be able to tell them apart");
+
+        var errors = (await response.Content.ReadFromJsonAsync<List<IdentityErrorDto>>())!;
+        errors.Should().NotBeNullOrEmpty();
+        errors.Select(e => e.Code).Should().Contain("PasswordRequiresLower");
+        errors.Select(e => e.Code).Should().Contain("PasswordRequiresUpper");
+    }
+
+    private sealed record IdentityErrorDto(string Code, string Description);
+
     [Fact, TestCase("AUTH-004")]
     public async Task Login_WithCorrectCredentials_ReturnsToken()
     {
@@ -84,15 +107,30 @@ public class AuthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("AUTH-007")]
     public async Task Login_AfterFiveFailedAttempts_LocksAccountOut()
     {
+        // US-60 (ARCHITECTURE_CYCLE6.md §42.3, API_CONTRACT_CYCLE6.md §39.3): lockout is now a
+        // distinguishable 423, not the same 401 as a plain wrong password — this is the whole point of
+        // the four-way split login now makes (401/423/403/429/5xx).
         var phone = UniquePhone();
         await RegisterAsync(phone, "Password123!");
 
-        for (var i = 0; i < 5; i++)
-            await LoginRawAsync(phone, "WrongPassword!");
+        // ASP.NET Core Identity's own CheckPasswordSignInAsync locks the account out AS PART OF the
+        // failed attempt that pushes AccessFailedCount to Lockout:MaxFailedAccessAttempts (5,
+        // Program.cs) — that fifth wrong attempt itself already comes back 423, not 401. Only the first
+        // four are still plain "wrong password".
+        for (var i = 0; i < 4; i++)
+        {
+            var attempt = await LoginRawAsync(phone, "WrongPassword!");
+            attempt.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+        var fifthAttempt = await LoginRawAsync(phone, "WrongPassword!");
+        fifthAttempt.StatusCode.Should().Be(HttpStatusCode.Locked);
 
-        // Even the correct password should now be rejected while the lockout window is active.
+        // Even the correct password should now be rejected while the lockout window is active — with
+        // 423 Locked, not 401, per API_CONTRACT_CYCLE6.md §39.3.
         var response = await LoginRawAsync(phone, "Password123!");
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.Locked);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Be("Account temporarily locked");
     }
 
     [Fact, TestCase("AUTH-008")]
