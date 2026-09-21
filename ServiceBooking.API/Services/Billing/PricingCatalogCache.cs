@@ -71,12 +71,11 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>Wired into <c>AdminController</c>'s plan create/update/delete endpoints, so a plan
-    /// change is reflected immediately rather than after the 60-second TTL. There is currently no admin
-    /// endpoint that writes the pricing.public-enabled / pricing.legal-notice PlatformSetting rows
-    /// (that toggle is still set directly in the database — ARCHITECTURE_CYCLE5.md §48 slice not yet
-    /// built), so flipping either of those keys is NOT covered by this call and only takes effect once
-    /// <see cref="PublicEnabledCacheKey"/> naturally expires (up to 60s). Once an endpoint for those
-    /// keys exists it must call this too.</summary>
+    /// change is reflected immediately rather than after the 60-second TTL. Also called by
+    /// <c>PUT /api/admin/platform-settings</c> whenever <c>pricingPublicEnabled</c> actually changes
+    /// (cycle-07), so that toggle no longer needs to wait out the up-to-60s <see cref="PublicEnabledCacheKey"/>
+    /// TTL either. pricing.legal-notice has no admin write endpoint yet and is still set directly in the
+    /// database; once one exists it must call this too.</summary>
     public void Invalidate()
     {
         cache.Remove(CacheKey);

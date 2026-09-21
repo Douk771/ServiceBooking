@@ -181,61 +181,14 @@ public class AdminController(
         return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
     }
 
+    // openapi-cycle5.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
+    // favor of PUT /admin/billing-accounts/{accountId}/subscription (not yet implemented — see the
+    // cycle-07 backend report) and must answer 410 Gone rather than behave as before, so a stale admin
+    // client can't silently keep writing tariff/paid-until onto AccountSubscription once the
+    // BillingAccount model replaces it.
     [HttpPut("owners/{ownerUserId}/subscription")]
-    public async Task<IActionResult> UpdateSubscription(string ownerUserId, [FromBody] UpdateSubscriptionDto dto)
-    {
-        // Both existence checks happen BEFORE any write: previously a typo'd ownerUserId or planConfigId
-        // sailed through to SaveChangesAsync and failed on the FK constraint with an unhandled 500
-        // (audit D2) instead of a clean 404.
-        var ownerExists = await db.Users.AnyAsync(u => u.Id == ownerUserId);
-        if (!ownerExists) return NotFound("Owner not found");
-
-        if (dto.PlanConfigId.HasValue)
-        {
-            var plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanConfigId.Value);
-            if (plan is null) return NotFound("Plan not found");
-            if (!plan.IsActive) return BadRequest("Plan is not active");
-        }
-
-        // PaidUntil arrives from a plain <input type="date"> as a bare "2026-08-01" string, which
-        // System.Text.Json deserializes into a DateTime with Kind=Unspecified. Npgsql requires
-        // Kind=Utc for a "timestamp with time zone" column, so write it explicitly as UTC.
-        var paidUntilUtc = dto.PaidUntil.HasValue && dto.PaidUntil.Value.Kind != DateTimeKind.Utc
-            ? DateTime.SpecifyKind(dto.PaidUntil.Value, DateTimeKind.Utc)
-            : dto.PaidUntil;
-
-        var sub = await db.AccountSubscriptions.FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
-        var oldPlanConfigId = sub?.PlanConfigId;
-        var oldPaidUntil = sub?.PaidUntil;
-        var oldIsActive = sub?.IsActive ?? true;
-
-        if (sub is null)
-        {
-            sub = new AccountSubscription { Id = Guid.NewGuid(), OwnerUserId = ownerUserId };
-            db.AccountSubscriptions.Add(sub);
-        }
-        sub.PlanConfigId = dto.PlanConfigId;
-        sub.PaidUntil = paidUntilUtc;
-        sub.IsActive = dto.IsActive;
-        sub.UpdatedAt = DateTime.UtcNow;
-
-        db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
-        {
-            Id = Guid.NewGuid(),
-            OwnerUserId = ownerUserId,
-            ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!,
-            OldPlanConfigId = oldPlanConfigId,
-            NewPlanConfigId = dto.PlanConfigId,
-            OldPaidUntil = oldPaidUntil,
-            NewPaidUntil = paidUntilUtc,
-            OldIsActive = oldIsActive,
-            NewIsActive = dto.IsActive,
-            Comment = dto.Comment,
-        });
-
-        await db.SaveChangesAsync();
-        return NoContent();
-    }
+    public IActionResult UpdateSubscription(string ownerUserId, [FromBody] object? dto) =>
+        LegacyEndpointGone("PUT /api/admin/billing-accounts/{accountId}/subscription");
 
     [HttpGet("owners/{ownerUserId}/subscription-history")]
     public async Task<ActionResult<List<SubscriptionChangeLogDto>>> GetSubscriptionHistory(string ownerUserId)
@@ -393,7 +346,8 @@ public class AdminController(
     public async Task<IActionResult> GetPlans()
     {
         var plans = await db.SubscriptionPlanConfigs.OrderBy(p => p.PricePerMonth).ToListAsync();
-        return Ok(plans);
+        var subscriberCounts = await GetActiveSubscriberCountsAsync(plans.Select(p => p.Id));
+        return Ok(new AdminPlansListDto(plans.Select(p => MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id))).ToList()));
     }
 
     [HttpPost("plans")]
@@ -419,7 +373,9 @@ public class AdminController(
             return Conflict("Another plan is already marked as the system free plan.");
         }
         pricingCatalogCache.Invalidate();
-        return Ok(dto);
+        // A brand-new plan has no subscribers yet — no need for the AccountSubscriptions round trip
+        // GetActiveSubscriberCountsAsync does for the list/update endpoints.
+        return Ok(MapAdminPlanDto(dto, subscribedAccounts: 0));
     }
 
     [HttpPut("plans/{id:guid}")]
@@ -488,7 +444,8 @@ public class AdminController(
             return Conflict("Another plan is already marked as the system free plan.");
         }
         pricingCatalogCache.Invalidate();
-        return Ok(plan);
+        var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
+        return Ok(MapAdminPlanDto(plan, subscribedAccounts));
     }
 
     [HttpDelete("plans/{id:guid}")]
@@ -516,6 +473,36 @@ public class AdminController(
         pricingCatalogCache.Invalidate();
         return NoContent();
     }
+
+    private async Task<Dictionary<Guid, int>> GetActiveSubscriberCountsAsync(IEnumerable<Guid> planIds)
+    {
+        var ids = planIds.ToList();
+        return await db.AccountSubscriptions
+            .Where(s => s.IsActive && s.PlanConfigId.HasValue && ids.Contains(s.PlanConfigId.Value))
+            .GroupBy(s => s.PlanConfigId!.Value)
+            .Select(g => new { PlanConfigId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PlanConfigId, x => x.Count);
+    }
+
+    // openapi-cycle5.yaml AdminPlanDto: projects the entity onto the contract shape rather than
+    // returning it directly — the entity also carries AllowNotificationChannel and CreatedAt (neither
+    // in the schema, which sets additionalProperties: false) and stores Highlights as a single
+    // newline-separated string rather than the array the schema requires. `options`/`subscribedAccounts`
+    // are cycle-5 additions tied to the not-yet-built BillingAccount/option catalog (see the cycle-07
+    // backend report): `options` is always `[]` until that catalog exists — every option availability
+    // rule for this plan is therefore reported as "unavailable" by omission, which is the schema's own
+    // documented default for a missing rule, not a made-up placeholder.
+    internal static AdminPlanDto MapAdminPlanDto(SubscriptionPlanConfig plan, int subscribedAccounts) => new(
+        plan.Id, plan.Name, plan.Description, SplitHighlights(plan.Highlights), plan.PricePerMonth, "RUB",
+        plan.MaxEmployees, plan.MaxCompanies, plan.AllowOnlineBooking, plan.AllowMailing, plan.AllowAnalytics,
+        plan.AllowPublicListing, plan.AllowOnlinePayment, plan.PhotoQuotaMb, plan.PhotoRetention,
+        plan.NotifyDaysBefore, plan.IsPublic, plan.IsActive, plan.IsSystemFree, plan.SortOrder,
+        Options: [], subscribedAccounts);
+
+    internal static List<string> SplitHighlights(string? raw) =>
+        string.IsNullOrWhiteSpace(raw)
+            ? []
+            : raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(10).ToList();
 
     /// <summary>ARCHITECTURE_CYCLE5.md §43.4: exactly one row may have <c>IsSystemFree == true</c>, and
     /// that row's price must be 0 — validated here so a violation surfaces as 400/409 instead of the
@@ -631,41 +618,14 @@ public class AdminController(
             PendingRequests: channels.Count(c => c.RequestedAtUtc is not null && c.PaidUntilUtc is null)));
     }
 
+    // openapi-cycle5.yaml (legacyChannelPayment, redaction 2.1): retired in favor of
+    // PUT /admin/billing-accounts/{accountId}/subscription (not yet implemented — see the cycle-07
+    // backend report), which folds the notification-channel option into the account's option matrix.
+    // Must answer 410 Gone rather than keep writing ChannelPaymentLog rows against a model that's being
+    // replaced.
     [HttpPost("notification-channels/{id:guid}/payment")]
-    public async Task<ActionResult<AdminChannelDto>> RecordChannelPayment(Guid id, [FromBody] AdminChannelPaymentDto dto)
-    {
-        var channel = await db.NotificationChannels.Include(c => c.Assignments).FirstOrDefaultAsync(c => c.Id == id);
-        if (channel is null) return NotFound();
-
-        var paidFromUtc = DateTime.SpecifyKind(dto.PaidFrom.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
-        var paidUntilUtc = DateTime.SpecifyKind(dto.PaidUntil.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
-        if (paidUntilUtc <= paidFromUtc) return BadRequest("paidUntil must be after paidFrom");
-
-        var oldPaidUntil = channel.PaidUntilUtc;
-        db.ChannelPaymentLogs.Add(new ChannelPaymentLog
-        {
-            Id = Guid.NewGuid(),
-            ChannelId = channel.Id,
-            ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!,
-            OldPaidUntil = oldPaidUntil,
-            NewPaidUntil = paidUntilUtc,
-            Amount = dto.Amount,
-            Comment = dto.Comment,
-        });
-
-        channel.PaidFromUtc = paidFromUtc;
-        channel.PaidUntilUtc = paidUntilUtc;
-        // API_CONTRACT_CYCLE4.md §34.3: marking payment clears idleness — ChannelHealthTask's own next
-        // pass would clear it anyway (a live paid period with an active company means "not idle"), but
-        // clearing it here means an admin doesn't have to explain a 15-minute lag to an owner watching.
-        channel.IdleSinceUtc = null;
-        channel.IdleWarningSentAtUtc = null;
-
-        await db.SaveChangesAsync();
-
-        var idleDays = await HttpContext.RequestServices.GetRequiredService<Services.Notifications.PlatformSettings>().GetChannelIdleDaysAsync();
-        return Ok(MapAdminChannelDto(channel, idleDays));
-    }
+    public IActionResult RecordChannelPayment(Guid id, [FromBody] object? dto) =>
+        LegacyEndpointGone("PUT /api/admin/billing-accounts/{accountId}/subscription");
 
     [HttpPost("notification-channels/{id:guid}/suspend")]
     public Task<IActionResult> SuspendChannel(Guid id, [FromBody] AdminChannelSuspendDto dto) => SetSuspendedAsync(id, true, dto.Comment);
@@ -699,7 +659,8 @@ public class AdminController(
     {
         var price = await platformSettings.GetChannelPricePerMonthAsync();
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
-        return Ok(new AdminPlatformSettingsDto(price, idleDays));
+        var pricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync();
+        return Ok(new AdminPlatformSettingsDto(price, idleDays, pricingPublicEnabled));
     }
 
     [HttpPut("platform-settings")]
@@ -711,6 +672,7 @@ public class AdminController(
 
         var oldPrice = await platformSettings.GetChannelPricePerMonthAsync();
         var oldIdleDays = await platformSettings.GetChannelIdleDaysAsync();
+        var oldPricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
         // Reviewer note: previously wrote (and journaled) both keys unconditionally, even when the
@@ -733,9 +695,30 @@ public class AdminController(
             platformSettings.InvalidateCache(PlatformSettingsWriter.IdleDaysKey);
         }
 
+        // ARCHITECTURE_CYCLE5.md §48: the "рубильник" for the public price list (GET /api/pricing). Was
+        // previously settable only by hand-editing the PlatformSettings row directly in the database —
+        // see the standing comment on PricingCatalogCache.Invalidate — this is the admin lever for it.
+        if (oldPricingPublicEnabled != dto.PricingPublicEnabled)
+        {
+            await PlatformSettingsWriter.WriteAsync(
+                db, PricingCatalogCache.PublicEnabledSettingKey,
+                oldPricingPublicEnabled ? "true" : "false", dto.PricingPublicEnabled ? "true" : "false", userId);
+            pricingCatalogCache.Invalidate();
+        }
+
         await db.SaveChangesAsync();
         return Ok(dto);
     }
+
+    // Plain-text 410 body per openapi-cycle5.yaml's `text/plain: {schema: {type: string}}` response —
+    // shared by both cycle-5 retired routes so they always point callers at the same replacement.
+    private static IActionResult LegacyEndpointGone(string replacementRoute) =>
+        new ContentResult
+        {
+            StatusCode = StatusCodes.Status410Gone,
+            Content = $"Этот маршрут упразднён. Используйте {replacementRoute}.",
+            ContentType = "text/plain; charset=utf-8",
+        };
 
     private static AdminChannelDto MapAdminChannelDto(NotificationChannel channel, int idleDays) => new(
         channel.Id, channel.State, ChannelPaymentState.Of(channel, DateTime.UtcNow), "", null,
@@ -770,6 +753,19 @@ public record UpdatePlanDto(
     int? PhotoQuotaMb, PhotoRetention PhotoRetention, string? Description, bool IsActive, int NotifyDaysBefore,
     string? Highlights = null, bool? IsPublic = null, int? SortOrder = null, bool? IsSystemFree = null);
 
+// openapi-cycle5.yaml AdminPlanDto/PlanOptionRuleDto — `Options` is always empty (see MapAdminPlanDto)
+// until the BillingAccount option catalog exists (cycle-07 backend report).
+public record AdminPlanOptionRuleDto(Guid OptionId, string Availability, int? IncludedQuantity);
+
+public record AdminPlanDto(
+    Guid Id, string Name, string? Description, List<string> Highlights, decimal PricePerMonth, string Currency,
+    int? MaxEmployees, int? MaxCompanies, bool AllowOnlineBooking, bool AllowMailing, bool AllowAnalytics,
+    bool AllowPublicListing, bool AllowOnlinePayment, int? PhotoQuotaMb, PhotoRetention PhotoRetention,
+    int NotifyDaysBefore, bool IsPublic, bool IsActive, bool IsSystemFree, int SortOrder,
+    List<AdminPlanOptionRuleDto> Options, int SubscribedAccounts);
+
+public record AdminPlansListDto(List<AdminPlanDto> Plans);
+
 public record SubscriptionChangeLogDto(Guid Id, DateTime ChangedAt, string ChangedByEmail,
     string OldPlanName, string NewPlanName, DateTime? OldPaidUntil, DateTime? NewPaidUntil,
     bool OldIsActive, bool NewIsActive, string? Comment);
@@ -800,4 +796,4 @@ public record AdminChannelPaymentDto(DateOnly PaidFrom, DateOnly PaidUntil, deci
 
 public record AdminChannelSuspendDto(string? Comment);
 
-public record AdminPlatformSettingsDto(decimal? ChannelPricePerMonth, int ChannelIdleDays);
+public record AdminPlatformSettingsDto(decimal? ChannelPricePerMonth, int ChannelIdleDays, bool PricingPublicEnabled);
