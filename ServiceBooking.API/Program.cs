@@ -120,6 +120,7 @@ DeploymentSafetyChecks.ValidateNotificationSecrets(builder.Configuration, builde
 DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentName);
 DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(builder.Configuration);
 DeploymentSafetyChecks.ValidateGreenApiServerCountry(builder.Configuration);
+DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
 
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
@@ -539,6 +540,40 @@ builder.Services.AddScoped<IScheduledTask, PhotoRetentionCleanupTask>();
 // and channel health (15-minute period — polling, idle detection, orphaned-instance cleanup).
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.NotificationDispatchTask>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelHealthTask>();
+
+// T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
+// is registered individually (not discovered by reflection) so the list here IS the list of what runs —
+// deliberately including the fact that NO rule for NotificationOptOut exists anywhere in this list.
+builder.Services.Configure<ServiceBooking.API.Services.Retention.RetentionPeriods>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Retention.RetentionPeriods.SectionName));
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.NotificationBodyRedactionRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.NotificationMetadataDeletionRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.TemplateHistoryRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ConsentRecordRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.InactiveAccountRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.BookingPersonalizationRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ClientNoteRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ClientNotePhotoRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ClientHealthNoteRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ChannelStateEventRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.PaymentLogRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.MailLogRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.AppLogAgeRule>();
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
+
 builder.Services.AddHostedService<ScheduledTaskRunner>();
 
 var app = builder.Build();

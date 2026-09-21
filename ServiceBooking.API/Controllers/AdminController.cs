@@ -750,6 +750,27 @@ public class AdminController(
     private static AdminChannelDto MapAdminChannelDto(NotificationChannel channel, int idleDays) => new(
         channel.Id, channel.State, ChannelPaymentState.Of(channel, DateTime.UtcNow), "", null,
         channel.PaidFromUtc, channel.PaidUntilUtc, channel.Assignments.Count, channel.IdleSinceUtc, channel.RequestedAtUtc);
+
+    // ── Retention policy (T5-B8/B9, ARCHITECTURE_CYCLE5.md §49.5) ────────────────
+
+    // §49.5: "сроки не переписываются руками в документ, а выгружаются из работающей конфигурации" —
+    // this endpoint reads the SAME IOptions<RetentionPeriods> every rule reads, so a declared-vs-actual
+    // mismatch is structurally impossible. [FromServices], same reasoning as GetScheduledTasks above:
+    // only this one action pays for resolving it.
+    [HttpGet("retention/policy")]
+    public ActionResult<RetentionPolicyDto> GetRetentionPolicy(
+        [FromServices] Microsoft.Extensions.Options.IOptions<Services.Retention.RetentionPeriods> periods,
+        [FromServices] IConfiguration config)
+    {
+        var p = periods.Value;
+        var dryRun = config.GetSection("ScheduledTasks:data-retention").GetValue("DryRun", true);
+
+        return Ok(new RetentionPolicyDto(
+            p.NotificationBodyDays, p.NotificationMetadataDays, p.TemplateHistoryDays,
+            p.InactiveAccountDays, p.BookingPersonalizationDays, p.ClientNoteDays, p.ClientNotePhotoDays,
+            p.ClientHealthNoteDays, p.ConsentRecordDays, p.ChannelStateEventDays, p.PaymentLogDays,
+            p.MailLogDays, p.AppLogDays, dryRun));
+    }
 }
 
 // ── DTOs ───────────────────────────────────────────────────────────────────────
@@ -796,6 +817,14 @@ public record AdminChannelDto(
     Guid Id, ChannelState State, ChannelPaymentStatus PaymentState,
     string OwnerName, string? OwnerPhoneMasked,
     DateTime? PaidFrom, DateTime? PaidUntil, int CompanyCount, DateTime? IdleSince, DateTime? RequestedAt);
+
+// T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.5) — the actual configured retention values, for publication in
+// the platform's privacy policy and for the lawyer's own periodic check (US-73 п. 7, US-80 п. 5).
+public record RetentionPolicyDto(
+    int NotificationBodyDays, int NotificationMetadataDays, int TemplateHistoryDays,
+    int InactiveAccountDays, int BookingPersonalizationDays, int ClientNoteDays, int ClientNotePhotoDays,
+    int ClientHealthNoteDays, int ConsentRecordDays, int ChannelStateEventDays, int PaymentLogDays,
+    int MailLogDays, int AppLogDays, bool DryRun);
 
 public record AdminChannelSummaryDto(
     int Connected, int Connecting, int Disconnected, int Blocked,

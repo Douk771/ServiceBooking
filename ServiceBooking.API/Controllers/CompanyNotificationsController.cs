@@ -267,7 +267,7 @@ public class CompanyNotificationsController(
             n.Id, n.CreatedAt, n.Type, NotificationTexts.TypeText(n.Type),
             n.RecipientName, string.IsNullOrEmpty(n.RecipientPhone) ? "получатель удалён" : PhoneDisplayMask.Mask(n.RecipientPhone),
             n.Status, NotificationTexts.StatusText(n.Status, n.Reason, n.ChannelId, n.ReadAtUtc, n.AttemptCount),
-            n.BookingId, n.VisitStartUtc, n.SentAtUtc, n.ChannelId)).ToList();
+            n.BookingId, n.VisitStartUtc, n.SentAtUtc, n.ChannelId, n.ContentRedactedAtUtc != null)).ToList();
 
         return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
     }

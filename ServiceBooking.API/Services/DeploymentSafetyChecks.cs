@@ -258,6 +258,37 @@ public static class DeploymentSafetyChecks
                 "without a known server location risks violating ч. 5 ст. 18 152-ФЗ (data localization).");
     }
 
+    /// <summary>
+    /// T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1, §49.5). Two minimums are legally load-bearing, not just
+    /// defaults an operator is free to shorten, so — same reasoning as
+    /// <see cref="ValidateProviderDeliveryConsentMode"/> and <see cref="ValidateGreenApiServerCountry"/> —
+    /// this runs unconditionally, in every environment, with no "safe in Development" carve-out:
+    /// <c>Retention:TemplateHistoryDays</c> must be at least 365 (advertising limitation period, ст. 4.5
+    /// КоАП) and <c>Retention:ConsentRecordDays</c> must be at least 1095 (general limitation period,
+    /// ст. 196 ГК — the operator must be able to PROVE consent, ч. 1 ст. 9). "Не меньше трёх лет" must not
+    /// depend on who last edited appsettings.Production.json.
+    /// </summary>
+    public static void ValidateRetentionPeriods(IConfiguration configuration)
+    {
+        var section = configuration.GetSection(ServiceBooking.API.Services.Retention.RetentionPeriods.SectionName);
+
+        var templateHistoryDays = section.GetValue<int?>("TemplateHistoryDays")
+                                   ?? new ServiceBooking.API.Services.Retention.RetentionPeriods().TemplateHistoryDays;
+        if (templateHistoryDays < 365)
+            throw new InvalidOperationException(
+                $"Retention:TemplateHistoryDays is {templateHistoryDays}, below the 365-day minimum " +
+                "(1-year advertising limitation period, ст. 4.5 КоАП — LEGAL_REVIEW.md §13.5). Set " +
+                "RETENTION__TEMPLATEHISTORYDAYS to at least 365.");
+
+        var consentRecordDays = section.GetValue<int?>("ConsentRecordDays")
+                                 ?? new ServiceBooking.API.Services.Retention.RetentionPeriods().ConsentRecordDays;
+        if (consentRecordDays < 1095)
+            throw new InvalidOperationException(
+                $"Retention:ConsentRecordDays is {consentRecordDays}, below the 1095-day (3-year) minimum " +
+                "(general limitation period, ст. 196 ГК — the operator must be able to prove consent, " +
+                "ч. 1 ст. 9, LEGAL_REVIEW.md §13.5). Set RETENTION__CONSENTRECORDDAYS to at least 1095.");
+    }
+
     private static void ValidateEncryptionKeyFormat(string? keyBase64)
     {
         if (string.IsNullOrWhiteSpace(keyBase64) || keyBase64 == "CHANGE_ME")

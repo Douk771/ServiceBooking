@@ -712,4 +712,86 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
         act.Should().Throw<InvalidOperationException>();
     }
+
+    // ── ValidateRetentionPeriods (T5-B8/B9, ARCHITECTURE_CYCLE5.md §49.1/§49.5) ────────────────
+
+    [Fact]
+    public void ValidateRetentionPeriods_DefaultConfig_DoesNotThrow()
+    {
+        // No Retention section at all — must fall back to RetentionPeriods' own defaults (365/1095),
+        // both of which already satisfy the minimums.
+        var config = BuildConfig(new Dictionary<string, string?>());
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(365)]
+    [InlineData(1095)]
+    [InlineData(3650)]
+    public void ValidateRetentionPeriods_TemplateHistoryAtOrAboveMinimum_DoesNotThrow(int days)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:TemplateHistoryDays"] = days.ToString() });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(364)]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void ValidateRetentionPeriods_TemplateHistoryBelowMinimum_Throws(int days)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:TemplateHistoryDays"] = days.ToString() });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*TemplateHistoryDays*");
+    }
+
+    [Theory]
+    [InlineData(1095)]
+    [InlineData(1096)]
+    [InlineData(3650)]
+    public void ValidateRetentionPeriods_ConsentRecordAtOrAboveMinimum_DoesNotThrow(int days)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:ConsentRecordDays"] = days.ToString() });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(1094)]
+    [InlineData(365)]
+    [InlineData(0)]
+    public void ValidateRetentionPeriods_ConsentRecordBelowMinimum_Throws(int days)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:ConsentRecordDays"] = days.ToString() });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ConsentRecordDays*");
+    }
+
+    [Fact]
+    public void ValidateRetentionPeriods_TemplateHistoryChecked_EvenWhenConsentRecordAlsoInvalid()
+    {
+        // Whichever fails first is fine — the point is that a caller fixing one doesn't get a false
+        // "all clear" while the other minimum is still violated.
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Retention:TemplateHistoryDays"] = "30",
+            ["Retention:ConsentRecordDays"] = "30",
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
 }
