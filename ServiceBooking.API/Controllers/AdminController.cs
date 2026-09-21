@@ -193,14 +193,26 @@ public class AdminController(
             var plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanConfigId.Value);
             if (plan is null) return NotFound("Plan not found");
             if (!plan.IsActive) return BadRequest("Plan is not active");
+
+            // ARCHITECTURE_CYCLE6.md §43.3.6 / API_CONTRACT_CYCLE6.md §42.1 (redaction 2, Q2): a plan
+            // without a paid-until date can no longer be saved, closing H7/R13 — checked BEFORE any
+            // write, so a rejected request never touches AccountSubscriptions or the change log.
+            if (!dto.PaidUntil.HasValue)
+                return BadRequest("Укажите дату окончания подписки");
         }
 
         // PaidUntil arrives from a plain <input type="date"> as a bare "2026-08-01" string, which
         // System.Text.Json deserializes into a DateTime with Kind=Unspecified. Npgsql requires
         // Kind=Utc for a "timestamp with time zone" column, so write it explicitly as UTC.
-        var paidUntilUtc = dto.PaidUntil.HasValue && dto.PaidUntil.Value.Kind != DateTimeKind.Utc
-            ? DateTime.SpecifyKind(dto.PaidUntil.Value, DateTimeKind.Utc)
-            : dto.PaidUntil;
+        //
+        // §43.3.2/H2: a date with no time-of-day means "paid through the END of that day" — the way a
+        // human reads "paid until Oct 1" — not midnight at its start. A caller that explicitly sends a
+        // time of day (e.g. a stored value being re-sent) keeps that time untouched.
+        DateTime? paidUntilUtc = dto.PaidUntil is { } paidUntil
+            ? DateTime.SpecifyKind(
+                paidUntil.TimeOfDay == TimeSpan.Zero ? paidUntil.Date.AddDays(1).AddMilliseconds(-1) : paidUntil,
+                DateTimeKind.Utc)
+            : null;
 
         var sub = await db.AccountSubscriptions.FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
         var oldPlanConfigId = sub?.PlanConfigId;
@@ -213,8 +225,11 @@ public class AdminController(
             db.AccountSubscriptions.Add(sub);
         }
         sub.PlanConfigId = dto.PlanConfigId;
-        sub.PaidUntil = paidUntilUtc;
-        sub.IsActive = dto.IsActive;
+        // §43.3.1/H1: absent/null used to silently mean "false" and drop the owner to Free. Now it
+        // means "true" — the common case ("just renew, don't touch active state").
+        var isActive = dto.IsActive ?? true;
+        sub.PaidUntil = dto.PlanConfigId.HasValue ? paidUntilUtc : null;
+        sub.IsActive = isActive;
         sub.UpdatedAt = DateTime.UtcNow;
 
         db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
@@ -225,14 +240,54 @@ public class AdminController(
             OldPlanConfigId = oldPlanConfigId,
             NewPlanConfigId = dto.PlanConfigId,
             OldPaidUntil = oldPaidUntil,
-            NewPaidUntil = paidUntilUtc,
+            NewPaidUntil = sub.PaidUntil,
             OldIsActive = oldIsActive,
-            NewIsActive = dto.IsActive,
+            NewIsActive = isActive,
             Comment = dto.Comment,
         });
 
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    /// <summary>
+    /// US-63 diagnostic endpoint (ARCHITECTURE_CYCLE6.md §43.2, API_CONTRACT_CYCLE6.md §42.2):
+    /// answers "the plan is assigned — why doesn't it work" in one round trip, instead of a support
+    /// engineer guessing across six independent failure points (§43.1).
+    /// </summary>
+    [HttpGet("owners/{ownerUserId}/subscription")]
+    public async Task<ActionResult<SubscriptionDiagnosticsDto>> GetSubscriptionDiagnostics(string ownerUserId)
+    {
+        var owner = await db.Users.FirstOrDefaultAsync(u => u.Id == ownerUserId);
+        if (owner is null) return NotFound("Owner not found");
+
+        var sub = await db.AccountSubscriptions
+            .Include(s => s.PlanConfig)
+            .FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
+
+        var nowUtc = DateTime.UtcNow;
+        var effective = SubscriptionResolver.Resolve(sub, nowUtc);
+        var (status, statusText) = SubscriptionDiagnostics.Describe(sub, nowUtc);
+
+        var companies = await db.Companies.Where(c => c.OwnerUserId == ownerUserId)
+            .Select(c => new { c.Id, c.Name, c.AllowSelfBooking }).ToListAsync();
+
+        var companyDtos = companies.Select(c =>
+        {
+            var blockingReason = SubscriptionDiagnostics.BlockingReasonFor(sub, effective, c.AllowSelfBooking, nowUtc);
+            return new SubscriptionDiagnosticsCompanyDto(
+                c.Id, c.Name, c.AllowSelfBooking,
+                OnlineBookingEnabled: blockingReason == PlanNotAppliedReason.None,
+                BlockingReason: blockingReason);
+        }).ToList();
+
+        var ownerName = string.Join(" ", new[] { owner.FirstName, owner.LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (string.IsNullOrWhiteSpace(ownerName)) ownerName = owner.Email ?? owner.PhoneNumber ?? ownerUserId;
+
+        return Ok(new SubscriptionDiagnosticsDto(
+            ownerUserId, ownerName,
+            sub?.PlanConfigId, sub?.PlanConfig?.Name, sub?.PaidUntil, sub?.IsActive ?? true,
+            sub?.PlanConfig?.IsActive ?? true, status, statusText, effective, companyDtos));
     }
 
     [HttpGet("owners/{ownerUserId}/subscription-history")]
@@ -685,7 +740,18 @@ public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, 
     int MemberCount, int BookingCount, string OwnerUserId, string OwnerEmail,
     Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive);
 
-public record UpdateSubscriptionDto(Guid? PlanConfigId, DateTime? PaidUntil, bool IsActive, string? Comment);
+// IsActive is bool? (was bool, ARCHITECTURE_CYCLE6.md §43.3.1): a request that omits it must keep
+// meaning "leave it enabled", not silently deactivate the subscription (H1).
+public record UpdateSubscriptionDto(Guid? PlanConfigId, DateTime? PaidUntil, bool? IsActive, string? Comment);
+
+public record SubscriptionDiagnosticsDto(
+    string OwnerUserId, string OwnerName, Guid? PlanConfigId, string? PlanName, DateTime? PaidUntil,
+    bool IsActive, bool PlanIsActive, SubscriptionStatus Status, string StatusText,
+    EffectivePlan Effective, List<SubscriptionDiagnosticsCompanyDto> Companies);
+
+public record SubscriptionDiagnosticsCompanyDto(
+    Guid CompanyId, string Name, bool AllowSelfBooking, bool OnlineBookingEnabled,
+    PlanNotAppliedReason BlockingReason);
 
 public record SubscriptionChangeLogDto(Guid Id, DateTime ChangedAt, string ChangedByEmail,
     string OldPlanName, string NewPlanName, DateTime? OldPaidUntil, DateTime? NewPaidUntil,
