@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPhone } from './phone'
+import { formatPhone, maskPhoneInput, toCanonicalPhone, isRussianPhone } from './phone'
 
 describe('formatPhone', () => {
   it('formats an 11-digit Russian number starting with 7', () => {
@@ -40,5 +40,88 @@ describe('formatPhone', () => {
 
   it('returns an empty string when the input has no digits at all', () => {
     expect(formatPhone('n/a')).toBe('')
+  })
+})
+
+describe('toCanonicalPhone', () => {
+  it('turns a leading 8 into 7', () => {
+    expect(toCanonicalPhone('89990000000')).toBe('79990000000')
+  })
+
+  it('keeps a leading +7 as 7', () => {
+    expect(toCanonicalPhone('+79990000000')).toBe('79990000000')
+  })
+
+  it('prepends 7 for a bare mobile number (no country code)', () => {
+    expect(toCanonicalPhone('9990000000')).toBe('79990000000')
+  })
+
+  it('strips formatting characters from a fully-formatted paste', () => {
+    expect(toCanonicalPhone('+7 (999) 000-00-00')).toBe('79990000000')
+  })
+
+  it('ignores digits typed beyond 11', () => {
+    expect(toCanonicalPhone('7999000000099')).toBe('79990000000')
+  })
+
+  it('rejects an explicit foreign country code (+380…)', () => {
+    expect(toCanonicalPhone('+380671234567')).toBe('')
+  })
+
+  it('returns an empty string for empty input', () => {
+    expect(toCanonicalPhone('')).toBe('')
+  })
+
+  it('handles partial input while typing (fewer than 11 digits)', () => {
+    expect(toCanonicalPhone('8999')).toBe('7999')
+  })
+})
+
+describe('maskPhoneInput', () => {
+  it('builds the mask progressively as digits are typed', () => {
+    expect(maskPhoneInput('7')).toBe('+7')
+    expect(maskPhoneInput('79')).toBe('+7 (9')
+    expect(maskPhoneInput('7999')).toBe('+7 (999)')
+    expect(maskPhoneInput('7999000')).toBe('+7 (999) 000')
+    expect(maskPhoneInput('799900000')).toBe('+7 (999) 000-00')
+    expect(maskPhoneInput('79990000000')).toBe('+7 (999) 000-00-00')
+  })
+
+  it('gives the same result for 8-prefixed and +7-prefixed full numbers', () => {
+    expect(maskPhoneInput('89990000000')).toBe(maskPhoneInput('+79990000000'))
+  })
+
+  it('gives the same result for slitno digits and a formatted paste', () => {
+    expect(maskPhoneInput('79990000000')).toBe(maskPhoneInput('+7 (999) 000-00-00'))
+  })
+
+  it('ignores stray junk characters mixed into the input', () => {
+    expect(maskPhoneInput('+7 (999) --00 00-00 ')).toBe('+7 (999) 000-00-0')
+  })
+
+  it('returns an empty string for a rejected foreign number', () => {
+    expect(maskPhoneInput('+380671234567')).toBe('')
+  })
+
+  it('returns an empty string for empty input', () => {
+    expect(maskPhoneInput('')).toBe('')
+  })
+})
+
+describe('isRussianPhone', () => {
+  it('accepts an 11-digit number starting with 7', () => {
+    expect(isRussianPhone('79990000000')).toBe(true)
+  })
+
+  it('rejects a 10-digit number', () => {
+    expect(isRussianPhone('9990000000')).toBe(false)
+  })
+
+  it('rejects a 12-digit number', () => {
+    expect(isRussianPhone('380671234567')).toBe(false)
+  })
+
+  it('rejects an 11-digit number not starting with 7', () => {
+    expect(isRussianPhone('89990000000')).toBe(false)
   })
 })

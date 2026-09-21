@@ -1,10 +1,11 @@
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
+import { PhoneInput } from '../components/ui/PhoneInput'
 import { Icon } from '../components/ui/Icon'
 import { getAuthErrorMessage } from '../utils/authError'
 import { useState } from 'react'
@@ -18,8 +19,9 @@ export function LoginPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
-  } = useForm<FormData>()
+  } = useForm<FormData>({ defaultValues: { phone: '' } })
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -74,12 +76,18 @@ export function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-[18px]">
-            <Input
-              label="Телефон"
-              type="tel"
-              placeholder="+7 999 000 00 00"
-              error={errors.phone?.message}
-              {...register('phone', { required: 'Введите телефон' })}
+            <Controller
+              name="phone"
+              control={control}
+              rules={{ required: 'Введите телефон' }}
+              render={({ field }) => (
+                <PhoneInput
+                  label="Телефон"
+                  error={errors.phone?.message}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
             />
             <Input
               label="Пароль"
