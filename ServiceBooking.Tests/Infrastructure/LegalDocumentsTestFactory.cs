@@ -14,6 +14,22 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// in-process TestServer against the already-migrated schema. Assembly-level
 /// [CollectionBehavior(DisableTestParallelization = true)] guarantees no other collection's tests run
 /// concurrently with this one, so the two hosts never race on the same rows.
+///
+/// Root-caused during a QA pass on a LATER cycle (see that cycle's CURRENT_STATE.md/report for the
+/// full trace): <c>SuperAdmin:Phone</c> is deliberately its OWN value here, distinct from every other
+/// factory's shared "+70000000001". Program.cs seeds the SuperAdmin account — including its
+/// <c>UserConsent</c> rows, stamped with whichever <c>Legal:Root</c> manifest THIS PARTICULAR host
+/// happened to have loaded — exactly once per phone number, on whichever host's startup reaches that
+/// code FIRST after the database is wiped (`if (admin is null)`, Program.cs). This factory's
+/// <c>Legal:Root</c> is a throw-away temp directory with an intentionally one-off, random version tag
+/// (<see cref="ResetToDefault"/>) — if it ever won that race using the SAME phone as every other
+/// factory, the shared SuperAdmin's consent would be permanently stamped with a version nothing else
+/// recognizes, and <c>LegalConsentFilter</c> would then 451 every OTHER test's SuperAdmin-authenticated
+/// request for the rest of that process, non-deterministically depending on collection execution order.
+/// A dedicated phone means this factory's random manifest can never poison the shared account no matter
+/// which host boots first — every OTHER factory still points at the default/canonical
+/// <c>App_Data/legal</c> (or an explicit copy of it, see <c>UploadsStaticFilesTestFactory</c>), so
+/// THEIR seeding races each other harmlessly onto a consistent, matching version.
 /// </summary>
 public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
 {
@@ -71,8 +87,12 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
         builder.UseSetting("Jwt:Issuer", "ServiceBooking");
         builder.UseSetting("Jwt:Audience", "ServiceBookingClient");
         builder.UseSetting("AllowedOrigins", "http://localhost:5173");
-        builder.UseSetting("SuperAdmin:Phone", "+70000000001");
-        builder.UseSetting("SuperAdmin:Email", "superadmin@test.local");
+        // Deliberately NOT the shared "+70000000001" every other factory uses — see this class's own doc
+        // comment for why colliding on that phone here specifically poisons every other test's SuperAdmin
+        // login with a UserConsent version nothing else recognizes. No test in this class ever logs in as
+        // SuperAdmin, so a dedicated, never-asserted-on phone costs nothing here.
+        builder.UseSetting("SuperAdmin:Phone", "+70000099999");
+        builder.UseSetting("SuperAdmin:Email", "superadmin-legal-isolated@test.local");
         builder.UseSetting("SuperAdmin:Password", "SuperAdmin123!");
         builder.UseSetting("SmartCaptcha:SecretKey", "");
         builder.UseSetting("SmartCaptcha:SiteKey", "");

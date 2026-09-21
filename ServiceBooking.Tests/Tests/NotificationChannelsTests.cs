@@ -284,7 +284,10 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
             oldChannel.PaidUntilUtc.Should().BeNull("N6: the paid period must not double-count on the terminal row");
 
             var newChannel = await db.NotificationChannels.AsNoTracking().FirstAsync(c => c.Id == result.NewChannelId);
-            newChannel.PaidUntilUtc.Should().Be(paidUntilBefore);
+            // Tolerance, not equality: the expected value was read back through Postgres (microseconds)
+            // while the actual carries .NET ticks (100ns), so exact comparison drops a digit on CI's
+            // database and not on ours — the same trap as `result.PaidUntil` above.
+            newChannel.PaidUntilUtc.Should().BeCloseTo(paidUntilBefore!.Value, TimeSpan.FromMilliseconds(1));
 
             var assignment = await db.ChannelCompanyAssignments.AsNoTracking().SingleAsync(a => a.CompanyId == company.Id);
             assignment.ChannelId.Should().Be(result.NewChannelId);
