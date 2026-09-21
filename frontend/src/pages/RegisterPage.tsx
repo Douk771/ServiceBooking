@@ -1,12 +1,14 @@
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
+import { PhoneInput } from '../components/ui/PhoneInput'
 import { Icon } from '../components/ui/Icon'
 import { getAuthErrorMessage } from '../utils/authError'
+import { isRussianPhone } from '../utils/phone'
 import { useState } from 'react'
 
 interface FormData {
@@ -23,9 +25,10 @@ export function RegisterPage() {
     register,
     handleSubmit,
     watch,
+    control,
     formState: { errors },
   } = useForm<FormData>({
-    defaultValues: { acceptedLegal: false },
+    defaultValues: { acceptedLegal: false, phone: '' },
   })
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
@@ -93,24 +96,48 @@ export function RegisterPage() {
                 {...register('lastName', { required: 'Введите фамилию' })}
               />
             </div>
-            <Input
-              label="Телефон"
-              type="tel"
-              placeholder="+7 999 000 00 00"
-              error={errors.phone?.message}
-              {...register('phone', { required: 'Введите телефон' })}
+            <Controller
+              name="phone"
+              control={control}
+              rules={{
+                required: 'Введите телефон',
+                validate: (v) =>
+                  isRussianPhone(v) || 'Пока принимаем только российские номера, в формате +7 (900) 000-00-00',
+              }}
+              render={({ field }) => (
+                <PhoneInput
+                  label="Телефон"
+                  error={errors.phone?.message}
+                  value={field.value}
+                  onChange={field.onChange}
+                />
+              )}
             />
             <Input label="Email (необязательно)" type="email" placeholder="your@email.com" {...register('email')} />
-            <Input
-              label="Пароль"
-              type="password"
-              placeholder="Минимум 8 символов"
-              error={errors.password?.message}
-              {...register('password', {
-                required: 'Введите пароль',
-                minLength: { value: 8, message: 'Минимум 8 символов' },
-              })}
-            />
+            <div className="flex flex-col gap-1.5">
+              <Input
+                label="Пароль"
+                type="password"
+                placeholder="••••••••"
+                error={errors.password?.message}
+                {...register('password', {
+                  required: 'Введите пароль',
+                  minLength: { value: 8, message: 'Пароль должен быть не короче 8 символов' },
+                  validate: {
+                    hasLower: (v) => /[a-z]/.test(v) || 'Добавьте строчную букву',
+                    hasUpper: (v) => /[A-Z]/.test(v) || 'Добавьте заглавную букву',
+                    hasDigit: (v) => /\d/.test(v) || 'Добавьте цифру',
+                  },
+                })}
+              />
+              {/* US-60/Q6 (ARCHITECTURE_CYCLE6.md §42.3, API_CONTRACT_CYCLE6.md §39.6): the password
+                  policy itself is not changed by the customer's decision — only made visible up
+                  front, so the user doesn't have to guess it from a rejected-array error after the
+                  fact. */}
+              <p className="text-xs text-muted">
+                Не менее 8 символов, хотя бы одна строчная и одна заглавная буква, хотя бы одна цифра
+              </p>
+            </div>
 
             <label className="flex items-start gap-2.5 cursor-pointer">
               <input

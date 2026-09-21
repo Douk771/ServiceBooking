@@ -62,6 +62,38 @@ describe('getAuthErrorMessage', () => {
     )
   })
 
+  it('400 register with a single Identity error array → human Russian text', () => {
+    expect(
+      getAuthErrorMessage(axiosErrorWith(400, [{ code: 'PasswordRequiresUpper', description: 'x' }])),
+    ).toBe('Пароль должен содержать хотя бы одну заглавную букву')
+  })
+
+  it('400 register with several Identity errors → all shown, not just the first', () => {
+    expect(
+      getAuthErrorMessage(
+        axiosErrorWith(400, [
+          { code: 'PasswordRequiresLower', description: 'x' },
+          { code: 'PasswordRequiresUpper', description: 'y' },
+          { code: 'PasswordRequiresDigit', description: 'z' },
+        ]),
+      ),
+    ).toBe(
+      'Пароль должен содержать хотя бы одну строчную букву Пароль должен содержать хотя бы одну заглавную букву Пароль должен содержать хотя бы одну цифру',
+    )
+  })
+
+  it('400 register DuplicateUserName → phone-already-registered message, not "check your data"', () => {
+    expect(getAuthErrorMessage(axiosErrorWith(400, [{ code: 'DuplicateUserName', description: 'x' }]))).toBe(
+      'Этот телефон уже зарегистрирован',
+    )
+  })
+
+  it('400 register with an unknown Identity code falls back to the server description', () => {
+    expect(getAuthErrorMessage(axiosErrorWith(400, [{ code: 'SomeNewCode', description: 'some server text' }]))).toBe(
+      'some server text',
+    )
+  })
+
   it('no response at all (network error) → distinct message from 5xx', () => {
     expect(getAuthErrorMessage(new Error('Network Error'))).toBe(
       'Не удалось связаться с сервером. Проверьте интернет и попробуйте ещё раз',

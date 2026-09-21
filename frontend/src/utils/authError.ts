@@ -1,13 +1,43 @@
 import { AxiosError } from 'axios'
 
 /**
+ * Identity error codes (400 on register, API_CONTRACT_CYCLE6.md §39.6) translated into human Russian.
+ * `DuplicateUserName` gets special wording — "this phone is already registered" is a materially
+ * different, more actionable message than "check your data".
+ */
+const IDENTITY_ERROR_MESSAGES: Record<string, string> = {
+  PasswordTooShort: 'Пароль должен быть не короче 8 символов',
+  PasswordRequiresLower: 'Пароль должен содержать хотя бы одну строчную букву',
+  PasswordRequiresUpper: 'Пароль должен содержать хотя бы одну заглавную букву',
+  PasswordRequiresDigit: 'Пароль должен содержать хотя бы одну цифру',
+  PasswordRequiresUniqueChars: 'Пароль содержит слишком много повторяющихся символов',
+  DuplicateUserName: 'Этот телефон уже зарегистрирован',
+}
+
+interface IdentityError {
+  code?: string
+  description?: string
+}
+
+function isIdentityErrorArray(data: unknown): data is IdentityError[] {
+  return Array.isArray(data) && data.every((item) => item && typeof item === 'object')
+}
+
+/** Translates one array of Identity errors (§39.6) into the human Russian text(s) shown to the user. */
+export function formatIdentityErrors(errors: IdentityError[]): string {
+  return errors
+    .map((e) => (e.code && IDENTITY_ERROR_MESSAGES[e.code]) || e.description || 'Проверьте введённые данные.')
+    .join(' ')
+}
+
+/**
  * Maps a failed login/register request to a clear, actionable Russian message.
  *
  * Bodies are plain strings for every 4xx here (API_CONTRACT.md §0.2), except 400 on register, which
- * can also be a JSON array of Identity errors (API_CONTRACT.md §5.4) — that shape is left to the
- * caller's own field-level handling, this mapper only covers the codes that aren't already shown next
- * to a specific form field: the two rate-limiting policies introduced in this cycle (US-42) and the
- * new consent gate (US-37).
+ * can also be a JSON **array** of Identity errors (API_CONTRACT_CYCLE6.md §39.6) — e.g. a weak
+ * password or a duplicate phone. That array used to be silently dropped (`typeof data === 'string'`
+ * turned it into an empty string), so the user only ever saw a generic "check your data" and never
+ * learned the account wasn't even created (US-60).
  *
  * 401/423/403/5xx/"no response" branches are US-60 (cycle 6, ARCHITECTURE_CYCLE6.md §42.3.3): three
  * outcomes that used to collapse into one "wrong credentials" string on the login screen are now
@@ -16,7 +46,8 @@ import { AxiosError } from 'axios'
 export function getAuthErrorMessage(error: unknown): string {
   const ax = error as AxiosError
   const status = ax?.response?.status
-  const body = typeof ax?.response?.data === 'string' ? ax.response.data : ''
+  const data = ax?.response?.data
+  const body = typeof data === 'string' ? data : ''
 
   switch (status) {
     case 401:
@@ -32,6 +63,7 @@ export function getAuthErrorMessage(error: unknown): string {
       // status alone since the body is fixed text per endpoint, not a substring to branch on.
       return body || 'Слишком много попыток входа, попробуйте через несколько минут'
     case 400:
+      if (isIdentityErrorArray(data)) return formatIdentityErrors(data)
       if (body.includes('Consent to the Terms of Service'))
         return 'Необходимо принять условия использования и политику обработки персональных данных.'
       return body || 'Проверьте введённые данные.'
