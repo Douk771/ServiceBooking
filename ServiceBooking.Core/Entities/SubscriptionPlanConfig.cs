@@ -32,4 +32,18 @@ public class SubscriptionPlanConfig
     public bool IsActive { get; set; } = true;
     public int NotifyDaysBefore { get; set; } = 7;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Cycle 5 additions (ARCHITECTURE_CYCLE5.md §43.4) for the public/admin pricing screen (§48).
+    // Newline-separated bullet points shown on the public price card; PricingCatalogCache splits,
+    // trims and caps this at 5 lines to build PublicPlanDto.highlights.
+    public string? Highlights { get; set; }
+    // Whether this plan may appear on the public price list (GET /api/pricing) — independent of
+    // IsActive, which controls whether it can still be assigned to an account at all.
+    public bool IsPublic { get; set; }
+    public int SortOrder { get; set; }
+    // The single system free tariff (П4/§64 п.5): exactly one row may have this set (partial unique
+    // index in AppDbContext), its PricePerMonth must be 0, and it can be neither deleted nor
+    // deactivated. Enforced by the admin write endpoint, not implemented in this slice — see the
+    // backend report for cycle 07.
+    public bool IsSystemFree { get; set; }
 }

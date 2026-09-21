@@ -22,6 +22,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ClientNote> ClientNotes => Set<ClientNote>();
     public DbSet<MailLog> MailLogs => Set<MailLog>();
     public DbSet<SubscriptionPlanConfig> SubscriptionPlanConfigs => Set<SubscriptionPlanConfig>();
+    public DbSet<SubscriptionOption> SubscriptionOptions => Set<SubscriptionOption>();
     public DbSet<SubscriptionChangeLog> SubscriptionChangeLogs => Set<SubscriptionChangeLog>();
     public DbSet<ClientNotePhoto> ClientNotePhotos => Set<ClientNotePhoto>();
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
@@ -301,6 +302,24 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<PlatformSettingChangeLog>(e =>
         {
             e.HasIndex(l => l.Key);
+        });
+
+        // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4): at most one system-free plan row, ever.
+        builder.Entity<SubscriptionPlanConfig>(e =>
+        {
+            e.HasIndex(p => p.IsSystemFree).IsUnique().HasFilter("\"IsSystemFree\" = true");
+        });
+
+        // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3): option catalog for the pricing screen.
+        builder.Entity<SubscriptionOption>(e =>
+        {
+            e.Property(o => o.Code).HasMaxLength(64);
+            e.HasIndex(o => o.Code).IsUnique();
+            e.Property(o => o.Name).HasMaxLength(100);
+            e.Property(o => o.Description).HasMaxLength(500);
+            e.Property(o => o.CapabilityKey).HasMaxLength(64);
+            e.Property(o => o.PricePerMonth).HasPrecision(10, 2);
+            e.Property(o => o.UnitName).HasMaxLength(32);
         });
     }
 }
