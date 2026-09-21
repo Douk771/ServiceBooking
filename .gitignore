@@ -45,6 +45,12 @@ ServiceBooking.API/logs/
 # committed ServiceBooking.API/App_Data/legal draft; never meant to be a tracked path in this repo.
 /legal/
 
+# Repo-root /state — writable bind-mount target for the notifications master-key fingerprint file
+# (ARCHITECTURE_CYCLE4.md §24.5, docker-compose.prod.yml, DEPLOY.md §3/§4/§11). Host-local operator
+# data, created on the VPS before first `docker compose up`; never meant to be a tracked path here,
+# same treatment as /legal/ above and .env.
+/state/
+
 # Secrets
 **/appsettings.*.json
 !**/appsettings.json

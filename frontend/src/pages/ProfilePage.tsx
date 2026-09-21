@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { format } from 'date-fns'
 import { profileApi, type ProfilePlanDto } from '../api/profile'
+import { notificationsApi } from '../api/notifications'
 import { useAuthStore } from '../store/authStore'
 import { useExportData } from '../hooks/useExportData'
 import { Card } from '../components/ui/Card'
@@ -70,6 +71,46 @@ function PlanSection({ plan }: { plan: ProfilePlanDto }) {
         <span>Компаний: {plan.maxCompanies !== null ? `до ${plan.maxCompanies}` : '∞'}</span>
       </div>
       <p className="text-xs text-muted mt-3">Изменение тарифа и оплата скоро будут доступны здесь же.</p>
+    </Card>
+  )
+}
+
+// US-33 п. 6 — client-side opt-out toggle, same effect as the unsubscribe-link page.
+function NotificationPreferencesCard() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({ queryKey: ['notification-preferences'], queryFn: notificationsApi.getPreferences })
+
+  const mut = useMutation({
+    mutationFn: (enabled: boolean) => notificationsApi.updatePreferences(enabled),
+    onSuccess: (_res, enabled) => {
+      qc.setQueryData(['notification-preferences'], { enabled })
+    },
+  })
+
+  if (isLoading) return <div className="h-20 bg-cream-deep rounded-2xl animate-pulse mb-[18px]" />
+  if (!data) return null
+
+  return (
+    <Card className="p-[26px] mb-[18px]">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-[15.5px] font-semibold text-ink mb-1">Уведомления о визитах</h2>
+          <p className="text-sm text-ink-soft">
+            Сервисные сообщения о записях — подтверждения, напоминания, отмены — приходят в WhatsApp от салона.
+          </p>
+        </div>
+        <label className="flex items-center gap-2.5 cursor-pointer shrink-0">
+          <span className="text-sm text-ink-soft">{data.enabled ? 'Включены' : 'Выключены'}</span>
+          <input
+            type="checkbox"
+            className="w-4 h-4 accent-gold rounded"
+            checked={data.enabled}
+            disabled={mut.isPending}
+            onChange={(e) => mut.mutate(e.target.checked)}
+          />
+        </label>
+      </div>
+      {mut.isError && <p className="text-sm text-danger mt-2">Не удалось сохранить настройку. Попробуйте снова.</p>}
     </Card>
   )
 }
@@ -264,6 +305,8 @@ export function ProfilePage() {
       </Card>
 
       {profile?.plan && <PlanSection plan={profile.plan} />}
+
+      <NotificationPreferencesCard />
 
       {/* Password */}
       <Card className="p-[26px]">

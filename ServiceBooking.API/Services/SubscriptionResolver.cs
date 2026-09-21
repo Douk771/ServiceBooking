@@ -15,7 +15,13 @@ public record EffectivePlan(
     int? MaxCompanies,
     // Client-note photo storage cap in MB; null = unlimited (US-24, ARCHITECTURE.md §7.1).
     int? PhotoQuotaMb,
-    PhotoRetention PhotoRetention)
+    PhotoRetention PhotoRetention,
+    // Cycle 4 (ARCHITECTURE_CYCLE4.md §33): whether this plan may buy the WhatsApp channel option.
+    // False on Free (Q1). Deliberately NOT given a default value: every existing positional construction
+    // site (Free below, FromConfig, and every unit test that builds an EffectivePlan positionally) must
+    // say explicitly whether the plan it's describing allows the option, rather than silently inheriting
+    // false from a default and hiding a forgotten decision.
+    bool AllowNotificationChannel)
 {
     // No usable subscription → a restrictive baseline: no paid features, and an account may have just
     // one company with one employee (the owner alone). This is what blocks free-company spam and forces
@@ -27,12 +33,12 @@ public record EffectivePlan(
     public static readonly EffectivePlan Free = new(
         AllowOnlineBooking: false, AllowMailing: false, AllowAnalytics: false,
         AllowPublicListing: true, AllowOnlinePayment: false, MaxEmployees: 1, MaxCompanies: 1,
-        PhotoQuotaMb: 100, PhotoRetention: PhotoRetention.SixMonths);
+        PhotoQuotaMb: 100, PhotoRetention: PhotoRetention.SixMonths, AllowNotificationChannel: false);
 
     public static EffectivePlan FromConfig(SubscriptionPlanConfig c) => new(
         c.AllowOnlineBooking, c.AllowMailing, c.AllowAnalytics,
         c.AllowPublicListing, c.AllowOnlinePayment, c.MaxEmployees, c.MaxCompanies,
-        c.PhotoQuotaMb, c.PhotoRetention);
+        c.PhotoQuotaMb, c.PhotoRetention, c.AllowNotificationChannel);
 }
 
 /// <summary>
@@ -89,7 +95,12 @@ public class SubscriptionResolver(AppDbContext db)
             });
     }
 
-    private async Task<Dictionary<string, EffectivePlan>> GetEffectivePlansForOwnersAsync(IEnumerable<string> ownerUserIds)
+    // Made public for ARCHITECTURE_CYCLE4.md §33's cycle-4 admin channel summary (T4-B11): both
+    // NotificationChannel and AccountSubscription key off OwnerUserId, so resolving plans for a page of
+    // channels' owners belongs here, not behind a "company -> owner -> plan" detour that would add an
+    // extra query and an extra dictionary for no reason. Public in a one-line change, no behavior change —
+    // GetEffectivePlansAsync(companyIds) still calls it the same way it always did.
+    public async Task<Dictionary<string, EffectivePlan>> GetEffectivePlansForOwnersAsync(IEnumerable<string> ownerUserIds)
     {
         var ids = ownerUserIds.Distinct().ToList();
         var now = DateTime.UtcNow;

@@ -239,6 +239,20 @@ function BookingRow({ booking: b, client, onReschedule, cancel, complete, noShow
                   <Icon name="check" size={11} strokeWidth={2} /> Оплачено
                 </span>
               )}
+              {/* US-32 п. 6 — compact reminder-delivery mark, server-supplied text (statusText). */}
+              {b.reminderStatus && (
+                <span
+                  className={`text-xs font-medium px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                    b.reminderStatus.status === 'Delivered'
+                      ? 'bg-success-bg text-success'
+                      : b.reminderStatus.status === 'Failed' || b.reminderStatus.status === 'Cancelled'
+                        ? 'bg-danger-bg text-danger'
+                        : 'bg-cream-deep text-ink-soft'
+                  }`}
+                >
+                  <Icon name="megaphone" size={11} strokeWidth={1.8} /> {b.reminderStatus.text}
+                </span>
+              )}
             </div>
             <p className="text-sm text-muted mt-0.5 flex items-center gap-1">
               <Icon name="user" size={12} strokeWidth={1.8} /> {b.clientName}

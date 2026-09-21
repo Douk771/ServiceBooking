@@ -217,9 +217,23 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         slug ??= Unique("company-");
         name ??= $"Company {slug}";
         var client = AuthedClient(ownerToken);
-        var response = await client.PostAsJsonAsync("/api/companies", new CreateCompanyDto(name, slug, null, null, null, null, allowSelfBooking));
+        var response = await client.PostAsJsonAsync("/api/companies",
+            new CreateCompanyDto(name, slug, null, null, null, null, await AnyCityIdAsync(), null, allowSelfBooking));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<CompanyDto>())!;
+    }
+
+    // Cycle 4 (API_CONTRACT_CYCLE4.md §31.2): CreateCompanyDto.CityId is required. Tests that don't care
+    // which city just need ANY valid, active one — seeded by the SeedCities migration, so this never
+    // needs its own setup. Cached per test class instance since it's the same answer every call.
+    private int? _anyCityId;
+    protected async Task<int> AnyCityIdAsync()
+    {
+        if (_anyCityId is not null) return _anyCityId.Value;
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        _anyCityId = await db.Cities.Where(c => c.IsActive).Select(c => c.Id).FirstAsync();
+        return _anyCityId.Value;
     }
 
     /// <summary>

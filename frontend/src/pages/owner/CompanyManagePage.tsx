@@ -10,12 +10,17 @@ import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { Avatar } from '../../components/ui/Avatar'
+import { CityCombobox } from '../../components/ui/CityCombobox'
 import { ScheduleTab } from './ScheduleTab'
+import { NotificationSettingsTab } from './NotificationSettingsTab'
+import { NotificationTemplatesTab } from './NotificationTemplatesTab'
+import { NotificationLogTab } from './NotificationLogTab'
 import { getAddMemberErrorMessage } from '../../utils/memberError'
 import { getCompanyManageErrorMessage, getLogoErrorMessage } from '../../utils/companyManageError'
 import { getUploadErrorMessage } from '../../utils/uploadError'
 import { formatPhone } from '../../utils/phone'
-import type { Service } from '../../types'
+import { formatCityTimeZone } from '../../utils/timezone'
+import type { Service, City } from '../../types'
 
 // ── Services tab ──────────────────────────────────────────────────────────────
 
@@ -775,9 +780,105 @@ function SettingsTab({ companyId }: { companyId: string }) {
         </form>
       </Card>
 
+      {company && <CityTimeZoneCard company={company} companyId={companyId} />}
       {company && <WidgetCard company={company} />}
       <PhotoUsageCard companyId={companyId} />
     </div>
+  )
+}
+
+// ── City & time zone (US-30) ─────────────────────────────────────────────────
+
+function CityTimeZoneCard({ company, companyId }: { company: import('../../types').Company; companyId: string }) {
+  const qc = useQueryClient()
+  const [city, setCity] = useState<City | null>(
+    company.cityId != null && company.cityName
+      ? {
+          id: company.cityId,
+          name: company.cityName,
+          region: company.cityRegion ?? '',
+          timeZoneId: company.timeZoneId ?? '',
+          utcOffsetMinutes: company.utcOffsetMinutes ?? 0,
+          label: company.cityRegion ? `${company.cityName}, ${company.cityRegion}` : company.cityName,
+        }
+      : null,
+  )
+  const [manualZone, setManualZone] = useState(!!company.timeZoneIsManual)
+  const [zoneId, setZoneId] = useState(company.timeZoneId ?? '')
+  const [error, setError] = useState('')
+
+  const mut = useMutation({
+    mutationFn: () =>
+      companiesApi.update(companyId, {
+        cityId: city?.id,
+        // Explicit null resets to the city-derived zone (§31.3); an empty manual field means "not
+        // overridden", so it's sent as null rather than an empty string.
+        timeZoneId: manualZone ? zoneId || null : null,
+      }),
+    onSuccess: () => {
+      setError('')
+      qc.invalidateQueries({ queryKey: ['my-companies'] })
+    },
+    onError: (err: unknown) => setError(getCompanyManageErrorMessage(err, 'Не удалось сохранить город и часовой пояс.')),
+  })
+
+  const effectiveZoneId = manualZone ? zoneId : city?.timeZoneId
+  const effectiveOffset = manualZone ? null : city?.utcOffsetMinutes
+
+  return (
+    <Card className="p-6 mt-[18px]">
+      <h2 className="text-lg font-semibold text-ink mb-1">Город и часовой пояс</h2>
+      <p className="text-sm text-muted mb-4">
+        От часового пояса зависит момент отправки напоминаний клиентам — «за 24 часа» считается по местному времени
+        салона, а не по Москве.
+      </p>
+      <div className="flex flex-col gap-3">
+        <CityCombobox
+          value={city}
+          onChange={(c) => {
+            setCity(c)
+            if (c && !manualZone) setZoneId(c.timeZoneId)
+          }}
+        />
+        {city && effectiveOffset != null && !manualZone && (
+          <p className="text-xs text-muted">Часовой пояс: {formatCityTimeZone(city.label, effectiveOffset, city.timeZoneId)}</p>
+        )}
+        <label className="flex items-center gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            className="w-4 h-4 accent-gold rounded"
+            checked={manualZone}
+            onChange={(e) => {
+              setManualZone(e.target.checked)
+              if (!e.target.checked && city) setZoneId(city.timeZoneId)
+            }}
+          />
+          <span className="text-sm text-ink-soft">Указать часовой пояс вручную (IANA, например Asia/Barnaul)</span>
+        </label>
+        {manualZone && (
+          <input
+            value={zoneId}
+            onChange={(e) => setZoneId(e.target.value)}
+            placeholder="Asia/Barnaul"
+            className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold bg-white text-ink font-mono"
+          />
+        )}
+        {error && <p className="text-sm text-danger">{error}</p>}
+        {mut.isSuccess && !error && (
+          <p className="text-sm text-success flex items-center gap-1.5">
+            <Icon name="check" size={14} strokeWidth={2} /> Сохранено
+          </p>
+        )}
+        <Button
+          className="self-start"
+          loading={mut.isPending}
+          disabled={!city && !effectiveZoneId}
+          onClick={() => mut.mutate()}
+        >
+          Сохранить
+        </Button>
+      </div>
+    </Card>
   )
 }
 
@@ -907,7 +1008,37 @@ function PhotoUsageCard({ companyId }: { companyId: string }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type Tab = 'services' | 'schedule' | 'members' | 'settings'
+type Tab = 'services' | 'schedule' | 'members' | 'settings' | 'notifications'
+type NotificationsSubTab = 'settings' | 'templates' | 'log'
+
+function CompanyNotificationsTab({ companyId }: { companyId: string }) {
+  const [sub, setSub] = useState<NotificationsSubTab>('settings')
+  const subTabs: { key: NotificationsSubTab; label: string }[] = [
+    { key: 'settings', label: 'Настройки' },
+    { key: 'templates', label: 'Шаблоны' },
+    { key: 'log', label: 'Журнал' },
+  ]
+  return (
+    <div>
+      <div className="flex gap-1 bg-cream-deep p-1 rounded-full mb-4 w-fit flex-wrap">
+        {subTabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setSub(t.key)}
+            className={`px-3.5 py-2 rounded-full text-[13px] font-semibold whitespace-nowrap transition-all ${
+              sub === t.key ? 'bg-white text-ink shadow-sm' : 'text-gold-dark hover:text-ink'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {sub === 'settings' && <NotificationSettingsTab companyId={companyId} />}
+      {sub === 'templates' && <NotificationTemplatesTab companyId={companyId} />}
+      {sub === 'log' && <NotificationLogTab companyId={companyId} />}
+    </div>
+  )
+}
 
 export function CompanyManagePage() {
   const { id } = useParams<{ id: string }>()
@@ -920,6 +1051,7 @@ export function CompanyManagePage() {
     { key: 'services', label: 'Услуги' },
     { key: 'schedule', label: 'Расписание' },
     { key: 'members', label: 'Сотрудники' },
+    { key: 'notifications', label: 'Уведомления' },
     { key: 'settings', label: 'Настройки' },
   ]
 
@@ -950,6 +1082,7 @@ export function CompanyManagePage() {
       {id && tab === 'services' && <ServicesTab companyId={id} />}
       {id && tab === 'schedule' && <ScheduleTab companyId={id} />}
       {id && tab === 'members' && <MembersTab companyId={id} />}
+      {id && tab === 'notifications' && <CompanyNotificationsTab companyId={id} />}
       {id && tab === 'settings' && <SettingsTab companyId={id} />}
     </div>
   )

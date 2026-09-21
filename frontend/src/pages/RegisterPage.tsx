@@ -130,6 +130,11 @@ export function RegisterPage() {
               </span>
             </label>
 
+            {/* US-33 п. 1 */}
+            <p className="text-[13px] text-muted -mt-2.5">
+              Оставляя номер телефона, вы получите сервисные сообщения о своих записях в WhatsApp от салонов.
+            </p>
+
             {error && <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>}
 
             <Button type="submit" size="lg" loading={loading} disabled={!acceptedLegal} className="mt-1 w-full">

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.DTOs.Bookings;
@@ -35,7 +36,11 @@ public record BookingDto(
     DateTime? ConsentAcceptedAt,
     // US-39: true once the client who made this booking has deleted their account (§7.4) — the booking
     // itself was anonymized, not deleted.
-    bool ClientDeleted
+    bool ClientDeleted,
+    // API_CONTRACT_CYCLE4.md §30.3: additive, staff-visible only (GET /api/bookings/master,
+    // GET /api/bookings/{id}) — null on every other endpoint that reuses this DTO (Create,
+    // GET /api/bookings/client) and whenever the booking has no notification queued at all.
+    ReminderStatusDto? ReminderStatus = null
 );
 
 public record OccupiedRangeDto(TimeOnly Start, TimeOnly End);

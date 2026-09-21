@@ -57,11 +57,33 @@ services:
       # (ARCHITECTURE.md §11.4), the app runs the same either way.
       - Sentry__Dsn=${SENTRY_DSN:-}
       - Sentry__Release=${GIT_SHA:-}
+      # Six Notifications__* variables, final names per ARCHITECTURE_CYCLE4.md §37 — mirrors the
+      # Jwt__Key=${JWT_KEY} convention above. NOTIFICATIONS_ENCRYPTION_KEY is NOT a routine secret:
+      # regenerating it is an irreversible loss of every salon's WhatsApp channel, see DEPLOY.md
+      # "Инвентарь секретов" (separate line, not lumped in with `openssl rand`-rotated secrets) and
+      # the rotation procedure there. Empty NOTIFICATIONS_PROVIDER/logging default keeps the app
+      # running with the no-op transport until a provider is deliberately configured.
+      - Notifications__EncryptionKey=${NOTIFICATIONS_ENCRYPTION_KEY:-}
+      - Notifications__KeyRotationAck=${NOTIFICATIONS_KEY_ROTATION_ACK:-}
+      - Notifications__Provider=${NOTIFICATIONS_PROVIDER:-logging}
+      - Notifications__PartnerToken=${NOTIFICATIONS_PARTNER_TOKEN:-}
+      - Notifications__WebhookToken=${NOTIFICATIONS_WEBHOOK_TOKEN:-}
+      - Notifications__UnsubscribeKey=${NOTIFICATIONS_UNSUBSCRIBE_KEY:-}
     volumes:
       - api_uploads:/app/wwwroot/uploads          # public class: company logos, avatars, service images
       - api_private_uploads:/app/private-uploads  # private class: client-note photos — back this up separately, it holds personal data
       - api_logs:/app/logs                        # Serilog file sink (ARCHITECTURE.md §11.1) — not backed up, it's a disposable diagnostic, not data
       - ./legal:/app/App_Data/legal:ro             # bind-mount OVER the baked-in draft (ARCHITECTURE.md §4.1): edit files on the host, no rebuild/redeploy needed
+      # WRITABLE bind-mount (no :ro, unlike ./legal above) — the app writes its own master-key
+      # fingerprint file here on first successful start and compares against it on every start after
+      # (ARCHITECTURE_CYCLE4.md §24.5). Must be a host bind-mount, not a named volume: a named volume
+      # is exactly as ephemeral to "recreate the container" as the container's own filesystem in the
+      # failure mode this exists to catch, and deploy-remote.sh's `up -d --build` recreates the
+      # container on every deploy. On the host, create ./state (mode 0700, owned by the user docker
+      # runs as / the container's uid so the dotnet process inside can write to it) BEFORE first
+      # `docker compose up` — see DEPLOY.md §3/§4 for the exact command. `state/` is gitignored, same
+      # treatment as `.env`: it is host-local operator data, not something the repo checkout owns.
+      - ./state:/app/App_Data/state
     # /api/health/live never touches the database (ARCHITECTURE.md §10.1), so this only tells docker
     # "the process is up and answering HTTP" — readiness (DB + migrations) is what deploy-remote.sh /
     # rollback.sh poll separately after a restart (T-D3). start_period is generous on purpose: it has to

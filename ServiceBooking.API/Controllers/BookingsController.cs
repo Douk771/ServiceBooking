@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Bookings;
+using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
@@ -16,7 +17,8 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/[controller]")]
 public class BookingsController(
     AppDbContext db, SlotService slotService, CaptchaService captchaService,
-    SubscriptionResolver subscriptionResolver, LegalDocumentProvider legalProvider) : ControllerBase
+    SubscriptionResolver subscriptionResolver, LegalDocumentProvider legalProvider,
+    NotificationScheduler notificationScheduler, ILogger<BookingsController> logger) : ControllerBase
 {
     [HttpGet("occupied")]
     [Authorize]
@@ -274,6 +276,21 @@ public class BookingsController(
         if (!slotOk) return Conflict("Time slot is no longer available");
 
         db.Bookings.Add(booking);
+
+        // ARCHITECTURE_CYCLE4.md §25.3: queued in the SAME transaction as the booking itself, after all
+        // eight existing gates above (none of which are touched) and before SaveChangesAsync — the
+        // scheduler only tracks changes on this same AppDbContext, it never calls SaveChangesAsync
+        // itself. A failure here must not fail the booking (US-28 p.4: the booking is more important than
+        // the notification), so it's caught and logged, never rethrown.
+        try
+        {
+            await notificationScheduler.OnBookingCreatedAsync(booking, HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to queue notifications for booking {BookingId}", booking.Id);
+        }
+
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
 
@@ -308,7 +325,8 @@ public class BookingsController(
             ? $"{booking.Client.FirstName} {booking.Client.LastName}"
             : booking.GuestName ?? "Guest";
 
-        return Ok(MapToDto(booking, booking.Service, booking.Master, clientName));
+        var reminderStatus = await ReminderStatusForAsync(booking.Id);
+        return Ok(MapToDto(booking, booking.Service, booking.Master, clientName, reminderStatus));
     }
 
     // GET /api/bookings/my removed (US-22, BREAKING № 2, API_CONTRACT.md §3.3): fully superseded by
@@ -373,10 +391,14 @@ public class BookingsController(
             .ThenBy(b => b.StartTime)
             .ToListAsync();
 
+        // API_CONTRACT_CYCLE4.md §30.3: one batched query for the whole page's reminder status, not one
+        // per booking — same "batch, don't loop" convention as everything else added this cycle.
+        var reminderStatusByBooking = await ReminderStatusesForAsync(bookings.Select(b => b.Id));
+
         return Ok(bookings.Select(b =>
         {
             var name = b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Guest";
-            return MapToDto(b, b.Service, b.Master, name);
+            return MapToDto(b, b.Service, b.Master, name, reminderStatusByBooking.GetValueOrDefault(b.Id));
         }));
     }
 
@@ -468,6 +490,19 @@ public class BookingsController(
         booking.StartTime = dto.StartTime;
         booking.EndTime = slotEnd;
         booking.UpdatedAt = DateTime.UtcNow;
+
+        // ARCHITECTURE_CYCLE4.md §25.3: reschedules the queued Reminder and queues a BookingRescheduled
+        // notification, in the same transaction as the booking's own update — see the comment in Create
+        // for why a failure here is caught and logged rather than allowed to fail the reschedule itself.
+        try
+        {
+            await notificationScheduler.OnBookingRescheduledAsync(booking, HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to reschedule notifications for booking {BookingId}", booking.Id);
+        }
+
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
 
@@ -493,6 +528,19 @@ public class BookingsController(
         booking.Status = BookingStatus.Cancelled;
         booking.CancellationReason = reason;
         booking.UpdatedAt = DateTime.UtcNow;
+
+        // ARCHITECTURE_CYCLE4.md §25.3: cancels the queued rows for this booking and queues a
+        // BookingCancelled notification, in the same (implicit) transaction as the booking's own
+        // SaveChangesAsync below — see the comment in Create for why a failure here is caught and logged.
+        try
+        {
+            await notificationScheduler.OnBookingCancelledAsync(booking, HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to queue cancellation notification for booking {BookingId}", booking.Id);
+        }
+
         await db.SaveChangesAsync();
 
         return NoContent();
@@ -527,11 +575,40 @@ public class BookingsController(
             cm.CompanyId == booking.CompanyId && cm.UserId == userId && cm.Role == UserRole.CompanyOwner);
     }
 
-    private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName) =>
+    private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName, ReminderStatusDto? reminderStatus = null) =>
         new(b.Id, b.CompanyId, b.Company?.Name ?? "", b.Company?.Slug ?? "", b.ServiceId, s.Name, b.MasterId,
             $"{master.FirstName} {master.LastName}", b.ClientId, clientName,
             b.GuestPhone ?? b.Client?.PhoneNumber, b.GuestEmail ?? b.Client?.Email,
             b.Date, b.StartTime, b.EndTime, b.Status, b.PaymentStatus, b.Price, b.CancellationReason,
             b.Notes, b.CreatedAt,
-            b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted);
+            b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus);
+
+    // API_CONTRACT_CYCLE4.md §30.3. Picks the highest-Generation Reminder row for a booking (§23.5: a
+    // reschedule supersedes the previous generation's row rather than mutating it), so a rescheduled
+    // booking's card reflects the CURRENT reminder, not one already Cancelled by NotificationScheduler.
+    private async Task<ReminderStatusDto?> ReminderStatusForAsync(Guid bookingId)
+    {
+        var map = await ReminderStatusesForAsync([bookingId]);
+        return map.GetValueOrDefault(bookingId);
+    }
+
+    private async Task<Dictionary<Guid, ReminderStatusDto>> ReminderStatusesForAsync(IEnumerable<Guid> bookingIds)
+    {
+        var ids = bookingIds.Distinct().ToList();
+        if (ids.Count == 0) return [];
+
+        var rows = await db.OutboundNotifications.AsNoTracking()
+            .Where(n => n.BookingId != null && ids.Contains(n.BookingId!.Value) && n.Type == NotificationType.Reminder)
+            .ToListAsync();
+
+        return rows.GroupBy(n => n.BookingId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var latest = g.OrderByDescending(n => n.Generation).ThenByDescending(n => n.CreatedAt).First();
+                    var text = NotificationTexts.StatusText(latest.Status, latest.Reason, latest.ChannelId, latest.ReadAtUtc, latest.AttemptCount);
+                    return new ReminderStatusDto(latest.Status, $"напоминание {text}");
+                });
+    }
 }

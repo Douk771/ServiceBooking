@@ -32,6 +32,9 @@ export interface CreateCompanyPayload {
   email?: string
   allowSelfBooking: boolean
   showInPublicListing?: boolean
+  /** API_CONTRACT_CYCLE4.md §31.2 — required; the one breaking change of cycle 4. */
+  cityId: number
+  timeZoneId?: string | null
 }
 
 export interface UpdateCompanyPayload {
@@ -43,6 +46,9 @@ export interface UpdateCompanyPayload {
   allowSelfBooking?: boolean
   requirePrepayment?: boolean
   showInPublicListing?: boolean
+  /** API_CONTRACT_CYCLE4.md §31.3 — `timeZoneId: null` explicitly resets to the city-derived zone. */
+  cityId?: number
+  timeZoneId?: string | null
 }
 
 export interface CompanyPhotoUsage {

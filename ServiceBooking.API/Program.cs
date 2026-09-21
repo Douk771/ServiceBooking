@@ -97,12 +97,40 @@ if (!isDeveloperEnvironment)
     DeploymentSafetyChecks.ValidateSecrets(builder.Configuration, builder.Environment.ContentRootPath);
 }
 
+// Cycle 4 (US-54, US-35, US-30 — ARCHITECTURE_CYCLE4.md §24.2, §24.5, §34.3): all three are pure
+// config/filesystem checks with no dependency on the DI container, so — like ValidateSecrets above —
+// they run here, before Build(). Each is self-gated on environment/Enabled internally (unlike
+// ValidateSecrets they are NOT wrapped in `if (!isDeveloperEnvironment)`: ValidateNotificationSecrets'
+// rule 3 must run even in Development, and the other two are no-ops there anyway).
+DeploymentSafetyChecks.ValidateNotificationSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+{
+    // Reviewer note: this check's one non-fatal warning (a key rotation ack that's about to be
+    // consumed, §24.4/§24.5) used to go through Console.WriteLine, which never reaches Serilog/GlitchTip
+    // at all. The full pipeline (builder.Host.UseSerilog(...) above) is only wired up once the host is
+    // actually built, which is AFTER this call by design (fail-fast before Build(), same as
+    // ValidateSecrets) — so this is a minimal bootstrap logger, console-only, JUST for this one warning,
+    // disposed immediately after. It intentionally does not duplicate the file/GlitchTip sinks above.
+    using var bootstrapLogger = new LoggerConfiguration()
+        .WriteTo.Console(new CompactJsonFormatter())
+        .CreateLogger();
+    DeploymentSafetyChecks.ValidateChannelKeyFingerprint(
+        builder.Configuration, builder.Environment.EnvironmentName, builder.Environment.ContentRootPath,
+        warn: message => bootstrapLogger.Warning(message));
+}
+DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentName);
+
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
         // LegalDocumentProvider is resolved from DI per-request rather than requiring a service-locator
         // pattern here.
         options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>())
-    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+    .AddJsonOptions(o =>
+    {
+        o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        // Cycle 4: lets a DTO property distinguish "omitted from the request" from "present and
+        // explicitly null" — see ServiceBooking.API.DTOs.Common.Optional<T>'s doc comment.
+        o.JsonSerializerOptions.Converters.Add(new ServiceBooking.API.DTOs.Common.OptionalJsonConverterFactory());
+    });
 builder.Services.AddEndpointsApiExplorer();
 
 // Swagger / OpenAPI — Development only (US-10): the API surface, including auth flows, shouldn't be
@@ -229,6 +257,10 @@ builder.Services.AddCors(opt =>
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<SlotService>();
 builder.Services.AddScoped<SubscriptionResolver>();
+// Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
+// directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
+// this developer's file this cycle.
+builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
 builder.Services.AddHttpClient<CaptchaService>();
 
 // Image uploads (US-19, US-25): FileStorage holds no per-request state (just the two configured roots),
@@ -241,6 +273,95 @@ builder.Services.AddScoped<ImageUploadService>();
 // request instead of re-parsed per scope — the whole point of the ReloadSeconds cache (§4.3).
 builder.Services.Configure<LegalOptions>(builder.Configuration.GetSection("Legal"));
 builder.Services.AddSingleton<LegalDocumentProvider>();
+
+// WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
+builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.NotificationOptions.SectionName));
+
+// §29.2 (QR response cache) and §23.3 (PlatformSettings' 60s cache) both need IMemoryCache — neither
+// AddControllers nor AddMvc registers it by default, unlike (say) AddResponseCaching.
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PlatformSettings>();
+
+// The webhook parser (§32) is registered unconditionally, independent of Notifications:Provider — it is
+// pure translation with no secret/network access of its own, and NotificationsController.ProviderWebhook
+// resolves it via [FromServices] regardless of which transport is active, so a "logging"-provider
+// deployment that nonetheless receives a stray webhook still parses (and safely 200s) it rather than
+// throwing on a missing DI registration. The interface (IProviderWebhookParser) lives in
+// Services/ProviderWebhookParsing.cs, not Services/Notifications/ — see that file's doc comment.
+builder.Services.AddSingleton<ServiceBooking.API.Services.IProviderWebhookParser,
+    ServiceBooking.API.Services.Notifications.GreenApi.GreenApiWebhookParser>();
+
+// The dispatcher's abstractions over time, delay and pause randomness (§21 p.7, §26, §27) — production
+// defaults everywhere except the dedicated dispatch-test host, which overrides all three with recording/
+// fake implementations (NotificationDispatchTestFactory).
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationClock,
+    ServiceBooking.API.Services.Notifications.SystemNotificationClock>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IDispatchDelay,
+    ServiceBooking.API.Services.Notifications.SystemDispatchDelay>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IPauseGenerator,
+    ServiceBooking.API.Services.Notifications.PauseGenerator>();
+
+// The "green-api" named client (§24.3, §28.1): request/URL logging for THIS client only is silenced at
+// the category level (rung 1 of the three-rung defence against a token reaching a log — GreenApiUrls'
+// SafeLabel, logged explicitly by the adapter itself, is rung 2), and its primary handler is the
+// keep-alive + IPv4-first-ConnectCallback SocketsHttpHandler built by GreenApiHandlerFactory. Registered
+// unconditionally (not inside the switch below) — CaptchaService's own named client follows the same
+// "always registered, only used when configured" shape, and it means changing Notifications:Provider at
+// runtime-config level, without a rebuild, never needs a different DI graph.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.green-api.LogicalHandler", LogLevel.None);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.green-api.ClientHandler", LogLevel.None);
+builder.Services.AddHttpClient("green-api", client =>
+    {
+        var greenApiOptions = builder.Configuration.GetSection("Notifications:GreenApi").Get<
+            ServiceBooking.API.Services.Notifications.NotificationOptions.GreenApiOptions>() ?? new();
+        client.Timeout = TimeSpan.FromSeconds(greenApiOptions.TimeoutSeconds);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var greenApiOptions = builder.Configuration.GetSection("Notifications:GreenApi").Get<
+            ServiceBooking.API.Services.Notifications.NotificationOptions.GreenApiOptions>() ?? new();
+        return ServiceBooking.API.Services.Notifications.GreenApi.GreenApiHandlerFactory.Create(greenApiOptions);
+    });
+
+// Transport/provisioning selection by Notifications:Provider (§28). "logging" — the default, safe in
+// every environment — never makes a network call at all (US-27 p.9). "green-api" is the real adapter
+// (T4-B5); an unrecognised value fails LOUD at startup rather than silently falling back to the logging
+// stub, which would otherwise be the one way a Production deployment could believe notifications are
+// really going out over WhatsApp when nothing is.
+var notificationsProvider = builder.Configuration["Notifications:Provider"];
+switch (notificationsProvider)
+{
+    case null or "" or "logging":
+        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport,
+            ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
+        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
+            ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+        break;
+    case "green-api":
+        // INotificationTransport uses a CHANNEL's own token (a salon's), safe to wire up in any
+        // environment — sandbox mode (Notifications:AllowedRecipients) is the guard against it reaching
+        // a real customer.
+        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport,
+            ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
+
+        // IChannelProvisioning uses the PLATFORM's own partner token, which can create/delete a live
+        // salon's instance — IChannelProvisioning's own doc comment is explicit that DI must make this
+        // implementation structurally NOT EXIST outside Production (§28, US-35 p.4), not merely fail at
+        // call time because ValidateNotificationSecrets' rule 3 already forces PartnerToken empty there.
+        // A developer who sets Provider=green-api locally (PartnerToken necessarily empty, or startup
+        // would already have refused) still gets the harmless no-op rather than a real adapter with
+        // nothing to call.
+        if (builder.Environment.IsProduction())
+            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
+                ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>();
+        else
+            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
+                ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+        break;
+    default:
+        throw new InvalidOperationException($"Unknown Notifications:Provider '{notificationsProvider}'.");
+}
 
 // ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
 // gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default
@@ -313,6 +434,11 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // notifications-webhook: the provider calls this anonymously and per-address, keyed the same way
+    // as auth-login/auth-register (ARCHITECTURE_CYCLE4.md §32) — 600/min is generous enough for normal
+    // delivery-status traffic while still bounding a misbehaving/compromised caller.
+    o.AddPolicy("notifications-webhook", ctx => IpWindowPolicy(ctx, "notifications-webhook", defaultPermitLimit: 600, defaultWindowMinutes: 1));
+
     // data-export: keyed by user id only — the endpoint requires [Authorize], there is no anonymous case.
     o.AddPolicy("data-export", ctx =>
     {
@@ -340,6 +466,7 @@ builder.Services.AddRateLimiter(o =>
             "auth-register" => "Слишком много регистраций с этого адреса. Повторите позже.",
             "booking-create" => "Слишком много записей с этого адреса. Повторите позже.",
             "data-export" => "Выгрузка доступна не чаще трёх раз в сутки.",
+            "notifications-webhook" => "Too many requests.",
             _ => "Too many uploads. Try again in a minute."
         };
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
@@ -361,6 +488,24 @@ static RateLimitPartition<string> IpWindowPolicy(
     });
 }
 
+// B2/I5: mask the {token} segment of the two notification routes that embed a secret in the URL, so
+// the request-completed log line (Information) never carries it. Returns null for every other path —
+// callers only override RequestPath when this returns non-null.
+static string? MaskSensitiveRequestPath(string? path)
+{
+    if (string.IsNullOrEmpty(path)) return null;
+
+    const string webhookPrefix = "/api/notifications/provider-webhook/";
+    const string unsubscribePrefix = "/api/notifications/unsubscribe/";
+
+    if (path.StartsWith(webhookPrefix, StringComparison.Ordinal) && path.Length > webhookPrefix.Length)
+        return webhookPrefix + "***";
+    if (path.StartsWith(unsubscribePrefix, StringComparison.Ordinal) && path.Length > unsubscribePrefix.Length)
+        return unsubscribePrefix + "***";
+
+    return null;
+}
+
 // Health checks (US-43, ARCHITECTURE.md §10): "live" never touches anything and always answers 200 —
 // it just proves the process is up and can accept HTTP. "ready" additionally proves the database is
 // reachable and migrated, tagged "ready" so MapHealthChecks below can select just this one check.
@@ -371,6 +516,10 @@ builder.Services.AddHealthChecks()
 // implementations are registered — adding a second task later is exactly one more line like this one,
 // the runner itself never changes (ARCHITECTURE.md §8.1).
 builder.Services.AddScoped<IScheduledTask, PhotoRetentionCleanupTask>();
+// Cycle 4 (ARCHITECTURE_CYCLE4.md §26, §30): the dispatcher (1-minute period, its own internal budget)
+// and channel health (15-minute period — polling, idle detection, orphaned-instance cleanup).
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.NotificationDispatchTask>();
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelHealthTask>();
 builder.Services.AddHostedService<ScheduledTaskRunner>();
 
 var app = builder.Build();
@@ -432,6 +581,27 @@ app.UseSerilogRequestLogging(opts =>
         // "найди по traceId" in DEPLOY.md stops working, which is the whole point of this line existing.
         diagnosticContext.Set("traceId", Activity.Current?.Id ?? httpContext.TraceIdentifier);
         diagnosticContext.Set("userId", httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier));
+    };
+    // N1 (review round 2): RequestPath masking does NOT belong in EnrichDiagnosticContext — this
+    // middleware builds the final LogEvent's properties as collectedProperties.Concat([RequestMethod,
+    // RequestPath, StatusCode, Elapsed]) and applies them via AddOrUpdateProperty IN THAT ORDER, so the
+    // middleware's OWN RequestPath (added last) overwrites whatever EnrichDiagnosticContext set under the
+    // same name — a previous version of this code relied on diagnosticContext.Set("RequestPath", ...)
+    // winning, which it does not; §37's "ноль совпадений в логах приложения" was not actually met, and
+    // the unsubscribe token (a signed phone number) was reaching Information-level logs, upstream of
+    // PhoneMaskingEnricher (Warning+ only). GetMessageTemplateProperties exists in Serilog.AspNetCore
+    // specifically for this — it's what BUILDS RequestMethod/RequestPath/StatusCode/Elapsed in the first
+    // place, so masking here is authoritative rather than racing the middleware for the last write.
+    opts.GetMessageTemplateProperties = (httpContext, requestPath, elapsedMs, statusCode) =>
+    {
+        var maskedPath = MaskSensitiveRequestPath(requestPath) ?? requestPath;
+        return
+        [
+            new LogEventProperty("RequestMethod", new ScalarValue(httpContext.Request.Method)),
+            new LogEventProperty("RequestPath", new ScalarValue(maskedPath)),
+            new LogEventProperty("StatusCode", new ScalarValue(statusCode)),
+            new LogEventProperty("Elapsed", new ScalarValue(elapsedMs)),
+        ];
     };
 });
 

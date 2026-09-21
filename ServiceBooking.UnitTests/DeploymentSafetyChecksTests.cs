@@ -345,4 +345,297 @@ public class DeploymentSafetyChecksTests
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*TrustedNetworks*");
     }
+
+    // ── ValidateNotificationSecrets (cycle 4, US-54/US-35, ARCHITECTURE_CYCLE4.md §24.2) ──────────
+
+    private static string ValidBase64Key() =>
+        Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+
+    // I4: NOTIFICATIONS_UNSUBSCRIBE_KEY/NOTIFICATIONS_WEBHOOK_TOKEN, present on every "should not throw"
+    // config below a real-provider gate — the two new checks these tests exist to NOT trip on the
+    // otherwise-valid configurations.
+    private static Dictionary<string, string?> ValidRealProviderExtras() => new()
+    {
+        ["Notifications:UnsubscribeKey"] = "a-real-unsubscribe-hmac-key",
+        ["Notifications:WebhookToken"] = "a-real-webhook-token",
+    };
+
+    [Fact]
+    public void ValidateNotificationSecrets_LoggingProviderInProduction_DoesNotThrow()
+    {
+        // I4: gated on Provider, not Notifications:Enabled (which no longer gates anything downstream)
+        // — the "logging" provider (default, and the only one exempt) never touches a real secret.
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:Provider"] = "logging" });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_NoProviderConfiguredInProduction_DefaultsToLogging_DoesNotThrow()
+    {
+        // An absent Notifications:Provider key must read exactly like NotificationOptions.Provider's own
+        // default ("logging"), not like "some other, unrecognized provider" that happens to need checking.
+        var config = BuildConfig(new Dictionary<string, string?>());
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInTesting_SkipsKeyValidation()
+    {
+        // Developer environments are exempt from rules 1–2 (unlike rule 3 below).
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:Provider"] = "green-api" });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Testing");
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("CHANGE_ME")]
+    [InlineData("not-valid-base64!!!")]
+    public void ValidateNotificationSecrets_GreenApiInProduction_MissingOrPlaceholderKey_Throws(string? key)
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:EncryptionKey"] = key
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*EncryptionKey*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_WrongKeyLength_Throws()
+    {
+        var shortKey = Convert.ToBase64String(new byte[16]);
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:EncryptionKey"] = shortKey
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*32 bytes*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_ValidKey_WithoutPartnerToken_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>(ValidRealProviderExtras())
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PartnerToken*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_ValidConfig_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>(ValidRealProviderExtras())
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().NotThrow();
+    }
+
+    // I4: a real provider with everything else valid but an empty UnsubscribeKey/WebhookToken must still
+    // fail fast — the downstream symptom (message shipped without the opt-out line; webhook 401s
+    // forever) never surfaces as a crash on its own.
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_MissingUnsubscribeKey_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:WebhookToken"] = "a-real-webhook-token",
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*UnsubscribeKey*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_MissingWebhookToken_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:UnsubscribeKey"] = "a-real-unsubscribe-hmac-key",
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*WebhookToken*");
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    [InlineData("Staging")]
+    public void ValidateNotificationSecrets_PartnerTokenSetOutsideProduction_Throws(string environmentName)
+    {
+        // Rule 3 (§24.2 p.3) is a mirror-image safety rule and is NOT exempted for developer
+        // environments: a real partner token on a dev machine could delete a live salon's instance.
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:PartnerToken"] = "a-real-partner-token"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, environmentName);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PartnerToken*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_PartnerTokenSetInProduction_DoesNotTriggerRule3()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>(ValidRealProviderExtras())
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token"
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EmptyPartnerTokenOutsideProduction_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:PartnerToken"] = "" });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Development");
+
+        act.Should().NotThrow();
+    }
+
+    // ── ValidateChannelKeyFingerprint (cycle 4, US-54, ARCHITECTURE_CYCLE4.md §24.5) ────────────────
+
+    [Fact]
+    public void ValidateChannelKeyFingerprint_LoggingProvider_DoesNotTouchFileSystem()
+    {
+        // I4: gated on Provider, same as ValidateNotificationSecrets — "logging" needs no fingerprint.
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:Provider"] = "logging" });
+
+        var act = () => DeploymentSafetyChecks.ValidateChannelKeyFingerprint(config, "Production", contentRoot);
+
+        act.Should().NotThrow();
+        Directory.Exists(contentRoot).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ValidateChannelKeyFingerprint_GreenApiInTesting_IsNoOp()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:EncryptionKey"] = ValidBase64Key()
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateChannelKeyFingerprint(config, "Testing", contentRoot);
+
+        act.Should().NotThrow();
+        Directory.Exists(contentRoot).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ValidateChannelKeyFingerprint_FirstRunInProduction_WritesFingerprintFile()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        try
+        {
+            var config = BuildConfig(new Dictionary<string, string?>
+            {
+                ["Notifications:Provider"] = "green-api",
+                ["Notifications:EncryptionKey"] = ValidBase64Key()
+            });
+
+            DeploymentSafetyChecks.ValidateChannelKeyFingerprint(config, "Production", contentRoot);
+
+            var expectedPath = Path.Combine(contentRoot, "App_Data", "state", ".notifications-key-fingerprint");
+            File.Exists(expectedPath).Should().BeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(contentRoot)) Directory.Delete(contentRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ValidateChannelKeyFingerprint_KeyChangedWithoutAck_ThrowsAndLeavesFileUntouched()
+    {
+        var contentRoot = Path.Combine(Path.GetTempPath(), "sb-safety-" + Guid.NewGuid());
+        try
+        {
+            var firstKeyConfig = BuildConfig(new Dictionary<string, string?>
+            {
+                ["Notifications:Provider"] = "green-api",
+                ["Notifications:EncryptionKey"] = ValidBase64Key()
+            });
+            DeploymentSafetyChecks.ValidateChannelKeyFingerprint(firstKeyConfig, "Production", contentRoot);
+
+            var secondKeyConfig = BuildConfig(new Dictionary<string, string?>
+            {
+                ["Notifications:Provider"] = "green-api",
+                ["Notifications:EncryptionKey"] = ValidBase64Key() // a DIFFERENT random key
+            });
+
+            var act = () => DeploymentSafetyChecks.ValidateChannelKeyFingerprint(secondKeyConfig, "Production", contentRoot);
+
+            act.Should().Throw<InvalidOperationException>().WithMessage("*NOTIFICATIONS_ENCRYPTION_KEY*");
+        }
+        finally
+        {
+            if (Directory.Exists(contentRoot)) Directory.Delete(contentRoot, recursive: true);
+        }
+    }
+
+    // ── ValidateTimeZoneDatabase (cycle 4, US-30, ARCHITECTURE_CYCLE4.md §34.3) ────────────────────
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public void ValidateTimeZoneDatabase_DeveloperEnvironment_DoesNotThrow(string environmentName)
+    {
+        var act = () => DeploymentSafetyChecks.ValidateTimeZoneDatabase(environmentName);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateTimeZoneDatabase_Production_ResolvesAsiaBarnaul_OnThisMachine()
+    {
+        // Documents the requirement rather than faking a broken tzdata (that would need mocking
+        // TimeZoneInfo, which isn't practical) — the real assertion this check protects against is
+        // exercised in deploy/ci/smoke.sh against the actual runtime image (§34.3).
+        var act = () => DeploymentSafetyChecks.ValidateTimeZoneDatabase("Production");
+        act.Should().NotThrow();
+    }
 }

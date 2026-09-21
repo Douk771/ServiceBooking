@@ -16,6 +16,13 @@ set -euo pipefail
 REPO_DIR="${SERVICEBOOKING_REPO_DIR:-/opt/ezbook/app}"
 COMPOSE_FILE="$REPO_DIR/docker-compose.prod.yml"
 ENV_FILE="$REPO_DIR/.env"
+# Notifications master-key fingerprint (ARCHITECTURE_CYCLE4.md §24.5) — lives on the same writable
+# bind-mount the app itself writes to (docker-compose.prod.yml `./state:/app/App_Data/state`), NOT
+# inside a docker volume. Must travel in the SAME backup set as .env: if the key in a restored .env
+# is ever paired with a machine that has no fingerprint file, the app just writes a fresh one on
+# first start and the whole point of §24.5 — catching "this .env has the wrong key" — silently stops
+# working. See ARCHITECTURE_CYCLE4.md §38 п.4 and DEPLOY.md §11.
+FINGERPRINT_FILE="$REPO_DIR/state/.notifications-key-fingerprint"
 BACKUP_ROOT="/var/backups/servicebooking"     # deliberately OUTSIDE any docker volume (US-40 п.4):
                                                # `docker compose down -v` must not be able to take the
                                                # backups down with the data they're a copy of.
@@ -77,7 +84,7 @@ chmod 0700 "$BACKUP_ROOT"   # personal data lives in here (client-note photos) �
 # fail() reports to it) was only a matter of weeks away. Sum the newest file of each of the three kinds
 # instead — that's what one backup run is actually about to write.
 last_set_size_kb=0
-for pattern in "db-*.dump" "uploads-*.tar.gz" "private-uploads-*.tar.gz" "env-*.txt"; do
+for pattern in "db-*.dump" "uploads-*.tar.gz" "private-uploads-*.tar.gz" "env-*.txt" "notifications-key-fingerprint-*.txt"; do
   # shellcheck disable=SC2012
   # `|| true` is load-bearing under `set -euo pipefail`: with no matching file the glob stays literal,
   # ls exits non-zero and pipefail propagates that as the pipeline's status — which, in a bare
@@ -145,6 +152,23 @@ else
   log "WARNING: $ENV_FILE не найден — конфигурация в копию не попала"
 fi
 
+# ---- 3c. notifications master-key fingerprint (goes with .env, see FINGERPRINT_FILE comment above) ----
+if [ -f "$FINGERPRINT_FILE" ]; then
+  if cp "$FINGERPRINT_FILE" "$BACKUP_ROOT/notifications-key-fingerprint-${ts}${suffix}.txt.tmp"; then
+    chmod 600 "$BACKUP_ROOT/notifications-key-fingerprint-${ts}${suffix}.txt.tmp"
+    mv "$BACKUP_ROOT/notifications-key-fingerprint-${ts}${suffix}.txt.tmp" \
+       "$BACKUP_ROOT/notifications-key-fingerprint-${ts}${suffix}.txt"
+    log "notifications key fingerprint backup OK: notifications-key-fingerprint-${ts}${suffix}.txt"
+  else
+    rm -f "$BACKUP_ROOT/notifications-key-fingerprint-${ts}${suffix}.txt.tmp"
+    fail "notifications key fingerprint backup failed"
+  fi
+else
+  # Not a failure: notifications may still be disabled/on the no-op transport (no key configured
+  # yet), or this may be a pre-cycle-4 machine that never had a fingerprint file to begin with.
+  log "WARNING: $FINGERPRINT_FILE не найден — отпечаток ключа шифрования каналов в копию не попал (нормально, если Notifications ещё выключены)"
+fi
+
 # ---- 4. rotation ----
 # The trailing `|| true` on both pipelines is required, not defensive noise: under `set -euo pipefail`
 # a pattern with no matches makes ls exit non-zero, pipefail turns that into the pipeline's status, and
@@ -152,11 +176,11 @@ fi
 # a unit that systemd reports as failed for a backup that in fact succeeded. The weekly patterns match
 # nothing at all until the first Sunday run, so this fires on ordinary days, not just in theory.
 log "rotating: keep $KEEP_DAILY daily, $KEEP_WEEKLY weekly"
-for pattern in "db-*[0-9]Z.dump" "uploads-*[0-9]Z.tar.gz" "private-uploads-*[0-9]Z.tar.gz" "env-*[0-9]Z.txt"; do
+for pattern in "db-*[0-9]Z.dump" "uploads-*[0-9]Z.tar.gz" "private-uploads-*[0-9]Z.tar.gz" "env-*[0-9]Z.txt" "notifications-key-fingerprint-*[0-9]Z.txt"; do
   # shellcheck disable=SC2012
   ls -1t "$BACKUP_ROOT"/$pattern 2>/dev/null | tail -n +$((KEEP_DAILY + 1)) | xargs -r rm -f || true
 done
-for pattern in "db-*-weekly.dump" "uploads-*-weekly.tar.gz" "private-uploads-*-weekly.tar.gz" "env-*-weekly.txt"; do
+for pattern in "db-*-weekly.dump" "uploads-*-weekly.tar.gz" "private-uploads-*-weekly.tar.gz" "env-*-weekly.txt" "notifications-key-fingerprint-*-weekly.txt"; do
   # shellcheck disable=SC2012
   ls -1t "$BACKUP_ROOT"/$pattern 2>/dev/null | tail -n +$((KEEP_WEEKLY + 1)) | xargs -r rm -f || true
 done

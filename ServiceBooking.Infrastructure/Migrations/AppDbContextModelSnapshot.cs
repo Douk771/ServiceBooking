@@ -358,6 +358,142 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("Bookings");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelCompanyAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AssignedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AssignedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChannelId");
+
+                    b.HasIndex("CompanyId")
+                        .IsUnique();
+
+                    b.ToTable("ChannelCompanyAssignments");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelPaymentLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("Amount")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ChangedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("NewPaidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("OldPaidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChannelId");
+
+                    b.ToTable("ChannelPaymentLogs");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelStateEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("FromState")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Reason")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ToState")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChannelId", "OccurredAtUtc");
+
+                    b.ToTable("ChannelStateEvents");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.City", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Region")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SearchName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SearchName");
+
+                    b.HasIndex("Region", "Name");
+
+                    b.ToTable("Cities");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.ClientNote", b =>
                 {
                     b.Property<Guid>("Id")
@@ -471,6 +607,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<bool>("AllowSelfBooking")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("CityId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -507,7 +646,17 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("TimeZoneIsManual")
+                        .HasColumnType("boolean");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("CityId");
 
                     b.HasIndex("OwnerUserId");
 
@@ -550,6 +699,31 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("CompanyMembers");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyNotificationSettings", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("EnabledTypeMask")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinLeadMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReminderLeadMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("text");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("CompanyNotificationSettings");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.MailLog", b =>
@@ -608,6 +782,359 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("ServiceId");
 
                     b.ToTable("MasterServices");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationChannel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ConnectedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ConsecutiveSendFailures")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ContactEmail")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DisruptionNotifiedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("IdleSinceUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("IdleWarningSentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("InstanceCreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsSuspendedByAdmin")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastStateCheckAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("LastStateReason")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LastTestMessageAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OrphanedInstanceId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("PaidFromUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("PaidUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ProviderInstanceId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ProviderSecretCiphertext")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ProviderSecretKeyId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("ReplacedByChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("RequestedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RiskAcceptedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RiskAcceptedVersion")
+                        .HasColumnType("text");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Transport")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("ProviderInstanceId")
+                        .IsUnique()
+                        .HasFilter("\"ProviderInstanceId\" IS NOT NULL");
+
+                    b.HasIndex("ReplacedByChannelId");
+
+                    b.HasIndex("State");
+
+                    b.ToTable("NotificationChannels");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationOptOut", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("OptedOutAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Phone")
+                        .IsUnique();
+
+                    b.ToTable("NotificationOptOuts");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Type")
+                        .IsUnique();
+
+                    b.ToTable("NotificationTemplates");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationTemplateHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ChangedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PreviousBody")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "Type", "ChangedAtUtc");
+
+                    b.ToTable("NotificationTemplateHistories");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.OutboundNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid?>("BookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ChannelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeliveredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("DueAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Generation")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("LastAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ReadAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("Reason")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReasonDetail")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("RecipientName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RecipientPhone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("RecipientUserId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("SentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("VisitStartUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("ProviderMessageId")
+                        .HasDatabaseName("IX_OutboundNotifications_ProviderMessageId")
+                        .HasFilter("\"ProviderMessageId\" IS NOT NULL");
+
+                    b.HasIndex("ChannelId", "Status")
+                        .HasDatabaseName("IX_OutboundNotifications_Channel_Status");
+
+                    b.HasIndex("CompanyId", "CreatedAt")
+                        .HasDatabaseName("IX_OutboundNotifications_Company_CreatedAt");
+
+                    b.HasIndex("VisitStartUtc", "CreatedAt")
+                        .HasDatabaseName("IX_OutboundNotifications_Dispatch")
+                        .HasFilter("\"Status\" = 0");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("VisitStartUtc", "CreatedAt"), new[] { "DueAtUtc", "ChannelId", "CompanyId" });
+
+                    b.ToTable("OutboundNotifications");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("PlatformSettings");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformSettingChangeLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ChangedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("NewValue")
+                        .HasColumnType("text");
+
+                    b.Property<string>("OldValue")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key");
+
+                    b.ToTable("PlatformSettingChangeLogs");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Review", b =>
@@ -799,6 +1326,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<bool>("AllowMailing")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AllowNotificationChannel")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("AllowOnlineBooking")
@@ -1047,6 +1577,47 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Service");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelCompanyAssignment", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.NotificationChannel", "Channel")
+                        .WithMany("Assignments")
+                        .HasForeignKey("ChannelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Channel");
+
+                    b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelPaymentLog", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.NotificationChannel", "Channel")
+                        .WithMany()
+                        .HasForeignKey("ChannelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Channel");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelStateEvent", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.NotificationChannel", "Channel")
+                        .WithMany()
+                        .HasForeignKey("ChannelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Channel");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.ClientNote", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.Booking", "Booking")
@@ -1100,11 +1671,18 @@ namespace ServiceBooking.Infrastructure.Migrations
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Company", b =>
                 {
+                    b.HasOne("ServiceBooking.Core.Entities.City", "City")
+                        .WithMany()
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("ServiceBooking.Core.Entities.AppUser", "Owner")
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("City");
 
                     b.Navigation("Owner");
                 });
@@ -1126,6 +1704,17 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Company");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyNotificationSettings", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Company");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.MailLog", b =>
@@ -1164,6 +1753,60 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Master");
 
                     b.Navigation("Service");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationChannel", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.NotificationChannel", "ReplacedByChannel")
+                        .WithMany()
+                        .HasForeignKey("ReplacedByChannelId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("ReplacedByChannel");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationTemplate", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.OutboundNotification", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Booking", "Booking")
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.NotificationChannel", "Channel")
+                        .WithMany()
+                        .HasForeignKey("ChannelId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Booking");
+
+                    b.Navigation("Channel");
+
+                    b.Navigation("Company");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Review", b =>
@@ -1296,6 +1939,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Members");
 
                     b.Navigation("Services");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationChannel", b =>
+                {
+                    b.Navigation("Assignments");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Service", b =>

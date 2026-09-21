@@ -306,6 +306,13 @@ public class SchedulerTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
                 builder.UseSetting("ScheduledTasks:Enabled", "true");
                 builder.UseSetting("ScheduledTasks:TickSeconds", "1");
                 builder.UseSetting("Storage:PrivateRoot", isolatedPrivateRoot);
+                // Cycle 4 review fix: notification-dispatch/channel-health no longer need disabling HERE —
+                // ServiceBooking.API/appsettings.Testing.json now disables both by default (same file this
+                // host's config already loads via ASPNETCORE_ENVIRONMENT=Testing), so any test host built
+                // this way is safe by construction, including hosts a future developer adds without knowing
+                // about this specific test. Only NotificationDispatchTestFactory opts notification-dispatch
+                // back in, explicitly, for its own tests (see its own comment) — this test's assertions are
+                // only about photo-retention-cleanup and ThrowingScheduledTask, so it does not.
                 builder.ConfigureServices(services => services.AddScoped<IScheduledTask, ThrowingScheduledTask>());
             });
 
