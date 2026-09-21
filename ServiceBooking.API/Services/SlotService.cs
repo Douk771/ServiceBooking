@@ -1,16 +1,27 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services;
 
-public class SlotService(AppDbContext db)
+public class SlotService(AppDbContext db, IConfiguration configuration)
 {
-    // `allowWithoutSchedule` lets a staff member creating a manual booking on a client's behalf pick
-    // any free slot across the whole day even when the master hasn't set working hours for this date
-    // yet. Guest/self-service booking never sets this — it stays gated to explicitly configured hours,
-    // which is what protects a master from being booked at a time they never agreed to.
-    public async Task<List<TimeSlotResult>> GetAvailableSlotsAsync(Guid companyId, string masterId, Guid serviceId, DateOnly date, bool allowWithoutSchedule = false)
+    // Default staff fallback window when there's no schedule row for the date and extendedHours
+    // wasn't requested (ARCHITECTURE_CYCLE6.md §46.2), read from Booking:DefaultWorkWindow. Parsing
+    // lives in DeploymentSafetyChecks (pure, unit-testable); an unparsable/inverted value throws at
+    // first use rather than silently falling back to a whole day.
+    private (TimeOnly Start, TimeOnly End)? _defaultWindow;
+    private (TimeOnly Start, TimeOnly End) DefaultWindow =>
+        _defaultWindow ??= DeploymentSafetyChecks.ParseDefaultWorkWindow(configuration);
+
+    // `fallback` lets a staff member creating a manual booking on a client's behalf pick a free slot
+    // even when the master hasn't set working hours for this date yet — DefaultWindow (09:00-21:00 by
+    // default) unless they explicitly ask for the whole day. Guest/self-service booking always passes
+    // None — it stays gated to explicitly configured hours, which is what protects a master from being
+    // booked at a time they never agreed to.
+    public async Task<List<TimeSlotResult>> GetAvailableSlotsAsync(
+        Guid companyId, string masterId, Guid serviceId, DateOnly date, ScheduleFallback fallback = ScheduleFallback.None)
     {
         var service = await db.Services.FindAsync(serviceId);
         if (service is null) return [];
@@ -21,7 +32,7 @@ public class SlotService(AppDbContext db)
 
         // Guard duplicates the rule intentionally to skip the bookings query; the authoritative rule
         // lives in SlotCalculator.
-        if (workingHours is null && !allowWithoutSchedule) return [];
+        if (workingHours is null && fallback == ScheduleFallback.None) return [];
 
         // Occupancy is deliberately NOT scoped by company: a master who works for two businesses is
         // still one person, so a booking made in company A must block the same time in company B.
@@ -34,10 +45,11 @@ public class SlotService(AppDbContext db)
 
         var breaks = workingHours?.Breaks.Select(b => new TimeRange(b.StartTime, b.EndTime)).ToList() ?? [];
 
+        var (defaultStart, defaultEnd) = DefaultWindow;
         return SlotCalculator.Calculate(
             service.DurationMinutes,
             workingHours?.StartTime, workingHours?.EndTime,
-            breaks, existingBookings, allowWithoutSchedule);
+            breaks, existingBookings, fallback, defaultStart, defaultEnd);
     }
 }
 

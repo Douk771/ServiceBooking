@@ -55,7 +55,8 @@ public class BookingsController(
         [FromQuery] string masterId,
         [FromQuery] Guid serviceId,
         [FromQuery] DateOnly date,
-        [FromQuery] bool manual = false)
+        [FromQuery] bool manual = false,
+        [FromQuery] bool extendedHours = false)
     {
         // `manual` is client-supplied, so only honor it once we've independently verified the caller
         // actually works in THIS company — same trust bar BookingsController.Create uses for
@@ -77,8 +78,12 @@ public class BookingsController(
         if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
             return BadRequest("Master does not work for this company");
 
-        var allowWithoutSchedule = manual && isStaff;
-        var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, serviceId, date, allowWithoutSchedule);
+        // ARCHITECTURE_CYCLE6.md §46.3: manual+staff -> DefaultWindow; manual+extendedHours+staff ->
+        // WholeDay; anything else (including extendedHours without manual, or a non-staff caller) -> None.
+        var fallback = manual && isStaff
+            ? (extendedHours ? ScheduleFallback.WholeDay : ScheduleFallback.DefaultWindow)
+            : ScheduleFallback.None;
+        var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, serviceId, date, fallback);
         return Ok(slots);
     }
 
@@ -270,7 +275,7 @@ public class BookingsController(
             var breaks = workingHours?.Breaks.Select(b => new TimeRange(b.StartTime, b.EndTime)).ToList() ?? [];
 
             slotOk = SlotCalculator.IsSlotAllowed(dto.StartTime, service.DurationMinutes,
-                workingHours?.StartTime, workingHours?.EndTime, breaks, existingBookings, allowWithoutSchedule: false);
+                workingHours?.StartTime, workingHours?.EndTime, breaks, existingBookings, ScheduleFallback.None);
         }
 
         if (!slotOk) return Conflict("Time slot is no longer available");

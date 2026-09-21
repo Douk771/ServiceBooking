@@ -638,4 +638,51 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateTimeZoneDatabase("Production");
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public void ParseDefaultWorkWindow_ValidConfig_ReturnsParsedTimes()
+    {
+        var config = BuildConfig(new()
+        {
+            ["Booking:DefaultWorkWindow:Start"] = "09:00",
+            ["Booking:DefaultWorkWindow:End"] = "21:00",
+        });
+
+        var (start, end) = DeploymentSafetyChecks.ParseDefaultWorkWindow(config);
+
+        start.Should().Be(new TimeOnly(9, 0));
+        end.Should().Be(new TimeOnly(21, 0));
+    }
+
+    [Fact]
+    public void ParseDefaultWorkWindow_Missing_Throws()
+    {
+        var config = BuildConfig(new());
+        var act = () => DeploymentSafetyChecks.ParseDefaultWorkWindow(config);
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void ParseDefaultWorkWindow_Unparsable_Throws()
+    {
+        var config = BuildConfig(new()
+        {
+            ["Booking:DefaultWorkWindow:Start"] = "not-a-time",
+            ["Booking:DefaultWorkWindow:End"] = "21:00",
+        });
+        var act = () => DeploymentSafetyChecks.ParseDefaultWorkWindow(config);
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void ParseDefaultWorkWindow_StartAfterEnd_Throws()
+    {
+        var config = BuildConfig(new()
+        {
+            ["Booking:DefaultWorkWindow:Start"] = "22:00",
+            ["Booking:DefaultWorkWindow:End"] = "09:00",
+        });
+        var act = () => DeploymentSafetyChecks.ParseDefaultWorkWindow(config);
+        act.Should().Throw<InvalidOperationException>();
+    }
 }

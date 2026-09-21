@@ -320,4 +320,31 @@ public static class DeploymentSafetyChecks
                 "Dockerfile.", ex);
         }
     }
+
+    /// <summary>
+    /// Parses <c>Booking:DefaultWorkWindow</c> (ARCHITECTURE_CYCLE6.md §46.2) — the fallback window
+    /// staff get on a date with no schedule row and <c>manual=true</c> but no <c>extendedHours</c>.
+    /// Pure and DI-free like the rest of this class, so it's testable without a host. An unparsable or
+    /// inverted value must fail the deployment loudly (CURRENT_STATE.md §6 convention: never fall back
+    /// silently to a whole day) rather than surface as "the grid looks wrong" days later.
+    /// </summary>
+    public static (TimeOnly Start, TimeOnly End) ParseDefaultWorkWindow(IConfiguration configuration)
+    {
+        var startRaw = configuration["Booking:DefaultWorkWindow:Start"];
+        var endRaw = configuration["Booking:DefaultWorkWindow:End"];
+
+        if (string.IsNullOrWhiteSpace(startRaw) || string.IsNullOrWhiteSpace(endRaw))
+            throw new InvalidOperationException(
+                "Booking:DefaultWorkWindow:Start/End are missing. Set both in appsettings.json.");
+
+        if (!TimeOnly.TryParse(startRaw, out var start) || !TimeOnly.TryParse(endRaw, out var end))
+            throw new InvalidOperationException(
+                $"Booking:DefaultWorkWindow:Start/End could not be parsed as times (\"{startRaw}\"/\"{endRaw}\").");
+
+        if (start >= end)
+            throw new InvalidOperationException(
+                $"Booking:DefaultWorkWindow:Start ({start}) must be before End ({end}).");
+
+        return (start, end);
+    }
 }
