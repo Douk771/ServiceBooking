@@ -176,11 +176,15 @@ public sealed class NotificationDispatchTask(
                 });
             }
 
-            // I7: summed unconditionally, AFTER the loop — even a group interrupted mid-pause by the
-            // budget still contributes whatever it had already sent/failed before returning, instead of a
-            // Parallel.ForEachAsync-thrown OperationCanceledException wiping every group's contribution
-            // from perGroupResults (which is how a partial pass used to report "sent 0" while messages had
-            // actually gone out).
+            // I7: summed unconditionally, AFTER the loop. A group interrupted mid-pause by the budget now
+            // ALSO reaches this line with a normal return (ProcessChannelGroupAsync catches its own
+            // budget cancellation around the pause and breaks its loop instead of throwing) — so every
+            // group's contribution, including the one the budget cut off, is in perGroupResults by the
+            // time this runs. Before that fix, an uncaught OperationCanceledException from the pause
+            // would unwind out of ProcessChannelGroupAsync WITHOUT reaching `perGroupResults.Add(result)`
+            // above, silently dropping exactly the group that had the most reason to be counted (the one
+            // that was actively sending when the budget ran out) — every OTHER group still summed
+            // correctly, so this was never a "sent 0" bug, just a quietly short one.
             sent = perGroupResults.Sum(r => r.Sent);
             failed = perGroupResults.Sum(r => r.Failed);
 
@@ -431,10 +435,25 @@ public sealed class NotificationDispatchTask(
             await scopedDb.SaveChangesAsync(runnerCt);
 
             // B5: the ONE place besides the loop-top check where the budget is actually consulted
-            // (§26.1) — between rows, during the antiban pause, never mid-send.
+            // (§26.1) — between rows, during the antiban pause, never mid-send. Caught locally, not left
+            // to propagate: an unhandled OperationCanceledException here would unwind straight out of
+            // this method WITHOUT returning (sentCount, failedCount) — the caller's
+            // `perGroupResults.Add(result)` (only reached on a normal return) never runs, so THIS group's
+            // already-committed sends/failures would silently vanish from the pass's own summary even
+            // though every row was correctly recorded in the database. Caught, not avoided: the budget
+            // must still end the loop exactly here, same as the loop-top check does.
             var isLastInGroup = i == rowIds.Count - 1;
             if (!isLastInGroup)
-                await delay.DelayAsync(pause.Next(opts.PauseMinMs, opts.PauseMaxMs), budgetCt);
+            {
+                try
+                {
+                    await delay.DelayAsync(pause.Next(opts.PauseMinMs, opts.PauseMaxMs), budgetCt);
+                }
+                catch (OperationCanceledException) when (budgetCt.IsCancellationRequested)
+                {
+                    break; // budget exhausted mid-pause — remainder stays Pending, same as the loop-top check
+                }
+            }
         }
 
         return (sentCount, failedCount);
