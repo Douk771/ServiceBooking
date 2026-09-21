@@ -39,7 +39,8 @@ public class PricingController(PricingCatalogCache cache) : ControllerBase
     [Authorize(Roles = "SuperAdmin")]
     public async Task<ActionResult<PublicPricingDto>> GetPricingPreview(CancellationToken ct)
     {
-        var (dto, _) = await cache.GetAsync(ct);
+        var (dto, _) = await cache.BuildFreshAsync(ct);
+        Response.Headers.CacheControl = "no-store";
         return Ok(dto);
     }
 }
