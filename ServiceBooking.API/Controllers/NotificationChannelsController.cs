@@ -160,9 +160,10 @@ public class NotificationChannelsController(
         if (string.IsNullOrEmpty(encryptionKey))
         {
             // Defensive only — DeploymentSafetyChecks.ValidateNotificationSecrets already refuses to
-            // start the app with Notifications:Enabled and no key outside Development, so this branch is
-            // reachable only in a dev/test process running with Enabled=false, where connect shouldn't
-            // realistically be exercised in the first place.
+            // start the app with a real provider configured and no key outside Development (I4: gated on
+            // Provider, not the removed Notifications:Enabled), so this branch is reachable only in a
+            // dev/test process on the "logging" provider, where Connect shouldn't realistically be
+            // exercised in the first place.
             logger.LogError("Notifications:EncryptionKey is not configured; cannot store the provider secret for channel {ChannelId}", channel.Id);
             return StatusCode(503, "Сервис подключения временно недоступен, попробуйте позже");
         }
@@ -196,7 +197,13 @@ public class NotificationChannelsController(
         ProvisionedInstance instance;
         try
         {
-            instance = await provisioning.CreateInstanceAsync(HttpContext.RequestAborted);
+            // N4: deliberately NOT HttpContext.RequestAborted — an owner closing the tab must not race
+            // (and possibly win against) the provider having already created a BILLED instance. If the
+            // browser cancels, this call keeps running to completion server-side regardless (nothing
+            // downstream is awaiting RequestAborted either); the only remaining boundary is
+            // HttpClient.Timeout (§28.1's "green-api" named client), same as every other necessary-but-
+            // irreversible provider call in this cycle.
+            instance = await provisioning.CreateInstanceAsync(CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -215,35 +222,27 @@ public class NotificationChannelsController(
         channel.ProviderSecretKeyId = SecretProtector.ComputeKeyId(SecretProtector.DecodeKey(encryptionKey));
         await db.SaveChangesAsync();
 
-        // Lower bound of our own antiban pause range (§29.1 step 2) — best effort, a failure here must
-        // not undo a binding that already succeeded at the provider.
+        // N5: ONE setSettings call for the antiban send delay (§29.1 step 2) AND the webhook (I2, §32) —
+        // GREEN-API restarts the instance on every settings change, so two separate calls meant the owner
+        // watched it restart twice, back-to-back, right before the QR code was shown. Best effort as a
+        // whole: a failure here must not undo a binding that already succeeded at the provider. webhookUrl
+        // is left null (webhook fields omitted from the body entirely) when no webhook token is configured
+        // (dev/test with the logging provider, or Production before T4-D2 wires the .env variable) rather
+        // than registering a callback URL nobody can authenticate against. Deliberately NOT
+        // HttpContext.RequestAborted, same reasoning as CreateInstanceAsync above — this call still
+        // mutates the SAME billed instance, and a closed tab must not race it either.
+        var webhookUrl = string.IsNullOrEmpty(options.Value.WebhookToken)
+            ? null
+            : $"https://{NotificationTemplateValidator.OwnDomain}/api/notifications/provider-webhook/{options.Value.WebhookToken}";
         try
         {
-            await provisioning.SetSendDelayAsync(
+            await provisioning.ConfigureInstanceAsync(
                 new ChannelCredentials(instance.InstanceId, instance.Token), options.Value.Dispatch.PauseMinMs,
-                HttpContext.RequestAborted);
+                webhookUrl, CancellationToken.None);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "SetSendDelay failed for channel {ChannelId} (non-critical)", channel.Id);
-        }
-
-        // I2: without this, the provider never calls back at all (§32) — best effort, same reasoning as
-        // SetSendDelayAsync above. Skipped when no webhook token is configured (dev/test with the
-        // logging provider, or Production before T4-D2 wires the .env variable) rather than registering
-        // a callback URL nobody can authenticate against.
-        if (!string.IsNullOrEmpty(options.Value.WebhookToken))
-        {
-            var webhookUrl = $"https://{NotificationTemplateValidator.OwnDomain}/api/notifications/provider-webhook/{options.Value.WebhookToken}";
-            try
-            {
-                await provisioning.ConfigureWebhookAsync(
-                    new ChannelCredentials(instance.InstanceId, instance.Token), webhookUrl, HttpContext.RequestAborted);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "ConfigureWebhook failed for channel {ChannelId} (non-critical)", channel.Id);
-            }
+            logger.LogWarning(ex, "ConfigureInstance (send delay/webhook) failed for channel {ChannelId} (non-critical)", channel.Id);
         }
 
         return Accepted(new ConnectResponseDto(ChannelState.Connecting, RefreshAfterSeconds: 3));
@@ -409,6 +408,11 @@ public class NotificationChannelsController(
         channel.ReplacedByChannelId = newChannel.Id;
         channel.State = ChannelState.Replaced;
         channel.LastStateReason = ChannelStateReason.ReplacedAfterBan;
+        // N6: the paid period already moved to newChannel (captured above) — left set here, this
+        // terminal row would still read as ChannelPaymentState.Of(...) == Paid, and an admin summary
+        // that flags "expires within 7 days" would count the SAME paid period twice, once per channel.
+        channel.PaidFromUtc = null;
+        channel.PaidUntilUtc = null;
         db.ChannelStateEvents.Add(new ChannelStateEvent
         {
             Id = Guid.NewGuid(), ChannelId = channel.Id,

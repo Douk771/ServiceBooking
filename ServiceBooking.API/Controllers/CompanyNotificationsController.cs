@@ -211,9 +211,14 @@ public class CompanyNotificationsController(
         var rows = await query.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id)
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
 
+        // N8/N9: ProfileController.DeleteAccount scrubs a Cancelled row's RecipientPhone to an empty
+        // string (never a fake sentinel like "deleted", which PhoneDisplayMask.Mask would garble into
+        // something that LOOKS like a real masked phone, e.g. "+de***ed") — an empty RecipientPhone
+        // never happens on an ordinary row (every row is queued knowing who to send to), so it uniquely
+        // identifies a scrubbed one and gets its own, honest label instead of running through the masker.
         var items = rows.Select(n => new NotificationLogItemDto(
             n.Id, n.CreatedAt, n.Type, NotificationTexts.TypeText(n.Type),
-            n.RecipientName, PhoneDisplayMask.Mask(n.RecipientPhone),
+            n.RecipientName, string.IsNullOrEmpty(n.RecipientPhone) ? "получатель удалён" : PhoneDisplayMask.Mask(n.RecipientPhone),
             n.Status, NotificationTexts.StatusText(n.Status, n.Reason, n.ChannelId, n.ReadAtUtc, n.AttemptCount),
             n.BookingId, n.VisitStartUtc, n.SentAtUtc, n.ChannelId)).ToList();
 

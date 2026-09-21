@@ -113,27 +113,19 @@ public sealed class GreenApiProvisioning(
         return GreenApiStateInstanceParser.Parse(ReadString(body, "stateInstance"));
     }
 
-    public async Task SetSendDelayAsync(ChannelCredentials credentials, int milliseconds, CancellationToken ct)
+    public async Task ConfigureInstanceAsync(ChannelCredentials credentials, int sendDelayMilliseconds, string? webhookUrl, CancellationToken ct)
     {
         var opts = options.Value;
         var (uri, safeLabel) = GreenApiUrls.SetSettings(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
-        try
-        {
-            await SendAsync(HttpMethod.Post, uri, safeLabel, ct, new { delaySendMessagesMilliseconds = milliseconds });
-        }
-        catch (GreenApiProvisioningException ex)
-        {
-            // §29.1: a failed delay setting does not roll back the connect flow — it only means the
-            // provider's own throttle stays at its default instead of our 5s floor.
-            logger.LogWarning(ex, "Setting GREEN-API send delay failed, continuing without it");
-        }
-    }
 
-    public async Task ConfigureWebhookAsync(ChannelCredentials credentials, string webhookUrl, CancellationToken ct)
-    {
-        var opts = options.Value;
-        var (uri, safeLabel) = GreenApiUrls.SetSettings(opts.GreenApi.ApiUrl, credentials.InstanceId, credentials.Token);
-        try
+        // N5: ONE setSettings call, not two back-to-back — GREEN-API restarts the instance on every
+        // settings change, so a separate delay call followed by a separate webhook call meant the owner
+        // watched the instance restart twice in a row right before the QR code appeared.
+        var body = new Dictionary<string, object>
+        {
+            ["delaySendMessagesMilliseconds"] = sendDelayMilliseconds,
+        };
+        if (webhookUrl is not null)
         {
             // I2: `webhookUrl` already carries our own path token — `webhookUrlToken` is deliberately
             // NOT set (see cycle report). `outgoingAPIMessageWebhook` is delivery-status callbacks for
@@ -141,21 +133,25 @@ public sealed class GreenApiProvisioning(
             // opposed to `outgoingMessageWebhook` (messages sent from the linked phone itself) — the
             // former is the one this cycle needs. `stateWebhook` is the `stateInstance` push
             // (ChannelStateMapper's second entry point, §32). Incoming-message webhooks stay off: this
-            // cycle never reads client replies.
-            await SendAsync(HttpMethod.Post, uri, safeLabel, ct, new
-            {
-                webhookUrl,
-                outgoingAPIMessageWebhook = "yes",
-                stateWebhook = "yes",
-                incomingWebhook = "no",
-            });
+            // cycle never reads client replies. Omitted entirely (not sent as empty/false) when
+            // webhookUrl is null, so this call never actively clears a webhook some other path set.
+            body["webhookUrl"] = webhookUrl;
+            body["outgoingAPIMessageWebhook"] = "yes";
+            body["stateWebhook"] = "yes";
+            body["incomingWebhook"] = "no";
+        }
+
+        try
+        {
+            await SendAsync(HttpMethod.Post, uri, safeLabel, ct, body);
         }
         catch (GreenApiProvisioningException ex)
         {
-            // §29.1/I2: best effort, same as SetSendDelayAsync — a failure here must not roll back an
-            // otherwise-successful Connect. ChannelHealthTask's own poll remains the fallback path for
+            // §29.1/I2: best effort — a failure here must not roll back an otherwise-successful Connect.
+            // A failed delay means the provider's own throttle stays at its default instead of our 5s
+            // floor; a failed webhook means ChannelHealthTask's own poll remains the fallback path for
             // state changes even if the webhook is never actually delivered for this instance.
-            logger.LogWarning(ex, "Setting GREEN-API webhook failed, continuing without it");
+            logger.LogWarning(ex, "Configuring GREEN-API instance settings (send delay/webhook) failed, continuing without it");
         }
     }
 
@@ -245,6 +241,20 @@ public sealed class GreenApiProvisioning(
             logger.LogInformation("GREEN-API request {SafeLabel} took {DurationMs}ms, status=(network failure)",
                 safeLabel, stopwatch.ElapsedMilliseconds);
             throw new GreenApiProvisioningException($"{safeLabel}: network failure.", ex);
+        }
+        // N11: HttpClient.Timeout (§28.1/§24.3's GreenApi:TimeoutSeconds) fires as TaskCanceledException,
+        // NOT HttpRequestException — the catch above never saw it, so a slow provider response propagated
+        // as a raw TaskCanceledException out of every method in this class, including
+        // GetPhoneNumberAsync/GetQrAsync, whose own doc comments promise "never throws, null on any
+        // failure". The `!ct.IsCancellationRequested` guard is what tells a genuine internal timeout
+        // apart from the CALLER's own token being cancelled (e.g. a caller that still legitimately wants
+        // OperationCanceledException to propagate) — only the former is converted here.
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            logger.LogInformation("GREEN-API request {SafeLabel} took {DurationMs}ms, status=(timeout)",
+                safeLabel, stopwatch.ElapsedMilliseconds);
+            throw new GreenApiProvisioningException($"{safeLabel}: request timed out.", ex);
         }
 
         using (response)

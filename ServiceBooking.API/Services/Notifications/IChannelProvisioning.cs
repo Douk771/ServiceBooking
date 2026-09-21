@@ -42,17 +42,25 @@ public interface IChannelProvisioning
     /// (B4). Returns <see langword="null"/> on any failure — never throws — so a channel that is
     /// genuinely Connected is not put at risk by a number lookup that couldn't complete this pass.</summary>
     Task<string?> GetPhoneNumberAsync(ChannelCredentials credentials, CancellationToken ct);
-    Task SetSendDelayAsync(ChannelCredentials credentials, int milliseconds, CancellationToken ct);
-
-    /// <summary>I2: without this, the provider never calls back at all — <c>noAccount</c>/delivery-status
-    /// events simply don't arrive, no matter how correct §32's endpoint is. Best effort, same as
-    /// <see cref="SetSendDelayAsync"/>: a failure here must not undo an otherwise-successful Connect.
-    /// <paramref name="webhookUrl"/> already carries this channel's webhook auth token as a PATH segment
-    /// (matching the existing <c>/provider-webhook/{token}</c> route) — GREEN-API's own
-    /// <c>webhookUrlToken</c> mechanism is deliberately NOT used (see cycle report I2): it arrives as an
-    /// <c>Authorization</c> HEADER, which the webhook controller doesn't (and, for a single shared
-    /// per-deployment token rather than a per-channel one, doesn't need to) verify.</summary>
-    Task ConfigureWebhookAsync(ChannelCredentials credentials, string webhookUrl, CancellationToken ct);
+    /// <summary>
+    /// N5 (review round 2): ONE <c>setSettings</c> call for everything the connect flow needs to
+    /// configure — the antiban send delay (§29.1 step 2) AND, when <paramref name="webhookUrl"/> is
+    /// given, the provider webhook (I2: without it the provider never calls back at all —
+    /// <c>noAccount</c>/delivery-status events simply don't arrive). Previously two separate calls;
+    /// GREEN-API restarts the instance on every settings change, so two calls meant two restarts
+    /// back-to-back right before the owner is shown the QR code — merged into one body instead.
+    /// Best effort as a whole: a failure here must not undo an otherwise-successful Connect.
+    /// <paramref name="webhookUrl"/> is <see langword="null"/> when no webhook token is configured
+    /// (dev/test with the logging provider, or Production before T4-D2 wires the .env variable) — in
+    /// that case the webhook fields are omitted from the body entirely rather than sent as empty/false,
+    /// so this call never actively clears a webhook some OTHER path configured. It already carries this
+    /// channel's webhook auth token as a PATH segment (matching the existing
+    /// <c>/provider-webhook/{token}</c> route) — GREEN-API's own <c>webhookUrlToken</c> mechanism is
+    /// deliberately NOT used (see cycle report I2): it arrives as an <c>Authorization</c> HEADER, which
+    /// the webhook controller doesn't (and, for a single shared per-deployment token rather than a
+    /// per-channel one, doesn't need to) verify.
+    /// </summary>
+    Task ConfigureInstanceAsync(ChannelCredentials credentials, int sendDelayMilliseconds, string? webhookUrl, CancellationToken ct);
     Task LogoutAsync(ChannelCredentials credentials, CancellationToken ct);
     Task<InstanceDeletion> DeleteInstanceAsync(string instanceId, CancellationToken ct);
 }

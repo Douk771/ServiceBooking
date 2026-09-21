@@ -9,10 +9,11 @@ public sealed class NotificationOptions
 {
     public const string SectionName = "Notifications";
 
-    /// <summary>Master switch. When false, the dispatch/health background tasks still run (cheaply —
-    /// there is never a Connected channel to act on) but no queue rows are ever produced, because
-    /// <c>NotificationGate</c> blocks postings the same way an unpaid/unassigned channel does.</summary>
-    public bool Enabled { get; set; }
+    // N10 (review round 2): the "Enabled" master switch that used to live here is gone. It never actually
+    // gated anything downstream (NotificationGate/the scheduled tasks never read it — the real gate is
+    // "is there a paid, connected channel"), and DeploymentSafetyChecks' fail-fast checks were fixed in
+    // I4 to key off Provider instead. A config key nobody reads is worse than no key: it looks like a
+    // switch and isn't one. Do not reintroduce it without wiring it to something real.
 
     /// <summary><c>"logging"</c> (default, safe everywhere) or <c>"green-api"</c> (real provider,
     /// requires a partner token and is refused outside Production by

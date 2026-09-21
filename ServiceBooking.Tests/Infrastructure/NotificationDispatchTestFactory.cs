@@ -65,12 +65,9 @@ public sealed class NotificationDispatchTestFactory(bool channelHealthEnabled = 
         builder.UseSetting("ScheduledTasks:channel-health:PeriodSeconds", "1");
         builder.UseSetting("ScheduledTasks:channel-health:MaxRunMinutes", "1");
 
-        // Notifications:Enabled gates NotificationGate's tariff check (AllowNotificationChannel) only
-        // through EffectivePlan, resolved from seeded DB state, not from this flag — but it is set so a
-        // test seeding a company/channel end-to-end sees the same "notifications are a real feature"
-        // configuration production would. Provider stays "logging" (US-35): no real GreenApi adapter is
-        // EVER reachable from this host regardless of the substitutions below.
-        builder.UseSetting("Notifications:Enabled", "true");
+        // N10 (review round 2): Notifications:Enabled is gone — it never gated anything downstream, and
+        // has been removed from NotificationOptions/appsettings.json. Provider stays "logging" (US-35):
+        // no real GreenApi adapter is EVER reachable from this host regardless of the substitutions below.
         builder.UseSetting("Notifications:Provider", "logging");
         // A valid, fixed 32-byte key so SecretProtector round-trips a seeded channel's ciphertext
         // (ChannelTestFactory.EncryptSecret uses the SAME literal) — not a real secret, this whole host

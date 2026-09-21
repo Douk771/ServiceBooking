@@ -581,14 +581,27 @@ app.UseSerilogRequestLogging(opts =>
         // "найди по traceId" in DEPLOY.md stops working, which is the whole point of this line existing.
         diagnosticContext.Set("traceId", Activity.Current?.Id ?? httpContext.TraceIdentifier);
         diagnosticContext.Set("userId", httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier));
-
-        // §32/§24 + B2/I5: both {token} path segments below embed recoverable secrets — the webhook
-        // token, and (for unsubscribe) a base64url phone number signed by UnsubscribeTokens. Left alone
-        // they'd sit in every request-completed line at Information, upstream of PhoneMaskingEnricher
-        // (which only scans Warning+). Setting "RequestPath" here overrides the template-bound value —
-        // Serilog's ForContext/diagnostic-context properties win over same-named template properties.
-        var maskedPath = MaskSensitiveRequestPath(httpContext.Request.Path.Value);
-        if (maskedPath is not null) diagnosticContext.Set("RequestPath", maskedPath);
+    };
+    // N1 (review round 2): RequestPath masking does NOT belong in EnrichDiagnosticContext — this
+    // middleware builds the final LogEvent's properties as collectedProperties.Concat([RequestMethod,
+    // RequestPath, StatusCode, Elapsed]) and applies them via AddOrUpdateProperty IN THAT ORDER, so the
+    // middleware's OWN RequestPath (added last) overwrites whatever EnrichDiagnosticContext set under the
+    // same name — a previous version of this code relied on diagnosticContext.Set("RequestPath", ...)
+    // winning, which it does not; §37's "ноль совпадений в логах приложения" was not actually met, and
+    // the unsubscribe token (a signed phone number) was reaching Information-level logs, upstream of
+    // PhoneMaskingEnricher (Warning+ only). GetMessageTemplateProperties exists in Serilog.AspNetCore
+    // specifically for this — it's what BUILDS RequestMethod/RequestPath/StatusCode/Elapsed in the first
+    // place, so masking here is authoritative rather than racing the middleware for the last write.
+    opts.GetMessageTemplateProperties = (httpContext, requestPath, elapsedMs, statusCode) =>
+    {
+        var maskedPath = MaskSensitiveRequestPath(requestPath) ?? requestPath;
+        return
+        [
+            new LogEventProperty("RequestMethod", new ScalarValue(httpContext.Request.Method)),
+            new LogEventProperty("RequestPath", new ScalarValue(maskedPath)),
+            new LogEventProperty("StatusCode", new ScalarValue(statusCode)),
+            new LogEventProperty("Elapsed", new ScalarValue(elapsedMs)),
+        ];
     };
 });
 

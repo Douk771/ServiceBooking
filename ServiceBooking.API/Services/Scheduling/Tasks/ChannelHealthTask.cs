@@ -305,7 +305,22 @@ public sealed class ChannelHealthTask(
     private async Task DeleteInstanceAsync(
         NotificationChannel channel, ChannelState targetState, ChannelStateReason reason, DateTime now, CancellationToken ct)
     {
-        if (channel.ProviderInstanceId is not { } instanceId) return;
+        if (channel.ProviderInstanceId is not { } instanceId)
+        {
+            // N4: a channel can land here (State == Connecting, past the QR timeout) with NO
+            // ProviderInstanceId at all — the connect request created an instance at the provider but the
+            // process crashed/was killed before the id was ever written to this row (the window between
+            // NotificationChannelsController.Connect's provider call and its next SaveChanges). There is
+            // nothing to delete — the id was never recorded, so it can't be — but the channel must not sit
+            // stuck in Connecting forever with no way back into the UI (CanConnect is false for
+            // Connecting, so Connect() would 409 on every retry). The instance itself is an accepted,
+            // unavoidable loss in this specific crash window; what's NOT acceptable is a channel row that
+            // can never be un-stuck through the product.
+            ChannelStateTransition.Apply(
+                db, channel, targetState, reason, "instance id was never recorded (process crash after provider create)", now);
+            await db.SaveChangesAsync(ct);
+            return;
+        }
 
         // Captured BEFORE the DB write clears them — §30.4 step 2's best-effort LogoutAsync still needs
         // the channel's OWN (still valid at the provider) credentials, even though step 1 below already

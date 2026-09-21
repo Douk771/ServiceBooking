@@ -249,23 +249,36 @@ public class ProfileController(
             booking.ClientDeleted = true;
         }
 
-        // I9: queued-but-not-yet-sent notification rows carry their own snapshot of the recipient's
+        // I9/N9: EVERY notification row for this person carries its own snapshot of the recipient's
         // phone/name/rendered text (§23.4), independent of the booking row anonymized above — cancelling
-        // the booking does NOT touch these. Left alone, a deleted account keeps receiving reminders and
-        // keeps its personal data sitting in Body/RecipientName/RecipientPhone. Cancelled and scrubbed
-        // the same way Disconnect/UnassignCompany already cancel Pending rows elsewhere in this cycle;
+        // the booking does NOT touch these, and neither does anonymizing only the Pending ones: a
+        // terminal row (Sent/Delivered/Failed/...) keeps exactly the same personal data, forever, right
+        // next to a booking that's already been scrubbed in the SAME method. Split by whether the row is
+        // still actionable:
+        //   - Pending: cancelled AND scrubbed (was already sent nowhere — nothing to preserve).
+        //   - Everything else (terminal): scrubbed ONLY — Status/Reason/timestamps/ProviderMessageId are
+        //     left untouched, since they're the delivery record itself (§23.4: "a permanent journal
+        //     entry"), not personal data about the recipient the way the phone/name/body are.
         // NotificationOptOut rows are deliberately NOT touched here — they are what stops the platform
         // from ever messaging this phone again, which is the opposite of what this endpoint should undo.
-        var pendingNotifications = await db.OutboundNotifications
-            .Where(n => n.Status == NotificationStatus.Pending &&
-                        (n.RecipientUserId == userId || (canonicalPhone != null && n.RecipientPhone == canonicalPhone)))
+        var allNotifications = await db.OutboundNotifications
+            .Where(n => n.RecipientUserId == userId || (canonicalPhone != null && n.RecipientPhone == canonicalPhone))
             .ToListAsync();
-        foreach (var notification in pendingNotifications)
+        foreach (var notification in allNotifications)
         {
-            notification.Status = NotificationStatus.Cancelled;
-            notification.Reason = NotificationReason.BookingOrAssignmentCancelled;
+            if (notification.Status == NotificationStatus.Pending)
+            {
+                notification.Status = NotificationStatus.Cancelled;
+                notification.Reason = NotificationReason.BookingOrAssignmentCancelled;
+            }
+
             notification.RecipientName = null;
-            notification.RecipientPhone = "deleted";
+            // N8: empty, not a fake sentinel like the previous "deleted" — PhoneDisplayMask.Mask would
+            // otherwise run it through the generic fallback and produce something that LOOKS like a real
+            // masked phone ("+de***ed"). Empty never happens on an ordinary row, so
+            // CompanyNotificationsController.GetLog's mapping keys off exactly this to show "получатель
+            // удалён" instead of masking it.
+            notification.RecipientPhone = string.Empty;
             notification.Body = string.Empty;
         }
 
@@ -318,6 +331,15 @@ public class ProfileController(
                 row.Status = NotificationStatus.Cancelled;
                 row.Reason = NotificationReason.BookingOrAssignmentCancelled;
             }
+
+            // N7: previously left standing — a company (someone ELSE's company, this person only bought
+            // the channel) stayed assigned to a channel that will never send again. Its settings screen
+            // would keep showing "салон привязан к каналу" for a channel that's now dead, and any booking
+            // event there would keep queuing Pending rows that just sit until they expire, instead of the
+            // company being told up front there is no usable channel (§23.2's NoUsableChannel gate).
+            var channelAssignments = await db.ChannelCompanyAssignments
+                .Where(a => a.ChannelId == ownedChannel.Id).ToListAsync();
+            db.ChannelCompanyAssignments.RemoveRange(channelAssignments);
         }
 
         // Step 5: company memberships are removed and Identity roles resynced — same lock this person's
