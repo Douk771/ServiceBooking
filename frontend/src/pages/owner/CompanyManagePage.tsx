@@ -473,9 +473,12 @@ function MembersTab({ companyId }: { companyId: string }) {
   const { data: companies } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
   const company = companies?.find((c) => c.id === companyId)
 
-  // Mirrors the seat-limit check in CompaniesController.AddMember (counts ALL members, owner
-  // included) — checked on click, before the owner spends time filling out the add-member form.
-  const atMemberLimit = !!company?.maxEmployees && (members?.length ?? 0) >= company.maxEmployees
+  // Cycle 5 (ARCHITECTURE_CYCLE5.md §56): maxEmployees is now the AGGREGATE seat cap across the
+  // whole billing account (all of the owner's companies), not a per-company limit. Comparing it
+  // to THIS company's members.length would under-count staff at the account's other companies and
+  // gate "add employee" too early. The server computes canAddEmployee with the same rule the 402
+  // uses, so that (not client arithmetic) is the only source of truth for gating the button.
+  const atMemberLimit = company?.canAddEmployee === false
 
   const addMut = useMutation({
     mutationFn: (d: { phone: string; firstName: string; lastName: string; role: string; bio: string; email: string }) =>
@@ -512,16 +515,16 @@ function MembersTab({ companyId }: { companyId: string }) {
           <Button size="sm" onClick={() => setShowAdd(true)} disabled={atMemberLimit}>
             <Icon name="plus" size={14} strokeWidth={2} /> Добавить
           </Button>
-          {company?.maxEmployees != null && (
+          {company?.accountSeatsLimit != null && (
             <p className="text-xs text-muted">
-              {members?.length ?? 0} / {company.maxEmployees} сотрудников
+              {company.accountSeatsUsed ?? 0} / {company.accountSeatsLimit} сотрудников суммарно по подписке
             </p>
           )}
         </div>
       </div>
       {atMemberLimit && (
         <p className="text-xs text-warning mb-4 -mt-2">
-          Достигнут лимит сотрудников по текущему тарифу — повысьте тариф, чтобы добавить ещё
+          Достигнут суммарный лимит сотрудников по подписке — повысьте тариф, чтобы добавить ещё
         </p>
       )}
       {removeError && <p className="text-sm text-danger mb-4 -mt-2">{removeError}</p>}

@@ -29,8 +29,20 @@ export interface Company {
   planAllowsOnlineBooking?: boolean
   planAllowsOnlinePayment?: boolean
   planAllowsPublicListing?: boolean
-  /** Seat cap for company members (owner included). Null/undefined means unlimited. */
+  /**
+   * @deprecated Cycle 5 (ARCHITECTURE_CYCLE5.md §56): this now means the AGGREGATE seat cap across
+   * the whole billing account's subscription, not a per-company limit. Comparing it against a
+   * single company's `members.length` under-counts staff at the account's other companies and will
+   * gate "add employee" too early. Do NOT use for that check — use `canAddEmployee` instead. Kept
+   * only for display of the raw limit number where explicitly labelled "суммарно".
+   */
   maxEmployees?: number | null
+  /** Employees used across the WHOLE billing account (all companies), null when not computed (e.g. anonymous catalog). */
+  accountSeatsUsed?: number | null
+  /** Aggregate seat limit across the whole billing account; null = unlimited. */
+  accountSeatsLimit?: number | null
+  /** Server-computed per the same rule as the 402 on add-member — use this to gate the "add employee" UI. */
+  canAddEmployee?: boolean | null
   /**
    * Server-computed aggregate over ALL of the company's reviews (not just the current page of
    * `GET /api/companies/{id}/reviews`) — cycle C fix for the QA-found regression where the average
