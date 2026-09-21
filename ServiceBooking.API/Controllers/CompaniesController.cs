@@ -98,7 +98,8 @@ public class CompaniesController(
             // there), never for staff — without this filter they'd show up in the public "book a
             // master" picker (audit Q6/US-12).
             .Where(cm => cm.CompanyId == id && cm.Company.IsActive &&
-                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner));
+                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner) &&
+                cm.ProvidesServices);
 
         if (serviceId.HasValue)
         {
@@ -139,10 +140,45 @@ public class CompaniesController(
             cm.Id, cm.UserId, cm.User.FirstName, cm.User.LastName,
             cm.User.PhoneNumber ?? "", cm.User.Email, cm.User.AvatarUrl, cm.Role.ToString(), cm.Bio,
             masterServices.Where(ms => ms.MasterId == cm.UserId).Select(ms => ms.ServiceId).ToList(),
-            cm.CommissionPercent
+            cm.CommissionPercent,
+            cm.ProvidesServices
         )).ToList();
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// US-62 (ARCHITECTURE_CYCLE6.md §40.3): only this company's owner (or SuperAdmin) may flip the
+    /// flag, and never for themselves via this endpoint's caller — a master can't hide themselves, and
+    /// turning the flag off with future bookings requires an explicit confirm.
+    /// </summary>
+    [HttpPut("{id:guid}/members/{memberId:guid}/provides-services")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProvidesServices(Guid id, Guid memberId, [FromBody] ProvidesServicesDto dto)
+    {
+        if (!await CanManageCompany(id)) return Forbid();
+
+        var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
+        if (member is null) return NotFound();
+
+        if (!dto.ProvidesServices && !dto.Confirm)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var futureBookingsCount = await db.Bookings.CountAsync(b =>
+                b.CompanyId == id && b.MasterId == member.UserId &&
+                b.Date >= today && b.Status != BookingStatus.Cancelled);
+
+            if (futureBookingsCount > 0)
+            {
+                return Conflict(
+                    $"У специалиста {futureBookingsCount} будущие записи. Они останутся в силе и в расписании, " +
+                    "но клиенты перестанут видеть его при записи. Повторите с подтверждением.");
+            }
+        }
+
+        member.ProvidesServices = dto.ProvidesServices;
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpPut("{id:guid}/members/{memberId:guid}/services")]
@@ -485,7 +521,8 @@ public class CompaniesController(
         // New members always start at 0 commission on this membership — same as before, just no longer
         // sourced from a value that could carry over from a different company (US-15).
         return Ok(new MemberDto(member.Id, user.Id, user.FirstName, user.LastName,
-            user.PhoneNumber ?? "", user.Email, user.AvatarUrl, dto.Role, dto.Bio, [], member.CommissionPercent));
+            user.PhoneNumber ?? "", user.Email, user.AvatarUrl, dto.Role, dto.Bio, [], member.CommissionPercent,
+            member.ProvidesServices));
     }
 
     [HttpPut("{id:guid}/members/{memberId:guid}/commission")]

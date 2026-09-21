@@ -11,8 +11,13 @@ public record MemberDto(
     string Role,
     string? Bio,
     List<Guid> ServiceIds,
-    decimal CommissionPercent
+    decimal CommissionPercent,
+    bool ProvidesServices
 );
+
+// US-62 (ARCHITECTURE_CYCLE6.md §40.3): confirm is required only when turning the flag off AND the
+// member has future bookings — turning it on never needs confirmation.
+public record ProvidesServicesDto(bool ProvidesServices, bool Confirm);
 
 public record AddMemberDto(
     string Phone,
