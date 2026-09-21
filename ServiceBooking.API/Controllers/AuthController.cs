@@ -41,8 +41,10 @@ public class AuthController(
 
         // US-26: the account is identified by the CANONICAL phone — otherwise "8 999..." and
         // "+7 999..." would register as two different accounts (the exact problem this history fixes).
-        if (!PhoneNormalizer.TryNormalize(dto.Phone, out var canonicalPhone))
-            return BadRequest("Phone number must contain 10 to 15 digits.");
+        // US-61/Q4 (ARCHITECTURE_CYCLE6.md §48.2 p.1): new accounts only accept the Russian format —
+        // temporary, one predicate (PhoneNormalizer.IsRussian) away from being lifted.
+        if (!PhoneNormalizer.TryNormalizeRussian(dto.Phone, out var canonicalPhone))
+            return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
 
         // Phone is the account identifier: it goes into UserName (which has Identity's unique index),
         // giving phone uniqueness for free. Email is optional.

@@ -477,8 +477,9 @@ public class CompaniesController(
         // US-26: search AND auto-create both use the canonical form — otherwise adding a colleague by
         // "8 999..." would silently create a second account for someone already registered as
         // "+7 999...".
-        if (!PhoneNormalizer.TryNormalize(dto.Phone, out var canonicalPhone))
-            return BadRequest("Phone number must contain 10 to 15 digits.");
+        // US-61/Q4 (§48.2 p.3): adding a staff member is a new-data entry point too.
+        if (!PhoneNormalizer.TryNormalizeRussian(dto.Phone, out var canonicalPhone))
+            return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
 
         // Accounts are identified by phone (UserName == phone), so look the member up by phone.
         var user = await userManager.FindByNameAsync(canonicalPhone);

@@ -195,8 +195,10 @@ public class BookingsController(
         var guestPhone = dto.GuestPhone;
         if (!string.IsNullOrEmpty(guestPhone))
         {
-            if (!PhoneNormalizer.TryNormalize(guestPhone, out var canonicalGuestPhone))
-                return BadRequest("Phone number must contain 10 to 15 digits.");
+            // US-61/Q4 (§48.2 p.4): a new guest phone (self-booking or staff recording a walk-in) only
+            // accepts the Russian format.
+            if (!PhoneNormalizer.TryNormalizeRussian(guestPhone, out var canonicalGuestPhone))
+                return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
             guestPhone = canonicalGuestPhone;
         }
 

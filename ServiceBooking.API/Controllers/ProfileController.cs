@@ -160,8 +160,10 @@ public class ProfileController(
             return BadRequest("Неверный текущий пароль");
 
         // US-26: the canonical form is what's stored, never what the user typed — see PhoneNormalizer.
-        if (!PhoneNormalizer.TryNormalize(dto.NewPhone, out var canonicalPhone))
-            return BadRequest("Phone number must contain 10 to 15 digits.");
+        // US-61/Q4 (§48.2 p.2): changing to a NEW number only accepts the Russian format; an existing
+        // foreign number already on the account is untouched by this check (§48.4).
+        if (!PhoneNormalizer.TryNormalizeRussian(dto.NewPhone, out var canonicalPhone))
+            return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
 
         if (user.PhoneNumber != canonicalPhone)
         {
