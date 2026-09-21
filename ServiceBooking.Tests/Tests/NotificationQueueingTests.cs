@@ -95,9 +95,17 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
 
         // A visit only 90 minutes away — well under the 600-minute threshold. Date/StartTime are the
         // company's own LOCAL wall clock (US-30), so "soon" (a UTC instant) must be converted through the
-        // company's own time zone, not assumed to be UTC — this company was NOT created with Moscow's
-        // zone (AnyCityIdAsync picks whichever seeded city comes first, e.g. Barnaul/UTC+7).
-        var (date, start) = LocalDateTimeIn(company.TimeZoneId, DateTime.UtcNow.AddMinutes(90));
+        // company's own time zone — NOT assumed to be UTC. Pinned to a fixed UTC-offset zone here
+        // (rather than trusting whichever city AnyCityIdAsync happens to pick, e.g. Barnaul/UTC+7)
+        // because BookingsController.IsBookableMoment compares Date/StartTime against DateTime.UtcNow
+        // directly, with no timezone conversion of its own (a known, pre-existing limitation —
+        // ARCHITECTURE_CYCLE6.md §45.5, "Server lives in UTC" — not something this test is meant to
+        // exercise). With a non-UTC company zone, a run landing near local midnight can shift Date to
+        // "tomorrow" relative to the server's own UTC "today" and get a spurious 409 from that gate —
+        // flaky depending only on wall-clock time at test-run time, not on any behavior under test here.
+        // Pinning the company to UTC makes the local and "gate" frames of reference identical always.
+        await SetCompanyTimeZoneAsync(company.Id, TestTimeZoneId);
+        var (date, start) = LocalDateTimeIn(TestTimeZoneId, DateTime.UtcNow.AddMinutes(90));
 
         // Staff manual booking (Q7): bypasses the working-hours grid, which this test doesn't set up for
         // "today" — the only thing under test is the cancel-vs-threshold gate, not slot availability.
@@ -134,7 +142,11 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         createResponse.EnsureSuccessStatusCode();
         var booking = (await createResponse.Content.ReadJsonAsync<BookingDto>())!;
 
-        var (newDate, newStart) = LocalDateTimeIn(company.TimeZoneId, DateTime.UtcNow.AddMinutes(90));
+        // Same UTC-pinning as NTF-Q003 above, and for the same reason: IsBookableMoment compares against
+        // DateTime.UtcNow with no timezone conversion, so a non-UTC company zone makes this test's
+        // pass/fail depend on what time of day (UTC) it happens to run.
+        await SetCompanyTimeZoneAsync(company.Id, TestTimeZoneId);
+        var (newDate, newStart) = LocalDateTimeIn(TestTimeZoneId, DateTime.UtcNow.AddMinutes(90));
         var rescheduleResponse = await AuthedClient(owner.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/reschedule",
             new RescheduleDto(newDate, newStart));
         rescheduleResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -196,6 +208,18 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         });
         await db.SaveChangesAsync();
         return channel;
+    }
+
+    // Used by NTF-Q003/NTF-Q004 to remove wall-clock-time flakiness — see the comments at each call site.
+    private const string TestTimeZoneId = "Etc/UTC";
+
+    private async Task SetCompanyTimeZoneAsync(Guid companyId, string timeZoneId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var company = await db.Companies.FirstAsync(c => c.Id == companyId);
+        company.TimeZoneId = timeZoneId;
+        await db.SaveChangesAsync();
     }
 
     private async Task SetMinLeadMinutesAsync(Guid companyId, int minLeadMinutes, int reminderLeadMinutes)
