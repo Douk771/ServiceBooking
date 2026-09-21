@@ -1,3 +1,7 @@
 User-agent: *
 Allow: /privacy
 Allow: /terms
+Allow: /terms-owner
+Allow: /pdn-consent
+Allow: /channel-risk
+Allow: /offer-channel

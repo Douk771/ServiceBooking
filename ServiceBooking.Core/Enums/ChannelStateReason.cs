@@ -42,4 +42,11 @@ public enum ChannelStateReason
     /// something the owner did, and needs its own wording (§24.5, §26.4) and its own recovery path: the
     /// instance is decommissioned outright (nothing usable was ever readable again) so Connect reopens.</summary>
     SecretUnavailable,
+
+    /// <summary>T5-B13 (ARCHITECTURE_CYCLE5.md §52.2, ч. 5 ст. 18 152-ФЗ): the provider's response to
+    /// instance creation reported a server country/region that does not match
+    /// <c>Notifications:GreenApi:ServerCountry</c> — the instance is never wired up for use. A platform-
+    /// side misconfiguration, not something the owner did or can retry their way out of; appended at the
+    /// end, this enum is append-only (see <see cref="SecretUnavailable"/>'s own note).</summary>
+    ServerCountryMismatch,
 }

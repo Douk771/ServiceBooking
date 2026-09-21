@@ -12,6 +12,11 @@ export interface CreateBookingPayload {
   guestPhone?: string
   guestEmail?: string
   captchaToken?: string
+  /** API_CONTRACT_CYCLE5.md §46.1 (BREAKING № 5) — US-78. Defaults to `false` server-side when
+   *  omitted, which is exactly today's behaviour, so this is safe to leave off for staff bookings. */
+  bookedForOther?: boolean
+  /** Required (400 otherwise) when `bookedForOther` is `true`. */
+  guardianConfirmation?: { textVersion: string; confirmed: true }
 }
 
 export const bookingsApi = {

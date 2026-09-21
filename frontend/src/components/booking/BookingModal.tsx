@@ -11,7 +11,9 @@ import { Icon } from '../ui/Icon'
 import { Avatar } from '../ui/Avatar'
 import { Link } from 'react-router-dom'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
+import { useLegalText } from '../../hooks/useLegalText'
 import { getBookingErrorMessage } from '../../utils/bookingError'
+import { findSection, splitLegalSections } from '../../utils/legalSections'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
 import type { Company, Service } from '../../types'
 
@@ -43,6 +45,17 @@ export function BookingModal({ service, company, onClose }: Props) {
   const [guestEmail, setGuestEmail] = useState('')
   const [notes, setNotes] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
+  const [bookedForOther, setBookedForOther] = useState(false)
+
+  // API_CONTRACT_CYCLE5.md §46.3 — the notice under the booking button is now informational (ст. 18),
+  // not a consent checkbox; §41.2 — the guardian-confirmation checkbox text (D12).
+  const { data: bookingNotice } = useLegalText('BookingNotice')
+  const { data: guardianText } = useLegalText('GuardianConfirmation')
+  const bookingNoticeSections = bookingNotice ? splitLegalSections(bookingNotice.contentHtml) : []
+  const bookingNoticeShort = findSection(bookingNoticeSections, 'Короткая строка')
+  const bookingNoticeFull = findSection(bookingNoticeSections, 'Полный текст')
+  const guardianSections = guardianText ? splitLegalSections(guardianText.contentHtml) : []
+  const guardianRevealText = findSection(guardianSections, 'Текст, который появляется после отметки')
 
   // Load masters that can perform this service
   const { data: masters, isLoading: mastersLoading } = useQuery({
@@ -100,6 +113,11 @@ export function BookingModal({ service, company, onClose }: Props) {
         guestPhone: isAuthenticated() ? undefined : guestPhone,
         guestEmail: isAuthenticated() ? undefined : guestEmail,
         captchaToken: isAuthenticated() ? undefined : captchaToken || undefined,
+        // US-78 — §46.1: omitted (falsy) is exactly today's behaviour; sent only when the person
+        // ticked "записываю другого человека", and only with a confirmed guardian text version.
+        bookedForOther: bookedForOther || undefined,
+        guardianConfirmation:
+          bookedForOther && guardianText ? { textVersion: guardianText.version, confirmed: true } : undefined,
       }),
     onSuccess: () => setStep('done'),
   })
@@ -315,13 +333,32 @@ export function BookingModal({ service, company, onClose }: Props) {
                 </div>
               )}
 
+              {/* US-78, §46.1 — a single checkbox both flags `bookedForOther` and stands as the
+                  guardian/representative confirmation itself; no second action is asked for. */}
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 mt-0.5 rounded accent-gold"
+                  checked={bookedForOther}
+                  onChange={(e) => setBookedForOther(e.target.checked)}
+                />
+                <span className="text-[13px] text-ink-soft leading-snug">Я записываю другого человека</span>
+              </label>
+              {bookedForOther && guardianRevealText && (
+                <div
+                  className="legal-content -mt-2 rounded-xl bg-cream-deep px-3.5 py-2.5 text-xs text-ink-soft leading-[1.6] [&_p]:mb-1.5 last:[&_p]:mb-0 [&_a]:text-gold [&_a]:hover:text-gold-dark"
+                  dangerouslySetInnerHTML={{ __html: guardianRevealText.html }}
+                />
+              )}
+
               <Button
                 size="lg"
                 loading={mutation.isPending}
                 onClick={() => mutation.mutate()}
                 disabled={
                   (!isAuthenticated() && (!guestName || !guestPhone)) ||
-                  (!isAuthenticated() && smartCaptchaEnabled && !captchaToken)
+                  (!isAuthenticated() && smartCaptchaEnabled && !captchaToken) ||
+                  (bookedForOther && !guardianText)
                 }
                 className="w-full"
               >
@@ -340,15 +377,41 @@ export function BookingModal({ service, company, onClose }: Props) {
                   </Link>
                 </p>
               )}
-              {/* US-33 п. 1 — service messages about the booking need no separate opt-in checkbox, but
-                  the client must be told they'll arrive in WhatsApp from the salon (guest path included). */}
-              <p className="text-center text-xs text-muted -mt-1.5">
-                Оставляя номер телефона, вы получите сервисные сообщения о записи в WhatsApp от салона. Подробнее — в{' '}
-                <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
-                  политике обработки персональных данных
-                </Link>
-                .
-              </p>
+
+              {/* API_CONTRACT_CYCLE5.md §46.3 — informational notice под ст. 18, not a consent
+                  checkbox: who the operator is, purposes, legal basis, who the data goes to (named).
+                  Falls back to the whole fetched text if the "short line" section isn't found, so
+                  nothing silently disappears if the heading wording changes during legal review. */}
+              <div className="text-center text-xs text-muted -mt-1.5">
+                {bookingNoticeShort || bookingNoticeFull ? (
+                  <>
+                    <div
+                      className="legal-content [&_a]:text-gold [&_a]:hover:text-gold-dark [&_p]:mb-0"
+                      dangerouslySetInnerHTML={{ __html: (bookingNoticeShort ?? bookingNoticeFull)!.html }}
+                    />
+                    {bookingNoticeFull && bookingNoticeShort && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-gold hover:text-gold-dark inline">Подробнее</summary>
+                        <div
+                          className="legal-content text-left mt-2 [&_p]:mb-2 [&_a]:text-gold [&_a]:hover:text-gold-dark"
+                          dangerouslySetInnerHTML={{ __html: bookingNoticeFull.html }}
+                        />
+                      </details>
+                    )}
+                  </>
+                ) : (
+                  // §33 п. 1 fallback while the text hasn't loaded yet or the manifest is unreachable —
+                  // still names WhatsApp and links to the policy, never a blank notice.
+                  <p>
+                    Оставляя номер телефона, вы получите сервисные сообщения о записи в WhatsApp от салона. Подробнее
+                    — в{' '}
+                    <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
+                      политике обработки персональных данных
+                    </Link>
+                    .
+                  </p>
+                )}
+              </div>
 
               {mutation.isError && (
                 <p className="text-sm text-danger text-center">{getBookingErrorMessage(mutation.error)}</p>

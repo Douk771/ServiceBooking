@@ -13,6 +13,8 @@ import { EmbedPage } from './pages/EmbedPage'
 import { CabinetPage } from './pages/CabinetPage'
 import { CompanyManagePage } from './pages/owner/CompanyManagePage'
 import { ProfilePage } from './pages/ProfilePage'
+import { ConsentsPage } from './pages/ConsentsPage'
+import { SubjectRequestPage } from './pages/SubjectRequestPage'
 import { AdminPage } from './pages/AdminPage'
 import { LegalDocumentPage } from './pages/LegalDocumentPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
@@ -20,6 +22,7 @@ import { DeleteAccountPage } from './pages/DeleteAccountPage'
 import { Footer } from './components/layout/Footer'
 import { ConsentGate } from './components/legal/ConsentGate'
 import { LegalUpdateBanner } from './components/legal/LegalUpdateBanner'
+import { OwnerTermsGateModal } from './components/legal/OwnerTermsGateModal'
 import { legalApi } from './api/legal'
 import { useAuthStore } from './store/authStore'
 import { useLegalStore } from './store/legalStore'
@@ -31,10 +34,23 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
   return <>{children}</>
 }
 
-// Routes reachable while a "Material" legal-document change is pending acceptance (US-37 п. 4,
-// US-39 п. 9) — the same set the backend allow-lists in API_CONTRACT.md §0.4, minus the auth/health
-// endpoints that have no frontend page of their own.
-const CONSENT_GATE_BYPASS_PATHS = ['/privacy', '/terms', '/profile/delete', '/u/']
+// Routes reachable while a "Material" change to a GLOBAL-gate document is pending acceptance
+// (API_CONTRACT_CYCLE5.md §41, §48.4) — the same set the backend allow-lists, minus the auth/health
+// endpoints that have no frontend page of their own. Owner-scope (`TermsOwner`) documents don't need
+// an entry here: that gate never covers the screen (§42.2), so `OwnerTermsGateModal` handles it
+// separately from anywhere.
+const CONSENT_GATE_BYPASS_PATHS = [
+  '/privacy',
+  '/terms',
+  '/terms-owner',
+  '/pdn-consent',
+  '/channel-risk',
+  '/offer-channel',
+  '/data-request',
+  '/profile/delete',
+  '/profile/consents',
+  '/u/',
+]
 
 /**
  * Owns the single `legal-consent-status` query for the whole authenticated session (T-F2). Renders
@@ -135,6 +151,14 @@ export default function App() {
                       }
                     />
                     <Route
+                      path="/profile/consents"
+                      element={
+                        <ProtectedRoute>
+                          <ConsentsPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
                       path="/profile/delete"
                       element={
                         <ProtectedRoute>
@@ -151,14 +175,22 @@ export default function App() {
                       }
                     />
                     <Route path="/u/:token" element={<UnsubscribePage />} />
+                    <Route path="/data-request" element={<SubjectRequestPage />} />
                     <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
-                    <Route path="/terms" element={<LegalDocumentPage type="Terms" />} />
+                    <Route path="/terms" element={<LegalDocumentPage type="TermsClient" />} />
+                    <Route path="/terms-owner" element={<LegalDocumentPage type="TermsOwner" />} />
+                    <Route path="/pdn-consent" element={<LegalDocumentPage type="PdnConsent" />} />
+                    <Route path="/channel-risk" element={<LegalDocumentPage type="ChannelRiskNotice" />} />
+                    {/* §43 — the channel offer (D9) is an appendix inside TermsOwner, not a document
+                        of its own; this is a redirect, not a page. */}
+                    <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
                     {/* Legacy redirects */}
                     <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
                     <Route path="/owner" element={<Navigate to="/cabinet" replace />} />
                   </Routes>
                   <Footer />
                 </LegalGuard>
+                <OwnerTermsGateModal />
               </div>
             }
           />

@@ -43,14 +43,31 @@ public sealed class GreenApiProvisioning(
     {
         var opts = options.Value;
         var (uri, safeLabel) = GreenApiUrls.CreateInstance(opts.GreenApi.ApiUrl, opts.PartnerToken ?? string.Empty);
-        var (body, _) = await SendAsync(HttpMethod.Post, uri, safeLabel, ct);
+
+        // T5-B13 (ARCHITECTURE_CYCLE5.md §52.1, ч. 5 ст. 18 152-ФЗ): the configured server country is
+        // passed as a request parameter. 🟡 The exact field name the partner API expects (here:
+        // "country") is UNVERIFIED — T5-D8's spike (SPEC US-71 п. 5, "есть ли параметр страны в
+        // партнёрском API") was not run against a live account as of this change. This is safe either
+        // way: InstanceCreationEnabled defaults to false, so no real call carries this field until an
+        // operator deliberately turns instance creation on — at which point DEPLOY.md must record
+        // whether the provider actually honors it, and this field name updated if not.
+        var requestBody = string.IsNullOrEmpty(opts.GreenApi.ServerCountry)
+            ? null
+            : (object)new { country = opts.GreenApi.ServerCountry };
+        var (body, _) = await SendAsync(HttpMethod.Post, uri, safeLabel, ct, requestBody);
 
         var idInstance = ReadString(body, "idInstance") ?? ReadNumberAsString(body, "idInstance");
         var apiTokenInstance = ReadString(body, "apiTokenInstance");
         if (idInstance is null || apiTokenInstance is null)
             throw new GreenApiProvisioningException($"{safeLabel}: response did not contain idInstance/apiTokenInstance.");
 
-        return new ProvisionedInstance(idInstance, apiTokenInstance);
+        // Read back whatever the provider itself reports about where the instance lives — the field name
+        // is equally unverified (same 🟡 as above); "countryInstance" mirrors GREEN-API's own "Xxx
+        // Instance" naming convention used elsewhere in its responses (stateInstance, typeInstance).
+        // Absent entirely → null → Connect's comparison is a no-op, exactly like before this cycle.
+        var reportedCountry = ReadString(body, "countryInstance") ?? ReadString(body, "country");
+
+        return new ProvisionedInstance(idInstance, apiTokenInstance, reportedCountry);
     }
 
     public async Task<QrSnapshot> GetQrAsync(ChannelCredentials credentials, CancellationToken ct)

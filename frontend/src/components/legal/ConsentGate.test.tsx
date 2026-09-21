@@ -32,10 +32,11 @@ function renderGate(status: ConsentStatus) {
 
 const status: ConsentStatus = {
   requiresAcceptance: true,
+  ownerActionBlocked: false,
   showBanner: false,
   documents: [
-    { type: 'Privacy', version: '2026-10-01', acceptedVersion: '2026-09-15-draft', changeKind: 'Material' },
-    { type: 'Terms', version: '2026-10-01', acceptedVersion: '2026-09-15-draft', changeKind: 'Material' },
+    { type: 'Privacy', currentVersion: '2026-10-01', acceptedVersion: '2026-09-15-draft', changeKind: 'Material', gate: 'Global' },
+    { type: 'TermsClient', currentVersion: '2026-10-01', acceptedVersion: '2026-09-15-draft', changeKind: 'Material', gate: 'Global' },
   ],
 }
 
@@ -50,7 +51,7 @@ beforeEach(() => {
 })
 
 describe('ConsentGate', () => {
-  it('offers exactly reading the documents, signing out, exporting data, and deleting the account — nothing else', () => {
+  it('offers reading the documents, signing out, exporting data, revoking a consent, and deleting the account', () => {
     renderGate(status)
     expect(screen.getByRole('link', { name: /Политика обработки персональных данных/ })).toHaveAttribute(
       'href',
@@ -59,6 +60,7 @@ describe('ConsentGate', () => {
     expect(screen.getByRole('link', { name: /Пользовательское соглашение/ })).toHaveAttribute('href', '/terms')
     expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Выгрузить мои данные' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Мои согласия' })).toHaveAttribute('href', '/profile/consents')
     expect(screen.getByRole('link', { name: 'Удалить аккаунт' })).toHaveAttribute('href', '/profile/delete')
   })
 
@@ -90,7 +92,12 @@ describe('ConsentGate', () => {
 
     await user.click(screen.getByRole('button', { name: 'Принимаю новую редакцию' }))
 
-    await waitFor(() => expect(accept).toHaveBeenCalledWith('2026-10-01', '2026-10-01'))
+    await waitFor(() =>
+      expect(accept).toHaveBeenCalledWith([
+        { type: 'Privacy', version: '2026-10-01' },
+        { type: 'TermsClient', version: '2026-10-01' },
+      ]),
+    )
     await waitFor(() => expect(useAuthStore.getState().token).toBe('new-token'))
     expect(useLegalStore.getState().consentRequired).toBe(false)
   })

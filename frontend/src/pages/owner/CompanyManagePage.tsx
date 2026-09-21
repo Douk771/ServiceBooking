@@ -964,10 +964,11 @@ function WidgetCard({ company }: { company: import('../../types').Company }) {
 
 // ── Photo storage usage (US-24) ─────────────────────────────────────────────
 
+// API_CONTRACT_CYCLE5.md §59.1 — `Forever` was removed from the model; no entry for it here (grep
+// acceptance check, §57).
 const RETENTION_LABEL_RU: Record<string, string> = {
   SixMonths: '6 месяцев',
   TwelveMonths: '12 месяцев',
-  Forever: 'бессрочно',
 }
 
 function PhotoUsageCard({ companyId }: { companyId: string }) {

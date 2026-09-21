@@ -1,11 +1,21 @@
 import { api } from './client'
-import type { ChannelDto, ChannelOffer } from '../types'
+import type { ChannelDto, ChannelOffer, LegalEntityForm } from '../types'
+
+export interface RequestChannelPayload {
+  legalEntityForm: LegalEntityForm
+  inn: string
+  /** Version of `TermsOwner` — the channel offer (D9) lives as its appendix (§43.2), so acceptance is
+   *  recorded against the same document version rather than a standalone `ChannelOffer` type. */
+  offerAccepted: { version: string }
+}
 
 // API_CONTRACT_CYCLE4.md §20–§27 — owner-scoped WhatsApp channel management.
 export const notificationChannelsApi = {
   list: () => api.get<{ channels: ChannelDto[] }>('/notification-channels').then((r) => r.data.channels),
   offer: () => api.get<ChannelOffer>('/notification-channels/offer').then((r) => r.data),
-  request: () => api.post<ChannelDto>('/notification-channels').then((r) => r.data),
+  /** API_CONTRACT_CYCLE5.md §50.1 (BREAKING № 7) — INN, legal form and offer acceptance are now
+   *  required; a request without them is a 400. */
+  request: (payload: RequestChannelPayload) => api.post<ChannelDto>('/notification-channels', payload).then((r) => r.data),
   get: (id: string) => api.get<ChannelDto>(`/notification-channels/${id}`).then((r) => r.data),
   acceptRisk: (id: string, version: string) =>
     api.post<void>(`/notification-channels/${id}/accept-risk`, { version }).then((r) => r.data),

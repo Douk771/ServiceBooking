@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.ClientNotes;
@@ -75,7 +76,6 @@ public class DataRightsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var raw = await (await AuthedClient(clientUser.Token).GetAsync("/api/profile/export")).Content.ReadAsStringAsync();
 
         raw.Should().NotContain(secretNoteText, "note text is a staff member's judgment, not the subject's own data (API_CONTRACT.md §8)");
-        raw.Should().NotContain(company.Id.ToString(), "no foreign entity ids should appear in the export");
         raw.Should().NotContain("PasswordHash");
         raw.Should().NotContain("SecurityStamp");
         raw.Should().NotContain("ContentHash");
@@ -86,6 +86,21 @@ public class DataRightsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         // Only the fact/metadata is present — there is no field carrying note text or photo bytes at all.
         exported.GetProperty("notesAboutMe")[0].EnumerateObject().Select(p => p.Name)
             .Should().NotContain(new[] { "note", "text", "content" });
+
+        // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49, code review
+        // verdict): the export now DELIBERATELY includes an `operators` section carrying `companyId` for
+        // every company holding data about this subject — that's the routing fix that replaced
+        // "результат работы салона" (SPEC §8.2, US-75 п.1-2: "оператором этих данных является компания
+        // N, контакт: …"). The blanket "no foreign entity ids anywhere in the export" assertion this test
+        // used to make is too broad now that §49 requires exactly one foreign id, on purpose. Narrowed to
+        // what still must hold: `operators` carries THIS company (and no other subject's ids/hashes), and
+        // the raw text still contains no note content or password/security/content hashes (asserted
+        // above, unaffected by this section).
+        var operators = exported.GetProperty("operators").EnumerateArray().ToList();
+        operators.Should().ContainSingle(o => o.GetProperty("companyId").GetGuid() == company.Id,
+            "US-75 п.1-2: the subject must be told WHICH company holds data about them, with a contact to reach it");
+        operators.Should().OnlyContain(o => o.GetProperty("companyId").GetGuid() == company.Id,
+            "no OTHER company's id may leak into one subject's export");
     }
 
     [Fact, TestCase("LEG-023")]
@@ -96,9 +111,15 @@ public class DataRightsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         // limit (3/day, API_CONTRACT.md §12) has to be exercised against its own, tightly-configured host.
         await using var factory = new RateLimitTestFactory(dataExportPermitLimit: 3);
         var client = factory.CreateClient();
+        // CYCLE5-BREAKING (API_CONTRACT_CYCLE5.md §40.1): `acceptedLegal: true` replaced by a `legal`
+        // object carrying the versions actually being accepted — read from THIS factory's own manifest.
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        var legal = new { privacyAcknowledgedVersion = snapshot.Get(LegalDocumentType.Privacy)!.Version, termsAcceptedVersion = snapshot.Get(LegalDocumentType.TermsClient)!.Version };
         var register = await client.PostAsJsonAsync("/api/auth/register", new
         {
-            firstName = "Т", lastName = "Т", phone = "+79990001122", password = "Password123!", acceptedLegal = true
+            firstName = "Т", lastName = "Т", phone = "+79990001122", password = "Password123!", legal
         });
         register.EnsureSuccessStatusCode();
         var user = (await register.Content.ReadFromJsonAsync<ServiceBooking.API.DTOs.Auth.AuthResponseDto>())!;

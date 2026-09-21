@@ -1,7 +1,9 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useLegalStore } from '../store/legalStore'
+import { useOwnerGateStore } from '../store/ownerGateStore'
 import { queryClient } from '../queryClient'
+import type { OwnerGate451 } from '../types'
 
 export const api = axios.create({
   baseURL: '/api',
@@ -26,12 +28,21 @@ api.interceptors.response.use(
     const url: string = err.config?.url ?? ''
     const isAuthEndpoint = AUTH_PATHS_WITHOUT_REDIRECT.some((p) => url.includes(p))
     // 451 means "accept the updated legal documents before doing anything else" — it is NOT a
-    // permissions error, so unlike 401 it never logs the user out (API_CONTRACT.md §0.3). ConsentGate
-    // reads this flag and takes over the screen; every other request keeps failing 451 until
-    // POST /api/legal/accept clears it by minting a token with fresh consent claims.
+    // permissions error, so unlike 401 it never logs the user out (API_CONTRACT_CYCLE5.md §38.2).
+    // Two different 451s exist and are told apart by Content-Type, never by the caller's endpoint:
+    //   - text/plain  → the GLOBAL gate (Privacy/TermsClient) — blocks the whole app; ConsentGate
+    //     takes over the screen until POST /api/legal/accept clears it with a fresh token.
+    //   - application/json → the OWNER-SCOPE gate (TermsOwner) — blocks only the one action that
+    //     tripped it (reading and non-owner actions keep working); OwnerTermsGateModal opens with the
+    //     type/version from the body so the owner can accept and retry.
     if (err.response?.status === 451) {
-      useLegalStore.getState().setConsentRequired(true)
-      queryClient.invalidateQueries({ queryKey: ['legal-consent-status'] })
+      const contentType = String(err.response.headers?.['content-type'] ?? '')
+      if (contentType.includes('application/json')) {
+        useOwnerGateStore.getState().setPending(err.response.data as OwnerGate451)
+      } else {
+        useLegalStore.getState().setConsentRequired(true)
+        queryClient.invalidateQueries({ queryKey: ['legal-consent-status'] })
+      }
       return Promise.reject(err)
     }
     if (err.response?.status === 401 && !isAuthEndpoint) {

@@ -54,9 +54,15 @@ export function UnsubscribePage() {
           ) : (
             <>
               <h1 className="font-serif text-xl font-medium text-ink mb-2">Отказаться от уведомлений?</h1>
-              <p className="text-sm text-ink-soft mb-6">
+              <p className="text-sm text-ink-soft mb-3">
                 Номер {data.phoneMasked} перестанет получать сообщения о записях в WhatsApp от всех салонов на
                 платформе.
+              </p>
+              {/* API_CONTRACT_CYCLE5.md §56.5 п. 5, US-72 п. 1 — naming the delivery intermediary here
+                  too, not only in the legal texts. */}
+              <p className="text-xs text-muted mb-6">
+                Сообщения доставляет привлекаемое лицо — ООО «ГРИН-АПИ» (ИНН 5047259512) — через мессенджер WhatsApp;
+                доставка не гарантируется.
               </p>
               {mut.isError && <p className="text-sm text-danger mb-3">Не удалось выполнить действие. Попробуйте ещё раз.</p>}
               <Button variant="danger" loading={mut.isPending} onClick={() => mut.mutate()}>

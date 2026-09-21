@@ -30,6 +30,8 @@ function makeDocument(overrides: Partial<LegalDocument> = {}): LegalDocument {
     effectiveFrom: '2026-09-15',
     isDraft: true,
     changeKind: 'Material',
+    gate: 'Global',
+    url: '/privacy',
     contentHtml: '<p>Документ подготовлен командой сервиса.</p><h2>1. Общие положения</h2><p>Текст.</p>',
     ...overrides,
   }
@@ -53,7 +55,7 @@ describe('LegalDocumentPage', () => {
 
   it('does not show the draft banner when isDraft is false', async () => {
     getDocument.mockResolvedValueOnce(makeDocument({ isDraft: false }))
-    renderWithClient(<LegalDocumentPage type="Terms" />)
+    renderWithClient(<LegalDocumentPage type="TermsClient" />)
 
     await screen.findByRole('heading', { name: 'Политика обработки персональных данных' })
     expect(screen.queryByText(/Черновая редакция\./)).not.toBeInTheDocument()
@@ -79,5 +81,31 @@ describe('LegalDocumentPage', () => {
     retry.click()
 
     await waitFor(() => expect(getDocument).toHaveBeenCalledTimes(2))
+  })
+
+  // §43 — `/offer-channel` redirects to `/terms-owner#offer-channel`; the offer text is an appendix
+  // inside the TermsOwner document, so once the fetched content lands, the page must scroll to the
+  // anchor itself (the browser's own hash-scroll already happened, before there was anything to find).
+  it('scrolls to the URL hash once the content carrying that anchor has loaded', async () => {
+    window.history.pushState({}, '', '/terms-owner#offer-channel')
+    getDocument.mockResolvedValueOnce(
+      makeDocument({
+        type: 'TermsOwner',
+        title: 'Соглашение с компанией',
+        url: '/terms-owner',
+        contentHtml: '<p>Вступление.</p><h2 id="offer-channel">Оферта на подключение канала</h2><p>Текст оферты.</p>',
+      }),
+    )
+    const scrollIntoView = vi.fn()
+    const original = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = scrollIntoView
+
+    renderWithClient(<LegalDocumentPage type="TermsOwner" />)
+
+    await screen.findByRole('heading', { name: 'Соглашение с компанией' })
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
+
+    HTMLElement.prototype.scrollIntoView = original
+    window.history.pushState({}, '', '/')
   })
 })

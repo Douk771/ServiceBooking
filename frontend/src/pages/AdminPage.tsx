@@ -6,6 +6,7 @@ import { adminApi, type AdminUser, type AdminCompany } from '../api/admin'
 import { plansApi } from '../api/plans'
 import { PlansTab } from './admin/PlansTab'
 import { NotificationsAdminTab } from './admin/NotificationsAdminTab'
+import { SubjectRequestsTab } from './admin/SubjectRequestsTab'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -654,7 +655,7 @@ function AllBookingsTab() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'stats' | 'companies' | 'users' | 'bookings' | 'plans' | 'notifications'
+type Tab = 'stats' | 'companies' | 'users' | 'bookings' | 'plans' | 'notifications' | 'subject-requests'
 
 export function AdminPage() {
   const [tab, setTab] = useState<Tab>('stats')
@@ -666,6 +667,7 @@ export function AdminPage() {
     { key: 'bookings', label: 'Записи' },
     { key: 'plans', label: 'Тарифы' },
     { key: 'notifications', label: 'Каналы уведомлений' },
+    { key: 'subject-requests', label: 'Обращения субъектов' },
   ]
 
   return (
@@ -688,6 +690,7 @@ export function AdminPage() {
       {tab === 'bookings' && <AllBookingsTab />}
       {tab === 'plans' && <PlansTab />}
       {tab === 'notifications' && <NotificationsAdminTab />}
+      {tab === 'subject-requests' && <SubjectRequestsTab />}
     </div>
   )
 }

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -23,7 +24,8 @@ namespace ServiceBooking.API.Controllers;
 public class CompanyNotificationsController(
     AppDbContext db,
     SubscriptionResolver subscriptionResolver,
-    PlatformSettings platformSettings) : ControllerBase
+    PlatformSettings platformSettings,
+    LegalDocumentProvider legalProvider) : ControllerBase
 {
     // ── Settings ─────────────────────────────────────────────────────────────────────────────────
 
@@ -44,6 +46,7 @@ public class CompanyNotificationsController(
     }
 
     [HttpPut("notification-settings")]
+    [RequiresOwnerTerms]
     public async Task<ActionResult<NotificationSettingsDto>> UpdateSettings(Guid companyId, [FromBody] UpdateNotificationSettingsDto dto)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
@@ -108,10 +111,20 @@ public class CompanyNotificationsController(
                 type.ToString(), isDefault ? "" : row!.Body, isDefault, DefaultTemplates.For(type), row?.UpdatedAt);
         }).ToList();
 
-        return Ok(new TemplatesResponseDto(placeholders, "Отказаться от уведомлений: https://ezbook.ru/u/…", templates));
+        // T5-B12 (ARCHITECTURE_CYCLE5.md §51.2): the word list travels with the response, not baked into
+        // the frontend — see TemplatesResponseDto's own doc comment. warningVersion is 0-length when the
+        // manifest isn't loaded (only possible outside Production); the frontend simply can't submit an
+        // acknowledgement that matches an empty string, so PUT falls through to its own 503 there.
+        var adMarkers = await platformSettings.GetAdMarkersAsync();
+        var warningVersion = legalProvider.Current?.GetText(LegalTextKey.TemplateAdWarning)?.Version ?? "";
+
+        return Ok(new TemplatesResponseDto(
+            placeholders, "Отказаться от уведомлений: https://ezbook.ru/u/…", templates,
+            adMarkers, LegalTextKey.TemplateAdWarning, warningVersion));
     }
 
     [HttpPut("notification-templates/{type}")]
+    [RequiresOwnerTerms]
     public async Task<ActionResult<TemplateItemDto>> UpdateTemplate(Guid companyId, string type, [FromBody] TemplateBodyDto dto)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
@@ -130,23 +143,57 @@ public class CompanyNotificationsController(
         // Empty body ("вернуть текст платформы", API_CONTRACT_CYCLE4.md §29.1) bypasses length/placeholder
         // validation entirely — it's a request to delete the override, not a 1000-character message.
         var resetToDefault = dto.Body.Length == 0;
+        IReadOnlyList<string> markersHit = [];
         if (!resetToDefault)
         {
             var validation = NotificationTemplateValidator.Validate(dto.Body, parsedType);
             if (!validation.IsValid) return BadRequest(validation.Error);
+
+            // T5-B12 (ARCHITECTURE_CYCLE5.md §51.1, US-69 п. 1/4): required on every save that keeps
+            // custom text, never cached/inherited from a previous save of the SAME text. Checked before
+            // the marker scan — an owner who never acknowledged at all gets that specific message, not a
+            // marker warning that implies they just need to tick a different box.
+            var warningText = legalProvider.Current?.GetText(LegalTextKey.TemplateAdWarning);
+            if (warningText is null)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+            if (dto.Acknowledgement is not { Accepted: true })
+                return BadRequest("Подтвердите, что текст сервисный и вы принимаете ответственность за его содержание.");
+            if (dto.Acknowledgement.WarningVersion != warningText.Version)
+                return Conflict("Текст предупреждения был обновлён — перечитайте и подтвердите заново.");
+
+            var adMarkers = await platformSettings.GetAdMarkersAsync();
+            markersHit = TemplateAdHeuristics.Scan(dto.Body, adMarkers);
+            if (markersHit.Count > 0 && !dto.Acknowledgement.ConfirmedDespiteMarkers)
+                return BadRequest(new TemplateMarkersHitDto(markersHit,
+                    "Такой текст с высокой вероятностью является рекламой. Подтвердите, что это сервисное уведомление."));
         }
 
         var existing = await db.NotificationTemplates.FirstOrDefaultAsync(t => t.CompanyId == companyId && t.Type == parsedType);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var nowUtc = DateTime.UtcNow;
+        var newBody = resetToDefault ? "" : dto.Body;
 
-        if (existing is not null)
+        // A history row is written on every ACTUAL save (existing row updated, or a fresh row created) —
+        // ARCHITECTURE_CYCLE5.md §44.6: the newest revision needs a row too, or there is nothing to point
+        // the acknowledgement evidence at for the very first save. Reset-to-default writes a history row
+        // with no acknowledgement fields (nothing was confirmed — there is no custom text to be
+        // responsible for), matching every other "no custom text" branch in this method.
+        if (existing is not null || !resetToDefault)
         {
             db.NotificationTemplateHistories.Add(new NotificationTemplateHistory
             {
                 Id = Guid.NewGuid(), CompanyId = companyId, Type = parsedType,
-                PreviousBody = existing.Body, ChangedByUserId = userId, ChangedAtUtc = nowUtc,
+                PreviousBody = existing?.Body ?? "", ChangedByUserId = userId, ChangedAtUtc = nowUtc,
+                NewBody = newBody,
+                AcknowledgedByUserId = resetToDefault ? null : userId,
+                AcknowledgedAtUtc = resetToDefault ? null : nowUtc,
+                WarningVersion = resetToDefault ? null : dto.Acknowledgement!.WarningVersion,
+                AdMarkersHit = markersHit.Count > 0 ? string.Join(",", markersHit) : null,
             });
+        }
+
+        if (existing is not null)
+        {
             existing.Body = resetToDefault ? "" : dto.Body;
             existing.UpdatedAt = nowUtc;
             existing.UpdatedByUserId = userId;
@@ -220,7 +267,7 @@ public class CompanyNotificationsController(
             n.Id, n.CreatedAt, n.Type, NotificationTexts.TypeText(n.Type),
             n.RecipientName, string.IsNullOrEmpty(n.RecipientPhone) ? "получатель удалён" : PhoneDisplayMask.Mask(n.RecipientPhone),
             n.Status, NotificationTexts.StatusText(n.Status, n.Reason, n.ChannelId, n.ReadAtUtc, n.AttemptCount),
-            n.BookingId, n.VisitStartUtc, n.SentAtUtc, n.ChannelId)).ToList();
+            n.BookingId, n.VisitStartUtc, n.SentAtUtc, n.ChannelId, n.ContentRedactedAtUtc != null)).ToList();
 
         return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
     }

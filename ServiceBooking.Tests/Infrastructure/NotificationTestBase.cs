@@ -62,11 +62,19 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         return $"+79{suffix[..9]}";
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): Legal object
+    // read from the live manifest instead of a bool.
     protected async Task<AuthResponseDto> RegisterAsync(string? phone = null)
     {
         phone ??= UniquePhone();
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        var legal = new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
+
         var response = await AnonymousClient().PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "Owner", phone, "Password123!", null, true));
+            new RegisterDto("Test", "Owner", phone, "Password123!", null, legal));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }
@@ -104,14 +112,21 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         return await db.Cities.Where(c => c.Name == "Новосибирск").Select(c => c.Id).FirstAsync();
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.CreateCompanyAsync's own note):
+    // OwnerTerms is now required, and the response is an envelope, not a bare CompanyDto.
     protected async Task<CompanyDto> CreateCompanyAsync(string ownerToken, int? cityId = null, string? slug = null)
     {
         slug ??= Unique("company-");
         var client = AuthedClient(ownerToken);
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var ownerTermsVersion = provider.Current!.Get(LegalDocumentType.TermsOwner)!.Version;
         var response = await client.PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto($"Company {slug}", slug, null, null, null, null, cityId ?? await AnyCityIdAsync(), null, true));
+            new CreateCompanyDto($"Company {slug}", slug, null, null, null, null, cityId ?? await AnyCityIdAsync(), null, true,
+                OwnerTerms: new OwnerTermsDto(ownerTermsVersion)));
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<CompanyDto>())!;
+        var envelope = await response.Content.ReadFromJsonAsync<CreateCompanyResponseDto>();
+        return envelope!.Company;
     }
 
     /// <summary>Registers an owner and gives them a first company (an owner always needs ≥1 company to

@@ -9,13 +9,16 @@ namespace ServiceBooking.API.Services;
 
 public class TokenService(IConfiguration config)
 {
-    // privacyVersion/termsVersion: the version of each document THIS user has actually accepted, as
-    // recorded in UserConsent at the moment the token is issued (registration, login, or
-    // POST /api/legal/accept) — never the document's CURRENT version. LegalConsentFilter compares these
-    // claims against the current snapshot on every authenticated request without touching the database
-    // (ARCHITECTURE.md §6.3); null (no consent recorded — an account predating cycle C, or Dev/Testing
-    // without a loaded manifest) simply omits the claim, which the filter treats as "does not match".
-    public string GenerateToken(AppUser user, IList<string> roles, string? privacyVersion = null, string? termsVersion = null)
+    // privacyVersion/termsVersion/ownerTermsVersion: the version of each document THIS user has actually
+    // accepted, as recorded in the ConsentRecord journal at the moment the token is issued (registration,
+    // login, POST /api/legal/accept, or company creation for ownerTermsVersion) — never the document's
+    // CURRENT version. LegalConsentFilter compares privacy/terms against the current snapshot on every
+    // authenticated request without touching the database (ARCHITECTURE.md §6.3); [RequiresOwnerTerms]
+    // does the same for ownerTermsVersion (ARCHITECTURE_CYCLE5.md §46.3). null (no consent recorded — an
+    // account predating cycle C, a non-owner for ownerTermsVersion, or Dev/Testing without a loaded
+    // manifest) simply omits the claim, which both checks treat as "does not match".
+    public string GenerateToken(
+        AppUser user, IList<string> roles, string? privacyVersion = null, string? termsVersion = null, string? ownerTermsVersion = null)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -41,6 +44,7 @@ public class TokenService(IConfiguration config)
 
         if (privacyVersion is not null) claims.Add(new Claim("lcp", privacyVersion));
         if (termsVersion is not null) claims.Add(new Claim("lct", termsVersion));
+        if (ownerTermsVersion is not null) claims.Add(new Claim("lco", ownerTermsVersion));
 
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 

@@ -779,12 +779,16 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         var user = await RegisterAsync();
         var slug = Unique("newco-");
+        // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.CreateCompanyAsync's own note):
+        // OwnerTerms is now required, and the response is an envelope, not a bare CompanyDto.
         var response = await AuthedClient(user.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto($"Company {slug}", slug, null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto($"Company {slug}", slug, null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var created = await response.Content.ReadFromJsonAsync<CompanyDto>();
-        created!.Slug.Should().Be(slug);
+        var envelope = await response.Content.ReadFromJsonAsync<CreateCompanyResponseDto>();
+        var created = envelope!.Company;
+        created.Slug.Should().Be(slug);
 
         var myResponse = await AuthedClient(user.Token).GetAsync("/api/companies/my");
         var mine = await myResponse.Content.ReadFromJsonAsync<List<CompanyDto>>();
@@ -1184,7 +1188,8 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
 
         var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto("Second Branch", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto("Second Branch", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
 
         response.StatusCode.Should().Be((HttpStatusCode)402);
     }
@@ -1199,11 +1204,13 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         await SetSubscriptionAsync(company.Id, configId);
 
         var second = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto("Branch 2", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto("Branch 2", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
         second.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var third = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto("Branch 3", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto("Branch 3", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
         third.StatusCode.Should().Be((HttpStatusCode)402);
     }
 
@@ -1241,7 +1248,8 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var cityId = await AnyCityIdAsync();
         var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ =>
             AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-                new CreateCompanyDto($"Branch {Unique("")}", Unique("branch-"), null, null, null, null, cityId, null))));
+                new CreateCompanyDto($"Branch {Unique("")}", Unique("branch-"), null, null, null, null, cityId, null,
+                    OwnerTerms: CurrentOwnerTermsDto()))));
 
         responses.Count(r => r.StatusCode == HttpStatusCode.Created).Should().Be(1);
         responses.Count(r => r.StatusCode == (HttpStatusCode)402).Should().Be(4);

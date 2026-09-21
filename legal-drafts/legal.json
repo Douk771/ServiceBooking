@@ -1,0 +1,67 @@
+{
+  "documents": [
+    {
+      "type": "Privacy",
+      "version": "2026-09-22-draft",
+      "effectiveFrom": "2026-09-22",
+      "isDraft": true,
+      "changeKind": "Material",
+      "gate": "Global",
+      "title": "Политика обработки персональных данных",
+      "file": "01-privacy-policy.html"
+    },
+    {
+      "type": "TermsClient",
+      "version": "2026-09-22-draft",
+      "effectiveFrom": "2026-09-22",
+      "isDraft": true,
+      "changeKind": "Material",
+      "gate": "Global",
+      "title": "Пользовательское соглашение",
+      "file": "02-terms-client.html"
+    },
+    {
+      "type": "TermsOwner",
+      "version": "2026-09-22-draft",
+      "effectiveFrom": "2026-09-22",
+      "isDraft": true,
+      "changeKind": "Material",
+      "gate": "OwnerScope",
+      "title": "Соглашение с компанией и поручение на обработку персональных данных",
+      "file": "03-terms-owner.html"
+    },
+    {
+      "type": "PdnConsent",
+      "version": "2026-09-22-draft",
+      "effectiveFrom": "2026-09-22",
+      "isDraft": true,
+      "changeKind": "Material",
+      "gate": "None",
+      "title": "Согласие на обработку персональных данных",
+      "file": "04-pdn-consent.html",
+      "purposes": [
+        { "key": "ProviderDelivery", "title": "Передача привлекаемым лицам для доставки уведомлений" },
+        { "key": "WorkPhotos", "title": "Фотофиксация выполненной работы" },
+        { "key": "HealthData", "title": "Обработка сведений о состоянии здоровья" }
+      ]
+    },
+    {
+      "type": "ChannelRiskNotice",
+      "version": "2026-09-22-draft",
+      "effectiveFrom": "2026-09-22",
+      "isDraft": true,
+      "changeKind": "Material",
+      "gate": "None",
+      "title": "Подключение канала уведомлений: что вы берёте на себя",
+      "file": "06-channel-risk-notice.html"
+    }
+  ],
+  "uiTexts": [
+    { "key": "BookingNotice", "version": "2026-09-22-draft", "isDraft": true, "file": "05-booking-notice.html" },
+    { "key": "TemplateAdWarning", "version": "2026-09-22-draft", "isDraft": true, "file": "07-template-ad-warning.html" },
+    { "key": "UnsubscribePage", "version": "2026-09-22-draft", "isDraft": true, "file": "08-unsubscribe-page.html" },
+    { "key": "PhotoConsent", "version": "2026-09-22-draft", "isDraft": true, "file": "10-photo-consent.html" },
+    { "key": "HealthDataConsent", "version": "2026-09-22-draft", "isDraft": true, "file": "11-health-data-consent.html" },
+    { "key": "GuardianConfirmation", "version": "2026-09-22-draft", "isDraft": true, "file": "12-guardian-confirmation.html" }
+  ]
+}
