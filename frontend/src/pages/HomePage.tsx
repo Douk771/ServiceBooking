@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { companiesApi } from '../api/companies'
 import { Icon } from '../components/ui/Icon'
+import { PricingTeaser } from '../components/pricing/PricingTeaser'
 import type { Company } from '../types'
 import salonHero from '../assets/salon-hero.jpg'
 
@@ -128,6 +129,8 @@ export function HomePage() {
           ))}
         </div>
       </section>
+
+      <PricingTeaser />
 
       {/* Companies */}
       <section id="companies" className="max-w-[1180px] mx-auto px-8 pt-[88px] pb-[100px]">
