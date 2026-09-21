@@ -150,13 +150,6 @@ NotificationStatus  Pending | Sent | Delivered | Failed | Expired | Skipped | Ca
 
 **201 Created:** `ChannelDto` (состояние `NotConnected`, `paymentState: "NotPaid"`, `requestedAt`
 заполнен).
-```json
-{ "contactEmail": "owner@example.com" }
-```
-`contactEmail` — необязателен, если у владельца уже есть email; валидируется как email.
-
-**201 Created:** `ChannelDto` (состояние `NotConnected`, `paymentState: "NotPaid"`, `requestedAt`
-заполнен).
 
 | Код | Когда | Тело |
 |---|---|---|

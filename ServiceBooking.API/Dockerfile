@@ -10,8 +10,15 @@ EXPOSE 8080
 # curl is needed for two things the base image doesn't ship (aspnet:8.0 has neither curl nor wget):
 # the docker-compose HEALTHCHECK (docker-compose.prod.yml, T-D7/US-43) and deploy/ci/smoke.sh polling
 # /api/health/live from inside the same container network in CI (T-D1/US-41). ~1.5 MB, no dev headers.
+#
+# tzdata, explicit (ARCHITECTURE_CYCLE4.md §34.3): the base image already carries a timezone database
+# today, and DeploymentSafetyChecks.ValidateTimeZoneDatabase() (resolving Asia/Barnaul, not the more
+# forgiving Europe/Moscow) fail-fasts on startup if it's ever missing — but that check only turns a
+# missing package into a caught deploy failure, not into no failure at all. An explicit install here
+# costs one line and removes the dependency on Microsoft never trimming tzdata from a future aspnet:8.0
+# image; the startup check stays as the second line of defense for every other way this could break.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
