@@ -176,7 +176,15 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 // Identity
 builder.Services.AddIdentity<AppUser, IdentityRole>(opt =>
     {
+        // API_CONTRACT_CYCLE6.md documents the password requirement as "minLength: 8" only — no
+        // complexity rules. Identity's defaults (RequireUppercase/RequireDigit/RequireLowercase) are
+        // stricter than that and were silently rejecting contract-valid passwords (schemathesis finding,
+        // API_CONTRACT_CYCLE6.md §53). Disabling them here brings actual behavior in line with the
+        // documented contract instead of leaving the mismatch for the frontend to discover at runtime.
         opt.Password.RequireNonAlphanumeric = false;
+        opt.Password.RequireUppercase = false;
+        opt.Password.RequireLowercase = false;
+        opt.Password.RequireDigit = false;
         opt.Password.RequiredLength = 8;
         opt.Lockout.MaxFailedAccessAttempts = 5;
         opt.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
