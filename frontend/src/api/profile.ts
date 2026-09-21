@@ -9,8 +9,17 @@ export interface ProfilePlanDto {
   allowOnlineBooking: boolean
   allowMailing: boolean
   allowAnalytics: boolean
+  /** @deprecated Cycle 5: aggregate seat cap across the whole billing account, kept only for display. */
   maxEmployees: number | null
   maxCompanies: number | null
+  /** Cycle 5 additions (ARCHITECTURE_CYCLE5.md §56, ProfilePlanDtoV5Additions). */
+  totalMonthlyPrice?: number | null
+  currency?: string
+  companiesUsed?: number
+  employeesUsed?: number
+  expiresInDays?: number | null
+  isExpiringSoon?: boolean
+  optionCount?: number
 }
 
 export interface ProfileDto {

@@ -16,6 +16,7 @@ import { ProfilePage } from './pages/ProfilePage'
 import { AdminPage } from './pages/AdminPage'
 import { LegalDocumentPage } from './pages/LegalDocumentPage'
 import { PricingPage } from './pages/PricingPage'
+import { BillingPage } from './pages/BillingPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
 import { DeleteAccountPage } from './pages/DeleteAccountPage'
 import { Footer } from './components/layout/Footer'
@@ -153,6 +154,14 @@ export default function App() {
                     />
                     <Route path="/u/:token" element={<UnsubscribePage />} />
                     <Route path="/pricing" element={<PricingPage />} />
+                    <Route
+                      path="/billing"
+                      element={
+                        <ProtectedRoute roles={['CompanyOwner', 'SuperAdmin']}>
+                          <BillingPage />
+                        </ProtectedRoute>
+                      }
+                    />
                     <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
                     <Route path="/terms" element={<LegalDocumentPage type="Terms" />} />
                     {/* Legacy redirects */}

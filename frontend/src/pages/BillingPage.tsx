@@ -1,0 +1,230 @@
+import { useEffect, useState } from 'react'
+import { AxiosError } from 'axios'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { billingApi, type AvailableOptionDto } from '../api/billing'
+import { Card } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
+import { Icon } from '../components/ui/Icon'
+import { formatMonthlyPrice } from '../utils/pricingFormat'
+import { getBillingErrorMessage } from '../utils/billingError'
+
+/**
+ * Owner screen "Ваша подписка" (US-65, US-68, US-70) — API_CONTRACT_CYCLE5.md §41. One request
+ * covers the whole screen; every text shown (`statusText`, `usage.*Text`, `availabilityText`,
+ * `warning.text`) is server-composed and printed verbatim, per contract note on OwnerSubscriptionDto.
+ *
+ * Backend not shipped yet in this pass (no BillingAccount code on the API side) — this calls the
+ * real endpoint from the contract, so it lights up unchanged once the backend exists; until then it
+ * renders the error state below (also exercised by unit tests via a mocked client).
+ */
+export function BillingPage() {
+  const qc = useQueryClient()
+  const [requestError, setRequestError] = useState('')
+  const [desiredOptions, setDesiredOptions] = useState<Record<string, number> | null>(null)
+
+  const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
+    queryKey: ['owner-subscription'],
+    queryFn: billingApi.getSubscription,
+    retry: false,
+  })
+
+  useEffect(() => {
+    document.title = 'Ваша подписка — ServiceBooking'
+  }, [])
+
+  const cancelMut = useMutation({
+    mutationFn: billingApi.cancelRequest,
+    onSuccess: () => {
+      setRequestError('')
+      qc.invalidateQueries({ queryKey: ['owner-subscription'] })
+    },
+    onError: (err: unknown) => setRequestError(getBillingErrorMessage(err, 'Не удалось отозвать заявку.')),
+  })
+
+  const requestMut = useMutation({
+    mutationFn: (options: Record<string, number>) =>
+      billingApi.submitRequest({
+        options: Object.entries(options).map(([optionId, quantity]) => ({ optionId, quantity })),
+      }),
+    onSuccess: () => {
+      setRequestError('')
+      setDesiredOptions(null)
+      qc.invalidateQueries({ queryKey: ['owner-subscription'] })
+    },
+    onError: (err: unknown) => setRequestError(getBillingErrorMessage(err, 'Не удалось отправить заявку.')),
+  })
+
+  if (isLoading) {
+    return (
+      <div className="max-w-[860px] mx-auto px-8 pt-16 pb-24">
+        <div className="h-9 w-1/3 bg-cream-deep rounded-xl animate-pulse mb-10" />
+        <div className="h-52 bg-cream-deep rounded-[22px] animate-pulse mb-6" />
+        <div className="h-40 bg-cream-deep rounded-[22px] animate-pulse" />
+      </div>
+    )
+  }
+
+  const notFound = isError && (error as AxiosError)?.response?.status === 404
+
+  if (notFound) {
+    return (
+      <div className="max-w-[760px] mx-auto px-8 pt-16 pb-24">
+        <Card className="p-12 text-center text-muted">
+          <Icon name="alert-circle" size={32} strokeWidth={1.4} className="mx-auto mb-3" />
+          <p className="text-lg text-ink-soft">
+            У вас нет подписки — она появляется, когда вы становитесь ответственным хотя бы за одну компанию.
+          </p>
+        </Card>
+      </div>
+    )
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="max-w-[760px] mx-auto px-8 pt-16 pb-24">
+        <Card className="p-12 text-center text-muted">
+          <Icon name="alert-circle" size={32} strokeWidth={1.4} className="mx-auto mb-3" />
+          <p className="text-lg font-medium text-ink-soft mb-4">Не удалось загрузить подписку. Попробуйте снова.</p>
+          <Button variant="secondary" loading={isRefetching} onClick={() => refetch()}>
+            Попробовать снова
+          </Button>
+        </Card>
+      </div>
+    )
+  }
+
+  const toggleOption = (option: AvailableOptionDto) => {
+    setDesiredOptions((prev) => {
+      const base = prev ?? Object.fromEntries(data.options.map((o) => [o.optionId, o.quantity]))
+      const next = { ...base }
+      if (next[option.optionId]) delete next[option.optionId]
+      else next[option.optionId] = 1
+      return next
+    })
+  }
+
+  const isEditing = desiredOptions !== null
+
+  return (
+    <div className="max-w-[860px] mx-auto px-8 pt-16 pb-24">
+      <header className="mb-10">
+        <h1 className="font-serif text-[36px] font-medium text-ink mb-2">Ваша подписка</h1>
+        <p className="text-sm text-ink-soft">Тариф и опции действуют на все ваши компании сразу.</p>
+      </header>
+
+      {data.warning && (
+        <Card className={`p-5 mb-6 border ${data.warning.kind === 'Expired' ? 'border-danger bg-danger-bg' : 'border-warning bg-[#FBF3E3]'}`}>
+          <p className="text-sm font-semibold text-ink mb-1">{data.warning.text}</p>
+          {data.warning.affected.length > 0 && (
+            <ul className="text-xs text-ink-soft list-disc list-inside">
+              {data.warning.affected.map((a) => (
+                <li key={a}>{a}</li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      <Card className="p-[26px] mb-6">
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+          <h2 className="text-[15.5px] font-semibold text-ink">{data.plan.name}</h2>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-success-bg text-success">{data.statusText}</span>
+        </div>
+        <p className="text-2xl font-bold text-ink mb-1">{formatMonthlyPrice(data.totalMonthlyPrice)}</p>
+        <p className="text-xs text-muted mb-4">
+          {formatMonthlyPrice(data.plan.pricePerMonth)} тариф
+          {data.options.length > 0 && ` + ${data.options.length} опц.`}
+        </p>
+
+        <dl className="grid gap-2 text-sm text-ink-soft mb-2">
+          <div className="flex justify-between">
+            <dt>{data.usage.companiesText}</dt>
+          </div>
+          <div className="flex justify-between">
+            <dt>{data.usage.employeesText}</dt>
+          </div>
+          <div className="flex justify-between">
+            <dt>{data.usage.numbersText}</dt>
+          </div>
+        </dl>
+      </Card>
+
+      {data.options.length > 0 && (
+        <Card className="p-[26px] mb-6">
+          <h2 className="text-[15.5px] font-semibold text-ink mb-4">Подключённые опции</h2>
+          <ul className="grid gap-3">
+            {data.options.map((o) => (
+              <li key={o.optionId} className="flex items-center justify-between text-sm">
+                <span>
+                  {o.name}
+                  {o.kind === 'Quantity' && ` × ${o.quantity}`}
+                </span>
+                <span className="text-ink-soft">{o.statusText}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {data.pendingRequest && !isEditing && (
+        <Card className="p-[26px] mb-6 border border-line">
+          <h2 className="text-[15.5px] font-semibold text-ink mb-2">Заявка на рассмотрении</h2>
+          <p className="text-sm text-ink-soft mb-4">
+            Ожидаемый итог: {formatMonthlyPrice(data.pendingRequest.estimatedMonthlyPrice)}
+          </p>
+          <Button variant="secondary" size="sm" loading={cancelMut.isPending} onClick={() => cancelMut.mutate()}>
+            Отозвать заявку
+          </Button>
+        </Card>
+      )}
+
+      {data.canRequestChanges && data.availableOptions.length > 0 && (
+        <Card className="p-[26px] mb-6">
+          <h2 className="text-[15.5px] font-semibold text-ink mb-4">Доступные опции</h2>
+          <ul className="grid gap-3 mb-4">
+            {data.availableOptions.map((option) => {
+              const selected = isEditing
+                ? !!desiredOptions?.[option.optionId]
+                : data.options.some((o) => o.optionId === option.optionId)
+              return (
+                <li key={option.optionId} className="flex items-center justify-between text-sm gap-3">
+                  <div>
+                    <p className="font-medium text-ink">{option.name}</p>
+                    <p className="text-xs text-muted">{option.availabilityText}</p>
+                  </div>
+                  {option.canRequest && (
+                    <Button
+                      variant={selected ? 'secondary' : 'primary'}
+                      size="sm"
+                      onClick={() => toggleOption(option)}
+                    >
+                      {selected ? 'Убрать' : 'Добавить'}
+                    </Button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+
+          {isEditing && (
+            <div className="flex items-center gap-3">
+              <Button loading={requestMut.isPending} onClick={() => requestMut.mutate(desiredOptions!)}>
+                Отправить заявку
+              </Button>
+              <Button variant="ghost" onClick={() => setDesiredOptions(null)}>
+                Отменить
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {requestError && <p className="text-sm text-danger mb-6">{requestError}</p>}
+
+      <p className="text-xs text-muted">
+        Хотите сравнить тарифы целиком? <Link to="/pricing" className="underline">Смотрите страницу тарифов</Link>.
+      </p>
+    </div>
+  )
+}

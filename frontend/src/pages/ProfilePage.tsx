@@ -66,11 +66,29 @@ function PlanSection({ plan }: { plan: ProfilePlanDto }) {
         <PlanFeature label="Рассылка" enabled={plan.allowMailing} />
         <PlanFeature label="Аналитика" enabled={plan.allowAnalytics} />
       </div>
-      <div className="flex gap-4 text-xs text-muted">
-        <span>Сотрудников: {plan.maxEmployees !== null ? `до ${plan.maxEmployees}` : '∞'}</span>
-        <span>Компаний: {plan.maxCompanies !== null ? `до ${plan.maxCompanies}` : '∞'}</span>
+      <div className="flex gap-4 text-xs text-muted flex-wrap">
+        <span>
+          Сотрудников суммарно: {plan.employeesUsed ?? 0}
+          {plan.maxEmployees !== null ? ` / ${plan.maxEmployees}` : ' / ∞'}
+        </span>
+        <span>
+          Компаний: {plan.companiesUsed ?? 0}
+          {plan.maxCompanies !== null ? ` / ${plan.maxCompanies}` : ' / ∞'}
+        </span>
       </div>
-      <p className="text-xs text-muted mt-3">Изменение тарифа и оплата скоро будут доступны здесь же.</p>
+      {plan.isExpiringSoon && (
+        <p className="text-xs text-warning mt-3">
+          {plan.expiresInDays != null
+            ? `Подписка истекает через ${plan.expiresInDays} дн. — продлите её на странице «Ваша подписка».`
+            : 'Подписка скоро истекает — продлите её на странице «Ваша подписка».'}
+        </p>
+      )}
+      <Link
+        to="/billing"
+        className="inline-block text-xs font-semibold text-gold-dark mt-3 hover:underline"
+      >
+        Управлять подпиской →
+      </Link>
     </Card>
   )
 }
