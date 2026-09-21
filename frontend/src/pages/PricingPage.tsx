@@ -21,6 +21,8 @@ export function PricingPage() {
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ['public-pricing'],
     queryFn: pricingApi.getPublicPricing,
+    retry: false,
+    staleTime: 60_000,
   })
 
   useEffect(() => {
@@ -90,7 +92,10 @@ export function PricingPage() {
       {sortedOptions.length > 0 && (
         <section className="max-w-[720px]">
           <h2 className="font-serif text-[24px] font-medium text-ink mb-1">Дополнительные опции</h2>
-          <p className="text-sm text-ink-soft mb-5">Подключаются к любому платному тарифу.</p>
+          {/* No blanket "available on any paid plan" claim here: per-plan availability is governed by
+              PlanOptionRule server-side (ARCHITECTURE_CYCLE5.md §43.3, fail-closed), and the public
+              contract doesn't expose which plans a given option is available on. */}
+          <p className="text-sm text-ink-soft mb-5">Наличие опций зависит от выбранного тарифа.</p>
           <Card className="p-6">
             {sortedOptions.map((option) => (
               <OptionRow key={option.id} option={option} />

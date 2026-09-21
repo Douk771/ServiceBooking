@@ -28,9 +28,14 @@ export interface PricingOptionDto {
   description?: string
   kind: PricingOptionKind
   pricePerMonth: number
-  unitName: string
-  /** Собран сервером, печатается как есть (API_CONTRACT_CYCLE5.md §39). */
-  unitPriceText: string
+  /** Nullable per contract — Toggle options have no per-unit name. */
+  unitName: string | null
+  /**
+   * Собран сервером для Quantity-опций (API_CONTRACT_CYCLE5.md §39); для Kind === 'Toggle' сервер
+   * всегда отдаёт null (PricingCatalogBuilder.BuildUnitPriceText) — рендерящий код обязан сам
+   * подставлять formatMonthlyPrice(pricePerMonth) в этом случае, а не печатать null как есть.
+   */
+  unitPriceText: string | null
   sortOrder: number
 }
 
@@ -40,6 +45,6 @@ export interface PublicPricingDto {
   plans: PricingPlanDto[]
   options: PricingOptionDto[]
   notice: string
-  /** Появится после юридической вычитки (API_CONTRACT_CYCLE5.md §39) — отсутствует до тех пор. */
-  legalNotice?: string
+  /** Появится после юридической вычитки (API_CONTRACT_CYCLE5.md §39) — отсутствует/`null` до тех пор. */
+  legalNotice?: string | null
 }

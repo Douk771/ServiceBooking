@@ -15,11 +15,16 @@ export function PricingTeaser() {
     queryKey: ['public-pricing'],
     queryFn: pricingApi.getPublicPricing,
     retry: false,
+    staleTime: 60_000,
   })
 
   if (!isSuccess || !data) return null
 
-  const cheapestPaid = [...data.plans].filter((p) => !p.isFree).sort((a, b) => a.pricePerMonth - b.pricePerMonth)[0]
+  // `!isFree && pricePerMonth > 0` guards against a mis-configured plan (isFree=false, price=0)
+  // rendering the nonsensical "от Бесплатно".
+  const cheapestPaid = [...data.plans]
+    .filter((p) => !p.isFree && p.pricePerMonth > 0)
+    .sort((a, b) => a.pricePerMonth - b.pricePerMonth)[0]
   const highlightPlans = [...data.plans].sort((a, b) => a.sortOrder - b.sortOrder).slice(0, 3)
 
   return (
@@ -46,8 +51,8 @@ export function PricingTeaser() {
               <h3 className="font-serif text-[19px] font-medium text-ink mb-1">{plan.name}</h3>
               <p className="font-serif text-[24px] font-medium text-ink mb-3">{formatMonthlyPrice(plan.pricePerMonth)}</p>
               <ul className="flex flex-col gap-1.5">
-                {plan.highlights.slice(0, 3).map((h) => (
-                  <li key={h} className="flex items-start gap-1.5 text-[13px] text-ink-soft">
+                {plan.highlights.slice(0, 3).map((h, i) => (
+                  <li key={`${i}-${h}`} className="flex items-start gap-1.5 text-[13px] text-ink-soft">
                     <Icon name="check" size={13} strokeWidth={2.2} className="shrink-0 mt-0.5 text-gold-dark" />
                     {h}
                   </li>

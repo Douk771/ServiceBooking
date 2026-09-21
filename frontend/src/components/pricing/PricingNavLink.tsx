@@ -18,6 +18,7 @@ export function PricingNavLink({ className, onClick }: Props) {
     queryKey: ['public-pricing'],
     queryFn: pricingApi.getPublicPricing,
     retry: false,
+    staleTime: 60_000,
   })
 
   if (!isSuccess || !data) return null

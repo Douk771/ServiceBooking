@@ -4,8 +4,9 @@ import type { PricingPlanDto } from '../../types/pricing'
 
 interface Props {
   plan: PricingPlanDto
-  /** The middle-priced paid plan gets a visual accent — a cheap, honest way to guide the eye without
-   *  a comparison table (ARCHITECTURE_CYCLE5.md §56.2 rules out a table outright). */
+  /** The first paid plan (right after the free one, in sortOrder) gets a visual accent — a cheap,
+   *  honest way to guide the eye without a comparison table (ARCHITECTURE_CYCLE5.md §56.2 rules out
+   *  a table outright). Not "recommended": the contract has no such flag. */
   featured?: boolean
 }
 
@@ -28,14 +29,14 @@ export function PlanCard({ plan, featured = false }: Props) {
       <ul className="flex flex-col gap-2.5 mb-7">
         <li className={`flex items-start gap-2 text-sm ${featured ? 'text-cream/90' : 'text-ink-soft'}`}>
           <Icon name="check" size={15} strokeWidth={2} className={`shrink-0 mt-0.5 ${featured ? 'text-gold' : 'text-gold-dark'}`} />
-          {formatIncludedLimit(plan.includedCompanies, 'компания', 'компании', 'компаний')}
+          {formatIncludedLimit(plan.includedCompanies, 'компании', 'компаний')}
         </li>
         <li className={`flex items-start gap-2 text-sm ${featured ? 'text-cream/90' : 'text-ink-soft'}`}>
           <Icon name="check" size={15} strokeWidth={2} className={`shrink-0 mt-0.5 ${featured ? 'text-gold' : 'text-gold-dark'}`} />
-          {formatIncludedLimit(plan.includedEmployees, 'сотрудник', 'сотрудника', 'сотрудников')}
+          {formatIncludedLimit(plan.includedEmployees, 'сотрудника', 'сотрудников')}
         </li>
-        {plan.highlights.map((h) => (
-          <li key={h} className={`flex items-start gap-2 text-sm ${featured ? 'text-cream/90' : 'text-ink-soft'}`}>
+        {plan.highlights.map((h, i) => (
+          <li key={`${i}-${h}`} className={`flex items-start gap-2 text-sm ${featured ? 'text-cream/90' : 'text-ink-soft'}`}>
             <Icon
               name="check"
               size={15}

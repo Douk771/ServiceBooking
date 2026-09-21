@@ -9,9 +9,19 @@ export function formatMonthlyPrice(pricePerMonth: number): string {
   return `${pricePerMonth.toLocaleString('ru-RU')} ₽/мес`
 }
 
-export function formatIncludedLimit(count: number | null, unitOne: string, unitFew: string, unitMany: string): string {
+/**
+ * `до N X` always puts X in the genitive case (the preposition "до" governs genitive, unlike bare
+ * counting which is nominative) — so this takes exactly two genitive forms, not the usual
+ * one/few/many triple: genitive singular for counts ending in 1 (except *11), genitive plural
+ * otherwise. E.g. formatIncludedLimit(1, 'компании', 'компаний') → "до 1 компании",
+ * formatIncludedLimit(21, 'компании', 'компаний') → "до 21 компании" (21 also ends in 1).
+ */
+export function formatIncludedLimit(count: number | null, unitGenitiveSingular: string, unitGenitivePlural: string): string {
   if (count === null) return 'без ограничений'
-  return `до ${count} ${pluralizeRu(count, unitOne, unitFew, unitMany)}`
+  const mod10 = count % 10
+  const mod100 = count % 100
+  const form = mod10 === 1 && mod100 !== 11 ? unitGenitiveSingular : unitGenitivePlural
+  return `до ${count} ${form}`
 }
 
 /** Standard Russian plural-form picker (1 компания / 2 компании / 5 компаний). */

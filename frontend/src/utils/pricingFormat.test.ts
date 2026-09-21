@@ -19,15 +19,27 @@ describe('formatMonthlyPrice', () => {
 
 describe('formatIncludedLimit', () => {
   it('null → "без ограничений"', () => {
-    expect(formatIncludedLimit(null, 'компания', 'компании', 'компаний')).toBe('без ограничений')
+    expect(formatIncludedLimit(null, 'компании', 'компаний')).toBe('без ограничений')
   })
 
-  it('1 → singular form', () => {
-    expect(formatIncludedLimit(1, 'компания', 'компании', 'компаний')).toBe('до 1 компания')
+  it('1 → genitive singular ("до 1 компании", not nominative "компания")', () => {
+    expect(formatIncludedLimit(1, 'компании', 'компаний')).toBe('до 1 компании')
   })
 
-  it('5 → "many" form', () => {
-    expect(formatIncludedLimit(5, 'сотрудник', 'сотрудника', 'сотрудников')).toBe('до 5 сотрудников')
+  it('5 → genitive plural', () => {
+    expect(formatIncludedLimit(5, 'сотрудника', 'сотрудников')).toBe('до 5 сотрудников')
+  })
+
+  it('21 → genitive singular (ends in 1, like 1, unlike 11)', () => {
+    expect(formatIncludedLimit(21, 'компании', 'компаний')).toBe('до 21 компании')
+  })
+
+  it('11 → genitive plural (the *11 exception)', () => {
+    expect(formatIncludedLimit(11, 'компании', 'компаний')).toBe('до 11 компаний')
+  })
+
+  it('2..4 → genitive plural too (unlike nominative "few" form)', () => {
+    expect(formatIncludedLimit(3, 'компании', 'компаний')).toBe('до 3 компаний')
   })
 })
 
