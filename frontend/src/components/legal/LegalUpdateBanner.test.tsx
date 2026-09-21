@@ -8,10 +8,11 @@ import type { ConsentStatus } from '../../types'
 function makeStatus(overrides: Partial<ConsentStatus> = {}): ConsentStatus {
   return {
     requiresAcceptance: false,
+    ownerActionBlocked: false,
     showBanner: true,
     documents: [
-      { type: 'Privacy', version: '2026-09-15', acceptedVersion: '2026-01-01', changeKind: 'Editorial' },
-      { type: 'Terms', version: '2026-01-01', acceptedVersion: '2026-01-01', changeKind: 'Editorial' },
+      { type: 'Privacy', currentVersion: '2026-09-15', acceptedVersion: '2026-01-01', changeKind: 'Editorial', gate: 'Global' },
+      { type: 'TermsClient', currentVersion: '2026-01-01', acceptedVersion: '2026-01-01', changeKind: 'Editorial', gate: 'Global' },
     ],
     ...overrides,
   }
@@ -63,7 +64,7 @@ describe('LegalUpdateBanner', () => {
   })
 
   it('a later real version change re-shows the banner after an earlier dismissal', () => {
-    localStorage.setItem('legal-banner-dismissed-version', 'Privacy:2026-01-01|Terms:2026-01-01')
+    localStorage.setItem('legal-banner-dismissed-version', 'Privacy:2026-01-01|TermsClient:2026-01-01')
     render(
       <MemoryRouter>
         <LegalUpdateBanner status={makeStatus()} />

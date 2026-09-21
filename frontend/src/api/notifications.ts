@@ -29,9 +29,17 @@ export const notificationsApi = {
 
   getTemplates: (companyId: string) =>
     api.get<NotificationTemplatesResponse>(`/companies/${companyId}/notification-templates`).then((r) => r.data),
-  updateTemplate: (companyId: string, type: NotificationType, body: string) =>
+  /** API_CONTRACT_CYCLE5.md §47.2 (BREAKING № 6) — every save now carries an `acknowledgement`; a
+   *  save without it, or with `accepted: false`, is a 400. `confirmedDespiteMarkers` is only read by
+   *  the server when the ad-marker check actually hit (§47.2 second 400 case). */
+  updateTemplate: (
+    companyId: string,
+    type: NotificationType,
+    body: string,
+    acknowledgement: { warningVersion: string; accepted: true; confirmedDespiteMarkers: boolean },
+  ) =>
     api
-      .put<NotificationTemplate>(`/companies/${companyId}/notification-templates/${type}`, { body })
+      .put<NotificationTemplate>(`/companies/${companyId}/notification-templates/${type}`, { body, acknowledgement })
       .then((r) => r.data),
   previewTemplate: (companyId: string, type: NotificationType, body: string) =>
     api

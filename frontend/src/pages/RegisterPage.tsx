@@ -1,13 +1,17 @@
 import { useForm } from 'react-hook-form'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/auth'
+import { legalApi } from '../api/legal'
+import { consentsApi } from '../api/consents'
 import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Icon } from '../components/ui/Icon'
+import { Card } from '../components/ui/Card'
 import { getAuthErrorMessage } from '../utils/authError'
 import { useState } from 'react'
+import type { ConsentPurpose } from '../types'
 
 interface FormData {
   firstName: string
@@ -15,9 +19,24 @@ interface FormData {
   phone: string
   password: string
   email?: string
-  acceptedLegal: boolean
+  privacyAcknowledged: boolean
+  termsAccepted: boolean
 }
 
+/**
+ * API_CONTRACT_CYCLE5.md §40, §41; ARCHITECTURE_CYCLE5.md T5-F1. Registration is split into THREE
+ * separate blocks and TWO server calls, not one checkbox:
+ *   1. account fields;
+ *   2. ознакомление с Privacy + акцепт TermsClient — both blocking, each its own labelled checkbox
+ *      with its own link (ст. 9: a single "accept everything" checkbox is explicitly forbidden,
+ *      US-65 п. 1);
+ *   3. `PdnConsent` — a visually separate card with one checkbox per purpose, none required. Purposes
+ *      come from the manifest (§39.1), never a hardcoded array, so a change to the purpose list on
+ *      the server doesn't need a frontend release.
+ * A second, non-blocking `POST /api/profile/consents` call fires only if at least one purpose was
+ * checked (§40.4) — declining every purpose is a legitimate terminal state, not an error, and the
+ * account is already fully registered before this call is even attempted.
+ */
 export function RegisterPage() {
   const {
     register,
@@ -25,20 +44,44 @@ export function RegisterPage() {
     watch,
     formState: { errors },
   } = useForm<FormData>({
-    defaultValues: { acceptedLegal: false },
+    defaultValues: { privacyAcknowledged: false, termsAccepted: false },
   })
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const acceptedLegal = watch('acceptedLegal')
+  const [purposes, setPurposes] = useState<ConsentPurpose[]>([])
+  const privacyAcknowledged = watch('privacyAcknowledged')
+  const termsAccepted = watch('termsAccepted')
+
+  const { data: manifest, isLoading: manifestLoading, isError: manifestError, refetch } = useQuery({
+    queryKey: ['legal-documents'],
+    queryFn: legalApi.getManifest,
+  })
+
+  const privacy = manifest?.documents.find((d) => d.type === 'Privacy')
+  const terms = manifest?.documents.find((d) => d.type === 'TermsClient')
+  const pdnConsent = manifest?.documents.find((d) => d.type === 'PdnConsent')
+  const documentsReady = !!privacy && !!terms
+
+  const togglePurpose = (key: ConsentPurpose, checked: boolean) => {
+    setPurposes((prev) => (checked ? [...prev, key] : prev.filter((p) => p !== key)))
+  }
 
   const onSubmit = async (data: FormData) => {
+    if (!privacy || !terms) return
     setLoading(true)
     setError('')
     try {
-      const res = await authApi.register({ ...data, email: data.email || undefined })
+      const res = await authApi.register({
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phone: data.phone,
+        password: data.password,
+        email: data.email || undefined,
+        legal: { privacyAcknowledgedVersion: privacy.version, termsAcceptedVersion: terms.version },
+      })
       // Signing in over a live session (a direct /login link, or registering a second account without
       // logging out) would otherwise leave the previous user's cached queries in place, and the new
       // user gets a first frame of someone else's data. Navbar's logout clears for the same reason.
@@ -54,6 +97,18 @@ export function RegisterPage() {
         },
         res.token,
       )
+
+      // §40.4 — a second, separate, non-blocking call: only made if the person opted into at least
+      // one purpose, and its failure must never undo the registration that already succeeded above.
+      if (purposes.length > 0 && pdnConsent) {
+        try {
+          await consentsApi.grant('PdnConsent', pdnConsent.version, purposes)
+        } catch {
+          // Best-effort — the account exists either way; the purpose can still be granted later from
+          // "Мои согласия".
+        }
+      }
+
       navigate('/')
     } catch (e: unknown) {
       setError(getAuthErrorMessage(e))
@@ -78,69 +133,143 @@ export function RegisterPage() {
             <p className="text-sm text-ink-soft">Присоединяйтесь — это бесплатно</p>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-[18px]">
-            <div className="grid grid-cols-2 gap-3.5">
-              <Input
-                label="Имя"
-                placeholder="Иван"
-                error={errors.firstName?.message}
-                {...register('firstName', { required: 'Введите имя' })}
-              />
-              <Input
-                label="Фамилия"
-                placeholder="Иванов"
-                error={errors.lastName?.message}
-                {...register('lastName', { required: 'Введите фамилию' })}
-              />
+          {manifestLoading ? (
+            <div className="h-64 bg-cream-deep rounded-2xl animate-pulse" />
+          ) : manifestError || !documentsReady ? (
+            <div className="text-center py-8">
+              <Icon name="alert-circle" size={28} strokeWidth={1.6} className="mx-auto mb-2 text-muted" />
+              <p className="text-sm text-ink-soft mb-4">Не удалось загрузить правовые документы. Без них форма недоступна.</p>
+              <Button variant="secondary" onClick={() => refetch()}>
+                Попробовать снова
+              </Button>
             </div>
-            <Input
-              label="Телефон"
-              type="tel"
-              placeholder="+7 999 000 00 00"
-              error={errors.phone?.message}
-              {...register('phone', { required: 'Введите телефон' })}
-            />
-            <Input label="Email (необязательно)" type="email" placeholder="your@email.com" {...register('email')} />
-            <Input
-              label="Пароль"
-              type="password"
-              placeholder="Минимум 8 символов"
-              error={errors.password?.message}
-              {...register('password', {
-                required: 'Введите пароль',
-                minLength: { value: 8, message: 'Минимум 8 символов' },
-              })}
-            />
+          ) : (
+            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-[18px]" noValidate>
+              {/* Block 1 — account fields */}
+              <fieldset className="flex flex-col gap-[18px]">
+                <legend className="sr-only">Личные данные</legend>
+                <div className="grid grid-cols-2 gap-3.5">
+                  <Input
+                    label="Имя"
+                    placeholder="Иван"
+                    error={errors.firstName?.message}
+                    {...register('firstName', { required: 'Введите имя' })}
+                  />
+                  <Input
+                    label="Фамилия"
+                    placeholder="Иванов"
+                    error={errors.lastName?.message}
+                    {...register('lastName', { required: 'Введите фамилию' })}
+                  />
+                </div>
+                <Input
+                  label="Телефон"
+                  type="tel"
+                  placeholder="+7 999 000 00 00"
+                  error={errors.phone?.message}
+                  {...register('phone', { required: 'Введите телефон' })}
+                />
+                <Input label="Email (необязательно)" type="email" placeholder="your@email.com" {...register('email')} />
+                <Input
+                  label="Пароль"
+                  type="password"
+                  placeholder="Минимум 8 символов"
+                  error={errors.password?.message}
+                  {...register('password', {
+                    required: 'Введите пароль',
+                    minLength: { value: 8, message: 'Минимум 8 символов' },
+                  })}
+                />
+              </fieldset>
 
-            <label className="flex items-start gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4 mt-0.5 rounded accent-gold"
-                {...register('acceptedLegal', { required: true })}
-              />
-              <span className="text-[13px] text-ink-soft leading-snug">
-                Принимаю{' '}
-                <Link to="/terms" target="_blank" className="text-gold hover:text-gold-dark">
-                  пользовательское соглашение
-                </Link>{' '}
-                и{' '}
-                <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
-                  политику обработки персональных данных
-                </Link>
-              </span>
-            </label>
+              {/* Block 2 — Privacy acknowledgement + TermsClient acceptance: two SEPARATE actions,
+                  each blocking, never merged into a single "accept everything" checkbox (US-65 п. 1). */}
+              <fieldset className="flex flex-col gap-2.5 rounded-2xl border border-line bg-cream-deep/40 p-4">
+                <legend className="text-[13px] font-medium text-[#4A4038] px-0.5">Правовые документы</legend>
 
-            {/* US-33 п. 1 */}
-            <p className="text-[13px] text-muted -mt-2.5">
-              Оставляя номер телефона, вы получите сервисные сообщения о своих записях в WhatsApp от салонов.
-            </p>
+                <label htmlFor="privacyAcknowledged" className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    id="privacyAcknowledged"
+                    type="checkbox"
+                    className="w-4 h-4 mt-0.5 rounded accent-gold"
+                    aria-describedby="privacyAcknowledged-desc"
+                    {...register('privacyAcknowledged', { required: true })}
+                  />
+                  <span id="privacyAcknowledged-desc" className="text-[13px] text-ink-soft leading-snug">
+                    Я ознакомлен(а) с{' '}
+                    <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
+                      Политикой обработки персональных данных
+                    </Link>
+                  </span>
+                </label>
 
-            {error && <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>}
+                <label htmlFor="termsAccepted" className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    id="termsAccepted"
+                    type="checkbox"
+                    className="w-4 h-4 mt-0.5 rounded accent-gold"
+                    aria-describedby="termsAccepted-desc"
+                    {...register('termsAccepted', { required: true })}
+                  />
+                  <span id="termsAccepted-desc" className="text-[13px] text-ink-soft leading-snug">
+                    Я принимаю{' '}
+                    <Link to="/terms" target="_blank" className="text-gold hover:text-gold-dark">
+                      Пользовательское соглашение
+                    </Link>
+                  </span>
+                </label>
+              </fieldset>
 
-            <Button type="submit" size="lg" loading={loading} disabled={!acceptedLegal} className="mt-1 w-full">
-              Зарегистрироваться
-            </Button>
-          </form>
+              {/* Block 3 — PdnConsent: a visually separate card, purposes come from the manifest, and
+                  NONE of it is required (§41.2, US-67 п. 3–4) — declining changes nothing about
+                  registration or later booking. */}
+              {pdnConsent && pdnConsent.purposes && pdnConsent.purposes.length > 0 && (
+                <Card className="p-4 border-line">
+                  <p className="text-[13px] font-medium text-[#4A4038] mb-1">
+                    Согласие на обработку персональных данных (необязательно)
+                  </p>
+                  <p className="text-xs text-muted mb-3">
+                    Отдельный документ. Можно не отмечать ни одного пункта — это не помешает зарегистрироваться и
+                    записаться к мастеру.{' '}
+                    <Link to="/pdn-consent" target="_blank" className="text-gold hover:text-gold-dark">
+                      Читать полный текст
+                    </Link>
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {pdnConsent.purposes.map((p) => (
+                      <label key={p.key} htmlFor={`purpose-${p.key}`} className="flex items-start gap-2.5 cursor-pointer">
+                        <input
+                          id={`purpose-${p.key}`}
+                          type="checkbox"
+                          className="w-4 h-4 mt-0.5 rounded accent-gold"
+                          checked={purposes.includes(p.key)}
+                          onChange={(e) => togglePurpose(p.key, e.target.checked)}
+                        />
+                        <span className="text-[13px] text-ink-soft leading-snug">{p.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {/* US-33 п. 1 */}
+              <p className="text-[13px] text-muted -mt-1">
+                Оставляя номер телефона, вы получите сервисные сообщения о своих записях в WhatsApp от салонов.
+              </p>
+
+              {error && <div className="bg-danger-bg text-danger text-sm px-4 py-2 rounded-xl">{error}</div>}
+
+              <Button
+                type="submit"
+                size="lg"
+                loading={loading}
+                disabled={!privacyAcknowledged || !termsAccepted}
+                className="mt-1 w-full"
+              >
+                Зарегистрироваться
+              </Button>
+            </form>
+          )}
 
           <p className="text-center text-sm text-ink-soft mt-7">
             Уже есть аккаунт?{' '}

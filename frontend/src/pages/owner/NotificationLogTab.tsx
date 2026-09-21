@@ -125,8 +125,17 @@ export function NotificationLogTab({ companyId }: { companyId: string }) {
             <Card key={n.id} className="p-3.5 flex items-center justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-ink text-sm">{n.recipientName || 'Клиент'}</span>
-                  <span className="text-xs text-muted">{n.recipientPhoneMasked}</span>
+                  {/* API_CONTRACT_CYCLE5.md §51 — "text erased by retention" is read from
+                      `contentRedacted`, never inferred from an empty string (a genuinely nameless
+                      guest booking also has an empty `recipientName`, and must not look the same). */}
+                  {n.contentRedacted ? (
+                    <span className="text-xs text-muted italic">текст удалён по сроку хранения</span>
+                  ) : (
+                    <>
+                      <span className="font-medium text-ink text-sm">{n.recipientName || 'Клиент'}</span>
+                      <span className="text-xs text-muted">{n.recipientPhoneMasked}</span>
+                    </>
+                  )}
                   <span className="text-xs text-muted">{n.typeText}</span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">{format(parseISO(n.createdAt), 'd MMM yyyy, HH:mm', { locale: ru })}</p>

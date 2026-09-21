@@ -3,15 +3,21 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { mastersApi, type MasterClient } from '../api/masters'
-import { clientNotesApi } from '../api/clientNotes'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { Pagination } from '../components/ui/Pagination'
 import { NoteCard } from '../components/clientNotes/NoteCard'
 import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
+import { HealthNoteCard } from '../components/clientNotes/HealthNoteCard'
+import { PhotoConsentBadge } from '../components/clientNotes/PhotoConsentBadge'
 import { formatPhone } from '../utils/phone'
+import { getClientKey } from '../utils/clientKey'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { useLegalText } from '../hooks/useLegalText'
+import { usePhotoUploadWithConsent } from '../hooks/usePhotoUploadWithConsent'
+import { findSection, splitLegalSections } from '../utils/legalSections'
+import { useAuthStore } from '../store/authStore'
 
 const STATUS_LABELS: Record<string, string> = {
   Pending: 'Ожидает',
@@ -38,8 +44,27 @@ function ClientCard({ client, companyId }: ClientCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [newNote, setNewNote] = useState('')
   const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
-  const [photoUploadError, setPhotoUploadError] = useState('')
   const qc = useQueryClient()
+  const hasRole = useAuthStore((s) => s.hasRole)
+  const clientKey = getClientKey(client)
+  // US-77 п. 4 — SuperAdmin gets no block at all, not an empty/403 one (checked at §53 checklist).
+  const showHealthNote = !hasRole('SuperAdmin')
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['master-clients', companyId] })
+
+  // §45.5, US-77 п. 2 — the warning next to the free-text note reuses D11's own "reminder to staff"
+  // section, so the wording lives in one place (legal/11-health-data-consent.html) instead of being
+  // duplicated here by hand.
+  const { data: healthConsentText } = useLegalText('HealthDataConsent')
+  const noteWarning = healthConsentText
+    ? findSection(splitLegalSections(healthConsentText.contentHtml), 'Напоминание сотруднику')
+    : null
+
+  // Same reactive consent gate NotePhotoUploader uses for "attach to an existing note" — reused here
+  // rather than duplicated, because the only actual difference is that the note (and so its id) is
+  // created a moment earlier, inside this very mutation, instead of already existing (T5-F6 follow-up:
+  // "add a note with photos already selected" surfaced a generic error instead of the consent form).
+  const photoUpload = usePhotoUploadWithConsent({ companyId, clientKey, onUploaded: invalidate })
 
   const addNoteMut = useMutation({
     mutationFn: async () => {
@@ -49,20 +74,16 @@ function ClientCard({ client, companyId }: ClientCardProps) {
         guestPhone: client.guestPhone ?? undefined,
         note: newNote,
       })
-      setPhotoUploadError('')
-      for (const file of pendingPhotos) {
-        try {
-          await clientNotesApi.uploadPhoto(created.id, file)
-        } catch {
-          setPhotoUploadError('Заметка сохранена, но не все фото удалось загрузить.')
-        }
-      }
+      // The files themselves now live inside `photoUpload`'s own state for the rest of this batch, so
+      // clearing `pendingPhotos` right after this (in onSuccess, unconditionally) does not lose them —
+      // see usePhotoUploadWithConsent's doc comment.
+      await photoUpload.uploadSequentially(created.id, pendingPhotos)
       return created
     },
     onSuccess: () => {
       setNewNote('')
       setPendingPhotos([])
-      qc.invalidateQueries({ queryKey: ['master-clients', companyId] })
+      invalidate()
     },
   })
 
@@ -136,15 +157,28 @@ function ClientCard({ client, companyId }: ClientCardProps) {
             )}
           </div>
 
+          {/* Contraindications — US-77, visually separate from the free-text note, own component */}
+          {showHealthNote && (
+            <div>
+              <HealthNoteCard companyId={companyId} clientKey={clientKey} />
+            </div>
+          )}
+
           {/* Notes */}
           <div>
-            <p className="text-sm font-semibold text-ink mb-2">Заметки</p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-sm font-semibold text-ink">Заметки</p>
+              <PhotoConsentBadge companyId={companyId} clientKey={clientKey} />
+            </div>
+            {noteWarning && (
+              <p className="text-xs text-muted mb-2">{noteWarning.html.replace(/<[^>]+>/g, '')}</p>
+            )}
             {client.notes.length === 0 ? (
               <p className="text-sm text-muted mb-2">Нет заметок</p>
             ) : (
               <ul className="flex flex-col gap-1.5 mb-2">
                 {client.notes.map((n) => (
-                  <NoteCard key={n.id} note={n} companyId={companyId} />
+                  <NoteCard key={n.id} note={n} companyId={companyId} clientKey={clientKey} />
                 ))}
               </ul>
             )}
@@ -179,7 +213,8 @@ function ClientCard({ client, companyId }: ClientCardProps) {
                 onChange={setPendingPhotos}
                 compact
               />
-              {photoUploadError && <p className="text-xs text-danger">{photoUploadError}</p>}
+              {photoUpload.error && <p className="text-xs text-danger">{photoUpload.error}</p>}
+              {photoUpload.consentModal}
             </div>
           </div>
         </div>
