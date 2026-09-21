@@ -90,8 +90,22 @@ public class CompaniesController(
 
     // Public: list masters for a company, optionally filtered by serviceId
     [HttpGet("{id:guid}/masters")]
-    public async Task<ActionResult<List<MasterPublicDto>>> GetMasters(Guid id, [FromQuery] Guid? serviceId)
+    public async Task<ActionResult<List<MasterPublicDto>>> GetMasters(Guid id, [FromQuery] string? serviceId)
     {
+        // serviceId is bound as string (not Guid?) on purpose: ASP.NET Core's default model binder
+        // treats an empty string for a nullable Guid query param as "absent" and silently maps it to
+        // null, so a caller sending `?serviceId=` got a 200 with no filter applied instead of a 400 for
+        // a malformed uuid (schemathesis finding, API_CONTRACT_CYCLE6.md §53). Only reject when the
+        // query param was actually supplied with a non-empty, non-uuid value; omitted/empty stays "no
+        // filter", matching the optional-parameter contract.
+        Guid? parsedServiceId = null;
+        if (!string.IsNullOrEmpty(serviceId))
+        {
+            if (!Guid.TryParse(serviceId, out var parsed))
+                return BadRequest("serviceId must be a valid uuid.");
+            parsedServiceId = parsed;
+        }
+
         var memberQuery = db.CompanyMembers
             .Include(cm => cm.User)
             // A Client-role membership row exists for a company's own customers (e.g. anyone who books
@@ -101,10 +115,10 @@ public class CompaniesController(
                 (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner) &&
                 cm.ProvidesServices);
 
-        if (serviceId.HasValue)
+        if (parsedServiceId.HasValue)
         {
             var masterIdsForService = await db.MasterServices
-                .Where(ms => ms.ServiceId == serviceId.Value)
+                .Where(ms => ms.ServiceId == parsedServiceId.Value)
                 .Select(ms => ms.MasterId)
                 .ToListAsync();
 
