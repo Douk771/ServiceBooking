@@ -1,52 +1,67 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `7a36543`, дата: 2026-09-21.**
+**Актуально по состоянию на коммит: `071fc11`, дата: 2026-09-22.**
 
 Документ описывает **что есть в репозитории сейчас**, без предложений по развитию.
 
-Точка отсчёта. Ветка — **`develop`**, HEAD — `7a36543`, рабочее дерево чистое (кроме самого этого файла в момент его правки).
+Точка отсчёта. Ветка — **`develop`**, HEAD — `071fc11`, рабочее дерево чистое (кроме самого этого файла в момент его правки).
 Модель веток прежняя: `master` ← `release-candidate` ← `develop` ← `cycle/NN-<слаг>`
 (см. §0.0 DEPLOY.md). `develop` — интеграционный ствол и одновременно **та самая ветка, которая
 развёрнута на боевой машине**: `master` отстаёт, тегов нет, релиз формально не объявлен.
 
-Диапазон изменений с прошлой редакции (`0e61369`): **18 коммитов**, `0e61369..7a36543`, полный
-список — `git log --oneline 0e61369..HEAD`. Это **весь цикл 4** (ветка `cycle/04-notifications-whatsapp`,
-смёржена коммитом `2a11d07`), плюс два коммита починки CI уже на `develop` и один коммит
-документации (`d4137dd`), закрывший расхождение README/CHANGELOG с фактом развёртывания.
-Объём: **+25 082 / −1 197** строк, 176 файлов.
+Диапазон изменений с прошлой редакции (`7a36543`): **18 коммитов**, `7a36543..071fc11`, полный
+список — `git log --oneline 7a36543..HEAD`. Это **весь цикл 5** (ветка `cycle/05-legal-compliance`,
+смёржена коммитом `14c9331`), плюс два коммита уже на `develop`: починка смоук-теста под новый
+контракт регистрации (`aecddb1`) и документы ночной смены (`071fc11`).
+Объём: **+37 272 / −2 632** строк, 252 файла.
 
-**Главное отличие от прошлой редакции: в продукте впервые появился канал сообщений наружу —
-уведомления клиенту о записи в WhatsApp, отправляемые от имени салона с его собственного номера
-через GREEN-API.** Сюда же входят: справочник городов и часовые пояса компаний, первое в проекте
-шифрование чужих секретов (AES-GCM), две новые фоновые задачи, админский контур оплаты канала и
-параметров платформы, раздел «Уведомления» в кабинете владельца.
+**Главное отличие от прошлой редакции: переделан контур согласий, построенный в цикле 3.** Это не
+новая функция рядом, а **переписанное работающее** — через этот контур проходит каждый пользователь
+при каждом входе. `UserConsent` (одна перезаписываемая строка на пару «пользователь + документ»)
+заменён на **журнал событий `ConsentRecord`**; правовых документов стало пять вместо двух, плюс шесть
+невersионируемых текстов интерфейса; блокировка 451 перестала быть одной на всех и получила область
+действия (`LegalGate`).
 
-⚠️ **Функция не выпущена наружу и после выката никому не предлагается** — тарифный флаг
-`AllowNotificationChannel` выключен у всех планов, цена опции не задана. Это **ожидаемое состояние,
-а не дефект** (подробнее — §9, блок P0). Провайдер по умолчанию — `logging`, то есть в закоммиченной
-конфигурации приложение не делает ни одного сетевого вызова к GREEN-API.
+Сюда же входят: отдельная зашифрованная таблица противопоказаний клиента (`ClientHealthNote`),
+обращения субъектов данных (`SubjectRequest`), **тринадцать правил уничтожения по срокам хранения** и
+четвёртая фоновая задача `DataRetentionTask` (по умолчанию — **сухой прогон**), акцепт владельцем
+текста об ответственности за рекламу при сохранении шаблона, ИНН и форма лица при заявке на канал,
+подтверждение полномочий при записи за другого человека.
+
+⚠️ **Функция уведомлений в WhatsApp (цикл 4) по-прежнему не выпущена** — тарифный флаг
+`AllowNotificationChannel` выключен у всех планов, цена опции не задана, провайдер по умолчанию
+`logging`. Цикл 5 снял часть правовых блокеров, но **не все** (§9, блок P0-цикл-5). Это **ожидаемое
+состояние, а не дефект**.
+
+⚠️ **Правовые тексты цикла 5 — каркас, а не готовые документы.** Двенадцать документов юриста лежат
+в `legal-drafts/` с **пятнадцатью видами плейсхолдеров** (`{{ИНН_ОПЕРАТОРА}}`, `{{НОМЕР_УВЕДОМЛЕНИЯ_РКН}}`
+и т.п.); всё, что читает приложение, помечено `isDraft: true`. До публикации нужна вычитка
+практикующим юристом.
 
 Все утверждения ниже получены чтением исходников, конфигов и git-истории. Где чего-то не нашлось —
 так и написано.
 
-**Числа прогонов на `7a36543`** (автор этого документа работает только на чтение и тесты не
+**Числа прогонов на `071fc11`** (автор этого документа работает только на чтение и тесты не
 запускает — прогон функционального набора пересоздаёт базу `servicebooking_test`, см. §7; числа
-получены от исполнявшего прогон, зафиксированы в теле мерж-коммита `2a11d07`):
+получены от исполнявшего прогон):
 
 | Команда | Результат | Было в прошлой редакции |
 |---|---|---|
 | `dotnet build ServiceBooking.sln -warnaserror` | **0 warnings, 0 errors** | 0 / 0 |
-| `dotnet test ServiceBooking.UnitTests` | **488 / 488** | 215 / 215 |
-| `dotnet test ServiceBooking.Tests` | **449 / 449** | 407 / 407 |
-| `npm run test:run` (в `frontend/`) | **100 / 100** | 78 / 78 |
+| `dotnet test ServiceBooking.UnitTests` | **591 / 591** | 488 / 488 |
+| `dotnet test ServiceBooking.Tests` | **465 / 465** | 449 / 449 |
+| `npm run test:run` (в `frontend/`) | **181 / 181** | 100 / 100 |
 | `npx tsc --noEmit` (в `frontend/`) | чисто | чисто |
 | `npm run build` (в `frontend/`) | успешно | успешно |
 
 Числа перепроверены **статическим подсчётом** при подготовке этой редакции и сходятся точно:
-`[Fact]`+`[InlineData]` — **488** в `ServiceBooking.UnitTests`, **449** в `ServiceBooking.Tests`
-(там атрибуты идут парой `[Fact, TestCase("ID")]`), вызовов `it(...)` в `frontend/src` — **100**.
-Функциональный набор прогонялся **дважды подряд без пересоздания базы** — идемпотентность
-подтверждена (запись в `2a11d07`).
+`[Fact]`+`[InlineData]` — **591** в `ServiceBooking.UnitTests` (376 + 215), **465** в
+`ServiceBooking.Tests` (449 + 16; там атрибуты идут парой `[Fact, TestCase("ID")]`), вызовов
+`it(...)` в `frontend/src` — **181** в 32 файлах.
+
+⚖️ **Пропорция роста другая, чем в цикле 4.** Фронтенд вырос почти вдвое (+81) — впервые прирост
+фронта обогнал функциональный набор (+16). Причина в том, что цикл 5 менял в основном **формы и
+экраны согласий**, а не серверные алгоритмы.
 
 ---
 
@@ -63,16 +78,16 @@
 | СУБД | PostgreSQL (в docker-compose — `postgres:16-alpine`) | `docker-compose.yml`, `docker-compose.prod.yml` |
 | Аутентификация | ASP.NET Core Identity (`IdentityDbContext<AppUser>`) + JWT Bearer 8.0.11 | `Program.cs`, `Services/TokenService.cs` |
 | Обработка изображений | **SkiaSharp 2.88.8** + `SkiaSharp.NativeAssets.Linux.NoDependencies` (цикл 2) — декод, ориентация по EXIF, ресайз, ре-энкод | `ServiceBooking.API.csproj`, `Services/ImageProcessor.cs` |
-| Rate limiting | `Microsoft.AspNetCore.RateLimiting` (встроенный в ASP.NET Core 8), 🆕 **шесть** именованных политик: `uploads`, `auth-login`, `auth-register`, `booking-create`, `data-export`, 🆕 `notifications-webhook` (600/мин на IP); глобального лимитера нет | `Program.cs`, секция `RateLimits` |
-| 🆕 **Шифрование секретов** | **AES-GCM напрямую** (`System.Security.Cryptography`), мастер-ключ из конфигурации (`Notifications:EncryptionKey`, 32 байта base64). ASP.NET Core Data Protection **отвергнут осознанно** — его key ring в контейнере эфемерен и молча перестал бы читать ранее зашифрованные токены после передеплоя. Формат шифротекста `v1.<keyId>.<base64(nonce12‖tag16‖ct)>`, AAD — id канала | `Services/Notifications/SecretProtector.cs`, `ChannelKeyFingerprint.cs` |
+| Rate limiting | `Microsoft.AspNetCore.RateLimiting` (встроенный в ASP.NET Core 8), ⚖️ **семь** именованных политик: `uploads`, `auth-login`, `auth-register`, `booking-create`, `data-export`, `notifications-webhook` (600/мин на IP), ⚖️ `subject-request` (3/час на IP); глобального лимитера нет | `Program.cs`, секция `RateLimits` |
+| 🆕 **Шифрование секретов** | **AES-GCM напрямую** (`System.Security.Cryptography`), мастер-ключ из конфигурации (`Notifications:EncryptionKey`, 32 байта base64). ASP.NET Core Data Protection **отвергнут осознанно** — его key ring в контейнере эфемерен и молча перестал бы читать ранее зашифрованные токены после передеплоя. Формат шифротекста `v1.<keyId>.<base64(nonce12‖tag16‖ct)>`, AAD — id канала. ⚖️ Цикл 5 добавил **строковую перегрузку связанных данных** (`Encrypt/Decrypt(…, string associatedData)`) и обёртку `HealthNoteProtector` над ней — **второй криптографии в проекте намеренно не заводили**: один ключ, одна процедура ротации. Обратная совместимость подтверждена ревью побайтово — старые токены каналов читаются | `Services/Notifications/SecretProtector.cs`, `ChannelKeyFingerprint.cs`, ⚖️ `Services/Legal/HealthNoteProtector.cs` |
 | 🆕 **HTTP-клиент наружу** | `IHttpClientFactory`, именованный клиент `green-api` с keep-alive и **IPv4-first `ConnectCallback`**; логирование этого клиента заглушено на уровне категорий (токен в URL) | `Program.cs`, `Services/Notifications/GreenApi/GreenApiHandlerFactory.cs`, `PreferIPv4.cs` |
 | 🆕 Кеш в памяти | `IMemoryCache` (`AddMemoryCache`) — кеш QR-ответа и 60-секундный кеш `PlatformSettings` | `Program.cs` |
 | **Логирование** ⭐ | **Serilog.AspNetCore 8.0.3** (`CompactJsonFormatter` в stdout и `logs/app-.json`) + маскирование телефонов | `Program.cs`, `Services/LogMasking.cs`, `PhoneMaskingEnricher.cs` |
 | **Трекер ошибок** ⭐ | **Sentry.Serilog 4.13.0** — синк включается только при непустом `Sentry:Dsn`; целевой приёмник — self-hosted **GlitchTip** (Sentry-совместимый) | `ServiceBooking.API.csproj`, `docker-compose.glitchtip.yml` |
 | **Health-checks** ⭐ | встроенные `Microsoft.Extensions.Diagnostics.HealthChecks`, два анонимных эндпоинта со своим двухполевым ответом | `Program.cs`, `Services/Health/` |
-| Фоновые задачи | Свой `BackgroundService` + `IScheduledTask` (цикл 2). Hangfire/Quartz **нет**. 🆕 Задач стало **три** (добавились `notification-dispatch` и `channel-health`), сам раннер при этом не менялся | `Services/Scheduling/` |
+| Фоновые задачи | Свой `BackgroundService` + `IScheduledTask` (цикл 2). Hangfire/Quartz **нет**. ⚖️ Задач стало **четыре** (добавилась `data-retention`, период — сутки), сам раннер не менялся ни в цикле 4, ни в 5 | `Services/Scheduling/` |
 | Документация API | Swashbuckle.AspNetCore 6.5.0, Swagger **только в Development** (цикл 1) | `Program.cs` |
-| Правовые документы | ⭐ **файлы на диске** (`App_Data/legal/legal.json` + HTML), снимок в памяти с перечитыванием по mtime; не БД и не внешний сервис | `Services/Legal/LegalDocumentProvider.cs` |
+| Правовые документы | ⭐ **файлы на диске** (`App_Data/legal/legal.json` + HTML), снимок в памяти с перечитыванием по mtime; не БД и не внешний сервис. ⚖️ Манифест цикла 5 состоит из **двух списков**: `documents[]` — пять версионируемых документов (`Privacy`, `TermsClient`, `TermsOwner`, `PdnConsent`, `ChannelRiskNotice`) с `gate`/`changeKind`/`purposes`, и `uiTexts[]` — **шесть текстов интерфейса**, которые **не являются версионируемыми документами и не участвуют в гейте 451** | `Services/Legal/LegalDocumentProvider.cs`, `App_Data/legal/legal.json` |
 | Стиль кода | ⭐ `.editorconfig` в корне — **описывает** уже сложившийся стиль; `dotnet format` в CI **не подключён** | `.editorconfig` |
 | Менеджер пакетов | NuGet, версии зафиксированы в `.csproj` (без `Directory.Packages.props`, без lock-файлов) | — |
 
@@ -200,10 +215,30 @@ Vite и куда мапится docker-compose.
 `ConnectPreference: IPv4First`, `ConnectTimeoutSeconds: 5`, `PerAddressConnectTimeoutSeconds: 2`),
 подсекция `Dispatch` (`BatchSize: 200`, `BudgetSeconds: 50`, `MaxParallelChannels: 8`,
 `PauseMinMs: 5000`, `PauseMaxMs: 15000`, `InFlightGraceMinutes: 5`, `MaxAttempts: 5`),
+⚖️ цикл 5 добавил в неё `ProviderDeliveryConsent` (`AccountsOnly` по умолчанию — режим спорного
+правового гейта, см. §4.18) и в подсекцию `GreenApi` — `ServerCountry` (пусто) и
+`InstanceCreationEnabled: false`,
 а также `ReminderJitterMinutes: 15`, `UnauthorizedInstanceTimeoutMinutes: 15`,
 `TestMessageCooldownMinutes: 5`, `ConsecutiveFailureThreshold: 5`, `AllowedRecipients: []`
 (белый список получателей для обкатки). Все секреты этой секции в git **пустые** — боевые значения
 живут только в `.env` на машине (§8).
+
+⚖️ **Две новые секции цикла 5 в `appsettings.json`:**
+- **`Retention`** — тринадцать числовых сроков в сутках (`NotificationBodyDays: 30`,
+  `NotificationMetadataDays: 365`, `TemplateHistoryDays: 1095`, `InactiveAccountDays: 1095`,
+  `BookingPersonalizationDays: 1095`, `ClientNoteDays: 1095`, `ClientNotePhotoDays: 365`,
+  `ClientHealthNoteDays: 1095`, `ConsentRecordDays: 1095`, `ChannelStateEventDays: 365`,
+  `PaymentLogDays: 1825`, `MailLogDays: 365`, `AppLogDays: 90`) плюс `AppLogDirectory` (пусто =
+  проверка выключена). Сроки **намеренно вынесены из кода в конфиг**, но два из них
+  (`TemplateHistoryDays` ≥ 365 и `ConsentRecordDays` ≥ 1095) дополнительно проверяются fail-fast'ом
+  на старте — это юридические минимумы, а не дефолты по вкусу оператора.
+- **`SubjectRequests:ResponseWorkingDays: 10`** — срок ответа на обращение субъекта; **вычисляется и
+  сохраняется в момент приёма обращения**, а не пересчитывается из текущего конфига.
+- Подсекция `ScheduledTasks:data-retention` (`Enabled: true`, `MaxRunMinutes: 10`, **`DryRun: true`**,
+  `BatchSize: 500`). ⚠️ **Сухой прогон — значение по умолчанию**: чтобы задача действительно удаляла,
+  оператор обязан явно выставить `false` (на машине — через `RETENTION_DRY_RUN`, §8).
+- В `appsettings.Testing.json` добавлены выключение `data-retention` и поднятый лимит политики
+  `subject-request`.
 
 ---
 
@@ -217,9 +252,10 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 │   │                               CORS, Swagger (только Dev), exception handler, ForwardedHeaders,
 │   │                               5 политик rate limiting, глобальный LegalConsentFilter, health-эндпоинты,
 │   │                               регистрация фоновых задач, миграции, сид
-│   ├── Controllers/                🆕 18 контроллеров (19 классов — в Reviews их два); цикл 4 добавил
+│   ├── Controllers/                ⚖️ 20 контроллеров (21 класс — в Reviews их два); цикл 4 добавил
 │   │                               CitiesController, NotificationChannelsController, NotificationsController,
-│   │                               CompanyNotificationsController
+│   │                               CompanyNotificationsController; ⚖️ цикл 5 — ClientConsentsController,
+│   │                               SubjectRequestsController
 │   ├── DTOs/                       Auth / Bookings / ⭐ Common (PagedResult, 🆕 Optional<T>) / 🆕 Cities /
 │   │                               ClientNotes / Companies / 🆕 Notifications (Channel/Log/Settings/Template/Unsubscribe) /
 │   │                               Services / WorkingHours
@@ -231,7 +267,11 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 │   │   │                           🆕 NotificationRiskText, 🆕 ChannelPresentation, 🆕 CompanyTimeZone,
 │   │   │                           🆕 CitySearch, 🆕 PhoneDisplayMask, 🆕 UnsubscribeTokens,
 │   │   │                           🆕 PlatformSettingsWriter, 🆕 ProviderWebhookParsing
-│   │   ├── Legal/                  ⭐ LegalDocumentProvider, LegalConsentFilter, LegalOptions, LegalSnapshot
+│   │   ├── Legal/                  ⭐ LegalDocumentProvider, LegalConsentFilter, LegalOptions, LegalSnapshot;
+│   │   │                           ⚖️ +ConsentLedger, ConsentSubject, HealthNoteProtector,
+│   │   │                           RequiresOwnerTermsAttribute
+│   │   ├── Retention/              ⚖️ IRetentionRule, RetentionPeriods, RetentionPlan, RetentionRuleRunner,
+│   │   │                           Rules/ — ТРИНАДЦАТЬ правил уничтожения (см. §4.18)
 │   │   ├── Health/                 ⭐ DatabaseReadyHealthCheck
 │   │   ├── Notifications/          🆕 SecretProtector, ChannelKeyFingerprint, NotificationOptions, NotificationGate,
 │   │   │   │                       NotificationTiming, NotificationTemplateRenderer/Validator, DefaultTemplates,
@@ -243,39 +283,50 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 │   │   │                           WebhookParser, StateInstanceParser, HandlerFactory
 │   │   └── Scheduling/             IScheduledTask, ScheduledTaskRunner, ScheduledTaskOptions,
 │   │                               ScheduledTaskSchedule, Tasks/{PhotoRetentionCleanupTask,
-│   │                               🆕 NotificationDispatchTask, 🆕 ChannelHealthTask}
-│   ├── App_Data/legal/             ⭐ В GIT: манифест legal.json + privacy.html + terms.html (ЧЕРНОВИК);
+│   │                               🆕 NotificationDispatchTask, 🆕 ChannelHealthTask,
+│   │                               ⚖️ DataRetentionTask}
+│   ├── App_Data/legal/             ⭐ В GIT: манифест legal.json + HTML (ЧЕРНОВИКИ);
+│   │                               ⚖️ файлов стало 11: privacy, terms, terms-owner, pdn-consent,
+│   │                               channel-risk-notice + шесть текстов интерфейса;
 │   │                               на проде перекрывается bind-mount'ом ./legal с хоста
 │   ├── App_Data/private-uploads/   приватный класс хранения (в .gitignore)
 │   ├── Dockerfile                  multi-stage, aspnet:8.0, EXPOSE 8080 (комментарий «не менять на -alpine»)
 │   └── appsettings*.json           appsettings.json и appsettings.Testing.json в git; Development/Production — в .gitignore
 ├── ServiceBooking.Core/            только сущности и перечисления, зависимость одна — Identity.EFCore
-│   ├── Entities/                   🆕 30 классов (⭐ +UserConsent; 🆕 +12 сущностей цикла 4, см. §3)
-│   └── Enums/                      BookingStatus, ⭐ LegalDocumentType, PaymentStatus, PhotoRetention, UserRole,
-│                                   🆕 +7: ChannelState, ChannelStateReason, ChannelPaymentStatus,
-│                                   NotificationStatus, NotificationReason, NotificationType,
-│                                   NotificationTransport, OptOutSource
-├── ServiceBooking.Infrastructure/  AppDbContext + 🆕 28 миграций EF Core
-├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; 🆕 37 файлов, 488 запусков
-├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; 🆕 28 файлов, 449 запусков
+│   ├── Entities/                   ⚖️ 32 класса (−UserConsent, +ConsentRecord, +ClientHealthNote,
+│   │                               +SubjectRequest; 🆕 12 сущностей цикла 4, см. §3)
+│   └── Enums/                      BookingStatus, ⭐ LegalDocumentType (⚖️ пять членов), PaymentStatus,
+│                                   PhotoRetention (⚖️ без Forever), UserRole, 🆕 +7 цикла 4;
+│                                   ⚖️ +7 цикла 5: LegalGate, ConsentPurpose, ConsentAct, ConsentSource,
+│                                   SubjectRequestKind/Status, LegalEntityForm, ProviderDeliveryConsentMode;
+│                                   ⚖️ LegalTextKey — СТРОКИ, а не перечисление
+├── ServiceBooking.Infrastructure/  AppDbContext + ⚖️ 36 миграций EF Core
+├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; ⚖️ 44 файла, 591 запуск
+├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; ⚖️ 29 файлов, 465 запусков
 │   ├── Infrastructure/             ApiTestBase, CustomWebApplicationFactory, TestDatabaseFixture, JsonHelpers,
 │   │                               TestCaseAttribute, TestImages, ⭐ LegalDocumentsTestFactory, ⭐ RateLimitTestFactory,
 │   │                               🆕 NotificationTestBase, NotificationTestFactory, NotificationDispatchTestFactory
 │   └── Tests/                      🆕 28 файлов по доменам
 ├── frontend/                       React SPA
-│   ├── src/api/                    🆕 20 модулей — тонкая обёртка над axios, по одному на домен
+│   ├── src/api/                    ⚖️ 23 модуля — тонкая обёртка над axios, по одному на домен
 │   │                               (⭐ +legal.ts; 🆕 +cities.ts, +notifications.ts, +notificationChannels.ts,
-│   │                               +platformSettings.ts)
+│   │                               +platformSettings.ts; ⚖️ +consents.ts, +clientConsents.ts,
+│   │                               +subjectRequests.ts)
 │   ├── src/pages/                  страницы; вложенные owner/ и admin/ — вкладки;
 │   │                               ⭐ +LegalDocumentPage.tsx, +DeleteAccountPage.tsx;
 │   │                               🆕 +UnsubscribePage.tsx, owner/{NotificationsSection, NotificationSettingsTab,
-│   │                               NotificationTemplatesTab, NotificationLogTab}.tsx, admin/NotificationsAdminTab.tsx
-│   ├── src/components/             booking/, clientNotes/, ⭐ legal/ (ConsentGate, LegalUpdateBanner),
-│   │                               layout/, review/, schedule/, ui/ (⭐ +Pagination, 🆕 +CityCombobox),
+│   │                               NotificationTemplatesTab, NotificationLogTab}.tsx, admin/NotificationsAdminTab.tsx;
+│   │                               ⚖️ +ConsentsPage.tsx, +SubjectRequestPage.tsx,
+│   │                               admin/SubjectRequestsTab.tsx, owner/TemplateAcknowledgementModal.tsx
+│   ├── src/components/             booking/, clientNotes/ (⚖️ +HealthNoteCard, +PhotoConsentBadge,
+│   │                               +ClientConsentModal), ⭐ legal/ (ConsentGate, LegalUpdateBanner,
+│   │                               ⚖️ +OwnerTermsGateModal), layout/, review/, schedule/,
+│   │                               ui/ (⭐ +Pagination, 🆕 +CityCombobox),
 │   │                               🆕 notifications/ (QrModal, AssignCompanyDialog, RiskAcceptanceModal,
-│   │                               ChannelBreachBanner)
-│   ├── src/hooks/                  useOverlayDismiss, useAuthedImage, ⭐ useExportData, ⭐ useDebouncedValue
-│   ├── src/store/authStore.ts      единственный zustand-стор
+│   │                               ChannelBreachBanner, ⚖️ +ChannelRequestModal)
+│   ├── src/hooks/                  useOverlayDismiss, useAuthedImage, ⭐ useExportData, ⭐ useDebouncedValue,
+│   │                               ⚖️ +useLegalText, +usePhotoUploadWithConsent
+│   ├── src/store/                  ⚖️ ДВА zustand-стора: authStore.ts и ownerGateStore.ts
 │   ├── src/test/setup.ts           setup Vitest (jest-dom + cleanup Testing Library)
 │   ├── src/types/index.ts          общие TS-типы (ручная копия серверных DTO)
 │   ├── src/utils/                  мапперы ошибок HTTP → русский текст (⭐ +authError, +legalError,
@@ -304,12 +355,18 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 ├── docker-compose.glitchtip.yml    ⭐ self-hosted GlitchTip (Sentry-совместимый трекер), отдельный стек
 ├── README.md                       продуктовое описание + «чего пока нет» + ⭐ запуск/секреты/CI/деплой
 ├── CHANGELOG.md                    changelog по датам циклов, самая свежая запись сверху
-├── docs/                           пользовательская документация по ролям (⭐ +personal-data.md)
-├── SPEC.md                         🆕 ~276 КБ, спека ЦИКЛА 4 (уведомления WhatsApp), редакция 6
+├── docs/                           пользовательская документация по ролям (⭐ +personal-data.md,
+│                                   ⚖️ +incident-runbook.md — утечка ПДн, что делать)
+├── legal-drafts/                   ⚖️ ДВЕНАДЦАТЬ HTML-документов юриста + README.md +
+│                                   legal.json + legal.manifest.proposed.json; ИСХОДНИКИ
+│                                   с плейсхолдерами {{…}}, приложение их НЕ читает
+├── LEGAL_REVIEW.md                 ⚖️ ~205 КБ, юридическое заключение по продукту, редакция 4
+├── SPEC.md                         ⚖️ ~163 КБ, спека ЦИКЛА 5 (правовые основания продукта)
 ├── ARCHITECTURE.md / API_CONTRACT.md                документы ЦИКЛА 3 (не перезаписаны!)
-├── ARCHITECTURE_CYCLE4.md / API_CONTRACT_CYCLE4.md  🆕 документы цикла 4 — ПРОДОЛЖЕНИЯ прежних
-│                                   (разделы 21–40 и 19–37, нумерация не пересекается)
-├── SPEC_CYCLE3_PRODUCTION.md       🆕 сохранённая спека цикла 3 (SPEC.md занят циклом 4)
+├── ARCHITECTURE_CYCLE4.md / API_CONTRACT_CYCLE4.md  🆕 документы цикла 4 (разделы 21–40 и 19–37)
+├── ARCHITECTURE_CYCLE5.md / API_CONTRACT_CYCLE5.md  ⚖️ документы цикла 5 (разделы 41–60 и 38–53)
+├── SPEC_CYCLE3_PRODUCTION.md       🆕 сохранённая спека цикла 3
+├── SPEC_CYCLE4_NOTIFICATIONS.md    ⚖️ сохранённая спека цикла 4 (SPEC.md занят циклом 5)
 ├── SPEC_DEFERRED_NOTIFICATIONS.md / SPEC_APPENDIX_CHANNELS.md  ⭐ спека ОТЛОЖЕННОГО цикла уведомлений
 ├── API_DOCUMENTATION.md            ~247 КБ, подробный справочник эндпоинтов (рус.)
 ├── TEST_CATALOG.md                 ~270 КБ, человекочитаемый каталог всех тест-кейсов (рус.)
@@ -322,14 +379,16 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 
 ⭐ — появилось в цикле 3. 🚀 — появилось/изменилось при первом реальном развёртывании
 (диапазон `6369266..0e61369`). 🆕 — появилось в **цикле 4** (диапазон `0e61369..7a36543`).
+⚖️ — появилось или **переделано** в **цикле 5** (диапазон `7a36543..071fc11`). Значки прежних циклов
+намеренно оставлены как были: так видно, что именно в каком цикле возникло.
 
 ### Точка входа и слои
 
 - Единственная точка входа приложения — `ServiceBooking.API/Program.cs` (🆕 вырос до **784 строк**).
   **Второй процесс** в том же
   хосте — `ScheduledTaskRunner` (`BackgroundService`), тикает раз в `ScheduledTasks:TickSeconds` (60 с);
-  🆕 задач в нём теперь три, но сам раннер цикл 4 **не менял** — это прямое подтверждение, что
-  расширение через `IScheduledTask` работает как задумано.
+  ⚖️ задач в нём теперь **четыре**, и раннер не менялся **ни в цикле 4, ни в цикле 5** — расширение
+  через `IScheduledTask` продолжает работать как задумано.
   ⭐ Третий фоновый «житель» — `LegalDocumentProvider`: держит снимок правовых документов в памяти и
   перечитывает манифест с диска по mtime (не чаще раза в `Legal:ReloadSeconds`).
 - **Бизнес-логика по-прежнему живёт в контроллерах.** Сервисного слоя как такового нет, но `Services/`
@@ -354,6 +413,14 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
   `CitySearch`, `PhoneDisplayMask`, `UnsubscribeTokens`, `PauseGenerator`, `PreferIPv4`,
   `GreenApiUrls/ResultClassifier/WebhookParser/StateInstanceParser`, `NotificationTexts`,
   `Optional<T>`). Именно поэтому юнит-набор вырос с 215 до 488, а функциональный — только на 42.
+- ⚖️ **Цикл 5 добавил к этому слою первый «единственный читатель и писатель» таблицы** —
+  `Services/Legal/ConsentLedger.cs`. Это не репозиторий в общем смысле (их в проекте по-прежнему нет):
+  журнал согласий — **единственная** таблица, доступ к которой не размазан по контроллерам, и сделано
+  это ровно затем, чтобы ответ на вопрос «что сейчас считается согласованным» существовал в одном месте.
+  Сам `ConsentLedger` **намеренно не стоит на горячем пути**: Privacy/TermsClient/TermsOwner проверяются
+  по claim'ам JWT против снимка в памяти, без запросов в БД. Чистых классов цикл 5 добавил меньше, чем
+  цикл 4, но они есть и покрыты юнит-тестами: `InnValidator`, `WorkingDays`, `TemplateAdHeuristics`,
+  `ClientKey`, `RetentionPlan`, `SubjectRequestReference`, `HealthNoteProtector`.
 - 🆕 **Файлы цикла 4 поделены между двумя бэкенд-разработчиками:** `Services/Notifications/**` —
   один, `Services/Notification*.cs` в корне `Services/` (`NotificationScheduler`, `NotificationTexts`,
   `NotificationRiskText`) — другой. Это объясняет, почему презентационный код лежит не рядом с
@@ -384,11 +451,11 @@ Blazor Server-шаблон из первого коммита удалён це�
 | `WorkingHours` | Guid | `MasterId`, `CompanyId`, **`Date: DateOnly`**, `StartTime`, `EndTime`, `IsWorking`; **уникальный индекс `(MasterId, CompanyId, Date)`** (цикл 1) | 1—N `ScheduleBreak` |
 | `ScheduleBreak` | Guid | `WorkingHoursId`, `StartTime`, `EndTime` | перерывы внутри дня |
 | `WeeklyScheduleTemplate` | Guid | `MasterId`, `CompanyId`, `DayOfWeek` (ISO 1..7), `IsWorking`, `StartTime`, `EndTime`; индекс `(MasterId, CompanyId)` | шаблон, «раскатываемый» в `WorkingHours` |
-| `Booking` | Guid | `CompanyId`, `ServiceId`, `MasterId`, `ClientId?`, `GuestName/Phone/Email`, `Date`, `StartTime`, `EndTime`, **`Price` (снимок цены)**, **`CommissionPercent` (снимок комиссии, цикл 1)**, `Status`, `PaymentStatus`, `Notes`, `CancellationReason`, ⭐ **`ConsentPrivacyVersion?` / `ConsentTermsVersion?` / `ConsentAcceptedAtUtc?`** (снимок согласия, заполняет сервер, в т.ч. для гостя), ⭐ **`ClientDeleted`** | Master `Restrict`, Client `SetNull` |
+| `Booking` | Guid | `CompanyId`, `ServiceId`, `MasterId`, `ClientId?`, `GuestName/Phone/Email`, `Date`, `StartTime`, `EndTime`, **`Price` (снимок цены)**, **`CommissionPercent` (снимок комиссии, цикл 1)**, `Status`, `PaymentStatus`, `Notes`, `CancellationReason`, ⭐ **`ConsentPrivacyVersion?` / `ConsentTermsVersion?` / `ConsentAcceptedAtUtc?`** (снимок согласия, заполняет сервер, в т.ч. для гостя; ⚖️ `ConsentTermsVersion` **сохранил имя цикла 3**, но держит теперь версию `TermsClient`), ⭐ **`ClientDeleted`**, ⚖️ **`BookedForOther`**, **`GuardianConfirmedAtUtc?`**, **`GuardianConfirmationVersion?`** (запись за другого человека — только для самозаписи клиента/гостя/виджета, не для ручной записи персоналом), ⚖️ **`BookingNoticeVersion?`** (версия уведомления по ст. 18, сервер пишет **на каждую** запись, включая записи персонала) | Master `Restrict`, Client `SetNull` |
 | `Review` | Guid | `BookingId` (**уникальный индекс** — 1 отзыв на запись), `CompanyId`, `MasterId`, `ClientId?`, `ReviewerName`, `Rating 1..5`, `Comment` | Booking `Cascade` |
 | `ClientNote` | Guid | `CompanyId`, `MasterId` (автор), `ClientId?` / `GuestPhone?`, `Note`, **`BookingId?`** (визит, к которому написана заметка; `SetNull`), `CreatedAt`; индексы `(CompanyId, ClientId)` и `(CompanyId, GuestPhone)` | заметки общие для компании; удалять может **автор или владелец компании** (решение Q16); 1—N `ClientNotePhoto` |
 | `ClientNotePhoto` | Guid | `ClientNoteId`, `CompanyId` (денормализованная копия), `StoragePath`, `ThumbnailPath`, `ContentType`, `SizeBytes` (полный размер + миниатюра), `Width`, `Height`, `ContentHash` (SHA-256 **обработанных** байт), `UploadedByUserId?` (`SetNull`), `CreatedAt`; индексы `ClientNoteId`, `(CompanyId, CreatedAt)`, **уникальный `(ClientNoteId, ContentHash)`** | фото к заметке; каскад от заметки; ≤5 на заметку |
-| **`UserConsent`** ⭐ | Guid | `UserId`, `DocumentType: LegalDocumentType`, `Version`, `AcceptedAtUtc`; **уникальный индекс `(UserId, DocumentType)`** | последняя принятая версия одного документа одним пользователем. **Журнала нет** — строка перезаписывается при повторном принятии (осознанно, SPEC §3.3) |
+| ~~`UserConsent`~~ ⭐ | — | — | ⚖️ **УДАЛЕНА в цикле 5** вместе с таблицей (миграция `ConsentJournal`). Заменена журналом `ConsentRecord` — см. ниже |
 | `ScheduledTaskState` | string `Name` (PK) | `LastStartedAtUtc?`, `LastFinishedAtUtc?`, `LastSucceeded`, `LastDurationMs`, `LastSummary?`, `LastError?` | состояние периодической задачи, переживающее рестарт |
 | `AccountSubscription` | Guid | `OwnerUserId` (**уникальный индекс**), `PlanConfigId?`, `PaidUntil?`, `IsActive` | подписка на **аккаунт владельца**, а не на компанию |
 | `SubscriptionPlanConfig` | Guid | `Name`, `PricePerMonth`, `MaxEmployees?`, `MaxCompanies?`, `AllowOnlineBooking`, `AllowMailing`, `AllowAnalytics`, `AllowPublicListing`, `AllowOnlinePayment`, **`PhotoQuotaMb?`** (null = без ограничения, дефолт 100), **`PhotoRetention`**, `IsActive`, `NotifyDaysBefore` | справочник тарифов |
@@ -413,12 +480,45 @@ Blazor Server-шаблон из первого коммита удалён це�
 | **`PlatformSetting`** | **`Key` (PK, ≤100)** | `Value` (≤200), `UpdatedAt`, `UpdatedByUserId?` | параметры платформы, правимые суперадмином без пересборки и с журналом. Ключи цикла 4: `notifications.channel.price-per-month`, `notifications.channel.idle-days`. **Отсутствие ключа цены = опция не предлагается**, а не «цена 0» |
 | **`PlatformSettingChangeLog`** | Guid | `Key`, `OldValue?`, `NewValue?`, `ChangedByUserId`, `ChangedAtUtc`, `Comment?` | журнал правок параметров платформы |
 
+Изменения цикла 5 в сущностях цикла 4:
+
+| Сущность | Что добавилось | Зачем |
+|---|---|---|
+| `NotificationChannel` | ⚖️ `LegalEntityForm?`, `Inn?` | заявка на канал требует ИНН и форму лица; **против ЕГРЮЛ/ЕГРИП не сверяется**, только формальная контрольная сумма (`InnValidator`). Наружу видно только владельцу и суперадмину |
+| `NotificationTemplateHistory` | ⚖️ `NewBody`, `AcknowledgedByUserId?`, `AcknowledgedAtUtc?`, `WarningVersion?`, `AdMarkersHit?` | акцепт владельцем ответственности за рекламные маркеры при сохранении шаблона. `NewBody` дублирует `PreviousBody` следующей строки **намеренно** — это журнал, а не нормализованная модель |
+| `OutboundNotification` | ⚖️ `ContentRedactedAtUtc?` | отметка, что текст сообщения и данные получателя **затёрты на месте** правилом уничтожения; метаданные (статус, причина, даты) остаются вечным журналом |
+
+#### ⚖️ Сущности цикла 5 (3 новые, одна старая удалена)
+
+| Сущность | Ключ | Ключевые поля | Смысл |
+|---|---|---|---|
+| **`ConsentRecord`** | Guid | `UserId?` / `SubjectPhone?` + `CompanyId?` (субъект с аккаунтом **или** гость салона), `DocumentKey` (**строка**, ≤64), `DocumentVersion`, `DocumentHash` (SHA-256 **показанного текста**), `Purpose?: ConsentPurpose`, `Act: ConsentAct`, `Source: ConsentSource`, `GrantedAtUtc`, `IpAddress?`/`UserAgent?` (**наружу не отдаются никогда**), `RecordedByUserId?`, `RevokedAtUtc?`, `RevokeReason?` | **журнал событий вместо перезаписываемой строки.** Уникального индекса **нет вообще** — «что сейчас верно» это запрос (`ConsentLedger`), а не строка. Отзыв — проставление `RevokedAtUtc`, **не удаление**. `DocumentHash` — растяжка: если оператор подменит файл, не подняв версию, старые строки будут ссылаться на хеш, которому на диске ничего не соответствует. Индексы — два **частичных** (`CurrentByUser`, `CurrentBySubject`) + `Retention` по `GrantedAtUtc` |
+| **`ClientHealthNote`** | Guid | `CompanyId`, `ClientId?` / `GuestPhone?`, **`Ciphertext`**, `KeyId`, `UpdatedAt`, `UpdatedByUserId?`; два **частичных уникальных** индекса | противопоказания и особенности здоровья клиента — **отдельная зашифрованная таблица**, намеренно **не колонка на `ClientNote`**: от `ClientNote` к этому типу нет навигационного свойства нигде в модели, поэтому «заодно» утечь в чью-то будущую проекцию физически нечему. Шифрование — `HealthNoteProtector` поверх `SecretProtector`, AAD привязан к «компания + субъект». **Суперадмину отказывается в доступе явно (`Forbid`), а не отдаётся пустое значение** |
+| **`SubjectRequest`** | Guid | `Reference` (человекочитаемый номер), `Kind: SubjectRequestKind`, `SubjectPhone`, `ContactValue`, `Message`, `Status`, `ReceivedAtUtc`, **`DueAtUtc`**, `AnsweredAtUtc?`, `HandlerUserId?`, `Resolution?` | обращение субъекта данных (доступ / исправление / удаление / отзыв согласия / жалоба). Форма **анонимная**; ответ на `POST` одинаков независимо от того, знает ли система этот телефон. `DueAtUtc` **вычисляется и сохраняется в момент приёма** из `SubjectRequests:ResponseWorkingDays` — позднейшая правка конфига не переписывает уже данное человеку обещание. Отвечает **человек** (суперадмин), автоматики нет |
+
 Перечисления: `BookingStatus { Pending, Confirmed, Cancelled, Completed, NoShow }`,
 `PaymentStatus { NotRequired, Pending, Paid }`, `UserRole { Client, Master, CompanyOwner, SuperAdmin }`,
-`PhotoRetention { SixMonths = 0, TwelveMonths = 1, Forever = 2 }` (цикл 2),
-⭐ **`LegalDocumentType { Privacy, Terms }`** (цикл 3; одноимённый дубль на стороне API был заведён и
-удалён внутри цикла, коммит `263eb55` — перечисление живёт только в `Core`).
+⚖️ `PhotoRetention { SixMonths = 0, TwelveMonths = 1 }` — **`Forever = 2` удалён** (миграция
+`RemovePhotoRetentionForever` **переписывает** существующие строки в `TwelveMonths`; это удаление
+значения, а не перенумерация — `0`/`1` сохранили смысл),
+⚖️ **`LegalDocumentType { Privacy = 0, TermsClient = 1, TermsOwner = 2, PdnConsent = 3,
+ChannelRiskNotice = 4 }`** — пять членов вместо двух; `Terms` **переименован** в `TermsClient` с
+сохранением числового значения `1` (всё уже сохранённое продолжает означать тот же документ, меняется
+только строка в JSON — это ломающее изменение контракта, §5.3).
 Сериализуются как строки (`JsonStringEnumConverter` в `Program.cs`).
+
+⚖️ **Семь перечислений цикла 5 плюс один намеренно-не-перечисление:**
+
+| Перечисление | Члены | Важное |
+|---|---|---|
+| `LegalGate` | `Global`, `OwnerScope`, `None` | **где именно блокирует существенная правка документа**. `Global` — 451 на всех защищённых вызовах (Privacy, TermsClient); `OwnerScope` — только на перечисленных действиях владельца (TermsOwner); `None` — не блокирует вовсе (PdnConsent, ChannelRiskNotice). Отсутствующее/нераспознанное значение в манифесте по умолчанию **`Global`** — опечатка оператора обязана блокировать больше, а не меньше |
+| `ConsentAct` | `Acknowledged`, `Accepted`, `Consented`, `Confirmed` | правовая природа события — **своя колонка**, а не вывод из `DocumentKey` по switch'у, который забудут обновить |
+| `ConsentPurpose` | `ProviderDelivery`, `WorkPhotos`, `HealthData`, `ChannelOffer` | цели внутри `PdnConsent`. `null` означает «документ целиком» |
+| `ConsentSource` | 10 членов (`Registration`, `ReAcceptance`, `Profile`, `CompanyCreation`, `ChannelRequest`, `ChannelLink`, `PhotoForm`, `HealthForm`, `Booking`, `Migrated`) | `Migrated` пишет **только миграция**, приложение — никогда |
+| `SubjectRequestKind` / `SubjectRequestStatus` | `Access, Rectification, Erasure, ConsentWithdrawal, Complaint` / `Received, InProgress, Answered, Rejected` | обращения субъектов |
+| `LegalEntityForm` | `Ip`, `Company`, `SelfEmployed` | **чисто описательное** — определяет ожидаемую длину ИНН (10 или 12), само по себе ничего не гейтит |
+| `ProviderDeliveryConsentMode` | `Strict`, `AccountsOnly` (по умолчанию), `Off` | **единственный спорный вопрос права вынесен в конфигурацию, а не в ветку кода.** Влияет **только** на то, проверяет ли `NotificationGate` согласие при постановке в очередь; предъявляется и записывается это согласие **при любом значении флага**. Нераспознанное значение **роняет старт** |
+| **`LegalTextKey`** | `BookingNotice`, `TemplateAdWarning`, `UnsubscribePage`, `PhotoConsent`, `HealthDataConsent`, `GuardianConfirmation` | ⚠️ **это статический класс строковых констант, а НЕ перечисление** — намеренно: значения едут в БД (`ConsentRecord.DocumentKey`) и в манифест как строки, и добавление седьмого текста должно быть **правкой манифеста**, а не миграцией с перекомпиляцией каждого switch'а. Ни один из шести не участвует в гейте 451 и ни один не сравнивается с claim'ом JWT |
 
 🆕 **Семь перечислений цикла 4:**
 
@@ -454,11 +554,16 @@ Blazor Server-шаблон из первого коммита удалён це�
   индексированным агрегатом, а раздача проверялась одной строкой без join'а.
 - **Квота и срок хранения фото — свойства тарифа** (`PhotoQuotaMb`, `PhotoRetention`), разрешаются тем
   же `SubscriptionResolver`; на Free-базлайне — 100 МБ и 6 месяцев.
-- ⭐ **Согласие хранится в двух видах и с разным сроком жизни.** «Текущее состояние» — `UserConsent`
-  (одна строка на пару «пользователь + документ», перезаписывается) и claim'ы в JWT, по которым
-  работает гейт без похода в БД. «Исторический факт» — снимок версий **на самой записи** (`Booking`),
-  который переживает и смену редакции документа, и удаление аккаунта, и относится в том числе к
-  гостю, у которого аккаунта нет.
+- ⚖️ **Согласие хранится в трёх видах и с разным сроком жизни** (переделано в цикле 5).
+  «Что произошло» — **журнал `ConsentRecord`**: строка на каждое событие, с версией документа и хешем
+  показанного текста; отзыв ставит `RevokedAtUtc`, строка не удаляется. «Что сейчас верно» — **запрос**
+  через `ConsentLedger`, а не хранимое поле. «Быстрая проверка на каждом запросе» — claim'ы в JWT
+  против снимка документов в памяти, **без похода в БД** (`LegalConsentFilter`, `RequiresOwnerTerms`).
+  «Исторический факт» — снимок версий **на самой записи** (`Booking`), который переживает и смену
+  редакции документа, и удаление аккаунта, и относится в том числе к гостю, у которого аккаунта нет.
+  Одна таблица обслуживает и субъектов с аккаунтом, и гостей салона (`SubjectPhone` + `CompanyId`) —
+  цена этого решения два частичных индекса вместо одного уникального, выгода в том, что читатель,
+  выгрузка и «что помнить при следующей правке» существуют по одному разу, а не по два.
 - ⭐ **Удалённый аккаунт — надгробие, а не отсутствие строки** (`AppUser.DeletedAtUtc`, §4.15).
   Записи такого клиента остаются в истории компании анонимизированными, с флагом
   `Booking.ClientDeleted`.
@@ -475,7 +580,7 @@ Blazor Server-шаблон из первого коммита удалён це�
   HTTP-вызова и работает маркером «в полёте» на `InFlightGraceMinutes`.
 - 🆕 **Отписка живёт по номеру телефона, а не по человеку** — см. комментарий на `NotificationOptOut`.
 
-### Миграции (🆕 28, все в `ServiceBooking.Infrastructure/Migrations/`)
+### Миграции (⚖️ 36, все в `ServiceBooking.Infrastructure/Migrations/`)
 
 Первые 13 — как раньше: `InitialCreate` → `DateBasedSchedule` → `AddSubscriptionAndCommission` →
 `AddReviewsTemplatesNotes` → `AddPromoGiftMailPlans` → `AddPrepaymentSupport` →
@@ -522,6 +627,26 @@ Blazor Server-шаблон из первого коммита удалён це�
 ⚠️ **Правило, действующее с момента мёржа цикла 4:** первую из этих двух миграций **не редактировать**.
 Она уже применена, и всё новое оформляется **новыми** миграциями — как это и сделала вторая.
 
+⚖️ **Цикл 5 добавил восемь**, все от 2026-09-21, в порядке применения:
+
+1. **`ConsentJournal`** — ⚠️ **самая ответственная миграция цикла и необратимая по данным.** Создаёт
+   `ConsentRecords` с двумя частичными индексами, **переносит `INSERT…SELECT`-ом каждую строку
+   `UserConsents`** в журнал (`Act = Accepted`, `Source = Migrated`, хеш/IP/User-Agent пустые — этой
+   информации на `UserConsent` никогда не было) и **дропает таблицу `UserConsents`**. `Down` таблицу
+   пересоздаёт, но **пустой**: откат структуры возможен, откат данных — нет. На проде это `INSERT`
+   на ноль строк (боевых данных нет), путь существует ради dev/test-баз.
+2. **`RemovePhotoRetentionForever`** — переписывает данные: `PhotoRetention.Forever` → `TwelveMonths`.
+3. **`AddClientHealthNotes`** — таблица противопоказаний + два частичных уникальных индекса.
+4. **`AddBookingGuardianFields`** — `BookedForOther`, `GuardianConfirmed*`, `BookingNoticeVersion`.
+5. **`AddChannelLegalEntityFields`** — `LegalEntityForm`, `Inn` на канале.
+6. **`AddTemplateAcknowledgement`** — поля акцепта и `AdMarkersHit` на истории шаблонов.
+7. **`AddRedactionAndWidenSettings`** — `ContentRedactedAtUtc` и расширение полей настроек.
+8. **`AddSubjectRequests`** — таблица обращений субъектов.
+
+Итого **разрушительных по данным миграций в проекте теперь три**: `NormalizePhoneNumbers` (цикл 2),
+`ConsentJournal` и `RemovePhotoRetentionForever` (обе — цикл 5). Проект не в продакшене, боевых
+данных нет.
+
 История по-прежнему видна прямо в названиях: промокоды и подарочные сертификаты были добавлены и затем
 **удалены целиком**, а подписка переехала с компании на аккаунт владельца. Остатков этих фич в коде нет.
 
@@ -537,7 +662,7 @@ Blazor Server-шаблон из первого коммита удалён це�
 
 | Метод | Путь | Доступ |
 |---|---|---|
-| POST | `/api/auth/register` | анонимно; телефон нормализуется, невалидный → 400; выдаёт роль `Client`; ⭐ **требует `acceptedLegal`** с версиями обоих документов (цикл 3) — без принятия согласия аккаунт не создаётся; лимит `auth-register` 5/час на IP |
+| POST | `/api/auth/register` | анонимно; телефон нормализуется, невалидный → 400; выдаёт роль `Client`; ⚖️ **требует объект `legal` с двумя версиями** (`privacyAcknowledgedVersion`, `termsAcceptedVersion`) вместо прежнего `acceptedLegal: true` — **ломающее изменение цикла 5**, версии сверяются со снимком на сервере; согласие на обработку ПДн (`PdnConsent`) через этот вызов принять нельзя **by design**; лимит `auth-register` 5/час на IP |
 | POST | `/api/auth/login` | анонимно; поиск по канонической форме телефона, lockout после 5 попыток на 15 мин; невалидный номер даёт тот же 401, а не 400; ⭐ лимит `auth-login` 10/мин на IP |
 | GET / PUT | `/api/profile` | авторизованные |
 | POST | `/api/profile/change-password` | авторизованные |
@@ -791,6 +916,13 @@ ImageSignature, FileStorage}.cs`.
 (`hooks/useAuthedImage.ts`, `components/ui/AuthedImage.tsx`), с `IntersectionObserver` для ленивой
 загрузки и `staleTime: Infinity` в react-query.
 
+⚖️ **Цикл 5 поставил перед загрузкой гейт согласия.** `POST` фото к заметке теперь **отвечает 400,
+если у клиента нет действующего согласия на фотофиксацию**, и это действие дополнительно помечено
+`[RequiresOwnerTerms]`. На фронте согласие собирается там, **где стоит мастер** — в момент загрузки
+(`hooks/usePhotoUploadWithConsent.tsx`, `components/clientNotes/{PhotoConsentBadge, ClientConsentModal}`),
+а не отдельным административным экраном постфактум. Срок хранения фото при этом перестал иметь
+вариант «вечно» (§4.13).
+
 ### 4.13 Периодические фоновые задачи — первый фоновый процесс в продукте (цикл 2)
 
 `Services/Scheduling/`: `IScheduledTask` (контракт: `Name`, `DefaultPeriod`, `ExecuteAsync` →
@@ -807,10 +939,11 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 исчерпание — **штатный** исход, уже закоммиченное сохраняется, остальное доедет следующим запуском.
 Упавшая задача помечается неуспешной и повторяется **по обычному расписанию**, без backoff.
 
-🆕 **Задач теперь три** (раннер при этом не менялся ни строкой):
+⚖️ **Задач теперь четыре** (раннер при этом не менялся ни строкой ни в цикле 4, ни в цикле 5):
 
-1. `photo-retention-cleanup` (период — сутки): удаляет фото, пережившие срок хранения своего тарифа
-   (`Forever` не трогается), батчами по 200; затем подметает осиротевшие файлы на диске старше 24 часов.
+1. `photo-retention-cleanup` (период — сутки): удаляет фото, пережившие срок хранения своего тарифа,
+   батчами по 200; затем подметает осиротевшие файлы на диске старше 24 часов. ⚖️ Исключения
+   «хранить вечно» у неё больше нет — `PhotoRetention.Forever` удалён, потолок тарифа 12 месяцев.
 2. 🆕 **`notification-dispatch`** (период — **1 минута**, `MaxRunMinutes: 2`) — отправщик очереди,
    `Services/Scheduling/Tasks/NotificationDispatchTask.cs` (~464 строки, «главный архитектурный вопрос
    цикла»). Один проход: выборка батча по частичному индексу → классификация по гейтам/таймингам
@@ -825,6 +958,10 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
    одним батч-запросом: опрос состояния каналов (`Connecting`/`Connected`/`Disconnected`), детекция
    простоя и удаление простаивающего экземпляра, таймаут неавторизованного экземпляра, повтор удаления
    «осиротевших» экземпляров у провайдера (`OrphanedInstanceId`).
+4. ⚖️ **`data-retention`** (период — **сутки**, `MaxRunMinutes: 10`, `BatchSize: 500`,
+   **`DryRun: true` по умолчанию**) — `Services/Scheduling/Tasks/DataRetentionTask.cs`. Своей логики
+   не содержит: перебирает зарегистрированные `IRetentionRule` и выполняет каждое по разу, подробности
+   и полный список из тринадцати правил — §4.18.
 
 `GET /api/admin/scheduled-tasks` (SuperAdmin) отдаёт по каждой задаче: `enabled`, `periodMinutes`,
 `lastStartedAt`, `lastFinishedAt`, `lastDurationMs`, `lastSucceeded`, `lastSummary`, `lastError`,
@@ -834,41 +971,91 @@ PeriodMinutes, MaxRunMinutes}`), `ScheduledTaskSchedule` (чистые `IsDue`/`
 дёргают задачу напрямую. 🆕 Исключение — специализированная фабрика `NotificationDispatchTestFactory`,
 которая поднимает **свой** хост с реально тикающим раннером (§7.2).
 
-### 4.14 Правовой контур: документы, согласие, 451 ⭐ — новое в цикле 3
+### 4.14 Правовой контур: документы, согласие, 451 ⚖️ — построен в цикле 3, **переписан в цикле 5**
 
-`Controllers/LegalController.cs`, `Services/Legal/{LegalDocumentProvider, LegalConsentFilter,
-LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущность `UserConsent`.
+`Controllers/LegalController.cs`, `Controllers/ClientConsentsController.cs`,
+`Services/Legal/{LegalDocumentProvider, LegalConsentFilter, LegalOptions, LegalSnapshot,
+ConsentLedger, ConsentSubject, HealthNoteProtector, RequiresOwnerTermsAttribute}.cs`,
+`Core/Enums/{LegalDocumentType, LegalGate, LegalTextKey, ConsentAct, ConsentPurpose, ConsentSource}.cs`,
+сущность **`ConsentRecord`** (вместо `UserConsent`).
+
+⚠️ **Это не дополнение цикла 3, а замена его механизма.** Через контур проходит каждый пользователь
+при каждом входе, поэтому расхождения здесь видны сразу и всем.
 
 | Метод | Путь | Доступ |
 |---|---|---|
-| GET | `/api/legal/documents` | публично; только метаданные обоих документов (тип, заголовок, версия, дата вступления, `isDraft`, `changeKind`) — без HTML, чтобы подвал и форма регистрации не тянули текст |
-| GET | `/api/legal/documents/{type}` | публично; метаданные **и** HTML одного документа; `Cache-Control: public, max-age=300` |
-| GET | `/api/legal/consent-status` | авторизованные; `{ requiresAcceptance, showBanner, documents[] }`, считается **из claim'ов токена и снимка в памяти, без запроса в БД** |
-| POST | `/api/legal/accept` | авторизованные; тело — версии обоих документов; версии **сверяются с текущим снимком** (409, если оператор успел заменить текст ещё раз), запись в `UserConsent` под транзакцией + advisory lock |
+| GET | `/api/legal/documents` | публично; ⚖️ метаданные **пяти документов И шести текстов интерфейса** двумя списками (`documents[]`, `uiTexts[]`), без HTML. Для `PdnConsent` здесь же едет список `purposes` — **форма согласия строится из ответа, а не из захардкоженного массива на фронте**, поэтому смена набора целей юристом не требует релиза фронта |
+| GET | `/api/legal/documents/{type}` | публично; метаданные **и** HTML одного документа; неизвестный тип → **404, а не 500**; `Cache-Control: public, max-age=300` |
+| GET | ⚖️ `/api/legal/texts/{key}` | публично, **новое**; один текст интерфейса. Версионируется как документ, но **claim'а под него нет, ветки 451 нет, в `consent-status` он не появляется** |
+| GET | `/api/legal/consent-status` | авторизованные; ⚖️ отвечает **только про документы с `gate != None`** — PdnConsent и ChannelRiskNotice ничего не блокируют и в ответе «что меня блокирует» им не место. Считается **из claim'ов токена и снимка в памяти, без запроса в БД** |
+| POST | `/api/legal/accept` | авторизованные; ⚖️ тело — **список** принимаемых документов (любое подмножество `{Privacy, TermsClient, TermsOwner}`), а не две фиксированные строки: шестой блокирующий документ станет добавлением, а не ломающим изменением. Версии **сверяются с текущим снимком** (409, если оператор успел заменить текст ещё раз) |
+| GET/POST | ⚖️ `/api/profile/consents` | авторизованные, **новое**; просмотр и выдача согласия `PdnConsent` по целям. Через этот вызов принимается **только** `PdnConsent` — всё остальное 400 |
+| POST | ⚖️ `/api/profile/consents/revoke` | авторизованные, **новое**; отзыв. Ставит `RevokedAtUtc`, строку не удаляет |
+| GET | ⚖️ `/api/profile/consents/revoke-preview` | авторизованные, **новое**; что именно перестанет работать, **до** того как человек нажмёт отзыв |
+
+⚖️ **Салонный контур согласий** — `ClientConsentsController`,
+`[Route("api/companies/{companyId:guid}/clients/{clientKey}")]`, весь класс под `[Authorize]`.
+`{clientKey}` — это либо `userId` зарегистрированного клиента, либо `phone:79991234567` для гостя;
+формат разбирается **в одном месте** (`Services/ClientKey.cs`).
+
+| Метод | Путь | Что делает |
+|---|---|---|
+| GET/POST | `…/photo-consent` | согласие клиента на фотофиксацию работы |
+| GET | `…/health-note` | чтение противопоказаний; **суперадмину — `Forbid`** |
+| PUT | `…/health-note` | запись; `[RequiresOwnerTerms]`; **суперадмину — `Forbid`** |
+| DELETE | `…/health-note` | удаление; **суперадмину — `Forbid`** |
+| POST | `…/health-consent` | согласие на обработку сведений о здоровье |
 
 Как это устроено:
 
-- **Документы — файлы, а не строки в БД.** `App_Data/legal/` содержит манифест `legal.json`
-  (`type`, `version`, `effectiveFrom`, `isDraft`, `changeKind`, `title`, `file`) и по HTML-файлу на
-  документ. `LegalDocumentProvider` держит снимок в памяти и перечитывает манифест по mtime не чаще
-  раза в `Legal:ReloadSeconds` (по умолчанию 30 с). На проде каталог **bind-mount'ится с хоста**
-  поверх запечённого в образ черновика — замена текста после юридической вычитки это
-  **эксплуатационная операция, а не релиз** (`DEPLOY.md` §2.1).
-- **`changeKind` решает, блокировать ли пользователя.** `Material` — блокирующий экран и **451
-  Unavailable For Legal Reasons** на всех защищённых вызовах; `Editorial` — только баннер.
-  `Material` перебивает `Editorial`, если ожидают оба документа.
-- **Гейт — глобальный MVC-фильтр** `LegalConsentFilter` с allow-list'ом (сами правовые эндпоинты,
-  принятие согласия и **выгрузка данных** — иначе заблокированный пользователь не смог бы ни узнать,
-  чего от него хотят, ни забрать свои данные). Анонимные запросы фильтр не трогает.
-- **Снимок согласия на записи.** У `Booking` появились `ConsentPrivacyVersion`, `ConsentTermsVersion`,
-  `ConsentAcceptedAtUtc` — их заполняет **сервер** из актуальных документов, в том числе для гостевой
-  записи и виджета, где аккаунта нет вовсе.
-- **Тексты черновые** (`isDraft: true`), fail-fast на это намеренно нет — §9.7.
+- **Документы — файлы, а не строки в БД.** `App_Data/legal/` содержит манифест `legal.json` и по
+  HTML-файлу на документ. ⚖️ Манифест цикла 5 состоит из **двух списков**: `documents[]` (`type`,
+  `version`, `effectiveFrom`, `isDraft`, `changeKind`, **`gate`**, `title`, `file`, для PdnConsent —
+  `purposes[]`) и `uiTexts[]` (`key`, `version`, `isDraft`, `file`). `LegalDocumentProvider` держит
+  снимок в памяти и перечитывает по mtime не чаще раза в `Legal:ReloadSeconds` (30 с). На проде каталог
+  **bind-mount'ится с хоста** — замена текста это **эксплуатационная операция, а не релиз**.
+- ⚖️ **Разделение прошло не по линии «документ / не документ», а по линии «блокирует вход / не
+  блокирует».** Шесть текстов интерфейса (уведомление при записи, предупреждение о рекламе в шаблоне,
+  текст страницы отписки, форма согласия на фото, форма согласия на данные о здоровье, подтверждение
+  полномочий) версионируются и хешируются наравне с документами, но **не являются версионируемыми
+  документами в смысле гейта**: у них нет члена `LegalDocumentType`, нет claim'а и нет ветки 451.
+  Побочная выгода записана прямо в коде: **добавление седьмого текста — правка манифеста, а не миграция**.
+- ⚖️ **`changeKind` решает, блокировать ли, `gate` — кого и где.** `Material` + `Global` — 451 на всех
+  защищённых вызовах (Privacy, TermsClient); `Material` + `OwnerScope` — 451 **только на
+  перечисленных действиях владельца** (TermsOwner); `gate: None` — не блокирует нигде.
+  `Editorial` — только баннер. Отсутствующее/нераспознанное значение `gate` в манифесте трактуется как
+  **`Global`**: опечатка оператора обязана **закрывать**, а не открывать.
+- ⚖️ **Почему владельца нельзя было блокировать глобально.** Владелец салона почти всегда ещё и клиент
+  собственной платформы; сплошной 451 по `TermsOwner` отрезал бы его и от своей истории записей, и от
+  профиля. Поэтому `OwnerScope` реализован **отдельным атрибутом действия** `[RequiresOwnerTerms]`, а
+  не глобальным фильтром. Он висит на **двенадцати действиях** (по коду: 4 в `CompaniesController`,
+  3 в `NotificationChannelsController`, 2 в `CompanyNotificationsController`, по одному в
+  `MastersController`, `ClientNotePhotosController`, `ClientConsentsController`).
+  ⚠️ **Отсутствующий claim `lco` трактуется как «ещё не применимо», а не как расхождение** — у того,
+  кто создаёт первую компанию, этого claim'а нет вовсе; **первый** акцепт гейтится телом запроса
+  `POST /api/companies`, а атрибут ловит только того, кто принял однажды и с тех пор устарел.
+- **Гейт для глобальных документов — по-прежнему глобальный MVC-фильтр** `LegalConsentFilter` с
+  allow-list'ом (правовые эндпоинты, принятие согласия, выгрузка данных, страница отписки). Анонимные
+  запросы фильтр не трогает.
+- ⚖️ **`ConsentLedger` — единственный читатель и единственный писатель журнала.** Он **намеренно не
+  стоит на горячем пути**: на каждом запросе работают claim'ы против снимка в памяти, а в БД ходят
+  только четыре «холодных» места — экраны управления согласиями, постановка уведомления в очередь,
+  загрузка фото, чтение/запись противопоказаний.
+- **Снимок согласия на записи** — как и раньше, заполняет сервер; ⚖️ добавился `BookingNoticeVersion`
+  (пишется **на каждую** запись) и поля подтверждения полномочий при записи за другого человека.
+- ⚖️ **Тексты по-прежнему черновые** (`isDraft: true` у всех одиннадцати файлов), fail-fast на это
+  намеренно нет. Но ⚖️ **загрузчик манифеста теперь не примет документ с `isDraft: false`, пока в нём
+  остался хоть один незаполненный плейсхолдер `{{…}}`** — недописанный текст в прод не уедет.
 
-Фронт: страницы `/privacy` и `/terms` (`pages/LegalDocumentPage.tsx`), `components/legal/ConsentGate.tsx`
-(полноэкранный блокирующий экран на `Material`; из него **достижима выгрузка данных** — коммит
-`a115aad`), `components/legal/LegalUpdateBanner.tsx` (на `Editorial`), чекбокс со ссылками в форме
-регистрации и в форме записи, ссылки в подвале, `api/legal.ts`, `utils/legalError.ts`.
+Фронт: страницы `/privacy`, `/terms`, ⚖️ `/terms-owner`, `/pdn-consent`, `/channel-risk` (все —
+`pages/LegalDocumentPage.tsx`) и редирект `/offer-channel` → `/terms-owner#offer-channel`;
+⚖️ `/profile/consents` (`ConsentsPage.tsx`) — управление согласиями и их история;
+`components/legal/ConsentGate.tsx` (блокирующий экран на глобальном `Material`; из него **достижима
+выгрузка данных**), ⚖️ `components/legal/OwnerTermsGateModal.tsx` + `store/ownerGateStore.ts`
+(владельческий гейт — модальное окно, а не полноэкранная блокировка),
+`components/legal/LegalUpdateBanner.tsx`, ⚖️ `hooks/useLegalText.ts` (тексты интерфейса),
+`utils/legalSections.ts`, `api/legal.ts`, `api/consents.ts`, `api/clientConsents.ts`,
+`utils/legalError.ts`. ⚖️ `frontend/public/robots.txt` явно разрешает индексацию пяти правовых страниц.
 
 ### 4.15 Права субъекта данных: выгрузка и удаление аккаунта ⭐ — новое в цикле 3
 
@@ -880,6 +1067,14 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
   отзывы, **метаданные** заметок и фото о себе (компания, дата, размер/количество).
   В файл **намеренно не входят** тексты заметок сотрудников и содержимое фотографий — они признаны
   результатом работы салона; в самом JSON лежит поле с объяснением этого пользователю.
+  ⚖️ **Цикл 5 расширил выгрузку**: история согласий берётся из журнала (`ConsentLedger.HistoryAsync`)
+  и включает **отозванные и перекрытые** строки — выгрузка это правовой артефакт, а не снимок
+  текущего состояния; появились перечень операторов-салонов с указанием, что у кого хранится,
+  отправленные уведомления с полем **`bodyAvailable`** (`false`, если текст уже затёрт правилом
+  уничтожения — честнее, чем молча отдать пустоту), статус отписки и **расшифрованные
+  противопоказания о себе** (расшифровка явным вызовом `HealthNoteProtector`, не через прозрачный
+  конвертер). Две из этих правок — находки ревью: салонные согласия (фото/здоровье) сначала не
+  попадали в историю, а заметка о здоровье гостя молча выпадала из выгрузки.
 - **`POST /api/profile/delete-account`** (POST, а не DELETE — нужно тело с текущим паролем).
   Два гейта: текущий пароль и **«за вами числится компания» → 409** (владелец обязан сначала передать
   компанию). Дальше, одной транзакцией: согласия удаляются; заметки и фото **о** пользователе
@@ -920,7 +1115,7 @@ LegalOptions, LegalSnapshot}.cs`, `Core/Enums/LegalDocumentType.cs`, сущно�
   Identity-роль, и человек, удалённый из единственной компании, продолжал проходить
   `[Authorize(Roles = …)]`. Историю почистила миграция данных `ResyncIdentityRoles`.
 - **`Services/DeploymentSafetyChecks.cs`** — fail-fast прод-конфига, вынесенный из `Program.cs` в
-  чистые статические методы **ради тестируемости** (🆕 теперь **59 юнит-тестов**), см. §8.
+  чистые статические методы **ради тестируемости** (⚖️ теперь **84 юнит-теста**), см. §8.
 
 ### 4.17 🆕 Уведомления клиенту в WhatsApp — функция цикла 4, код есть, наружу не выпущена
 
@@ -993,12 +1188,114 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 `CONSENT_GATE_BYPASS_PATHS`**, иначе заблокированный согласием пользователь не смог бы отписаться),
 переключатель уведомлений в `ProfilePage.tsx`.
 
+⚖️ **Что цикл 5 изменил в этой функции** (кода уведомлений он касался вынужденно, потому что именно
+там лежали правовые дыры):
+- **Заявка на канал требует ИНН и форму лица** и принятия оферты — `POST /api/notification-channels`
+  без них теперь 400 (ломающее изменение). ИНН проверяется **только формальной контрольной суммой**
+  (`Services/InnValidator.cs`), против ЕГРЮЛ/ЕГРИП не сверяется — и это записано как осознанное.
+- **`GreenApi:InstanceCreationEnabled: false` по умолчанию** и **обязательный `ServerCountry`,
+  если создание экземпляров включено**: «пусть провайдер решит сам, в какой стране сервер» перестало
+  быть допустимым значением по умолчанию — fail-fast на старте.
+- **Новая ветка гейта постановки в очередь** — `ProviderDeliveryConsentMode` (§4.18).
+- **Сохранение шаблона требует акцепта** текста об ответственности за рекламу (§4.18).
+
+### 4.18 ⚖️ Сроки хранения, обращения субъектов, спецкатегории — новое в цикле 5
+
+**Уничтожение по срокам хранения.** `Services/Retention/` — `IRetentionRule`, `RetentionPeriods`
+(конфигурация), `RetentionPlan`, `RetentionRuleRunner` и **тринадцать правил** в `Rules/`:
+`NotificationBodyRedactionRule`, `NotificationMetadataDeletionRule`, `TemplateHistoryRule`,
+`ConsentRecordRule`, `InactiveAccountRule`, `BookingPersonalizationRule`, `ClientNoteRule`,
+`ClientNotePhotoRule`, `ClientHealthNoteRule`, `ChannelStateEventRule`, `PaymentLogRule`,
+`MailLogRule`, `AppLogAgeRule`. Их исполняет четвёртая фоновая задача
+`Services/Scheduling/Tasks/DataRetentionTask.cs` (период — сутки).
+
+Как это устроено:
+
+- **Задача не содержит правил вовсе** — она перебирает то, что зарегистрировано в `Program.cs`, и
+  выполняет каждое по разу. Регистрация **поимённая, не по рефлексии**: список в `Program.cs` и есть
+  список того, что работает.
+- ⚠️ **Сухой прогон — значение по умолчанию.** `DryRun: true` в `appsettings.json`; чтобы задача
+  действительно что-то удалила, оператор обязан явно выставить `false`. Обратного (по умолчанию
+  удаляем) в проекте нет нигде.
+- **Время — из той же абстракции `INotificationClock`**, что у диспетчера уведомлений; каждое правило
+  получает «сейчас» **данными**, ни одно не читает `DateTime.UtcNow` само. Именно это позволяет
+  функциональному тесту сдвинуть фейковые часы и увидеть результат сразу.
+- **Два вида действия**: часть правил **затирает поля на месте** (текст уведомления и данные
+  получателя, анонимизация записи и неактивного аккаунта — тем же механизмом, что уже использовало
+  удаление аккаунта), часть **удаляет строки**. `AppLogAgeRule` **ничего не удаляет вообще** — только
+  считает старые файлы и сообщает; ротация логов это дело эксплуатации, а правило здесь работает
+  растяжкой.
+- **Два срока проверяются fail-fast'ом на старте** (`TemplateHistoryDays` ≥ 365,
+  `ConsentRecordDays` ≥ 1095): «не меньше трёх лет» не должно зависеть от того, кто последним правил
+  `appsettings.Production.json`.
+- Журнал прогона — **одна строка на правило, только числа и даты**: ни телефонов, ни текста
+  сообщений, ни идентификаторов субъектов.
+
+🔴 **Правила уничтожения для `NotificationOptOut` не существует.** Это надо читать буквально: оно не
+выключено, не помечено «бессрочно» и не стоит за флагом — **файла и регистрации нет**. Включить
+настройкой нельзя, только новым файлом правила и новой строкой регистрации. Смысл ровно один: удаление
+строки отписки означало бы возобновление рассылки тому, кто от неё отказался. Факт зафиксирован
+комментариями и в `Program.cs`, и в самой задаче, и отдельным тестом (§7).
+
+**Обращения субъектов данных.** `Controllers/SubjectRequestsController.cs` —
+`POST /api/subject-requests`, **анонимно**, политика лимита `subject-request` (3/час на IP).
+Ответ **одинаков независимо от того, знает ли система указанный телефон**. Срок ответа считается
+в рабочих днях (`Services/WorkingDays.cs`) из `SubjectRequests:ResponseWorkingDays` и **сохраняется
+на строке** — позднейшая правка конфига не переписывает обещание, данное конкретному человеку.
+Номер обращения генерирует `Services/SubjectRequestReference.cs`.
+Разбор — суперадмином: `GET /api/admin/subject-requests`,
+`POST /api/admin/subject-requests/{id}/status`. Отдельно — `GET /api/admin/retention/policy`
+(что и с какими сроками уничтожается). Фронт: публичная страница `/data-request`
+(`pages/SubjectRequestPage.tsx`) и вкладка `pages/admin/SubjectRequestsTab.tsx`.
+
+**Спецкатегории (сведения о здоровье).** Отдельная таблица `ClientHealthNote`, шифрование
+`HealthNoteProtector` поверх `SecretProtector` (**тот же мастер-ключ `Notifications:EncryptionKey` —
+вторую криптографию намеренно не заводили: один ключ, одна процедура ротации**), AAD привязан к
+«компания + субъект». Расшифровка — **только явными вызовами**, EF-конвертер отвергнут осознанно:
+прозрачный конвертер расшифровывал бы поле в любой будущей проекции, которую напишут не думая об этом.
+Любая неудача расшифровки (не тот ключ, порча, чужой AAD) даёт `null`, а не 500. **Суперадмину
+чтение/запись/удаление запрещены явным `Forbid`** — не пустым значением. Фронт:
+`components/clientNotes/HealthNoteCard.tsx`, `ClientConsentModal.tsx`, `PhotoConsentBadge.tsx`,
+`hooks/usePhotoUploadWithConsent.tsx`.
+
+**Реклама в шаблонах уведомлений.** `Services/Notifications/TemplateAdHeuristics.cs` — словарь
+маркеров, которые указывают на рекламный характер текста; при сохранении шаблона владелец **обязан
+подтвердить ответственность**, и подтверждение пишется в историю шаблона вместе с тем, **что именно
+сервер обнаружил** (`AdMarkersHit`) — доказательством служит не только факт нажатия кнопки. Фронт:
+`pages/owner/TemplateAcknowledgementModal.tsx`, `utils/templateMarkers.ts`.
+
+**Спорный вопрос права вынесен в конфигурацию.** `ProviderDeliveryConsentMode`
+(`Notifications:ProviderDeliveryConsent`, по умолчанию `AccountsOnly`) управляет **только тем,
+проверяет ли `NotificationGate` согласие на передачу данных привлекаемому лицу при постановке
+сообщения в очередь**. Само согласие предъявляется и записывается **при любом значении флага**.
+`AccountsOnly` — гость никогда не блокируется (его никто не спрашивал, основание договорное),
+владелец аккаунта без действующего согласия блокируется; `Strict` блокирует и гостя;
+`Off` не проверяет никогда. Нераспознанное значение **роняет старт**.
+
 ---
 
 ## 5. Что реализовано частично, заглушки и несогласованности
 
-Явных маркеров `TODO`/`FIXME`/`HACK` в коде **нет ни одного** (🆕 перепроверено grep'ом заново на
-`7a36543` по всем четырём проектам и `frontend/src`). Всё ниже выявлено чтением кода.
+Явных маркеров `TODO`/`FIXME`/`HACK` в коде **нет ни одного** (⚖️ перепроверено grep'ом заново на
+`071fc11` по всем четырём проектам и `frontend/src`). Всё ниже выявлено чтением кода.
+
+### 5.0 ⚖️ Ломающие изменения цикла 5 — то, что сломается у любого, кто звал API по-старому
+
+Цикл 5 менял работающее, поэтому список коротких «до → после» важнее обычного:
+
+| Что | Было | Стало |
+|---|---|---|
+| **Регистрация** | `POST /api/auth/register` с `"acceptedLegal": true` | объект `"legal": { "privacyAcknowledgedVersion", "termsAcceptedVersion" }` — версии, которые клиент **утверждает, что видел**; сервер сверяет их со своим снимком. `PdnConsent` через этот вызов принять **нельзя by design** — это отдельный, неблокирующий вызов |
+| **Тип документа** | `"Terms"` | `"TermsClient"` (числовое значение `1` сохранено — ломается только строка в JSON и маршруты, где тип передаётся строкой) |
+| **Создание компании** | `POST /api/companies` без правовых полей | требует акцепта соглашения владельца в теле запроса; дальнейшие действия владельца гейтятся `[RequiresOwnerTerms]` |
+| **Заявка на канал** | `POST /api/notification-channels` без реквизитов | требует ИНН, форму лица и принятие оферты |
+| **Загрузка фото к заметке** | загружалась всегда | **400 без согласия клиента** на фотофиксацию |
+| **Сохранение шаблона** | сохранялось всегда | требует акцепта текста об ответственности за рекламу |
+| **`PhotoRetention.Forever`** | был | **удалён**; миграция переписывает существующие строки в `TwelveMonths` |
+| **Таблица `UserConsents`** | была | **дропнута** миграцией; вместо неё журнал `ConsentRecords` |
+
+Именно последствия первой строки этой таблицы не довели до `deploy/ci/smoke.sh` внутри цикла — см.
+урок в §9.
 
 ### 5.1 Настоящие заглушки
 
@@ -1036,25 +1333,34 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 5. **Клиент не видит своих фото.** Фотофиксация работает только внутрь салона: у клиента нет ни
    эндпоинта, ни экрана. Осознанное решение Q5, а не пробел.
 
-6. **Согласия клиента на фотосъёмку в интерфейсе по-прежнему нет.** Ни чекбокса, ни дисклеймера, ни
-   хранения факта согласия. Цикл 3 построил общий правовой контур (§4.14), но фотосъёмку он
-   **не покрывает**: согласие даётся на политику и оферту, отдельного согласия на съёмку нет.
-   Решение Q6 цикла 2 остаётся в силе, README и `docs/faq.md` про это пишут прямо.
+6. ⚖️ **ЗАКРЫТО циклом 5: согласие клиента на фотосъёмку появилось.** Прежняя формулировка («ни
+   чекбокса, ни дисклеймера, ни хранения факта») больше не верна: есть форма согласия
+   (`POST …/photo-consent`), текст интерфейса `PhotoConsent` в манифесте, запись в журнал согласий,
+   бейдж в интерфейсе мастера и **отказ загрузить фото без согласия (400)**. Решение Q6 цикла 2
+   снято. ⚠️ Остаётся сверить README и `docs/faq.md`, которые всё ещё пишут, что согласия нет — эти
+   два файла правит product-analyst параллельно, здесь они не описываются.
 
-7. ⭐ **Правовые документы — черновик, и приложение это никак не проверяет.** `legal.json` помечен
-   `"isDraft": true`, версии — `2026-09-08-draft`. Fail-fast на `isDraft` в Production **намеренно
-   отсутствует** (решение заказчика: старт с черновиком разрешён), видимость обеспечивается только
-   плашкой в UI и текстом самого документа.
+7. ⚖️ **Правовые документы — по-прежнему черновик, и черновиков стало одиннадцать.** Все записи
+   `legal.json` помечены `"isDraft": true`; Privacy и TermsClient остались на `2026-09-08-draft`,
+   три новых документа и шесть текстов интерфейса — на `2026-09-21-draft`. Fail-fast на `isDraft`
+   в Production **намеренно отсутствует** (решение заказчика). Что **изменилось**: загрузчик манифеста
+   теперь **не примет `isDraft: false`, пока в тексте остался хоть один плейсхолдер `{{…}}`**.
+   Исходники юриста лежат отдельно — `legal-drafts/`, двенадцать HTML плюс манифест, **пятнадцать
+   видов незаполненных плейсхолдеров** (`{{ИНН_ОПЕРАТОРА}}`, `{{ОГРН_ОПЕРАТОРА}}`,
+   `{{НОМЕР_УВЕДОМЛЕНИЯ_РКН}}`, `{{ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ}}` и т.д.). Их не может заполнить команда:
+   четыре значения из ЕГРЮЛ, два появятся после уведомления РКН, семь — решения заказчика.
+   `legal-drafts/legal.manifest.proposed.json` — **предлагаемый** манифест, **не подключён**.
 
 8. ⭐ **`Booking.ClientDeleted` не доведён до интерфейса.** Бэкенд проставляет флаг, он приезжает в
    DTO и объявлен в TS-типах — и там же заканчивается (см. §5.2).
 
-9. 🆕 **Текст о рисках подключения WhatsApp — «рыба».** `Services/NotificationRiskText.cs`,
-   единственная константа `CurrentVersion = "2026-09-18-draft"`, содержательный текст ждёт вычитки
-   юристом. Механика при этом **настоящая**: владелец обязан принять текст, версия сохраняется в
-   `NotificationChannel.RiskAcceptedVersion`, устаревшая версия отвергается 400. Полноценного
-   провайдера документов (как в цикле 3) для одного абзаца заводить не стали — это осознанно.
-   Правовые документы `App_Data/legal/` при этом **не менялись** и остаются на `2026-09-08-draft`.
+9. ⚖️ **Текст о рисках подключения WhatsApp существует теперь ДВАЖДЫ, и это несогласованность.**
+   Цикл 4 оставил `Services/NotificationRiskText.cs` — константу `CurrentVersion = "2026-09-18-draft"`
+   с «рыбой»; именно её всё ещё сверяет `NotificationChannelsController` (`offer` и `accept-risk`).
+   Цикл 5 завёл **полноценный документ** `ChannelRiskNotice` в манифесте (`channel-risk-notice.html`,
+   версия `2026-09-21-draft`, `gate: None`) и публичную страницу `/channel-risk`. То есть в продукте
+   сейчас два независимых носителя одного и того же текста с **разными версиями**, и принятие риска
+   каналом сверяется со старым. Механика приёма при этом настоящая в обоих случаях.
 
 10. 🆕 **`NotificationChannel.ContactEmail` — зарезервированное, сознательно неиспользуемое поле.**
     Сбор email при оплате канала и письмо о разрыве вырезаны решением заказчика; колонка оставлена в
@@ -1110,8 +1416,9 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 4. **Типы фронта по-прежнему копируются вручную** (`frontend/src/types/index.ts`), генерации из
    OpenAPI нет. Именно так и возник разрыв `price`/`companySlug`, который цикл 2 закрыл, и так же
    «повис» `clientDeleted` (п. выше). 🆕 Цикл 4 добавил в этот файл **+177 строк** ручных копий
-   (каналы, состояния, шаблоны, журнал, города) — поверхность расхождения выросла заметнее, чем в
-   любом предыдущем цикле.
+   (каналы, состояния, шаблоны, журнал, города). ⚖️ Цикл 5 добавил ещё **+190** (пять типов
+   документов, тексты интерфейса, цели согласий, обращения субъектов, заметка о здоровье, ИНН) —
+   поверхность ручного копирования продолжает расти линейно с каждым циклом.
 
 5. ⭐ **Пагинация `GET /api/masters/clients` — единственная из четырёх, которая считается в памяти.**
    Контроллер материализует весь список клиентов компании, применяет `search` и режет `Skip/Take`
@@ -1135,12 +1442,17 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
   работает и почему это стенд, а в CHANGELOG появился верхний раздел **«Не выпущено»** — то, что
   принято командой, но ещё не выкачено. Содержимое цикла 4 в оба файла вносится **параллельно
   product-analyst'ом**, этим документом не описывается.
-- 🆕 **`ARCHITECTURE.md` и `API_CONTRACT.md` в корне — это документы ЦИКЛА 3, а не текущего.**
-  Цикл 4 их **не перезаписывал**: он положил рядом `ARCHITECTURE_CYCLE4.md` (разделы **21–40**) и
-  `API_CONTRACT_CYCLE4.md` (разделы **19–37**) — продолжения с непересекающейся нумерацией. Ссылка
-  вида «§26» без указания файла **неоднозначна**: смотреть надо на номер (≥21 / ≥19 — цикл 4).
-  `SPEC.md`, наоборот, **перезаписан** циклом 4, а прошлая спека сохранена как
-  `SPEC_CYCLE3_PRODUCTION.md`.
+- ⚖️ **`ARCHITECTURE.md` и `API_CONTRACT.md` в корне — это документы ЦИКЛА 3.** Цикл 4 положил рядом
+  `ARCHITECTURE_CYCLE4.md` (разделы **21–40**) и `API_CONTRACT_CYCLE4.md` (**19–37**), цикл 5 — тем
+  же приёмом `ARCHITECTURE_CYCLE5.md` (**41–60**) и `API_CONTRACT_CYCLE5.md` (**38–53**). Нумерация
+  сквозная и не пересекается, но **ссылка вида «§26» без указания файла неоднозначна**: смотреть надо
+  на номер (≥41 / ≥38 — цикл 5, ≥21 / ≥19 — цикл 4). `SPEC.md` **перезаписан** циклом 5, спека
+  цикла 4 сохранена как `SPEC_CYCLE4_NOTIFICATIONS.md`, цикла 3 — `SPEC_CYCLE3_PRODUCTION.md`.
+  ⚠️ В корне теперь **три поколения** документов цикла одновременно.
+- ⚖️ **Комментарий на `OutboundNotification.ContentRedactedAtUtc` устарел внутри собственного цикла.**
+  Он утверждает, что «ничего эту колонку пока не ставит, она нужна только для `bodyAvailable`
+  в выгрузке» — на момент его написания это было правдой, но правила уничтожения дописали позже в том
+  же цикле, и `NotificationBodyRedactionRule` колонку заполняет.
 - 🆕 **`API_CONTRACT_CYCLE4.md` §35 описывает эндпоинт, которого нет** —
   `PUT /api/companies/{id}/members/{memberId}/notifications` (US-34). В самом контракте он помечен
   «режется первым», и он действительно был срезан; раздел из документа не убран.
@@ -1159,10 +1471,12 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 - 🚀 Преамбула `ARCHITECTURE.md` (цикл 3) называет baseline **цикла 3** — исторические числа на
   момент начала того цикла, а не текущие (`488`/`449`/`100`, §7). Преамбула
   `ARCHITECTURE_CYCLE4.md` аналогично называет baseline цикла 4 (`215`/`407`/`78`).
-- 🆕 Соглашения об архиве (`docs/history/`) в репозитории **по-прежнему нет**, каталога такого нет,
-  в README оно не описано. Цикл 4 решил проблему иначе — **суффиксом в имени файла**
-  (`*_CYCLE4.md`, `SPEC_CYCLE3_PRODUCTION.md`), а не переносом в архив. Поэтому документы двух
-  последних циклов **одновременно лежат в корне**. Более ранние редакции живут только в git-истории
+- ⚖️ Соглашения об архиве (`docs/history/`) в репозитории **по-прежнему нет**, каталога такого нет,
+  в README оно не описано. Циклы 4 и 5 решают проблему **суффиксом в имени файла**
+  (`*_CYCLE4.md`, `*_CYCLE5.md`, `SPEC_CYCLE3_PRODUCTION.md`, `SPEC_CYCLE4_NOTIFICATIONS.md`), а не
+  переносом в архив. Поэтому документы трёх последних циклов **одновременно лежат в корне**, и эта
+  редакция `CURRENT_STATE.md` их, как и прошлая, **не архивировала** — переносить некуда.
+  Более ранние редакции живут только в git-истории
   (SPEC цикла 2 — `git show 0492092:SPEC.md`, цикла 1 — `e6b746c`, ещё более ранняя — `7c86ca2`).
 - ⭐ `SPEC_DEFERRED_NOTIFICATIONS.md` и `SPEC_APPENDIX_CHANNELS.md` — сохранённая спека **отложенной**
   темы уведомлений по телефону (MAX/SMS). 🆕 Цикл 4 закрыл эту тему **другим каналом** (WhatsApp), но
@@ -1300,7 +1614,35 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
   (`await db.Database.MigrateAsync()` в `Program.cs`). Имена — `PascalCase` описанием изменения.
   Скриптов отката/сидов данных (кроме ролей и SuperAdmin) нет.
 
+⚖️ **Конвенции, которые добавил цикл 5** (им следовать, а не заводить рядом своё):
+
+- **Одно правило уничтожения — один файл в `Services/Retention/Rules/`, зарегистрированный поимённо
+  в `Program.cs`.** Никакой автоподхватки рефлексией: список регистраций **и есть** список того, что
+  работает, и его можно прочитать глазами. Побочное следствие используется намеренно — отсутствие
+  правила видно так же явно, как его наличие (случай `NotificationOptOut`, §4.18).
+- **Расширяемое — строкой, закрытое — перечислением.** Ключи текстов интерфейса (`LegalTextKey`) —
+  строковые константы, потому что добавление седьмого текста должно быть правкой манифеста; типы
+  документов (`LegalDocumentType`) — перечисление, потому что каждый член означает ещё и claim, и
+  политику гейта, и ветку сравнения версий.
+- **Нераспознанное значение конфигурации роняет старт**, а отсутствующее значение трактуется в
+  **более строгую** сторону (`gate` по умолчанию `Global`, `DryRun` по умолчанию `true`,
+  `InstanceCreationEnabled` по умолчанию `false`). Fail-closed — общее правило цикла.
+- **Опасные операции по умолчанию выключены и включаются явным действием оператора**, а не наоборот.
+- **Шифруемое поле расшифровывается только явным вызовом**, никогда — прозрачным конвертером EF.
+- **Доступ запрещать явным `Forbid`, а не отдавать пустое значение** — чтобы «ничего не нашлось» и
+  «вам не положено» не выглядели одинаково.
+- **Разбор составного идентификатора живёт в одном месте** (`Services/ClientKey.cs` для `{clientKey}`).
+- **Сроки и пороги — конфигурация; юридические минимумы — fail-fast поверх конфигурации.**
+
 ### Фронтенд (TypeScript/React)
+
+- ⚖️ **Второй zustand-стор появился и это осознанно:** `ownerGateStore` держит состояние
+  владельческого гейта отдельно от `authStore`, потому что это состояние сессии UI, а не аутентификации.
+- ⚖️ **Правовые тексты тянутся с сервера хуком `useLegalText`, а не хардкодятся в компоненте.**
+  Список целей согласия форма строит **из ответа `/api/legal/documents`**, а не из своего массива, —
+  смена набора целей юристом не требует релиза фронта.
+- ⚖️ Мапперов ошибок стало больше по тому же образцу (`subjectRequestError.ts`) — новый домен ошибок
+  оформляется отдельным маппером, а не `catch` с текстом внутри компонента.
 
 - **Функциональные компоненты, именованный экспорт** (`export function CabinetPage()`); дефолтный экспорт
   только у `App.tsx`.
@@ -1369,6 +1711,11 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 - 🆕 Цикл 4 — **15 коммитов** в ветке цикла (`560526c..85ad781`) плюс мерж и две починки CI.
   Заголовки — в том же повествовательном стиле, что и раньше; тело объясняет «почему», трейлер
   `Co-Authored-By: Claude Opus 5` (у мерж-коммита — `Claude Sonnet 5`).
+- ⚖️ Цикл 5 — **15 коммитов** в ветке `cycle/05-legal-compliance`, мерж-коммит `14c9331`
+  (история ветки сохранена, не squash), плюс два коммита уже на `develop`: починка смоук-теста под
+  новый контракт регистрации (`aecddb1`) и документы (`071fc11`). Модель веток соблюдена так же,
+  как в цикле 4. Обратите внимание на порядок: **правка смоука пришла после мержа** — в самой ветке
+  цикла расхождение не заметили (§9, L6).
 - Цикл 3 — **26 коммитов** (`f3adc6e..7a551eb`), в отличие от цикла 2, уехавшего одним коммитом
   `0492092`. Заголовки мелких коммитов несут идентификатор задачи из ARCHITECTURE (`T-B1`, `T-F5`, …)
   и историю из SPEC (`US-42`), ломающие изменения помечены прямо в заголовке (`BREAKING #1`,
@@ -1382,16 +1729,18 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 | Набор | Проект/каталог | Нужна БД? | Команда | Объём |
 |---|---|---|---|---|
-| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | нет | `dotnet test ServiceBooking.UnitTests` | 🆕 **488** запусков (было 215) |
-| **Функциональные (API) тесты** | `ServiceBooking.Tests` | **да, PostgreSQL** | `dotnet test ServiceBooking.Tests` | 🆕 **449** запусков (было 407) |
-| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | нет | `npm run test:run` (в `frontend/`) | 🆕 **100** тестов (было 78) |
+| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | нет | `dotnet test ServiceBooking.UnitTests` | ⚖️ **591** запуск (было 488) |
+| **Функциональные (API) тесты** | `ServiceBooking.Tests` | **да, PostgreSQL** | `dotnet test ServiceBooking.Tests` | ⚖️ **465** запусков (было 449) |
+| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | нет | `npm run test:run` (в `frontend/`) | ⚖️ **181** тест (было 100), 32 файла |
 
 Количества посчитаны статически по атрибутам `[Fact]`/`[Theory]`+`[InlineData]` и вызовам `it(...)`
-и совпадают с фактическим прогоном на `7a36543`. В `ServiceBooking.Tests` атрибуты идут парой
+и совпадают с фактическим прогоном на `071fc11`. В `ServiceBooking.Tests` атрибуты идут парой
 `[Fact, TestCase("ID")]` — голого `[Fact]` там не встретить, искать надо `[Fact`.
 
-🆕 **Пропорция роста важна сама по себе:** юнит-набор вырос более чем вдвое (+273), функциональный —
-на 42. Цикл 4 писался «чистой логикой наружу», и основная проверка его правил живёт **без БД**.
+⚖️ **Пропорция роста в цикле 5 обратная циклу 4:** фронтенд +81 (впервые обогнал функциональный
+набор), юнит +103, функциональный всего +16. Причина не в небрежности, а в предмете: цикл 5 менял
+формы, экраны и тексты, а не серверные алгоритмы, и значительная часть его серверной работы —
+**правка уже существовавших** функциональных тестов под новый контракт, а не написание новых.
 
 ### 7.1 Юнит-тесты бэкенда — `ServiceBooking.UnitTests`
 
@@ -1407,7 +1756,7 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 | Файл | Что покрывает | `[Fact]` + `[InlineData]` |
 |---|---|---|
-| **`DeploymentSafetyChecksTests.cs`** ⭐🆕 | fail-fast прод-конфига: Jwt-ключ, пароль SuperAdmin, приватный корень внутри `wwwroot`, доверенные сети, 🆕 секреты уведомлений, отпечаток ключа, наличие tzdata | **59** (было 28) |
+| **`DeploymentSafetyChecksTests.cs`** ⭐🆕⚖️ | fail-fast прод-конфига: Jwt-ключ, пароль SuperAdmin, приватный корень внутри `wwwroot`, доверенные сети, 🆕 секреты уведомлений, отпечаток ключа, наличие tzdata, ⚖️ режим согласия на передачу, страна сервера провайдера, минимальные сроки хранения | ⚖️ **84** (было 59) |
 | **`LegalDocumentProviderTests.cs`** ⭐ | чтение и перечитывание `legal.json`, версии, `isDraft`, `changeKind` | 9 + 11 = 20 |
 | **`PaginationTests.cs`** ⭐ | `Pagination.Normalize`: кламп снизу и **сверху** (переполнение `(page-1)*pageSize`), `HasNext` | 7 + 14 = 21 |
 | **`LogMaskingTests.cs`** ⭐ | маскирование телефонов в логах | 5 + 11 = 16 |
@@ -1418,12 +1767,13 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 | `PhoneNormalizerTests.cs` | каноническая форма, валидность | 10 + 12 = 22 |
 | `ScheduledTaskScheduleTests.cs` | `IsDue` / `IsOverdue` | 10 |
 | `SubscriptionResolverRulesTests.cs` | правило разрешения тарифа, включая `PlanConfig.IsActive` | 10 |
-| `PhotoQuotaTests.cs` | окно хранения, `Forever` | 8 + 2 = 10 |
+| `PhotoQuotaTests.cs` | окно хранения (⚖️ без `Forever`) | ⚖️ 8 |
 | `ImageSignatureTests.cs` | определение JPEG/PNG/WEBP по байтам | 7 |
 | `TokenServiceTests.cs` | claims, хеш `SecurityStamp` | 5 |
 | `FileStorageTests.cs` | containment-проверка путей, ключи vs URL | 8 |
 
-🆕 **Файлы цикла 4** (22 новых, суммарно ~273 запуска):
+🆕 **Файлы цикла 4** (22 новых, суммарно ~273 запуска). ⚖️ Числа в этой таблице — **на момент цикла 4**;
+шесть из них цикл 5 увеличил, актуальные значения — в блоке «Существенно выросли» ниже:
 
 | Файл | Что покрывает | Запусков |
 |---|---|---|
@@ -1450,7 +1800,26 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 | `PhoneDisplayMaskTests.cs` | маска номера для показа владельцу | 4 |
 | `OptionalTests.cs` | «не прислали» vs «прислали null» | 3 |
 
-| **Итого** | | 🆕 **488 запусков** |
+⚖️ **Файлы цикла 5** (7 новых, плюс заметный рост существующих):
+
+| Файл | Что покрывает | Запусков |
+|---|---|---|
+| `InnValidatorTests.cs` | контрольная сумма ИНН на 10 и 12 знаков | 12 |
+| `TemplateAdHeuristicsTests.cs` | словарь рекламных маркеров в шаблоне | 7 |
+| `WorkingDaysTests.cs` | срок ответа на обращение в рабочих днях | 7 |
+| `ClientKeyTests.cs` | разбор `{clientKey}` — `userId` или `phone:…` | 6 |
+| `HealthNoteProtectorTests.cs` | шифрование заметки о здоровье, чужой AAD, порча | 5 |
+| `RetentionPlanTests.cs` | план уничтожения: какие правила на какие сроки | 5 |
+| `AppLogAgeRuleTests.cs` | правило-растяжка по возрасту файлов логов | 4 |
+
+Существенно выросли: `NotificationTemplateTests` (30, +31 строка кода на акцепт),
+`NotificationGateTests` (29 — новая ветка `ProviderDeliveryConsentMode`),
+`LegalDocumentProviderTests` (28 — пять документов, шесть текстов, `gate`, плейсхолдеры),
+`ChannelPresentationTests` (25), `SecretProtectorTests` (18 — **строковая перегрузка AAD и
+побайтовая проверка, что старые токены каналов читаются**), `LegalConsentFilterTests` (7 — области
+блокировки), `PhotoQuotaTests` (8 — без `Forever`).
+
+| **Итого** | | ⚖️ **591 запуск** |
 
 ### 7.2 Функциональные (API) тесты — `ServiceBooking.Tests`
 
@@ -1472,7 +1841,12 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
     `App_Data/legal`, чтобы `LEG-`-тесты переписывали `legal.json`/HTML прямо на диске (существенная
     vs редакционная правка, «подменили файл — без пересборки»), не мешая остальным. `ReloadSeconds: 1`,
     чтобы не спать 30 секунд на каждую смену версии. 🆕 **Получила собственного суперадмина**
-    (коммит `7a36543`) — см. §9 про урок общих ресурсов.
+    (коммит `7a36543`) — см. §9 про урок общих ресурсов. ⚖️ **Переписана в цикле 5** под манифест из
+    пяти документов и шести текстов.
+  - ⚖️ `Infrastructure/ApiTestBase.cs` **вырос на +101 строку**: общие хелперы регистрации теперь
+    строят новый объект `legal` с версиями, прочитанными у живого хоста. Это и есть причина, по
+    которой функциональный набор «починился» почти механически — и одновременно причина, по которой
+    он **не мог** поймать расхождение со смоук-скриптом (§9, L6).
   - 🆕 `Infrastructure/NotificationTestFactory.cs` — хост на тест для тестов каналов.
   - 🆕 `Infrastructure/NotificationTestBase.cs` — общая база в **той же** коллекции `"Api"`.
   - 🆕 **`Infrastructure/NotificationDispatchTestFactory.cs` — первая в проекте тестовая
@@ -1501,11 +1875,12 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 | `Tests/AdminTests.cs` | `ADM-` | 42 |
 | `Tests/ServicesTests.cs` | `SVC-` | 19 |
 | `Tests/MastersTests.cs` | `MC-` | 19 |
-| `Tests/ClientNotePhotosTests.cs` | `MC-` (продолжает нумерацию) | 19 |
+| `Tests/ClientNotePhotosTests.cs` | `MC-` (продолжает нумерацию) | ⚖️ 21 (загрузка требует согласия) |
 | `Tests/ProfileTests.cs` | `PROF-` | 18 |
 | `Tests/WorkingHoursTests.cs` | `WH-` | 17 |
 | `Tests/ScheduleTemplateTests.cs` | `ST-` | 15 |
-| **`Tests/LegalConsentTests.cs`** ⭐ | `LEG-` | 14 |
+| **`Tests/LegalConsentTests.cs`** ⭐⚖️ | `LEG-` (⚖️ **переписан целиком** под пять типов документов и раздельную блокировку) | ⚖️ 17 |
+| **`Tests/LegalPriorityTests.cs`** ⚖️ | `LGL-` — **новый файл, инварианты правового контура** (см. ниже) | ⚖️ 9 |
 | `Tests/AuthTests.cs` | `AUTH-` | 12 + 2 = 14 |
 | `Tests/ReportsTests.cs` | `RPT-` | 13 |
 | `Tests/ReviewsTests.cs` | `RV-` | 11 + 6 = 17 |
@@ -1518,15 +1893,30 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 | **`Tests/HealthTests.cs`** ⭐ | `OPS-` | 4 |
 | **`Tests/IdentityRoleSyncTests.cs`** ⭐ | `SEC-` | 4 |
 | `Tests/UploadsStaticFilesTests.cs` | — | 2 |
-| 🆕 **`Tests/NotificationChannelsTests.cs`** | `NTF-C001…C018` (свой `NotificationTestFactory` на тест) | 18 |
+| 🆕 **`Tests/NotificationChannelsTests.cs`** | `NTF-C001…C018` (свой `NotificationTestFactory` на тест) | ⚖️ 20 (заявка требует ИНН и оферты) |
 | 🆕 **`Tests/NotificationWebhookUnsubscribeTests.cs`** | `NTF-W*`, `NTF-U*`, `NTF-L*` | 9 |
 | 🆕 **`Tests/NotificationCitiesTimeZoneTests.cs`** | `NTF-G001…G006` (коллекция `"Api"`) | 6 |
-| 🆕 **`Tests/NotificationQueueingTests.cs`** | `NTF-Q001…Q004` (коллекция `"Api"`) | 4 |
+| 🆕 **`Tests/NotificationQueueingTests.cs`** | `NTF-Q001…Q004` (коллекция `"Api"`) | ⚖️ 5 (ветка `AccountsOnly`) |
 | 🆕 **`Tests/NotificationDispatchExtraTests.cs`** | `NTF-D03…D05` (коллекция `"NotificationDispatch"`) | 3 |
 | 🆕 **`Tests/NotificationDispatchTests.cs`** | `NTF-D01…D02` (коллекция `"NotificationDispatch"`) | 2 |
-| **Итого** | | 🆕 **449 запусков** |
+| **Итого** | | ⚖️ **465 запусков** |
 
-Человекочитаемое описание каждого кейса — в `TEST_CATALOG.md` (~246 КБ, русский), §10.4.
+⚖️ **`LegalPriorityTests.cs` — единственный новый функциональный файл цикла и самый важный для
+понимания цикла.** Он проверяет не эндпоинты, а **инварианты**, которые иначе некому защитить:
+
+- `LGL-073-DRY` — **сухой прогон не пишет в базу ничего**, и листание при этом завершается (то есть
+  режим «только посмотреть» не зациклится на первом же батче);
+- `LGL-073-OPTOUT` — **отписка переживает полный прогон уничтожения**: после того как отработали все
+  тринадцать правил, строка `NotificationOptOut` на месте. Это прямая проверка того, что правила для
+  неё не появилось «заодно»;
+- `LGL-073-DELETE-HEALTH` / `-GUEST` — удаление заметки о здоровье и клиента, и гостя;
+- `LGL-068-REVOKE-EFFECTS` / `-IDEMPOTENT` — что именно прекращается при отзыве согласия и что
+  повторный отзыв ничего не ломает;
+- `LGL-074-IDENTICAL` — ответ на обращение субъекта **одинаков** для известного и неизвестного
+  системе телефона; `LGL-074-RATE` — лимит на форму обращений;
+- `LGL-077-SUPERADMIN` — суперадмину отказано в доступе к противопоказаниям.
+
+Человекочитаемое описание каждого кейса — в `TEST_CATALOG.md` (⚖️ ~276 КБ, русский), §10.4.
 **Оговорка про `LEG-036`** (гонка одновременного принятия согласия): сторож **вероятностный** —
 красноту подтверждали на 20 итерациях, в репозиторий закоммичен одиночный прогон (см. §9.15).
 
@@ -1545,16 +1935,21 @@ dotnet test ServiceBooking.Tests         # основной функционал
 cd frontend && npm ci && npm run lint && npx tsc --noEmit && npm run test:run
 ```
 
-Числа последнего фактического прогона (на `7a36543`, выполнял не автор этого документа):
-`dotnet build … -warnaserror` — **0 warnings / 0 errors**; `ServiceBooking.UnitTests` — **488/488**;
-`ServiceBooking.Tests` — **449/449** (🆕 два прогона подряд **без пересоздания базы** — идемпотентность
-подтверждена); `npm run test:run` — **100/100**; `tsc --noEmit` — чисто;
+Числа последнего фактического прогона (на `071fc11`, выполнял не автор этого документа):
+`dotnet build … -warnaserror` — **0 warnings / 0 errors**; `ServiceBooking.UnitTests` — **591/591**;
+`ServiceBooking.Tests` — **465/465**; `npm run test:run` — **181/181**; `tsc --noEmit` — чисто;
 `npm run build` — успешно. Отдельного набора e2e/браузерных тестов в проекте **нет** — базовый
 прогон QA это `ServiceBooking.Tests` (xUnit + `WebApplicationFactory` + реальная PostgreSQL).
 
 🆕 **Важно для QA, прогоняющего базовый набор:** сетевых вызовов наружу функциональный набор не
 делает — `Notifications:Provider` в `Testing` остаётся `logging`, транспорт-заглушка. Ни одного
 сообщения в WhatsApp при прогоне не уходит.
+
+⚖️ **Второе важное для QA, появившееся в цикле 5:** задача уничтожения `data-retention` в окружении
+`Testing` **выключена** (`appsettings.Testing.json`), как и три остальные фоновые задачи, а в
+закоммиченной конфигурации она в любом случае работает **в сухом прогоне**. То есть базовый прогон
+ничего не удаляет по срокам хранения; тесты, которым это нужно, дёргают задачу напрямую и двигают
+фейковые часы.
 
 Ожидаемый шум в выводе функционального набора, не являющийся сбоем:
 `RequestSizeLimitFilter ... does not support IHttpRequestBodySizeFeature` (у `TestServer` нет этой
@@ -1571,16 +1966,24 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 - **Раннер:** Vitest 3.2, окружение `jsdom` 25, `@testing-library/react` 16 + `jest-dom` + `user-event`.
 - **Конфиг:** `frontend/vitest.config.ts` (намеренно отдельный от `vite.config.ts`),
   `globals: false` (явные импорты `describe`/`it`/`expect`), setup — `src/test/setup.ts`.
-- **Что покрыто (🆕 100):** `utils/uploadError` (14), `utils/phone` (10), 🆕 `utils/notificationError` (9),
+- ⚖️ **Что добавил цикл 5 (+81, 32 файла тестов):** впервые заметная доля — **экраны и формы, а не
+  утилиты**: `pages/RegisterPage` (новый контракт согласий в форме регистрации),
+  `pages/ConsentsPage`, `pages/SubjectRequestPage`, `components/booking/BookingModal`,
+  `components/clientNotes/{HealthNoteCard, NotePhotoUploader, PhotoConsentBadge}`,
+  `components/legal/OwnerTermsGateModal`, `components/notifications/ChannelRequestModal`,
+  `pages/owner/{NotificationTemplatesTab, TemplateAcknowledgementModal}`,
+  `hooks/usePhotoUploadWithConsent`, плюс утилиты `inn`, `legalSections`, `subjectRequestError`,
+  `templateMarkers`. Претензия прошлой редакции «весь прирост — утилиты» к этому циклу **не относится**.
+- **Что покрыто было к циклу 4 (100):** `utils/uploadError` (14), `utils/phone` (10), 🆕 `utils/notificationError` (9),
   🆕 `utils/channelBanner` (8), `utils/authError` (7), `utils/cancelError` (6), `utils/legalError` (6),
   `pages/MasterClientsPage` (6), 🆕 `utils/timezone` (5), `pages/LegalDocumentPage` (5),
   `components/clientNotes/PhotoGallery` (5), `components/ui/Pagination` (4),
   `components/legal/ConsentGate` (4), `components/legal/LegalUpdateBanner` (4),
   `hooks/useDebouncedValue` (4), `pages/CompanyPage` (3).
-- 🆕 **Весь прирост цикла 4 (+22) — это утилиты.** Ни один из новых экранов уведомлений
-  (`NotificationsSection` и три его вкладки, `QrModal`, `AssignCompanyDialog`, `RiskAcceptanceModal`,
-  `NotificationsAdminTab`, `UnsubscribePage`, `CityCombobox`) тестами **не покрыт**.
-- Впервые появились тесты на **страницы**, а не только на утилиты.
+- 🆕 Весь прирост цикла 4 (+22) был утилитами; экраны уведомлений (`NotificationsSection` и три его
+  вкладки, `QrModal`, `AssignCompanyDialog`, `RiskAcceptanceModal`, `NotificationsAdminTab`,
+  `UnsubscribePage`, `CityCombobox`) так и **остались не покрыты** — цикл 5 их не трогал.
+- ⚖️ Не покрыт и новый `pages/admin/SubjectRequestsTab.tsx` (админский журнал обращений).
 
 ### Чего в тестах НЕТ
 
@@ -1602,6 +2005,16 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
   бане номера существуют только в виде кода и тестов против заглушек.
 - 🆕 `TEST_CATALOG.md` содержит **явный раздел «Не покрыто функциональными тестами этого прогона»** —
   это зафиксированный, а не скрытый пробел.
+- ⚖️ **Прицельно не покрыто циклом 5** (зафиксировано, не блокер): акцепт владельцем при сохранении
+  шаблона; эвристика рекламных маркеров на уровне API; поля подтверждения полномочий при записи за
+  другого человека; админский журнал обращений субъектов; полнота истории согласий в выгрузке.
+- ⚖️ **Смоук-тест против собранного образа поймал то, чего не увидели 465 функциональных тестов.**
+  Ломающее изменение контракта регистрации не довели до `deploy/ci/smoke.sh`, потому что
+  функциональные тесты **строят запрос из текущего кода**, а скрипт носил свою захардкоженную копию
+  тела запроса. Разошлись — и никакой тест этого увидеть не мог. Чинили уже на `develop`, отдельным
+  коммитом (`aecddb1`); заодно скрипт перестал хардкодить версии документов и **читает их из
+  `/api/legal/documents` того самого образа**, что делает проверку строго сильнее прежней. Класс
+  расхождений, который ловится только прогоном против настоящего образа, — см. §9.
 
 ---
 
@@ -1630,6 +2043,11 @@ pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `t
 - **`deploy/ci/smoke.sh` гоняет реальную загрузку изображения** по HTTP в живой контейнер, то есть
   проверяет, что `SkiaSharp.NativeAssets.Linux.NoDependencies` действительно грузится на glibc-базе
   и что файл потом реально отдаётся. Ни `dotnet build`, ни `dotnet run` этого поймать не могут.
+  ⚖️ **Цикл 5 научил скрипт новому контракту регистрации** (`legal: { privacyAcknowledgedVersion,
+  termsAcceptedVersion }` вместо `acceptedLegal: true`) и заодно сделал его строже: версии больше не
+  захардкожены, а **читаются из `GET /api/legal/documents` этого же образа**, с явной проверкой, что
+  `Privacy` и `TermsClient` в манифесте вообще присутствуют. До этой правки смоук краснел — и это
+  единственная проверка во всём проекте, которая поймала расхождение (§7, §9).
   Скрипт запускается и руками: `BASE_URL=http://localhost:5000 deploy/ci/smoke.sh`.
   В самом `ServiceBooking.API/Dockerfile` вверху стоит предупреждение: **не менять тег на `-alpine`**.
 
@@ -1717,6 +2135,11 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
   намеренно**: `deploy-remote.sh` пересоздаёт контейнер на каждом деплое. Каталог `./state`
   (0700) должен существовать **до** первого `docker compose up`; `/state/` добавлен в `.gitignore`
   тем же правилом, что `/legal/` и `.env`.
+  ⚖️ **Цикл 5 добавил сюда одну переменную — `RETENTION_DRY_RUN`** (`ScheduledTasks__data-retention__DryRun`,
+  по умолчанию `true`). Форма та же фейл-сейфная, что у `NOTIFICATIONS_PROVIDER`: пусто/не задано =
+  запечённое в образ безопасное умолчание, то есть **сухой прогон**. Чтобы задача начала удалять,
+  оператор обязан выставить `false` осознанно и по процедуре из `DEPLOY.md` §11.4 (сначала сухой
+  прогон, разбор журнала, потом боевой).
 - `deploy/nginx/ezbook.conf`: статика из `/var/www/ezbook/current` (симлинк на релиз), прокси `/api/`
   и `/uploads/` на `127.0.0.1:5000`, `client_max_body_size 6M`, TLS через `certbot --nginx`.
   `/swagger/` не проксируется. Заголовки: на уровне `server` — `Strict-Transport-Security`,
@@ -1760,6 +2183,15 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
   этой базы» **молча перестанет работать**. 🆕 `DEPLOY.md` §11.2 теперь **описывает восстановление
   `.env` и отпечатка** (шаг 3b) — прежняя претензия к раннбуку снята, но копия всё так же локальная
   (§9).
+  ⚖️ **Цикл 5 переписал шаг 3b в развилку.** Оператору теперь сначала предлагается решить, **на какой
+  машине он находится** (та же или новая), и только потом выполнять ровно один из двух вариантов.
+  Причина названа в раннбуке прямо: тем же ключом `NOTIFICATIONS_ENCRYPTION_KEY` с цикла 5 зашифрованы
+  **не только токены WhatsApp-каналов, но и противопоказания клиентов всех салонов** — пропуск шага
+  там, где он обязателен, это не мелкая неаккуратность процедуры, а потеря медицинских данных.
+  ⚖️ Появился **§11.2b — обязательный шаг после восстановления: повторно применить удаления**,
+  выполненные по запросам субъектов уже после снятия восстанавливаемой копии.
+  ⚖️ Процедура **ротации ключа теперь начинается с `ClientHealthNotes`**, а не с каналов.
+  ⚖️ Появился **§11.4** — уничтожение по срокам хранения, с обязательным сухим прогоном первым.
   ⚠️ **В копию входит и `.env`** (шаг 3b скрипта, файл `env-<ts>.txt`, права 0600) — без него дамп
   базы и тома бесполезны. Но: `DEPLOY.md` §11.1 в списке «что делает каждый прогон» этот шаг **не
   называет** (перечислено 6 шагов из 7), процедура восстановления §11.2 `.env` **не восстанавливает**,
@@ -1785,7 +2217,7 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
   события копятся, а письма не уходят.
 
 **Fail-fast прод-конфигурации** живёт теперь в `Services/DeploymentSafetyChecks.cs` (вынесен из
-`Program.cs` ради тестируемости — чистые статические методы, 🆕 **59 юнит-тестов**). В окружении Production
+`Program.cs` ради тестируемости — чистые статические методы, ⚖️ **84 юнит-теста**). В окружении Production
 приложение **не стартует**, если `Jwt:Key` пуст/короче 32 символов/равен плейсхолдеру; если
 `SuperAdmin:Password` пуст или равен `Admin12345`/`CHANGE_ME`; если `Storage:PrivateRoot` резолвится
 внутри `wwwroot`; ⭐ если `Storage:PrivateRoot` резолвится внутри фактического `Storage:PublicRoot`
@@ -1809,6 +2241,20 @@ Runbook: `DEPLOY.md` (~111 КБ) — 🚀 **переписан целиком** 
   `Europe/Moscow`); отсутствие tzdata в образе станет пойманным отказом деплоя, а не загадкой в
   рантайме. Параллельно в `Dockerfile` **явно доустановлен `tzdata`** — не потому, что базового
   образа не хватает сегодня, а чтобы не зависеть от того, что Microsoft его не вырежет.
+
+⚖️ **Три новые проверки цикла 5**, все — **безусловные, без послабления для Development**
+(это проверки согласованности конфигурации, а не секретов, и ошибиться в них на ноутбуке так же
+неправильно, как в проде):
+- `ValidateProviderDeliveryConsentMode` — `Notifications:ProviderDeliveryConsent` обязан быть одним из
+  `Strict`/`AccountsOnly`/`Off`; **нераспознанное значение роняет старт**, потому что это правовой
+  гейт, а не косметическая настройка.
+- `ValidateGreenApiServerCountry` — если создание экземпляров у провайдера включено
+  (`GreenApi:InstanceCreationEnabled`), **страна сервера обязана быть задана**: «пусть решит
+  провайдер» не является допустимым умолчанием для требования локализации данных.
+- `ValidateRetentionPeriods` — `Retention:TemplateHistoryDays` ≥ **365** и
+  `Retention:ConsentRecordDays` ≥ **1095**. Это юридические минимумы: «не меньше трёх лет» не должно
+  зависеть от того, кто последним правил `appsettings.Production.json`.
+
 ⭐ **До коммита `909dcc3` файла `.dockerignore` в репозитории вообще не было** — он сам был
 перечислен строкой в `.gitignore` и потому никогда не коммитился; любой чистый клон собирал образ
 БЕЗ единого исключения, включая исключение секретов (`appsettings.Development/Production.json`).
@@ -1835,6 +2281,10 @@ Serilog (`ServiceBooking.API/logs/**`), артефакты тестовых пр
 внешнем кабинете. Этот — **нет**: он расшифровывает токены WhatsApp-экземпляров **чужих салонов**,
 его потеря необратимо уносит все подключённые каналы. Поэтому в `DEPLOY.md` он вынесен **отдельной
 строкой** инвентаря секретов, а не в общий список ротируемых.
+⚖️ **С цикла 5 цена его потери выросла ещё раз:** тем же ключом зашифрованы **противопоказания
+клиентов всех салонов** (`ClientHealthNotes`). Ротация ключа в раннбуке теперь **начинается именно с
+этой таблицы**, а не с каналов. В `.env.production.example` добавлена ещё одна, не секретная
+переменная — `RETENTION_DRY_RUN` (по умолчанию `true`).
 
 ---
 
@@ -1849,6 +2299,58 @@ Serilog (`ServiceBooking.API/logs/**`), артефакты тестовых пр
 
 🆕 **Нумерация 1–30 ниже СОХРАНЕНА от прошлой редакции** — цикл 4 добавил свой блок с буквенными
 номерами (P0-A…P0-E), чтобы ссылки вида «§9.17» из других документов остались валидными.
+⚖️ **Цикл 5 поступил так же** — его блок идёт ниже с номерами L1…L6, нумерация 1–30 и P0-A…P0-E
+не тронута.
+
+---
+
+**⚖️ P0-цикл-5 — что цикл 5 закрыл, что переформулировал и что осталось**
+
+**L1. Функция уведомлений по-прежнему НЕ выпущена, и правовая часть закрыта не полностью.** Цикл 5
+снял главный блокер прошлой редакции — «правовая оценка по 41-ФЗ не проведена»: заключение сделано
+(`LEGAL_REVIEW.md`), и 41-ФЗ к платформе **не применяется**. Но выпуск блокируют пять вещей, ни одна
+из которых не решается кодом:
+  1. **уведомление в Роскомнадзор** об обработке персональных данных не подано;
+  2. **договоры поручения с салонами** не заключены;
+  3. **партнёрского аккаунта GREEN-API нет** — реального экземпляра не создавалось ни разу
+     (перешло из цикла 4 без изменений);
+  4. **вопрос практикующему юристу** — вправе ли платформа привлекать обработчика в выбранной схеме —
+     не задан и не закрыт;
+  5. **пятнадцать видов плейсхолдеров** в двенадцати документах юриста не заполнены (§5.1 п. 7):
+     часть требует данных ЕГРЮЛ, часть появится только после уведомления РКН, часть — решения заказчика.
+
+**L2. P0-3 (бэкап и `.env`) закрыт НЕ ПОЛНОСТЬЮ, а переформулирован — и на его месте новая дыра.**
+Что закрыто: бэкапы работают и **проверены**; проблема была не в них, а в **закомментированном шаге
+раннбука**, который теперь стал развилкой (§8). Что **открылось**: 🔴 **восстановление базы из копии
+воскрешает данные, которые были удалены по запросу субъекта** — а журнал обращений и журнал отзывов
+согласий лежат **в том же самом дампе**, то есть восстанавливаются вместе с воскрешёнными данными и
+не могут служить независимым доказательством того, что удаление было. Временная мера — ручной
+обязательный шаг `DEPLOY.md` §11.2b «повторно применить удаления после восстановления». Настоящее
+решение — **журнал удалений, живущий вне базы**, — в этом цикле не делалось и переходит в следующий.
+
+**L3. Правовые тексты — каркас, а не готовые документы.** Двенадцать документов написаны и увязаны с
+механикой (версии, хеши, гейты, акцепты — всё настоящее и покрыто тестами), но **до публикации нужна
+вычитка практикующим юристом**. Всё, что читает приложение, помечено `isDraft: true`. Загрузчик
+манифеста не примет `isDraft: false`, пока остался хоть один плейсхолдер — но от **неверного по сути**
+текста без плейсхолдеров это не защищает.
+
+**L4. Прицельно не покрыто тестами** (зафиксировано командой, не скрыто): акцепт владельца при
+сохранении шаблона; эвристика рекламных маркеров на уровне API; поля подтверждения полномочий при
+записи за другого человека; админский журнал обращений субъектов; полнота истории согласий в выгрузке.
+
+**L5. Долг цикла 4 в этом цикле не брался вообще.** Не сдвинулись: **уведомления персоналу**
+(US-34, P0-цикл-4 пункт B) и **справочник городов** — 91 запись, **админского способа добавить город
+по-прежнему нет**, единственный путь это новая миграция.
+
+**L6. 🧠 Урок цикла, который стоит записать.** **Смоук-тест против собранного образа поймал то, чего
+не увидели 465 функциональных тестов.** Ломающее изменение контракта регистрации не довели до
+`deploy/ci/smoke.sh`: функциональные тесты **строят запрос из текущего кода** и потому не могут
+разойтись с ним по определению, а скрипт носил **свою захардкоженную копию** тела запроса. Ни один
+тест этого класса расхождений увидеть не мог — его ловит только проверка против **настоящего образа**
+с настоящим HTTP. Чинили уже на `develop` (`aecddb1`), заодно убрав из скрипта хардкод версий
+документов. Вывод, применимый к любому следующему циклу: у каждого внешнего потребителя API
+(скрипты, curl-рецепты в документации, примеры) есть своя копия контракта, и ломающее изменение
+обязано пройти по всем копиям, а не только по коду и тестам.
 
 ---
 
@@ -1925,8 +2427,11 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
    (пожар, кража, смерть диска — диск ещё и **не зашифрован**, LUKS нет). Решение заказчика
    (SPEC R13), в `backup.sh` есть готовая заглушка `upload_offsite()` под будущую доработку. Тем же
    свойством страдает мониторинг: `health-alert.sh` крутится на проверяемой машине.
-3. 🚀🆕 **Конфигурация (`.env`) при потере машины невосстановима — и теперь от неё зависят учётные
-   данные ЧУЖИХ аккаунтов WhatsApp.** 🆕 **Цена вопроса выросла качественно, и это прямо названо
+3. 🚀🆕⚖️ **Конфигурация (`.env`) при потере машины невосстановима — и теперь от неё зависят учётные
+   данные ЧУЖИХ аккаунтов WhatsApp, а с цикла 5 ещё и медицинские сведения о клиентах салонов.**
+   ⚖️ См. L2 выше: бэкапы проверены, дыра была в раннбуке и закрыта развилкой; но копия **по-прежнему
+   лежит на той же машине**, а сверху добавилась новая проблема — восстановление воскрешает удалённое
+   по запросу субъекта. 🆕 **Цена вопроса выросла качественно, и это прямо названо
    блокирующим выпуск функции уведомлений (P0-цикл-4, пункт A).** Что изменилось к лучшему: раздел
    «Инвентарь секретов» в `DEPLOY.md` **появился** (раньше `backup.sh` ссылался вникуда), §11.2
    теперь **описывает восстановление `.env` и файла отпечатка ключа** (шаг 3b, с предупреждением
@@ -1956,12 +2461,13 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
    **переименование или перенос каталога приведёт к созданию новых пустых томов** — docker не
    ошибётся, он молча создаст пустое, и приложение поднимется с чистой базой. Ровно эта ловушка уже
    сработала на процедуре восстановления (искали `ezbook_api_*`, а тома — `app_api_*`).
-7. 🚀 **Правовые тексты — ЧЕРНОВАЯ редакция, юрист их не вычитывал, и система уже работает.**
-   `App_Data/legal/legal.json`: `"isDraft": true`, версии `2026-09-08-draft`. Fail-fast на черновик
-   в Production **намеренно отсутствует** (решение заказчика). Отличие от прошлой редакции в том,
-   что сайт теперь открыт: **каждая регистрация фиксирует согласие именно с черновиком**, и эти
-   записи останутся такими после вычитки — `UserConsent` перезаписывается только при новом принятии.
-   Видимость черновика обеспечена только плашкой в UI и первым абзацем самого текста.
+7. 🚀⚖️ **Правовые тексты — ЧЕРНОВАЯ редакция, юрист их не вычитывал, и система уже работает.**
+   `legal.json`: `"isDraft": true` у **всех одиннадцати** записей. Fail-fast на черновик в Production
+   **намеренно отсутствует** (решение заказчика). Сайт открыт, значит **каждая регистрация фиксирует
+   согласие именно с черновиком**. ⚖️ Что **улучшилось** по сравнению с прошлой редакцией: такие
+   записи теперь не теряются при повторном принятии — журнал `ConsentRecord` хранит **каждое** событие
+   с версией и хешем текста, так что после вычитки будет видно, кто с какой редакцией соглашался.
+   Что **не** изменилось: видимость черновика обеспечена только плашкой в UI и текстом самого документа.
 8. 🚀 **Релиза не было: `master` отстаёт, тегов нет, «прод» формально не существует.** Развёрнута
    ветка `develop`, деплой выполнялся workflow `deploy-staging.yml`, то есть всё описанное выше —
    **стенд**, хотя и на публичном домене с настоящим TLS. `deploy-production.yml` нацелен на **ту же
@@ -2007,11 +2513,12 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
    анти-фрейминга. В **Windows/IIS-контуре** (`frontend/public/web.config`, `DEPLOY-windows.md`)
    заголовков нет вообще — этот контур **выведен из скоупа цикла 3 решением заказчика**, но
    `DEPLOY-windows.md` из репозитория не удалён, и по нему всё ещё можно развернуть систему без защиты.
-14. **Юридический риск фотофиксации принят, но не снят.** Общий правовой контур появился (§4.14), но
-   **согласия клиента на фотосъёмку в интерфейсе по-прежнему нет** — ни чекбокса, ни дисклеймера, ни
-   хранения факта: решение Q6 цикла 2 остаётся в силе. Согласие на политику и оферту,
-   которое даёт клиент, фотосъёмку **не покрывает**. Ответственность переложена на компанию-салон
-   текстом в README/`docs/faq.md`.
+14. ⚖️ **ЗАКРЫТО циклом 5: юридический риск фотофиксации снят на уровне механики.** Появились форма
+   согласия на съёмку, текст `PhotoConsent` в манифесте, запись факта в журнал согласий и **отказ
+   загрузить фото без согласия (400)**; отдельно сделано согласие на сведения о здоровье, а сами
+   сведения вынесены в зашифрованную таблицу, закрытую в том числе от суперадмина. Решение Q6 цикла 2
+   снято. **Остаточный риск** — тот же, что у всего правового контура: тексты форм черновые и не
+   вычитаны юристом (L3), а README и `docs/faq.md` всё ещё утверждают, что согласия нет.
 
 **P2 — код без тестов, на который многое завязано / хрупкие места**
 
@@ -2028,8 +2535,9 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     Признано приемлемым ревьюером (список ограничен одной компанией) и **задокументировано
     комментарием в коде** — но с ростом базы клиентов это первый кандидат на деградацию.
     Остальные три выборки (`admin/users`, `admin/companies`, публичные отзывы) пагинируются в БД.
-18. **Фронтенд покрыт точечно.** 🆕 100 тестов Vitest на ~10 000 строк TSX, и **весь прирост цикла 4
-    (+22) — это утилиты**, ни одного теста на новые экраны. Покрыты мапперы ошибок,
+18. **Фронтенд покрыт точечно, но заметно лучше.** ⚖️ 181 тест Vitest (было 100), и **прирост цикла 5
+    (+81) — впервые в основном экраны и формы, а не утилиты** (§7.3). Непокрытым остался весь раздел
+    уведомлений цикла 4 и новый админский журнал обращений. Покрыты мапперы ошибок,
     `formatPhone`, `timezone`, `channelBanner`, `PhotoGallery`, `Pagination`, `useDebouncedValue`,
     правовой контур (`ConsentGate`, `LegalUpdateBanner`, `LegalDocumentPage`) и по одному тесту на
     `CompanyPage` и `MasterClientsPage`. **Не покрыты**: `BookingModal`, `ManualBookingModal`,
@@ -2052,6 +2560,10 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     безопасно (боевых данных нет), но повторно применить её к живой базе будет нельзя.
     Рядом появилась вторая миграция с данными — `ResyncIdentityRoles`, у неё **`Down` — no-op**
     (осознанно: откат пересчёта ролей бессмыслен).
+    ⚖️ **Цикл 5 добавил в этот список ещё две необратимые по данным:** `ConsentJournal` (переносит
+    строки в журнал и **дропает `UserConsents`**; `Down` пересоздаёт таблицу **пустой** — структура
+    откатывается, данные нет) и `RemovePhotoRetentionForever` (переписывает `Forever` → `TwelveMonths`).
+    Итого разрушительных миграций в проекте **три**.
 24. **Ограничитель `PermitLimit` читается из конфигурации на каждый запрос** через
     `ctx.RequestServices.GetRequiredService<IConfiguration>()` — приём из цикла 2 сохранён и
     распространён на четыре новые политики.
@@ -2084,7 +2596,33 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
 
 24e. **`AdminController` и `CompaniesController` продолжили расти:** админский контроллер получил
     +211 строк (каналы, оплаты, параметры платформы), компании — +125 (города и зоны). Сервисного
-    слоя по-прежнему нет.
+    слоя по-прежнему нет. ⚖️ Цикл 5 добавил админскому ещё +142 (обращения субъектов, политика
+    уничтожения), `ProfileController` вырос на **+486** и стал вторым по объёму после компаний.
+
+⚖️ **P2, добавленное циклом 5:**
+
+24f. 🔴 **Тринадцать правил уничтожения ни разу не работали в боевом режиме.** Они покрыты
+    юнит-тестами и функциональным тестом на сухой прогон, но **по умолчанию ничего не удаляют**, и на
+    живой машине боевой прогон не выполнялся. Это самый большой новый код цикла, и цена его ошибки
+    асимметрична: не отработало — накопились данные; отработало неверно — данные уничтожены
+    безвозвратно. Защиты две — сухой прогон по умолчанию и процедура «сначала посмотреть журнал»
+    (`DEPLOY.md` §11.4), обе **обнаруживают**, но не **восстанавливают**.
+
+24g. **Список действий под `[RequiresOwnerTerms]` ведётся руками.** Двенадцать действий в шести
+    контроллерах; ничто не проверяет, что новое действие владельца не забыли пометить. Пропуск
+    атрибута не ломает ни сборку, ни тест — он просто тихо оставляет дыру в гейте.
+
+24h. **Текст о рисках канала существует в двух местах с разными версиями** (§5.1 п. 9):
+    константа `NotificationRiskText` цикла 4, с которой сверяется контроллер, и документ
+    `ChannelRiskNotice` цикла 5 в манифесте, с которого читает публичная страница.
+
+24i. **Мастер-ключ шифрования стал единой точкой отказа не только для каналов, но и для медицинских
+    сведений** (расширение 24c). Решение переиспользовать ключ осознанное — «вторая криптография это
+    вторая процедура ротации и второй способ потерять данные», — но радиус поражения вырос.
+
+24j. **`ConsentLedger` — новая центральная зависимость правового контура.** Единственный читатель и
+    писатель журнала; он намеренно вне горячего пути, но любая ошибка в нём теперь одинаково
+    затрагивает регистрацию, профиль, фото, здоровье и постановку уведомлений в очередь.
 
 **P3 — эксплуатация, гигиена, недоделки**
 
@@ -2137,6 +2675,17 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
 развёртывания» — закрыто коммитом `d4137dd`; «раннер `ScheduledTaskRunner` в тестах выключен
 целиком, его собственное поведение проверить нечем» — закрыто `NotificationDispatchTestFactory`.
 
+⚖️ **Закрыто циклом 5** (не переоткрывать без причины): «правовая оценка по 41-ФЗ не проведена» —
+проведена, закон к платформе не применяется (`LEGAL_REVIEW.md`); «согласия клиента на фотосъёмку нет»
+— есть, вместе с отказом загрузить фото без него; «спецкатегории (здоровье) обрабатываются без
+отдельного основания и без защиты» — отдельная зашифрованная таблица, отдельное согласие, доступ
+закрыт даже суперадмину; «у субъекта нет способа обратиться к оператору» — анонимная форма обращений
+со сроком ответа, вычисляемым в рабочих днях и фиксируемым на строке; «сроков хранения нет ни у чего»
+— тринадцать правил и конфигурируемые сроки с fail-fast на юридические минимумы;
+«согласие перезаписывается и историю восстановить нельзя» — журнал вместо строки;
+«`DEPLOY.md` не описывает, что делать при утечке» — `docs/incident-runbook.md`.
+⚠️ **Частично**: «бэкапы не проверены» — проверены, но восстановление воскрешает удалённое (L2).
+
 **Закрыто циклом 3** (не переоткрывать без причины):
 отсутствие политики конфиденциальности, пользовательского соглашения и записи согласия;
 отсутствие прав субъекта данных (выгрузка и удаление аккаунта);
@@ -2170,25 +2719,33 @@ Blazor-проект и мёртвые страницы фронта; расхо�
 Всё перечисленное лежит в репозитории.
 
 🆕 **Расхождение продуктовой документации с фактом развёртывания, о котором предупреждала прошлая
-редакция, ЗАКРЫТО** коммитом `d4137dd`. Продуктовое описание цикла 4 вносится в `README.md` и
+редакция, ЗАКРЫТО** коммитом `d4137dd`. ⚖️ Продуктовое описание цикла 5 вносится в `README.md` и
 `CHANGELOG.md` **параллельно, product-analyst'ом**, и этим документом не фиксируется — актуальное
-состояние этих двух файлов смотреть прямо в них.
+состояние этих двух файлов смотреть прямо в них. ⚠️ На момент этой редакции README и `docs/faq.md`
+ещё содержат утверждение «согласия на фотосъёмку нет», которое циклом 5 перестало быть верным (§5.1 п. 6).
 
 ### 10.1 Краткая продуктовая документация
 
 | Что | Путь | Формат | Структура |
 |---|---|---|---|
-| Обзор продукта | `README.md` (~19 КБ) | Markdown, русский | `## О проекте` (внутри жирными врезками «Для кого», «Роли», **«Что умеет»**, **«Чего пока нет»** — честный список отсутствующего: платежи, письма, уведомления, самостоятельная оплата тарифа, клиентский просмотр фото, согласие на съёмку) → **`## Запуск`** (`### Локально, всё в Docker`, `### Локально, без Docker для API`, `### Переменные окружения и секреты`, `### CI`, `### Деплой`). В цикле 3 README вырос эксплуатационной половиной: врезки «Бэкапы» (и прямо — что копия локальная) и «Часовые пояса» (UTC везде) |
-| Changelog | `CHANGELOG.md` (🆕 ~58 КБ) | Markdown, русский, по мотивам Keep a Changelog | **По датам завершения цикла, самая свежая запись сверху**; номеров версий в проекте нет. 🆕 **Самый верхний раздел — `## Не выпущено`**: туда кладётся принятое командой, но не выкаченное на работающий адрес; дату раздел получает в момент фактического выката. Сейчас там — уведомления в WhatsApp, с оговоркой «функцию нельзя включить сейчас, и после выката она никому не предлагается — это ожидаемое состояние, а не дефект». Ниже — датированные записи (`2026-09-17 — сервис впервые развёрнут`, `2026-09-15`, `2026-09-07`, …) |
+| Обзор продукта | `README.md` (⚖️ ~30 КБ; правится product-analyst'ом прямо сейчас, размер и формулировки могут отличаться) | Markdown, русский | `## О проекте` (внутри жирными врезками «Для кого», «Роли», **«Что умеет»**, **«Чего пока нет»** — честный список отсутствующего: платежи, письма, уведомления, самостоятельная оплата тарифа, клиентский просмотр фото, согласие на съёмку) → **`## Запуск`** (`### Локально, всё в Docker`, `### Локально, без Docker для API`, `### Переменные окружения и секреты`, `### CI`, `### Деплой`). В цикле 3 README вырос эксплуатационной половиной: врезки «Бэкапы» (и прямо — что копия локальная) и «Часовые пояса» (UTC везде) |
+| Changelog | `CHANGELOG.md` (⚖️ ~88 КБ; правится product-analyst'ом прямо сейчас) | Markdown, русский, по мотивам Keep a Changelog | **По датам завершения цикла, самая свежая запись сверху**; номеров версий в проекте нет. 🆕 **Самый верхний раздел — `## Не выпущено`**: туда кладётся принятое командой, но не выкаченное на работающий адрес; дату раздел получает в момент фактического выката. Сейчас там — уведомления в WhatsApp, с оговоркой «функцию нельзя включить сейчас, и после выката она никому не предлагается — это ожидаемое состояние, а не дефект». Ниже — датированные записи (`2026-09-17 — сервис впервые развёрнут`, `2026-09-15`, `2026-09-07`, …) |
 
 GitHub Releases / wiki в проекте не используются. 🆕 Оба файла приведены в соответствие с
 реальностью коммитом `d4137dd` и **дополняются product-analyst'ом прямо сейчас** — считать их
 устаревшими больше нельзя, но и опираться на конкретные формулировки из этой редакции не стоит.
 
-🆕 Пользовательская документация в `docs/**` циклом 4 **не менялась** — раздела про уведомления в
-WhatsApp там пока нет (проверено: в диапазоне ни один файл `docs/` не тронут).
+🆕 Пользовательская документация в `docs/**` циклом 4 не менялась — раздела про уведомления в
+WhatsApp там нет до сих пор. ⚖️ **Цикл 5 добавил в `docs/` ровно один файл и ни одного не правил:**
+`docs/incident-runbook.md` (~13 КБ) — «Утечка персональных данных: что делать прямо сейчас».
+Markdown, русский, структура по фазам: «Это вообще инцидент?» → «Первые 15 минут — остановить
+дальнейшую утечку» → «Зафиксировать масштаб» → **«Сроки — это самое важное в этом документе»** →
+«Уведомить пользователей» → «Журнал инцидентов» → «После острой фазы». Это **эксплуатационный
+документ, а не пользовательский** — лежит в `docs/` рядом с ролевыми гайдами, но адресован команде.
+⚠️ Ролевые гайды (`docs/client.md`, `owner.md`, `master.md`, `faq.md`, `personal-data.md`) про
+согласия цикла 5 **ничего не знают** — их цикл не трогал.
 
-Отдельно, не продуктовая, но постоянно нужная документация: **`DEPLOY.md`** (🆕 ~129 КБ, markdown,
+Отдельно, не продуктовая, но постоянно нужная документация: **`DEPLOY.md`** (⚖️ ~153 КБ, markdown,
 русский) — эксплуатационный раннбук машины. Структура: «Целевая машина (факты)» → «Чек-лист всей
 установки» → §0…§15 пошаговые разделы (каждый шаг с блоком «Должно получиться») → **§16 чек-лист
 первого запуска с датами и вердиктами** → **«Почему так сделано»** (объяснительная часть, вынесена
@@ -2198,6 +2755,11 @@ CSP устроена так, какую ветку катим и почему Al
 **«Инвентарь секретов»** (§55), отдельную строку про `NOTIFICATIONS_ENCRYPTION_KEY` и процедуру его
 ротации, создание каталога `state/` до первого запуска и шаг 3b восстановления `.env` + отпечатка
 ключа в §11.2.
+⚖️ Цикл 5 дописал ещё +252 строки (файл вырос до ~153 КБ): шаг 3b **превращён в развилку** «та же
+машина / новая машина» с объяснением, что ключом зашифрованы и медицинские данные; новый
+**§11.2b «обязательный шаг после восстановления: повторно применить удаления»**; новый
+**§11.4 «уничтожение по срокам хранения — сначала сухой прогон»** с переключателем `RETENTION_DRY_RUN`;
+процедура ротации ключа переставлена так, что **начинается с `ClientHealthNotes`**.
 
 ### 10.2 Развёрнутая пользовательская документация
 
@@ -2215,25 +2777,45 @@ CSP устроена так, какую ветку катим и почему Al
 | **`docs/personal-data.md`** ⭐ (~16 КБ, цикл 3) | общая: правовые документы и **плашка «Черновая редакция»**, согласие при регистрации, что происходит при редакционной и существенной правке, «Скачать свои данные», «Удалить аккаунт» (что удаляется, что остаётся, освобождение телефона, почему владелец компании так удалиться не может, что делать, если аккаунта нет) |
 | `docs/schedule.md` | общая: расписание, перерывы, расчёт свободного времени (единственный файл `docs/`, не тронутый циклом 3) |
 | `docs/faq.md` | частые вопросы **и честный список ограничений** |
+| ⚖️ `docs/incident-runbook.md` (~13 КБ) | **утечка ПДн: что делать прямо сейчас** — по фазам, с акцентом на сроки уведомления РКН и субъектов. Документ для команды, не для пользователя |
 
-Отдельного сайта документации и справочного раздела внутри приложения **нет**. Внутри приложения
-пользователю доступны только сами правовые документы — страницы `/privacy` и `/terms`.
+Отдельного сайта документации и справочного раздела внутри приложения **нет**. ⚖️ Внутри приложения
+пользователю доступны правовые документы — страницы `/privacy`, `/terms`, `/terms-owner`,
+`/pdn-consent`, `/channel-risk` (все пять разрешены к индексации в `frontend/public/robots.txt`), плюс
+экран управления своими согласиями `/profile/consents` и публичная форма обращения `/data-request`.
 
 ### 10.3 Документация API для внешних потребителей
 
 | Что | Путь | Формат | Структура |
 |---|---|---|---|
-| Справочник эндпоинтов | `API_DOCUMENTATION.md` (🆕 ~247 КБ) | Markdown, русский | §1 Обзор → §2 Аутентификация → §3 Ключевые бизнес-концепции (**§3.11 «Конверт `PagedResult<T>`»**) → **§4 Справочник эндпоинтов** (основной объём) → §5 Сквозные сценарии (curl-рецепты) → §6 Справочник кодов ответа → **§7 Известные ограничения**. 🆕 **Обновлён в цикле 4**: добавлены `§4.3a GET /api/cities` и большой **§4.15 «Notifications (WhatsApp)»** с подразделами «Каналы владельца», «Настройки и шаблоны компании», «Журнал доставки и отметка в записи», «Отписка и вебхук», «Админка». Оба новых раздела **явно помечены «недоступно в текущем релизе»** |
+| Справочник эндпоинтов | `API_DOCUMENTATION.md` (⚖️ ~259 КБ) | Markdown, русский | §1 Обзор → §2 Аутентификация → §3 Ключевые бизнес-концепции (**§3.11 «Конверт `PagedResult<T>`»**) → **§4 Справочник эндпоинтов** (основной объём) → §5 Сквозные сценарии (curl-рецепты) → §6 Справочник кодов ответа → **§7 Известные ограничения**. 🆕 **Обновлён в цикле 4**: добавлены `§4.3a GET /api/cities` и большой **§4.15 «Notifications (WhatsApp)»** с подразделами «Каналы владельца», «Настройки и шаблоны компании», «Журнал доставки и отметка в записи», «Отписка и вебхук», «Админка». Оба новых раздела **явно помечены «недоступно в текущем релизе»** |
 | Контракт цикла 3 | `API_CONTRACT.md` (~51 КБ) | Markdown, русский | разделы **до 19**: контракт цикла 3, коды ошибок (включая 451) |
 | 🆕 Контракт цикла 4 | **`API_CONTRACT_CYCLE4.md`** (~40 КБ) | Markdown, русский | **разделы 19–37, продолжение предыдущего файла, нумерация не пересекается**. §19 общее для всех эндпоинтов цикла → §20–27 каналы → §28–30 настройки/шаблоны/журнал → §31 город и часовой пояс → §32–33 отписка и вебхук → §34 админка → §35 (эндпоинт US-34, **срезан, в коде его нет**) → §36 сводка новых и изменённых эндпоинтов → §37 чек-лист согласования BE↔FE |
+| ⚖️ Контракт цикла 5 | **`API_CONTRACT_CYCLE5.md`** (~52 КБ) | Markdown, русский | **разделы 38–53**, та же схема продолжения. §38 общее → §39 правовые документы (**BREAKING**) → §40 регистрация (**BREAKING № 2**) → §41 согласия пользователя → §42 соглашение владельца и owner-гейт (**BREAKING № 3**) → §43 публичные страницы документов → §44 согласие на фотофиксацию (**BREAKING № 4**) → §45 противопоказания → §46 запись: ст. 18 и подтверждение полномочий (**BREAKING № 5**) → §47 шаблоны (**BREAKING № 6**) → §48 обращения субъектов → §49 расширение выгрузки → §50 заявка на канал: ИНН (**BREAKING № 7**) → §51 затёртые строки журнала → §52 сводка изменений → §53 чек-лист BE↔FE. **Семь ломающих изменений пронумерованы в самом контракте** — удобная точка входа для любого, кто звал API по-старому |
+
+⚖️ `API_DOCUMENTATION.md` **обновлён в цикле 5** (+212 строк): переработан §2.6 «Правовые документы и
+согласия», добавлены `GET /api/legal/texts/{key}`, `GET|POST /api/profile/consents` и отдельный
+подраздел про режим `T-24` (проверка согласия на передачу привлекаемому лицу).
 
 **OpenAPI/Swagger-файла в репозитории нет** — схема генерируется Swashbuckle во время работы и
 доступна только в Development (`/swagger`). Postman-коллекции нет. Генерации TS-типов из схемы нет.
+⚖️ Цикл 5 этого не изменил, хотя семь ломающих изменений подряд — ровно тот случай, когда
+сгенерированные типы поймали бы расхождение раньше человека.
 
 ### 10.4 Описания тест-кейсов
 
-**`TEST_CATALOG.md`** (🆕 ~270 КБ), Markdown, русский — человекочитаемое описание **каждого**
+**`TEST_CATALOG.md`** (⚖️ ~276 КБ), Markdown, русский — человекочитаемое описание **каждого**
 автоматизированного кейса, отдельно от самого кода тестов.
+
+⚖️ **Цикл 5 добавил раздел «Legal, цикл 5 (US-64…US-82, правовые основания продукта) — приёмка QA»**
+(+128 строк). Его структура отличается от разделов прошлых циклов и это существенно: он начинается с
+**контекста** (список функциональных файлов, которые цикл ожидал сломать, зафиксированный заранее в
+`ARCHITECTURE_CYCLE5.md` §55.2), затем идёт **«Переработка существующих `LEG-`»** — то есть
+перечисление того, **что и почему пришлось переписать** в уже существовавших тестах
+(`LegalConsentTests` целиком, `ClientNotePhotosTests`, `NotificationChannelsTests`,
+`NotificationQueueingTests`, `DataRightsTests`, `SchedulerTests`), затем **новые `LGL-` тесты
+приоритетных пунктов разбора** и отдельно **«Инфраструктурные находки QA»** — правки в
+`ServiceBooking.Tests/Infrastructure/`, которые тестами не являются.
 
 🆕 **Цикл 4 добавил раздел `## Notifications (US-27…US-63)`** с подразделами по файлам и указанием
 **коллекции**, в которой живёт каждый набор (это существенно — см. §9, урок про общие ресурсы):
@@ -2261,7 +2843,7 @@ CSP устроена так, какую ветку катим и почему Al
   актуальное нельзя.
 
 Отдельного `TESTPLAN.md`, каталога `docs/testing/` или ручных сценариев вне `TEST_CATALOG.md`
-в проекте **не найдено**.
+в проекте **не найдено** (⚖️ перепроверено на `071fc11`; цикл 5 такого каталога не заводил).
 
 🚀 **Ручной чек-лист живых проверок теперь существует** — это `DEPLOY.md` §16 «Первый запуск на этой
 машине — что проверить вживую». Формат: markdown-чеклист (`- [x]`), семь пунктов, у каждого дата,
@@ -2275,7 +2857,12 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 
 | Документ | Размер | Что это |
 |---|---|---|
-| 🆕 **`SPEC.md`** | ~276 КБ | **ЦИКЛ 4** «уведомления клиенту о записи через WhatsApp (GREEN-API), отправитель — салон, платит платформа», **редакция 6**. Истории US-27…US-63, §0 решения заказчика, §3 порядок урезания (US-34 была первой), §11 спайк сетевого контура, §15.1 вычисляемый статус оплаты, §16 шестнадцать вопросов архитектору |
+| ⚖️ **`SPEC.md`** | ~163 КБ | **ЦИКЛ 5** «правовые основания продукта». Истории US-64…US-82, §16 — вопросы архитектору (на них отвечает §60 архитектуры) |
+| ⚖️ **`ARCHITECTURE_CYCLE5.md`** | ~154 КБ | **ЦИКЛ 5, разделы 41–60.** Ключевые ссылки из кода: §41 принципы цикла, **§43 правовой контент: документы, тексты интерфейса, маршруты**, **§44 модель данных цикла** (§44.2 журнал согласий, §44.3 заметка о здоровье, §44.4 обращения, §44.7 ретенция), §45 где вычисляется «текущее согласие» и почему не кешируется, §46 экран регистрации и owner-гейт, §47 отзыв согласия, §48 спецкатегории и шифрование, **§49 ретенция: сухой прогон и затирание**, §50 права субъекта, §51 реклама в шаблонах, **§52 страна сервера и спорный гейт T-24**, §53–54 таблица оснований обработки, **§55 карта регрессионного риска**, §57 конфигурация и приёмочные грепы, §58 правовые ограничения, §59 расхождения и что нужно от заказчика, §60 карта ответов на §16 SPEC |
+| ⚖️ **`API_CONTRACT_CYCLE5.md`** | ~52 КБ | **ЦИКЛ 5, разделы 38–53**, см. §10.3. Семь ломающих изменений пронумерованы |
+| ⚖️ **`LEGAL_REVIEW.md`** | ~205 КБ | **Юридическое заключение по продукту, редакция 4** — отдельный жанр, которого в проекте раньше не было. Структура: §0 оговорка о статусе → §1 резюме для заказчика → §2 что фактически обрабатывает продукт → §3–8 ответы на семь вопросов (41-ФЗ, роли по 152-ФЗ, передача данных GREEN-API и трансграничность, правомерность рассылки, документы и платная опция, права субъекта) → **§9 «то, чего не было в списке, но что существеннее части списка»** → **§10 что блокирует выпуск, а что можно делать параллельно** → §11 задачи для разработки (вход в SPEC цикла 5) → **§12 действия заказчика, которые команда закрыть не может** → §13 развилки для заказчика (в т.ч. §13.5 таблица сроков хранения, из которой взяты дефолты `Retention`) → §13-бис где лежат тексты и в каком они статусе → §14 источники по состоянию на 2026-09-21 → §15 повторная оговорка. ⚠️ Это **не заключение практикующего юриста** — см. §0 самого документа и L3 в §9 |
+| ⚖️ **`legal-drafts/`** | — | **Исходники правовых текстов под контролем версий** (не то, что читает приложение). Двенадцать HTML (`01-privacy-policy` … `12-guardian-confirmation`), `legal.json`, `legal.manifest.proposed.json` (**предлагаемый манифест, НЕ подключён**) и `README.md`, который объясняет разницу между тремя каталогами (`legal-drafts/` в git, `App_Data/legal/` запечён в образ, `legal/` только на машине и не в git), даёт команду поиска незаполненных плейсхолдеров и отсылает к разделу `LEGAL_REVIEW.md` «Что должен предоставить заказчик» |
+| ⚖️ `SPEC_CYCLE4_NOTIFICATIONS.md` | ~282 КБ | **сохранённая спека цикла 4** — переехала сюда, потому что `SPEC.md` занят циклом 5 |
 | 🆕 **`ARCHITECTURE_CYCLE4.md`** | ~165 КБ | **ЦИКЛ 4, разделы 21–40** — продолжение `ARCHITECTURE.md`. Ключевые ссылки из кода: §23 модель данных цикла, **§24 шифрование чужих секретов**, §25 слои и файлы, **§26 отправщик (главный вопрос цикла)**, §27 как отправщик тестируется, §28 адаптер провайдера, §29 QR, §30 состояние канала и простой, §31 оповещение владельца, §32 вебхук, §33 тариф, **§34 часовые пояса и города**, §35 миграции, §36 порядок работ, §37 конфигурация и «приёмочные грепы», **§38 расхождения со SPEC**, §39 риски, §40 карта ответов на §16 SPEC |
 | 🆕 **`API_CONTRACT_CYCLE4.md`** | ~40 КБ | **ЦИКЛ 4, разделы 19–37**, см. §10.3 |
 | `SPEC_CYCLE3_PRODUCTION.md` 🆕 | ~139 КБ | **сохранённая спека цикла 3** «готовность к продакшену» — переехала сюда, потому что `SPEC.md` занят циклом 4 |
@@ -2285,11 +2872,12 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 | **`SPEC_APPENDIX_CHANNELS.md`** ⭐ | ~57 КБ | приложение к нему: исследование каналов доставки |
 
 **Соглашения об архиве (`docs/history/`) в репозитории по-прежнему нет**, каталога такого нет, в
-README оно не описано. 🆕 **Цикл 4 решил задачу иначе — суффиксом в имени файла**
-(`*_CYCLE4.md`, `SPEC_CYCLE3_PRODUCTION.md`), так что документы **двух последних циклов
-одновременно лежат в корне**, а `SPEC.md`/`ARCHITECTURE.md`/`API_CONTRACT.md` без суффикса означают
-разные циклы (4 и 3 соответственно). Это следует иметь в виду при любой ссылке «см. SPEC».
-Документы цикла 4 **никуда не переносились** — в том числе поэтому эта редакция `CURRENT_STATE.md`
-их не архивировала.
+README оно не описано. ⚖️ **Циклы 4 и 5 решают задачу суффиксом в имени файла**
+(`*_CYCLE4.md`, `*_CYCLE5.md`, `SPEC_CYCLE3_PRODUCTION.md`, `SPEC_CYCLE4_NOTIFICATIONS.md`), так что
+документы **трёх последних циклов одновременно лежат в корне**, а `SPEC.md` без суффикса означает
+**цикл 5**, тогда как `ARCHITECTURE.md`/`API_CONTRACT.md` без суффикса — **цикл 3**. Это следует
+иметь в виду при любой ссылке «см. SPEC» или «см. §26».
+Документы цикла 5 **никуда не переносились** — переносить их некуда, поэтому эта редакция
+`CURRENT_STATE.md`, как и прошлая, ничего не архивировала.
 Предыдущие редакции живут только в git-истории: SPEC цикла 2 — `git show 0492092:SPEC.md`,
 цикла 1 — `git show e6b746c:SPEC.md`, ещё более ранняя — `7c86ca2`.
