@@ -403,26 +403,39 @@ public class AdminController(
         // the row exists, the same way every other tariff validation in this controller does (US-24 p.3).
         if (dto.PhotoQuotaMb is < 0) return BadRequest("Photo quota must not be negative.");
 
-        var systemFreeError = await ValidateSystemFreeAsync(dto, existingPlanId: null);
+        var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree, dto.PricePerMonth, existingPlanId: null);
         if (systemFreeError is not null) return systemFreeError;
 
         dto.Id = Guid.NewGuid();
         dto.CreatedAt = DateTime.UtcNow;
         db.SubscriptionPlanConfigs.Add(dto);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException) when (dto.IsSystemFree)
+        {
+            // See UpdatePlan for why this races the AnyAsync check above; same translation to 409.
+            return Conflict("Another plan is already marked as the system free plan.");
+        }
         pricingCatalogCache.Invalidate();
         return Ok(dto);
     }
 
     [HttpPut("plans/{id:guid}")]
-    public async Task<IActionResult> UpdatePlan(Guid id, [FromBody] SubscriptionPlanConfig dto)
+    public async Task<IActionResult> UpdatePlan(Guid id, [FromBody] UpdatePlanDto dto)
     {
         if (dto.PhotoQuotaMb is < 0) return BadRequest("Photo quota must not be negative.");
 
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
 
-        var systemFreeError = await ValidateSystemFreeAsync(dto, existingPlanId: id);
+        // Cycle-5 fields (Highlights/IsPublic/SortOrder/IsSystemFree) are nullable on this DTO and left
+        // untouched when the caller omits them — the existing admin UI (frontend/src/pages/admin/
+        // PlansTab.tsx) doesn't send them yet, and binding straight into the entity used to reset them
+        // to false/0/null on every save, silently unpublishing plans (code review finding, blocking).
+        var effectiveIsSystemFree = dto.IsSystemFree ?? plan.IsSystemFree;
+        var systemFreeError = await ValidateSystemFreeAsync(effectiveIsSystemFree, dto.PricePerMonth, existingPlanId: id);
         if (systemFreeError is not null) return systemFreeError;
 
         plan.Name = dto.Name;
@@ -438,26 +451,42 @@ public class AdminController(
         plan.PhotoRetention = dto.PhotoRetention;
         plan.Description = dto.Description;
         plan.NotifyDaysBefore = dto.NotifyDaysBefore;
-        // Cycle 5 additions (ARCHITECTURE_CYCLE5.md §43.4) — omitted from the original PUT, which meant
-        // a plan published via POST could never be re-ordered, re-worded or unpublished again.
-        plan.Highlights = dto.Highlights;
-        plan.IsPublic = dto.IsPublic;
-        plan.SortOrder = dto.SortOrder;
-        plan.IsSystemFree = dto.IsSystemFree;
+        // Cycle 5 additions (ARCHITECTURE_CYCLE5.md §43.4): applied only when the caller actually sent
+        // them, so clients that don't yet know about these fields can't wipe them out by omission.
+        if (dto.Highlights is not null) plan.Highlights = dto.Highlights;
+        if (dto.IsPublic.HasValue) plan.IsPublic = dto.IsPublic.Value;
+        if (dto.SortOrder.HasValue) plan.SortOrder = dto.SortOrder.Value;
+        plan.IsSystemFree = effectiveIsSystemFree;
 
         // Deactivating through this endpoint has exactly the effect DeletePlan refuses below: the
         // resolver treats PlanConfig.IsActive == false as Free, so every subscriber silently loses
         // online booking, analytics and their employee limit on the next request. Same guard, same
-        // status, or the 409 there is just a speed bump around a differently-named door.
+        // status, or the 409 there is just a speed bump around a differently-named door. The system
+        // free plan (ARCHITECTURE_CYCLE5.md §43.4) additionally can never be deactivated at all — the
+        // public price list has no "free" row otherwise and every account resolves to the hardcoded
+        // EffectivePlan.Free fallback instead of the configured system row.
         if (plan.IsActive && !dto.IsActive)
         {
+            if (plan.IsSystemFree)
+                return Conflict("The system free plan cannot be deactivated.");
+
             var activeSubscribers = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
             if (activeSubscribers > 0)
                 return Conflict($"Cannot deactivate a plan with {activeSubscribers} active subscriber(s). Move them to another plan first.");
         }
         plan.IsActive = dto.IsActive;
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException) when (effectiveIsSystemFree)
+        {
+            // Two concurrent requests can both pass the AnyAsync check above before either commits —
+            // the partial unique index on IsSystemFree (AppDbContext) is the real guard; translate its
+            // violation into the same 409 instead of letting a 500 leak out (code review finding).
+            return Conflict("Another plan is already marked as the system free plan.");
+        }
         pricingCatalogCache.Invalidate();
         return Ok(plan);
     }
@@ -467,6 +496,13 @@ public class AdminController(
     {
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
+
+        // ARCHITECTURE_CYCLE5.md §43.4: the system free plan can be neither deleted nor deactivated —
+        // deleting it (this endpoint only soft-deletes via IsActive = false) removes the "Бесплатно" row
+        // from the public price list and, like UpdatePlan's deactivation guard above, would push any
+        // future free-tier account onto the hardcoded EffectivePlan.Free fallback instead of this row.
+        if (plan.IsSystemFree)
+            return Conflict("The system free plan cannot be deleted.");
 
         // Deactivating a plan that still has active subscribers would silently strip their features on
         // their very next request (SubscriptionResolver.Resolve treats PlanConfig.IsActive == false as
@@ -483,12 +519,14 @@ public class AdminController(
 
     /// <summary>ARCHITECTURE_CYCLE5.md §43.4: exactly one row may have <c>IsSystemFree == true</c>, and
     /// that row's price must be 0 — validated here so a violation surfaces as 400/409 instead of the
-    /// partial unique index throwing a raw <c>DbUpdateException</c> (500) on save.</summary>
-    private async Task<IActionResult?> ValidateSystemFreeAsync(SubscriptionPlanConfig dto, Guid? existingPlanId)
+    /// partial unique index throwing a raw <c>DbUpdateException</c> (500) on save. The
+    /// <see cref="DbUpdateException"/> catch around <c>SaveChangesAsync</c> callers still handles the
+    /// race where two concurrent requests both pass this check before either commits.</summary>
+    private async Task<IActionResult?> ValidateSystemFreeAsync(bool isSystemFree, decimal pricePerMonth, Guid? existingPlanId)
     {
-        if (!dto.IsSystemFree) return null;
+        if (!isSystemFree) return null;
 
-        if (dto.PricePerMonth != 0)
+        if (pricePerMonth != 0)
             return BadRequest("The system free plan must have PricePerMonth = 0.");
 
         var otherSystemFreeExists = await db.SubscriptionPlanConfigs
@@ -722,6 +760,15 @@ public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, 
     Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive);
 
 public record UpdateSubscriptionDto(Guid? PlanConfigId, DateTime? PaidUntil, bool IsActive, string? Comment);
+
+// PUT /api/admin/plans/{id} body. Cycle-5 fields are nullable and applied only when present in the
+// request (see UpdatePlan) — binding straight into SubscriptionPlanConfig used to reset them to
+// false/0/null whenever a caller that doesn't know about them (the current admin UI) omitted them.
+public record UpdatePlanDto(
+    string Name, decimal PricePerMonth, int? MaxEmployees, int? MaxCompanies,
+    bool AllowOnlineBooking, bool AllowMailing, bool AllowAnalytics, bool AllowPublicListing, bool AllowOnlinePayment,
+    int? PhotoQuotaMb, PhotoRetention PhotoRetention, string? Description, bool IsActive, int NotifyDaysBefore,
+    string? Highlights = null, bool? IsPublic = null, int? SortOrder = null, bool? IsSystemFree = null);
 
 public record SubscriptionChangeLogDto(Guid Id, DateTime ChangedAt, string ChangedByEmail,
     string OldPlanName, string NewPlanName, DateTime? OldPaidUntil, DateTime? NewPaidUntil,

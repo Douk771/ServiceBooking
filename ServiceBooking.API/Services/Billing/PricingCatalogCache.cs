@@ -70,10 +70,13 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache)
         return enabled;
     }
 
-    /// <summary>Called right after any admin write to a plan, option, rule or the relevant
-    /// PlatformSetting keys (pricing.public-enabled, pricing.legal-notice) — same convention as
-    /// <c>PlatformSettings.InvalidateCache</c> (cycle 4). Wired into <c>AdminController</c>'s plan
-    /// create/update/delete endpoints.</summary>
+    /// <summary>Wired into <c>AdminController</c>'s plan create/update/delete endpoints, so a plan
+    /// change is reflected immediately rather than after the 60-second TTL. There is currently no admin
+    /// endpoint that writes the pricing.public-enabled / pricing.legal-notice PlatformSetting rows
+    /// (that toggle is still set directly in the database — ARCHITECTURE_CYCLE5.md §48 slice not yet
+    /// built), so flipping either of those keys is NOT covered by this call and only takes effect once
+    /// <see cref="PublicEnabledCacheKey"/> naturally expires (up to 60s). Once an endpoint for those
+    /// keys exists it must call this too.</summary>
     public void Invalidate()
     {
         cache.Remove(CacheKey);
