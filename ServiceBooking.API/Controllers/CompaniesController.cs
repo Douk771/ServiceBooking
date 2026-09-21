@@ -321,6 +321,15 @@ public class CompaniesController(
         if (dto.RequirePrepayment is not null) company.RequirePrepayment = dto.RequirePrepayment.Value;
         if (dto.ShowInPublicListing is not null) company.ShowInPublicListing = dto.ShowInPublicListing.Value;
 
+        // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): omitted/null leaves it untouched; 0 resets to
+        // Default; anything else outside [Min, Max] is the one source of this 400.
+        if (dto.BookingHorizonDays is not null)
+        {
+            if (!BookingHorizon.TryNormalize(dto.BookingHorizonDays, out var horizonDays))
+                return BadRequest("Горизонт записи — от 1 до 365 дней");
+            company.BookingHorizonDays = horizonDays;
+        }
+
         // Cycle 4 (API_CONTRACT_CYCLE4.md §31.3, US-30 p.3): city and time zone. cityChanged tracks
         // whether THIS request moves CityId, since CompanyTimeZoneResolver.ForUpdate needs to know that
         // to decide whether a zone that isn't a manual override should follow the new city.
@@ -696,7 +705,8 @@ public class CompaniesController(
             plan.MaxEmployees,
             averageRating,
             reviewCount,
-            c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes);
+            c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes,
+            BookingHorizon.Normalize(c.BookingHorizonDays));
     }
 
     // Cycle 4: batched City lookup for the three list endpoints (GetAll, GetMy, GetMemberOf) — same

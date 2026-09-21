@@ -57,7 +57,10 @@ public record CompanyDto(
     string? CityRegion,
     string TimeZoneId,
     bool TimeZoneIsManual,
-    int UtcOffsetMinutes
+    int UtcOffsetMinutes,
+    // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): always the already-normalized value (never 0/null) —
+    // the calendar and the /embed/:slug widget read the horizon from here for free.
+    int BookingHorizonDays
 );
 
 public record CreateCompanyDto(
@@ -103,7 +106,11 @@ public record UpdateCompanyDto(
     // Optional<T> because the three cases in API_CONTRACT_CYCLE4.md §31.3 need to be told apart: field
     // omitted (leave the zone as-is), field explicitly null (revert to the city's own zone), field set
     // to a value (manual override) — see CompanyTimeZoneResolver.ForUpdate.
-    Optional<string?> TimeZoneId = default
+    Optional<string?> TimeZoneId = default,
+    // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): omitted/null → don't touch, same convention as every
+    // other plain-nullable field above; 0 → explicit reset to BookingHorizon.Default (90); anything
+    // outside [1, 365] → 400 via BookingHorizon.TryNormalize, checked in CompaniesController.Update.
+    int? BookingHorizonDays = null
 );
 
 // US-24 p.4 / US-19 p.7 — GET /api/companies/{id}/photo-usage.

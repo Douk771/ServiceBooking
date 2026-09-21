@@ -19,6 +19,13 @@ public class Company
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): how far ahead a client may book online. Always the
+    // already-normalized value (ServiceBooking.API.Services.BookingHorizon.TryNormalize/Normalize) —
+    // never raw user input. Staff (manual bookings, reschedule) are never subject to this. 90 here
+    // duplicates BookingHorizon.Default as a literal (Core can't reference the API project) — kept in
+    // sync by convention, same as this file already does for TimeZoneId's "Europe/Moscow" literal.
+    public int BookingHorizonDays { get; set; } = 90;
+
     // Cycle 4 (ARCHITECTURE_CYCLE4.md §23.3, §34): city drives the derived time zone used for
     // reminder/visit-time math. Restrict on delete — a city referenced by a company can't be removed
     // from the directory out from under it. Required for new companies from the AddCompanyCityAndTimeZone

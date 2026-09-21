@@ -175,6 +175,18 @@ public class BookingsController(
         if (!IsBookableMoment(dto.Date, dto.StartTime, service.DurationMinutes))
             return Conflict("Time slot is no longer available");
 
+        // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7 p.2/p.3): the client-only path is bounded by the
+        // company's booking horizon; staff (manual bookings) are never subject to this — a salon must
+        // always be able to book a regular ahead of the public window. 400, not 409: this is unrelated
+        // to slot occupancy (§45.7 p.3).
+        if (!isStaffManualBooking)
+        {
+            var horizonDays = BookingHorizon.Normalize(company!.BookingHorizonDays);
+            var todayUtc = DateOnly.FromDateTime(DateTime.UtcNow);
+            if (!BookingHorizon.IsWithin(dto.Date, todayUtc, horizonDays))
+                return BadRequest($"Записаться можно не дальше чем на {horizonDays} дней вперёд");
+        }
+
         AppUser? client = null;
         if (isAuthenticated && !isManualBooking)
             client = await db.Users.FindAsync(userId);
