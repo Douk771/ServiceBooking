@@ -84,6 +84,10 @@ public class LegalConsentFilter(LegalDocumentProvider provider) : IAsyncAuthoriz
 
         if (path.StartsWith("/api/legal/", StringComparison.OrdinalIgnoreCase)) return true;
         if (path.StartsWith("/api/health/", StringComparison.OrdinalIgnoreCase)) return true;
+        // API_CONTRACT_CYCLE5.md §39 / row 45 of the status-code table: the legal gate must not apply
+        // to GET /api/pricing, including for an authenticated caller with a pending Material consent —
+        // the frontend deliberately routes such a user to /pricing anyway (CONSENT_GATE_BYPASS_PATHS).
+        if (HttpMethods.IsGet(method) && string.Equals(path, "/api/pricing", StringComparison.OrdinalIgnoreCase)) return true;
         // API_CONTRACT.md §0.4 allow-lists POST /api/auth/**, not the whole path regardless of method.
         // AuthController only exposes POST today, so this was behaviorally identical to a blanket
         // path match — but a future GET /api/auth/* (e.g. a "who am I" probe) would have silently
