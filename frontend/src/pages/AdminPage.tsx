@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { adminApi, type AdminUser, type AdminCompany } from '../api/admin'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import { PlansTab } from './admin/PlansTab'
 import { NotificationsAdminTab } from './admin/NotificationsAdminTab'
 import { BillingAccountsAdminTab } from './admin/BillingAccountsAdminTab'
@@ -548,14 +549,19 @@ export function AdminPage() {
           </button>
         ))}
       </div>
-      {tab === 'stats' && <StatsTab />}
-      {tab === 'companies' && <CompaniesTab />}
-      {tab === 'users' && <UsersTab />}
-      {tab === 'bookings' && <AllBookingsTab />}
-      {tab === 'plans' && <PlansTab />}
-      {tab === 'billing' && <BillingAccountsAdminTab />}
-      {tab === 'notifications' && <NotificationsAdminTab />}
-      {tab === 'subject-requests' && <SubjectRequestsTab />}
+      {/* One boundary per tab, keyed on the tab itself — so a crash in one tab's content doesn't
+          take the tab bar or the rest of the admin page down with it (§103.1), and switching tabs
+          away from a broken one and back gets a fresh mount instead of a stuck fallback card. */}
+      <ErrorBoundary key={tab} label={tabs.find((t) => t.key === tab)?.label}>
+        {tab === 'stats' && <StatsTab />}
+        {tab === 'companies' && <CompaniesTab />}
+        {tab === 'users' && <UsersTab />}
+        {tab === 'bookings' && <AllBookingsTab />}
+        {tab === 'plans' && <PlansTab />}
+        {tab === 'billing' && <BillingAccountsAdminTab />}
+        {tab === 'notifications' && <NotificationsAdminTab />}
+        {tab === 'subject-requests' && <SubjectRequestsTab />}
+      </ErrorBoundary>
     </div>
   )
 }

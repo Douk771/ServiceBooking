@@ -22,6 +22,7 @@ import { BillingPage } from './pages/BillingPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
 import { DeleteAccountPage } from './pages/DeleteAccountPage'
 import { Footer } from './components/layout/Footer'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConsentGate } from './components/legal/ConsentGate'
 import { LegalUpdateBanner } from './components/legal/LegalUpdateBanner'
 import { OwnerTermsGateModal } from './components/legal/OwnerTermsGateModal'
@@ -109,98 +110,103 @@ export default function App() {
               <div className="min-h-screen bg-cream font-sans text-ink">
                 <Navbar />
                 <LegalGuard>
-                  <Routes>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="/login" element={<LoginPage />} />
-                    <Route path="/register" element={<RegisterPage />} />
-                    <Route path="/company/:slug" element={<CompanyPage />} />
-                    <Route
-                      path="/my-bookings"
-                      element={
-                        <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
-                          <MyBookingsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/my-visits"
-                      element={
-                        <ProtectedRoute roles={['Client', 'Master', 'CompanyOwner', 'SuperAdmin']}>
-                          <ClientBookingsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/cabinet"
-                      element={
-                        <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
-                          <CabinetPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/owner/company/:id"
-                      element={
-                        <ProtectedRoute roles={['CompanyOwner', 'SuperAdmin']}>
-                          <CompanyManagePage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/profile"
-                      element={
-                        <ProtectedRoute>
-                          <ProfilePage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/profile/consents"
-                      element={
-                        <ProtectedRoute>
-                          <ConsentsPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/profile/delete"
-                      element={
-                        <ProtectedRoute>
-                          <DeleteAccountPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/admin"
-                      element={
-                        <ProtectedRoute roles={['SuperAdmin']}>
-                          <AdminPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route path="/u/:token" element={<UnsubscribePage />} />
-                    <Route path="/pricing" element={<PricingPage />} />
-                    <Route
-                      path="/billing"
-                      element={
-                        <ProtectedRoute roles={['CompanyOwner', 'SuperAdmin']}>
-                          <BillingPage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route path="/data-request" element={<SubjectRequestPage />} />
-                    <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
-                    <Route path="/terms" element={<LegalDocumentPage type="TermsClient" />} />
-                    <Route path="/terms-owner" element={<LegalDocumentPage type="TermsOwner" />} />
-                    <Route path="/pdn-consent" element={<LegalDocumentPage type="PdnConsent" />} />
-                    <Route path="/channel-risk" element={<LegalDocumentPage type="ChannelRiskNotice" />} />
-                    {/* §43 — the channel offer (D9) is an appendix inside TermsOwner, not a document
+                  {/* Wraps only the page routes, not Navbar — a page-level render crash (e.g. an
+                      unprotected field on a stale API response, §100.2) must not take the shell
+                      down with it (§103.1). */}
+                  <ErrorBoundary>
+                    <Routes>
+                      <Route path="/" element={<HomePage />} />
+                      <Route path="/login" element={<LoginPage />} />
+                      <Route path="/register" element={<RegisterPage />} />
+                      <Route path="/company/:slug" element={<CompanyPage />} />
+                      <Route
+                        path="/my-bookings"
+                        element={
+                          <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
+                            <MyBookingsPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/my-visits"
+                        element={
+                          <ProtectedRoute roles={['Client', 'Master', 'CompanyOwner', 'SuperAdmin']}>
+                            <ClientBookingsPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/cabinet"
+                        element={
+                          <ProtectedRoute roles={['Master', 'CompanyOwner', 'SuperAdmin']}>
+                            <CabinetPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/owner/company/:id"
+                        element={
+                          <ProtectedRoute roles={['CompanyOwner', 'SuperAdmin']}>
+                            <CompanyManagePage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/profile"
+                        element={
+                          <ProtectedRoute>
+                            <ProfilePage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/profile/consents"
+                        element={
+                          <ProtectedRoute>
+                            <ConsentsPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/profile/delete"
+                        element={
+                          <ProtectedRoute>
+                            <DeleteAccountPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin"
+                        element={
+                          <ProtectedRoute roles={['SuperAdmin']}>
+                            <AdminPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route path="/u/:token" element={<UnsubscribePage />} />
+                      <Route path="/pricing" element={<PricingPage />} />
+                      <Route
+                        path="/billing"
+                        element={
+                          <ProtectedRoute roles={['CompanyOwner', 'SuperAdmin']}>
+                            <BillingPage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route path="/data-request" element={<SubjectRequestPage />} />
+                      <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
+                      <Route path="/terms" element={<LegalDocumentPage type="TermsClient" />} />
+                      <Route path="/terms-owner" element={<LegalDocumentPage type="TermsOwner" />} />
+                      <Route path="/pdn-consent" element={<LegalDocumentPage type="PdnConsent" />} />
+                      <Route path="/channel-risk" element={<LegalDocumentPage type="ChannelRiskNotice" />} />
+                      {/* §43 — the channel offer (D9) is an appendix inside TermsOwner, not a document
                         of its own; this is a redirect, not a page. */}
-                    <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
-                    {/* Legacy redirects */}
-                    <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
-                    <Route path="/owner" element={<Navigate to="/cabinet" replace />} />
-                  </Routes>
+                      <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
+                      {/* Legacy redirects */}
+                      <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
+                      <Route path="/owner" element={<Navigate to="/cabinet" replace />} />
+                    </Routes>
+                  </ErrorBoundary>
                   <Footer />
                 </LegalGuard>
                 <OwnerTermsGateModal />
