@@ -87,6 +87,32 @@ public class SlotCalculatorTests
     }
 
     [Fact]
+    public void Calculate_ScheduleRowPresent_WholeDayIgnoresScheduleWindow()
+    {
+        // SPEC.md §0.1 Q7 (поправка 2026-09-22): a master working 10:00-14:00 on a normal weekday
+        // must still be reachable at 19:00 via the "show other hours" toggle — the server itself
+        // accepts a staff booking at any free time regardless of schedule (isStaffManualBooking), so
+        // the grid must offer it too. Before the fix, WholeDay only took effect when there was no
+        // WorkingHours row at all, making the toggle a no-op on any date the master actually works.
+        var slots = SlotCalculator.Calculate(60, new TimeOnly(10, 0), new TimeOnly(14, 0), [], [], ScheduleFallback.WholeDay);
+
+        slots.Should().Contain(s => s.Start == new TimeOnly(19, 0));
+        slots.Should().Contain(s => s.Start == new TimeOnly(0, 0));
+    }
+
+    [Fact]
+    public void Calculate_ScheduleRowPresent_WholeDayAlsoIgnoresBreaks()
+    {
+        // Sopутствующее решение (SPEC.md §0.1 Q7): if WholeDay hid break time, staff would see less
+        // than the server actually allows them to book — same bug in miniature.
+        var breaks = new List<TimeRange> { new(new TimeOnly(12, 0), new TimeOnly(13, 0)) };
+
+        var slots = SlotCalculator.Calculate(60, new TimeOnly(10, 0), new TimeOnly(14, 0), breaks, [], ScheduleFallback.WholeDay);
+
+        slots.Should().Contain(s => s.Start == new TimeOnly(12, 0));
+    }
+
+    [Fact]
     public void Calculate_ServiceLongerThanWindow_ReturnsEmpty()
     {
         var slots = SlotCalculator.Calculate(600, NineAm, new TimeOnly(10, 0), [], [], ScheduleFallback.None);
