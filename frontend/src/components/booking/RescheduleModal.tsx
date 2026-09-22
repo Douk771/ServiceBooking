@@ -40,7 +40,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
   // Today is only offered as a reschedule target if the server still has at least one slot left
   // for it — mirrors `ManualBookingModal`'s "slots today" check, now via the same endpoint.
   const { data: slotsToday = [] } = useQuery({
-    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, todayStr, 'manual', showExtendedHours],
+    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, todayStr, 'manual', showExtendedHours, booking.id],
     queryFn: () =>
       bookingsApi.getSlots(
         booking.companyId,
@@ -50,6 +50,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
         todayStr,
         true,
         showExtendedHours,
+        booking.id,
       ),
     staleTime: 0,
   })
@@ -71,7 +72,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
     isLoading: slotsLoading,
     error: slotsError,
   } = useQuery({
-    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, selectedDate, 'manual', showExtendedHours],
+    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, selectedDate, 'manual', showExtendedHours, booking.id],
     queryFn: () =>
       bookingsApi.getSlots(
         booking.companyId,
@@ -81,6 +82,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
         selectedDate,
         true,
         showExtendedHours,
+        booking.id,
       ),
     enabled: !!selectedDate,
     staleTime: 0,

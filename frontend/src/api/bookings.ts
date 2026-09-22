@@ -90,6 +90,7 @@ export const bookingsApi = {
     date: string,
     manual = false,
     extendedHours = false,
+    excludeBookingId?: string,
   ) => {
     const params = serviceParams(serviceId, extraServiceIds)
     params.append('companyId', companyId)
@@ -97,6 +98,9 @@ export const bookingsApi = {
     params.append('date', date)
     if (manual) params.append('manual', 'true')
     if (extendedHours) params.append('extendedHours', 'true')
+    // R2 (SPEC.md §0.1 Q7 review): reschedule passes the booking being moved so the grid doesn't
+    // block the booking's own current interval against itself.
+    if (excludeBookingId) params.append('excludeBookingId', excludeBookingId)
     return api.get<TimeSlot[]>('/bookings/slots', { params }).then((r) => r.data)
   },
 
