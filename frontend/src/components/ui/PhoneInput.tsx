@@ -5,10 +5,29 @@ import { maskPhoneInput, toCanonicalPhone } from '../../utils/phone'
 interface PhoneInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> {
   label?: string
   error?: string
-  /** Canonical digits (`79990000000`), matching what the server stores/expects (US-61). */
+  /**
+   * Canonical digits (`79990000000`) when `restrictToRussia` is true (the default). When
+   * `restrictToRussia` is false, this is instead the raw text as typed (e.g. `+380671234567`) — see
+   * below for why.
+   */
   value: string
-  /** Fires with the canonical digit string, not the masked display string. */
+  /** Fires with the canonical digit string (or, in `restrictToRussia={false}` mode, the raw text). */
   onChange: (canonical: string) => void
+  /**
+   * Defaults to `true` — the Russian-only input policy (US-61, §48.1/§48.2) applies to forms that
+   * *create* a phone number (registration, profile phone change). Sign-in is explicitly exempt
+   * (ARCHITECTURE_CYCLE6.md §947): an account may already have a foreign number on file, and the
+   * server still normalizes logins with `Normalize`, not `TryNormalizeRussian`. LoginPage passes
+   * `false` so such a number can actually be typed and submitted.
+   *
+   * When `false`, the grouped `+7 (900) 000-00-00` live mask is dropped in favor of plain,
+   * unmangled text entry: the mask's controlled round-trip (value → canonical digits → re-render)
+   * has nowhere to keep a bare `+` the user just typed before any digits follow it, so a `+380…`
+   * number typed digit-by-digit would lose its `+` and get folded back into a Russian number. The
+   * caller (LoginPage) normalizes the raw text with `toCanonicalPhoneLenient` once, at submit time,
+   * instead.
+   */
+  restrictToRussia?: boolean
 }
 
 /**
@@ -21,15 +40,37 @@ interface PhoneInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'v
  * same separator right back.
  */
 export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
-  ({ label, error, value, onChange, className, ...props }, forwardedRef) => {
+  ({ label, error, value, onChange, className, restrictToRussia = true, ...props }, forwardedRef) => {
     const innerRef = useRef<HTMLInputElement>(null)
     useImperativeHandle(forwardedRef, () => innerRef.current as HTMLInputElement)
 
-    const displayValue = maskPhoneInput(value)
+    if (!restrictToRussia) {
+      // Plain, unmangled text entry — see the `restrictToRussia` doc comment above for why the
+      // masked round-trip doesn't work here.
+      return (
+        <Input
+          ref={innerRef}
+          label={label}
+          error={error}
+          className={className}
+          type="tel"
+          autoComplete="tel"
+          placeholder="+7 (900) 000-00-00"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          {...props}
+        />
+      )
+    }
+
+    const toCanonical = toCanonicalPhone
+    const mask = maskPhoneInput
+
+    const displayValue = mask(value)
 
     const setCanonicalAndCursor = (nextCanonical: string, cursorDigitIndex: number) => {
       onChange(nextCanonical)
-      const nextDisplay = maskPhoneInput(nextCanonical)
+      const nextDisplay = mask(nextCanonical)
       // The re-render hasn't happened yet; place the caret once the new masked value is painted.
       requestAnimationFrame(() => {
         const el = innerRef.current
@@ -61,8 +102,8 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
       const el = e.currentTarget
       if (el.selectionStart !== el.selectionEnd) return // let the browser handle range deletes as a normal edit
       const cursor = el.selectionStart ?? 0
-      const canonical = toCanonicalPhone(value)
-      const current = maskPhoneInput(value)
+      const canonical = toCanonical(value)
+      const current = mask(value)
 
       if (e.key === 'Backspace') {
         if (cursor === 0) return
@@ -82,7 +123,7 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
     }
 
     const handleChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-      const nextCanonical = toCanonicalPhone(e.target.value)
+      const nextCanonical = toCanonical(e.target.value)
       onChange(nextCanonical)
     }
 

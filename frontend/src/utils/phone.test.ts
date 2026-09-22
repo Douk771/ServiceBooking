@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPhone, maskPhoneInput, toCanonicalPhone, isRussianPhone } from './phone'
+import { formatPhone, maskPhoneInput, toCanonicalPhone, isRussianPhone, toCanonicalPhoneLenient } from './phone'
 
 describe('formatPhone', () => {
   it('formats an 11-digit Russian number starting with 7', () => {
@@ -123,5 +123,29 @@ describe('isRussianPhone', () => {
 
   it('rejects an 11-digit number not starting with 7', () => {
     expect(isRussianPhone('89990000000')).toBe(false)
+  })
+})
+
+// US-63 fix (ARCHITECTURE_CYCLE6.md §947): the login form must accept a foreign number already on
+// file, unlike toCanonicalPhone which is Russian-only (registration policy, §48.1/§48.2).
+describe('toCanonicalPhoneLenient', () => {
+  it('passes a foreign +<countrycode> number through untouched', () => {
+    expect(toCanonicalPhoneLenient('+380671234567')).toBe('380671234567')
+  })
+
+  it('still folds a leading 8 into 7 for Russian-shaped input', () => {
+    expect(toCanonicalPhoneLenient('89990000000')).toBe('79990000000')
+  })
+
+  it('still prefixes a bare local number with 7', () => {
+    expect(toCanonicalPhoneLenient('9990000000')).toBe('79990000000')
+  })
+
+  it('caps at 15 digits (server E.164 bound)', () => {
+    expect(toCanonicalPhoneLenient('+123456789012345678')).toBe('123456789012345')
+  })
+
+  it('returns an empty string for empty input', () => {
+    expect(toCanonicalPhoneLenient('')).toBe('')
   })
 })
