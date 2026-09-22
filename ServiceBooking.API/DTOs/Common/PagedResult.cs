@@ -73,12 +73,31 @@ public static class Pagination
     /// characters that actually caused the crash is removed. Returns null (not empty string) once
     /// stripping leaves nothing searchable, so call sites' existing `IsNullOrWhiteSpace` guard still
     /// short-circuits an all-control-character input the same way it already does for blank input.
+    ///
+    /// Also strips lone (unpaired) UTF-16 surrogate code units. ASP.NET Core's query-string binder
+    /// percent-decodes raw bytes into a .NET string without validating that surrogate pairs are well
+    /// formed, so a crafted `?search=...` can produce a string containing e.g. a high surrogate with no
+    /// following low surrogate. Such a string is not valid UTF-16 text and Npgsql's UTF-8 transcoder
+    /// throws an unhandled EncoderFallbackException (500, with an internal stack trace leaked to the
+    /// client) when it tries to bind it as a query parameter. A lone surrogate can never represent a
+    /// meaningful search character on its own, so it is simply dropped rather than surfaced as a 400 —
+    /// consistent with this method's existing "clamp/strip, don't reject" contract for `search`.
     /// </summary>
     public static string? SanitizeSearch(string? search)
     {
         if (string.IsNullOrEmpty(search)) return search;
-        var cleaned = new string(search.Where(c => !char.IsControl(c)).ToArray());
+        var cleaned = new string(search.Where((c, i) => !char.IsControl(c) && !IsLoneSurrogate(search, i)).ToArray());
         return cleaned.Length == 0 ? null : cleaned;
+    }
+
+    private static bool IsLoneSurrogate(string s, int index)
+    {
+        var c = s[index];
+        if (char.IsHighSurrogate(c))
+            return index + 1 >= s.Length || !char.IsLowSurrogate(s[index + 1]);
+        if (char.IsLowSurrogate(c))
+            return index == 0 || !char.IsHighSurrogate(s[index - 1]);
+        return false;
     }
 
     /// <summary>
