@@ -262,12 +262,17 @@ public class CompanyTransferService(
         var targetOwnerName = await GetDisplayNameAsync(targetAccount.OwnerUserId);
         var ownershipSuffix = ownerChanged ? $"; ответственный сменился на {targetOwnerName}" : "; ответственный не менялся";
 
+        // NB-8 (cycle-07 backend report): sourceOwnerName is computed once here and reused below for
+        // the target-account log row's comment — the previous code re-issued FindAsync(sourceBillingAccountId)
+        // a second time inside that string interpolation even though sourceAccount was already loaded
+        // right above.
+        string? sourceOwnerName = null;
         if (sourceBillingAccountId.HasValue)
         {
             var sourceAccount = await db.BillingAccounts.FindAsync(sourceBillingAccountId.Value);
             if (sourceAccount is not null)
             {
-                var sourceOwnerName = await GetDisplayNameAsync(sourceAccount.OwnerUserId);
+                sourceOwnerName = await GetDisplayNameAsync(sourceAccount.OwnerUserId);
                 db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
                 {
                     Id = Guid.NewGuid(),
@@ -292,7 +297,7 @@ public class CompanyTransferService(
             ChangedByUserId = changedByUserId,
             ChangedAt = now,
             Comment = sourceBillingAccountId.HasValue
-                ? $"Компания «{company.Name}» принята от {await GetDisplayNameAsync((await db.BillingAccounts.FindAsync(sourceBillingAccountId.Value))?.OwnerUserId)}{ownershipSuffix}"
+                ? $"Компания «{company.Name}» принята от {sourceOwnerName}{ownershipSuffix}"
                 : $"Компания «{company.Name}» принята в аккаунт (у компании не было плательщика){ownershipSuffix}",
         });
 

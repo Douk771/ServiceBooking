@@ -153,12 +153,11 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
         if (failure is not null)
         {
             var fallbackName = await GetUserDisplayNameAsync(newOwnerUserId);
-            var relation = failure.Kind switch
-            {
-                TransferFailureKind.NewOwnerNotLinkedToTargetAccount => "None",
-                _ => "None",
-            };
-            return new TransferNewOwnerDto(newOwnerUserId, fallbackName, false, relation, false, failure.Message);
+            // NB-8 (cycle-07 backend report): every ValidateNewOwnerAsync failure kind means "no usable
+            // relation to the target account" per the contract's own TransferOwnerRelation enum
+            // (AccountHolder/AccountMember/None) — there is no failure kind that maps to anything but
+            // None, so this was never actually a switch on Kind; it's a constant.
+            return new TransferNewOwnerDto(newOwnerUserId, fallbackName, false, "None", false, failure.Message);
         }
 
         var isHolder = await db.BillingAccounts.AnyAsync(a => a.Id == targetBillingAccountId && a.OwnerUserId == newOwnerUserId);
