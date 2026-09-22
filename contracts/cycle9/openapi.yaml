@@ -19,6 +19,8 @@ openapi: 3.0.3
 info:
   title: ServiceBooking API — цикл 9 (MAX, режим доставки, Web Push, города)
   version: "6.0.0"
+  license:
+    name: Proprietary
   description: |
     Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
       * camelCase в JSON; enum — строками; DateTime — ISO-8601 UTC; DateOnly — YYYY-MM-DD;
@@ -773,8 +775,8 @@ components:
         горячем анонимном списке сайта).
       additionalProperties: false
       required:
-        [id, name, slug, allowSelfBooking, requirePrepayment, onlineBookingEnabled, analyticsEnabled,
-         mailingEnabled, showInPublicListing, visibleInPublicListing, onlinePaymentEnabled,
+        [id, name, slug, allowSelfBooking, requirePrepayment, onlineBookingEnabled, allowAnalytics,
+         allowMailing, showInPublicListing, publicListingEnabled, prepaymentEnabled,
          planAllowsOnlineBooking, planAllowsOnlinePayment, planAllowsPublicListing, reviewCount,
          timeZoneId, timeZoneIsManual, utcOffsetMinutes, bookingHorizonDays]
       properties:
@@ -789,11 +791,11 @@ components:
         allowSelfBooking: { type: boolean }
         requirePrepayment: { type: boolean }
         onlineBookingEnabled: { type: boolean }
-        analyticsEnabled: { type: boolean }
-        mailingEnabled: { type: boolean }
+        allowAnalytics: { type: boolean }
+        allowMailing: { type: boolean }
         showInPublicListing: { type: boolean }
-        visibleInPublicListing: { type: boolean }
-        onlinePaymentEnabled: { type: boolean }
+        publicListingEnabled: { type: boolean }
+        prepaymentEnabled: { type: boolean }
         planAllowsOnlineBooking: { type: boolean }
         planAllowsOnlinePayment: { type: boolean }
         planAllowsPublicListing: { type: boolean }
@@ -995,6 +997,7 @@ components:
           description: 🆕 добавлено циклом 9; по нему же работает query-фильтр ?transport=.
         status: { $ref: "#/components/schemas/NotificationStatus" }
         reason:
+          type: string
           allOf:
             - $ref: "#/components/schemas/NotificationReason"
           nullable: true
