@@ -8,7 +8,7 @@ import { formatMonthlyPrice } from '../../utils/pricingFormat'
  * Landing-page block, US-71: "companies that don't use the service yet should see prices before
  * logging in". Renders nothing while loading and nothing on 404 (publication switched off) or
  * network error — a broken/missing pricing block must never be the reason the homepage looks wrong
- * (ARCHITECTURE_CYCLE5.md §58, F5-2 "скрывается при 404").
+ * (ARCHITECTURE_CYCLE7.md §58, F5-2 "скрывается при 404").
  */
 export function PricingTeaser() {
   const { data, isSuccess } = useQuery({

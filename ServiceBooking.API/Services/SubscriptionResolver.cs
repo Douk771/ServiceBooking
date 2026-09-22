@@ -12,7 +12,7 @@ public record EffectivePlan(
     bool AllowAnalytics,
     bool AllowPublicListing,
     bool AllowOnlinePayment,
-    // Cycle 5 (ARCHITECTURE_CYCLE5.md §44.1) — renamed on purpose (was MaxEmployees/MaxCompanies,
+    // Cycle 7 (ARCHITECTURE_CYCLE7.md §44.1) — renamed on purpose (was MaxEmployees/MaxCompanies,
     // enforced per company): the limit is now SUMMED across every company the billing account owns.
     // The rename is a deliberately breaking change — a positional/named-argument mismatch here is a
     // compile error, not a silent behavior change (§45.3 p.2).
@@ -27,7 +27,7 @@ public record EffectivePlan(
     // say explicitly whether the plan it's describing allows the option, rather than silently inheriting
     // false from a default and hiding a forgotten decision.
     bool AllowNotificationChannel,
-    // Cycle 5 (ARCHITECTURE_CYCLE5.md §47.1) — "N": how many notification numbers the account's
+    // Cycle 7 (ARCHITECTURE_CYCLE7.md §47.1) — "N": how many notification numbers the account's
     // AccountSubscriptionOptions row for "notifications.whatsapp" currently pays for. 0 means "the
     // option isn't paid at all" (NotificationGate blocks with NotOnPaidPlan before ChannelFunding.Rank
     // is even consulted). NOT the same axis as AllowNotificationChannel above (which is "may this PLAN
@@ -54,7 +54,7 @@ public record EffectivePlan(
 }
 
 /// <summary>
-/// Resolves the effective plan for a billing account (ARCHITECTURE_CYCLE5.md §43.2, §44, §45). A
+/// Resolves the effective plan for a billing account (ARCHITECTURE_CYCLE7.md §43.2, §44, §45). A
 /// subscription is bound to the account, not to a person or a single company — every company the
 /// account owns shares one plan. Money reads go through <see cref="BillingAccount"/>/
 /// <see cref="Company.BillingAccountId"/> from here on; <c>Company.OwnerUserId</c> stays a
@@ -62,7 +62,7 @@ public record EffectivePlan(
 /// </summary>
 public class SubscriptionResolver(AppDbContext db)
 {
-    /// <summary>ARCHITECTURE_CYCLE5.md §43.3/§47.1 — the catalog code for the notification-channel
+    /// <summary>ARCHITECTURE_CYCLE7.md §43.3/§47.1 — the catalog code for the notification-channel
     /// quantity option; the single source of truth for "how many numbers are paid for" reads this
     /// exact code from AccountSubscriptionOptions.</summary>
     public const string WhatsAppOptionCode = "notifications.whatsapp";
@@ -78,7 +78,7 @@ public class SubscriptionResolver(AppDbContext db)
         Resolve(sub, grandfatheredEmployeeBonus, extraEmployees: 0, extraCompanies: 0, paidNotificationNumbers, nowUtc);
 
     /// <summary>
-    /// ARCHITECTURE_CYCLE5.md §44.3 п.6: employees = plan.MaxEmployees + Σ quantity of options whose
+    /// ARCHITECTURE_CYCLE7.md §44.3 п.6: employees = plan.MaxEmployees + Σ quantity of options whose
     /// CapabilityKey is <see cref="CapabilityKeys.Employees"/> + grandfathered bonus; companies =
     /// plan.MaxCompanies + Σ quantity of options whose CapabilityKey is
     /// <see cref="CapabilityKeys.Companies"/>. <paramref name="extraEmployees"/>
@@ -177,7 +177,7 @@ public class SubscriptionResolver(AppDbContext db)
             .Select(a => new { a.Id, a.GrandfatheredEmployeeBonus })
             .ToListAsync();
 
-        // Cycle 5 (§44.1-§44.3): every option row still in force (own PaidUntilUtc still in the future,
+        // Cycle 7 (§44.1-§44.3): every option row still in force (own PaidUntilUtc still in the future,
         // or none — meaning "rides the subscription's own paid period" — and not EndsAtUtc'd), grouped
         // by CapabilityKey. This is the one place an option's quantity turns into a plan effect —
         // adding a new "extra-*" catalog row (US-76) needs no code change here.

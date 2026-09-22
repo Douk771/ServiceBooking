@@ -1,6 +1,6 @@
 -- deploy/checks/billing-precheck.sql
 --
--- Cycle 5, stage 6 (ARCHITECTURE_CYCLE5.md §43.6/§54.1/§54.5, B5-13, B7). Safe to run against the
+-- Cycle 7, stage 6 (ARCHITECTURE_CYCLE7.md §43.6/§54.1/§54.5, B5-13, B7). Safe to run against the
 -- target database AT ANY POINT before the deploy — including before ANY cycle-5 migration has been
 -- applied at all. Checks 1-4 look at columns (`BillingAccountId` on Companies/AccountSubscriptions/
 -- NotificationChannels) that only exist once `AddBillingAccounts`/
@@ -26,7 +26,7 @@
 -- check below is expected to return zero findings. The script exists for the environments — and the
 -- future migrations reusing this same co-tenancy pattern — where that stops being true.
 --
--- When this fits in the deploy checklist: see DEPLOY.md's "Cycle 5 billing migration" section. Run
+-- When this fits in the deploy checklist: see DEPLOY.md's "Cycle 7 billing migration" section. Run
 -- once early (any state), and again immediately before applying `AddCoTenancyConstraints` — that
 -- second run is the one whose findings must be all-zero for the deploy to proceed.
 
@@ -153,7 +153,7 @@ $sql$ END AS query
 \gexec
 
 \echo '=== billing-precheck: 5) Companies with no owner (would silently sink into an orphaned account) ==='
--- Companies/OwnerUserId predate cycle 5, but this script promises to run at ANY point, including
+-- Companies/OwnerUserId predate cycle 7, but this script promises to run at ANY point, including
 -- against a database that hasn't even had cycle 1's schema applied yet (e.g. a brand-new empty
 -- database pointed at by mistake) — guard on table existence too, not just the cycle-5 columns.
 SELECT CASE WHEN EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Companies') THEN $sql$

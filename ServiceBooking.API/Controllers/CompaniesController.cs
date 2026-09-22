@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -19,7 +20,8 @@ public class CompaniesController(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
     ServiceBooking.API.Services.Billing.BillingAccountProvisioner billingAccountProvisioner,
     ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader,
-    ImageUploadService imageUploadService, FileStorage storage) : ControllerBase
+    ImageUploadService imageUploadService, FileStorage storage,
+    LegalDocumentProvider legalProvider, ConsentLedger ledger, TokenService tokenService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<CompanyDto>>> GetAll()
@@ -104,20 +106,35 @@ public class CompaniesController(
 
     // Public: list masters for a company, optionally filtered by serviceId
     [HttpGet("{id:guid}/masters")]
-    public async Task<ActionResult<List<MasterPublicDto>>> GetMasters(Guid id, [FromQuery] Guid? serviceId)
+    public async Task<ActionResult<List<MasterPublicDto>>> GetMasters(Guid id, [FromQuery] string? serviceId)
     {
+        // serviceId is bound as string (not Guid?) on purpose: ASP.NET Core's default model binder
+        // treats an empty string for a nullable Guid query param as "absent" and silently maps it to
+        // null, so a caller sending `?serviceId=` got a 200 with no filter applied instead of a 400 for
+        // a malformed uuid (schemathesis finding, API_CONTRACT_CYCLE6.md §53). Only reject when the
+        // query param was actually supplied with a non-empty, non-uuid value; omitted/empty stays "no
+        // filter", matching the optional-parameter contract.
+        Guid? parsedServiceId = null;
+        if (!string.IsNullOrEmpty(serviceId))
+        {
+            if (!Guid.TryParse(serviceId, out var parsed))
+                return BadRequest("serviceId must be a valid uuid.");
+            parsedServiceId = parsed;
+        }
+
         var memberQuery = db.CompanyMembers
             .Include(cm => cm.User)
             // A Client-role membership row exists for a company's own customers (e.g. anyone who books
             // there), never for staff — without this filter they'd show up in the public "book a
             // master" picker (audit Q6/US-12).
             .Where(cm => cm.CompanyId == id && cm.Company.IsActive &&
-                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner));
+                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner) &&
+                cm.ProvidesServices);
 
-        if (serviceId.HasValue)
+        if (parsedServiceId.HasValue)
         {
             var masterIdsForService = await db.MasterServices
-                .Where(ms => ms.ServiceId == serviceId.Value)
+                .Where(ms => ms.ServiceId == parsedServiceId.Value)
                 .Select(ms => ms.MasterId)
                 .ToListAsync();
 
@@ -153,10 +170,45 @@ public class CompaniesController(
             cm.Id, cm.UserId, cm.User.FirstName, cm.User.LastName,
             cm.User.PhoneNumber ?? "", cm.User.Email, cm.User.AvatarUrl, cm.Role.ToString(), cm.Bio,
             masterServices.Where(ms => ms.MasterId == cm.UserId).Select(ms => ms.ServiceId).ToList(),
-            cm.CommissionPercent
+            cm.CommissionPercent,
+            cm.ProvidesServices
         )).ToList();
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// US-62 (ARCHITECTURE_CYCLE6.md §40.3): only this company's owner (or SuperAdmin) may flip the
+    /// flag, and never for themselves via this endpoint's caller — a master can't hide themselves, and
+    /// turning the flag off with future bookings requires an explicit confirm.
+    /// </summary>
+    [HttpPut("{id:guid}/members/{memberId:guid}/provides-services")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProvidesServices(Guid id, Guid memberId, [FromBody] ProvidesServicesDto dto)
+    {
+        if (!await CanManageCompany(id)) return Forbid();
+
+        var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
+        if (member is null) return NotFound();
+
+        if (!dto.ProvidesServices && !dto.Confirm)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var futureBookingsCount = await db.Bookings.CountAsync(b =>
+                b.CompanyId == id && b.MasterId == member.UserId &&
+                b.Date >= today && b.Status != BookingStatus.Cancelled);
+
+            if (futureBookingsCount > 0)
+            {
+                return Conflict(
+                    $"У специалиста {futureBookingsCount} будущие записи. Они останутся в силе и в расписании, " +
+                    "но клиенты перестанут видеть его при записи. Повторите с подтверждением.");
+            }
+        }
+
+        member.ProvidesServices = dto.ProvidesServices;
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 
     [HttpPut("{id:guid}/members/{memberId:guid}/services")]
@@ -198,10 +250,23 @@ public class CompaniesController(
 
     [HttpPost]
     [Authorize]
-    public async Task<ActionResult<CompanyDto>> Create(CreateCompanyDto dto)
+    [RequiresOwnerTerms]
+    public async Task<ActionResult<CreateCompanyResponseDto>> Create(CreateCompanyDto dto)
     {
         if (await db.Companies.AnyAsync(c => c.Slug == dto.Slug))
             return Conflict("Slug already taken");
+
+        // ARCHITECTURE_CYCLE5.md §42.1, API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3). Checked by hand
+        // (RegisterDto.Legal's own note explains why), before anything else touches the database — an
+        // unaccepted company creation must never create a row to begin with.
+        if (string.IsNullOrWhiteSpace(dto.OwnerTerms?.Version))
+            return BadRequest("Для создания компании нужно принять соглашение с владельцем.");
+
+        var ownerTermsDoc = legalProvider.Current?.Get(LegalDocumentType.TermsOwner);
+        if (ownerTermsDoc is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+        if (dto.OwnerTerms.Version != ownerTermsDoc.Version)
+            return Conflict("Соглашение было обновлено ещё раз — перечитайте и примите новую редакцию.");
 
         // Cycle 4, API_CONTRACT_CYCLE4.md §31.2 (breaking change): every new company needs a city, so
         // a derived time zone exists for reminder timing. Validated before touching the advisory lock
@@ -280,17 +345,37 @@ public class CompaniesController(
         await IdentityRoleSync.SyncAsync(db, userManager, userId);
         await limitTransaction.CommitAsync();
 
+        // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance itself, recorded AFTER the company/membership
+        // commit above (nothing before this point can fail because of it, and a failure here must not
+        // undo an otherwise-successful company creation — best-effort would be wrong here though: US-66
+        // needs this row to exist, so it's still inside the overall request, just its own grant/lock).
+        var ownerSubject = ConsentSubject.ForUser(userId);
+        await ledger.GrantAsync(new ConsentGrant(
+            ownerSubject, LegalDocumentType.TermsOwner.ToString(), ownerTermsDoc.Version, ownerTermsDoc.ContentHash,
+            Purpose: null, ConsentAct.Accepted, ConsentSource.CompanyCreation,
+            IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()));
+
+        // A fresh token, carrying the new "lco" claim — see CreateCompanyResponseDto's own doc comment
+        // for why this is mandatory, not an optimization. Privacy/TermsClient claims are re-resolved the
+        // same way AuthController.Login does, so this token is complete, not just augmented.
+        var user = await userManager.FindByIdAsync(userId);
+        var roles = await userManager.GetRolesAsync(user!);
+        var privacyState = await ledger.CurrentAsync(ownerSubject, LegalDocumentType.Privacy.ToString(), purpose: null);
+        var termsState = await ledger.CurrentAsync(ownerSubject, LegalDocumentType.TermsClient.ToString(), purpose: null);
+        var token = tokenService.GenerateToken(user!, roles, privacyState?.DocumentVersion, termsState?.DocumentVersion, ownerTermsDoc.Version);
+
         // `plan` was already resolved above for the MaxCompanies check — reuse it so the response
         // reflects the owner's real plan (e.g. their existing paid plan when opening a 2nd+ branch),
         // instead of assuming Free.
         // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
         var createUsage = accountId != Guid.Empty ? await accountUsageReader.GetAsync([accountId]) : new Dictionary<Guid, AccountUsage>();
-        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug },
-            MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId)));
+        var companyDto = MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId));
+        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, new CreateCompanyResponseDto(companyDto, token));
     }
 
     [HttpPut("{id:guid}")]
     [Authorize]
+    [RequiresOwnerTerms]
     public async Task<ActionResult<CompanyDto>> Update(Guid id, UpdateCompanyDto dto)
     {
         var company = await db.Companies.FindAsync(id);
@@ -305,6 +390,15 @@ public class CompaniesController(
         if (dto.AllowSelfBooking is not null) company.AllowSelfBooking = dto.AllowSelfBooking.Value;
         if (dto.RequirePrepayment is not null) company.RequirePrepayment = dto.RequirePrepayment.Value;
         if (dto.ShowInPublicListing is not null) company.ShowInPublicListing = dto.ShowInPublicListing.Value;
+
+        // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): omitted/null leaves it untouched; 0 resets to
+        // Default; anything else outside [Min, Max] is the one source of this 400.
+        if (dto.BookingHorizonDays is not null)
+        {
+            if (!BookingHorizon.TryNormalize(dto.BookingHorizonDays, out var horizonDays))
+                return BadRequest("Горизонт записи — от 1 до 365 дней");
+            company.BookingHorizonDays = horizonDays;
+        }
 
         // Cycle 4 (API_CONTRACT_CYCLE4.md §31.3, US-30 p.3): city and time zone. cityChanged tracks
         // whether THIS request moves CityId, since CompanyTimeZoneResolver.ForUpdate needs to know that
@@ -426,6 +520,7 @@ public class CompaniesController(
 
     [HttpPost("{id:guid}/members")]
     [Authorize]
+    [RequiresOwnerTerms]
     public async Task<ActionResult<MemberDto>> AddMember(Guid id, AddMemberDto dto)
     {
         if (!await CanManageCompany(id)) return Forbid();
@@ -438,7 +533,7 @@ public class CompaniesController(
         // unhandled 500 (audit D3). Reject an unknown role name explicitly instead.
         if (!Enum.TryParse<UserRole>(dto.Role, out _)) return BadRequest("Unknown role");
 
-        // Tariff seat limit (ARCHITECTURE_CYCLE5.md §46.4): SUMMED across every company on the
+        // Tariff seat limit (ARCHITECTURE_CYCLE7.md §46.4): SUMMED across every company on the
         // account, not just this one — a customer with 3 branches on an 8-seat plan can put all 8
         // anywhere, not 8-per-branch. Only blocks adding NEW members once at/over the cap; existing
         // members are never removed.
@@ -498,8 +593,9 @@ public class CompaniesController(
         // US-26: search AND auto-create both use the canonical form — otherwise adding a colleague by
         // "8 999..." would silently create a second account for someone already registered as
         // "+7 999...".
-        if (!PhoneNormalizer.TryNormalize(dto.Phone, out var canonicalPhone))
-            return BadRequest("Phone number must contain 10 to 15 digits.");
+        // US-61/Q4 (§48.2 p.3): adding a staff member is a new-data entry point too.
+        if (!PhoneNormalizer.TryNormalizeRussian(dto.Phone, out var canonicalPhone))
+            return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
 
         // Accounts are identified by phone (UserName == phone), so look the member up by phone.
         var user = await userManager.FindByNameAsync(canonicalPhone);
@@ -551,7 +647,8 @@ public class CompaniesController(
         // New members always start at 0 commission on this membership — same as before, just no longer
         // sourced from a value that could carry over from a different company (US-15).
         return Ok(new MemberDto(member.Id, user.Id, user.FirstName, user.LastName,
-            user.PhoneNumber ?? "", user.Email, user.AvatarUrl, dto.Role, dto.Bio, [], member.CommissionPercent));
+            user.PhoneNumber ?? "", user.Email, user.AvatarUrl, dto.Role, dto.Bio, [], member.CommissionPercent,
+            member.ProvidesServices));
     }
 
     [HttpPut("{id:guid}/members/{memberId:guid}/commission")]
@@ -571,6 +668,7 @@ public class CompaniesController(
 
     [HttpDelete("{id:guid}/members/{memberId:guid}")]
     [Authorize]
+    [RequiresOwnerTerms]
     public async Task<IActionResult> RemoveMember(Guid id, Guid memberId)
     {
         if (!await CanManageCompany(id)) return Forbid();
@@ -614,6 +712,7 @@ public class CompaniesController(
         var bookings = await db.Bookings
             .Include(b => b.Service)
             .Include(b => b.Master)
+            .Include(b => b.BookingServices)
             .Where(b => b.CompanyId == id && b.Date >= fromDate && b.Date <= toDate)
             .ToListAsync();
 
@@ -647,15 +746,20 @@ public class CompaniesController(
                 };
             }).ToList();
 
+        // US-67 (ARCHITECTURE_CYCLE6.md §44.2 p.4): the "top services" breakdown counts individual
+        // services from BookingServices, not visits — a 3-service visit contributes 3 counts here,
+        // one per line item, while totalRevenue above (computed from Booking.Price) still counts the
+        // visit exactly once. Pre-cycle bookings have exactly one BookingServices row each (backfilled),
+        // so this is unchanged for them.
         var popularServices = bookings
-            .GroupBy(b => b.ServiceId)
+            .SelectMany(b => b.BookingServices)
+            .GroupBy(bs => bs.ServiceId)
             .Select(g =>
             {
-                var svc = g.First().Service;
                 return new
                 {
                     serviceId = g.Key,
-                    serviceName = svc?.Name ?? g.Key.ToString(),
+                    serviceName = g.First().NameSnapshot,
                     count = g.Count()
                 };
             })
@@ -707,7 +811,7 @@ public class CompaniesController(
     // the seven call sites that return a CompanyDto. `city` is the resolved City row for c.CityId, or
     // null when CityId is null (pre-cycle-4 edge case, §31.4's doc comment) — resolved by the caller,
     // batched via GetCitiesAsync for the three list endpoints, so this stays a pure mapping function.
-    // `employeeCount`/`usage` (ARCHITECTURE_CYCLE5.md §46, §53.1): `usage` is null for a caller who
+    // `employeeCount`/`usage` (ARCHITECTURE_CYCLE7.md §46, §53.1): `usage` is null for a caller who
     // doesn't manage this company (§46.2's public paths pass 0/null explicitly) — that null propagates
     // to AccountSeatsUsed/AccountSeatsLimit/CanAddEmployee, deliberately distinct from "no limit"
     // (AccountSeatsLimit is a real null when the plan itself is unlimited, WITH a non-null usage).
@@ -741,10 +845,11 @@ public class CompaniesController(
             canAddEmployee,
             averageRating,
             reviewCount,
-            c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes);
+            c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes,
+            BookingHorizon.Normalize(c.BookingHorizonDays));
     }
 
-    // ARCHITECTURE_CYCLE5.md §46.1: batched account-usage lookup for the two AUTHENTICATED list/detail
+    // ARCHITECTURE_CYCLE7.md §46.1: batched account-usage lookup for the two AUTHENTICATED list/detail
     // endpoints (GetMy/GetMemberOf/Update/UploadLogo) — two grouped queries total regardless of how
     // many companies/accounts are in `companies`, never one query per company.
     private async Task<(Dictionary<Guid, int> EmployeeCounts, Dictionary<Guid, AccountUsage> UsageByAccount)> GetUsageAsync(

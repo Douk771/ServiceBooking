@@ -15,6 +15,11 @@ public class CompanyMember
     public decimal CommissionPercent { get; set; } = 0;
     public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
 
+    // US-62 (ARCHITECTURE_CYCLE6.md §40): whether this member shows up in the public "book a master"
+    // list (GET /api/companies/{id}/masters). Meaningful for Master/CompanyOwner roles; defaults to
+    // true so every existing membership (and the migration backfill) keeps today's visibility.
+    public bool ProvidesServices { get; set; } = true;
+
     public Company Company { get; set; } = null!;
     public AppUser User { get; set; } = null!;
 }

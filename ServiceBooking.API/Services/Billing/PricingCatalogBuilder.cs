@@ -6,7 +6,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
-/// Pure mapping from catalog rows to <see cref="PublicPricingDto"/> (ARCHITECTURE_CYCLE5.md §48) — no
+/// Pure mapping from catalog rows to <see cref="PublicPricingDto"/> (ARCHITECTURE_CYCLE7.md §48) — no
 /// database, no cache, no clock. Kept separate from <see cref="PricingCatalogCache"/> so the filtering/
 /// sorting/formatting rules are unit-testable on their own, the way §44.3's capability resolver is.
 /// </summary>
@@ -15,18 +15,18 @@ public static class PricingCatalogBuilder
     public const string DefaultNotice =
         "Подключение тарифа и опций выполняет администратор платформы — оставьте заявку, и мы свяжемся с вами.";
 
-    /// <summary>openapi-cycle5.yaml AdminPlanDto/AdminPlanInput.highlights: <c>maxItems: 10</c> — the cap
+    /// <summary>contracts/cycle7/openapi.yaml AdminPlanDto/AdminPlanInput.highlights: <c>maxItems: 10</c> — the cap
     /// on how many bullets an admin may SAVE for a plan, shared with
     /// <c>AdminController.SplitHighlights/JoinHighlights</c> and enforced at write time by
     /// <see cref="ValidateHighlights"/> (cycle-07 QA finding #4).</summary>
     public const int MaxHighlights = 10;
 
-    /// <summary>openapi-cycle5.yaml AdminPlanDto/AdminPlanInput.highlights item: <c>maxLength: 120</c> —
+    /// <summary>contracts/cycle7/openapi.yaml AdminPlanDto/AdminPlanInput.highlights item: <c>maxLength: 120</c> —
     /// enforced at write time by <see cref="ValidateHighlights"/> (cycle-07 QA finding #3). Before this,
     /// nothing stopped an admin from saving a bullet longer than the contract's own documented ceiling.</summary>
     public const int MaxHighlightLength = 120;
 
-    /// <summary>openapi-cycle5.yaml PublicPlanDto.highlights: <c>maxItems: 5</c> — DELIBERATELY separate
+    /// <summary>contracts/cycle7/openapi.yaml PublicPlanDto.highlights: <c>maxItems: 5</c> — DELIBERATELY separate
     /// from <see cref="MaxHighlights"/>. The storefront shows fewer bullets than an admin may save (10),
     /// so this only ever trims what <see cref="Build"/> displays; it must never be used as the write-time
     /// cap in <c>AdminController</c> or an admin who saved 8 bullets would silently lose 3 with no error

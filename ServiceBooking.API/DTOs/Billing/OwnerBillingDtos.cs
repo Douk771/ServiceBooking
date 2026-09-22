@@ -1,6 +1,6 @@
 namespace ServiceBooking.API.DTOs.Billing;
 
-/// <summary>contracts/openapi-cycle5.yaml OwnerSubscriptionDto — GET /api/billing/subscription
+/// <summary>contracts/cycle7/openapi.yaml OwnerSubscriptionDto — GET /api/billing/subscription
 /// (US-65, US-68, US-70). Invariant checked by tests on both sides: TotalMonthlyPrice ==
 /// Plan.PricePerMonth + sum(Options[].PricePerMonth). Never mentions "биллинг-аккаунт" (Р8).</summary>
 public record OwnerSubscriptionDto(

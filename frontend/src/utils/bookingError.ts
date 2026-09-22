@@ -15,10 +15,12 @@ export function getBookingErrorMessage(error: unknown): string {
 
   switch (status) {
     case 402:
+      // API_CONTRACT_CYCLE6.md §42.3 — tariff doesn't include online booking.
       if (lower.includes('expired')) return 'Подписка компании истекла — запись временно недоступна.'
-      return 'Онлайн-запись в этой компании сейчас недоступна.'
+      return 'Онлайн-запись недоступна: тариф компании её не включает'
     case 403:
-      return 'Онлайн-запись недоступна — запись только через мастера.'
+      // §42.3 — `Company.AllowSelfBooking == false`.
+      return 'Салон сейчас не принимает онлайн-записи'
     case 409:
       return 'Это время уже занято. Выберите другой слот.'
     case 404:

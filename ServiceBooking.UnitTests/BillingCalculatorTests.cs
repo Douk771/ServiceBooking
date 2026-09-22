@@ -4,7 +4,7 @@ using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE5.md §44.3 — the owner subscription screen's invariant
+/// <summary>ARCHITECTURE_CYCLE7.md §44.3 — the owner subscription screen's invariant
 /// (totalMonthlyPrice == plan price + Σ option prices) and the Included/Extra pricing split rest on
 /// these pure functions; covered directly, no DB/HTTP.</summary>
 public class BillingCalculatorTests

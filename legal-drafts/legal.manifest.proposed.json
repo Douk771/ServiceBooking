@@ -1,0 +1,109 @@
+{
+  "_comment": "ПРЕДЛАГАЕМЫЙ манифест для замены ServiceBooking.API/App_Data/legal/legal.json. НЕ ПОДКЛЮЧЁН. Замена выполняется задачей цикла 5 вместе с T-5 (пять значений LegalDocumentType) и T-6. Версии и даты — плейсхолдеры, проставляются при публикации. isDraft снимается после вычитки живым юристом (T-20).",
+  "_versionFormat": "ГГГГ-ММ-ДД (без суффикса -draft после вычитки)",
+
+  "documents": [
+    {
+      "type": "Privacy",
+      "version": "{{ВЕРСИЯ_ДОКУМЕНТА}}",
+      "effectiveFrom": "{{ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ}}",
+      "isDraft": true,
+      "changeKind": "Material",
+      "title": "Политика обработки персональных данных",
+      "file": "01-privacy-policy.html",
+      "_shownAt": "публично /privacy; ознакомление при регистрации (блокирует)"
+    },
+    {
+      "type": "TermsClient",
+      "version": "{{ВЕРСИЯ_ДОКУМЕНТА}}",
+      "effectiveFrom": "{{ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ}}",
+      "isDraft": true,
+      "changeKind": "Material",
+      "title": "Пользовательское соглашение",
+      "file": "02-terms-client.html",
+      "_shownAt": "публично /terms; акцепт при регистрации (блокирует)"
+    },
+    {
+      "type": "TermsOwner",
+      "version": "{{ВЕРСИЯ_ДОКУМЕНТА}}",
+      "effectiveFrom": "{{ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ}}",
+      "isDraft": true,
+      "changeKind": "Material",
+      "title": "Соглашение с компанией и поручение на обработку персональных данных",
+      "file": "03-terms-owner.html",
+      "_shownAt": "акцепт при создании компании (блокирует создание компании, не регистрацию)"
+    },
+    {
+      "type": "PdnConsent",
+      "version": "{{ВЕРСИЯ_ДОКУМЕНТА}}",
+      "effectiveFrom": "{{ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ}}",
+      "isDraft": true,
+      "changeKind": "Material",
+      "title": "Согласие на обработку персональных данных",
+      "file": "04-pdn-consent.html",
+      "_shownAt": "отдельная форма при регистрации, НЕ блокирует; гранулярно по трём целям; управление в профиле",
+      "_purposes": ["ProviderDelivery", "WorkPhotos", "HealthData"]
+    },
+    {
+      "type": "ChannelRiskNotice",
+      "version": "{{ВЕРСИЯ_ДОКУМЕНТА}}",
+      "effectiveFrom": "{{ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ}}",
+      "isDraft": true,
+      "changeKind": "Material",
+      "title": "Подключение канала уведомлений: что вы берёте на себя",
+      "file": "06-channel-risk-notice.html",
+      "_shownAt": "отдельный экран перед привязкой номера; факт пишется в NotificationChannel.RiskAcceptedAtUtc/RiskAcceptedVersion"
+    },
+    {
+      "type": "ChannelOffer",
+      "version": "{{ВЕРСИЯ_ДОКУМЕНТА}}",
+      "effectiveFrom": "{{ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ}}",
+      "isDraft": true,
+      "changeKind": "Material",
+      "title": "Оферта на подключение канала уведомлений",
+      "file": "09-channel-offer.html",
+      "_shownAt": "до подачи заявки на подключение канала; приложение к TermsOwner",
+      "_note": "Шестой тип сверх пяти из T-5. Альтернатива — включить текст приложением в TermsOwner и не заводить отдельный тип; решение за архитектором."
+    }
+  ],
+
+  "uiTexts": [
+    {
+      "_comment": "Тексты интерфейса. Версионируются, факт показа/подтверждения сохраняется, но в LegalDocumentType не попадают и гейт 451 не задействуют.",
+      "key": "BookingNotice",
+      "title": "Уведомление при записи (ст. 18 152-ФЗ)",
+      "file": "05-booking-notice.html",
+      "shownAt": "форма записи, гостевой путь, /embed — под кнопкой; не требует отметки"
+    },
+    {
+      "key": "TemplateAdWarning",
+      "title": "Предупреждение о рекламе в шаблоне",
+      "file": "07-template-ad-warning.html",
+      "shownAt": "редактор шаблона: у поля ввода и при сохранении (T-1, T-2, T-3)"
+    },
+    {
+      "key": "UnsubscribePage",
+      "title": "Страница отказа от уведомлений",
+      "file": "08-unsubscribe-page.html",
+      "shownAt": "/u/{token}, анонимно"
+    },
+    {
+      "key": "PhotoConsent",
+      "title": "Согласие на фотофиксацию выполненной работы",
+      "file": "10-photo-consent.html",
+      "shownAt": "перед первой загрузкой фото о клиенте (T-16); для клиента с аккаунтом дублирует цель 2 PdnConsent"
+    },
+    {
+      "key": "HealthDataConsent",
+      "title": "Согласие на обработку сведений о состоянии здоровья",
+      "file": "11-health-data-consent.html",
+      "shownAt": "перед первым заполнением поля противопоказаний (T-18, вариант C); дублирует цель 3 PdnConsent"
+    },
+    {
+      "key": "GuardianConfirmation",
+      "title": "Подтверждение при записи другого человека",
+      "file": "12-guardian-confirmation.html",
+      "shownAt": "форма записи и ручная запись сотрудником (T-19)"
+    }
+  ]
+}

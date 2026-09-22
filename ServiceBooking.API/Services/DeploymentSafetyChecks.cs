@@ -217,6 +217,78 @@ public static class DeploymentSafetyChecks
         }
     }
 
+    /// <summary>
+    /// T-24 (ARCHITECTURE_CYCLE5.md §52.3): <c>Notifications:ProviderDeliveryConsent</c> must be one of
+    /// <c>Strict</c>/<c>AccountsOnly</c>/<c>Off</c> (case-insensitive) — an unrecognized value fails loud
+    /// at startup, the same convention <c>Notifications:Provider</c> already follows (an operator typo
+    /// here would otherwise silently fall back to whichever branch <c>Enum.Parse</c> happens to default
+    /// to, and this value governs a legal gate, not a cosmetic setting). Runs in every environment,
+    /// unconditionally — unlike most of this class's checks, there is no "safe in Development" carve-out:
+    /// a misconfigured value is just as wrong on a laptop as in Production, and the whole point of this
+    /// flag being config (not code) is that it is cheap to get right everywhere.
+    /// </summary>
+    public static void ValidateProviderDeliveryConsentMode(IConfiguration configuration)
+    {
+        var raw = configuration["Notifications:ProviderDeliveryConsent"];
+        if (string.IsNullOrWhiteSpace(raw)) return; // absent → NotificationOptions' own default (AccountsOnly)
+
+        if (!Enum.TryParse<Core.Enums.ProviderDeliveryConsentMode>(raw, ignoreCase: true, out _))
+            throw new InvalidOperationException(
+                $"Notifications:ProviderDeliveryConsent is '{raw}', which is not one of Strict/AccountsOnly/Off. " +
+                "Fix the configured value — see ARCHITECTURE_CYCLE5.md §52.3/§52.4 for what each means and costs.");
+    }
+
+    /// <summary>
+    /// T5-B13 (ARCHITECTURE_CYCLE5.md §52.1, US-71 п. 6, ч. 5 ст. 18 152-ФЗ): if instance creation is
+    /// turned on, the server country MUST be set — "the provider decides" is not an acceptable default
+    /// for a data-localization requirement. Runs unconditionally, same reasoning as
+    /// <see cref="ValidateProviderDeliveryConsentMode"/>: this is a config-consistency check, not an
+    /// environment-gated secret check, so there is no "safe in Development" carve-out for it either.
+    /// </summary>
+    public static void ValidateGreenApiServerCountry(IConfiguration configuration)
+    {
+        var creationEnabled = configuration.GetValue<bool>("Notifications:GreenApi:InstanceCreationEnabled");
+        if (!creationEnabled) return;
+
+        var serverCountry = configuration["Notifications:GreenApi:ServerCountry"];
+        if (string.IsNullOrWhiteSpace(serverCountry))
+            throw new InvalidOperationException(
+                "Notifications:GreenApi:InstanceCreationEnabled is true but Notifications:GreenApi:ServerCountry " +
+                "is empty. Set NOTIFICATIONS_GREEN_API_SERVER_COUNTRY in .env — creating real WhatsApp instances " +
+                "without a known server location risks violating ч. 5 ст. 18 152-ФЗ (data localization).");
+    }
+
+    /// <summary>
+    /// T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1, §49.5). Two minimums are legally load-bearing, not just
+    /// defaults an operator is free to shorten, so — same reasoning as
+    /// <see cref="ValidateProviderDeliveryConsentMode"/> and <see cref="ValidateGreenApiServerCountry"/> —
+    /// this runs unconditionally, in every environment, with no "safe in Development" carve-out:
+    /// <c>Retention:TemplateHistoryDays</c> must be at least 365 (advertising limitation period, ст. 4.5
+    /// КоАП) and <c>Retention:ConsentRecordDays</c> must be at least 1095 (general limitation period,
+    /// ст. 196 ГК — the operator must be able to PROVE consent, ч. 1 ст. 9). "Не меньше трёх лет" must not
+    /// depend on who last edited appsettings.Production.json.
+    /// </summary>
+    public static void ValidateRetentionPeriods(IConfiguration configuration)
+    {
+        var section = configuration.GetSection(ServiceBooking.API.Services.Retention.RetentionPeriods.SectionName);
+
+        var templateHistoryDays = section.GetValue<int?>("TemplateHistoryDays")
+                                   ?? new ServiceBooking.API.Services.Retention.RetentionPeriods().TemplateHistoryDays;
+        if (templateHistoryDays < 365)
+            throw new InvalidOperationException(
+                $"Retention:TemplateHistoryDays is {templateHistoryDays}, below the 365-day minimum " +
+                "(1-year advertising limitation period, ст. 4.5 КоАП — LEGAL_REVIEW.md §13.5). Set " +
+                "RETENTION__TEMPLATEHISTORYDAYS to at least 365.");
+
+        var consentRecordDays = section.GetValue<int?>("ConsentRecordDays")
+                                 ?? new ServiceBooking.API.Services.Retention.RetentionPeriods().ConsentRecordDays;
+        if (consentRecordDays < 1095)
+            throw new InvalidOperationException(
+                $"Retention:ConsentRecordDays is {consentRecordDays}, below the 1095-day (3-year) minimum " +
+                "(general limitation period, ст. 196 ГК — the operator must be able to prove consent, " +
+                "ч. 1 ст. 9, LEGAL_REVIEW.md §13.5). Set RETENTION__CONSENTRECORDDAYS to at least 1095.");
+    }
+
     private static void ValidateEncryptionKeyFormat(string? keyBase64)
     {
         if (string.IsNullOrWhiteSpace(keyBase64) || keyBase64 == "CHANGE_ME")
@@ -319,5 +391,32 @@ public static class DeploymentSafetyChecks
                 "zone would get wrong visit/reminder times. Install tzdata in the runtime stage of the " +
                 "Dockerfile.", ex);
         }
+    }
+
+    /// <summary>
+    /// Parses <c>Booking:DefaultWorkWindow</c> (ARCHITECTURE_CYCLE6.md §46.2) — the fallback window
+    /// staff get on a date with no schedule row and <c>manual=true</c> but no <c>extendedHours</c>.
+    /// Pure and DI-free like the rest of this class, so it's testable without a host. An unparsable or
+    /// inverted value must fail the deployment loudly (CURRENT_STATE.md §6 convention: never fall back
+    /// silently to a whole day) rather than surface as "the grid looks wrong" days later.
+    /// </summary>
+    public static (TimeOnly Start, TimeOnly End) ParseDefaultWorkWindow(IConfiguration configuration)
+    {
+        var startRaw = configuration["Booking:DefaultWorkWindow:Start"];
+        var endRaw = configuration["Booking:DefaultWorkWindow:End"];
+
+        if (string.IsNullOrWhiteSpace(startRaw) || string.IsNullOrWhiteSpace(endRaw))
+            throw new InvalidOperationException(
+                "Booking:DefaultWorkWindow:Start/End are missing. Set both in appsettings.json.");
+
+        if (!TimeOnly.TryParse(startRaw, out var start) || !TimeOnly.TryParse(endRaw, out var end))
+            throw new InvalidOperationException(
+                $"Booking:DefaultWorkWindow:Start/End could not be parsed as times (\"{startRaw}\"/\"{endRaw}\").");
+
+        if (start >= end)
+            throw new InvalidOperationException(
+                $"Booking:DefaultWorkWindow:Start ({start}) must be before End ({end}).");
+
+        return (start, end);
     }
 }

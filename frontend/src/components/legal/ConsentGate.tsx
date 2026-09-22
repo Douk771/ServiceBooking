@@ -14,12 +14,13 @@ interface Props {
 }
 
 /**
- * Full-screen blocking state for a "Material" legal-document change (US-37 п. 4, API_CONTRACT.md §0.3).
- * Rendered whenever `requiresAcceptance` is true — from either the 451 branch in client.ts or the
- * consent-status query on app entry. While it's up, the only things a signed-in user can do are read
- * the documents, sign out, export their data, or delete their account (T-F2 done-criterion; export and
- * delete-account are both in the 451 allow-list per API_CONTRACT.md §0.4) — nothing else is reachable
- * because everything else keeps returning 451.
+ * Full-screen blocking state for a "Material" legal-document change on a `Global`-gate document
+ * (API_CONTRACT_CYCLE5.md §38.2, §39.4). Rendered whenever `requiresAcceptance` is true — from either
+ * the 451 branch in client.ts or the consent-status query on app entry. While it's up, the only
+ * things a signed-in user can do are read the documents, sign out, export their data, revoke a
+ * consent, or delete their account (T5-F4; export/revoke/delete-account are all in the 451 allow-list
+ * per API_CONTRACT_CYCLE5.md §41) — nothing else is reachable because everything else keeps returning
+ * 451.
  */
 export function ConsentGate({ status }: Props) {
   const qc = useQueryClient()
@@ -28,13 +29,15 @@ export function ConsentGate({ status }: Props) {
   const setConsentRequired = useLegalStore((s) => s.setConsentRequired)
   const { exportMut, exportError } = useExportData()
 
-  const privacy = status.documents.find((d) => d.type === 'Privacy')
-  const terms = status.documents.find((d) => d.type === 'Terms')
+  // Only `Global`-gate documents block here (§38.2) — today that's Privacy + TermsClient, but the
+  // list is read from the response rather than hardcoded so a sixth document doesn't need a frontend
+  // change (§56.5 п. 2).
+  const globalDocs = status.documents.filter((d) => d.gate === 'Global')
 
   const mut = useMutation({
     mutationFn: () => {
-      if (!privacy || !terms) throw new Error('missing document versions')
-      return legalApi.accept(privacy.version, terms.version)
+      if (globalDocs.length === 0) throw new Error('no pending global documents')
+      return legalApi.accept(globalDocs.map((d) => ({ type: d.type, version: d.currentVersion })))
     },
     onSuccess: (res) => {
       if (user) setAuth(user, res.token)
@@ -42,6 +45,11 @@ export function ConsentGate({ status }: Props) {
       qc.invalidateQueries({ queryKey: ['legal-consent-status'] })
     },
   })
+
+  const docLinks: { type: string; url: string; label: string }[] = [
+    { type: 'Privacy', url: '/privacy', label: 'Политика обработки персональных данных' },
+    { type: 'TermsClient', url: '/terms', label: 'Пользовательское соглашение' },
+  ]
 
   const handleLogout = () => {
     logout()
@@ -62,20 +70,16 @@ export function ConsentGate({ status }: Props) {
         </p>
 
         <div className="flex flex-col gap-2 mb-6">
-          <Link
-            to="/privacy"
-            target="_blank"
-            className="text-sm text-gold hover:text-gold-dark flex items-center gap-1.5"
-          >
-            <Icon name="chevron-right" size={13} strokeWidth={1.8} /> Политика обработки персональных данных
-          </Link>
-          <Link
-            to="/terms"
-            target="_blank"
-            className="text-sm text-gold hover:text-gold-dark flex items-center gap-1.5"
-          >
-            <Icon name="chevron-right" size={13} strokeWidth={1.8} /> Пользовательское соглашение
-          </Link>
+          {docLinks.map((d) => (
+            <Link
+              key={d.type}
+              to={d.url}
+              target="_blank"
+              className="text-sm text-gold hover:text-gold-dark flex items-center gap-1.5"
+            >
+              <Icon name="chevron-right" size={13} strokeWidth={1.8} /> {d.label}
+            </Link>
+          ))}
         </div>
 
         {mut.isError && <p className="text-sm text-danger mb-4">{getLegalErrorMessage(mut.error)}</p>}
@@ -96,10 +100,14 @@ export function ConsentGate({ status }: Props) {
           Выгрузить мои данные
         </Button>
 
-        <div className="flex items-center justify-center gap-4 text-xs text-muted mt-2">
+        <div className="flex items-center justify-center gap-4 text-xs text-muted mt-2 flex-wrap">
           <button onClick={handleLogout} className="hover:text-ink-soft transition-colors">
             Выйти
           </button>
+          <span>·</span>
+          <Link to="/profile/consents" className="hover:text-ink-soft transition-colors">
+            Мои согласия
+          </Link>
           <span>·</span>
           <Link to="/profile/delete" className="hover:text-ink-soft transition-colors">
             Удалить аккаунт

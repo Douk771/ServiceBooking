@@ -1,6 +1,6 @@
 namespace ServiceBooking.API.Services.Billing;
 
-/// <summary>Server-assembled Russian copy for billing/funding surfaces (ARCHITECTURE_CYCLE5.md §41
+/// <summary>Server-assembled Russian copy for billing/funding surfaces (ARCHITECTURE_CYCLE7.md §41
 /// п. 8, as <c>NotificationTexts</c> is for cycle 4) — the frontend never composes these sentences
 /// itself. The word "биллинг-аккаунт" never appears here (§41 п. 8, Р8): every text below is shown to
 /// the OWNER, not an admin.</summary>

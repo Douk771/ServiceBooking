@@ -4,7 +4,7 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §46) — how much of a billing account's SUMMED limits are already
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §46) — how much of a billing account's SUMMED limits are already
 /// spent: companies owned, and seats occupied across every one of them. Two grouped queries total, no
 /// matter how many accounts/companies are asked about — the same "one query for the whole page" shape
 /// as <c>CompaniesController.GetReviewAggregatesAsync</c>/<c>GetCitiesAsync</c> (cycle 4). Deliberately

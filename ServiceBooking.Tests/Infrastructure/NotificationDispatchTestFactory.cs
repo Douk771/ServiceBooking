@@ -23,26 +23,20 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// alone already guarantees that — the substitution exists to make sends OBSERVABLE and instant, not to
 /// make them safe (they already were).
 /// </summary>
-public sealed class NotificationDispatchTestFactory(bool channelHealthEnabled = false, int? budgetSecondsOverride = null) : WebApplicationFactory<Program>
+public sealed class NotificationDispatchTestFactory(
+    string connectionString, bool channelHealthEnabled = false, int? budgetSecondsOverride = null) : WebApplicationFactory<Program>
 {
     public RecordingDelay Delay { get; } = new();
     public FakeClock Clock { get; } = new();
     public RecordingTransport Transport { get; } = new();
 
+    /// <summary>This host's identity — see <see cref="TestHostSettings"/>. Populated once the host has
+    /// started (e.g. by touching <see cref="WebApplicationFactory{TEntryPoint}.Services"/>).</summary>
+    public TestHostIdentity Identity { get; private set; } = null!;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:DefaultConnection", TestDatabaseFixture.ConnectionString);
-        builder.UseSetting("Jwt:Key", "TEST_ONLY_SECRET_KEY_AT_LEAST_32_CHARACTERS_LONG");
-        builder.UseSetting("Jwt:Issuer", "ServiceBooking");
-        builder.UseSetting("Jwt:Audience", "ServiceBookingClient");
-        builder.UseSetting("AllowedOrigins", "http://localhost:5173");
-        builder.UseSetting("SuperAdmin:Phone", "+70000000001");
-        builder.UseSetting("SuperAdmin:Email", "superadmin@test.local");
-        builder.UseSetting("SuperAdmin:Password", "SuperAdmin123!");
-        builder.UseSetting("SmartCaptcha:SecretKey", "");
-        builder.UseSetting("SmartCaptcha:SiteKey", "");
-        builder.UseSetting("Logging:LogLevel:Microsoft.EntityFrameworkCore", "Warning");
+        Identity = TestHostSettings.Apply(builder, "dispatch", connectionString);
 
         // §27.1: the runner ticks only under THIS host. TickSeconds=1 (not the 60s production default)
         // is what lets a test observe a second pass within real seconds instead of real minutes.

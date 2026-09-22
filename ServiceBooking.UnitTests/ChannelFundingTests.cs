@@ -5,7 +5,7 @@ using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE5.md §47.1 — "paid N, configured M" is a pure, deterministic rule: the
+/// <summary>ARCHITECTURE_CYCLE7.md §47.1 — "paid N, configured M" is a pure, deterministic rule: the
 /// N earliest-created live channels are Funded, the rest Unfunded; N == 0 makes every live channel
 /// NotPaid. No DB, no HTTP.</summary>
 public class ChannelFundingTests

@@ -6,7 +6,9 @@
 #
 # Runnable two ways:
 #   - from CI (docker-build job in .github/workflows/ci.yml), against a container started there;
-#   - by hand, against any running instance: `BASE_URL=http://localhost:5000 deploy/ci/smoke.sh`.
+#   - by hand, against any running instance: `BASE_URL=http://localhost:${SB_API_PORT:-5000} deploy/ci/smoke.sh`
+#     (SB_API_PORT is the cycle-8 env-contract variable, API_CONTRACT_CYCLE8.md §85 — matches whatever
+#     port your dev-compose stack actually published; defaults to 5000, same as before).
 #
 # Any failed step exits 1 — the caller (CI job) is expected to print `docker logs <container>` on
 # failure so the actual crash/exception is visible, not just "smoke failed".
@@ -49,14 +51,37 @@ until code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/health/ready"
 done
 log "ready OK"
 
-# Step 3: register a throwaway account (acceptedLegal:true - US-37 makes this mandatory) and grab the
-# token. This is also an implicit check that Legal:Root loaded a valid manifest in this exact image
-# (Program.cs fail-fasts on startup otherwise, ARCHITECTURE.md §4.4 - so if this endpoint answers at
-# all with a token, the legal documents shipped correctly in the published image).
+# Step 3: register a throwaway account and grab the token. Cycle 5 replaced the old `acceptedLegal:true`
+# with the two versions the caller claims to have seen (CYCLE5-BREAKING, API_CONTRACT_CYCLE5.md §40.1),
+# and the server checks them against its live snapshot - so the versions have to be read from the image
+# itself, not hardcoded here, or this step would start failing the day a legal text is re-versioned.
+#
+# Reading them first also makes this a STRONGER check of the shipped manifest than the old one was: it
+# no longer just proves the app started (Program.cs fail-fasts on a broken manifest, ARCHITECTURE.md
+# §4.4), it proves Privacy and TermsClient are actually present and served by this exact image.
+log "reading current legal versions"
+documents_response=$(curl -s -w '\n%{http_code}' "$BASE_URL/api/legal/documents")
+documents_code=$(echo "$documents_response" | tail -n1)
+documents_body=$(echo "$documents_response" | sed '$d')
+[ "$documents_code" = "200" ] || fail "GET /api/legal/documents returned $documents_code, body: $documents_body"
+
+legal_versions=$(echo "$documents_body" | python3 -c '
+import sys, json
+docs = json.load(sys.stdin)["documents"]
+by_type = {d["type"]: d["version"] for d in docs}
+missing = [t for t in ("Privacy", "TermsClient") if t not in by_type]
+if missing:
+    sys.exit("missing document types in manifest: " + ", ".join(missing))
+print(by_type["Privacy"], by_type["TermsClient"])
+') || fail "could not read Privacy/TermsClient versions from: $documents_body"
+read -r PRIVACY_VERSION TERMS_VERSION <<< "$legal_versions"
+[ -n "$PRIVACY_VERSION" ] && [ -n "$TERMS_VERSION" ] || fail "empty legal versions in: $documents_body"
+log "legal versions: Privacy=$PRIVACY_VERSION TermsClient=$TERMS_VERSION"
+
 log "registering throwaway account $PHONE"
 register_response=$(curl -s -w '\n%{http_code}' -X POST "$BASE_URL/api/auth/register" \
   -H 'Content-Type: application/json' \
-  -d "{\"firstName\":\"Smoke\",\"lastName\":\"Test\",\"phone\":\"$PHONE\",\"password\":\"$PASSWORD\",\"acceptedLegal\":true}")
+  -d "{\"firstName\":\"Smoke\",\"lastName\":\"Test\",\"phone\":\"$PHONE\",\"password\":\"$PASSWORD\",\"legal\":{\"privacyAcknowledgedVersion\":\"$PRIVACY_VERSION\",\"termsAcceptedVersion\":\"$TERMS_VERSION\"}}")
 register_code=$(echo "$register_response" | tail -n1)
 register_body=$(echo "$register_response" | sed '$d')
 [ "$register_code" = "200" ] || fail "POST /api/auth/register returned $register_code, body: $register_body"

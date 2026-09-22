@@ -2,7 +2,7 @@ using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Billing;
 
-/// <summary>Cycle 5, stage 5 (ARCHITECTURE_CYCLE5.md §44.3) — pure, DB-free arithmetic and status
+/// <summary>Cycle 7, stage 5 (ARCHITECTURE_CYCLE7.md §44.3) — pure, DB-free arithmetic and status
 /// rules shared by the owner subscription screen and the admin billing-account screen. Kept separate
 /// from any controller/DbContext-bound service so it is unit-testable without a database, the same
 /// convention as <see cref="CompanyTransferCalculator"/> and <see cref="ChannelFunding"/>.</summary>

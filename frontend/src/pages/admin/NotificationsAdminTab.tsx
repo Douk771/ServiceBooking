@@ -45,7 +45,7 @@ function SummaryRow() {
 
 // ── Channels list ─────────────────────────────────────────────────────────────
 // Оплата номера больше не отмечается здесь — единица оплаты переехала в подписку биллинг-аккаунта
-// (POST /admin/notification-channels/{id}/payment отвечает 410, API_CONTRACT_CYCLE5.md §53).
+// (POST /admin/notification-channels/{id}/payment отвечает 410, API_CONTRACT_CYCLE7.md §53).
 // Замена — вкладка «Биллинг-аккаунты» → карточка аккаунта → «Назначить подписку», опция
 // notifications.whatsapp с количеством.
 
@@ -121,6 +121,8 @@ function ChannelsList() {
                 {c.companyCount} компаний · оплачен до {fmt(c.paidUntil)}
                 {c.requestedAt && <> · заявка от {fmt(c.requestedAt)}</>}
                 {c.idleSince && <> · простой с {fmt(c.idleSince)}</>}
+                {/* §50.2 — INN is visible only to the owner and to SuperAdmin. */}
+                {c.inn && <> · ИНН {c.inn}</>}
               </p>
             </div>
             <div className="flex gap-2 shrink-0">

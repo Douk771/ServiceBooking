@@ -17,7 +17,7 @@ const DISMISSED_KEY = 'legal-banner-dismissed-version'
  */
 export function LegalUpdateBanner({ status }: Props) {
   const versionKey = status.documents
-    .map((d) => `${d.type}:${d.version}`)
+    .map((d) => `${d.type}:${d.currentVersion}`)
     .sort()
     .join('|')
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISSED_KEY) === versionKey)

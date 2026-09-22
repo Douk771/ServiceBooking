@@ -4,7 +4,7 @@ import { AxiosError } from 'axios'
  * Maps a failed admin billing-account request (assign subscription / reject request) to a Russian
  * message. PUT .../subscription returns a bare-string 409 for three distinct cases — option not
  * available on the chosen plan, request already processed, or new limits below what's already in
- * use without confirmLimitOverflow (API_CONTRACT_CYCLE5.md §49) — the server already composes the
+ * use without confirmLimitOverflow (API_CONTRACT_CYCLE7.md §49) — the server already composes the
  * specific wording (which number overflowed, which option, etc.), so it's shown verbatim rather
  * than collapsed into a generic "error" banner.
  *

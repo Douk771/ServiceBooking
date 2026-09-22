@@ -10,7 +10,7 @@ namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
 /// 60-second in-memory cache in front of <see cref="PricingCatalogBuilder"/>
-/// (ARCHITECTURE_CYCLE5.md §48) — the public price list is read on every homepage/pricing-page hit and
+/// (ARCHITECTURE_CYCLE7.md §48) — the public price list is read on every homepage/pricing-page hit and
 /// must never cost a query per anonymous visitor.
 /// </summary>
 public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache)
@@ -37,7 +37,7 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache)
     }
 
     /// <summary>Same payload as <see cref="GetAsync"/> but built straight from the database, bypassing
-    /// (and never populating) the 60-second cache — API_CONTRACT_CYCLE5.md §40: the admin preview must
+    /// (and never populating) the 60-second cache — API_CONTRACT_CYCLE7.md §40: the admin preview must
     /// show a just-saved change immediately, not up to a minute later.</summary>
     public Task<CachedPricing> BuildFreshAsync(CancellationToken ct = default) => BuildAsync(ct);
 
@@ -57,7 +57,7 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache)
 
     /// <summary>Rubильник публикации (§48) — absent key means disabled, matching every other
     /// PlatformSetting boolean flag convention in this codebase (absence, never a false default row).
-    /// Cached alongside the catalog itself: ARCHITECTURE_CYCLE5.md §48 explicitly drops rate limiting
+    /// Cached alongside the catalog itself: ARCHITECTURE_CYCLE7.md §48 explicitly drops rate limiting
     /// for GET /api/pricing on the premise the whole request is served from memory — a per-request
     /// database round trip just for this flag would make that premise false.</summary>
     public async Task<bool> IsPublicEnabledAsync(CancellationToken ct = default)

@@ -7,7 +7,7 @@ using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Billing;
 
-/// <summary>Cycle 5, stage 5 (contracts/openapi-cycle5.yaml /billing/subscription,
+/// <summary>Cycle 7, stage 5 (contracts/cycle7/openapi.yaml /billing/subscription,
 /// /billing/subscription/request) — the owner's own "Ваша подписка" screen and their option/plan
 /// request. Every text is assembled here (§41 п. 8) — the frontend prints strings as-is.</summary>
 public class OwnerSubscriptionService(

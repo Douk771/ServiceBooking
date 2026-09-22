@@ -105,4 +105,33 @@ public class PhoneNormalizerTests
         ok.Should().BeFalse();
         canonical.Should().BeEmpty();
     }
+
+    // ── IsRussian / TryNormalizeRussian (ARCHITECTURE_CYCLE6.md §48.1, US-61/Q4) ──────────────────
+
+    [Fact]
+    public void IsRussian_CanonicalRussianNumber_IsTrue() =>
+        PhoneNormalizer.IsRussian("79990000000").Should().BeTrue();
+
+    [Theory]
+    [InlineData("9990000000")]   // 10 digits
+    [InlineData("799900000001")] // 12 digits
+    [InlineData("38990000000")]  // 11 digits but doesn't start with '7'
+    public void IsRussian_WrongLengthOrPrefix_IsFalse(string canonical) =>
+        PhoneNormalizer.IsRussian(canonical).Should().BeFalse();
+
+    [Fact]
+    public void TryNormalizeRussian_LeadingEight_NormalizesAndAccepts()
+    {
+        var ok = PhoneNormalizer.TryNormalizeRussian("8 999 000-00-00", out var canonical);
+        ok.Should().BeTrue();
+        canonical.Should().Be("79990000000");
+    }
+
+    [Fact]
+    public void TryNormalizeRussian_ForeignNumber_IsRejected()
+    {
+        var ok = PhoneNormalizer.TryNormalizeRussian("+380671234567", out var canonical);
+        ok.Should().BeFalse();
+        canonical.Should().Be("380671234567"); // still normalized, just not accepted
+    }
 }

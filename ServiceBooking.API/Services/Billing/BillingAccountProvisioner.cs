@@ -5,7 +5,7 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §43.2/§45.1) — the one place that turns "a user who pays" into a
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §43.2/§45.1) — the one place that turns "a user who pays" into a
 /// <see cref="BillingAccount"/> row. Accounts are provisioned on demand rather than at registration:
 /// the first thing that needs one (today: creating the first company) calls
 /// <see cref="EnsureAccountAsync"/> instead of every sign-up growing a row nobody uses.

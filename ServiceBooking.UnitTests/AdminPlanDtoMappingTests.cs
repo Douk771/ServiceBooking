@@ -7,7 +7,7 @@ namespace ServiceBooking.UnitTests;
 
 /// <summary>
 /// Covers AdminController.MapAdminPlanDto/SplitHighlights — the pure projection from
-/// SubscriptionPlanConfig onto openapi-cycle5.yaml's AdminPlanDto shape (contracts/openapi-cycle5.yaml,
+/// SubscriptionPlanConfig onto contracts/cycle7/openapi.yaml's AdminPlanDto shape (contracts/cycle7/openapi.yaml,
 /// cycle-07 contract-drift fixes). No HTTP, no DB: exercises the mapping functions directly.
 /// </summary>
 public class AdminPlanDtoMappingTests

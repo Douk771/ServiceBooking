@@ -76,10 +76,14 @@ public class NotificationCitiesTimeZoneTests(TestDatabaseFixture fixture) : ApiT
     {
         var owner = await RegisterAsync();
         var barnaulId = await BarnaulCityIdAsync();
+        // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.CreateCompanyAsync's own note):
+        // OwnerTerms is now required, and the response is an envelope, not a bare CompanyDto.
         var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto("Barnaul Co", Unique("barnaul-"), null, null, null, null, barnaulId, null, true));
+            new CreateCompanyDto("Barnaul Co", Unique("barnaul-"), null, null, null, null, barnaulId, null, true,
+                OwnerTerms: CurrentOwnerTermsDto()));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var company = (await response.Content.ReadJsonAsync<CompanyDto>())!;
+        var envelope = (await response.Content.ReadJsonAsync<CreateCompanyResponseDto>())!;
+        var company = envelope.Company;
         company.CityId.Should().Be(barnaulId);
         company.TimeZoneId.Should().Be("Asia/Barnaul");
         company.UtcOffsetMinutes.Should().Be(420);

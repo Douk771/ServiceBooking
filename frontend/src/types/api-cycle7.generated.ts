@@ -134,7 +134,7 @@ export interface paths {
         /**
          * Снять опцию с продажи (мягко, isActive = false)
          * @description Уже оплаченные строки продолжают действовать до конца оплаченного периода — намеренное
-         *     отличие от поведения деактивированного тарифа (ARCHITECTURE_CYCLE5.md §44.3 п. 5).
+         *     отличие от поведения деактивированного тарифа (ARCHITECTURE_CYCLE7.md §44.3 п. 5).
          */
         delete: operations["deactivateAdminOption"];
         options?: never;
@@ -153,7 +153,7 @@ export interface paths {
          * Известные ключи возможностей для выпадающего списка (US-66, US-76)
          * @description Каналы рассылки — ЧИСЛОВЫЕ ключи: единица оплаты — номер (Р6), поэтому значение
          *     возможности — количество оплаченных номеров, а не флаг.
-         *     Свободный ввод ключа в редакторе опции остаётся разрешён (ARCHITECTURE_CYCLE5.md §44.2).
+         *     Свободный ввод ключа в редакторе опции остаётся разрешён (ARCHITECTURE_CYCLE7.md §44.2).
          */
         get: operations["getOptionCapabilities"];
         put?: never;
@@ -278,7 +278,7 @@ export interface paths {
         /**
          * Карточка аккаунта — подписка, опции, компании, номера (US-67)
          * @description channels[] отсортирован по createdAt ASC — это тот же порядок, по которому распределяется
-         *     оплата номеров (ARCHITECTURE_CYCLE5.md §47.1): оплату получают N заведённых раньше.
+         *     оплата номеров (ARCHITECTURE_CYCLE7.md §47.1): оплату получают N заведённых раньше.
          */
         get: operations["getAdminBillingAccount"];
         put?: never;
@@ -326,7 +326,7 @@ export interface paths {
         };
         /**
          * Журнал изменений подписки аккаунта (US-66, US-67, US-77)
-         * @description Содержит строки циклов 1-4 (changeKind = Legacy) и строки цикла 5.
+         * @description Содержит строки циклов 1-4 (changeKind = Legacy) и строки цикла 7.
          *     Самостоятельной смены ответственного за компанию здесь нет и быть не может — она в
          *     GET /admin/companies/{companyId}/owner-history (US-64 п. 4). Строка CompanyTransferred
          *     появляется здесь только потому, что в этот момент действительно менялись деньги.
@@ -371,6 +371,10 @@ export interface paths {
         /**
          * Отклонить заявку
          * @description Одобрение отдельной кнопки не имеет — оно происходит через PUT подписки с requestId.
+         *
+         *     Unreleased (cycle 07 backend report, BLK-4): comment обязателен и не может быть пустой
+         *     строкой/состоять из одних пробелов — это единственный способ, которым владелец узнаёт
+         *     причину отказа (US-70, LastRejectionReason). Отсутствующий или пустой comment -> 400.
          */
         post: operations["rejectSubscriptionRequest"];
         delete?: never;
@@ -396,7 +400,7 @@ export interface paths {
          *     newOwnerUserId передаётся ТЕМ ЖЕ необязательным параметром, что и в POST: если новый
          *     ответственный ещё не сотрудник этой компании, перенос займёт ЕЩЁ ОДНО место в штате
          *     принимающего аккаунта, и без этого параметра предпросмотр посчитал бы на место меньше,
-         *     чем произойдёт (ARCHITECTURE_CYCLE5.md §51.2).
+         *     чем произойдёт (ARCHITECTURE_CYCLE7.md §51.2).
          */
         get: operations["previewCompanyTransfer"];
         put?: never;
@@ -420,7 +424,7 @@ export interface paths {
         put?: never;
         /**
          * Перенести компанию в другой биллинг-аккаунт, при необходимости сменив ответственного (US-77)
-         * @description Одна операция — два сценария (ARCHITECTURE_CYCLE5.md §51.0):
+         * @description Одна операция — два сценария (ARCHITECTURE_CYCLE7.md §51.0):
          *       * newOwnerUserId НЕ задан — меняется только плательщик (BillingAccountId);
          *         ответственный за компанию остаётся прежним;
          *       * newOwnerUserId задан — BillingAccountId И OwnerUserId меняются В ОДНОЙ ТРАНЗАКЦИИ.
@@ -483,7 +487,7 @@ export interface paths {
         get?: never;
         /**
          * Сменить ответственного за компанию (US-64) — BREAKING по ПОВЕДЕНИЮ
-         * @description Форма запроса и ответа не меняется. Меняется поведение (API_CONTRACT_CYCLE5.md §53.5):
+         * @description Форма запроса и ответа не меняется. Меняется поведение (API_CONTRACT_CYCLE7.md §53.5):
          *       * подписка, опции, срок и лимиты НЕ затрагиваются — компания остаётся в своём аккаунте;
          *       * компания ОСТАЁТСЯ на номере рассылок, её очередь сообщений НЕ отменяется
          *         (отмена поведения цикла 4, US-64 п. 3);
@@ -508,7 +512,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Параметры платформы (+1 поле цикла 5) */
+        /** Параметры платформы (+1 поле цикла 7) */
         get: operations["getPlatformSettings"];
         /** Изменить параметры платформы (каждое изменение — в PlatformSettingChangeLog) */
         put: operations["updatePlatformSettings"];
@@ -591,12 +595,12 @@ export interface components {
          * @description Funded — номер входит в оплаченные; Unfunded — заведён сверх оплаченного количества
          *     (не отправляет, но сохраняет назначения и состояние подключения); NotPaid — у аккаунта
          *     не оплачено ни одного номера. Оплату получают N номеров, заведённых РАНЬШЕ
-         *     (createdAt ASC, id ASC) — ARCHITECTURE_CYCLE5.md §47.1.
+         *     (createdAt ASC, id ASC) — ARCHITECTURE_CYCLE7.md §47.1.
          * @enum {string}
          */
         ChannelFundingState: "Funded" | "Unfunded" | "NotPaid";
         /**
-         * @description Связь кандидата в ответственные с ПРИНИМАЮЩИМ аккаунтом (ARCHITECTURE_CYCLE5.md §51.1):
+         * @description Связь кандидата в ответственные с ПРИНИМАЮЩИМ аккаунтом (ARCHITECTURE_CYCLE7.md §51.1):
          *     AccountHolder — он держатель этого аккаунта; AccountMember — он уже сотрудник хотя бы одной
          *     его компании; None — связи нет, перенос со сменой ответственного получит 409.
          * @enum {string}
@@ -607,7 +611,7 @@ export interface components {
         /** @enum {string} */
         Currency: "RUB";
         /** @enum {string} */
-        PhotoRetention: "SixMonths" | "TwelveMonths" | "Forever";
+        PhotoRetention: "SixMonths" | "TwelveMonths";
         /**
          * @description Публичные поля публичных тарифов и опций. Внутренних полей (capabilityKey, isActive,
          *     isPublic, includedQuantity, photoRetention, идентификаторов правил) здесь НЕТ ФИЗИЧЕСКИ.
@@ -716,7 +720,7 @@ export interface components {
             numbersRegistered: number;
             /**
              * @description Собран сервером. numbersPaid < numbersRegistered — НОРМАЛЬНОЕ состояние, не ошибка:
-             *     работают номера, заведённые раньше (ARCHITECTURE_CYCLE5.md §47.1). В этом случае текст
+             *     работают номера, заведённые раньше (ARCHITECTURE_CYCLE7.md §47.1). В этом случае текст
              *     ОБЯЗАН содержать три вещи: сколько оплачено против скольких заведено, какой номер
              *     работает (маскированный) и что сделать, чтобы включить остальные. Фронт печатает строку
              *     целиком и ничего не дописывает.
@@ -1037,7 +1041,7 @@ export interface components {
             numbersRegistered: number;
             /**
              * @description Места, выданные миграцией при переходе «лимит на компанию -> суммарный» (US-73,
-             *     ARCHITECTURE_CYCLE5.md §54.4). Участвует в лимите, НЕ участвует в деньгах,
+             *     ARCHITECTURE_CYCLE7.md §54.4). Участвует в лимите, НЕ участвует в деньгах,
              *     обнуляется администратором вручную.
              */
             grandfatheredEmployeeBonus: number;
@@ -1226,7 +1230,7 @@ export interface components {
              * @description НЕОБЯЗАТЕЛЬНО. Не задан — меняется только плательщик, ответственный остаётся прежним.
              *     Задан — BillingAccountId и OwnerUserId меняются в одной транзакции.
              *     Обязан быть держателем принимающего аккаунта ЛИБО сотрудником хотя бы одной его
-             *     компании (ARCHITECTURE_CYCLE5.md §51.1), иначе 409. Несуществующий или удалённый
+             *     компании (ARCHITECTURE_CYCLE7.md §51.1), иначе 409. Несуществующий или удалённый
              *     пользователь — 400.
              */
             newOwnerUserId?: string | null;
@@ -1255,7 +1259,7 @@ export interface components {
             pricingPublicEnabled: boolean;
         };
         /**
-         * @description Семь полей, которые цикл 5 ДОБАВЛЯЕТ в существующий CompanyDto (7 точек возврата).
+         * @description Семь полей, которые цикл 7 ДОБАВЛЯЕТ в существующий CompanyDto (7 точек возврата).
          *     Три существующих уровня флагов сохраняются без изменений.
          *
          *     BREAKING (СЕМАНТИЧЕСКОЕ): существующее поле maxEmployees теперь означает СУММАРНЫЙ лимит
@@ -1958,10 +1962,10 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": {
-                    comment?: string | null;
+                    comment: string;
                 };
             };
         };

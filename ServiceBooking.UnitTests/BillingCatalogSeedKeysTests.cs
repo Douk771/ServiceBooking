@@ -5,7 +5,7 @@ using ServiceBooking.API.Services.Billing;
 namespace ServiceBooking.UnitTests;
 
 /// <summary>
-/// Cycle 5, B3 (ARCHITECTURE_CYCLE5.md §54.3, §44.2) — <c>SeedBillingCatalog</c> (a raw-SQL migration)
+/// Cycle 7, B3 (ARCHITECTURE_CYCLE7.md §54.3, §44.2) — <c>SeedBillingCatalog</c> (a raw-SQL migration)
 /// hardcodes the <c>SubscriptionOption.CapabilityKey</c> values it seeds ("companies", "employees",
 /// "notifications.whatsapp") because <see cref="SubscriptionResolver.GetEffectivePlansForAccountsAsync"/>
 /// reads those exact strings back out via <see cref="CapabilityKeys"/>. This test is the regression

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.Bookings;
+using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.DTOs.WorkingHours;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Enums;
@@ -682,8 +683,12 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
     // trusted to pick any free time. The `manual` flag opens up a full-day range when no WorkingHours
     // row exists, but only for an authenticated caller; guest self-booking never sends it.
 
+    // US-66 (ARCHITECTURE_CYCLE6.md §46, API_CONTRACT_CYCLE6.md §41.1): a date with no WorkingHours row
+    // no longer opens up the full 00:00-24:00 range by default — it falls back to the configured
+    // default working window (09:00-21:00, appsettings.json Slots:DefaultWindow). The whole-day range is
+    // still reachable, but only via the explicit extendedHours=true (see the test right below).
     [Fact, TestCase("BK-024")]
-    public async Task GetSlots_WithManualFlag_ReturnsFullDayRange_WhenNoWorkingHoursSetForThatDate()
+    public async Task GetSlots_WithManualFlag_ReturnsDefaultWorkingWindow_WhenNoWorkingHoursSetForThatDate()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
@@ -693,6 +698,35 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         var response = await AuthedClient(owner.Token).GetAsync(
             $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
+        // Default window is 09:00-21:00 — nothing before it and nothing after it.
+        slots.Should().Contain(s => s.Start == new TimeOnly(9, 0));
+        // 60-minute service inside a 09:00-21:00 window: the last slot that fits starts at 20:00.
+        slots.Should().Contain(s => s.Start == new TimeOnly(20, 0));
+        slots.Should().NotContain(s => s.Start < new TimeOnly(9, 0));
+        slots.Should().NotContain(s => s.Start > new TimeOnly(20, 0));
+        slots.Should().NotContain(s => s.End > new TimeOnly(21, 0));
+        // The old whole-day behavior must be gone by default, not just "also present".
+        slots.Should().NotContain(s => s.Start == new TimeOnly(0, 0));
+        slots.Should().NotContain(s => s.Start == new TimeOnly(22, 30));
+    }
+
+    // The previous, pre-US-66 behavior (whole day, 00:00-24:00) is still available, but only when the
+    // caller explicitly asks for it via extendedHours=true alongside manual=true (ARCHITECTURE_CYCLE6.md
+    // §46.3/§46.4) — this is the "show remaining hours" escape hatch, not the default any more.
+    [Fact, TestCase("BK-057")]
+    public async Task GetSlots_WithManualFlagAndExtendedHours_ReturnsFullDayRange_WhenNoWorkingHoursSetForThatDate()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        // Deliberately not calling SetWorkingDayAsync — no WorkingHours row exists for this date.
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}&manual=true&extendedHours=true");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
@@ -793,6 +827,179 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         (await slotsA.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!.Should().NotBeEmpty();
         (await slotsB.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!.Should().BeEmpty();
+    }
+
+    // ── GET /api/bookings/slots?excludeBookingId=... (reschedule grid, R2/R3) ──
+    //
+    // API_CONTRACT_CYCLE6.md §41.1 / ARCHITECTURE_CYCLE6.md §46.3. Regression coverage for the
+    // reschedule screen's own slot grid: it must not block the booking's own current interval against
+    // itself (R2), and it must keep working when the service was deactivated or the master was removed
+    // from the company (R3), since none of that should make an existing booking un-reschedulable. Also
+    // locks down the deliberately-ordered permission checks (CanManageBookingAsync before the
+    // companyId/masterId pair match) that close the 403-vs-400 oracle.
+
+    [Fact, TestCase("BK-068")]
+    public async Task GetSlots_ExcludeBookingId_ByUnrelatedCaller_ReturnsForbidden_EvenWithWrongCompanyAndMaster()
+    {
+        // The oracle this closes: if the pair-match ran before CanManage, a caller without any right to
+        // manage the booking could distinguish "this booking belongs to company X / master Y" (400) from
+        // "it doesn't" (403) by observing which status they get back, while holding nothing but a public
+        // booking id. Passing deliberately WRONG companyId/masterId here and still getting 403 (not 400)
+        // proves CanManage is evaluated first, regardless of what the caller supplies.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var booking = await (await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null)))
+            .Content.ReadJsonAsync<BookingDto>();
+
+        var stranger = await RegisterAsync();
+        var response = await AuthedClient(stranger.Token).GetAsync(
+            $"/api/bookings/slots?companyId={Guid.NewGuid()}&masterId=some-other-master&serviceId={service.Id}" +
+            $"&date={date:yyyy-MM-dd}&excludeBookingId={booking!.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact, TestCase("BK-069")]
+    public async Task GetSlots_ExcludeBookingId_UnknownBookingId_ReturnsNotFound()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}" +
+            $"&date={date:yyyy-MM-dd}&excludeBookingId={Guid.NewGuid()}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact, TestCase("BK-070")]
+    public async Task GetSlots_ExcludeBookingId_MasterIdDoesNotMatchTheBooking_ReturnsBadRequest()
+    {
+        // Caller CAN manage the booking (they're the company owner) but supplies a masterId that
+        // doesn't match the booking's own MasterId — 400, not 403/404 (every object exists, only the
+        // combination is wrong, same convention as the non-exclude branch just below in this file).
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var otherMaster = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var booking = await (await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, null, null, null, null)))
+            .Content.ReadJsonAsync<BookingDto>();
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={otherMaster.UserId}&serviceId={service.Id}" +
+            $"&date={date:yyyy-MM-dd}&excludeBookingId={booking!.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("BK-071")]
+    public async Task GetSlots_ExcludeBookingId_ByOwner_OffersTimeOverlappingTheBookingsOwnInterval()
+    {
+        // The main test for R2: without excludeBookingId, a booking's own interval always shows up as
+        // occupied (BK-011). With it, the grid must offer a slot that overlaps the booking's OWN current
+        // interval — proving the booking excludes itself from its own occupancy, not merely that some
+        // other slot survived.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var booking = await (await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null, null, null, null, null)))
+            .Content.ReadJsonAsync<BookingDto>();
+
+        var withoutExclude = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}&date={date:yyyy-MM-dd}");
+        (await withoutExclude.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!
+            .Should().NotContain(s => s.Start == new TimeOnly(11, 0));
+
+        var withExclude = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}" +
+            $"&date={date:yyyy-MM-dd}&excludeBookingId={booking!.Id}");
+
+        withExclude.StatusCode.Should().Be(HttpStatusCode.OK);
+        var slots = (await withExclude.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
+        slots.Should().Contain(s => s.Start == new TimeOnly(11, 0));
+    }
+
+    [Fact, TestCase("BK-072")]
+    public async Task GetSlots_ExcludeBookingId_ServiceWasDeactivatedSinceBooking_StillOffersSlots()
+    {
+        // R3: a service soft-deleted (IsActive = false) after the booking was made must not make the
+        // booking un-reschedulable — the exclude path takes duration straight from the booking's own
+        // stored BookingServices/Service and skips the "service is active" re-validation entirely.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var booking = await (await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null, null, null, null, null)))
+            .Content.ReadJsonAsync<BookingDto>();
+
+        var deactivate = await AuthedClient(owner.Token).DeleteAsync($"/api/services/{service.Id}");
+        deactivate.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}" +
+            $"&date={date:yyyy-MM-dd}&excludeBookingId={booking!.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
+        // Some slot must be offered at all (the whole working day isn't blocked), and specifically the
+        // booking's own 60-minute interval, now excluded from occupancy, must be among them.
+        slots.Should().Contain(s => s.Start == new TimeOnly(11, 0));
+        slots.Should().Contain(s => s.Start == new TimeOnly(9, 0));
+    }
+
+    [Fact, TestCase("BK-073")]
+    public async Task GetSlots_ExcludeBookingId_MasterLeftTheCompanySinceBooking_StillOffersSlots()
+    {
+        // Last review's finding: a master removed from CompanyMembers (fired) after the booking was made
+        // still has future bookings the owner must be able to reschedule. The exclude path deliberately
+        // skips the "master works in this company" membership check.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var booking = await (await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null, null, null, null, null)))
+            .Content.ReadJsonAsync<BookingDto>();
+
+        var members = await (await AuthedClient(owner.Token).GetAsync($"/api/companies/{company.Id}/members"))
+            .Content.ReadFromJsonAsync<List<MemberDto>>();
+        var memberId = members!.Single(m => m.UserId == master.UserId).Id;
+        var removeResponse = await AuthedClient(owner.Token).DeleteAsync($"/api/companies/{company.Id}/members/{memberId}");
+        removeResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var response = await AuthedClient(owner.Token).GetAsync(
+            $"/api/bookings/slots?companyId={company.Id}&masterId={master.UserId}&serviceId={service.Id}" +
+            $"&date={date:yyyy-MM-dd}&excludeBookingId={booking!.Id}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var slots = (await response.Content.ReadFromJsonAsync<List<TimeSlotResult>>())!;
+        slots.Should().Contain(s => s.Start == new TimeOnly(11, 0));
+        slots.Should().Contain(s => s.Start == new TimeOnly(9, 0));
     }
 
     // ── POST /api/bookings — целостность создания (US-13, US-05, T-B14) ─────
@@ -1175,5 +1382,50 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
         var response = await AuthedClient(clientUser.Token).GetAsync("/api/bookings/my");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ── US-65/Q5: booking horizon (ARCHITECTURE_CYCLE6.md §45.7) ───────────────────
+
+    [Fact, TestCase("BK-058")]
+    public async Task ClientBookingBeyondHorizon_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var horizonUpdate = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}", new { bookingHorizonDays = 1 });
+        horizonUpdate.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var farDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30);
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, farDate);
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, farDate, new TimeOnly(10, 0), null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "US-65/Q5: an online self-booking client may not book further ahead than the company's horizon");
+    }
+
+    [Fact, TestCase("BK-059")]
+    public async Task StaffManualBookingBeyondHorizon_Succeeds()
+    {
+        // Q5/§45.7 p.2: the horizon governs the public storefront only — staff recording a walk-in or a
+        // regular must always be able to book ahead of it.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var horizonUpdate = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}", new { bookingHorizonDays = 1 });
+        horizonUpdate.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var farDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30);
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, farDate);
+
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, farDate, new TimeOnly(10, 0),
+                null, "Walk-in guest", "+79990001234", null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 }

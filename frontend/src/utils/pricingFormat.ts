@@ -1,7 +1,7 @@
 /**
- * Formatting helpers for the public pricing page (ARCHITECTURE_CYCLE5.md §56.2): money always as
+ * Formatting helpers for the public pricing page (ARCHITECTURE_CYCLE7.md §56.2): money always as
  * `toLocaleString('ru-RU')` + ' ₽/мес', included limits as "до N" or "без ограничений" for `null`
- * (API_CONTRACT_CYCLE5.md §39 — `null` = без ограничения).
+ * (API_CONTRACT_CYCLE7.md §39 — `null` = без ограничения).
  */
 
 export function formatMonthlyPrice(pricePerMonth: number): string {

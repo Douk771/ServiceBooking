@@ -3,7 +3,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.Core.Entities;
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3, US-66) — whether/how an option is available on a plan.
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3, US-66) — whether/how an option is available on a plan.
 /// One row per (PlanConfigId, OptionId); an option with no row for a given plan is treated as
 /// <see cref="OptionAvailability.Unavailable"/> (the AdminPlanDto.options contract's own documented
 /// default for a missing rule).

@@ -11,7 +11,7 @@ using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
 
-/// <summary>contracts/openapi-cycle5.yaml tag billing-owner — the owner's own "Ваша подписка" screen
+/// <summary>contracts/cycle7/openapi.yaml tag billing-owner — the owner's own "Ваша подписка" screen
 /// (GET /api/billing/subscription) and their plan/option request (US-65, US-68, US-69, US-70).</summary>
 [ApiController]
 [Route("api/billing")]

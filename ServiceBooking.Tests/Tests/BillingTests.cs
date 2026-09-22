@@ -13,7 +13,7 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 5 (SPEC.md US-65, US-70; ARCHITECTURE_CYCLE5.md §49, §54.5) — the owner's own subscription
+/// QA cycle 7 (SPEC.md US-65, US-70; ARCHITECTURE_CYCLE7.md §49, §54.5) — the owner's own subscription
 /// screen and their plan/option request queue. Written from SPEC.md, independently of
 /// BillingController's/AdminBillingController's own implementation, per this cycle's QA brief
 /// ("Вызов 2"). Developers proposed these scenarios but did not write them (backend report) — this is

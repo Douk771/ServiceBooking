@@ -1,6 +1,6 @@
 namespace ServiceBooking.API.Services.Billing;
 
-/// <summary>Cycle 5, stage 5 (ARCHITECTURE_CYCLE5.md §44.2, US-66, US-76) — the known capability keys
+/// <summary>Cycle 7, stage 5 (ARCHITECTURE_CYCLE7.md §44.2, US-66, US-76) — the known capability keys
 /// an admin can pick for an option in the catalog editor. Free-text entry of an unknown key stays
 /// allowed on purpose (§44.2) — this list only drives the dropdown and the
 /// <c>AdminOptionDto.capabilityKnown</c> warning flag, it is not a foreign key.</summary>

@@ -157,6 +157,24 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         users.Should().NotContain(u => u.Id == controlUser.UserId);
     }
 
+    // US-61/Q4 (ARCHITECTURE_CYCLE6.md §48.4): the Russian-only restriction is about creating new data,
+    // not about finding data that already exists — admin phone search must still find an account whose
+    // number is not in the Russian format.
+    [Fact, TestCase("ADM-045")]
+    public async Task GetUsers_SearchByForeignPhoneNumber_FindsAccount()
+    {
+        var digits = new string(Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(6).ToArray()).PadRight(6, '2');
+        var foreignPhone = "447911" + digits;
+        await CreateRawAccountAsync(foreignPhone, "Password123!");
+
+        var admin = await LoginAsSuperAdminAsync();
+        var response = await AuthedClient(admin.Token).GetAsync($"/api/admin/users?search={foreignPhone}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var usersPage = await response.Content.ReadFromJsonAsync<PagedResult<AdminUserDto>>();
+        usersPage!.Items.Should().ContainSingle(u => u.Phone == foreignPhone);
+    }
+
     [Fact, TestCase("ADM-011")]
     public async Task UpdateRoles_AsSuperAdmin_ReplacesOldRolesWithNewOnes()
     {
@@ -316,7 +334,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("ADM-048")]
     public async Task LegacyOwnerSubscriptionEndpoint_ReturnsGoneWithReplacementRoute()
     {
-        // openapi-cycle5.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
+        // contracts/cycle7/openapi.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
         // favor of PUT /admin/billing-accounts/{accountId}/subscription and must answer 410 Gone,
         // unconditionally, without touching the body — regression coverage for AdminController's
         // LegacyEndpointGone so a future change can't silently resurrect the old write behavior.
@@ -334,7 +352,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("ADM-049")]
     public async Task LegacyNotificationChannelPaymentEndpoint_ReturnsGoneWithReplacementRoute()
     {
-        // Same retirement (openapi-cycle5.yaml, legacyChannelPayment) on the notification-channel side.
+        // Same retirement (contracts/cycle7/openapi.yaml, legacyChannelPayment) on the notification-channel side.
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
 
@@ -641,7 +659,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         created!.Id.Should().NotBeEmpty();
         created.Name.Should().Be(newPlan.Name);
         // US-24: photo quota/retention travel through the same create/update/GET cycle as every other
-        // tariff field — the response is the contract's AdminPlanDto projection (openapi-cycle5.yaml),
+        // tariff field — the response is the contract's AdminPlanDto projection (contracts/cycle7/openapi.yaml),
         // not the entity serialized directly.
         created.PhotoQuotaMb.Should().Be(newPlan.PhotoQuotaMb);
         created.PhotoRetention.Should().Be(newPlan.PhotoRetention);
@@ -653,8 +671,11 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         plans.Should().Contain(p => p.Id == created.Id);
 
         // Update.
+        // CYCLE5-BREAKING (compile-only swap — ARCHITECTURE_CYCLE5.md §44.7): PhotoRetention.Forever was
+        // removed along with the enum member. TwelveMonths keeps this update round-trip test meaningful;
+        // it no longer exercises "Forever" specifically, which QA should decide whether to cover another way.
         var updateDto = ToUpdateDto(created, name: "Updated Plan Name", pricePerMonth: 999.99m,
-            maxEmployees: 5, maxCompanies: 3, allowAnalytics: true, photoQuotaMb: 2048, photoRetention: PhotoRetention.Forever);
+            maxEmployees: 5, maxCompanies: 3, allowAnalytics: true, photoQuotaMb: 2048, photoRetention: PhotoRetention.TwelveMonths);
         var updateResponse = await adminClient.PutAsJsonAsync($"/api/admin/plans/{created.Id}", updateDto);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await updateResponse.Content.ReadJsonAsync<AdminPlanDto>();
@@ -664,7 +685,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         updated.MaxCompanies.Should().Be(3);
         updated.AllowAnalytics.Should().BeTrue();
         updated.PhotoQuotaMb.Should().Be(2048);
-        updated.PhotoRetention.Should().Be(PhotoRetention.Forever);
+        updated.PhotoRetention.Should().Be(PhotoRetention.TwelveMonths);
 
         // Soft-delete: sets IsActive = false but GetPlans does NOT filter by IsActive, so it still shows up.
         var deleteResponse = await adminClient.DeleteAsync($"/api/admin/plans/{created.Id}");
@@ -685,7 +706,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // ("UpdateSubscription_CalledTwice_UpdatesExistingRowRatherThanDuplicating") tested
     // AdminController.UpdateSubscription's own body-parsing/upsert behavior. That endpoint
     // (PUT /api/admin/owners/{ownerUserId}/subscription) is now contractually retired
-    // (openapi-cycle5.yaml, redaction 2.1) and answers 410 Gone unconditionally without touching its
+    // (contracts/cycle7/openapi.yaml, redaction 2.1) and answers 410 Gone unconditionally without touching its
     // body — see ADM-048 below for coverage of the retirement itself. Its replacement
     // (PUT /admin/billing-accounts/{accountId}/subscription) doesn't exist yet (cycle-07 backend
     // report), so there is currently no endpoint whose date-parsing/upsert behavior these two tests
@@ -695,7 +716,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     [Fact, TestCase("ADM-022")]
     public async Task GetSubscriptionHistory_AfterTwoChanges_ReturnsThemNewestFirstWithOldAndNewValues()
     {
-        // Written against SubscriptionChangeLogDto (openapi-cycle5.yaml)/GetSubscriptionHistory, which
+        // Written against SubscriptionChangeLogDto (contracts/cycle7/openapi.yaml)/GetSubscriptionHistory, which
         // is unaffected by the owners/subscription retirement above — only the write side (previously
         // AdminController.UpdateSubscription, now gone with no replacement yet) is gone. Nothing in the
         // running system currently writes SubscriptionChangeLog rows (flagged separately in the QA
@@ -755,10 +776,14 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         await SetSubscriptionAsync(firstCompany.Id, configId);
 
         var secondSlug = Unique("branch-");
+        // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.CreateCompanyAsync's own note):
+        // OwnerTerms is now required, and the response is an envelope, not a bare CompanyDto.
         var secondResponse = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto($"Branch {secondSlug}", secondSlug, null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto($"Branch {secondSlug}", secondSlug, null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
         secondResponse.StatusCode.Should().Be(HttpStatusCode.Created);
-        var secondCompany = (await secondResponse.Content.ReadFromJsonAsync<CompanyDto>())!;
+        var secondEnvelope = (await secondResponse.Content.ReadFromJsonAsync<CreateCompanyResponseDto>())!;
+        var secondCompany = secondEnvelope.Company;
 
         // Search matches company name/email (not owner email), so fetch a large page and pick the two by
         // id — pageSize=500 (cycle C pagination, US-49) comfortably covers what this shared-database
@@ -960,12 +985,12 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // carry a non-zero price. Both writes below (POST and PUT) must reject bad combinations instead of
     // letting the DB's partial unique index turn it into an unhandled 500.
     //
-    // Response bodies are read as AdminPlanDto/AdminPlansListDto (openapi-cycle5.yaml's actual response
+    // Response bodies are read as AdminPlanDto/AdminPlansListDto (contracts/cycle7/openapi.yaml's actual response
     // shape — highlights as an array), not SubscriptionPlanConfig — see ADM-020 and the QA report for
     // why deserializing straight into the EF entity is the wrong pattern here. Numbered ADM-050+ (not
     // ADM-044+, which collided with the pre-existing ADM-044 "GetUsers_SearchOfNonAsciiDigitsOnly").
 
-    // openapi-cycle5.yaml's AdminPlanInput has no `isSystemFree` property (additionalProperties: false)
+    // contracts/cycle7/openapi.yaml's AdminPlanInput has no `isSystemFree` property (additionalProperties: false)
     // — the flag moved to its own route, `PUT /api/admin/plans/{id}/system-free` (cycle-07 code review
     // finding B "isSystemFree removal"), specifically so an ordinary field edit through POST/PUT
     // /api/admin/plans can no longer accidentally flip the flag guarded by the partial unique index

@@ -12,11 +12,11 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 5 (SPEC.md US-71, US-72; API_CONTRACT_CYCLE5.md §39-40) — the public pricing catalog
+/// QA cycle 7 (SPEC.md US-71, US-72; API_CONTRACT_CYCLE7.md §39-40) — the public pricing catalog
 /// surface: <c>GET /api/pricing</c> (anonymous) and <c>GET /api/admin/pricing/preview</c> (SuperAdmin).
-/// Written from SPEC.md/API_CONTRACT_CYCLE5.md, independently of PricingController's/
+/// Written from SPEC.md/API_CONTRACT_CYCLE7.md, independently of PricingController's/
 /// PricingCatalogBuilder's own implementation, per this cycle's QA brief ("Вызов 2"). Only these two
-/// endpoints exist in this slice of cycle 5 (see git log on cycle/07-pricing-model-rework) — everything
+/// endpoints exist in this slice of cycle 7 (see git log on cycle/07-pricing-model-rework) — everything
 /// else in SPEC.md's Эпик 1/3 (billing account, /api/billing/subscription, admin CRUD of the catalog,
 /// company transfer, US-64/65/66/67/68/69/70/73/74/76/77) has no implementation yet and is out of scope
 /// for this test pass; it is flagged separately in the QA report, not tested here.
@@ -28,7 +28,7 @@ namespace ServiceBooking.Tests.Tests;
 /// </summary>
 public class PricingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
-    // ── Seeding helpers (no admin write endpoint exists yet in this slice, ARCHITECTURE_CYCLE5.md §58
+    // ── Seeding helpers (no admin write endpoint exists yet in this slice, ARCHITECTURE_CYCLE7.md §58
     //    B5-2 — so tests write catalog rows straight to the DB, the same convention ApiTestBase already
     //    uses for CreateTestPlanConfigAsync) ──────────────────────────────────────────────────────────
 
@@ -128,7 +128,7 @@ public class PricingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.3): AccountSubscriptionOptions now references
+        // Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §43.3): AccountSubscriptionOptions now references
         // SubscriptionOptions with FK Restrict (an account's paid quantity can't dangle if its option
         // row vanished) — other suites' raw-row seeding (e.g. NotificationTestBase.EnsureWhatsAppPaidAsync)
         // can leave rows here, which would otherwise make the blanket DELETE below fail.
@@ -586,7 +586,7 @@ public class PricingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var second = await GetPublicPricingOkAsync();
         second.Plans.Should().ContainSingle().Which.Name.Should().Be("Исходное имя",
-            "цикл 5 полагается на 60-секундный кеш (§6/§48), пока цикл не истёк, обычный HTTP-запрос " +
+            "цикл 7 полагается на 60-секундный кеш (§6/§48), пока цикл не истёк, обычный HTTP-запрос " +
             "не должен видеть только что записанное в БД изменение");
     }
 

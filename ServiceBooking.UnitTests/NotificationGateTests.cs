@@ -25,10 +25,13 @@ public class NotificationGateTests
         EffectivePlan? plan = null, NotificationType type = NotificationType.Reminder,
         bool hasAssignment = true, NotificationChannel? channel = null,
         CompanyNotificationSettings? settings = null, bool optedOut = false,
-        DateTime? visitStart = null, bool channelIsFunded = true) =>
+        DateTime? visitStart = null, bool channelIsFunded = true,
+        ProviderDeliveryConsentMode providerDeliveryConsentMode = ProviderDeliveryConsentMode.AccountsOnly,
+        bool? recipientHasProviderDeliveryConsent = null) =>
         NotificationGate.Evaluate(
             plan ?? AllowingPlan, type, hasAssignment, channel ?? PaidChannel(), settings ?? DefaultSettings(),
-            optedOut, Now, visitStart ?? Now.AddDays(1), channelIsFunded);
+            optedOut, Now, visitStart ?? Now.AddDays(1), channelIsFunded,
+            providerDeliveryConsentMode, recipientHasProviderDeliveryConsent);
 
     [Fact]
     public void Evaluate_EverythingFine_Allowed()
@@ -148,5 +151,102 @@ public class NotificationGateTests
         // Missing CompanyNotificationSettings row = defaults (§23.3): all types enabled, MinLeadMinutes 120.
         var result = Evaluate(settings: null, visitStart: Now.AddDays(1));
         result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
+    }
+
+    // ── T-24: ProviderDeliveryConsentMode (ARCHITECTURE_CYCLE5.md §52.3) ────────────────────────────
+
+    [Fact]
+    public void Evaluate_AccountsOnly_GuestRecipient_NeverBlocked()
+    {
+        // recipientHasProviderDeliveryConsent: null = "no account" — nobody asked a guest for this
+        // consent, so AccountsOnly (the shipped default) treats them as covered by the contractual basis.
+        var result = Evaluate(providerDeliveryConsentMode: ProviderDeliveryConsentMode.AccountsOnly,
+            recipientHasProviderDeliveryConsent: null);
+        result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
+    }
+
+    [Fact]
+    public void Evaluate_AccountsOnly_AccountHolderWithoutGrant_Blocked()
+    {
+        var result = Evaluate(providerDeliveryConsentMode: ProviderDeliveryConsentMode.AccountsOnly,
+            recipientHasProviderDeliveryConsent: false);
+        result.Outcome.Should().Be(NotificationGateOutcome.Blocked);
+        result.Reason.Should().Be(NotificationReason.NoProviderDeliveryConsent);
+    }
+
+    [Fact]
+    public void Evaluate_AccountsOnly_AccountHolderWithGrant_Allowed()
+    {
+        var result = Evaluate(providerDeliveryConsentMode: ProviderDeliveryConsentMode.AccountsOnly,
+            recipientHasProviderDeliveryConsent: true);
+        result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
+    }
+
+    [Fact]
+    public void Evaluate_Strict_GuestRecipient_Blocked()
+    {
+        // §52.4's "ужесточение": Strict has no AccountsOnly carve-out for guests — they structurally
+        // cannot satisfy "has an explicit, current grant".
+        var result = Evaluate(providerDeliveryConsentMode: ProviderDeliveryConsentMode.Strict,
+            recipientHasProviderDeliveryConsent: null);
+        result.Outcome.Should().Be(NotificationGateOutcome.Blocked);
+        result.Reason.Should().Be(NotificationReason.NoProviderDeliveryConsent);
+    }
+
+    [Fact]
+    public void Evaluate_Strict_AccountHolderWithGrant_Allowed()
+    {
+        var result = Evaluate(providerDeliveryConsentMode: ProviderDeliveryConsentMode.Strict,
+            recipientHasProviderDeliveryConsent: true);
+        result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
+    }
+
+    [Fact]
+    public void Evaluate_Strict_AccountHolderWithoutGrant_Blocked()
+    {
+        var result = Evaluate(providerDeliveryConsentMode: ProviderDeliveryConsentMode.Strict,
+            recipientHasProviderDeliveryConsent: false);
+        result.Outcome.Should().Be(NotificationGateOutcome.Blocked);
+        result.Reason.Should().Be(NotificationReason.NoProviderDeliveryConsent);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Evaluate_Off_NeverBlocksRegardlessOfConsentState(bool? hasConsent)
+    {
+        // §52.4 step 1: Off relies on named disclosure alone — the purpose is never checked at queue time
+        // under this value, for a guest OR an account holder who explicitly withheld/revoked it.
+        var result = Evaluate(providerDeliveryConsentMode: ProviderDeliveryConsentMode.Off,
+            recipientHasProviderDeliveryConsent: hasConsent);
+        result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
+    }
+
+    [Fact]
+    public void Evaluate_DefaultMode_IsAccountsOnly()
+    {
+        // The Evaluate helper's own default mirrors NotificationGate.Evaluate's own default parameter
+        // value — pins that the shipped default really is AccountsOnly (ARCHITECTURE_CYCLE5.md §52.3.1),
+        // not merely this test file's assumption about it.
+        var blockedResult = NotificationGate.Evaluate(
+            AllowingPlan, NotificationType.Reminder, companyHasAssignment: true, PaidChannel(), DefaultSettings(),
+            recipientOptedOut: false, Now, Now.AddDays(1), channelIsFunded: true, recipientHasProviderDeliveryConsent: false);
+        blockedResult.Reason.Should().Be(NotificationReason.NoProviderDeliveryConsent);
+
+        var allowedResult = NotificationGate.Evaluate(
+            AllowingPlan, NotificationType.Reminder, companyHasAssignment: true, PaidChannel(), DefaultSettings(),
+            recipientOptedOut: false, Now, Now.AddDays(1), channelIsFunded: true, recipientHasProviderDeliveryConsent: null);
+        allowedResult.Outcome.Should().Be(NotificationGateOutcome.Allowed);
+    }
+
+    [Fact]
+    public void Evaluate_RecipientOptedOut_TakesPrecedenceOverMissingProviderDeliveryConsent()
+    {
+        // Ordering matters for which single reason ends up on the row: opt-out (an unconditional refusal
+        // channel, US-33) is checked first, same as it was checked before every other rule in this gate.
+        var result = Evaluate(optedOut: true, providerDeliveryConsentMode: ProviderDeliveryConsentMode.Strict,
+            recipientHasProviderDeliveryConsent: false);
+        result.Reason.Should().Be(NotificationReason.RecipientOptedOut);
     }
 }

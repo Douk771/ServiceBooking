@@ -6,6 +6,7 @@ import { adminApi, type AdminUser, type AdminCompany } from '../api/admin'
 import { PlansTab } from './admin/PlansTab'
 import { NotificationsAdminTab } from './admin/NotificationsAdminTab'
 import { BillingAccountsAdminTab } from './admin/BillingAccountsAdminTab'
+import { SubjectRequestsTab } from './admin/SubjectRequestsTab'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -15,6 +16,7 @@ import { Icon } from '../components/ui/Icon'
 import { Pagination } from '../components/ui/Pagination'
 import { getCompanyAdminErrorMessage } from '../utils/companyAdminError'
 import { formatPhone } from '../utils/phone'
+import { formatBookingServiceNames } from '../utils/bookingServices'
 
 // ── Stats tab ─────────────────────────────────────────────────────────────────
 
@@ -48,6 +50,12 @@ function StatsTab() {
     </div>
   )
 }
+
+// ── Account subscription modal (owner-scoped) — REMOVED (cycle-07): superseded by
+// AssignSubscriptionModal in BillingAccountsAdminTab.tsx, which posts to the account-scoped
+// PUT /admin/billing-accounts/{accountId}/subscription. This version called the now-410-Gone
+// PUT /admin/owners/{id}/subscription (API_CONTRACT_CYCLE7.md §54) and was dead code kept only
+// by the merge; deleting it here rather than reviving the dead call.
 
 function ChangeOwnerModal({ company, onClose }: { company: AdminCompany; onClose: () => void }) {
   const qc = useQueryClient()
@@ -480,7 +488,7 @@ function AllBookingsTab() {
                   <span className="text-xs text-muted">{b.companyName}</span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">
-                  {b.serviceName} · {b.masterName} · {b.date} {b.startTime.slice(0, 5)}
+                  {formatBookingServiceNames(b)} · {b.masterName} · {b.date} {b.startTime.slice(0, 5)}
                 </p>
                 {b.clientPhone && (
                   <p className="text-xs text-muted flex items-center gap-1">
@@ -502,7 +510,15 @@ function AllBookingsTab() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'stats' | 'companies' | 'users' | 'bookings' | 'plans' | 'billing' | 'notifications'
+type Tab =
+  | 'stats'
+  | 'companies'
+  | 'users'
+  | 'bookings'
+  | 'plans'
+  | 'billing'
+  | 'notifications'
+  | 'subject-requests'
 
 export function AdminPage() {
   const [tab, setTab] = useState<Tab>('stats')
@@ -515,6 +531,7 @@ export function AdminPage() {
     { key: 'plans', label: 'Тарифы' },
     { key: 'billing', label: 'Биллинг-аккаунты' },
     { key: 'notifications', label: 'Каналы уведомлений' },
+    { key: 'subject-requests', label: 'Обращения субъектов' },
   ]
 
   return (
@@ -538,6 +555,7 @@ export function AdminPage() {
       {tab === 'plans' && <PlansTab />}
       {tab === 'billing' && <BillingAccountsAdminTab />}
       {tab === 'notifications' && <NotificationsAdminTab />}
+      {tab === 'subject-requests' && <SubjectRequestsTab />}
     </div>
   )
 }

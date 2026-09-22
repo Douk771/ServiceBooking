@@ -69,6 +69,11 @@ services:
       - Notifications__PartnerToken=${NOTIFICATIONS_PARTNER_TOKEN:-}
       - Notifications__WebhookToken=${NOTIFICATIONS_WEBHOOK_TOKEN:-}
       - Notifications__UnsubscribeKey=${NOTIFICATIONS_UNSUBSCRIBE_KEY:-}
+      # Retention (ARCHITECTURE_CYCLE5.md §49, DEPLOY.md §11.4): appsettings.json bakes DryRun=true —
+      # deletion-by-age rules only log what they WOULD delete until this is deliberately flipped to
+      # false on the host, per the two-run procedure in DEPLOY.md. Empty/unset keeps the baked-in
+      # default (dry run) — same fail-safe shape as NOTIFICATIONS_PROVIDER above.
+      - ScheduledTasks__data-retention__DryRun=${RETENTION_DRY_RUN:-true}
     volumes:
       - api_uploads:/app/wwwroot/uploads          # public class: company logos, avatars, service images
       - api_private_uploads:/app/private-uploads  # private class: client-note photos — back this up separately, it holds personal data

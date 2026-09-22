@@ -1,7 +1,7 @@
 namespace ServiceBooking.Core.Entities;
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3) — audit trail for changing who manages a company
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3) — audit trail for changing who manages a company
 /// (US-64 p.4), independent of <see cref="SubscriptionChangeLog"/>: a stand-alone change of
 /// responsible owner writes nothing to the subscription log — that's the whole point (money isn't
 /// touched). <see cref="WithTransfer"/> distinguishes that case from an owner change that happens as

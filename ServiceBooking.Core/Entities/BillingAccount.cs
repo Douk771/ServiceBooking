@@ -1,7 +1,7 @@
 namespace ServiceBooking.Core.Entities;
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §43.2, §43.3) — the billing unit: "who pays and by which rules
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §43.2, §43.3) — the billing unit: "who pays and by which rules
 /// companies live", as opposed to <see cref="Company.OwnerUserId"/> which answers "who manages/sees
 /// it". An account is provisioned on demand (not at registration) — see
 /// <c>BillingAccountProvisioner.EnsureAccountAsync</c>, a later slice of this cycle.
@@ -26,9 +26,9 @@ public class BillingAccount
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 
-    // Cycle 5, stage 5 (ARCHITECTURE_CYCLE5.md §49, US-70) — the owner's single pending request to
+    // Cycle 7, stage 5 (ARCHITECTURE_CYCLE7.md §49, US-70) — the owner's single pending request to
     // change plan/options. Deliberately modeled as a handful of nullable columns on the account rather
-    // than the separate SubscriptionRequest/SubscriptionRequestItem tables ARCHITECTURE_CYCLE5.md §43.3
+    // than the separate SubscriptionRequest/SubscriptionRequestItem tables ARCHITECTURE_CYCLE7.md §43.3
     // sketches: "at most one pending request per account" then falls out of "these columns are either
     // all null or all set" instead of a partial unique index, and a resubmission is a plain overwrite
     // (contract requires this anyway — 200, not 201). This is a deliberate, reported deviation — see

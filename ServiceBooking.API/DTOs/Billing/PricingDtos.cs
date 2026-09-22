@@ -1,7 +1,7 @@
 namespace ServiceBooking.API.DTOs.Billing;
 
-/// <summary>API_CONTRACT_CYCLE5.md §38.1, OpenAPI PublicPricingDto — the only anonymous response of
-/// cycle 5 (GET /api/pricing, GET /api/admin/pricing/preview).</summary>
+/// <summary>API_CONTRACT_CYCLE7.md §38.1, OpenAPI PublicPricingDto — the only anonymous response of
+/// cycle 7 (GET /api/pricing, GET /api/admin/pricing/preview).</summary>
 public record PublicPricingDto(
     string Version,
     string Currency,

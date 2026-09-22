@@ -50,4 +50,30 @@ public static class PhoneNormalizer
         canonical = Normalize(raw);
         return IsValid(canonical);
     }
+
+    /// <summary>
+    /// Temporary (cycle 6, `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q4) country policy: only the Russian number format is accepted
+    /// for NEW data. Lifting this restriction later is a one-line change to this predicate alone — no
+    /// caller is touched (ARCHITECTURE_CYCLE6.md §48.1). Deliberately a separate predicate from
+    /// <see cref="IsValid"/> (the permanent E.164 technical bound, also relied on by the historical
+    /// NormalizePhoneNumbers migration and by non-input call sites like GREEN-API's own number and
+    /// phone-based search) rather than folded into it — see §48.1 for why conflating the two would be
+    /// wrong. Known accepted consequence: Kazakhstan also uses the +7 country code and a Kazakh number
+    /// (+7 7XX...) passes this check too; distinguishing them needs a maintained area-code directory,
+    /// disproportionate for a temporary restriction.
+    /// </summary>
+    public static bool IsRussian(string canonical) => canonical.Length == 11 && canonical[0] == '7';
+
+    /// <summary>
+    /// Normalize + E.164 + the temporary Russian-only country policy, in one call — this is what every
+    /// NEW-data user-input entry point (registration, phone change, adding a staff member, guest
+    /// booking) calls instead of <see cref="TryNormalize"/>. Existing data, login, notes, search and
+    /// GREEN-API's own number keep calling <see cref="TryNormalize"/>/<see cref="Normalize"/> unchanged
+    /// (§48.2) — this restriction is about creating new rows, not about anything that already exists.
+    /// </summary>
+    public static bool TryNormalizeRussian(string? raw, out string canonical)
+    {
+        canonical = Normalize(raw);
+        return IsValid(canonical) && IsRussian(canonical);
+    }
 }

@@ -11,7 +11,7 @@ using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
 
-/// <summary>contracts/openapi-cycle5.yaml tag company-transfer (US-77, US-64 p.4) — moving a company
+/// <summary>contracts/cycle7/openapi.yaml tag company-transfer (US-77, US-64 p.4) — moving a company
 /// to another billing account, and the audit trail of who manages it. Wires the already-built
 /// <see cref="CompanyTransferService"/>/<see cref="CompanyTransferCalculator"/> to HTTP;
 /// <c>PUT /api/admin/companies/{id}/owner</c> itself already lives on <see cref="AdminController"/>

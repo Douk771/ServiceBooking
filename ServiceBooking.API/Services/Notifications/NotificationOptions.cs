@@ -67,10 +67,32 @@ public sealed class NotificationOptions
     /// canonical phone numbers and logs everything else as if it were the logging stub.</summary>
     public string[] AllowedRecipients { get; set; } = [];
 
+    /// <summary>T-24 (ARCHITECTURE_CYCLE5.md §52.3) — raw string, parsed by
+    /// <see cref="Core.Enums.ProviderDeliveryConsentMode"/> and validated at startup by
+    /// <see cref="DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode"/> (an unrecognized value
+    /// fails loud, same convention as <see cref="Provider"/>). Default matches the customer's decision
+    /// (§52.3.1) — "AccountsOnly" is not a placeholder, it is the value this cycle actually ships with.</summary>
+    public string ProviderDeliveryConsent { get; set; } = "AccountsOnly";
+
     public sealed class GreenApiOptions
     {
         public string ApiUrl { get; set; } = "https://api.green-api.com";
         public int TimeoutSeconds { get; set; } = 15;
+
+        /// <summary>US-71/T-24-adjacent (ARCHITECTURE_CYCLE5.md §52.1) — ч. 5 ст. 18 152-ФЗ requires
+        /// personal data to stay on servers located in the RF; GREEN-API instances can be provisioned in
+        /// different countries. Empty by design (the operator must set it deliberately) — validated by
+        /// <see cref="DeploymentSafetyChecks.ValidateGreenApiServerCountry"/>, which fails startup if
+        /// <see cref="InstanceCreationEnabled"/> is true and this is empty, rather than letting the
+        /// provider pick silently.</summary>
+        public string ServerCountry { get; set; } = "";
+
+        /// <summary>ARCHITECTURE_CYCLE5.md §52.1 — ПЛ1 (does the partner API even expose a country
+        /// parameter) was not confirmed at the time this flag was wired in; real instance creation stays
+        /// OFF by default until it is. <c>false</c> makes <c>POST /api/notification-channels/{id}/connect</c>
+        /// answer 409 instead of calling the provider at all (API_CONTRACT_CYCLE5.md §50.3) — a deliberate
+        /// stop, not a silent fallback to the wrong region.</summary>
+        public bool InstanceCreationEnabled { get; set; }
 
         /// <summary><c>"IPv4First"</c> (default, §28.1) or <c>"System"</c> — the emergency escape hatch
         /// that fully disables the custom <c>ConnectCallback</c> without a rebuild.</summary>

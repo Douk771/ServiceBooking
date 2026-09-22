@@ -1,12 +1,12 @@
 import { api } from './client'
-import type { components } from '../types/api-cycle5.generated'
+import type { components } from '../types/api-cycle7.generated'
 
 /**
- * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE5.md §41,
- * contracts/openapi-cycle5.yaml OwnerSubscriptionDto and friends.
+ * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
+ * contracts/cycle7/openapi.yaml OwnerSubscriptionDto and friends.
  *
- * Types are re-exported from the generated `../types/api-cycle5.generated` (openapi-typescript
- * against contracts/openapi-cycle5.yaml, `npm run types:api`) rather than hand-written — see N22:
+ * Types are re-exported from the generated `../types/api-cycle7.generated` (openapi-typescript
+ * against contracts/cycle7/openapi.yaml, `npm run types:api`) rather than hand-written — see N22:
  * the hand-written copy that used to live here had drifted from the contract (invented
  * `SubscriptionStatus: 'Inactive'` instead of the real `'Free'`, and `'Purchasable'` instead of
  * `'Extra'` for OptionAvailability).

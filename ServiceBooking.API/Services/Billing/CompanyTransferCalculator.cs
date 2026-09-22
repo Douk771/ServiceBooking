@@ -1,7 +1,7 @@
 namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §51.1, §51.2) — the pure, DB-free rules behind
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §51.1, §51.2) — the pure, DB-free rules behind
 /// <see cref="CompanyTransferService"/>: whether a proposed new owner counts as "linked" to the
 /// receiving account, and the seat-overflow formula that accounts for the +1 seat a not-yet-a-member
 /// new owner would occupy (risk A8). Kept separate from the service so both can be unit-tested without

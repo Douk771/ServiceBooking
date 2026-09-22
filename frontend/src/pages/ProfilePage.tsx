@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { Link } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { format } from 'date-fns'
@@ -13,7 +13,8 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
-import { formatPhone } from '../utils/phone'
+import { PhoneInput } from '../components/ui/PhoneInput'
+import { formatPhone, isRussianPhone } from '../utils/phone'
 import { getUploadErrorMessage } from '../utils/uploadError'
 
 const roleLabel: Record<string, string> = {
@@ -211,11 +212,12 @@ export function ProfilePage() {
     handleSubmit: hsPhone,
     reset: resetPhone,
     setError: setPhoneError,
+    control: phoneControl,
     formState: { errors: phoneErrors },
   } = useForm<{
     currentPassword: string
     newPhone: string
-  }>()
+  }>({ defaultValues: { newPhone: '' } })
 
   const phoneMut = useMutation({
     mutationFn: (d: { currentPassword: string; newPhone: string }) =>
@@ -371,12 +373,22 @@ export function ProfilePage() {
       <Card className="p-[26px] mt-[18px]">
         <h2 className="text-[15.5px] font-semibold text-ink mb-[18px]">Смена телефона</h2>
         <form onSubmit={hsPhone((d) => phoneMut.mutate(d))} className="flex flex-col gap-4">
-          <Input
-            label="Новый телефон"
-            type="tel"
-            placeholder="+7 999 000 00 00"
-            error={phoneErrors.newPhone?.message}
-            {...regPhone('newPhone', { required: 'Введите телефон' })}
+          <Controller
+            name="newPhone"
+            control={phoneControl}
+            rules={{
+              required: 'Введите телефон',
+              validate: (v) =>
+                isRussianPhone(v) || 'Пока принимаем только российские номера, в формате +7 (900) 000-00-00',
+            }}
+            render={({ field }) => (
+              <PhoneInput
+                label="Новый телефон"
+                error={phoneErrors.newPhone?.message}
+                value={field.value}
+                onChange={field.onChange}
+              />
+            )}
           />
           <Input
             label="Текущий пароль"
@@ -395,16 +407,29 @@ export function ProfilePage() {
         </form>
       </Card>
 
+      {/* Consents (US-68, T5-F3) */}
+      <Card className="p-[26px] mt-[18px]">
+        <h2 className="text-[15.5px] font-semibold text-ink mb-2">Мои согласия</h2>
+        <p className="text-sm text-ink-soft mb-4">
+          Согласие на обработку персональных данных — отдельный документ. Посмотреть, что вы отмечали, и отозвать
+          любую цель можно на отдельной странице.
+        </p>
+        <Link to="/profile/consents">
+          <Button variant="secondary">Мои согласия</Button>
+        </Link>
+      </Card>
+
       {/* Data export (US-38) */}
       <Card className="p-[26px] mt-[18px]">
         <h2 className="text-[15.5px] font-semibold text-ink mb-3">Мои данные</h2>
         <p className="text-sm text-ink-soft mb-1.5">
-          В файл войдут: профиль, история согласий, компании, где вы состоите, ваши записи и отзывы, а также перечень
-          заметок и фотографий о вас (без содержимого).
+          В файл войдут: профиль, история согласий, компании, где вы состоите, ваши записи и отзывы, журнал
+          отправленных вам уведомлений, статус отписки, а также перечень заметок и фотографий о вас (без содержимого).
         </p>
         <p className="text-sm text-ink-soft mb-4">
-          В файл <strong>не войдут</strong>: текст заметок сотрудников салона о вас и содержимое фотографий, загруженных
-          салоном, — это результат работы салона, а не ваши данные. Запросить их можно у салона напрямую.
+          Текст заметок сотрудников салона о вас и содержимое фотографий, загруженных салоном, ведёт сама компания —
+          она отдельный оператор этих данных. В файле вы найдёте перечень таких компаний с их контактами: запрос об
+          этих данных направляйте напрямую им.
         </p>
         {exportError && <p className="text-sm text-danger mb-3">{exportError}</p>}
         <Button variant="secondary" loading={exportMut.isPending} onClick={() => exportMut.mutate()}>

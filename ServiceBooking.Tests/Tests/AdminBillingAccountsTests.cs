@@ -17,7 +17,7 @@ namespace ServiceBooking.Tests.Tests;
 /// functional coverage at all before this file, which is exactly how a real crash on migrated data
 /// (an account with a paid option but no <see cref="AccountSubscription"/> row — the seed's own
 /// "quantity option without a subscription" shape, see <see cref="AdminBillingController"/>'s BLK-2
-/// fix) went unnoticed by 498 otherwise-green tests. Written from SPEC.md/ARCHITECTURE_CYCLE5.md §43.4
+/// fix) went unnoticed by 498 otherwise-green tests. Written from SPEC.md/ARCHITECTURE_CYCLE7.md §43.4
 /// (five subscription-status states) and the QA brief's own root-cause description, independently of
 /// the controller's implementation.
 /// </summary>

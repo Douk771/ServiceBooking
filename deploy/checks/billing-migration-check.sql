@@ -1,6 +1,6 @@
 -- deploy/checks/billing-migration-check.sql
 --
--- Cycle 5, stage 6 (ARCHITECTURE_CYCLE5.md §54.5, US-73's acceptance criterion: "no company loses any
+-- Cycle 7, stage 6 (ARCHITECTURE_CYCLE7.md §54.5, US-73's acceptance criterion: "no company loses any
 -- capability by moving to the account-level billing model"). Read-only, one SELECT per company,
 -- comparing "as it was" (the old per-company rule: a subscription looked up by the company's OWNER,
 -- limits applied per company) against "as it is now" (the new account rule: a subscription looked up

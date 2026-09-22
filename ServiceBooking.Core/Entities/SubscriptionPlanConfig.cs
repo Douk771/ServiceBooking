@@ -33,7 +33,7 @@ public class SubscriptionPlanConfig
     public int NotifyDaysBefore { get; set; } = 7;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // Cycle 5 additions (ARCHITECTURE_CYCLE5.md §43.4) for the public/admin pricing screen (§48).
+    // Cycle 7 additions (ARCHITECTURE_CYCLE7.md §43.4) for the public/admin pricing screen (§48).
     // Newline-separated bullet points shown on the public price card; PricingCatalogCache splits,
     // trims and caps this at 5 lines to build PublicPlanDto.highlights.
     public string? Highlights { get; set; }

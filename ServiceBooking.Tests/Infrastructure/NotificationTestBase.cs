@@ -18,31 +18,41 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// and this cycle's channel/webhook/unsubscribe surface needs a host with different
 /// <c>Notifications:*</c> settings (see <see cref="NotificationTestFactory"/>'s own doc comment).
 ///
-/// It IS, however, in the same <c>[Collection("Api")]</c> as <see cref="ApiTestBase"/> — found missing
-/// by the coordinator's own review of this QA pass, and load-bearing for two separate reasons, not one:
-/// (1) <see cref="TestDatabaseFixture"/> wipes "servicebooking_test" exactly once, the first time ANY
-/// test in the "Api" collection runs — a class outside every collection never triggers that wipe, so
-/// rows accumulate silently across repeated `dotnet test` invocations (confirmed: a webhook test using a
-/// literal, non-unique <c>ProviderMessageId</c> picked up a SEVEN-deep pile of same-named rows from prior
-/// runs and updated the wrong one — see NotificationWebhookUnsubscribeTests.cs's own fix for the second,
-/// independent line of defense against that); (2) xUnit only guarantees a test class doesn't run
-/// concurrently with anything ELSE touching the same collection's fixture — a class outside every
-/// collection is free to run in xUnit's default parallel bucket WHILE "Api"'s <c>TestDatabaseFixture</c>
-/// is still mid-<c>EnsureDeletedAsync</c>+migrate, racing this factory's own independent Program.cs
-/// migrate call against the SAME physical database (the exact "index/column already exists" class of
-/// failure backend-developer reported before this cycle). The fixture parameter itself is intentionally
-/// unused beyond establishing that dependency — this class still boots its OWN <see cref="NotificationTestFactory"/>
-/// per instance (different <c>Notifications:*</c> settings), never <c>fixture.Factory</c>.
+/// ARCHITECTURE_CYCLE8_PHASE2.md §91/§92.1: one <see cref="TestDatabaseFixture"/> instance per test
+/// class (<c>IClassFixture</c>, not phase 1's <c>ICollectionFixture</c>/<c>[Collection("Api")]</c>) — the
+/// fixture guarantees this class' own database exists and is migrated before <see cref="NotificationTestFactory"/>
+/// boots against it. This class still boots its OWN <see cref="NotificationTestFactory"/> per instance
+/// (different <c>Notifications:*</c> settings), never <c>fixture.Factory</c> — the fixture is used only
+/// for its connection string, class slot and <see cref="TestData"/> generator.
 /// </summary>
-[Collection("Api")]
-public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsyncDisposable
+public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>, IAsyncDisposable
 {
-    // Referenced only to document/enforce the collection dependency above (see the class doc comment) —
-    // deliberately never used to obtain a factory or connection string; every method below talks to its
-    // own NotificationTestFactory instead.
-    private readonly TestDatabaseFixture _collectionFixture = fixture;
+    protected readonly TestDatabaseFixture Fixture;
 
-    protected readonly NotificationTestFactory Factory = new();
+    /// <summary>This class' database connection string — for the rare subclass that needs to build a
+    /// second, dedicated host against the same database.</summary>
+    protected readonly string ConnectionString;
+
+    protected readonly NotificationTestFactory Factory;
+
+    protected NotificationTestBase(TestDatabaseFixture fixture)
+    {
+        Fixture = fixture;
+        ConnectionString = fixture.ConnectionString;
+        Factory = Boot(new NotificationTestFactory(fixture.ConnectionString));
+        // T9 M3: records the slot↔class pairing this fixture's own doc comment promised — see
+        // TestDatabaseFixture.RecordTestClass.
+        fixture.RecordTestClass(GetType().Name);
+    }
+
+    /// <summary>Boots the host eagerly (rather than lazily on first <see cref="WebApplicationFactory{TEntryPoint}.CreateClient"/>)
+    /// so <see cref="NotificationTestFactory.Identity"/> — populated inside <c>ConfigureWebHost</c> — is
+    /// always available by the time <see cref="LoginAsSuperAdminAsync"/> reads it.</summary>
+    private static NotificationTestFactory Boot(NotificationTestFactory factory)
+    {
+        _ = factory.Services;
+        return factory;
+    }
 
     protected HttpClient AnonymousClient() => Factory.CreateClient();
 
@@ -53,20 +63,25 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         return client;
     }
 
-    protected static string Unique(string prefix) => $"{prefix}{Guid.NewGuid():N}"[..Math.Min(prefix.Length + 20, prefix.Length + 12)];
+    /// <summary>Delegates to this class' own <see cref="TestData"/> — see <see cref="ApiTestBase.Unique"/>'s
+    /// own note on why this is no longer static (§94, Q12).</summary>
+    protected string Unique(string prefix) => Fixture.Data.Name(prefix);
 
-    protected static string UniquePhone()
-    {
-        var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(10).ToArray();
-        var suffix = new string(digits).PadRight(10, '0');
-        return $"+79{suffix[..9]}";
-    }
+    protected string UniquePhone() => Fixture.Data.Phone();
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): Legal object
+    // read from the live manifest instead of a bool.
     protected async Task<AuthResponseDto> RegisterAsync(string? phone = null)
     {
         phone ??= UniquePhone();
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        var legal = new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
+
         var response = await AnonymousClient().PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "Owner", phone, "Password123!", null, true));
+            new RegisterDto("Test", "Owner", phone, "Password123!", null, legal));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }
@@ -78,7 +93,8 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }
 
-    protected Task<AuthResponseDto> LoginAsSuperAdminAsync() => LoginAsync("+70000000001", "SuperAdmin123!");
+    protected Task<AuthResponseDto> LoginAsSuperAdminAsync() =>
+        LoginAsync(Factory.Identity.SuperAdminPhone, Factory.Identity.SuperAdminPassword);
 
     private int? _anyCityId;
     protected async Task<int> AnyCityIdAsync()
@@ -104,14 +120,21 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         return await db.Cities.Where(c => c.Name == "Новосибирск").Select(c => c.Id).FirstAsync();
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.CreateCompanyAsync's own note):
+    // OwnerTerms is now required, and the response is an envelope, not a bare CompanyDto.
     protected async Task<CompanyDto> CreateCompanyAsync(string ownerToken, int? cityId = null, string? slug = null)
     {
         slug ??= Unique("company-");
         var client = AuthedClient(ownerToken);
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var ownerTermsVersion = provider.Current!.Get(LegalDocumentType.TermsOwner)!.Version;
         var response = await client.PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto($"Company {slug}", slug, null, null, null, null, cityId ?? await AnyCityIdAsync(), null, true));
+            new CreateCompanyDto($"Company {slug}", slug, null, null, null, null, cityId ?? await AnyCityIdAsync(), null, true,
+                OwnerTerms: new OwnerTermsDto(ownerTermsVersion)));
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<CompanyDto>())!;
+        var envelope = await response.Content.ReadFromJsonAsync<CreateCompanyResponseDto>();
+        return envelope!.Company;
     }
 
     /// <summary>Registers an owner and gives them a first company (an owner always needs ≥1 company to
@@ -141,7 +164,7 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         };
         db.SubscriptionPlanConfigs.Add(plan);
 
-        // Cycle 5 (ARCHITECTURE_CYCLE5.md §45.1): money is read through BillingAccountId now, so a
+        // Cycle 7 (ARCHITECTURE_CYCLE7.md §45.1): money is read through BillingAccountId now, so a
         // helper that writes the AccountSubscription row directly must also make sure the owner has an
         // account (and that any of their companies already created point at it) — mirrors
         // ApiTestBase.EnsureBillingAccountAsync.
@@ -249,7 +272,7 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
     }
 
     /// <summary>
-    /// Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §47.1) — funding is no longer read off the channel's
+    /// Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §47.1) — funding is no longer read off the channel's
     /// own PaidUntilUtc; it comes from the account's paid <c>notifications.whatsapp</c> quantity
     /// (<see cref="ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode"/>). Every raw-row
     /// seeding helper that wants a channel to actually be <c>Funded</c> must call this too — creates the

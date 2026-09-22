@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { clientNotesApi } from '../../api/clientNotes'
-import { getUploadErrorMessage } from '../../utils/uploadError'
+import { usePhotoUploadWithConsent } from '../../hooks/usePhotoUploadWithConsent'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 
@@ -20,6 +18,14 @@ interface NotePhotoUploaderProps {
   onChange?: (files: File[]) => void
   onUploaded?: () => void
   compact?: boolean
+  /**
+   * Required together with `clientKey` whenever `noteId` is set — needed to react to a missing-consent
+   * 400 (§44.3, T5-F6) by opening the consent step and retrying, instead of just failing the upload.
+   * Without them (e.g. no clientKey yet resolved), a missing-consent 400 falls back to the plain error
+   * message like any other upload failure.
+   */
+  companyId?: string
+  clientKey?: string
 }
 
 /**
@@ -37,11 +43,12 @@ export function NotePhotoUploader({
   onChange,
   onUploaded,
   compact,
+  companyId,
+  clientKey,
 }: NotePhotoUploaderProps) {
   const galleryInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
-  const [error, setError] = useState('')
-  const [uploading, setUploading] = useState(false)
+  const [localError, setLocalError] = useState('')
   const [previewUrls, setPreviewUrls] = useState<string[]>([])
 
   useEffect(() => {
@@ -50,33 +57,28 @@ export function NotePhotoUploader({
     return () => urls.forEach((u) => URL.revokeObjectURL(u))
   }, [value])
 
-  const uploadMut = useMutation({
-    mutationFn: (file: File) => clientNotesApi.uploadPhoto(noteId!, file),
+  // §44.3, T5-F6 — same reactive consent gate `MasterClientsPage` uses for the "new note with staged
+  // photos" path; this is the "attach to an already-created note" side of it.
+  const { uploadSequentially, uploading, error: uploadError, consentModal } = usePhotoUploadWithConsent({
+    companyId,
+    clientKey,
+    onUploaded,
   })
+  const error = localError || uploadError
 
   const disabled = remainingSlots <= 0
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
-    setError('')
+    setLocalError('')
     const selected = Array.from(files).slice(0, Math.max(0, remainingSlots))
     if (files.length > selected.length) {
-      setError(`К одной заметке можно приложить не больше ${MAX_PHOTOS} фото.`)
+      setLocalError(`К одной заметке можно приложить не больше ${MAX_PHOTOS} фото.`)
     }
     if (selected.length === 0) return
 
     if (noteId) {
-      setUploading(true)
-      for (const file of selected) {
-        try {
-          await uploadMut.mutateAsync(file)
-          onUploaded?.()
-        } catch (e) {
-          setError(getUploadErrorMessage(e))
-          break
-        }
-      }
-      setUploading(false)
+      await uploadSequentially(noteId, selected)
     } else {
       onChange?.([...(value ?? []), ...selected].slice(0, MAX_PHOTOS))
     }
@@ -158,6 +160,8 @@ export function NotePhotoUploader({
         </Button>
       </div>
       {error && <p className="text-xs text-danger">{error}</p>}
+
+      {consentModal}
     </div>
   )
 }

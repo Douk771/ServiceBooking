@@ -9,19 +9,15 @@ import { ChannelBreachBanner } from '../../components/notifications/ChannelBreac
 import { RiskAcceptanceModal } from '../../components/notifications/RiskAcceptanceModal'
 import { QrModal } from '../../components/notifications/QrModal'
 import { AssignCompanyDialog } from '../../components/notifications/AssignCompanyDialog'
+import { ChannelRequestModal } from '../../components/notifications/ChannelRequestModal'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import type { ChannelDto } from '../../types'
 
 // ── Offer (before any channel is bought) ────────────────────────────────────────
 
 function OfferCard({ hasExistingChannel }: { hasExistingChannel: boolean }) {
-  const qc = useQueryClient()
+  const [showRequest, setShowRequest] = useState(false)
   const { data: offer, isLoading } = useQuery({ queryKey: ['notification-channel-offer'], queryFn: notificationChannelsApi.offer })
-
-  const requestMut = useMutation({
-    mutationFn: () => notificationChannelsApi.request(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notification-channels'] }),
-  })
 
   if (isLoading) return <div className="h-40 bg-cream-deep rounded-2xl animate-pulse" />
   if (!offer) return null
@@ -64,13 +60,18 @@ function OfferCard({ hasExistingChannel }: { hasExistingChannel: boolean }) {
         (платформа его снижает, но не устраняет). При блокировке деньги не возвращаются, но номер можно заменить в
         том же периоде.
       </p>
+      {/* API_CONTRACT_CYCLE5.md §41.3, §56.5 п. 5, US-72 п. 1 — naming the delivery intermediary
+          wherever the product itself explains the channel, not just in the legal texts. */}
+      <p className="text-xs text-muted mb-4">
+        Доставку сообщений технически обеспечивает привлекаемое лицо — ООО «ГРИН-АПИ» (ИНН 5047259512); ему
+        передаются номер получателя, имя и текст сообщения.
+      </p>
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <p className="text-lg font-semibold text-gold-dark">{offer.pricePerMonth.toLocaleString('ru-RU')} ₽ / мес</p>
-        <Button loading={requestMut.isPending} onClick={() => requestMut.mutate()}>
-          Подключить канал
-        </Button>
+        <Button onClick={() => setShowRequest(true)}>Подключить канал</Button>
       </div>
-      {requestMut.isError && <p className="text-sm text-danger mt-3">{getNotificationErrorMessage(requestMut.error)}</p>}
+
+      {showRequest && <ChannelRequestModal onClose={() => setShowRequest(false)} />}
     </Card>
   )
 }
@@ -162,6 +163,8 @@ function ChannelCard({
                 Unfunded the server's text names the reason, which number works instead, and both
                 ways to fix it (buy another number or delete the extra one). */}
             <p className="text-xs text-muted mt-1">{channel.fundingText}</p>
+            {/* §50.2 — visible to the owner (here) and to SuperAdmin only. */}
+            {channel.inn && <p className="text-xs text-muted mt-0.5">ИНН {channel.inn}</p>}
           </div>
 
           <div className="flex gap-2 flex-wrap justify-end">

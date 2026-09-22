@@ -5,8 +5,8 @@ using ServiceBooking.API.Services.Billing;
 
 namespace ServiceBooking.API.Controllers;
 
-/// <summary>API_CONTRACT_CYCLE5.md §48, contracts/openapi-cycle5.yaml paths /pricing and
-/// /admin/pricing/preview. GET /api/pricing is the only anonymous endpoint of cycle 5.</summary>
+/// <summary>API_CONTRACT_CYCLE7.md §48, contracts/cycle7/openapi.yaml paths /pricing and
+/// /admin/pricing/preview. GET /api/pricing is the only anonymous endpoint of cycle 7.</summary>
 [ApiController]
 public class PricingController(PricingCatalogCache cache) : ControllerBase
 {

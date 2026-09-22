@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import { companiesApi, type CreateCompanyPayload } from '../api/companies'
+import { legalApi } from '../api/legal'
 import { adminApi } from '../api/admin'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
@@ -103,8 +104,14 @@ function MyCompaniesTab() {
   const [showCreate, setShowCreate] = useState(false)
   const [city, setCity] = useState<City | null>(null)
   const [cityError, setCityError] = useState('')
+  const [ownerTermsAccepted, setOwnerTermsAccepted] = useState(false)
   const qc = useQueryClient()
+  const { user, token, setAuth } = useAuthStore()
   const { data: companies, isLoading } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
+  // §42.1 — `ownerTerms.version` is pinned to the version shown at the moment of submission, not
+  // re-read server-side from the form; the manifest is the single source for it.
+  const { data: manifest } = useQuery({ queryKey: ['legal-documents'], queryFn: legalApi.getManifest })
+  const ownerTerms = manifest?.documents.find((d) => d.type === 'TermsOwner')
 
   interface FormData {
     name: string
@@ -126,10 +133,15 @@ function MyCompaniesTab() {
 
   const create = useMutation({
     mutationFn: (data: CreateCompanyPayload) => companiesApi.create(data),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      // §42.1 (BREAKING № 3) — a fresh token (claim `lco`) comes back with the company. Without
+      // saving it immediately, the owner gets owner-scope 451 on the company they just created,
+      // a second after creating it, until their next login.
+      if (user && token) setAuth(user, res.token)
       qc.invalidateQueries({ queryKey: ['my-companies'] })
       setShowCreate(false)
       setCity(null)
+      setOwnerTermsAccepted(false)
       reset()
     },
   })
@@ -196,6 +208,7 @@ function MyCompaniesTab() {
           onClose={() => {
             setShowCreate(false)
             setCity(null)
+            setOwnerTermsAccepted(false)
             reset()
           }}
         >
@@ -207,6 +220,7 @@ function MyCompaniesTab() {
                 setCityError('Укажите город салона')
                 return
               }
+              if (!ownerTerms) return
               setCityError('')
               create.mutate({
                 name: d.name,
@@ -218,6 +232,7 @@ function MyCompaniesTab() {
                 allowSelfBooking: d.allowSelfBooking,
                 showInPublicListing: d.showInPublicListing,
                 cityId: city.id,
+                ownerTerms: { version: ownerTerms.version },
               })
             })}
             className="flex flex-col gap-4"
@@ -272,6 +287,25 @@ function MyCompaniesTab() {
               <input type="checkbox" className="w-4 h-4 accent-gold rounded" {...register('showInPublicListing')} />
               <span className="text-sm text-ink-soft">Показывать компанию в общем списке</span>
             </label>
+
+            {/* API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3) — creating a company now requires
+                accepting TermsOwner (D3), separate from the client TermsClient accepted at
+                registration (US-65 п. 2: a different document, a different moment). */}
+            <label className="flex items-start gap-2.5 cursor-pointer rounded-2xl border border-line bg-cream-deep/40 p-3.5">
+              <input
+                type="checkbox"
+                className="w-4 h-4 mt-0.5 rounded accent-gold"
+                checked={ownerTermsAccepted}
+                onChange={(e) => setOwnerTermsAccepted(e.target.checked)}
+              />
+              <span className="text-[13px] text-ink-soft leading-snug">
+                Я принимаю{' '}
+                <Link to="/terms-owner" target="_blank" className="text-gold hover:text-gold-dark">
+                  Соглашение с компанией и поручение на обработку персональных данных
+                </Link>
+              </span>
+            </label>
+
             {create.isError && <p className="text-sm text-danger">{getCreateCompanyErrorMessage(create.error)}</p>}
             <div className="flex gap-3 pt-1">
               <Button
@@ -281,12 +315,13 @@ function MyCompaniesTab() {
                 onClick={() => {
                   setShowCreate(false)
                   setCity(null)
+                  setOwnerTermsAccepted(false)
                   reset()
                 }}
               >
                 Отмена
               </Button>
-              <Button type="submit" className="flex-1" loading={create.isPending}>
+              <Button type="submit" className="flex-1" loading={create.isPending} disabled={!ownerTermsAccepted || !ownerTerms}>
                 Создать
               </Button>
             </div>

@@ -169,4 +169,45 @@ public class SecretProtectorTests
 
         keyId.Should().Be(fingerprint[..8]);
     }
+
+    // ── String-AAD overload (T5-B6, ARCHITECTURE_CYCLE5.md §48.1 — HealthNoteProtector's foundation) ──
+
+    [Fact]
+    public void EncryptThenDecrypt_SameKeyAndAssociatedData_RoundTrips_StringOverload()
+    {
+        var key = NewKey();
+        var aad = "health:11111111-1111-1111-1111-111111111111:phone:79991234567";
+
+        var ciphertext = SecretProtector.Encrypt("аллергия на аммиак", key, aad);
+        var plaintext = SecretProtector.Decrypt(ciphertext, key, aad);
+
+        plaintext.Should().Be("аллергия на аммиак");
+    }
+
+    [Fact]
+    public void Decrypt_StringOverload_DifferentAssociatedData_Throws()
+    {
+        // The whole point of AAD (ARCHITECTURE_CYCLE5.md §48.1): a ciphertext moved between rows —
+        // different company, different subject — must not decrypt, even with the right key.
+        var key = NewKey();
+        var ciphertext = SecretProtector.Encrypt("secret", key, "health:company-a:phone:1");
+
+        var act = () => SecretProtector.Decrypt(ciphertext, key, "health:company-b:phone:1");
+
+        act.Should().Throw<ChannelSecretUnavailableException>();
+    }
+
+    [Fact]
+    public void GuidOverload_And_StringOverload_ProduceCompatibleFormats()
+    {
+        // Encrypt(Guid) delegates to Encrypt(string) with channelId.ToString() — this pins that the
+        // delegation actually happened (same keyId/prefix shape), not two diverging implementations.
+        var key = NewKey();
+        var channelId = Guid.NewGuid();
+
+        var viaGuid = SecretProtector.Encrypt("token", key, channelId);
+        var plaintext = SecretProtector.Decrypt(viaGuid, key, channelId.ToString());
+
+        plaintext.Should().Be("token");
+    }
 }

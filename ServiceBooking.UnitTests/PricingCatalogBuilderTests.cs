@@ -88,7 +88,7 @@ public class PricingCatalogBuilderTests
     [Fact]
     public void Build_TiedSortOrder_PlansFallBackToPrice()
     {
-        // API_CONTRACT_CYCLE5.md §39: "по sortOrder, затем по цене" — not by name.
+        // API_CONTRACT_CYCLE7.md §39: "по sortOrder, затем по цене" — not by name.
         var plans = new[]
         {
             Plan(name: "Я", price: 500, sortOrder: 0),
@@ -157,7 +157,7 @@ public class PricingCatalogBuilderTests
     [Fact]
     public void Build_SplitsHighlightsOnNewlineAndCapsAtPublicMaxHighlights()
     {
-        // openapi-cycle5.yaml PublicPlanDto.highlights: maxItems 5 — deliberately LOWER than
+        // contracts/cycle7/openapi.yaml PublicPlanDto.highlights: maxItems 5 — deliberately LOWER than
         // AdminPlanDto/AdminPlanInput's write-time cap of 10 (PricingCatalogBuilder.MaxHighlights).
         // cycle-07 QA finding #4: the display side must cap at PublicMaxHighlights, not MaxHighlights,
         // or an admin can save up to 10 bullets that the storefront silently trims to 5 with no warning.
@@ -212,7 +212,7 @@ public class PricingCatalogBuilderTests
         PricingCatalogBuilder.ValidateHighlights(highlights).Should().BeNull();
     }
 
-    // openapi-cycle5.yaml AdminPlanInput.highlights: maxItems 10 — writing 11 must be rejected, not
+    // contracts/cycle7/openapi.yaml AdminPlanInput.highlights: maxItems 10 — writing 11 must be rejected, not
     // silently truncated (the previous behaviour let an admin save more than the contract allows and
     // never find out).
     [Fact]
@@ -231,7 +231,7 @@ public class PricingCatalogBuilderTests
         PricingCatalogBuilder.ValidateHighlights(highlights).Should().BeNull();
     }
 
-    // openapi-cycle5.yaml AdminPlanDto/AdminPlanInput.highlights item: maxLength 120 — writing 121 must
+    // contracts/cycle7/openapi.yaml AdminPlanDto/AdminPlanInput.highlights item: maxLength 120 — writing 121 must
     // be rejected (cycle-07 QA finding #3: this used to not be checked at write time at all).
     [Fact]
     public void ValidateHighlights_ItemOverMaxLength_ReturnsError()

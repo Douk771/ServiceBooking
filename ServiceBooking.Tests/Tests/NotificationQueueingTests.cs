@@ -33,6 +33,10 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
         var clientUser = await RegisterAsync();
+        // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §52.3, T-24): the shipped `AccountsOnly` gate mode
+        // blocks a registered recipient who never granted PdnConsent/ProviderDelivery — without this the
+        // rows below would queue as Skipped/NoProviderDeliveryConsent, not Pending.
+        await GrantProviderDeliveryConsentAsync(clientUser.Token);
         var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(10, 0), null, null, null, null, null));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -44,6 +48,76 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         rows.Should().Contain(r => r.Type == NotificationType.BookingConfirmed && r.Status == NotificationStatus.Pending);
         rows.Should().Contain(r => r.Type == NotificationType.Reminder && r.Status == NotificationStatus.Pending);
         rows.Should().OnlyContain(r => r.ChannelId == channel.Id);
+    }
+
+    [Fact, TestCase("NTF-Q005")]
+    public async Task BookingCreated_WithMultipleServices_RendersCommaJoinedServiceList_NoEmptySegmentsOrUndefined()
+    {
+        // US-67 (SPEC.md's acceptance criterion, ARCHITECTURE_CYCLE6.md §47.2): the service placeholder
+        // in the (unsent, since Provider=logging in Testing) notification body must be a clean
+        // comma-joined list for 1, 2 and 5 services — no "undefined", no empty segments, no trailing
+        // "/leading comma.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        await SeedConnectedAssignedChannelAsync(owner.UserId, company.Id);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var services = new List<ServiceBooking.API.DTOs.Services.ServiceDto>();
+        for (var i = 0; i < 5; i++)
+            services.Add(await CreateServiceAsync(owner.Token, company.Id, name: $"Услуга{i}"));
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §52.3, T-24): the shipped `AccountsOnly` gate mode
+        // blocks a registered recipient who never granted PdnConsent/ProviderDelivery — without this the
+        // BookingConfirmed row below would queue as Skipped/NoProviderDeliveryConsent, with an empty body,
+        // not Pending with the rendered service list.
+        await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, services[0].Id, master.UserId, date, new TimeOnly(9, 0),
+                null, null, null, null, null, ServiceIds: services.Select(s => s.Id).ToList()));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var booking = (await response.Content.ReadJsonAsync<BookingDto>())!;
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var confirmed = await db.OutboundNotifications
+            .FirstAsync(n => n.BookingId == booking.Id && n.Type == NotificationType.BookingConfirmed);
+
+        foreach (var s in services)
+            confirmed.Body.Should().Contain(s.Name);
+        confirmed.Body.Should().NotContain("undefined");
+        confirmed.Body.Should().NotContain(", ,", "no empty segment between service names");
+        confirmed.Body.Should().NotContain(",,");
+        // The five names, in order, joined by ", " — this is the exact §47.2 rendering rule.
+        confirmed.Body.Should().Contain(string.Join(", ", services.Select(s => s.Name)));
+    }
+
+    // LGL-072-01 (SPEC.md §6.3 T-24, ARCHITECTURE_CYCLE5.md §52.3 "AccountsOnly"). The mirror of the test
+    // above: a registered client who never granted ProviderDelivery consent must be BLOCKED, with the
+    // dedicated reason — this is the gate the default mode exists to enforce.
+    [Fact, TestCase("LGL-072-01")]
+    public async Task BookingCreated_RegisteredClientWithoutProviderDeliveryConsent_RowsSkipped_WithReason()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        await SeedConnectedAssignedChannelAsync(owner.UserId, company.Id);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync(); // deliberately no GrantProviderDeliveryConsentAsync call
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(10, 30), null, null, null, null, null));
+        response.StatusCode.Should().Be(HttpStatusCode.Created, "declining a purely optional consent must never block the booking itself (US-67 п.4)");
+        var booking = (await response.Content.ReadJsonAsync<BookingDto>())!;
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var rows = await db.OutboundNotifications.Where(n => n.BookingId == booking.Id).ToListAsync();
+        rows.Should().NotBeEmpty();
+        rows.Should().OnlyContain(r => r.Status == NotificationStatus.Skipped && r.Reason == NotificationReason.NoProviderDeliveryConsent);
     }
 
     [Fact, TestCase("NTF-Q002")]
@@ -95,9 +169,17 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
 
         // A visit only 90 minutes away — well under the 600-minute threshold. Date/StartTime are the
         // company's own LOCAL wall clock (US-30), so "soon" (a UTC instant) must be converted through the
-        // company's own time zone, not assumed to be UTC — this company was NOT created with Moscow's
-        // zone (AnyCityIdAsync picks whichever seeded city comes first, e.g. Barnaul/UTC+7).
-        var (date, start) = LocalDateTimeIn(company.TimeZoneId, DateTime.UtcNow.AddMinutes(90));
+        // company's own time zone — NOT assumed to be UTC. Pinned to a fixed UTC-offset zone here
+        // (rather than trusting whichever city AnyCityIdAsync happens to pick, e.g. Barnaul/UTC+7)
+        // because BookingsController.IsBookableMoment compares Date/StartTime against DateTime.UtcNow
+        // directly, with no timezone conversion of its own (a known, pre-existing limitation —
+        // ARCHITECTURE_CYCLE6.md §45.5, "Server lives in UTC" — not something this test is meant to
+        // exercise). With a non-UTC company zone, a run landing near local midnight can shift Date to
+        // "tomorrow" relative to the server's own UTC "today" and get a spurious 409 from that gate —
+        // flaky depending only on wall-clock time at test-run time, not on any behavior under test here.
+        // Pinning the company to UTC makes the local and "gate" frames of reference identical always.
+        await SetCompanyTimeZoneAsync(company.Id, TestTimeZoneId);
+        var (date, start) = LocalDateTimeIn(TestTimeZoneId, DateTime.UtcNow.AddMinutes(90));
 
         // Staff manual booking (Q7): bypasses the working-hours grid, which this test doesn't set up for
         // "today" — the only thing under test is the cancel-vs-threshold gate, not slot availability.
@@ -129,12 +211,17 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, farDate);
 
         var clientUser = await RegisterAsync();
+        await GrantProviderDeliveryConsentAsync(clientUser.Token); // AccountsOnly gate (§52.3) — see NTF-Q001's own note
         var createResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new CreateBookingDto(company.Id, service.Id, master.UserId, farDate, new TimeOnly(9, 0), null, null, null, null, null));
         createResponse.EnsureSuccessStatusCode();
         var booking = (await createResponse.Content.ReadJsonAsync<BookingDto>())!;
 
-        var (newDate, newStart) = LocalDateTimeIn(company.TimeZoneId, DateTime.UtcNow.AddMinutes(90));
+        // Same UTC-pinning as NTF-Q003 above, and for the same reason: IsBookableMoment compares against
+        // DateTime.UtcNow with no timezone conversion, so a non-UTC company zone makes this test's
+        // pass/fail depend on what time of day (UTC) it happens to run.
+        await SetCompanyTimeZoneAsync(company.Id, TestTimeZoneId);
+        var (newDate, newStart) = LocalDateTimeIn(TestTimeZoneId, DateTime.UtcNow.AddMinutes(90));
         var rescheduleResponse = await AuthedClient(owner.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/reschedule",
             new RescheduleDto(newDate, newStart));
         rescheduleResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -219,6 +306,18 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
             await NotificationTestBase.EnsureWhatsAppPaidAsync(db, billingAccountId.Value);
 
         return channel;
+    }
+
+    // Used by NTF-Q003/NTF-Q004 to remove wall-clock-time flakiness — see the comments at each call site.
+    private const string TestTimeZoneId = "Etc/UTC";
+
+    private async Task SetCompanyTimeZoneAsync(Guid companyId, string timeZoneId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var company = await db.Companies.FirstAsync(c => c.Id == companyId);
+        company.TimeZoneId = timeZoneId;
+        await db.SaveChangesAsync();
     }
 
     private async Task SetMinLeadMinutesAsync(Guid companyId, int minLeadMinutes, int reminderLeadMinutes)

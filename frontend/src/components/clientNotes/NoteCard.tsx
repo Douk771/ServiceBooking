@@ -13,13 +13,17 @@ import { NotePhotoUploader } from './NotePhotoUploader'
 interface NoteCardProps {
   note: ClientNote
   companyId: string
+  /** §44 — needed to react to a missing-photo-consent 400 by opening the consent step (T5-F6).
+   *  Absent on call sites that don't yet resolve a client key (e.g. none today besides
+   *  `MasterClientsPage`) — the uploader falls back to a plain error message without it. */
+  clientKey?: string
 }
 
 /**
  * A single `ClientNote` — author, date, text, its photos, and (when `canDelete`) removal with an
  * inline confirmation. Shared between `MasterClientsPage` and `MyBookingsPage` (US-07 п. 3).
  */
-export function NoteCard({ note, companyId }: NoteCardProps) {
+export function NoteCard({ note, companyId, clientKey }: NoteCardProps) {
   const qc = useQueryClient()
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [photoError, setPhotoError] = useState('')
@@ -98,7 +102,14 @@ export function NoteCard({ note, companyId }: NoteCardProps) {
 
       {note.photos.length < 5 && (
         <div className="mt-2">
-          <NotePhotoUploader noteId={note.id} remainingSlots={5 - note.photos.length} compact onUploaded={invalidate} />
+          <NotePhotoUploader
+            noteId={note.id}
+            remainingSlots={5 - note.photos.length}
+            compact
+            onUploaded={invalidate}
+            companyId={companyId}
+            clientKey={clientKey}
+          />
         </div>
       )}
       {photoError && <p className="text-xs text-danger mt-1">{photoError}</p>}

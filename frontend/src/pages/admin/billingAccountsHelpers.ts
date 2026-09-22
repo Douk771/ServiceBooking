@@ -32,7 +32,7 @@ export interface AssignOptionRow {
  * Builds the AssignOptionInput[] payload from the editable rows shown in the assign-subscription
  * form. Only selected rows are sent — an option left unselected (or a lowered quantity) is exactly
  * the "full desired composition" the contract asks for; the server derives the wind-down (endsAt)
- * from the difference itself (API_CONTRACT_CYCLE5.md §49, AssignSubscriptionInput.options).
+ * from the difference itself (API_CONTRACT_CYCLE7.md §49, AssignSubscriptionInput.options).
  */
 export function optionRowsToPayload(rows: AssignOptionRow[]): AssignOptionInput[] {
   return rows

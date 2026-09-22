@@ -6,7 +6,7 @@ interface Props {
 }
 
 /**
- * Server assembles `unitPriceText` for Quantity options (API_CONTRACT_CYCLE5.md §39, US-71 п. 3 —
+ * Server assembles `unitPriceText` for Quantity options (API_CONTRACT_CYCLE7.md §39, US-71 п. 3 —
  * no bare numbers without a unit anywhere on the page) and this component prints that string as-is.
  * For Toggle options the server always sends `unitPriceText: null` (there is no per-unit name to
  * attach) — fall back to the plain monthly price so the row is never left blank.

@@ -14,7 +14,7 @@ public class NotificationChannel
     public string OwnerUserId { get; set; } = string.Empty;
     public AppUser Owner { get; set; } = null!;
 
-    // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4, §47) — who PAYS for and owns this number; OwnerUserId
+    // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4, §47) — who PAYS for and owns this number; OwnerUserId
     // above stays "who set it up and manages it" (same OwnerUserId/BillingAccountId split as
     // Company). Stage 6 (§43.6, B5-13): NOT NULL at the database level plus the alternate key
     // (Id, BillingAccountId) that ChannelCompanyAssignment's composite FK pins to. CLR type stays
@@ -49,6 +49,12 @@ public class NotificationChannel
     // disruption email were both cut). Kept in the schema so a future reintroduction doesn't need a
     // migration; not exposed in any DTO.
     public string? ContactEmail { get; set; }
+
+    // T5-B4 (ARCHITECTURE_CYCLE5.md §54 row 13, API_CONTRACT_CYCLE5.md §50.1, US-82). Collected once, at
+    // the request, never re-validated against ЕГРЮЛ/ЕГРИП (ПЛ5 — formal checksum only). Never exposed to
+    // anyone but the owner and SuperAdmin (§50.2).
+    public LegalEntityForm? LegalEntityForm { get; set; }
+    public string? Inn { get; set; }
 
     public DateTime? PaidFromUtc { get; set; }
     public DateTime? PaidUntilUtc { get; set; }

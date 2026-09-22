@@ -9,12 +9,12 @@ import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 
 /**
- * Public route `/pricing` (ARCHITECTURE_CYCLE5.md §56.1) — reachable without auth, and outside the
+ * Public route `/pricing` (ARCHITECTURE_CYCLE7.md §56.1) — reachable without auth, and outside the
  * consent gate (added to CONSENT_GATE_BYPASS_PATHS in App.tsx) so a logged-in user with a pending
  * legal update can still see prices. US-71.
  *
  * 404 from the API means the publication switch (`pricing.public-enabled`) is off — that is an
- * expected state (API_CONTRACT_CYCLE5.md §39), not an error: the page renders a plain "not available
+ * expected state (API_CONTRACT_CYCLE7.md §39), not an error: the page renders a plain "not available
  * yet" notice instead of an error screen.
  */
 export function PricingPage() {
@@ -57,7 +57,7 @@ export function PricingPage() {
     )
   }
 
-  // 404 → publication is switched off. Not an error (API_CONTRACT_CYCLE5.md §39).
+  // 404 → publication is switched off. Not an error (API_CONTRACT_CYCLE7.md §39).
   if (!data) {
     return (
       <div className="max-w-[760px] mx-auto px-8 pt-16 pb-24">
@@ -93,7 +93,7 @@ export function PricingPage() {
         <section className="max-w-[720px]">
           <h2 className="font-serif text-[24px] font-medium text-ink mb-1">Дополнительные опции</h2>
           {/* No blanket "available on any paid plan" claim here: per-plan availability is governed by
-              PlanOptionRule server-side (ARCHITECTURE_CYCLE5.md §43.3, fail-closed), and the public
+              PlanOptionRule server-side (ARCHITECTURE_CYCLE7.md §43.3, fail-closed), and the public
               contract doesn't expose which plans a given option is available on. */}
           <p className="text-sm text-ink-soft mb-5">Наличие опций зависит от выбранного тарифа.</p>
           <Card className="p-6">

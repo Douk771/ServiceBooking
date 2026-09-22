@@ -101,7 +101,7 @@ public class PaginationTests
         result.Items.Should().Equal("a");
     }
 
-    // Cycle-07 backend report, item 1: contracts/openapi-cycle5.yaml's PagedAdminBillingAccounts /
+    // Cycle-07 backend report, item 1: contracts/cycle7/openapi.yaml's PagedAdminBillingAccounts /
     // PagedAdminSubscriptionRequests are `additionalProperties: false` with
     // required [items, page, pageSize, totalCount] — no `total`, no `hasNext`. CreateContract is the
     // envelope those two cycle-5 endpoints use instead of Create/PagedResult<T>.

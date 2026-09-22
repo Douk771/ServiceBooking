@@ -60,4 +60,12 @@ public class OutboundNotification
     public string IdempotencyKey { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §44.7, §49.3) — set once the retention sweep has затерло this
+    // row's Body/RecipientName/RecipientPhone (UPDATE in place, not a delete: the metadata — Status,
+    // Reason, timestamps — stays a permanent journal entry). Null means the content is still there.
+    // 🔴 The sweep itself (T5-B8/B9, dry-run-by-default retention task) is NOT part of this pass — this
+    // column exists now only so GET /api/profile/export's `bodyAvailable` field (T5-B11) has something to
+    // read; nothing sets it yet, so it is always null until that task is built. See the cycle report.
+    public DateTime? ContentRedactedAtUtc { get; set; }
 }

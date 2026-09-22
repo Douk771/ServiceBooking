@@ -36,7 +36,7 @@ public record AdminPlanInput(
     bool? IsPublic = null, bool IsActive = true, int? SortOrder = null,
     List<AdminPlanOptionRuleDtoV2>? Options = null);
 
-// contracts/openapi-cycle5.yaml's AdminPlanInput has no isSystemFree property (additionalProperties:
+// contracts/cycle7/openapi.yaml's AdminPlanInput has no isSystemFree property (additionalProperties:
 // false) — changing which plan is the system free one is a distinct, rarer administrative action from
 // an ordinary field edit, so it gets its own route/DTO instead of riding along inside AdminPlanInput
 // (cycle-07 code review finding B "isSystemFree removal").

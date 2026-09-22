@@ -10,7 +10,7 @@ public class AccountSubscription
     public Guid Id { get; set; }
     public string OwnerUserId { get; set; } = string.Empty;
 
-    // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4) — the account this subscription belongs to; unique
+    // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4) — the account this subscription belongs to; unique
     // (one subscription row per account, mirroring OwnerUserId's own uniqueness). OwnerUserId stays
     // as a history column read by reconciliation/incident tooling (§54.5's before/after check), but
     // business logic reads BillingAccountId from here on. Stage 6 (§43.6, B5-13): NOT NULL at the

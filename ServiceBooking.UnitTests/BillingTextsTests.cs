@@ -3,7 +3,7 @@ using ServiceBooking.API.Services.Billing;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE5.md §47.1 — funding text is an acceptance criterion, not decoration:
+/// <summary>ARCHITECTURE_CYCLE7.md §47.1 — funding text is an acceptance criterion, not decoration:
 /// the Unfunded text must name the cause (paid-vs-configured counts), the working number, and both
 /// ways to fix it.</summary>
 public class BillingTextsTests

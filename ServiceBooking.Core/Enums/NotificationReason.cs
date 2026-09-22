@@ -39,4 +39,11 @@ public enum NotificationReason
 
     /// <summary>Booking (or the channel assignment) was cancelled after the notification was queued.</summary>
     BookingOrAssignmentCancelled,
+
+    /// <summary>T-24 (ARCHITECTURE_CYCLE5.md §52.3): the recipient does not have a current
+    /// `PdnConsent`/`ProviderDelivery` grant, and <c>Notifications:ProviderDeliveryConsent</c> requires
+    /// one for them. Appended at the end — this enum is append-only (CURRENT_STATE.md §6: positions are
+    /// not read from SQL/bitmasks here, but the convention is kept for the same reason ChannelStateReason
+    /// keeps it: a reordering would silently relabel every already-persisted row).</summary>
+    NoProviderDeliveryConsent,
 }

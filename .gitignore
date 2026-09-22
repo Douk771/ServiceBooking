@@ -45,7 +45,7 @@ ServiceBooking.API/logs/
 # ServiceBooking.API/logs/ above: a runtime artifact of running the app/tools locally, not source.
 /logs/
 
-# schemathesis's own working directory (contract checks against contracts/openapi-cycle5.yaml) —
+# schemathesis's own working directory (contract checks against contracts/cycle7/openapi.yaml) —
 # cassettes/state from local runs, not something to commit.
 /.schemathesis/
 
@@ -67,3 +67,8 @@ ServiceBooking.API/logs/
 # rely on (scheduler disabled, upload rate limit raised, ARCHITECTURE.md §8.5) — must be committed so
 # the test suite behaves the same for every developer and in CI.
 !ServiceBooking.API/appsettings.Testing.json
+
+# Кеш schemathesis. Циклы 6 и 8 добавили этот игнор независимо друг от друга, каждый после
+# собственной контрактной проверки (ARCHITECTURE_CYCLE6.md §53.2, цикл 8 §86.3) — инструмент
+# запускается по месту через pipx/npx, и его локальный вывод в репозитории не нужен.
+.schemathesis/

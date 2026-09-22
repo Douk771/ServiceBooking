@@ -10,7 +10,7 @@ import { formatMonthlyPrice } from '../utils/pricingFormat'
 import { getBillingErrorMessage } from '../utils/billingError'
 
 /**
- * Owner screen "Ваша подписка" (US-65, US-68, US-70) — API_CONTRACT_CYCLE5.md §41. One request
+ * Owner screen "Ваша подписка" (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41. One request
  * covers the whole screen; every text shown (`statusText`, `usage.*Text`, `availabilityText`,
  * `warning.text`) is server-composed and printed verbatim, per contract note on OwnerSubscriptionDto.
  *

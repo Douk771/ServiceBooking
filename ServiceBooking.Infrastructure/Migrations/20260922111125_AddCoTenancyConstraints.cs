@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ServiceBooking.Infrastructure.Migrations
 {
     /// <summary>
-    /// Cycle 5, stage 6 of 6 — the point of no return (ARCHITECTURE_CYCLE5.md §43.6, B5-13, US-73).
+    /// Cycle 7, stage 6 of 6 — the point of no return (ARCHITECTURE_CYCLE7.md §43.6, B5-13, US-73).
     ///
     /// Everything up to here (<c>AddBillingAccounts</c>, <c>BackfillBillingAccounts</c>,
     /// <c>AddChannelBillingAccountAndSubscriptionOptions</c>, <c>BackfillChannelBillingAccounts</c>,

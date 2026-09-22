@@ -1,7 +1,7 @@
 namespace ServiceBooking.Core.Entities;
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3) — what's paid for on a billing account, beyond the base plan:
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3) — what's paid for on a billing account, beyond the base plan:
 /// one row per (account, option). Today only the <c>notifications.whatsapp</c> row's
 /// <see cref="Quantity"/> is read (§47.1's N, "how many notification numbers are paid for"); the
 /// request/approval workflow fields below (US-70) are carried on the entity now so the admin-approval

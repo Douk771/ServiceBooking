@@ -27,6 +27,14 @@ public readonly record struct NotificationGateResult(NotificationGateOutcome Out
 /// </summary>
 public static class NotificationGate
 {
+    // providerDeliveryConsentMode: T-24 (ARCHITECTURE_CYCLE5.md §52.3) — a config parameter, not a
+    // hardcoded branch; see ProviderDeliveryConsentMode for what each value means. Defaults to
+    // AccountsOnly so every existing caller (and every existing test) that doesn't pass it explicitly
+    // keeps today's behavior for guests (never blocked) and gains the new check only for recipients WITH
+    // an account.
+    // recipientHasProviderDeliveryConsent: null means "no account" (a guest — structurally cannot have
+    // granted anything, §52.3's AccountsOnly row); true/false means the caller already looked up the
+    // recipient's current PdnConsent/ProviderDelivery grant via ConsentLedger.
     public static NotificationGateResult Evaluate(
         EffectivePlan plan,
         NotificationType type,
@@ -36,16 +44,35 @@ public static class NotificationGate
         bool recipientOptedOut,
         DateTime nowUtc,
         DateTime visitStartUtc,
-        // Cycle 5 (ARCHITECTURE_CYCLE5.md §45.3 p.3, §47.2): made an explicit, mandatory parameter
+        // Cycle 7 (ARCHITECTURE_CYCLE7.md §45.3 p.3, §47.2): made an explicit, mandatory parameter
         // instead of an internal ChannelPaymentState.Of(channel, now) call — every caller must now say
         // out loud where it got "is this number funded" from, rather than the gate quietly re-deriving
         // it. Callers compute this via Services.Billing.ChannelFunding.Rank over the account's live
         // channels and plan.PaidNotificationNumbers (§47.1's N-vs-M rule) — no channel-level payment
         // read is left in this gate.
-        bool channelIsFunded)
+        bool channelIsFunded,
+        ProviderDeliveryConsentMode providerDeliveryConsentMode = ProviderDeliveryConsentMode.AccountsOnly,
+        bool? recipientHasProviderDeliveryConsent = null)
     {
         if (recipientOptedOut)
             return NotificationGateResult.Block(NotificationReason.RecipientOptedOut);
+
+        // T-24 (ARCHITECTURE_CYCLE5.md §52.3). Off: never checked here — reliance is on named disclosure
+        // alone (§52.4 step 1 requires D4 to be rewritten before this value is ever used). AccountsOnly:
+        // a guest (recipientHasProviderDeliveryConsent == null) is never blocked — nobody asked them,
+        // the contractual basis for the booking itself covers delivery; an account holder who has NOT
+        // granted (or has revoked) the purpose IS blocked. Strict: even a guest is blocked, since they
+        // structurally cannot satisfy "has an explicit, current grant" — §52.4's "ужесточение", a
+        // deliberate product decision the flag alone does not soften.
+        var blockedByProviderDeliveryConsent = providerDeliveryConsentMode switch
+        {
+            ProviderDeliveryConsentMode.Off => false,
+            ProviderDeliveryConsentMode.AccountsOnly => recipientHasProviderDeliveryConsent == false,
+            ProviderDeliveryConsentMode.Strict => recipientHasProviderDeliveryConsent != true,
+            _ => throw new ArgumentOutOfRangeException(nameof(providerDeliveryConsentMode))
+        };
+        if (blockedByProviderDeliveryConsent)
+            return NotificationGateResult.Block(NotificationReason.NoProviderDeliveryConsent);
 
         // §47.2: "not on a paid plan" now means "the account has 0 paid notification numbers" — the
         // separate AllowNotificationChannel flag only gates whether the PLAN may buy the option at all,

@@ -780,12 +780,16 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         var user = await RegisterAsync();
         var slug = Unique("newco-");
+        // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.CreateCompanyAsync's own note):
+        // OwnerTerms is now required, and the response is an envelope, not a bare CompanyDto.
         var response = await AuthedClient(user.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto($"Company {slug}", slug, null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto($"Company {slug}", slug, null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var created = await response.Content.ReadFromJsonAsync<CompanyDto>();
-        created!.Slug.Should().Be(slug);
+        var envelope = await response.Content.ReadFromJsonAsync<CreateCompanyResponseDto>();
+        var created = envelope!.Company;
+        created.Slug.Should().Be(slug);
 
         var myResponse = await AuthedClient(user.Token).GetAsync("/api/companies/my");
         var mine = await myResponse.Content.ReadFromJsonAsync<List<CompanyDto>>();
@@ -1208,7 +1212,8 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
 
         var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto("Second Branch", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto("Second Branch", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
 
         response.StatusCode.Should().Be((HttpStatusCode)402);
     }
@@ -1223,11 +1228,13 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         await SetSubscriptionAsync(company.Id, configId);
 
         var second = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto("Branch 2", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto("Branch 2", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
         second.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var third = await AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto("Branch 3", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null));
+            new CreateCompanyDto("Branch 3", Unique("branch-"), null, null, null, null, await AnyCityIdAsync(), null,
+                OwnerTerms: CurrentOwnerTermsDto()));
         third.StatusCode.Should().Be((HttpStatusCode)402);
     }
 
@@ -1265,7 +1272,8 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var cityId = await AnyCityIdAsync();
         var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ =>
             AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-                new CreateCompanyDto($"Branch {Unique("")}", Unique("branch-"), null, null, null, null, cityId, null))));
+                new CreateCompanyDto($"Branch {Unique("")}", Unique("branch-"), null, null, null, null, cityId, null,
+                    OwnerTerms: CurrentOwnerTermsDto()))));
 
         responses.Count(r => r.StatusCode == HttpStatusCode.Created).Should().Be(1);
         responses.Count(r => r.StatusCode == (HttpStatusCode)402).Should().Be(4);
@@ -1289,7 +1297,8 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(i =>
             AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
-                new CreateCompanyDto($"First Branch {Unique(i.ToString())}", Unique("first-branch-"), null, null, null, null, cityId, null))));
+                new CreateCompanyDto($"First Branch {Unique(i.ToString())}", Unique("first-branch-"), null, null, null, null, cityId, null,
+                    OwnerTerms: CurrentOwnerTermsDto()))));
 
         responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.Created || r.StatusCode == (HttpStatusCode)402,
             "the provisioning race must never surface as an unhandled 500");
@@ -1356,6 +1365,79 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         dto.RequirePrepayment.Should().BeFalse();
         dto.PrepaymentEnabled.Should().BeFalse();
         dto.PlanAllowsOnlinePayment.Should().BeTrue();
+    }
+
+    // ── US-62: "provides services" (ARCHITECTURE_CYCLE6.md §40.3, `SPEC_CYCLE6_BOOKING_FIXES.md` US-62) ──────────
+
+    [Fact, TestCase("CO-079")]
+    public async Task DisablingOwnerProvidesServices_RemovesThemFromPublicMastersListAndCount()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var member = await GetMemberAsync(owner.Token, company.Id, owner.UserId);
+        // `SPEC_CYCLE6_BOOKING_FIXES.md` US-62 "low-risk assumption": existing/new owners default to enabled, so rollout
+        // doesn't silently hide a specialist who actually works in the chair.
+        member.ProvidesServices.Should().BeTrue();
+
+        var before = await AnonymousClient().GetFromJsonAsync<List<MasterPublicDto>>($"/api/companies/{company.Id}/masters");
+        before!.Should().ContainSingle(m => m.UserId == owner.UserId);
+
+        var toggle = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}/members/{member.Id}/provides-services",
+            new { providesServices = false, confirm = false });
+        toggle.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Not just "excluded from the list" — the count of "how many active specialists" (US-64) is the
+        // same list, so a zero-length result here IS the "no specialists" count.
+        var after = await AnonymousClient().GetFromJsonAsync<List<MasterPublicDto>>($"/api/companies/{company.Id}/masters");
+        after.Should().BeEmpty("a specialist with ProvidesServices=false must not be offered to clients, " +
+            "nor counted toward how many active specialists a company has (US-64)");
+
+        // The flag hides the person from the booking picker only — it must not evict them from the
+        // company's own member list.
+        var members = await AuthedClient(owner.Token).GetFromJsonAsync<List<MemberDto>>($"/api/companies/{company.Id}/members");
+        members!.Should().ContainSingle(m => m.UserId == owner.UserId);
+    }
+
+    [Fact, TestCase("CO-080")]
+    public async Task DisablingProvidesServices_WithFutureBookings_RequiresConfirm_AndLeavesBookingsIntact()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        // The owner is the only specialist and provides services (default) — book a future visit
+        // directly with them so the "future bookings" guard has something to count.
+        var member = await GetMemberAsync(owner.Token, company.Id, owner.UserId);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, owner.UserId, company.Id, date);
+        var clientUser = await RegisterAsync();
+        var bookingResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, owner.UserId, date, new TimeOnly(10, 0), null, null, null, null, null));
+        bookingResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var booking = (await bookingResponse.Content.ReadJsonAsync<BookingDto>())!;
+
+        // Without confirm: 409, and the count is visible to the owner in the message.
+        var withoutConfirm = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}/members/{member.Id}/provides-services",
+            new { providesServices = false, confirm = false });
+        withoutConfirm.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var message = await withoutConfirm.Content.ReadAsStringAsync();
+        message.Should().Contain("1", "the warning must tell the owner how many future bookings are at stake");
+
+        // The booking survives untouched — turning the flag off must never silently drop it.
+        var stillThere = await AuthedClient(owner.Token).GetAsync($"/api/bookings/{booking.Id}");
+        stillThere.StatusCode.Should().Be(HttpStatusCode.OK);
+        var stillBooking = (await stillThere.Content.ReadJsonAsync<BookingDto>())!;
+        stillBooking.Status.Should().Be(BookingStatus.Confirmed);
+
+        // With confirm=true: succeeds, and the booking is STILL untouched (only visibility changes).
+        var withConfirm = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}/members/{member.Id}/provides-services",
+            new { providesServices = false, confirm = true });
+        withConfirm.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var afterConfirm = await AuthedClient(owner.Token).GetAsync($"/api/bookings/{booking.Id}");
+        var afterConfirmBooking = (await afterConfirm.Content.ReadJsonAsync<BookingDto>())!;
+        afterConfirmBooking.Status.Should().Be(BookingStatus.Confirmed);
+        afterConfirmBooking.MasterId.Should().Be(owner.UserId);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

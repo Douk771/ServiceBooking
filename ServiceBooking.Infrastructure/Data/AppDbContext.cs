@@ -16,6 +16,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<WorkingHours> WorkingHours => Set<WorkingHours>();
     public DbSet<ScheduleBreak> ScheduleBreaks => Set<ScheduleBreak>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<BookingService> BookingServices => Set<BookingService>();
     public DbSet<AccountSubscription> AccountSubscriptions => Set<AccountSubscription>();
     public DbSet<WeeklyScheduleTemplate> WeeklyScheduleTemplates => Set<WeeklyScheduleTemplate>();
     public DbSet<Review> Reviews => Set<Review>();
@@ -29,7 +30,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PlanOptionRule> PlanOptionRules => Set<PlanOptionRule>();
     public DbSet<ClientNotePhoto> ClientNotePhotos => Set<ClientNotePhoto>();
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
-    public DbSet<UserConsent> UserConsents => Set<UserConsent>();
+
+    // Cycle 5 — consent journal (ARCHITECTURE_CYCLE5.md §44.2), replaces cycle 3's UserConsent.
+    public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
+    public DbSet<ClientHealthNote> ClientHealthNotes => Set<ClientHealthNote>();
+    public DbSet<SubjectRequest> SubjectRequests => Set<SubjectRequest>();
 
     // Cycle 4 — WhatsApp notifications (ARCHITECTURE_CYCLE4.md §23, §25).
     public DbSet<City> Cities => Set<City>();
@@ -62,7 +67,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // NULL means "not migrated yet" is unambiguous during the backfill.
             e.HasOne(c => c.City).WithMany().HasForeignKey(c => c.CityId).OnDelete(DeleteBehavior.Restrict);
             e.Property(c => c.TimeZoneId).HasMaxLength(64);
-            // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4): "who pays" — Restrict so a billing account
+            // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4): "who pays" — Restrict so a billing account
             // can't be deleted out from under a company that still belongs to it. Stage 6 (§43.6,
             // B5-13): NOT NULL at the database level (`BackfillBillingAccounts`/`AddCoTenancyKeys`
             // already populated every row) and an alternate key on (Id, BillingAccountId) — the
@@ -114,7 +119,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(s => s.Owner).WithMany().HasForeignKey(s => s.OwnerUserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => s.OwnerUserId).IsUnique();
             e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
-            // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4): one subscription row per account. Cascade
+            // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4): one subscription row per account. Cascade
             // mirrors the Owner FK above — deleting the account takes its subscription row with it.
             // Stage 6 (§43.6, B5-13): NOT NULL at the database level.
             e.Property(s => s.BillingAccountId).IsRequired();
@@ -175,10 +180,25 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // unbounded `text` before this fix (code review finding).
             e.Property(b => b.ConsentPrivacyVersion).HasMaxLength(64);
             e.Property(b => b.ConsentTermsVersion).HasMaxLength(64);
+            e.Property(b => b.GuardianConfirmationVersion).HasMaxLength(64);
+            e.Property(b => b.BookingNoticeVersion).HasMaxLength(64);
             e.HasOne(b => b.Company).WithMany(c => c.Bookings).HasForeignKey(b => b.CompanyId);
             e.HasOne(b => b.Service).WithMany(s => s.Bookings).HasForeignKey(b => b.ServiceId);
             e.HasOne(b => b.Master).WithMany(u => u.MasterBookings).HasForeignKey(b => b.MasterId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(b => b.Client).WithMany(u => u.ClientBookings).HasForeignKey(b => b.ClientId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<BookingService>(e =>
+        {
+            e.Property(bs => bs.NameSnapshot).HasMaxLength(200);
+            e.Property(bs => bs.Price).HasColumnType("decimal(10,2)");
+            e.HasIndex(bs => new { bs.BookingId, bs.Position }).IsUnique();
+            e.HasIndex(bs => bs.ServiceId);
+            e.HasOne(bs => bs.Booking).WithMany(b => b.BookingServices).HasForeignKey(bs => bs.BookingId).OnDelete(DeleteBehavior.Cascade);
+            // Restrict, not Cascade: a service that has ever been part of a visit can't be hard-deleted
+            // out from under the historical record — the product already only soft-deletes services
+            // (Service.IsActive) for exactly this reason.
+            e.HasOne(bs => bs.Service).WithMany().HasForeignKey(bs => bs.ServiceId).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Review>(e =>
@@ -232,13 +252,76 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(s => s.Name).HasMaxLength(100);
         });
 
-        builder.Entity<UserConsent>(e =>
+        builder.Entity<ConsentRecord>(e =>
         {
-            // "At most one row per document per user" as a hard DB guarantee (US-37, ARCHITECTURE.md
-            // §5.1) — no journal is kept, re-acceptance overwrites the existing row.
-            e.HasIndex(c => new { c.UserId, c.DocumentType }).IsUnique();
-            e.Property(c => c.Version).HasMaxLength(64); // matches ARCHITECTURE.md §5.1 (was `text`)
-            e.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(c => c.SubjectPhone).HasMaxLength(20);
+            e.Property(c => c.DocumentKey).HasMaxLength(64);
+            e.Property(c => c.DocumentVersion).HasMaxLength(64);
+            e.Property(c => c.DocumentHash).HasMaxLength(64);
+            e.Property(c => c.IpAddress).HasMaxLength(45);
+            e.Property(c => c.UserAgent).HasMaxLength(256);
+            e.Property(c => c.RevokeReason).HasMaxLength(256);
+
+            // NO ACTION on all three FKs, deliberately not Cascade (ARCHITECTURE_CYCLE5.md §44.2 p.5):
+            // this table is evidence — a user row being physically removed (it never is, §7.4's
+            // tombstone, but the schema must not rely on that) must never take the proof of what they
+            // consented to down with it.
+            e.HasOne(c => c.User).WithMany()
+                .HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(c => c.Company).WithMany()
+                .HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(c => c.RecordedByUser).WithMany()
+                .HasForeignKey(c => c.RecordedByUserId).OnDelete(DeleteBehavior.NoAction);
+
+            // §44.2 p.4 — deliberately no unique index anywhere on this table (that IS US-66 p.1;
+            // double-click protection moves to ConsentLedger.GrantAsync's idempotency window, §45.4).
+            // "Current, non-revoked row for this user+key+purpose" — ConsentLedger's ForUser reads.
+            e.HasIndex(c => new { c.UserId, c.DocumentKey, c.Purpose, c.GrantedAtUtc })
+                .HasDatabaseName("IX_ConsentRecords_CurrentByUser")
+                .IsDescending(false, false, false, true)
+                .HasFilter("\"RevokedAtUtc\" IS NULL AND \"UserId\" IS NOT NULL");
+
+            // "Current, non-revoked row for this phone+company+key" — ConsentLedger's ForPhoneInCompany
+            // reads (salon-facing consents: photo, health — a subject without an account included).
+            e.HasIndex(c => new { c.SubjectPhone, c.CompanyId, c.DocumentKey, c.GrantedAtUtc })
+                .HasDatabaseName("IX_ConsentRecords_CurrentBySubject")
+                .IsDescending(false, false, false, true)
+                .HasFilter("\"RevokedAtUtc\" IS NULL AND \"SubjectPhone\" IS NOT NULL");
+
+            // Retention sweep's scan order (ARCHITECTURE_CYCLE5.md §49.1) — not built by this task, but
+            // the index belongs with the table it serves.
+            e.HasIndex(c => c.GrantedAtUtc).HasDatabaseName("IX_ConsentRecords_Retention");
+        });
+
+        builder.Entity<SubjectRequest>(e =>
+        {
+            e.Property(r => r.Reference).HasMaxLength(16);
+            e.HasIndex(r => r.Reference).IsUnique();
+            e.Property(r => r.SubjectPhone).HasMaxLength(20);
+            e.Property(r => r.ContactValue).HasMaxLength(200);
+            e.Property(r => r.Message).HasMaxLength(4000);
+            e.Property(r => r.Resolution).HasMaxLength(2000);
+            e.HasIndex(r => r.SubjectPhone);
+            e.HasIndex(r => new { r.Status, r.DueAtUtc });
+        });
+
+        builder.Entity<ClientHealthNote>(e =>
+        {
+            e.Property(n => n.GuestPhone).HasMaxLength(20);
+            e.Property(n => n.Ciphertext).HasColumnType("text");
+            e.Property(n => n.KeyId).HasMaxLength(16);
+            e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            // NO ACTION, not SetNull/Cascade — same reasoning as ConsentRecord (§44.2 p.5): the row is
+            // this company's own record, not personal convenience data that should vanish quietly if the
+            // client's account is (never physically, but the schema must not rely on that) removed.
+            e.HasOne(n => n.Client).WithMany()
+                .HasForeignKey(n => n.ClientId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(n => n.UpdatedByUser).WithMany()
+                .HasForeignKey(n => n.UpdatedByUserId).OnDelete(DeleteBehavior.NoAction);
+            // §44.3: "one health note per client per company" — a hard DB guarantee, not an application-
+            // level find-or-create, mirroring ClientNotePhoto's idempotency-by-index convention.
+            e.HasIndex(n => new { n.CompanyId, n.ClientId }).IsUnique().HasFilter("\"ClientId\" IS NOT NULL");
+            e.HasIndex(n => new { n.CompanyId, n.GuestPhone }).IsUnique().HasFilter("\"GuestPhone\" IS NOT NULL");
         });
 
         builder.Entity<MailLog>(e => {
@@ -272,6 +355,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 .IsRequired().OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(c => c.BillingAccountId);
             e.HasAlternateKey(c => new { c.Id, c.BillingAccountId });
+            e.Property(c => c.Inn).HasMaxLength(12); // T5-B4: 10 (Company) or 12 (Ip/SelfEmployed) digits
             // Filtered unique index: a channel with no instance yet has ProviderInstanceId == null, and
             // there is exactly one live column value we must never see twice.
             e.HasIndex(c => c.ProviderInstanceId).IsUnique().HasFilter("\"ProviderInstanceId\" IS NOT NULL");
@@ -282,7 +366,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<ChannelCompanyAssignment>(e =>
         {
-            // Cycle 5, stage 6 (ARCHITECTURE_CYCLE5.md §43.6) — both FKs are composite, pinned to the
+            // Cycle 7, stage 6 (ARCHITECTURE_CYCLE7.md §43.6) — both FKs are composite, pinned to the
             // (Id, BillingAccountId) alternate keys on NotificationChannels/Companies. This is the
             // co-tenancy guarantee: a row can only exist while the channel and the company it's
             // assigned to agree on BillingAccountId, so "assign a company to a number belonging to a
@@ -368,6 +452,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<NotificationTemplateHistory>(e =>
         {
             e.HasIndex(h => new { h.CompanyId, h.Type, h.ChangedAtUtc });
+            e.Property(h => h.NewBody).HasMaxLength(1000); // matches NotificationTemplateValidator.MaxLength
+            e.Property(h => h.WarningVersion).HasMaxLength(64);
+            e.Property(h => h.AdMarkersHit).HasMaxLength(200);
         });
 
         builder.Entity<NotificationOptOut>(e =>
@@ -380,7 +467,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasKey(s => s.Key);
             e.Property(s => s.Key).HasMaxLength(100);
-            e.Property(s => s.Value).HasMaxLength(200);
+            // T5-B12/M7 (ARCHITECTURE_CYCLE5.md §44.7): 200 → 2000 — the ad-markers dictionary
+            // (PlatformSettings.AdMarkersKey) is a comma-separated list that doesn't fit in 200.
+            e.Property(s => s.Value).HasMaxLength(2000);
         });
 
         builder.Entity<PlatformSettingChangeLog>(e =>
@@ -388,7 +477,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(l => l.Key);
         });
 
-        // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4): at most one system-free plan row, ever.
+        // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4): at most one system-free plan row, ever.
         builder.Entity<SubscriptionPlanConfig>(e =>
         {
             e.HasIndex(p => p.IsSystemFree).IsUnique().HasFilter("\"IsSystemFree\" = true");
@@ -425,7 +514,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 }
 
 /// <summary>Keyless row shape for <c>AccountUsageReader.GetAsync</c>'s raw SQL projection
-/// (ARCHITECTURE_CYCLE5.md §46.1) — lives here (not in ServiceBooking.API, which depends on this
+/// (ARCHITECTURE_CYCLE7.md §46.1) — lives here (not in ServiceBooking.API, which depends on this
 /// project, not the other way around) purely so <c>AppDbContext</c> can map it; never queried through
 /// normal LINQ, only ever the target of <c>FromSqlInterpolated</c>.</summary>
 public sealed class AccountUsageRow

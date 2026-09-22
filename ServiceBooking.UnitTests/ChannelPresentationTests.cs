@@ -49,6 +49,29 @@ public class ChannelPresentationTests
         text.Should().Contain("3").And.Contain("18.10");
     }
 
+    // T5-B13 (ARCHITECTURE_CYCLE5.md §52.2) — a platform-side incident must read as one, and never as
+    // "you did something wrong" the way the ordinary Disconnected text does.
+    [Fact]
+    public void StateText_Disconnected_ServerCountryMismatch_IsDistinctFromOrdinaryDisconnected()
+    {
+        var ordinary = ChannelPresentation.StateText(ChannelState.Disconnected, null, 3, null);
+        var mismatch = ChannelPresentation.StateText(
+            ChannelState.Disconnected, null, 3, null, ChannelStateReason.ServerCountryMismatch);
+
+        mismatch.Should().NotBe(ordinary);
+        mismatch.Should().Contain("платформ");
+    }
+
+    [Fact]
+    public void CanConnect_Disconnected_IsNeverReconnectable_RegardlessOfReason()
+    {
+        // §52.2's "у него нет кнопки «повторить»" — enforced structurally here, not by a special case in
+        // the presentation text: Disconnected was never one of CanConnect's three starting states, and
+        // ServerCountryMismatch relies on that staying true rather than adding a carve-out.
+        ChannelPresentation.CanConnect(ChannelState.Disconnected, ChannelPaymentStatus.Paid, riskAccepted: true)
+            .Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(ChannelState.NotConnected, ChannelPaymentStatus.Paid, true, true)]
     [InlineData(ChannelState.NeedsReconnect, ChannelPaymentStatus.Paid, true, true)]

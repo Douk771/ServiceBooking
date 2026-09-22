@@ -1,8 +1,11 @@
 import { api } from './client'
-import type { components } from '../types/api-cycle5.generated'
+import type { components } from '../types/api-cycle7.generated'
 
 type Schemas = components['schemas']
 
+/** 152-ФЗ ч. 7 ст. 5 prohibits indefinite retention of personal data; `Forever` was removed from
+ *  the contract (`contracts/cycle7/openapi.yaml`) to match `RemovePhotoRetentionForever`, which
+ *  migrated existing `Forever` plans to `TwelveMonths` server-side. */
 export type PhotoRetention = Schemas['PhotoRetention']
 export type OptionAvailability = Schemas['OptionAvailability']
 

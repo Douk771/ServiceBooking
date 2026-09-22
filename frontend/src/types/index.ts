@@ -30,7 +30,7 @@ export interface Company {
   planAllowsOnlinePayment?: boolean
   planAllowsPublicListing?: boolean
   /**
-   * @deprecated Cycle 5 (ARCHITECTURE_CYCLE5.md §56): this now means the AGGREGATE seat cap across
+   * @deprecated Cycle 7 (ARCHITECTURE_CYCLE7.md §56): this now means the AGGREGATE seat cap across
    * the whole billing account's subscription, not a per-company limit. Comparing it against a
    * single company's `members.length` under-counts staff at the account's other companies and will
    * gate "add employee" too early. Do NOT use for that check — use `canAddEmployee` instead. Kept
@@ -43,6 +43,11 @@ export interface Company {
   accountSeatsLimit?: number | null
   /** Server-computed per the same rule as the 402 on add-member — use this to gate the "add employee" UI. */
   canAddEmployee?: boolean | null
+  /**
+   * How many days ahead a client may book online (API_CONTRACT_CYCLE6.md §41.4/§45.7).
+   * 0/null/undefined means "use the server default" (90 days), not "booking closed".
+   */
+  bookingHorizonDays?: number | null
   /**
    * Server-computed aggregate over ALL of the company's reviews (not just the current page of
    * `GET /api/companies/{id}/reviews`) — cycle C fix for the QA-found regression where the average
@@ -93,7 +98,7 @@ export interface ChannelCompanyRef {
   isActive: boolean
 }
 
-/** Cycle 5 (ChannelDtoCycle5Additions, openapi-cycle5.yaml): Funded = входит в оплаченные; Unfunded =
+/** Cycle 5 (ChannelDtoCycle5Additions, contracts/cycle7/openapi.yaml): Funded = входит в оплаченные; Unfunded =
  *  заведён сверх оплаченного количества (не отправляет, но сохраняет назначения и состояние
  *  подключения); NotPaid = у аккаунта не оплачено ни одного номера. */
 export type ChannelFundingState = 'Funded' | 'Unfunded' | 'NotPaid'
@@ -121,6 +126,9 @@ export interface ChannelDto {
   /** Server-composed (BillingTexts) — the frontend prints this verbatim, never builds its own copy
    *  about payment/funding state (project convention, ARCHITECTURE_CYCLE5.md). */
   fundingText: string
+  /** API_CONTRACT_CYCLE5.md §50.2 — shown only to the owner (here) and to SuperAdmin (AdminChannelDto). */
+  inn: string | null
+  legalEntityForm: LegalEntityForm | null
 }
 
 export interface ChannelOffer {
@@ -175,6 +183,12 @@ export interface NotificationTemplatesResponse {
   placeholders: NotificationPlaceholder[]
   unsubscribeLine: string
   templates: NotificationTemplate[]
+  /** API_CONTRACT_CYCLE5.md §47.1 — the ad-marker dictionary comes from the server; the frontend
+   *  never hardcodes or extends it (§56.5 п. 4), so its own highlighting always agrees with the
+   *  server's own check on the same text. */
+  adMarkers: string[]
+  warningTextKey: LegalTextKey
+  warningVersion: string
 }
 
 export interface NotificationLogEntry {
@@ -182,14 +196,17 @@ export interface NotificationLogEntry {
   createdAt: string
   type: NotificationType
   typeText: string
-  recipientName: string
-  recipientPhoneMasked: string
+  recipientName: string | null
+  recipientPhoneMasked: string | null
   status: NotificationStatus
   statusText: string
   bookingId: string | null
   visitStart: string | null
   sentAt: string | null
   channelId: string
+  /** API_CONTRACT_CYCLE5.md §51 — the body/recipient fields above were wiped by the retention job.
+   *  The frontend decides "text erased by retention" from this flag, never from an empty string. */
+  contentRedacted: boolean
 }
 
 export interface NotificationLogSummary {
@@ -222,6 +239,9 @@ export interface AdminChannelDto {
   companyCount: number
   idleSince: string | null
   requestedAt: string | null
+  /** API_CONTRACT_CYCLE5.md §50.2 — visible to SuperAdmin. */
+  inn: string | null
+  legalEntityForm: LegalEntityForm | null
 }
 
 export interface AdminChannelSummary {
@@ -264,6 +284,14 @@ export interface TimeSlot {
   end: string
 }
 
+/** US-67 (API_CONTRACT_CYCLE6.md §43.2/§45) — one line item of a multi-service visit. */
+export interface BookingServiceLine {
+  serviceId: string
+  name: string
+  durationMinutes: number
+  price: number
+}
+
 export interface Booking {
   id: string
   companyId: string
@@ -271,6 +299,13 @@ export interface Booking {
   companySlug?: string
   serviceId: string
   serviceName: string
+  /**
+   * US-67 — every service of the visit, always non-empty (bookings created before the cycle come
+   * back with a single-element array from the server). `services[0].serviceId === serviceId`.
+   */
+  services?: BookingServiceLine[]
+  /** US-67 — sum of services[].durationMinutes; undefined only for mocks that predate the cycle. */
+  totalDurationMinutes?: number
   masterId: string
   masterName: string
   clientId?: string
@@ -301,6 +336,13 @@ export interface Booking {
   clientDeleted?: boolean
   /** US-32 п. 6 — null when the booking has no notifications at all. */
   reminderStatus?: ReminderStatus | null
+  /** API_CONTRACT_CYCLE5.md §46.2 — version of the ст. 18 notice (D5) shown under the booking button,
+   *  filled by the server from the snapshot in effect at booking time. */
+  bookingNoticeVersion?: string | null
+  /** Whether this booking was made for someone other than the person submitting the form (US-78). */
+  bookedForOther?: boolean
+  /** When `bookedForOther` is true, when the guardian/representative confirmation (D12) was recorded. */
+  guardianConfirmedAt?: string | null
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'
@@ -336,11 +378,51 @@ export interface Paged<T> {
   hasNext: boolean
 }
 
-export type LegalDocumentType = 'Privacy' | 'Terms'
-export type LegalChangeKind = 'Material' | 'Editorial'
+// ── Cycle 7: legal documents & consents — API_CONTRACT_CYCLE7.md §38–§53 ───────────────────────────
 
-/** API_CONTRACT.md §1 — metadata only, no text. Used for the footer/registration links and to
- *  compare versions without paying for the HTML body. */
+/** §38.3 — exact string values, five types instead of two. `"Terms"` no longer exists (BREAKING №1);
+ *  it became `"TermsClient"`, and the /terms route/URL is unchanged. */
+export type LegalDocumentType = 'Privacy' | 'TermsClient' | 'TermsOwner' | 'PdnConsent' | 'ChannelRiskNotice'
+export type LegalChangeKind = 'Material' | 'Editorial'
+/** §38.3 — which 451 mechanism a document participates in: blocks everything, blocks owner actions
+ *  only, or blocks nothing (consent recorded through its own endpoints instead, §41). */
+export type LegalGate = 'Global' | 'OwnerScope' | 'None'
+/** §39.3 — microcopy documents (not gated, no `changeKind`/`gate`), fetched by key rather than type. */
+export type LegalTextKey =
+  | 'BookingNotice'
+  | 'TemplateAdWarning'
+  | 'UnsubscribePage'
+  | 'PhotoConsent'
+  | 'HealthDataConsent'
+  | 'GuardianConfirmation'
+export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
+export type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
+export type ConsentSource =
+  | 'Registration'
+  | 'ReAcceptance'
+  | 'Profile'
+  | 'CompanyCreation'
+  | 'ChannelRequest'
+  | 'ChannelLink'
+  | 'PhotoForm'
+  | 'HealthForm'
+  | 'Booking'
+  | 'Migrated'
+export type SubjectRequestKind = 'Access' | 'Rectification' | 'Erasure' | 'ConsentWithdrawal' | 'Complaint'
+export type SubjectRequestStatus = 'Received' | 'InProgress' | 'Answered' | 'Rejected'
+export type DueState = 'OnTime' | 'DueSoon' | 'Overdue'
+export type LegalEntityForm = 'Ip' | 'Company' | 'SelfEmployed'
+
+/** A named consent purpose as published in the manifest — §39.1. The frontend reads the set of
+ *  purposes from here rather than hardcoding an array, so a change to the purpose list doesn't need
+ *  a frontend release (API_CONTRACT_CYCLE5.md §39.1, §56.5 п. 2). */
+export interface LegalPurposeMeta {
+  key: ConsentPurpose
+  title: string
+}
+
+/** §39.1 — metadata only, no text. Used for the footer/registration links and to compare versions
+ *  without paying for the HTML body. `gate`/`purposes` are new in cycle 5. */
 export interface LegalDocumentMeta {
   type: LegalDocumentType
   title: string
@@ -348,23 +430,135 @@ export interface LegalDocumentMeta {
   effectiveFrom: string
   isDraft: boolean
   changeKind: LegalChangeKind
+  gate: LegalGate
+  url: string
+  /** Present only on `PdnConsent`. */
+  purposes?: LegalPurposeMeta[]
 }
 
-/** API_CONTRACT.md §2 — metadata plus the HTML fragment for /privacy and /terms. */
+/** §39.1 — one entry per UI microcopy text in the manifest. */
+export interface LegalTextMeta {
+  key: LegalTextKey
+  version: string
+  isDraft: boolean
+}
+
+/** §39.1 — `GET /api/legal/documents`: an object with two arrays, not a bare array (BREAKING). */
+export interface LegalManifest {
+  documents: LegalDocumentMeta[]
+  uiTexts: LegalTextMeta[]
+}
+
+/** §39.2 — metadata plus the HTML fragment for a single document route (/privacy, /terms, …). */
 export interface LegalDocument extends LegalDocumentMeta {
   contentHtml: string
 }
 
-/** API_CONTRACT.md §3 — one entry per document type in GET /api/legal/consent-status. */
+/** §39.3 — `GET /api/legal/texts/{key}`: same shape as a document, minus `changeKind`/`gate`. */
+export interface LegalText {
+  key: LegalTextKey
+  version: string
+  isDraft: boolean
+  contentHtml: string
+}
+
+/** §39.4 — one entry per gated document type in `GET /api/legal/consent-status`. */
 export interface ConsentStatusDocument {
   type: LegalDocumentType
-  version: string
+  currentVersion: string
   acceptedVersion: string | null
   changeKind: LegalChangeKind
+  gate: LegalGate
 }
 
 export interface ConsentStatus {
+  /** Blocks the whole app (Global gate, Material change). */
   requiresAcceptance: boolean
+  /** Blocks owner-only actions (OwnerScope gate, Material change) — `false` for non-owners. */
+  ownerActionBlocked: boolean
+  /** An Editorial change exists — informational banner only, nothing is blocked. */
   showBanner: boolean
   documents: ConsentStatusDocument[]
+}
+
+/** §38.2 — the JSON body of an owner-scope 451 (Content-Type: application/json), distinct from the
+ *  plain-text body of a global 451. Carries what `OwnerTermsGateModal` needs to open itself. */
+export interface OwnerGate451 {
+  reason: string
+  documentType: LegalDocumentType
+  version: string
+}
+
+/** §38.4 — one row of the consent ledger, used by §41 (profile) and §49 (export). */
+export interface ConsentLedgerEntry {
+  id: string
+  documentKey: string
+  documentVersion: string
+  purpose: ConsentPurpose | null
+  act: ConsentAct
+  source: ConsentSource
+  companyId: string | null
+  grantedAt: string
+  revokedAt: string | null
+  revokeReason: string | null
+}
+
+/** §41.1 — `GET /api/profile/consents`. */
+export interface ProfileConsentsResponse {
+  document: { type: 'PdnConsent'; version: string; isDraft: boolean; purposes: LegalPurposeMeta[] }
+  granted: { purpose: ConsentPurpose; version: string; grantedAt: string; revokedAt: string | null }[]
+  versionOutdated: boolean
+  history: ConsentLedgerEntry[]
+}
+
+/** §41.3 — what revoking a consent purpose actually did/would do (also returned, unchanged, by the
+ *  `revoke-preview` dry-run endpoint). */
+export interface ConsentRevokeEffects {
+  photosDeleted: number
+  healthNotesDeleted: number
+  profileFieldsCleared: string[]
+  queuedNotificationsCancelled: number
+}
+
+export interface ConsentRevokeResponse {
+  revoked: number
+  effects: ConsentRevokeEffects
+}
+
+// ── Cycle 5: photo/health consent (§44, §45) ────────────────────────────────────────────────────────
+
+/** §44.1 — `GET /api/companies/{id}/clients/{key}/photo-consent`. */
+export interface PhotoConsentStatus {
+  granted: boolean
+  grantedAt: string | null
+  version: string | null
+  confirmedBy: string | null
+  textVersionOutdated: boolean
+  source: ConsentSource | null
+}
+
+/** §45.1 — `GET /api/companies/{id}/clients/{key}/health-note`. */
+export interface HealthNoteDto {
+  value: string | null
+  updatedAt?: string
+  updatedBy?: string
+  consentRequired?: boolean
+}
+
+// ── Cycle 5: subject requests (§48) ─────────────────────────────────────────────────────────────────
+
+export interface SubjectRequestDto {
+  id: string
+  reference: string
+  kind: SubjectRequestKind
+  status: SubjectRequestStatus
+  phoneMasked: string
+  contactValue: string
+  message: string
+  receivedAt: string
+  dueAt: string
+  dueState: DueState
+  answeredAt: string | null
+  handlerName: string | null
+  resolution: string | null
 }

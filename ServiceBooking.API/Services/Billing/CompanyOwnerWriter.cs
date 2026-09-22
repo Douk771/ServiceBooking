@@ -6,7 +6,7 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §50, §51.3) — the single place that moves
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §50, §51.3) — the single place that moves
 /// <see cref="Company.OwnerUserId"/> and writes <see cref="CompanyOwnerChangeLog"/>. Used by BOTH
 /// <c>AdminController.UpdateCompanyOwner</c> (a stand-alone owner change, <c>WithTransfer = false</c>)
 /// and <c>CompanyTransferService</c> (an owner change bundled with a company transfer,

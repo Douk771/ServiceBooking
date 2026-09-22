@@ -12,7 +12,7 @@ export interface ProfilePlanDto {
   /** @deprecated Cycle 5: aggregate seat cap across the whole billing account, kept only for display. */
   maxEmployees: number | null
   maxCompanies: number | null
-  /** Cycle 5 additions (ARCHITECTURE_CYCLE5.md §56, ProfilePlanDtoV5Additions). */
+  /** Cycle 7 additions (ARCHITECTURE_CYCLE7.md §56, ProfilePlanDtoV5Additions). */
   totalMonthlyPrice?: number | null
   currency?: string
   companiesUsed?: number

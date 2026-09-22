@@ -4,7 +4,7 @@ namespace ServiceBooking.API.DTOs.Common;
 public record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int Total, bool HasNext);
 
 /// <summary>
-/// Cycle 5 billing-admin envelope (contracts/openapi-cycle5.yaml PagedAdminBillingAccounts /
+/// Cycle 5 billing-admin envelope (contracts/cycle7/openapi.yaml PagedAdminBillingAccounts /
 /// PagedAdminSubscriptionRequests, `additionalProperties: false`, required
 /// [items, page, pageSize, totalCount]) — deliberately a SEPARATE shape from <see cref="PagedResult{T}"/>
 /// rather than a rename of it. Renaming PagedResult itself would also change the wire shape of the four

@@ -5,7 +5,7 @@ import type { PricingPlanDto } from '../../types/pricing'
 interface Props {
   plan: PricingPlanDto
   /** The first paid plan (right after the free one, in sortOrder) gets a visual accent — a cheap,
-   *  honest way to guide the eye without a comparison table (ARCHITECTURE_CYCLE5.md §56.2 rules out
+   *  honest way to guide the eye without a comparison table (ARCHITECTURE_CYCLE7.md §56.2 rules out
    *  a table outright). Not "recommended": the contract has no such flag. */
   featured?: boolean
 }

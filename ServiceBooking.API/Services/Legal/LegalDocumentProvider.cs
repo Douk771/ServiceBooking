@@ -1,4 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -8,10 +10,11 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.API.Services.Legal;
 
 /// <summary>
-/// Singleton in-memory cache of the legal documents manifest (ARCHITECTURE.md §4.3). Polls
-/// legal.json's mtime, not more often than LegalOptions.ReloadSeconds, and re-parses everything
-/// atomically into a new LegalSnapshot on change — a FileSystemWatcher is deliberately not used
-/// (inotify events aren't reliable across a Docker bind-mount boundary, and a silently-not-firing
+/// Singleton in-memory cache of the legal documents manifest (ARCHITECTURE.md §4.3, extended by
+/// ARCHITECTURE_CYCLE5.md §43.3 to two arrays — `documents` and `uiTexts`). Polls legal.json's mtime
+/// (and every content file it references), not more often than LegalOptions.ReloadSeconds, and re-parses
+/// everything atomically into a new LegalSnapshot on change — a FileSystemWatcher is deliberately not
+/// used (inotify events aren't reliable across a Docker bind-mount boundary, and a silently-not-firing
 /// watcher is exactly the failure this history must not have).
 ///
 /// A failed reload (missing file, invalid manifest, a document that fails validation) NEVER clears the
@@ -96,16 +99,17 @@ public partial class LegalDocumentProvider
             var json = File.ReadAllText(manifestPath);
             var manifest = JsonSerializer.Deserialize<ManifestFile>(json, JsonOptions)
                 ?? throw new InvalidOperationException("legal.json parsed to null.");
-            var entries = manifest.Documents ?? [];
+            var documentEntries = manifest.Documents ?? [];
+            var uiTextEntries = manifest.UiTexts ?? [];
 
             // max(mtime) over the manifest itself and every content file it references — see the field
             // comment on _lastLoadedSourcesMtimeUtc for why legal.json's own mtime alone isn't enough.
             // A missing/escaping file here just means "not fresher than before" for this check; the real
-            // validation (and its error) happens in LoadDocument below.
+            // validation (and its error) happens in LoadDocument/LoadUiText below.
             var sourcesMtimeUtc = File.GetLastWriteTimeUtc(manifestPath);
-            foreach (var entry in entries)
+            foreach (var file in documentEntries.Select(e => e.File).Concat(uiTextEntries.Select(e => e.File)))
             {
-                var candidatePath = ResolveContentPath(entry.File);
+                var candidatePath = ResolveContentPath(file);
                 if (candidatePath is not null && File.Exists(candidatePath))
                 {
                     var fileMtimeUtc = File.GetLastWriteTimeUtc(candidatePath);
@@ -116,7 +120,7 @@ public partial class LegalDocumentProvider
             if (_snapshot is not null && sourcesMtimeUtc == _lastLoadedSourcesMtimeUtc)
                 return; // nothing changed since the last successful load
 
-            var snapshot = LoadSnapshot(entries);
+            var snapshot = LoadSnapshot(documentEntries, uiTextEntries);
             _snapshot = snapshot;
             _lastLoadedSourcesMtimeUtc = sourcesMtimeUtc;
         }
@@ -149,22 +153,36 @@ public partial class LegalDocumentProvider
         && !fileName.Contains("..")
         && !Path.IsPathRooted(fileName);
 
-    private LegalSnapshot LoadSnapshot(List<ManifestEntry> entries)
+    private LegalSnapshot LoadSnapshot(List<ManifestEntry> documentEntries, List<ManifestUiTextEntry> uiTextEntries)
     {
         var documents = new Dictionary<LegalDocumentType, LegalDocument>();
-        foreach (var entry in entries)
+        foreach (var entry in documentEntries)
         {
             var doc = LoadDocument(entry);
             documents[doc.Type] = doc;
         }
 
-        // Both documents are required to publish ANY of them — a manifest missing one is exactly as
-        // broken as one with an invalid entry (ARCHITECTURE.md §4.4): partial legal coverage is not a
-        // valid state to serve to real users.
-        if (!documents.ContainsKey(LegalDocumentType.Privacy) || !documents.ContainsKey(LegalDocumentType.Terms))
-            throw new InvalidOperationException("legal.json must contain both a Privacy and a Terms document.");
+        // All five document types are required to publish ANY of them — a manifest missing one is
+        // exactly as broken as one with an invalid entry (ARCHITECTURE.md §4.4, ARCHITECTURE_CYCLE5.md
+        // §43.3): partial legal coverage is not a valid state to serve to real users.
+        var missingDocumentTypes = Enum.GetValues<LegalDocumentType>().Except(documents.Keys).ToList();
+        if (missingDocumentTypes.Count > 0)
+            throw new InvalidOperationException(
+                $"legal.json is missing required document type(s): {string.Join(", ", missingDocumentTypes)}.");
 
-        return new LegalSnapshot(documents);
+        var uiTexts = new Dictionary<string, LegalUiText>(StringComparer.Ordinal);
+        foreach (var entry in uiTextEntries)
+        {
+            var text = LoadUiText(entry);
+            uiTexts[text.Key] = text;
+        }
+
+        var missingUiTextKeys = LegalTextKey.All.Except(uiTexts.Keys).ToList();
+        if (missingUiTextKeys.Count > 0)
+            throw new InvalidOperationException(
+                $"legal.json is missing required uiTexts key(s): {string.Join(", ", missingUiTextKeys)}.");
+
+        return new LegalSnapshot(documents, uiTexts);
     }
 
     private LegalDocument LoadDocument(ManifestEntry entry)
@@ -178,15 +196,82 @@ public partial class LegalDocumentProvider
         if (entry.IsDraft && !entry.Version.EndsWith("-draft", StringComparison.Ordinal))
             throw new InvalidOperationException($"{type}: isDraft is true but version '{entry.Version}' does not end with '-draft'.");
 
-        if (!IsBareFilename(entry.File))
-            throw new InvalidOperationException($"{type}: 'file' must be a bare filename, no path segments.");
+        var (contentHtml, contentHash) = LoadContent(type.ToString(), entry.File);
 
-        var fullPath = Path.GetFullPath(Path.Combine(_root, entry.File));
+        if (!entry.IsDraft && PlaceholderRegex().IsMatch(contentHtml))
+            throw new InvalidOperationException(
+                $"{type}: document content contains an unresolved {{{{PLACEHOLDER}}}} and isDraft is false " +
+                "— a document with a hole cannot be published as final (ARCHITECTURE_CYCLE5.md §43.3).");
+
+        if (!Enum.TryParse<LegalChangeKind>(entry.ChangeKind, ignoreCase: true, out var changeKind))
+            changeKind = LegalChangeKind.Material; // unrecognized/absent → safe default, §4.2
+
+        // Unrecognized/absent → Global, the safe default (ARCHITECTURE_CYCLE5.md §43.3): a manifest typo
+        // must fail closed (block more callers) rather than silently stop gating an owner-only document.
+        if (!Enum.TryParse<LegalGate>(entry.Gate, ignoreCase: true, out var gate))
+            gate = LegalGate.Global;
+
+        if (!DateOnly.TryParse(entry.EffectiveFrom, out var effectiveFrom))
+            throw new InvalidOperationException($"{type}: effectiveFrom '{entry.EffectiveFrom}' is not a valid date.");
+
+        var purposes = new List<LegalPurpose>();
+        if (entry.Purposes is { Count: > 0 })
+        {
+            if (type != LegalDocumentType.PdnConsent)
+                throw new InvalidOperationException($"{type}: 'purposes' is only valid on PdnConsent.");
+
+            foreach (var p in entry.Purposes)
+            {
+                if (!Enum.TryParse<ConsentPurpose>(p.Key, ignoreCase: true, out var purposeKey))
+                    throw new InvalidOperationException($"{type}: unknown purpose key '{p.Key}'.");
+                if (string.IsNullOrWhiteSpace(p.Title))
+                    throw new InvalidOperationException($"{type}: purpose '{p.Key}' is missing a title.");
+                purposes.Add(new LegalPurpose(purposeKey, p.Title));
+            }
+        }
+        else if (type == LegalDocumentType.PdnConsent)
+        {
+            throw new InvalidOperationException("PdnConsent: 'purposes' must be non-empty (ARCHITECTURE_CYCLE5.md §43.3).");
+        }
+
+        return new LegalDocument(type, entry.Title ?? "", entry.Version, effectiveFrom, entry.IsDraft, changeKind, gate, purposes, contentHtml, contentHash);
+    }
+
+    private LegalUiText LoadUiText(ManifestUiTextEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.Key) || !LegalTextKey.All.Contains(entry.Key))
+            throw new InvalidOperationException($"uiTexts: unknown or missing key '{entry.Key}' — must be one of {string.Join(", ", LegalTextKey.All)}.");
+
+        if (string.IsNullOrWhiteSpace(entry.Version) || entry.Version.Length > 64)
+            throw new InvalidOperationException($"uiTexts.{entry.Key}: version must be non-empty and at most 64 characters.");
+
+        if (entry.IsDraft && !entry.Version.EndsWith("-draft", StringComparison.Ordinal))
+            throw new InvalidOperationException($"uiTexts.{entry.Key}: isDraft is true but version '{entry.Version}' does not end with '-draft'.");
+
+        var (contentHtml, contentHash) = LoadContent($"uiTexts.{entry.Key}", entry.File);
+
+        // §43.3's placeholder gate is written against LegalDocumentType.Purposes in the architecture
+        // text, but the underlying rule ("a hole on a live domain is worse than no document at all",
+        // §13-bis) applies exactly as much to a consent form's text — HealthDataConsent/PhotoConsent/
+        // GuardianConfirmation are read out loud to a real subject the same way D1/D2 are.
+        if (!entry.IsDraft && PlaceholderRegex().IsMatch(contentHtml))
+            throw new InvalidOperationException(
+                $"uiTexts.{entry.Key}: content contains an unresolved {{{{PLACEHOLDER}}}} and isDraft is false.");
+
+        return new LegalUiText(entry.Key, entry.Version, entry.IsDraft, contentHtml, contentHash);
+    }
+
+    private (string ContentHtml, string ContentHash) LoadContent(string label, string file)
+    {
+        if (!IsBareFilename(file))
+            throw new InvalidOperationException($"{label}: 'file' must be a bare filename, no path segments.");
+
+        var fullPath = Path.GetFullPath(Path.Combine(_root, file));
         var rootFull = Path.GetFullPath(_root) + Path.DirectorySeparatorChar;
         if (!fullPath.StartsWith(rootFull, StringComparison.Ordinal))
-            throw new InvalidOperationException($"{type}: 'file' escapes the legal documents root.");
+            throw new InvalidOperationException($"{label}: 'file' escapes the legal documents root.");
         if (!File.Exists(fullPath))
-            throw new InvalidOperationException($"{type}: file '{entry.File}' not found in {_root}.");
+            throw new InvalidOperationException($"{label}: file '{file}' not found in {_root}.");
 
         var contentHtml = File.ReadAllText(fullPath);
 
@@ -194,21 +279,25 @@ public partial class LegalDocumentProvider
         // input filter (ARCHITECTURE.md §4.4). Legal:Root is configuration-grade trust, same as
         // appsettings.Production.json.
         if (contentHtml.Contains("<script", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"{type}: document content contains '<script'.");
+            throw new InvalidOperationException($"{label}: content contains '<script'.");
         if (OnEventAttributeRegex().IsMatch(contentHtml))
-            throw new InvalidOperationException($"{type}: document content contains an on…= event handler attribute.");
+            throw new InvalidOperationException($"{label}: content contains an on…= event handler attribute.");
 
-        if (!Enum.TryParse<LegalChangeKind>(entry.ChangeKind, ignoreCase: true, out var changeKind))
-            changeKind = LegalChangeKind.Material; // unrecognized/absent → safe default, §4.2
+        // Computed once, here, not per-acceptance (ARCHITECTURE_CYCLE5.md §44.2 p.2): the hash written
+        // into every ConsentRecord for this document/text is this exact value, so an operator who swaps
+        // the file without bumping the version leaves old journal rows pointing at a hash nothing on
+        // disk matches any more — the mismatch IS the tripwire, not a bug to paper over.
+        var contentHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(contentHtml))).ToLowerInvariant();
 
-        if (!DateOnly.TryParse(entry.EffectiveFrom, out var effectiveFrom))
-            throw new InvalidOperationException($"{type}: effectiveFrom '{entry.EffectiveFrom}' is not a valid date.");
-
-        return new LegalDocument(type, entry.Title ?? "", entry.Version, effectiveFrom, entry.IsDraft, changeKind, contentHtml);
+        return (contentHtml, contentHash);
     }
 
     [GeneratedRegex(@"\son\w+\s*=", RegexOptions.IgnoreCase)]
     private static partial Regex OnEventAttributeRegex();
+
+    // ARCHITECTURE_CYCLE5.md §43.3: "{{[А-ЯЁ_]+}}" — an unresolved Cyrillic-uppercase placeholder token.
+    [GeneratedRegex(@"\{\{[А-ЯЁ_]+\}\}")]
+    private static partial Regex PlaceholderRegex();
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -216,6 +305,9 @@ public partial class LegalDocumentProvider
     {
         [JsonPropertyName("documents")]
         public List<ManifestEntry>? Documents { get; set; }
+
+        [JsonPropertyName("uiTexts")]
+        public List<ManifestUiTextEntry>? UiTexts { get; set; }
     }
 
     private sealed class ManifestEntry
@@ -225,7 +317,23 @@ public partial class LegalDocumentProvider
         [JsonPropertyName("effectiveFrom")] public string EffectiveFrom { get; set; } = "";
         [JsonPropertyName("isDraft")] public bool IsDraft { get; set; }
         [JsonPropertyName("changeKind")] public string? ChangeKind { get; set; }
+        [JsonPropertyName("gate")] public string? Gate { get; set; }
         [JsonPropertyName("title")] public string? Title { get; set; }
+        [JsonPropertyName("file")] public string File { get; set; } = "";
+        [JsonPropertyName("purposes")] public List<ManifestPurposeEntry>? Purposes { get; set; }
+    }
+
+    private sealed class ManifestPurposeEntry
+    {
+        [JsonPropertyName("key")] public string Key { get; set; } = "";
+        [JsonPropertyName("title")] public string Title { get; set; } = "";
+    }
+
+    private sealed class ManifestUiTextEntry
+    {
+        [JsonPropertyName("key")] public string Key { get; set; } = "";
+        [JsonPropertyName("version")] public string Version { get; set; } = "";
+        [JsonPropertyName("isDraft")] public bool IsDraft { get; set; }
         [JsonPropertyName("file")] public string File { get; set; } = "";
     }
 }

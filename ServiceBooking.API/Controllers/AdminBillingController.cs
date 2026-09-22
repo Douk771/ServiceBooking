@@ -12,7 +12,7 @@ using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
 
-/// <summary>contracts/openapi-cycle5.yaml tag billing-admin — options catalog, billing accounts,
+/// <summary>contracts/cycle7/openapi.yaml tag billing-admin — options catalog, billing accounts,
 /// subscription assignment and the owner request queue (US-66, US-67, US-70). Kept as a separate
 /// controller from <see cref="AdminController"/> (same "api/admin" route prefix, same SuperAdmin-only
 /// authorization) purely so this cycle's diff doesn't grow an already-780-line file further.</summary>

@@ -1,6 +1,6 @@
 namespace ServiceBooking.Core.Enums;
 
-/// <summary>Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3, §44.3, US-66) — how an option relates to a given
+/// <summary>Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3, §44.3, US-66) — how an option relates to a given
 /// plan. Append-only, values persist in the database.</summary>
 public enum OptionAvailability
 {

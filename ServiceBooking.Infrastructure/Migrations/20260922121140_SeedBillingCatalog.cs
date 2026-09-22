@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ServiceBooking.Infrastructure.Migrations
 {
     /// <summary>
-    /// Cycle 5 (ARCHITECTURE_CYCLE5.md §54.3, B3) — the catalog rows §44 and <c>SubscriptionResolver</c>
+    /// Cycle 7 (ARCHITECTURE_CYCLE7.md §54.3, B3) — the catalog rows §44 and <c>SubscriptionResolver</c>
     /// need to have anything to resolve at all. Runs LAST, after <c>AddCoTenancyConstraints</c>: the
     /// "paid channels → option quantity" step below reads <c>NotificationChannel.BillingAccountId</c>,
     /// which is only guaranteed non-null once that migration's guard has passed. §54.1's own table

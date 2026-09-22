@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { components } from '../types/api-cycle5.generated'
+import type { components } from '../types/api-cycle7.generated'
 
 type Schemas = components['schemas']
 
@@ -25,7 +25,7 @@ export interface PagedResult<T> {
   totalCount: number
 }
 
-// API_CONTRACT_CYCLE5.md §49, §53 — SuperAdmin-only. Replaces the 410'd
+// API_CONTRACT_CYCLE7.md §49, §53 — SuperAdmin-only. Replaces the 410'd
 // PUT /admin/owners/{ownerUserId}/subscription and POST /admin/notification-channels/{id}/payment.
 export const adminBillingApi = {
   listAccounts: (params: { search?: string; status?: SubscriptionStatus; page?: number; pageSize?: number }) =>

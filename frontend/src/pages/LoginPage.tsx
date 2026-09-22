@@ -1,11 +1,11 @@
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { useQueryClient } from '@tanstack/react-query'
-import { AxiosError } from 'axios'
 import { Link, useNavigate } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
+import { PhoneInput } from '../components/ui/PhoneInput'
 import { Icon } from '../components/ui/Icon'
 import { getAuthErrorMessage } from '../utils/authError'
 import { useState } from 'react'
@@ -19,8 +19,9 @@ export function LoginPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
-  } = useForm<FormData>()
+  } = useForm<FormData>({ defaultValues: { phone: '' } })
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -31,6 +32,11 @@ export function LoginPage() {
     setLoading(true)
     setError('')
     try {
+      // §48.4: sign-in accepts a foreign number already on file (unlike registration). PhoneInput in
+      // `restrictToRussia={false}` mode already hands back either canonical Russian digits or raw
+      // foreign text (see its prop doc comment) — either way, no client-side normalization is needed:
+      // `AuthController.Login` extracts digits from whatever text it's given (`PhoneNormalizer.Normalize`,
+      // §48.3, the "no second normalizer on the client" rule).
       const res = await authApi.login(data.phone, data.password)
       // Signing in over a live session (a direct /login link, or registering a second account without
       // logging out) would otherwise leave the previous user's cached queries in place, and the new
@@ -49,12 +55,10 @@ export function LoginPage() {
       )
       navigate('/')
     } catch (e: unknown) {
-      // 429 (US-42 `auth-login` policy) gets its own text; every other failure on this endpoint is a
-      // wrong-credentials 401, which the server sends with an empty body (API_CONTRACT.md §0.2) —
-      // authError's generic fallback would be misleadingly vague there, so it's only consulted for 429.
-      setError(
-        e instanceof AxiosError && e.response?.status === 429 ? getAuthErrorMessage(e) : 'Неверный телефон или пароль',
-      )
+      // getAuthErrorMessage now tells 401 (wrong credentials), 423 (lockout), 403 (sign-in not
+      // allowed), 429 (rate limit), 5xx and "no response" apart (ARCHITECTURE_CYCLE6.md §42.3.3) —
+      // this screen used to collapse everything but 429 into "wrong phone or password".
+      setError(getAuthErrorMessage(e))
     } finally {
       setLoading(false)
     }
@@ -77,12 +81,22 @@ export function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-[18px]">
-            <Input
-              label="Телефон"
-              type="tel"
-              placeholder="+7 999 000 00 00"
-              error={errors.phone?.message}
-              {...register('phone', { required: 'Введите телефон' })}
+            <Controller
+              name="phone"
+              control={control}
+              rules={{ required: 'Введите телефон' }}
+              render={({ field }) => (
+                <PhoneInput
+                  label="Телефон"
+                  error={errors.phone?.message}
+                  value={field.value}
+                  onChange={field.onChange}
+                  // Sign-in is exempt from the Russian-only policy (§48.2, `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q8): an
+                  // account may already have a foreign number on file, and the server still
+                  // normalizes logins with `Normalize`, not `TryNormalizeRussian`.
+                  restrictToRussia={false}
+                />
+              )}
             />
             <Input
               label="Пароль"

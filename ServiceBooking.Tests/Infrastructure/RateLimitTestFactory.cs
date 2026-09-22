@@ -23,8 +23,10 @@ public sealed class RateLimitTestFactory : WebApplicationFactory<Program>
     private readonly int? _bookingCreateAnonymousPermitLimit;
     private readonly string[]? _trustedNetworks;
     private readonly string _simulatedRealPeer;
+    private readonly string _connectionString;
 
     public RateLimitTestFactory(
+        string connectionString,
         int? authLoginPermitLimit = null,
         int? authRegisterPermitLimit = null,
         int? dataExportPermitLimit = null,
@@ -32,6 +34,7 @@ public sealed class RateLimitTestFactory : WebApplicationFactory<Program>
         string[]? trustedNetworks = null,
         string simulatedRealPeer = "127.0.0.1")
     {
+        _connectionString = connectionString;
         _authLoginPermitLimit = authLoginPermitLimit;
         _authRegisterPermitLimit = authRegisterPermitLimit;
         _dataExportPermitLimit = dataExportPermitLimit;
@@ -60,18 +63,7 @@ public sealed class RateLimitTestFactory : WebApplicationFactory<Program>
                 _ => new FakeRemoteIpStartupFilter(IPAddress.Parse(_simulatedRealPeer))));
 
 
-        builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:DefaultConnection", TestDatabaseFixture.ConnectionString);
-        builder.UseSetting("Jwt:Key", "TEST_ONLY_SECRET_KEY_AT_LEAST_32_CHARACTERS_LONG");
-        builder.UseSetting("Jwt:Issuer", "ServiceBooking");
-        builder.UseSetting("Jwt:Audience", "ServiceBookingClient");
-        builder.UseSetting("AllowedOrigins", "http://localhost:5173");
-        builder.UseSetting("SuperAdmin:Phone", "+70000000001");
-        builder.UseSetting("SuperAdmin:Email", "superadmin@test.local");
-        builder.UseSetting("SuperAdmin:Password", "SuperAdmin123!");
-        builder.UseSetting("SmartCaptcha:SecretKey", "");
-        builder.UseSetting("SmartCaptcha:SiteKey", "");
-        builder.UseSetting("Logging:LogLevel:Microsoft.EntityFrameworkCore", "Warning");
+        TestHostSettings.Apply(builder, "ratelimit", _connectionString);
 
         // WindowMinutes intentionally left at their (long) production defaults everywhere below — only
         // PermitLimit is tightened, so a test needs a handful of calls, not a real clock, to trip 429.

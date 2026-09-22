@@ -16,7 +16,7 @@ public class SubscriptionChangeLog
     public bool NewIsActive { get; set; }
     public string? Comment { get; set; }
 
-    // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4) — which billing account this row is about. Nullable:
+    // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4) — which billing account this row is about. Nullable:
     // every row written before this column existed (cycles 1-4) has none, and OwnerUserId above stays
     // their only key. New writes should populate it.
     public Guid? BillingAccountId { get; set; }

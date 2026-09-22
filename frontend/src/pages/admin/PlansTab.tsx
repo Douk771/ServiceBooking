@@ -19,7 +19,6 @@ import { getPlanErrorMessage } from '../../utils/planError'
 const RETENTION_LABELS: Record<PhotoRetention, string> = {
   SixMonths: '6 месяцев',
   TwelveMonths: '12 месяцев',
-  Forever: 'Бессрочно',
 }
 
 // AdminPlanDto.highlights allows up to 10 entries on write (contract + PricingCatalogBuilder.MaxHighlights).
@@ -548,7 +547,6 @@ export function PlansTab() {
                 >
                   <option value="SixMonths">6 месяцев</option>
                   <option value="TwelveMonths">12 месяцев</option>
-                  <option value="Forever">Бессрочно</option>
                 </select>
               </div>
             </div>

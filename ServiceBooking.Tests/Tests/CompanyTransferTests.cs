@@ -12,9 +12,9 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 5 (SPEC.md US-77, ARCHITECTURE_CYCLE5.md §51) — moving a company between billing accounts,
+/// QA cycle 7 (SPEC.md US-77, ARCHITECTURE_CYCLE7.md §51) — moving a company between billing accounts,
 /// with or without changing its responsible owner in the same transaction. Written from SPEC.md/
-/// ARCHITECTURE_CYCLE5.md §51, independently of CompanyTransferController's/CompanyTransferService's own
+/// ARCHITECTURE_CYCLE7.md §51, independently of CompanyTransferController's/CompanyTransferService's own
 /// implementation, per this cycle's QA brief ("Вызов 2"). Developers proposed these scenarios but did
 /// not write them (backend report) — this is that missing coverage.
 /// </summary>

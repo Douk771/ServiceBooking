@@ -42,7 +42,7 @@ public sealed record TransferResult(bool Success, TransferFailure? Failure)
 }
 
 /// <summary>
-/// Cycle 5 (ARCHITECTURE_CYCLE5.md §51) — moves a company to another billing account, optionally
+/// Cycle 7 (ARCHITECTURE_CYCLE7.md §51) — moves a company to another billing account, optionally
 /// changing its responsible owner in the same transaction (§51.0's two scenarios). Reuses
 /// <see cref="CompanyOwnerWriter"/> for the owner-change branch so it can never drift from
 /// <c>PUT /api/admin/companies/{id}/owner</c> (§50).

@@ -39,7 +39,7 @@ public record CompanyDto(
     bool PlanAllowsOnlineBooking,
     bool PlanAllowsOnlinePayment,
     bool PlanAllowsPublicListing,
-    // Cycle 5 (ARCHITECTURE_CYCLE5.md §53.1) — DEPRECATED, kept only because the response's FORM never
+    // Cycle 7 (ARCHITECTURE_CYCLE7.md §53.1) — DEPRECATED, kept only because the response's FORM never
     // changes (§41 п. 4): this used to mean "seat cap for THIS company" and now means the account's
     // SUMMED seat cap across every company it owns (§46). A consumer still comparing
     // members.length >= maxEmployees for one company will undercount and show an active "add" button
@@ -75,8 +75,16 @@ public record CompanyDto(
     string? CityRegion,
     string TimeZoneId,
     bool TimeZoneIsManual,
-    int UtcOffsetMinutes
+    int UtcOffsetMinutes,
+    // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): always the already-normalized value (never 0/null) —
+    // the calendar and the /embed/:slug widget read the horizon from here for free.
+    int BookingHorizonDays
 );
+
+// ARCHITECTURE_CYCLE5.md §42.1 — the acceptance of TermsOwner (D3) that gates company creation. Checked
+// by hand in the controller (not [Required]), same reasoning as RegisterDto.Legal: a domain-specific
+// text beats a generic ProblemDetails blob.
+public record OwnerTermsDto(string? Version);
 
 public record CreateCompanyDto(
     string Name,
@@ -93,8 +101,17 @@ public record CreateCompanyDto(
     // Optional override — see CompanyTimeZoneResolver.ForNewCompany.
     string? TimeZoneId,
     bool AllowSelfBooking = true,
-    bool ShowInPublicListing = true
+    bool ShowInPublicListing = true,
+    // ARCHITECTURE_CYCLE5.md §42.1, API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3) — appended at the end
+    // with a default so every existing positional CreateCompanyDto(...) call keeps compiling; the
+    // controller answers 400 at runtime if it's actually missing, same pattern as RegisterDto.Legal.
+    OwnerTermsDto? OwnerTerms = null
 );
+
+// API_CONTRACT_CYCLE5.md §42.1 — replaces the bare CompanyDto response. A fresh token is not an
+// optimization: claims are baked in at issuance, so without one the very next owner-action request would
+// still carry the OLD (missing) "lco" claim and immediately 451 on a company the owner just created.
+public record CreateCompanyResponseDto(CompanyDto Company, string Token);
 
 // Public-facing master info for the booking flow
 public record MasterPublicDto(
@@ -121,7 +138,11 @@ public record UpdateCompanyDto(
     // Optional<T> because the three cases in API_CONTRACT_CYCLE4.md §31.3 need to be told apart: field
     // omitted (leave the zone as-is), field explicitly null (revert to the city's own zone), field set
     // to a value (manual override) — see CompanyTimeZoneResolver.ForUpdate.
-    Optional<string?> TimeZoneId = default
+    Optional<string?> TimeZoneId = default,
+    // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): omitted/null → don't touch, same convention as every
+    // other plain-nullable field above; 0 → explicit reset to BookingHorizon.Default (90); anything
+    // outside [1, 365] → 400 via BookingHorizon.TryNormalize, checked in CompaniesController.Update.
+    int? BookingHorizonDays = null
 );
 
 // US-24 p.4 / US-19 p.7 — GET /api/companies/{id}/photo-usage.

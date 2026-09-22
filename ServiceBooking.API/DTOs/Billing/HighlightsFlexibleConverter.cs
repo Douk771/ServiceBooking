@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace ServiceBooking.API.DTOs.Billing;
 
 /// <summary>
-/// contracts/openapi-cycle5.yaml AdminPlanInput.highlights is a JSON array of strings, but the admin
+/// contracts/cycle7/openapi.yaml AdminPlanInput.highlights is a JSON array of strings, but the admin
 /// UI shipped in earlier cycles (frontend/src/pages/admin/PlansTab.tsx) and every existing functional
 /// test (ServiceBooking.Tests/Tests/AdminTests.cs, ~15 call sites via <c>NewPlanConfig</c>/
 /// <c>ToUpdateDto</c>) still POST/PUT a single newline-separated STRING, because they were written

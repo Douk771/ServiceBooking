@@ -9,7 +9,7 @@ interface Props {
 
 /**
  * Nav-bar link to `/pricing`. Renders nothing while the publication switch is off (404) — a link to
- * a page that then shows "not published yet" is worse than no link (API_CONTRACT_CYCLE5.md §39).
+ * a page that then shows "not published yet" is worse than no link (API_CONTRACT_CYCLE7.md §39).
  * Shares the `['public-pricing']` query cache with PricingTeaser/PricingPage, so navigating in stays
  * instant.
  */

@@ -143,7 +143,7 @@ public class SubscriptionResolverRulesTests
         plan.PhotoRetention.Should().Be(PhotoRetention.TwelveMonths);
     }
 
-    // ── ARCHITECTURE_CYCLE5.md §44.3 p.8 / §54.4: GrandfatheredEmployeeBonus adds seats forever,
+    // ── ARCHITECTURE_CYCLE7.md §44.3 p.8 / §54.4: GrandfatheredEmployeeBonus adds seats forever,
     // regardless of subscription state, and never appears in money. ─────────────────────────────
 
     [Fact]
@@ -204,7 +204,7 @@ public class SubscriptionResolverRulesTests
         plan.Should().Be(EffectivePlan.FromConfig(config));
     }
 
-    // ── ARCHITECTURE_CYCLE5.md §47.1: PaidNotificationNumbers is a pass-through the caller resolved
+    // ── ARCHITECTURE_CYCLE7.md §47.1: PaidNotificationNumbers is a pass-through the caller resolved
     // from AccountSubscriptionOptions — Resolve itself does no DB/validity math on it. ─────────────
 
     [Fact]
@@ -226,7 +226,7 @@ public class SubscriptionResolverRulesTests
         plan.PaidNotificationNumbers.Should().Be(0);
     }
 
-    // ── ARCHITECTURE_CYCLE5.md §44.3 п.6: employees = plan.MaxEmployees + Σ extra-employees + bonus,
+    // ── ARCHITECTURE_CYCLE7.md §44.3 п.6: employees = plan.MaxEmployees + Σ extra-employees + bonus,
     // companies = plan.MaxCompanies + Σ extra-companies. (B1) ──────────────────────────────────────
 
     [Fact]

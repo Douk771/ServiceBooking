@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ServiceBooking.Infrastructure.Migrations
 {
     /// <summary>
-    /// Cycle 5, stage 3 of 6 (ARCHITECTURE_CYCLE5.md §43.4/§47, US-73's "no company/number loses
+    /// Cycle 7, stage 3 of 6 (ARCHITECTURE_CYCLE7.md §43.4/§47, US-73's "no company/number loses
     /// anything" guarantee extended to numbers). Every existing <c>NotificationChannel</c> points at
     /// its OWNER's billing account — the same account <c>BackfillBillingAccounts</c> already
     /// provisioned/pointed every <c>Company</c>/<c>AccountSubscription</c> at, by the same

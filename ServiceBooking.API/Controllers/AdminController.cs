@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.DTOs.Common;
+using ServiceBooking.API.DTOs.Legal;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
@@ -40,7 +41,99 @@ public class AdminController(
             .Select(g => g.Sum(b => b.Price))
             .FirstOrDefaultAsync();
 
-        return Ok(new AdminStatsDto(totalCompanies, totalUsers, totalBookings, completedBookings, revenueByService));
+        // §50.1: visible without opening the subject-requests section — a one-person, no-shift-rotation
+        // operator (Р8) must see this without remembering to go looking for it.
+        var nowUtc = DateTime.UtcNow;
+        var overdueSubjectRequests = await db.SubjectRequests.CountAsync(r =>
+            r.DueAtUtc < nowUtc && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected);
+
+        return Ok(new AdminStatsDto(totalCompanies, totalUsers, totalBookings, completedBookings, revenueByService, overdueSubjectRequests));
+    }
+
+    // ── Subject requests (T5-B10, ARCHITECTURE_CYCLE5.md §50.1, US-74) ─────────────────────────────
+
+    [HttpGet("subject-requests")]
+    public async Task<ActionResult<PagedResult<SubjectRequestDto>>> GetSubjectRequests(
+        [FromQuery] SubjectRequestStatus? status, [FromQuery] SubjectRequestKind? kind, [FromQuery] string? dueState,
+        [FromQuery] int? page, [FromQuery] int? pageSize)
+    {
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        var query = db.SubjectRequests.AsNoTracking().AsQueryable();
+        if (status is not null) query = query.Where(r => r.Status == status);
+        if (kind is not null) query = query.Where(r => r.Kind == kind);
+
+        // dueState is computed server-side (ARCHITECTURE_CYCLE5.md §50.1: "считает сервер, не фронт") —
+        // filtered here the same way, not left to the frontend to derive from raw dates.
+        var nowUtc = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(dueState))
+        {
+            // Code review, "заодно": an unrecognized value used to fall through to `_ => query` — the
+            // filter silently did nothing instead of telling the caller their query string was wrong.
+            if (dueState is not ("Overdue" or "DueSoon" or "OnTime"))
+                return BadRequest($"Неизвестное значение dueState '{dueState}'. Ожидается Overdue, DueSoon или OnTime.");
+
+            query = dueState switch
+            {
+                "Overdue" => query.Where(r => r.DueAtUtc < nowUtc && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected),
+                "DueSoon" => query.Where(r => r.DueAtUtc >= nowUtc && r.DueAtUtc < nowUtc.AddDays(2) && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected),
+                _ => query.Where(r => r.DueAtUtc >= nowUtc.AddDays(2) || r.Status == SubjectRequestStatus.Answered || r.Status == SubjectRequestStatus.Rejected),
+            };
+        }
+
+        var total = await query.CountAsync();
+        // Urgent-first, always — §50.1: "самое горящее сверху", not a caller-chosen sort.
+        var rows = await query.OrderBy(r => r.DueAtUtc)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
+            .ToListAsync();
+
+        var handlerIds = rows.Where(r => r.HandlerUserId is not null).Select(r => r.HandlerUserId!).Distinct().ToList();
+        var handlerNames = handlerIds.Count == 0 ? new Dictionary<string, string>()
+            : await db.Users.Where(u => handlerIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+
+        var items = rows.Select(r => new SubjectRequestDto(
+            r.Id, r.Reference, r.Kind.ToString(), r.Status.ToString(), PhoneDisplayMask.Mask(r.SubjectPhone),
+            r.ContactValue, r.Message, r.ReceivedAtUtc, r.DueAtUtc, ComputeDueState(r, nowUtc),
+            r.AnsweredAtUtc, r.HandlerUserId is not null ? handlerNames.GetValueOrDefault(r.HandlerUserId) : null,
+            r.Resolution)).ToList();
+
+        return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
+    }
+
+    [HttpPost("subject-requests/{id:guid}/status")]
+    public async Task<IActionResult> UpdateSubjectRequestStatus(Guid id, [FromBody] UpdateSubjectRequestStatusDto dto)
+    {
+        var request = await db.SubjectRequests.FindAsync(id);
+        if (request is null) return NotFound();
+
+        // §48.3: a terminal status without a resolution would leave the journal unable to prove what was
+        // actually done — the same "doesn't count as evidence" reasoning behind ConsentRecord's own
+        // required fields.
+        if (dto.Status is SubjectRequestStatus.Answered or SubjectRequestStatus.Rejected && string.IsNullOrWhiteSpace(dto.Resolution))
+            return BadRequest("Для этого статуса нужно указать резолюцию.");
+
+        request.Status = dto.Status;
+        // Code review, "заодно": Resolution/AnsweredAtUtc/HandlerUserId are only ever WRITTEN when moving
+        // TO a terminal status — an earlier version wrote dto.Resolution unconditionally, so moving an
+        // already-Answered request back to a non-terminal status (e.g. reopening it for more work) wiped
+        // the resolution that was already on record, even though dto.Resolution is null for that call
+        // (the BadRequest check above only requires it for the terminal statuses).
+        if (dto.Status is SubjectRequestStatus.Answered or SubjectRequestStatus.Rejected)
+        {
+            request.Resolution = dto.Resolution;
+            request.AnsweredAtUtc = DateTime.UtcNow;
+            request.HandlerUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        }
+
+        await db.SaveChangesAsync();
+        return Ok();
+    }
+
+    private static string ComputeDueState(SubjectRequest r, DateTime nowUtc)
+    {
+        if (r.Status is SubjectRequestStatus.Answered or SubjectRequestStatus.Rejected) return "OnTime";
+        if (r.DueAtUtc < nowUtc) return "Overdue";
+        return r.DueAtUtc < nowUtc.AddDays(2) ? "DueSoon" : "OnTime";
     }
 
     // ── Users ──────────────────────────────────────────────────────────────────
@@ -197,7 +290,7 @@ public class AdminController(
         return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
     }
 
-    // openapi-cycle5.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
+    // contracts/cycle7/openapi.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
     // favor of PUT /admin/billing-accounts/{accountId}/subscription (AdminBillingController,
     // implemented this cycle) and must answer 410 Gone rather than behave as before, so a stale admin
     // client can't silently keep writing tariff/paid-until onto AccountSubscription once the
@@ -205,6 +298,46 @@ public class AdminController(
     [HttpPut("owners/{ownerUserId}/subscription")]
     public IActionResult UpdateSubscription(string ownerUserId, [FromBody] object? dto) =>
         LegacyEndpointGone("PUT /api/admin/billing-accounts/{accountId}/subscription");
+
+    /// <summary>
+    /// US-63 diagnostic endpoint (ARCHITECTURE_CYCLE6.md §43.2, API_CONTRACT_CYCLE6.md §42.2):
+    /// answers "the plan is assigned — why doesn't it work" in one round trip, instead of a support
+    /// engineer guessing across six independent failure points (§43.1).
+    /// </summary>
+    [HttpGet("owners/{ownerUserId}/subscription")]
+    public async Task<ActionResult<SubscriptionDiagnosticsDto>> GetSubscriptionDiagnostics(string ownerUserId)
+    {
+        var owner = await db.Users.FirstOrDefaultAsync(u => u.Id == ownerUserId);
+        if (owner is null) return NotFound("Owner not found");
+
+        var sub = await db.AccountSubscriptions
+            .Include(s => s.PlanConfig)
+            .FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
+
+        var nowUtc = DateTime.UtcNow;
+        var effective = SubscriptionResolver.Resolve(sub, grandfatheredEmployeeBonus: 0, paidNotificationNumbers: 0, nowUtc);
+        var (status, statusText) = SubscriptionDiagnostics.Describe(sub, nowUtc);
+
+        var companies = await db.Companies.Where(c => c.OwnerUserId == ownerUserId)
+            .Select(c => new { c.Id, c.Name, c.AllowSelfBooking }).ToListAsync();
+
+        var companyDtos = companies.Select(c =>
+        {
+            var blockingReason = SubscriptionDiagnostics.BlockingReasonFor(sub, effective, c.AllowSelfBooking, nowUtc);
+            return new SubscriptionDiagnosticsCompanyDto(
+                c.Id, c.Name, c.AllowSelfBooking,
+                OnlineBookingEnabled: blockingReason == PlanNotAppliedReason.None,
+                BlockingReason: blockingReason);
+        }).ToList();
+
+        var ownerName = string.Join(" ", new[] { owner.FirstName, owner.LastName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (string.IsNullOrWhiteSpace(ownerName)) ownerName = owner.Email ?? owner.PhoneNumber ?? ownerUserId;
+
+        return Ok(new SubscriptionDiagnosticsDto(
+            ownerUserId, ownerName,
+            sub?.PlanConfigId, sub?.PlanConfig?.Name, sub?.PaidUntil, sub?.IsActive ?? true,
+            sub?.PlanConfig?.IsActive ?? true, status, statusText, effective, companyDtos));
+    }
 
     [HttpGet("owners/{ownerUserId}/subscription-history")]
     public async Task<ActionResult<List<SubscriptionChangeLogDto>>> GetSubscriptionHistory(string ownerUserId)
@@ -307,6 +440,7 @@ public class AdminController(
             .Include(b => b.Master)
             .Include(b => b.Client)
             .Include(b => b.Company)
+            .Include(b => b.BookingServices)
             .AsQueryable();
 
         if (companyId.HasValue) query = query.Where(b => b.CompanyId == companyId);
@@ -317,7 +451,13 @@ public class AdminController(
         var bookings = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime).Take(500).ToListAsync();
 
         return Ok(bookings.Select(b => new AdminBookingDto(
-            b.Id, b.Company.Name, b.Service.Name,
+            b.Id, b.Company.Name,
+            // US-67 (ARCHITECTURE_CYCLE6.md §47.2): the visit shown as one line — comma-joined service
+            // names — rather than one row per service. Falls back to Service.Name only if
+            // BookingServices somehow has no rows (should never happen after the backfill).
+            b.BookingServices.Count > 0
+                ? string.Join(", ", b.BookingServices.OrderBy(bs => bs.Position).Select(bs => bs.NameSnapshot))
+                : b.Service.Name,
             $"{b.Master.FirstName} {b.Master.LastName}",
             b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Гость",
             b.GuestPhone ?? b.Client?.PhoneNumber,
@@ -335,7 +475,7 @@ public class AdminController(
             MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id), rules.Where(r => r.PlanConfigId == p.Id).ToList())).ToList()));
     }
 
-    // openapi-cycle5.yaml AdminPlanInput (BREAKING fix, cycle-07 backend report): the previous shape
+    // contracts/cycle7/openapi.yaml AdminPlanInput (BREAKING fix, cycle-07 backend report): the previous shape
     // bound straight into SubscriptionPlanConfig (Highlights as a raw newline-separated string) and had
     // no `options` field at all — every plan created/updated through this endpoint left the whole
     // option-availability matrix untouched, silently leaving every option Unavailable. Both endpoints
@@ -431,7 +571,7 @@ public class AdminController(
         // resolver treats PlanConfig.IsActive == false as Free, so every subscriber silently loses
         // online booking, analytics and their employee limit on the next request. Same guard, same
         // status, or the 409 there is just a speed bump around a differently-named door. The system
-        // free plan (ARCHITECTURE_CYCLE5.md §43.4) additionally can never be deactivated at all — the
+        // free plan (ARCHITECTURE_CYCLE7.md §43.4) additionally can never be deactivated at all — the
         // public price list has no "free" row otherwise and every account resolves to the hardcoded
         // EffectivePlan.Free fallback instead of the configured system row.
         if (plan.IsActive && !dto.IsActive)
@@ -464,7 +604,7 @@ public class AdminController(
 
     /// <summary>
     /// Separate from PUT /plans/{id} on purpose (code review finding B "isSystemFree removal") —
-    /// contracts/openapi-cycle5.yaml's AdminPlanInput has no isSystemFree property, and folding "make
+    /// contracts/cycle7/openapi.yaml's AdminPlanInput has no isSystemFree property, and folding "make
     /// this THE system free plan" into an ordinary field-edit DTO made it too easy for an unrelated PUT
     /// to accidentally flip the flag guarded by the partial unique index (AppDbContext).
     /// </summary>
@@ -525,7 +665,7 @@ public class AdminController(
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
 
-        // ARCHITECTURE_CYCLE5.md §43.4: the system free plan can be neither deleted nor deactivated —
+        // ARCHITECTURE_CYCLE7.md §43.4: the system free plan can be neither deleted nor deactivated —
         // deleting it (this endpoint only soft-deletes via IsActive = false) removes the "Бесплатно" row
         // from the public price list and, like UpdatePlan's deactivation guard above, would push any
         // future free-tier account onto the hardcoded EffectivePlan.Free fallback instead of this row.
@@ -555,7 +695,7 @@ public class AdminController(
             .ToDictionaryAsync(x => x.PlanConfigId, x => x.Count);
     }
 
-    // openapi-cycle5.yaml AdminPlanDto: projects the entity onto the contract shape rather than
+    // contracts/cycle7/openapi.yaml AdminPlanDto: projects the entity onto the contract shape rather than
     // returning it directly — the entity also carries AllowNotificationChannel and CreatedAt (neither
     // in the schema, which sets additionalProperties: false) and stores Highlights as a single
     // newline-separated string rather than the array the schema requires. `options` is now the real
@@ -615,7 +755,7 @@ public class AdminController(
         return null;
     }
 
-    // openapi-cycle5.yaml AdminPlanInput.options: the FULL desired availability matrix for the plan —
+    // contracts/cycle7/openapi.yaml AdminPlanInput.options: the FULL desired availability matrix for the plan —
     // rows not present are removed (an option that used to be Included/Extra and is now omitted becomes
     // Unavailable), matching the contract's "полная матрица" wording for the read side.
     // B6: an unknown Availability string or a nonexistent OptionId used to throw (Enum.Parse, no
@@ -668,7 +808,7 @@ public class AdminController(
         return null;
     }
 
-    /// <summary>ARCHITECTURE_CYCLE5.md §43.4: exactly one row may have <c>IsSystemFree == true</c>, and
+    /// <summary>ARCHITECTURE_CYCLE7.md §43.4: exactly one row may have <c>IsSystemFree == true</c>, and
     /// that row's price must be 0 — validated here so a violation surfaces as 400/409 instead of the
     /// partial unique index throwing a raw <c>DbUpdateException</c> (500) on save. The
     /// <see cref="DbUpdateException"/> catch around <c>SaveChangesAsync</c> callers still handles the
@@ -758,7 +898,8 @@ public class AdminController(
                 c.Id, c.State, ChannelPaymentState.Of(c, nowUtc),
                 owner is null ? "" : $"{owner.FirstName} {owner.LastName}",
                 owner?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(owner.PhoneNumber),
-                c.PaidFromUtc, c.PaidUntilUtc, c.Assignments.Count, c.IdleSinceUtc, c.RequestedAtUtc);
+                c.PaidFromUtc, c.PaidUntilUtc, c.Assignments.Count, c.IdleSinceUtc, c.RequestedAtUtc,
+                c.Inn, c.LegalEntityForm);
         }).ToList();
 
         return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
@@ -782,7 +923,7 @@ public class AdminController(
             PendingRequests: channels.Count(c => c.RequestedAtUtc is not null && c.PaidUntilUtc is null)));
     }
 
-    // openapi-cycle5.yaml (legacyChannelPayment, redaction 2.1): retired in favor of
+    // contracts/cycle7/openapi.yaml (legacyChannelPayment, redaction 2.1): retired in favor of
     // PUT /admin/billing-accounts/{accountId}/subscription (AdminBillingController, implemented this
     // cycle), which folds the notification-channel option into the account's option matrix.
     // Must answer 410 Gone rather than keep writing ChannelPaymentLog rows against a model that's being
@@ -859,7 +1000,7 @@ public class AdminController(
             platformSettings.InvalidateCache(PlatformSettingsWriter.IdleDaysKey);
         }
 
-        // ARCHITECTURE_CYCLE5.md §48: the "рубильник" for the public price list (GET /api/pricing). Was
+        // ARCHITECTURE_CYCLE7.md §48: the "рубильник" for the public price list (GET /api/pricing). Was
         // previously settable only by hand-editing the PlatformSettings row directly in the database —
         // see the standing comment on PricingCatalogCache.Invalidate — this is the admin lever for it.
         if (oldPricingPublicEnabled != dto.PricingPublicEnabled)
@@ -879,7 +1020,7 @@ public class AdminController(
         return Ok(dto);
     }
 
-    // Plain-text 410 body per openapi-cycle5.yaml's `text/plain: {schema: {type: string}}` response —
+    // Plain-text 410 body per contracts/cycle7/openapi.yaml's `text/plain: {schema: {type: string}}` response —
     // shared by both cycle-5 retired routes so they always point callers at the same replacement.
     private static IActionResult LegacyEndpointGone(string replacementRoute) =>
         new ContentResult
@@ -891,12 +1032,38 @@ public class AdminController(
 
     private static AdminChannelDto MapAdminChannelDto(NotificationChannel channel, int idleDays) => new(
         channel.Id, channel.State, ChannelPaymentState.Of(channel, DateTime.UtcNow), "", null,
-        channel.PaidFromUtc, channel.PaidUntilUtc, channel.Assignments.Count, channel.IdleSinceUtc, channel.RequestedAtUtc);
+        channel.PaidFromUtc, channel.PaidUntilUtc, channel.Assignments.Count, channel.IdleSinceUtc, channel.RequestedAtUtc,
+        channel.Inn, channel.LegalEntityForm);
+
+    // ── Retention policy (T5-B8/B9, ARCHITECTURE_CYCLE5.md §49.5) ────────────────
+
+    // §49.5: "сроки не переписываются руками в документ, а выгружаются из работающей конфигурации" —
+    // this endpoint reads the SAME IOptions<RetentionPeriods> every rule reads, so a declared-vs-actual
+    // mismatch is structurally impossible. [FromServices], same reasoning as GetScheduledTasks above:
+    // only this one action pays for resolving it.
+    [HttpGet("retention/policy")]
+    public ActionResult<RetentionPolicyDto> GetRetentionPolicy(
+        [FromServices] Microsoft.Extensions.Options.IOptions<Services.Retention.RetentionPeriods> periods,
+        [FromServices] IConfiguration config)
+    {
+        var p = periods.Value;
+        var dryRun = config.GetSection("ScheduledTasks:data-retention").GetValue("DryRun", true);
+
+        return Ok(new RetentionPolicyDto(
+            p.NotificationBodyDays, p.NotificationMetadataDays, p.TemplateHistoryDays,
+            p.InactiveAccountDays, p.BookingPersonalizationDays, p.ClientNoteDays, p.ClientNotePhotoDays,
+            p.ClientHealthNoteDays, p.ConsentRecordDays, p.ChannelStateEventDays, p.PaymentLogDays,
+            p.MailLogDays, p.AppLogDays, dryRun));
+    }
 }
 
 // ── DTOs ───────────────────────────────────────────────────────────────────────
 
-public record AdminStatsDto(int TotalCompanies, int TotalUsers, int TotalBookings, int CompletedBookings, decimal TotalRevenue);
+// T5-B10 (ARCHITECTURE_CYCLE5.md §50.1: "счётчик просроченных попадает в существующую админскую
+// сводку") — appended at the end with a default so any existing positional construction keeps compiling.
+public record AdminStatsDto(
+    int TotalCompanies, int TotalUsers, int TotalBookings, int CompletedBookings, decimal TotalRevenue,
+    int OverdueSubjectRequests = 0);
 
 // CommissionPercent removed (US-22): commission became per-company (CompanyMember.CommissionPercent)
 // back in cycle A; this account-level field means nothing any more and AdminPage.tsx never showed it.
@@ -911,7 +1078,18 @@ public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, 
     int MemberCount, int BookingCount, string OwnerUserId, string OwnerEmail,
     Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive);
 
-public record UpdateSubscriptionDto(Guid? PlanConfigId, DateTime? PaidUntil, bool IsActive, string? Comment);
+// IsActive is bool? (was bool, ARCHITECTURE_CYCLE6.md §43.3.1): a request that omits it must keep
+// meaning "leave it enabled", not silently deactivate the subscription (H1).
+public record UpdateSubscriptionDto(Guid? PlanConfigId, DateTime? PaidUntil, bool? IsActive, string? Comment);
+
+public record SubscriptionDiagnosticsDto(
+    string OwnerUserId, string OwnerName, Guid? PlanConfigId, string? PlanName, DateTime? PaidUntil,
+    bool IsActive, bool PlanIsActive, SubscriptionStatus Status, string StatusText,
+    EffectivePlan Effective, List<SubscriptionDiagnosticsCompanyDto> Companies);
+
+public record SubscriptionDiagnosticsCompanyDto(
+    Guid CompanyId, string Name, bool AllowSelfBooking, bool OnlineBookingEnabled,
+    PlanNotAppliedReason BlockingReason);
 
 // PUT /api/admin/plans/{id} body. Cycle-5 fields are nullable and applied only when present in the
 // request (see UpdatePlan) — binding straight into SubscriptionPlanConfig used to reset them to
@@ -922,7 +1100,7 @@ public record UpdatePlanDto(
     int? PhotoQuotaMb, PhotoRetention PhotoRetention, string? Description, bool IsActive, int NotifyDaysBefore,
     string? Highlights = null, bool? IsPublic = null, int? SortOrder = null, bool? IsSystemFree = null);
 
-// openapi-cycle5.yaml AdminPlanDto/PlanOptionRuleDto — `Options` is always empty (see MapAdminPlanDto)
+// contracts/cycle7/openapi.yaml AdminPlanDto/PlanOptionRuleDto — `Options` is always empty (see MapAdminPlanDto)
 // until the BillingAccount option catalog exists (cycle-07 backend report).
 public record AdminPlanOptionRuleDto(Guid OptionId, string Availability, int? IncludedQuantity);
 
@@ -952,10 +1130,22 @@ public record ScheduledTaskStatusDto(
 
 // ── Notification channels (API_CONTRACT_CYCLE4.md §34, T4-B11) ────────────────
 
+// Inn/LegalEntityForm appended (code review, "заодно"): the owner-facing channel read already exposes
+// both (NotificationChannelsController); SuperAdmin — who has to reconcile the same channel against
+// invoicing/compliance — was the one reader who couldn't see either.
 public record AdminChannelDto(
     Guid Id, ChannelState State, ChannelPaymentStatus PaymentState,
     string OwnerName, string? OwnerPhoneMasked,
-    DateTime? PaidFrom, DateTime? PaidUntil, int CompanyCount, DateTime? IdleSince, DateTime? RequestedAt);
+    DateTime? PaidFrom, DateTime? PaidUntil, int CompanyCount, DateTime? IdleSince, DateTime? RequestedAt,
+    string? Inn = null, LegalEntityForm? LegalEntityForm = null);
+
+// T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.5) — the actual configured retention values, for publication in
+// the platform's privacy policy and for the lawyer's own periodic check (US-73 п. 7, US-80 п. 5).
+public record RetentionPolicyDto(
+    int NotificationBodyDays, int NotificationMetadataDays, int TemplateHistoryDays,
+    int InactiveAccountDays, int BookingPersonalizationDays, int ClientNoteDays, int ClientNotePhotoDays,
+    int ClientHealthNoteDays, int ConsentRecordDays, int ChannelStateEventDays, int PaymentLogDays,
+    int MailLogDays, int AppLogDays, bool DryRun);
 
 public record AdminChannelSummaryDto(
     int Connected, int Connecting, int Disconnected, int Blocked,

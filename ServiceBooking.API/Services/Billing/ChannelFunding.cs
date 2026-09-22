@@ -3,7 +3,7 @@ using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Billing;
 
-/// <summary>Cycle 5 (ARCHITECTURE_CYCLE5.md §47.1) — the one place "is this number funded" gets
+/// <summary>Cycle 7 (ARCHITECTURE_CYCLE7.md §47.1) — the one place "is this number funded" gets
 /// computed. <see cref="ChannelFundingState.Funded"/> is not "connected"/"working" in the transport
 /// sense; it only answers "is the account's paid quantity enough to include this number".</summary>
 public enum ChannelFundingState

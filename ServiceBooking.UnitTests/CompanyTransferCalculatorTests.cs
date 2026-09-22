@@ -3,7 +3,7 @@ using ServiceBooking.API.Services.Billing;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE5.md §51.1/§51.2 — the pure, DB-free rules
+/// <summary>ARCHITECTURE_CYCLE7.md §51.1/§51.2 — the pure, DB-free rules
 /// <see cref="CompanyTransferService"/> is built on: new-owner linkage and the seat-overflow formula
 /// with its +1 correction for a new owner who isn't already a member of the transferred company
 /// (risk A8).</summary>

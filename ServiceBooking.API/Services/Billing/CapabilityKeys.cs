@@ -1,7 +1,7 @@
 namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>
-/// ARCHITECTURE_CYCLE5.md §44.2 — the capability-key literals shared between the raw-SQL
+/// ARCHITECTURE_CYCLE7.md §44.2 — the capability-key literals shared between the raw-SQL
 /// <c>SeedBillingCatalog</c> migration and <see cref="SubscriptionResolver"/>'s option arithmetic
 /// (§44.3 п.6). A prior pass seeded the catalog with the *option code* prefix ("extra-companies",
 /// "extra-employees") as the capability key, because that is what the resolver happened to read —
