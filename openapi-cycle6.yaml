@@ -34,7 +34,10 @@ openapi: 3.0.3
 
 info:
   title: ServiceBooking API — cycle 6 (booking flow fixes)
-  version: "6.1.0"
+  version: "6.2.0"
+  license:
+    name: Proprietary
+    url: https://ezbook.ru
   description: |
     Контракт цикла 6: US-60 (вход), US-61 (телефон, только +7), US-62 (признак «оказывает услуги»),
     US-63 (применение тарифа, дата обязательна), US-64 (один специалист), US-65 (календарь дней +
@@ -142,6 +145,13 @@ paths:
             text/plain:
               schema: { type: string }
               example: Введите номер телефона в формате +7 (900) 000-00-00
+        '429':
+          description: |
+            Сработала политика `auth-register`. Находка контрактной проверки цикла 6: код
+            реально возвращается, но в схеме его не было.
+          content:
+            text/plain:
+              schema: { type: string }
         '503':
           description: Правовые документы временно недоступны (манифест не читается)
           content:
@@ -178,6 +188,11 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/MasterPublic' }
+        '404':
+          description: |
+            Компания не найдена — либо `id` не является GUID и запрос не проходит ограничение
+            маршрута `{id:guid}`. Находка контрактной проверки цикла 6: поведение разумное,
+            в схеме его просто не было.
 
   /api/companies/{id}/members:
     get:
@@ -938,14 +953,19 @@ components:
         consentTermsVersion: { type: string, nullable: true }
         consentAcceptedAt: { type: string, format: date-time, nullable: true }
         clientDeleted: { type: boolean, example: false }
-        reminderStatus:
-          nullable: true
-          allOf:
-            - $ref: '#/components/schemas/ReminderStatus'
+        # OpenAPI 3.0: `nullable` обязан стоять рядом с `type`, а не рядом с `allOf`
+        # (находка redocly, правило nullable-type-sibling — прежняя запись была формально
+        # невалидна, и валидатор вправе был поле проигнорировать). Поэтому nullable перенесён
+        # внутрь самого компонента ReminderStatus, а здесь остаётся чистый $ref: так не
+        # появляется копии схемы, которая неизбежно разойдётся с оригиналом.
+        reminderStatus: { $ref: '#/components/schemas/ReminderStatus' }
 
     ReminderStatus:
       type: object
-      description: Аддитивное поле цикла 4, видно только персоналу; здесь приведено для полноты формы.
+      nullable: true
+      description: |
+        Аддитивное поле цикла 4, видно только персоналу; здесь приведено для полноты формы.
+        `nullable` стоит здесь, а не у поля-ссылки в `BookingDto` — см. комментарий там.
       required: [status, text]
       properties:
         status:
@@ -971,13 +991,23 @@ components:
           description: null — снять тариф (Free); в этом случае `paidUntil` не требуется.
         paidUntil:
           type: string
-          format: date-time
           nullable: true
+          pattern: '^\d{4}-\d{2}-\d{2}([Tt].+)?$'
           description: |
             РЕДАКЦИЯ 2 (ответ Q2): ОБЯЗАТЕЛЬНО, когда `planConfigId` не null — иначе 400
             «Укажите дату окончания подписки». Условная обязательность не выражается в OpenAPI 3.0,
             поэтому здесь поле nullable; правило проверяет сервер.
-            Дата без времени суток означает КОНЕЦ этого дня (23:59:59.999Z).
+
+            *Изменено в редакции 3 (решение по находке линтера).* Принимаются ДВЕ формы:
+            голая дата `2026-12-31` и полный момент `2026-12-31T23:59:59.999Z`. Поэтому
+            `format: date-time` здесь снят — он объявлял только вторую, а админка шлёт первую
+            (`<input type="date">`), и пример не соответствовал собственному типу.
+
+            **Дата без времени суток означает КОНЕЦ этого дня** (нормализуется сервером к
+            `23:59:59.999Z`). Это не округление, а смысл: без него «оплачено до 31 декабря»
+            истекало бы в полночь 31-го, то есть на сутки раньше, чем читает человек.
+            Правило намеренно живёт на сервере, а не в клиенте: иначе каждый клиент API
+            обязан был бы воспроизводить его сам, и ошибиться в нём можно было бы снова.
           example: "2026-12-31"
         isActive:
           type: boolean
