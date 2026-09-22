@@ -199,8 +199,13 @@ public class CompanyTransferService(
 
         // Step 6: the number belongs to the SOURCE account — a company leaving that account can no
         // longer be served by it (§43.6, §47.4). Strictly before step 7 (§51.3): the composite FK
-        // (a later slice) will make this order mandatory at the DB level, but the order matters now
-        // already, independent of that constraint.
+        // (ChannelCompanyAssignment → Companies(Id, BillingAccountId)) now makes this order mandatory
+        // at the DB level, not just by convention — if the assignment's delete and the company's
+        // BillingAccountId update were sent in the same SaveChangesAsync batch, EF Core's statement
+        // ordering for unrelated entities is not guaranteed to run the DELETE before the UPDATE, and
+        // the composite FK would reject the update while the (now stale) assignment row still points
+        // at the company's old BillingAccountId. A dedicated SaveChangesAsync here forces the DELETE
+        // to commit (within the same transaction) strictly before the UPDATE is even sent.
         var assignment = await db.ChannelCompanyAssignments.FirstOrDefaultAsync(a => a.CompanyId == companyId);
         if (assignment is not null)
         {
@@ -213,6 +218,7 @@ public class CompanyTransferService(
                 row.Status = NotificationStatus.Cancelled;
                 row.Reason = NotificationReason.BookingOrAssignmentCancelled;
             }
+            await db.SaveChangesAsync();
         }
 
         // Step 7: the payer changes.
