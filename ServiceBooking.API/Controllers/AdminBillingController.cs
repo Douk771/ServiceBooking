@@ -202,6 +202,7 @@ public class AdminBillingController(
         [FromQuery] string? search, [FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        search = Pagination.SanitizeSearch(search);
         var now = DateTime.UtcNow;
 
         // N19 — status, search and pagination all happen in SQL now; only the page's own rows (plus the

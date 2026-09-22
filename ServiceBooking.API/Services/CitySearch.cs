@@ -14,6 +14,11 @@ public static class CitySearch
         if (string.IsNullOrEmpty(raw)) return string.Empty;
 
         var lowered = raw.Trim().ToLowerInvariant().Replace('ё', 'е');
-        return new string(lowered.Where(c => c != ' ' && c != '-' && c != '(' && c != ')' && c != '—').ToArray());
+        // Postgres' `text` rejects an embedded NUL byte outright (Npgsql throws instead of the ILIKE
+        // simply matching nothing), and other control characters can never be part of a real city name
+        // anyway — strip the whole Unicode "control" category here, same class of character as
+        // Pagination.SanitizeSearch strips for every other `?search=` endpoint (cycle-07 QA finding #2).
+        return new string(lowered.Where(c =>
+            !char.IsControl(c) && c != ' ' && c != '-' && c != '(' && c != ')' && c != '—').ToArray());
     }
 }

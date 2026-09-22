@@ -121,4 +121,22 @@ public class PaginationTests
         // guarantee, not just a runtime assertion, that the two billing-admin list endpoints never
         // regrow the extra field schemathesis flagged as undocumented.
         typeof(ContractPagedResult<string>).GetProperty("HasNext").Should().BeNull();
+
+    // Cycle-07 QA finding #2: GET /api/admin/billing-accounts?search=... 500ed on an embedded NUL byte
+    // (Postgres' `text` type rejects it outright) — SanitizeSearch is the one place every `?search=`
+    // call site strips it, and any other control character, before the value ever reaches SQL.
+    [Theory]
+    [InlineData("Иванов\0", "Иванов")]
+    [InlineData("\0\0\0", null)]
+    [InlineData(" bell-and-escape", " bell-and-escape")]
+    [InlineData("no control chars", "no control chars")]
+    [InlineData(null, null)]
+    [InlineData("", "")]
+    public void SanitizeSearch_StripsControlCharactersOnly(string? input, string? expected) =>
+        Pagination.SanitizeSearch(input).Should().Be(expected);
+
+    [Fact]
+    public void SanitizeSearch_KeepsNonLatinTextUntouched() =>
+        // Only control characters are stripped — a Cyrillic company name search must not be mangled.
+        Pagination.SanitizeSearch("Компания «Ромашка»").Should().Be("Компания «Ромашка»");
 }

@@ -59,4 +59,25 @@ public static class Pagination
     /// <summary>See <see cref="ContractPagedResult{T}"/> — the cycle-5 billing-admin envelope only.</summary>
     public static ContractPagedResult<T> CreateContract<T>(IReadOnlyList<T> items, int page, int pageSize, int totalCount) =>
         new(items, page, pageSize, totalCount);
+
+    /// <summary>
+    /// The one place every `?search=` query parameter (AdminController users/companies,
+    /// AdminBillingController billing-accounts, CitiesController, MastersController) funnels through
+    /// before it reaches a `.Contains(...)`/LIKE translation.
+    ///
+    /// Postgres' `text` type rejects an embedded NUL byte (U+0000) outright — Npgsql surfaces that as an
+    /// unhandled exception (500), not a query that simply matches nothing — and other C0/C1 control
+    /// characters (form feed, escape sequences, etc.) are never meaningful in a name/phone/email search
+    /// anyway. Strips every Unicode control character (category Cc) rather than allow-listing ASCII, so
+    /// non-Latin search text (Cyrillic company names, etc.) is left untouched — only the class of
+    /// characters that actually caused the crash is removed. Returns null (not empty string) once
+    /// stripping leaves nothing searchable, so call sites' existing `IsNullOrWhiteSpace` guard still
+    /// short-circuits an all-control-character input the same way it already does for blank input.
+    /// </summary>
+    public static string? SanitizeSearch(string? search)
+    {
+        if (string.IsNullOrEmpty(search)) return search;
+        var cleaned = new string(search.Where(c => !char.IsControl(c)).ToArray());
+        return cleaned.Length == 0 ? null : cleaned;
+    }
 }
