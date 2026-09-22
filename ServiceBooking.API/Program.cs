@@ -32,6 +32,13 @@ var builder = WebApplication.CreateBuilder(args);
 // both, so a log line is one JSON object whether it's read live or grepped from disk a day later.
 // PhoneMaskingEnricher is the second/third rung of §11.3's defence; it self-limits to Warning+/exception
 // events, so it costs nothing on the Information-level "request completed" line every request produces.
+// Cycle 8 phase 2 (ARCHITECTURE_CYCLE8_PHASE2.md §96): preserveStaticLogger defaults to false, which
+// makes THIS host's logger win the process-wide static Log.Logger — harmless with one host per process,
+// but under per-test-class parallelism (several WebApplicationFactory hosts alive at once, ARCHITECTURE_
+// CYCLE8_PHASE2.md §92.4) the last host to start "wins" the static logger for every other host's writes,
+// and a host's own DisposeAsync can close a Log.Logger some OTHER still-running host is still using.
+// Scoped strictly to the Testing environment so Development/Production keep today's behavior byte-for-
+// byte, including Log.CloseAndFlush's shutdown-time flush semantics that depend on it.
 builder.Host.UseSerilog((context, services, loggerConfig) =>
 {
     loggerConfig
@@ -78,7 +85,7 @@ builder.Host.UseSerilog((context, services, loggerConfig) =>
             });
         });
     }
-});
+}, preserveStaticLogger: builder.Environment.IsEnvironment("Testing"));
 
 // Fail-fast on obviously-unsafe deployment configuration (US-10 → US-48, ARCHITECTURE.md §13). Runs
 // before anything reads these values, and BEFORE builder.Build() — so a misconfigured deployment never
@@ -631,6 +638,17 @@ if (!isDeveloperEnvironment)
 // the same masking as anything else with a phone in it, not through this switch.
 app.UseSerilogRequestLogging(opts =>
 {
+    // Cycle 8 phase 2 (ARCHITECTURE_CYCLE8_PHASE2.md §96): RequestLoggingMiddleware defaults to the
+    // STATIC Serilog.Log.Logger when opts.Logger is left null — the one fallback in this pipeline that
+    // preserveStaticLogger (set above on builder.Host.UseSerilog) does not route around by itself. Under
+    // Testing's per-host preserveStaticLogger=true, that default would mean this middleware's own
+    // request-completed line goes to whichever OTHER host most recently claimed the static logger (or
+    // nowhere, if none has) instead of THIS host's own file sink — resolved here by pointing it
+    // explicitly at the Serilog.ILogger this exact host's DI container built (registered by UseSerilog
+    // regardless of preserveStaticLogger). No behavior change outside Testing: in Development/Production
+    // there is only ever one host per process, so this is the SAME logger the static field would have
+    // pointed at anyway.
+    opts.Logger = app.Services.GetRequiredService<Serilog.ILogger>();
     // Every DELIBERATE 4xx (400/402/403/404/409/429/451) logs at Information, never Warning/Error
     // (US-45 p.5) — they are normal traffic, not incidents. Only an unhandled exception or a 5xx is
     // Warning/Error-worthy from the request-logging middleware's point of view; background-task and
