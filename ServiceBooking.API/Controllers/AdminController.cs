@@ -20,7 +20,7 @@ namespace ServiceBooking.API.Controllers;
 [Authorize(Roles = "SuperAdmin")]
 public class AdminController(
     AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager,
-    PricingCatalogCache pricingCatalogCache) : ControllerBase
+    PricingCatalogCache pricingCatalogCache, CompanyOwnerWriter companyOwnerWriter) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -261,63 +261,21 @@ public class AdminController(
         // company to an account nobody can ever log into again.
         if (newOwner.DeletedAtUtc is not null) return BadRequest("User account has been deleted");
 
-        var oldOwnerUserId = company.OwnerUserId;
-        company.OwnerUserId = newOwner.Id;
-
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
 
-        // US-46, ARCHITECTURE.md §19.3 (bug found during that history's design): Company.OwnerUserId
-        // and the CompanyMember row carrying the CompanyOwner role must move together. Before this fix
-        // they didn't — this endpoint changed OwnerUserId and granted the Identity role to the new
-        // owner, but never touched the old owner's CompanyMember row, so IdentityRoleSync (which is
-        // driven purely by CompanyMember rows) would recompute CompanyOwner for someone no longer the
-        // owner. The old owner keeps their membership — they may still work here — but is demoted to
-        // Master rather than left holding a CompanyOwner row for a company they no longer own.
-        if (oldOwnerUserId != newOwner.Id)
-        {
-            var oldMembership = await db.CompanyMembers.FirstOrDefaultAsync(cm =>
-                cm.CompanyId == id && cm.UserId == oldOwnerUserId && cm.Role == UserRole.CompanyOwner);
-            if (oldMembership is not null)
-                oldMembership.Role = UserRole.Master;
-        }
+        // ARCHITECTURE_CYCLE5.md §50/§59 grep 8: this is the ONLY place in the codebase allowed to
+        // assign Company.OwnerUserId, shared with CompanyTransferService's owner-change branch — see
+        // CompanyOwnerWriter's own remarks for why the two call sites must not drift apart.
+        var changedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var oldOwnerUserId = await companyOwnerWriter.ChangeOwnerAsync(
+            company, newOwner.Id, changedByUserId, withTransfer: false);
 
-        var membership = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.CompanyId == id && cm.UserId == newOwner.Id);
-        if (membership is null)
-            db.CompanyMembers.Add(new CompanyMember { Id = Guid.NewGuid(), CompanyId = id, UserId = newOwner.Id, Role = UserRole.CompanyOwner });
-        else
-            membership.Role = UserRole.CompanyOwner;
-
-        // B9 / SPEC US-56 п. 3: a WhatsApp channel is bound to the OWNER's account, not the company —
-        // handing the company to someone else must not leave it (and its clients' replies) going through
-        // the previous owner's personal number. §25.3 names this exact call site. Same transaction as the
-        // ownership move: no window where the assignment survives a committed owner change.
-        //
-        // NOT YET removed here despite ARCHITECTURE_CYCLE5.md §47.4 calling for exactly that ("a number
-        // belongs to the account, not the manager, so a manager change must not touch it") — this
-        // developer left it alone deliberately: §47.4's own text names this call site alongside §50's
-        // "смена ответственного" rewrite, which is stage 4's CompanyOwnerWriter/CompanyTransferService
-        // work, not this stage's. Removing it here, unaccompanied, would also flip
-        // NotificationChannelsTests.ChangeCompanyOwner_UnassignsChannel_CancelsPendingRows_OldOwnerStillSeesChannelInList
-        // (a currently-green functional test asserting exactly this cycle-4 behavior) to red — see the
-        // cycle report's note to stage 4 and qa-engineer.
-        if (oldOwnerUserId != newOwner.Id)
-        {
-            var assignment = await db.ChannelCompanyAssignments.FirstOrDefaultAsync(a => a.CompanyId == id);
-            if (assignment is not null)
-            {
-                db.ChannelCompanyAssignments.Remove(assignment);
-
-                var pending = await db.OutboundNotifications
-                    .Where(n => n.CompanyId == id && n.Status == NotificationStatus.Pending)
-                    .ToListAsync();
-                foreach (var row in pending)
-                {
-                    row.Status = NotificationStatus.Cancelled;
-                    row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-                }
-            }
-        }
+        // §47.4 (US-64 p.3) — a deliberate reversal of cycle 4's §25.3 behavior: the notification
+        // number belongs to the billing account, not to whoever manages the company, so a stand-alone
+        // owner change must not touch ChannelCompanyAssignment or cancel queued messages. That still
+        // happens on a company TRANSFER between accounts (§51.3 step 6), because there the company
+        // genuinely leaves the account the number belongs to — see CompanyTransferService.
 
         await db.SaveChangesAsync();
         // US-46: recompute roles for BOTH the new owner (gains CompanyOwner) and the old one (may lose
