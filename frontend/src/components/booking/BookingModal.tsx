@@ -4,25 +4,37 @@ import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../../api/bookings'
 import { companiesApi } from '../../api/companies'
+import { servicesApi } from '../../api/services'
 import { useAuthStore } from '../../store/authStore'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { PhoneInput } from '../ui/PhoneInput'
 import { Icon } from '../ui/Icon'
 import { Avatar } from '../ui/Avatar'
 import { Link } from 'react-router-dom'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { getBookingErrorMessage } from '../../utils/bookingError'
+import { isRussianPhone } from '../../utils/phone'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
 import { BookingCalendar } from './BookingCalendar'
 import type { Company, Service } from '../../types'
+
+// US-67 (API_CONTRACT_CYCLE6.md §41.1/§43.1) — server rejects a visit of more than 5 services.
+const MAX_SERVICES = 5
 
 interface Props {
   service: Service
   company: Company
   onClose: () => void
+  /**
+   * US-67 (§43.3): the embed widget (`EmbedPage.tsx`) deliberately stays single-service — pass
+   * `false` there. Everywhere else (the client-facing booking on `CompanyPage`) a visit can carry
+   * up to `MAX_SERVICES` services, so this defaults to `true`.
+   */
+  allowMultipleServices?: boolean
 }
 
-type Step = 'master' | 'date' | 'slot' | 'info' | 'done'
+type Step = 'services' | 'master' | 'date' | 'slot' | 'info' | 'done'
 
 function BackLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
@@ -47,9 +59,10 @@ function formatDateLabel(dateStr: string): string {
   return format(date, 'd MMM, EEE', { locale: ru })
 }
 
-export function BookingModal({ service, company, onClose }: Props) {
+export function BookingModal({ service, company, onClose, allowMultipleServices = true }: Props) {
   const { isAuthenticated } = useAuthStore()
-  const [step, setStep] = useState<Step>('master')
+  const [step, setStep] = useState<Step>(allowMultipleServices ? 'services' : 'master')
+  const [extraServices, setExtraServices] = useState<Service[]>([])
   const [selectedMasterId, setSelectedMasterId] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedSlot, setSelectedSlot] = useState('')
@@ -59,8 +72,28 @@ export function BookingModal({ service, company, onClose }: Props) {
   const [notes, setNotes] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
 
+  // US-67: the full list of the visit's services — the one the client clicked "Записаться" on,
+  // plus whatever they added on the services step. Duration/price shown to the client are always
+  // the SUM across this list, never just the first service's.
+  const allServices = [service, ...extraServices]
+  const totalDurationMinutes = allServices.reduce((sum, s) => sum + s.durationMinutes, 0)
+  const totalPrice = allServices.reduce((sum, s) => sum + s.price, 0)
+  const extraServiceIds = allowMultipleServices ? extraServices.map((s) => s.id) : undefined
+
+  // Full company service catalogue, for the "add another service" list. Not needed by the embed
+  // widget, which never shows this step.
+  const { data: companyServices, isLoading: companyServicesLoading } = useQuery({
+    queryKey: ['services', company.id],
+    queryFn: () => servicesApi.getByCompany(company.id),
+    enabled: allowMultipleServices,
+  })
+  const addableServices = (companyServices ?? []).filter((s) => !allServices.some((picked) => picked.id === s.id))
+
   // Load masters that can perform this service. US-62 (backend) already filters out staff who
   // toggled off "provides services" — this list is the post-filter, active count for US-64.
+  // Filtered by the primary service only (API_CONTRACT_CYCLE6.md §40.1 doesn't take a service list);
+  // if an added service turns out to be one this master doesn't do, that surfaces later as a 400
+  // on the slots/availability call ("Мастер не оказывает услугу: …"), not silently here.
   const { data: masters, isLoading: mastersLoading } = useQuery({
     queryKey: ['company-masters', company.id, service.id],
     queryFn: () => companiesApi.getMasters(company.id, service.id),
@@ -69,12 +102,15 @@ export function BookingModal({ service, company, onClose }: Props) {
   // US-64: with exactly one active master there's nothing to pick — auto-select and skip the
   // step entirely. With zero, there's nobody to book with at all; the master step stays on screen
   // to show that message rather than a broken empty list further down the flow.
+  // Keyed on `step` (not just on `masters` loading) — with the services step now shown first
+  // (allowMultipleServices), `masters` can finish loading well before the user ever reaches the
+  // master step, and a one-shot "masters just arrived" effect would then miss the skip entirely.
   useEffect(() => {
-    if (masters && masters.length === 1 && !selectedMasterId) {
+    if (step === 'master' && masters && masters.length === 1 && !selectedMasterId) {
       setSelectedMasterId(masters[0].userId)
-      setStep((s) => (s === 'master' ? 'date' : s))
+      setStep('date')
     }
-  }, [masters, selectedMasterId])
+  }, [step, masters, selectedMasterId])
 
   const now = new Date()
   const todayStr = format(now, 'yyyy-MM-dd')
@@ -84,11 +120,16 @@ export function BookingModal({ service, company, onClose }: Props) {
     return h * 60 + m
   }
 
-  const { data: rawSlots, isLoading: slotsLoading } = useQuery({
-    queryKey: ['slots', company.id, selectedMasterId, service.id, selectedDate],
-    queryFn: () => bookingsApi.getSlots(company.id, selectedMasterId, service.id, selectedDate),
+  const {
+    data: rawSlots,
+    isLoading: slotsLoading,
+    error: slotsError,
+  } = useQuery({
+    queryKey: ['slots', company.id, selectedMasterId, service.id, extraServiceIds, selectedDate],
+    queryFn: () => bookingsApi.getSlots(company.id, selectedMasterId, service.id, extraServiceIds, selectedDate),
     enabled: !!selectedMasterId && !!selectedDate,
     staleTime: 0, // always fetch fresh — bookings made by others should be reflected immediately
+    retry: false,
   })
   const slots = rawSlots?.filter((s) => selectedDate !== todayStr || timeToMinutes(s.start) > nowMinutes)
 
@@ -97,6 +138,7 @@ export function BookingModal({ service, company, onClose }: Props) {
       bookingsApi.create({
         companyId: company.id,
         serviceId: service.id,
+        serviceIds: allowMultipleServices ? allServices.map((s) => s.id) : undefined,
         masterId: selectedMasterId,
         date: selectedDate,
         startTime: selectedSlot,
@@ -108,6 +150,22 @@ export function BookingModal({ service, company, onClose }: Props) {
       }),
     onSuccess: () => setStep('done'),
   })
+
+  // US-67: adding a 6th service is rejected up front with a clear message rather than sent to the
+  // server to bounce back as a 400.
+  const [servicesLimitMessage, setServicesLimitMessage] = useState('')
+  const addService = (s: Service) => {
+    if (allServices.length >= MAX_SERVICES) {
+      setServicesLimitMessage(`За один визит можно выбрать не больше ${MAX_SERVICES} услуг`)
+      return
+    }
+    setServicesLimitMessage('')
+    setExtraServices((prev) => [...prev, s])
+  }
+  const removeService = (id: string) => {
+    setServicesLimitMessage('')
+    setExtraServices((prev) => prev.filter((s) => s.id !== id))
+  }
 
   const pickMaster = (id: string) => {
     setSelectedMasterId(id)
@@ -121,7 +179,8 @@ export function BookingModal({ service, company, onClose }: Props) {
   // be counted either. Only show it when there's a real choice to make.
   const showMasterStep = !!masters && masters.length > 1
   const noMastersAvailable = !!masters && masters.length === 0
-  const progressSteps: Step[] = showMasterStep ? ['master', 'date', 'slot', 'info'] : ['date', 'slot', 'info']
+  const baseSteps: Step[] = showMasterStep ? ['master', 'date', 'slot', 'info'] : ['date', 'slot', 'info']
+  const progressSteps: Step[] = allowMultipleServices ? ['services', ...baseSteps] : baseSteps
   const currentIdx = progressSteps.indexOf(step)
 
   const dismiss = useOverlayDismiss(onClose)
@@ -135,7 +194,8 @@ export function BookingModal({ service, company, onClose }: Props) {
             <div>
               <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Запись на услугу</h2>
               <p className="text-[13px] text-ink-soft">
-                {service.name} · {service.durationMinutes} мин · {service.price.toLocaleString('ru-RU')} ₽
+                {allServices.map((s) => s.name).join(', ')} · {totalDurationMinutes} мин ·{' '}
+                {totalPrice.toLocaleString('ru-RU')} ₽
               </p>
             </div>
             <button onClick={onClose} className="text-muted hover:text-ink shrink-0">
@@ -157,9 +217,92 @@ export function BookingModal({ service, company, onClose }: Props) {
         </div>
 
         <div className="p-6 pt-[22px]">
+          {/* ── Step: Services (US-67) ── */}
+          {step === 'services' && (
+            <div>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Услуги за визит</h3>
+
+              <div className="flex flex-col gap-2 mb-4">
+                {allServices.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-line bg-white"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-ink">{s.name}</p>
+                      <p className="text-xs text-muted mt-0.5">
+                        {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                      </p>
+                    </div>
+                    {s.id !== service.id && (
+                      <button
+                        type="button"
+                        aria-label={`Убрать «${s.name}»`}
+                        onClick={() => removeService(s.id)}
+                        className="text-muted hover:text-danger shrink-0"
+                      >
+                        <Icon name="x" size={16} strokeWidth={1.8} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between text-[13.5px] font-semibold text-ink bg-cream-deep rounded-xl px-3.5 py-2.5 mb-4">
+                <span>Итого</span>
+                <span>
+                  {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
+                </span>
+              </div>
+
+              {servicesLimitMessage && (
+                <p className="text-sm text-danger text-center mb-3">{servicesLimitMessage}</p>
+              )}
+
+              {addableServices.length > 0 && (
+                <>
+                  <h4 className="text-[13px] font-semibold text-ink-soft mb-2">Добавить услугу</h4>
+                  {companyServicesLoading ? (
+                    <div className="flex flex-col gap-2">
+                      {Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className="h-12 bg-cream-deep rounded-xl animate-pulse" />
+                      ))}
+                    </div>
+                  ) : addableServices.length > 0 ? (
+                    <div className="flex flex-col gap-2 mb-2">
+                      {addableServices.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => addService(s)}
+                          className="flex items-center justify-between gap-3 p-3 rounded-xl border border-line bg-white hover:border-line-strong transition-all text-left"
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-ink">{s.name}</p>
+                            <p className="text-xs text-muted mt-0.5">
+                              {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                            </p>
+                          </div>
+                          <Icon name="plus" size={16} strokeWidth={1.8} className="text-line-strong shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              <Button className="w-full mt-3" onClick={() => setStep('master')}>
+                Продолжить
+              </Button>
+            </div>
+          )}
+
           {/* ── Step: Master ── */}
           {step === 'master' && (
             <div>
+              {allowMultipleServices && (
+                <BackLink onClick={() => setStep('services')}>Изменить услуги</BackLink>
+              )}
               {!mastersLoading && noMastersAvailable ? (
                 <div className="text-center py-8">
                   <div className="w-12 h-12 rounded-full bg-cream-deep flex items-center justify-center mx-auto mb-3">
@@ -229,6 +372,7 @@ export function BookingModal({ service, company, onClose }: Props) {
                 companyId={company.id}
                 masterId={selectedMasterId}
                 serviceId={service.id}
+                extraServiceIds={extraServiceIds}
                 selectedDate={selectedDate}
                 onSelectDate={(date) => {
                   setSelectedDate(date)
@@ -268,6 +412,11 @@ export function BookingModal({ service, company, onClose }: Props) {
                     </button>
                   ))}
                 </div>
+              ) : slotsError ? (
+                // US-67 (§41.1): a service added after the master was picked may turn out to be one
+                // the master doesn't do — the server says so explicitly, so show that text instead
+                // of a bare empty state that reads as "just no free time".
+                <p className="text-center text-danger py-8">{getBookingErrorMessage(slotsError)}</p>
               ) : (
                 <p className="text-center text-muted py-8">Нет доступных слотов на этот день</p>
               )}
@@ -280,7 +429,12 @@ export function BookingModal({ service, company, onClose }: Props) {
               <BackLink onClick={() => setStep('slot')}>Изменить время</BackLink>
 
               <div className="bg-cream-deep rounded-2xl p-4 text-[13.5px] text-ink">
-                <div className="font-semibold">{service.name}</div>
+                {/* US-67: the visit's every service, plus the summed duration/price — never just
+                    the first service, so the client confirms what they're actually paying for. */}
+                <div className="font-semibold">{allServices.map((s) => s.name).join(', ')}</div>
+                <div className="text-ink-soft mt-0.5">
+                  {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
+                </div>
                 {selectedMaster && (
                   <div className="text-ink-soft mt-0.5">
                     {selectedMaster.firstName} {selectedMaster.lastName}
@@ -299,12 +453,15 @@ export function BookingModal({ service, company, onClose }: Props) {
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
                   />
-                  <Input
+                  <PhoneInput
                     label="Телефон *"
-                    type="tel"
-                    placeholder="+7 999 000 00 00"
                     value={guestPhone}
-                    onChange={(e) => setGuestPhone(e.target.value)}
+                    onChange={setGuestPhone}
+                    error={
+                      guestPhone && !isRussianPhone(guestPhone)
+                        ? 'Пока принимаем только российские номера, в формате +7 (900) 000-00-00'
+                        : undefined
+                    }
                   />
                   <Input
                     label="Email"
@@ -339,7 +496,7 @@ export function BookingModal({ service, company, onClose }: Props) {
                 loading={mutation.isPending}
                 onClick={() => mutation.mutate()}
                 disabled={
-                  (!isAuthenticated() && (!guestName || !guestPhone)) ||
+                  (!isAuthenticated() && (!guestName || !isRussianPhone(guestPhone))) ||
                   (!isAuthenticated() && smartCaptchaEnabled && !captchaToken)
                 }
                 className="w-full"

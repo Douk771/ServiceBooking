@@ -12,10 +12,18 @@ import type { AvailabilityResponse } from '../../api/bookings'
 const getMasters = vi.fn()
 const getAvailability = vi.fn()
 const getSlots = vi.fn()
+const createBooking = vi.fn()
+const getByCompany = vi.fn()
 
 vi.mock('../../api/companies', () => ({
   companiesApi: {
     getMasters: (...args: unknown[]) => getMasters(...args),
+  },
+}))
+
+vi.mock('../../api/services', () => ({
+  servicesApi: {
+    getByCompany: (...args: unknown[]) => getByCompany(...args),
   },
 }))
 
@@ -26,7 +34,7 @@ vi.mock('../../api/bookings', async () => {
     bookingsApi: {
       getAvailability: (...args: unknown[]) => getAvailability(...args),
       getSlots: (...args: unknown[]) => getSlots(...args),
-      create: vi.fn(),
+      create: (...args: unknown[]) => createBooking(...args),
     },
   }
 })
@@ -84,12 +92,17 @@ function availabilityFor(dates: Record<string, AvailabilityResponse['days'][numb
   }
 }
 
-function renderModal() {
+function renderModal(allowMultipleServices = false) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <BookingModal service={service} company={company} onClose={() => {}} />
+        <BookingModal
+          service={service}
+          company={company}
+          onClose={() => {}}
+          allowMultipleServices={allowMultipleServices}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -99,6 +112,8 @@ beforeEach(() => {
   getMasters.mockReset()
   getAvailability.mockReset().mockResolvedValue(availabilityFor({}))
   getSlots.mockReset().mockResolvedValue([])
+  createBooking.mockReset().mockResolvedValue({})
+  getByCompany.mockReset().mockResolvedValue([])
 })
 
 describe('BookingModal — US-64 single/zero master', () => {
@@ -178,5 +193,81 @@ describe('BookingModal — US-65 calendar day states', () => {
     const button = await screen.findByRole('button', { name: new RegExp(DAY_FULL_LABEL) })
     expect(button).toBeDisabled()
     expect(button.getAttribute('aria-disabled')).toBe('true')
+  })
+})
+
+// ── US-67: several services in one visit ─────────────────────────────────────
+
+const secondService: Service = {
+  id: 'svc2',
+  companyId: 'co1',
+  name: 'Окрашивание',
+  durationMinutes: 60,
+  price: 2500,
+}
+const thirdService: Service = {
+  id: 'svc3',
+  companyId: 'co1',
+  name: 'Укладка',
+  durationMinutes: 20,
+  price: 900,
+}
+
+describe('BookingModal — US-67 multiple services per visit', () => {
+  it('shows the summed duration and price once a second and third service are added', async () => {
+    getByCompany.mockResolvedValue([service, secondService, thirdService])
+    getMasters.mockResolvedValue([master()])
+    renderModal(true)
+
+    await screen.findByText('Услуги за визит')
+    ;(await screen.findByText('Окрашивание')).click()
+    ;(await screen.findByText('Укладка')).click()
+
+    // 30 + 60 + 20 = 110 minutes, 1500 + 2500 + 900 = 4900 ₽
+    expect(await screen.findByText('110 мин · 4 900 ₽')).toBeInTheDocument()
+  })
+
+  it('refuses to add a 6th service with an explanatory message', async () => {
+    const extraServices = Array.from({ length: 5 }, (_, i) => ({
+      id: `extra-${i}`,
+      companyId: 'co1',
+      name: `Доп. услуга ${i}`,
+      durationMinutes: 10,
+      price: 100,
+    }))
+    getByCompany.mockResolvedValue([service, ...extraServices])
+    getMasters.mockResolvedValue([master()])
+    renderModal(true)
+
+    await screen.findByText('Услуги за визит')
+    for (const s of extraServices) {
+      const el = await screen.findByText(s.name)
+      el.click()
+    }
+
+    expect(await screen.findByText('За один визит можно выбрать не больше 5 услуг')).toBeInTheDocument()
+  })
+
+  it('shows the server\'s "master does not perform this service" text instead of an empty slot list', async () => {
+    getByCompany.mockResolvedValue([service, secondService])
+    getMasters.mockResolvedValue([master()])
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }))
+    getSlots.mockRejectedValue({
+      response: { status: 400, data: 'Мастер не оказывает услугу: Окрашивание' },
+      isAxiosError: true,
+    })
+    renderModal(true)
+
+    await screen.findByText('Услуги за визит')
+    ;(await screen.findByText('Окрашивание')).click()
+    ;(await screen.findByText('Продолжить')).click()
+
+    await screen.findByText('Выберите дату')
+    const dateLabel = format(new Date(`${dateStr}T00:00:00`), 'd MMMM', { locale: (await import('date-fns/locale')).ru })
+    const dayButton = (await screen.findByLabelText(dateLabel)) as HTMLButtonElement
+    dayButton.click()
+
+    expect(await screen.findByText('Мастер не оказывает услугу: Окрашивание')).toBeInTheDocument()
   })
 })

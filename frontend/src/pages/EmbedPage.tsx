@@ -120,7 +120,14 @@ export function EmbedPage() {
       </p>
 
       {selectedService && company && (
-        <BookingModal service={selectedService} company={company} onClose={() => setSelectedService(null)} />
+        // US-67 (API_CONTRACT_CYCLE6.md §43.3): the embed widget deliberately stays single-service —
+        // this is not an oversight, it's the contract's explicit call. Do not pass `serviceIds` here.
+        <BookingModal
+          service={selectedService}
+          company={company}
+          onClose={() => setSelectedService(null)}
+          allowMultipleServices={false}
+        />
       )}
     </div>
   )
