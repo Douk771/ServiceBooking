@@ -187,6 +187,16 @@ public class SubscriptionResolver(AppDbContext db)
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
             .ToListAsync();
 
+        // N13, §44.3 п.3: a PlanOptionRule row of Unavailable must gate a purchased option's quantity
+        // out of the resolved plan — downgrading to a plan that no longer offers an option (e.g.
+        // WhatsApp) must switch that option off even if the AccountSubscriptionOption row itself is
+        // still paid up. Looked up per the CURRENT plan config (sub.PlanConfigId), not the one the
+        // option was originally bought under.
+        var planConfigIds = subs.Where(s => s.PlanConfigId.HasValue).Select(s => s.PlanConfigId!.Value).Distinct().ToList();
+        var planRules = planConfigIds.Count == 0
+            ? []
+            : await db.PlanOptionRules.Where(r => planConfigIds.Contains(r.PlanConfigId)).ToListAsync();
+
         var result = new Dictionary<Guid, EffectivePlan>();
         foreach (var id in ids)
         {
@@ -194,12 +204,14 @@ public class SubscriptionResolver(AppDbContext db)
             var bonus = bonuses.FirstOrDefault(b => b.Id == id)?.GrandfatheredEmployeeBonus ?? 0;
             var subUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
 
-            // "Currently paid" quantity for one option row: its own PaidUntilUtc if set, otherwise it
-            // lives and dies with the subscription's own paid period (N12: an option cannot outlive an
-            // expired subscription unless it carries its own paid-through date).
-            int PaidQuantity(AccountSubscriptionOption o) => o.PaidUntilUtc.HasValue
-                ? (o.PaidUntilUtc.Value >= now ? o.Quantity : 0)
-                : (subUsable ? o.Quantity : 0);
+            var currentPlanConfigId = sub?.PlanConfigId;
+            int PaidQuantity(AccountSubscriptionOption o)
+            {
+                var availability = currentPlanConfigId is { } planConfigId
+                    ? planRules.FirstOrDefault(r => r.PlanConfigId == planConfigId && r.OptionId == o.OptionId)?.Availability
+                    : null;
+                return IsOptionCurrentlyPaid(subUsable, o.PaidUntilUtc, availability, now) ? o.Quantity : 0;
+            }
 
             var accountOptions = activeOptions.Where(o => o.BillingAccountId == id).ToList();
             var extraEmployees = accountOptions.Where(o => o.Option.CapabilityKey == CapabilityKeys.Employees).Sum(PaidQuantity);
@@ -210,5 +222,27 @@ public class SubscriptionResolver(AppDbContext db)
             result[id] = Resolve(sub, bonus, extraEmployees, extraCompanies, paidNumbers, now);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Pure decision (no DB access, unit-testable): is one purchased option row currently counted
+    /// toward the effective plan? Three independent gates, all must hold (§44.3 п.2/п.3):
+    /// <list type="bullet">
+    /// <item>N12 — the subscription itself must be usable right now; an option can never outlive the
+    /// subscription it was bought on top of, no matter how far its own <paramref name="optionPaidUntilUtc"/>
+    /// reaches into the future.</item>
+    /// <item>N12 — if the option carries its own paid-through date, that date must not have passed.</item>
+    /// <item>N13 — the CURRENT plan's rule for this option must still say <see cref="OptionAvailability.Extra"/>
+    /// or <see cref="OptionAvailability.Included"/>; a missing rule (<paramref name="currentPlanAvailability"/>
+    /// is <c>null</c>) is treated as <see cref="OptionAvailability.Unavailable"/>, same fail-closed
+    /// convention as everywhere else this enum is read (N14).</item>
+    /// </list>
+    /// </summary>
+    public static bool IsOptionCurrentlyPaid(
+        bool subscriptionUsable, DateTime? optionPaidUntilUtc, OptionAvailability? currentPlanAvailability, DateTime nowUtc)
+    {
+        if (!subscriptionUsable) return false;
+        if (optionPaidUntilUtc.HasValue && optionPaidUntilUtc.Value < nowUtc) return false;
+        return currentPlanAvailability is OptionAvailability.Extra or OptionAvailability.Included;
     }
 }
