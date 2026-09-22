@@ -287,11 +287,19 @@ public static class TestSlot          { public const string Api, Legal, Dispatch
 public sealed record TestHostIdentity( string ConnectionString, string SuperAdminPhone, string SuperAdminEmail,
                                        string SuperAdminPassword, string PublicRoot, string PrivateRoot,
                                        string StateRoot, string LogDirectory, string LegalRoot );
-public static class TestHostSettings  { public static TestHostIdentity Apply(IWebHostBuilder b, string slot, string factoryTag); }
+public static class TestHostSettings  { public static TestHostIdentity Apply(IWebHostBuilder b, string slot, string factoryTag, string connectionString); }
 public static class TestPhones        { public static string Unique(); }                  // всегда +79…
 ```
 
-Каждая из шести фабрик выставляет `public TestHostIdentity Identity { get; }`.
+> Расхождение с кодом (review finding N16, зафиксировано, а не тихо принято): фактическая сигнатура
+> `TestHostSettings.Apply` принимает четвёртый параметр `connectionString` — база передаётся вызывающей
+> стороной (`TestDatabaseLease.ConnectionStringFor`), а не выбирается внутри `Apply`. На момент цикла 8
+> из шести тестовых фабрик `public TestHostIdentity Identity { get; }` выставляют только три
+> (`CustomWebApplicationFactory`, `NotificationTestFactory`, `NotificationDispatchTestFactory`) — у
+> `RateLimitTestFactory`, `UploadsStaticFilesTestFactory` и `LegalDocumentsTestFactory` результат
+> `TestHostSettings.Apply` вызывается, но никуда не сохраняется, так что `Identity` там недоступен.
+> Файлы фабрик — зона QA (см. §87.3); backend не трогал их в рамках закрытия этой находки, поэтому этот
+> абзац фиксирует расхождение для QA, а не тихо описывает несуществующий контракт.
 
 ### 87.2 Правила, обязательные к соблюдению в тестах
 

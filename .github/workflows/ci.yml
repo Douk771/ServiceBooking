@@ -42,8 +42,16 @@ jobs:
       # raw `github.run_id` (a decimal id of varying length) does NOT satisfy that and would make
       # TestRunKey throw at process start, so it's folded into 8 hex digits here rather than passed
       # through as-is.
+      #
+      # Review finding N17: GITHUB_RUN_ID alone is the same for every job of one workflow run, so two
+      # jobs (or, per TestDatabaseLease's N2 fix, two jobs racing on a shared external Postgres) would
+      # derive the identical run key and could collide on the same sbtest_<key>_<slot> database names.
+      # Folding in GITHUB_JOB (a per-job constant) makes the key differ per job while staying stable and
+      # traceable from the CI log for a single job's own re-runs.
       - name: Derive test run key
-        run: printf 'SERVICEBOOKING_TEST_RUN_KEY=%08x\n' "$(( GITHUB_RUN_ID % 4294967296 ))" >> "$GITHUB_ENV"
+        run: |
+          job_hash="$(printf '%s' "$GITHUB_JOB" | cksum | cut -d' ' -f1)"
+          printf 'SERVICEBOOKING_TEST_RUN_KEY=%08x\n' "$(( (GITHUB_RUN_ID ^ job_hash) % 4294967296 ))" >> "$GITHUB_ENV"
 
       - uses: actions/setup-dotnet@v4
         with:
