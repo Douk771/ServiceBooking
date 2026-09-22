@@ -40,8 +40,16 @@ public record BookingDto(
     // API_CONTRACT_CYCLE4.md §30.3: additive, staff-visible only (GET /api/bookings/master,
     // GET /api/bookings/{id}) — null on every other endpoint that reuses this DTO (Create,
     // GET /api/bookings/client) and whenever the booking has no notification queued at all.
-    ReminderStatusDto? ReminderStatus = null
+    ReminderStatusDto? ReminderStatus = null,
+    // US-67 (API_CONTRACT_CYCLE6.md §43.2): new, additive. Always non-empty, including for bookings
+    // created before this cycle (backfilled to a single row). Σ services[].price == Price,
+    // Σ services[].durationMinutes == TotalDurationMinutes, services[0].serviceId == ServiceId.
+    int TotalDurationMinutes = 0,
+    List<BookingServiceItemDto>? Services = null
 );
+
+// US-67 (API_CONTRACT_CYCLE6.md §43.2): one line per service in the visit, in visit order.
+public record BookingServiceItemDto(Guid ServiceId, string Name, int DurationMinutes, decimal Price);
 
 public record OccupiedRangeDto(TimeOnly Start, TimeOnly End);
 
@@ -61,5 +69,8 @@ public record CreateBookingDto(
     [MaxLength(200)] string? GuestName,
     [MaxLength(32)] string? GuestPhone,
     [MaxLength(256)] string? GuestEmail,
-    string? CaptchaToken
+    string? CaptchaToken,
+    // US-67 (API_CONTRACT_CYCLE6.md §43.1): optional, 1..5, no duplicates. When present, ServiceId must
+    // equal ServiceIds[0]. When absent (or empty), behavior is exactly the pre-cycle single-service path.
+    List<Guid>? ServiceIds = null
 );

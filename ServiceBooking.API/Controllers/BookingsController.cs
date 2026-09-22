@@ -53,10 +53,11 @@ public class BookingsController(
     public async Task<ActionResult<List<TimeSlotResult>>> GetSlots(
         [FromQuery] Guid companyId,
         [FromQuery] string masterId,
-        [FromQuery] Guid serviceId,
+        [FromQuery] Guid? serviceId,
         [FromQuery] DateOnly date,
         [FromQuery] bool manual = false,
-        [FromQuery] bool extendedHours = false)
+        [FromQuery] bool extendedHours = false,
+        [FromQuery] List<Guid>? serviceIds = null)
     {
         // `manual` is client-supplied, so only honor it once we've independently verified the caller
         // actually works in THIS company — same trust bar BookingsController.Create uses for
@@ -72,19 +73,54 @@ public class BookingsController(
         // whole day minus their occupancy — and occupancy is deliberately cross-company (Q9), so this
         // would be a weaker back door to exactly what GetOccupied above closes. 400, not 404: every
         // object exists, it is the combination that is wrong (API_CONTRACT.md §2.2).
-        var service = await db.Services.FindAsync(serviceId);
-        if (service is null) return NotFound("Service not found");
-        if (service.CompanyId != companyId) return BadRequest("Service does not belong to this company");
         if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
             return BadRequest("Master does not work for this company");
+
+        // US-67 (ARCHITECTURE_CYCLE6.md §47.2): serviceIds is the multi-service form of serviceId; when
+        // absent this is exactly the pre-cycle single-service path.
+        var (totalDuration, error) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
+        if (error is not null) return error;
 
         // ARCHITECTURE_CYCLE6.md §46.3: manual+staff -> DefaultWindow; manual+extendedHours+staff ->
         // WholeDay; anything else (including extendedHours without manual, or a non-staff caller) -> None.
         var fallback = manual && isStaff
             ? (extendedHours ? ScheduleFallback.WholeDay : ScheduleFallback.DefaultWindow)
             : ScheduleFallback.None;
-        var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, serviceId, date, fallback);
+        var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, totalDuration!.Value, date, fallback);
         return Ok(slots);
+    }
+
+    /// <summary>
+    /// Shared by GetSlots/GetAvailability: resolves the effective service list (single serviceId, or
+    /// serviceIds when supplied), validates the same three things POST /api/bookings validates
+    /// (existence/company/active, master capability — ARCHITECTURE_CYCLE6.md §47.1), and returns the
+    /// summed duration. Returns a non-null ActionResult when validation fails, which callers must
+    /// return directly.
+    /// </summary>
+    private async Task<(int? TotalDuration, ActionResult? Error)> ResolveTotalDurationAsync(
+        Guid companyId, string masterId, Guid? serviceId, List<Guid>? serviceIds)
+    {
+        var validation = BookingServiceSelection.Validate(serviceId, serviceIds);
+        if (!validation.IsValid) return (null, BadRequest(validation.Message));
+
+        var orderedIds = BookingServiceSelection.Resolve(serviceId, serviceIds);
+        var services = await db.Services.Where(s => orderedIds.Contains(s.Id)).ToListAsync();
+        if (services.Count != orderedIds.Distinct().Count()) return (null, NotFound("Service not found"));
+        if (services.Any(s => s.CompanyId != companyId))
+            return (null, BadRequest("Service does not belong to this company"));
+        if (services.Any(s => !s.IsActive))
+            return (null, BadRequest("Service is not available"));
+
+        var unsupported = await MasterCapability.FindUnsupportedServicesAsync(db, masterId, orderedIds);
+        if (unsupported.Count > 0)
+        {
+            var names = services.Where(s => unsupported.Contains(s.Id)).Select(s => s.Name);
+            return (null, BadRequest($"Мастер не оказывает услугу: {string.Join(", ", names)}"));
+        }
+
+        var servicesById = services.ToDictionary(s => s.Id);
+        var (totalDuration, _, _) = BookingServiceSelection.Aggregate(orderedIds, servicesById);
+        return (totalDuration, null);
     }
 
     /// <summary>
@@ -97,10 +133,11 @@ public class BookingsController(
     public async Task<ActionResult<AvailabilityDto>> GetAvailability(
         [FromQuery] Guid companyId,
         [FromQuery] string masterId,
-        [FromQuery] Guid serviceId,
+        [FromQuery] Guid? serviceId,
         [FromQuery] DateOnly from,
         [FromQuery] DateOnly to,
-        [FromQuery] bool manual = false)
+        [FromQuery] bool manual = false,
+        [FromQuery] List<Guid>? serviceIds = null)
     {
         if (to < from) return BadRequest("to must not be before from");
         if (to.DayNumber - from.DayNumber > 30) return BadRequest("Диапазон не может превышать 31 день");
@@ -121,18 +158,20 @@ public class BookingsController(
         if (!honorManual && to > horizonLastDate)
             return BadRequest($"Записаться можно не дальше чем на {horizonDays} дней вперёд");
 
-        var service = await db.Services.FindAsync(serviceId);
-        if (service is null) return NotFound("Service not found");
-        if (service.CompanyId != companyId) return BadRequest("Service does not belong to this company");
         if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
             return BadRequest("Master does not work for this company");
+
+        // US-67 (ARCHITECTURE_CYCLE6.md §47.2): same resolution GetSlots uses, so the calendar and the
+        // day's slot grid can never disagree about the visit's total duration.
+        var (totalDuration, durationError) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
+        if (durationError is not null) return durationError;
 
         var fallback = honorManual ? ScheduleFallback.DefaultWindow : ScheduleFallback.None;
         var (defaultStart, defaultEnd) = slotService.GetDefaultWindow();
         var days = await availabilityService.GetAvailabilityAsync(
-            companyId, masterId, service.DurationMinutes, from, to, fallback, defaultStart, defaultEnd);
+            companyId, masterId, totalDuration!.Value, from, to, fallback, defaultStart, defaultEnd);
 
-        return Ok(new AvailabilityDto(from, to, service.DurationMinutes, SlotCalculator.StepMinutes,
+        return Ok(new AvailabilityDto(from, to, totalDuration.Value, SlotCalculator.StepMinutes,
             horizonDays, horizonLastDate, days));
     }
 
@@ -210,20 +249,44 @@ public class BookingsController(
         if (!effectivePlan.AllowOnlineBooking && !isStaffManualBooking)
             return StatusCode(402, "Online booking requires a paid subscription.");
 
-        var service = await db.Services.FindAsync(dto.ServiceId);
-        if (service is null) return NotFound("Service not found");
+        // US-67 (ARCHITECTURE_CYCLE6.md §47.1): serviceIds is the multi-service form of serviceId —
+        // 1..5, no duplicates, serviceId must equal serviceIds[0] when both are sent.
+        var selectionValidation = BookingServiceSelection.Validate(dto.ServiceId, dto.ServiceIds);
+        if (!selectionValidation.IsValid) return BadRequest(selectionValidation.Message);
+
+        var orderedServiceIds = BookingServiceSelection.Resolve(dto.ServiceId, dto.ServiceIds);
+        var services = await db.Services.Where(s => orderedServiceIds.Contains(s.Id)).ToListAsync();
+        if (services.Count != orderedServiceIds.Distinct().Count()) return NotFound("Service not found");
         // Objects exist but their combination doesn't make sense — 400, not 404 (ARCHITECTURE.md §14.4).
-        if (service.CompanyId != dto.CompanyId) return BadRequest("Service does not belong to this company");
-        if (!service.IsActive) return BadRequest("Service is not available");
+        if (services.Any(s => s.CompanyId != dto.CompanyId))
+            return BadRequest("Service does not belong to this company");
+        if (services.Any(s => !s.IsActive)) return BadRequest("Service is not available");
         if (!await CompanyMembership.IsStaffAsync(db, dto.CompanyId, dto.MasterId))
             return BadRequest("Master is not a staff member of this company");
 
-        var slotEnd = dto.StartTime.AddMinutes(service.DurationMinutes);
+        // The master must be able to perform EVERY selected service, not just the first one
+        // (ARCHITECTURE_CYCLE6.md §47.1 p.2) — a client adding a service the chosen master doesn't do
+        // gets told so directly, rather than a silently empty slot list.
+        var unsupportedServices = await MasterCapability.FindUnsupportedServicesAsync(db, dto.MasterId, orderedServiceIds);
+        if (unsupportedServices.Count > 0)
+        {
+            var unsupportedNames = services.Where(s => unsupportedServices.Contains(s.Id)).Select(s => s.Name);
+            return BadRequest($"Мастер не оказывает услугу: {string.Join(", ", unsupportedNames)}");
+        }
+
+        var servicesById = services.ToDictionary(s => s.Id);
+        var (totalDurationMinutes, totalPrice, orderedServices) =
+            BookingServiceSelection.Aggregate(orderedServiceIds, servicesById);
+        // service.Price/service.DurationMinutes below now mean "the visit total" — kept as one variable
+        // so the rest of this method (mostly written before US-67) reads exactly like it always did.
+        var service = orderedServices[0];
+
+        var slotEnd = dto.StartTime.AddMinutes(totalDurationMinutes);
 
         // Not in the past, and doesn't wrap past midnight (TimeOnly can't represent 24:00, so an
         // overflowing slot would otherwise silently give EndTime < StartTime). Applies to every path,
         // including staff manual bookings — Q7's relaxation is about working hours, not about the past.
-        if (!IsBookableMoment(dto.Date, dto.StartTime, service.DurationMinutes))
+        if (!IsBookableMoment(dto.Date, dto.StartTime, totalDurationMinutes))
             return Conflict("Time slot is no longer available");
 
         // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7 p.2/p.3): the client-only path is bounded by the
@@ -301,9 +364,22 @@ public class BookingsController(
             ConsentAcceptedAtUtc = consentAcceptedAtUtc,
             Status = BookingStatus.Confirmed,
             PaymentStatus = requiresPrepayment ? PaymentStatus.Pending : PaymentStatus.NotRequired,
-            Price = service.Price,
+            Price = totalPrice,
             CommissionPercent = masterCommissionPercent
         };
+
+        // US-67 (ARCHITECTURE_CYCLE6.md §44.2 p.2/p.3): one row per selected service, in request order,
+        // snapshot at booking time — Σ prices/durations here must equal Price/EndTime-StartTime above.
+        var bookingServices = orderedServices.Select((s, position) => new BookingService
+        {
+            Id = Guid.NewGuid(),
+            BookingId = booking.Id,
+            ServiceId = s.Id,
+            Position = position,
+            NameSnapshot = s.Name,
+            DurationMinutes = s.DurationMinutes,
+            Price = s.Price,
+        }).ToList();
 
         // Serialize concurrent create/reschedule requests for the same master+date so the
         // conflict check below and the insert are atomic — otherwise two requests can both pass
@@ -337,13 +413,21 @@ public class BookingsController(
                     && wh.Date == dto.Date && wh.IsWorking);
             var breaks = workingHours?.Breaks.Select(b => new TimeRange(b.StartTime, b.EndTime)).ToList() ?? [];
 
-            slotOk = SlotCalculator.IsSlotAllowed(dto.StartTime, service.DurationMinutes,
+            slotOk = SlotCalculator.IsSlotAllowed(dto.StartTime, totalDurationMinutes,
                 workingHours?.StartTime, workingHours?.EndTime, breaks, existingBookings, ScheduleFallback.None);
         }
 
         if (!slotOk) return Conflict("Time slot is no longer available");
 
+        // Invariant check (ARCHITECTURE_CYCLE6.md §44.2 p.2): Σ BookingService rows must equal the
+        // booking's own totals before anything is persisted — a mismatch here is a bug in the
+        // aggregation above, not a user-facing 400.
+        if (bookingServices.Sum(bs => bs.Price) != booking.Price ||
+            bookingServices.Sum(bs => bs.DurationMinutes) != (booking.EndTime - booking.StartTime).TotalMinutes)
+            throw new InvalidOperationException("BookingService totals do not match the booking's Price/duration.");
+
         db.Bookings.Add(booking);
+        db.BookingServices.AddRange(bookingServices);
 
         // ARCHITECTURE_CYCLE4.md §25.3: queued in the SAME transaction as the booking itself, after all
         // eight existing gates above (none of which are touched) and before SaveChangesAsync — the
@@ -352,7 +436,8 @@ public class BookingsController(
         // the notification), so it's caught and logged, never rethrown.
         try
         {
-            await notificationScheduler.OnBookingCreatedAsync(booking, HttpContext.RequestAborted);
+            await notificationScheduler.OnBookingCreatedAsync(
+                booking, orderedServices.Select(s => s.Name).ToList(), HttpContext.RequestAborted);
         }
         catch (Exception ex)
         {
@@ -364,6 +449,7 @@ public class BookingsController(
 
         var master = await db.Users.FindAsync(dto.MasterId);
         booking.Company = company;
+        booking.BookingServices = bookingServices;
         var clientName = client is not null
             ? $"{client.FirstName} {client.LastName}"
             : dto.GuestName ?? "Guest";
@@ -382,6 +468,7 @@ public class BookingsController(
             .Include(b => b.Master)
             .Include(b => b.Client)
             .Include(b => b.Company)
+            .Include(b => b.BookingServices)
             .FirstOrDefaultAsync(b => b.Id == id);
 
         if (booking is null) return NotFound();
@@ -414,6 +501,7 @@ public class BookingsController(
             .Include(b => b.Master)
             .Include(b => b.Client)
             .Include(b => b.Company)
+            .Include(b => b.BookingServices)
             .Where(b => b.ClientId == userId);
 
         var nowUtc = DateTime.UtcNow;
@@ -447,6 +535,7 @@ public class BookingsController(
             .Include(b => b.Master)
             .Include(b => b.Client)
             .Include(b => b.Company)
+            .Include(b => b.BookingServices)
             .Where(b => b.MasterId == userId);
 
         if (date.HasValue)
@@ -522,14 +611,19 @@ public class BookingsController(
     public async Task<IActionResult> Reschedule(Guid id, [FromBody] RescheduleDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var booking = await db.Bookings.Include(b => b.Service).FirstOrDefaultAsync(b => b.Id == id);
+        var booking = await db.Bookings.Include(b => b.Service).Include(b => b.BookingServices)
+            .FirstOrDefaultAsync(b => b.Id == id);
         if (booking is null) return NotFound();
         if (!await CanManageBookingAsync(booking, userId)) return Forbid();
 
         if (booking.Status == BookingStatus.Cancelled || booking.Status == BookingStatus.Completed)
             return BadRequest("Cannot reschedule a cancelled or completed booking");
 
-        var slotEnd = dto.StartTime.AddMinutes(booking.Service.DurationMinutes);
+        // US-67 (ARCHITECTURE_CYCLE6.md §47.2): duration comes from the sum of the visit's
+        // BookingService rows, not booking.Service.DurationMinutes — a pre-cycle booking has exactly
+        // one such row (backfilled), so this is a no-op change for it.
+        var totalDurationMinutes = booking.BookingServices.Sum(bs => bs.DurationMinutes);
+        var slotEnd = dto.StartTime.AddMinutes(totalDurationMinutes);
 
         // This endpoint is staff-only (CanManageBookingAsync above lets in only the assigned master,
         // the company's owner, or SuperAdmin — a client can never reach here, they only have Cancel).
@@ -537,7 +631,7 @@ public class BookingsController(
         // time, no working-hours/breaks/grid check. Deliberately NOT validated against WorkingHours —
         // see ARCHITECTURE.md §3.4/§14.1: RescheduleModal's grid doesn't know the master's schedule, so a
         // full validation would reject slots the UI itself offered, with no way to explain why.
-        if (!IsBookableMoment(dto.Date, dto.StartTime, booking.Service.DurationMinutes))
+        if (!IsBookableMoment(dto.Date, dto.StartTime, totalDurationMinutes))
             return Conflict("Time slot is no longer available");
 
         // Same TOCTOU concern as Create: serialize concurrent reschedules/creates targeting this
@@ -643,13 +737,27 @@ public class BookingsController(
             cm.CompanyId == booking.CompanyId && cm.UserId == userId && cm.Role == UserRole.CompanyOwner);
     }
 
-    private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName, ReminderStatusDto? reminderStatus = null) =>
-        new(b.Id, b.CompanyId, b.Company?.Name ?? "", b.Company?.Slug ?? "", b.ServiceId, s.Name, b.MasterId,
+    private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName, ReminderStatusDto? reminderStatus = null)
+    {
+        // US-67 (API_CONTRACT_CYCLE6.md §43.2): `services` is built from BookingServices when loaded
+        // (every path except the in-memory object returned by Create, which sets it explicitly before
+        // calling here); falls back to the single legacy service `s` only if BookingServices wasn't
+        // populated at all, which should never happen after the AddBookingServices backfill.
+        var items = b.BookingServices is { Count: > 0 }
+            ? b.BookingServices.OrderBy(bs => bs.Position)
+                .Select(bs => new BookingServiceItemDto(bs.ServiceId, bs.NameSnapshot, bs.DurationMinutes, bs.Price))
+                .ToList()
+            : [new BookingServiceItemDto(b.ServiceId, s.Name, s.DurationMinutes, b.Price)];
+        var totalDurationMinutes = items.Sum(i => i.DurationMinutes);
+
+        return new(b.Id, b.CompanyId, b.Company?.Name ?? "", b.Company?.Slug ?? "", b.ServiceId, items[0].Name, b.MasterId,
             $"{master.FirstName} {master.LastName}", b.ClientId, clientName,
             b.GuestPhone ?? b.Client?.PhoneNumber, b.GuestEmail ?? b.Client?.Email,
             b.Date, b.StartTime, b.EndTime, b.Status, b.PaymentStatus, b.Price, b.CancellationReason,
             b.Notes, b.CreatedAt,
-            b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus);
+            b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus,
+            totalDurationMinutes, items);
+    }
 
     // API_CONTRACT_CYCLE4.md §30.3. Picks the highest-Generation Reminder row for a booking (§23.5: a
     // reschedule supersedes the previous generation's row rather than mutating it), so a rescheduled

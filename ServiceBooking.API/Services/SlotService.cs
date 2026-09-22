@@ -24,11 +24,8 @@ public class SlotService(AppDbContext db, IConfiguration configuration)
     // None — it stays gated to explicitly configured hours, which is what protects a master from being
     // booked at a time they never agreed to.
     public async Task<List<TimeSlotResult>> GetAvailableSlotsAsync(
-        Guid companyId, string masterId, Guid serviceId, DateOnly date, ScheduleFallback fallback = ScheduleFallback.None)
+        Guid companyId, string masterId, int totalDurationMinutes, DateOnly date, ScheduleFallback fallback = ScheduleFallback.None)
     {
-        var service = await db.Services.FindAsync(serviceId);
-        if (service is null) return [];
-
         var workingHours = await db.WorkingHours
             .Include(wh => wh.Breaks)
             .FirstOrDefaultAsync(wh => wh.MasterId == masterId && wh.CompanyId == companyId && wh.Date == date && wh.IsWorking);
@@ -50,7 +47,7 @@ public class SlotService(AppDbContext db, IConfiguration configuration)
 
         var (defaultStart, defaultEnd) = GetDefaultWindow();
         return SlotCalculator.Calculate(
-            service.DurationMinutes,
+            totalDurationMinutes,
             workingHours?.StartTime, workingHours?.EndTime,
             breaks, existingBookings, fallback, defaultStart, defaultEnd);
     }
