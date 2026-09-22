@@ -622,7 +622,13 @@ public class BookingsController(
         // US-67 (ARCHITECTURE_CYCLE6.md §47.2): duration comes from the sum of the visit's
         // BookingService rows, not booking.Service.DurationMinutes — a pre-cycle booking has exactly
         // one such row (backfilled), so this is a no-op change for it.
-        var totalDurationMinutes = booking.BookingServices.Sum(bs => bs.DurationMinutes);
+        // The fallback mirrors MapToDto below: if BookingServices is somehow empty, fall back to the
+        // single legacy service rather than summing to zero. Without it a row-less visit reschedules
+        // to EndTime == StartTime and silently collapses to nothing — the two other places that read
+        // this sum already guard it, and the asymmetry was a review finding of this cycle.
+        var totalDurationMinutes = booking.BookingServices is { Count: > 0 }
+            ? booking.BookingServices.Sum(bs => bs.DurationMinutes)
+            : booking.Service.DurationMinutes;
         var slotEnd = dto.StartTime.AddMinutes(totalDurationMinutes);
 
         // This endpoint is staff-only (CanManageBookingAsync above lets in only the assigned master,
