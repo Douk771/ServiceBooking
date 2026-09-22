@@ -24,6 +24,21 @@ public sealed class TestClassDatabaseLease(string classSlot, string connectionSt
 
         await TestRunEnvironment.ReleaseClassDatabaseAsync(ClassSlot, cancellationToken);
     }
+
+    /// <summary>T9 review (M3): annotates this class' database with the owning test class' name, once it
+    /// is known (see <see cref="TestDatabaseFixture.RecordTestClass"/> for why this can't happen any
+    /// earlier). Best-effort diagnostics only — never throws into the caller.</summary>
+    public async Task RecordTestClassAsync(string testClassName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await TestRunEnvironment.RecordTestClassAsync(ClassSlot, testClassName, cancellationToken);
+        }
+        catch
+        {
+            // Diagnostics only — a failure here must never fail the test run.
+        }
+    }
 }
 
 /// <summary>
@@ -101,6 +116,17 @@ public static class TestRunEnvironment
         {
             DropGate.Release();
         }
+    }
+
+    /// <summary>T9 review (M3) — see <see cref="TestClassDatabaseLease.RecordTestClassAsync"/>. Not gated
+    /// by either semaphore: this only writes a COMMENT ON DATABASE for a class database that is (by
+    /// construction — the caller is that class' own base-class constructor) still alive right now, and it
+    /// races with nothing that would corrupt state if it ran concurrently with a drop (worst case: the
+    /// comment update targets an already-gone database and fails, caught above).</summary>
+    internal static async Task RecordTestClassAsync(string classSlot, string testClassName, CancellationToken cancellationToken)
+    {
+        if (_databases is not null)
+            await _databases.RecordTestClassAsync(classSlot, testClassName, cancellationToken);
     }
 
     private static async Task<TestDatabaseLease> EnsureEnvironmentAsync(CancellationToken cancellationToken)

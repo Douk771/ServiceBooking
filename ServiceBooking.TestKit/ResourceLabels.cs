@@ -29,8 +29,18 @@ public static class ResourceLabels
     };
 
     /// <summary>JSON payload written via <c>COMMENT ON DATABASE</c> for server-mode (external) databases —
-    /// see ARCHITECTURE_CYCLE8.md §70.3, point 3. Read back by the sweeper via <see cref="TryParseComment"/>.</summary>
-    public sealed record DatabaseMetadata(string RunKey, string Host, int Pid, DateTimeOffset StartedAtUtc, string Workdir);
+    /// see ARCHITECTURE_CYCLE8.md §70.3, point 3. Read back by the sweeper via <see cref="TryParseComment"/>.
+    ///
+    /// <paramref name="ClassName"/> (T9 review, M3): ARCHITECTURE_CYCLE8_PHASE2.md §91.3/§92.2 and
+    /// contracts/cycle8/testkit-status.schema.json's <c>testClass</c> field both promise that the
+    /// slot↔class pairing is recorded somewhere a stuck database's owner can be identified from — but
+    /// nothing ever wrote it. Optional (defaults to null) because it is written in a SECOND pass, via
+    /// <see cref="TestDatabaseLease.RecordTestClassAsync"/>, after the database already exists: xUnit v2
+    /// never hands a class fixture its own class' <see cref="Type"/> at <c>CREATE DATABASE</c> time
+    /// (§92.2's own note), so the class name is only knowable once a test-base constructor first runs. A
+    /// database that is dropped before any test in its class ever constructs (init failed before the
+    /// first <c>[Fact]</c>) simply keeps ClassName=null — same as before this field existed.</summary>
+    public sealed record DatabaseMetadata(string RunKey, string Host, int Pid, DateTimeOffset StartedAtUtc, string Workdir, string? ClassName = null);
 
     public static string ToComment(DatabaseMetadata metadata) => JsonSerializer.Serialize(metadata, TestKitJson.Options);
 

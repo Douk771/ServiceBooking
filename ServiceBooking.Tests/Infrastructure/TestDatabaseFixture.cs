@@ -44,6 +44,28 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
     /// <summary>This class' single source of collision-free unique values (§94, Q12).</summary>
     public TestData Data { get; private set; } = null!;
 
+    private int _testClassRecorded;
+
+    /// <summary>T9 review (M3): call once from the owning base class' constructor (the first — and only
+    /// — place that actually knows <c>GetType().Name</c>, since xUnit v2 never hands a class fixture its
+    /// own class — §92.2) so the slot↔class pairing this doc comment already promised is actually
+    /// recorded, not just logged and forgotten. Logs unconditionally (cheap, always useful locally);
+    /// annotates the database itself (so a STUCK database found later by <c>status</c>/<c>sweep</c> can
+    /// still be traced back) only once per fixture, guarded here rather than relying on every call site
+    /// to dedupe — xUnit constructs a fresh test-class instance per <c>[Fact]</c>, so this runs once per
+    /// TEST, not once per CLASS, without this guard.</summary>
+    public void RecordTestClass(string testClassName)
+    {
+        Console.WriteLine($"[sb-test] class={testClassName} slot={ClassSlot} db={Identity.DatabaseName}");
+
+        if (Interlocked.Exchange(ref _testClassRecorded, 1) == 1)
+            return;
+
+        // Fire-and-forget: this is diagnostics, not part of the test's own behaviour, and every test
+        // constructor is synchronous — nothing here may block or fail the test.
+        _ = _lease.RecordTestClassAsync(testClassName);
+    }
+
     public async Task InitializeAsync()
     {
         ClassSlot = TestSlot.NextForClass();

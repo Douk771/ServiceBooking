@@ -533,8 +533,8 @@ public static class EnvStatus
                     Kind: "container",
                     Id: container.Name,
                     RunKey: container.RunKey,
-                    Slot: null,
-                    TestClass: null,
+                    Slot: null,       // a container is the whole server, not one class' database
+                    TestClass: null,  // T9 M3: intentional here — a container has no single owning test class
                     Workdir: container.Workdir,
                     StartedAtUtc: TestKitJson.ToIso8601(container.StartedAt),
                     AgeSeconds: age,

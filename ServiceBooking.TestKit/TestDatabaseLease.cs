@@ -21,6 +21,7 @@ public sealed class TestDatabaseLease
 
     private readonly TestServerLease _server;
     private readonly List<string> _createdDatabases = [];
+    private readonly Dictionary<string, ResourceLabels.DatabaseMetadata> _metadataByDatabase = [];
     private readonly object _createdDatabasesLock = new();
     private bool _noTemplate;
     private Func<string, Task>? _migrateTemplate;
@@ -184,7 +185,11 @@ public sealed class TestDatabaseLease
         await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
         await DropAsync(connection, name, cancellationToken);
-        lock (_createdDatabasesLock) _createdDatabases.Remove(name);
+        lock (_createdDatabasesLock)
+        {
+            _createdDatabases.Remove(name);
+            _metadataByDatabase.Remove(name);
+        }
     }
 
     private async Task CreateDatabaseAsync(NpgsqlConnection connection, string name, string? template, CancellationToken cancellationToken)
@@ -235,8 +240,52 @@ public sealed class TestDatabaseLease
             StartedAtUtc: DateTimeOffset.UtcNow,
             Workdir: TestInfrastructure.WorkingCopyRoot);
 
+        lock (_createdDatabasesLock) _metadataByDatabase[name] = metadata;
+
+        await WriteCommentAsync(connection, name, metadata, cancellationToken);
+    }
+
+    /// <summary>T9 review (M3): records which test class a class database belongs to, so a stuck
+    /// <c>sbtest_&lt;key&gt;_c07</c> found by <c>status</c>/<c>sweep</c> can be traced back to its owner —
+    /// the promise ARCHITECTURE_CYCLE8_PHASE2.md §91.3/§92.2 and the schema's <c>testClass</c> field both
+    /// already made, but that nothing previously implemented (every call site passed <c>TestClass: null</c>).
+    /// Called a SECOND time, after <see cref="CreateClassDatabaseAsync"/> already created and commented the
+    /// database — the class name is only knowable once a test-base constructor first runs (§92.2: xUnit v2
+    /// never hands a class fixture its own class' <see cref="Type"/>). A no-op if the database was already
+    /// dropped (class finished, or InitializeAsync failed) before any test constructed — nothing left to
+    /// annotate, and re-creating a comment for a database that no longer exists would just fail.</summary>
+    public async Task RecordTestClassAsync(string classSlot, string testClassName, CancellationToken cancellationToken = default)
+    {
+        var name = DatabaseNameFor(classSlot);
+
+        ResourceLabels.DatabaseMetadata? metadata;
+        lock (_createdDatabasesLock) _metadataByDatabase.TryGetValue(name, out metadata);
+        if (metadata is null)
+            return;
+
+        var updated = metadata with { ClassName = testClassName };
+        lock (_createdDatabasesLock) _metadataByDatabase[name] = updated;
+
+        await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        try
+        {
+            await WriteCommentAsync(connection, name, updated, cancellationToken);
+        }
+        catch (PostgresException)
+        {
+            // Best-effort diagnostics: the class database can legitimately be gone by the time this
+            // fires (a fast-finishing class racing its own teardown) — losing the testClass annotation
+            // must never fail the test run itself.
+        }
+    }
+
+    private static async Task WriteCommentAsync(NpgsqlConnection connection, string databaseName,
+        ResourceLabels.DatabaseMetadata metadata, CancellationToken cancellationToken)
+    {
         var commentJson = ResourceLabels.ToComment(metadata).Replace("'", "''");
-        await using var commentCommand = new NpgsqlCommand($"COMMENT ON DATABASE \"{name}\" IS '{commentJson}'", connection);
+        await using var commentCommand = new NpgsqlCommand($"COMMENT ON DATABASE \"{databaseName}\" IS '{commentJson}'", connection);
         await commentCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 

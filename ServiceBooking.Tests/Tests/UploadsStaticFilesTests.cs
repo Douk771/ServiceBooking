@@ -28,6 +28,15 @@ namespace ServiceBooking.Tests.Tests;
 /// </summary>
 public class UploadsStaticFilesTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
+    // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(UploadsStaticFilesTests));
+
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    {
+        fixture.RecordTestClass(className);
+        return 0;
+    }
+
     private static string RandomPhone()
     {
         var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(9).ToArray();
