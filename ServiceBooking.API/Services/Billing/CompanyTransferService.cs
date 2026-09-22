@@ -221,8 +221,19 @@ public class CompanyTransferService(
             await db.SaveChangesAsync();
         }
 
-        // Step 7: the payer changes.
-        company.BillingAccountId = targetBillingAccountId;
+        // Step 7: the payer changes. Pre-existing bug found and fixed while working this area (not one
+        // of the assigned findings, but it made every transfer 500): Company.BillingAccountId is part
+        // of the (Id, BillingAccountId) alternate key AppDbContext defines, and EF Core's change
+        // tracker unconditionally refuses to mark a key-participating property Modified — via a plain
+        // assignment OR via EntityEntry.ReloadAsync, which internally goes through the exact same
+        // guarded code path ("The property 'Company.BillingAccountId' is part of a key and so cannot be
+        // modified"). ExecuteUpdateAsync writes the column directly, bypassing the tracker entirely;
+        // detaching the stale tracked entry and re-querying gives a FRESH tracked entity with the new
+        // value already "clean" (no modified key property for a later SaveChangesAsync to trip over).
+        await db.Companies.Where(c => c.Id == companyId)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.BillingAccountId, targetBillingAccountId));
+        db.Entry(company).State = EntityState.Detached;
+        company = await db.Companies.FirstAsync(c => c.Id == companyId);
 
         // Step 8: owner change (if requested), through the SAME writer §50 uses — §59 grep 8.
         string? oldOwnerUserId = null;
