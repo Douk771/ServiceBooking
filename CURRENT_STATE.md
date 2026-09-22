@@ -1,18 +1,41 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `14a7fb6`, дата: 2026-09-22.**
+**Актуально по состоянию на коммит: `aac6231`, дата: 2026-09-22.**
 
 Документ описывает **что есть в репозитории сейчас**, без предложений по развитию.
 
-Точка отсчёта. Ветка — **`develop`**, HEAD — `14a7fb6`, рабочее дерево чистое (кроме самого этого
-файла в момент его правки). ⚠️ Последний коммит `14a7fb6` — это **правка `CHANGELOG.md`
-product-analyst'ом**, сделанная параллельно с этой редакцией; кода она не касается. Кодовая часть
-диапазона заканчивается на `6562a86`.
+🗓 Точка отсчёта этой редакции. Ветка — **`cycle/06-booking-fixes`** (цикл 6, готов к вливанию в
+`develop`), HEAD — `aac6231`, рабочее дерево чистое (кроме самого этого файла в момент его правки).
+⚠️ **Важно про порядок циклов.** Цикл 6 делался **параллельно** с циклами 5 и 8, и они влились в
+`develop` раньше. При мёрже `develop` в ветку цикла 6 этот файл взят из `develop` **целиком** —
+он свежее; правка цикла 6, которая в нём была (одно правило про изоляцию тестовой базы), циклом 8
+решена системно и лучше. Поэтому ниже разделы циклов 5 и 8 оставлены как есть, а цикл 6 **дописан
+поверх их редакции**. Хронология в документе не линейна: «прошлая редакция» в тексте ниже означает
+цикл 8, хотя номер цикла меньше.
 Модель веток прежняя: `master` ← `release-candidate` ← `develop` ← `cycle/NN-<слаг>`
 (см. §0.0 DEPLOY.md). `develop` — интеграционный ствол и одновременно **та самая ветка, которая
 развёрнута на боевой машине**: `master` отстаёт, тегов нет, релиз формально не объявлен.
 
-🔬 **Диапазон изменений этой редакции (цикл 8): `7b382d8..6562a86`, 56 коммитов, +9 910 / −1 369
+🗓 **Диапазон изменений этой редакции (цикл 6): `14a7fb6..aac6231`, 76 коммитов, +19 364 / −692
+строк, 122 файла.** Из них **67 — сам цикл 6** «доработка сценария записи на услуги» (истории
+US-60…US-67, ветка `cycle/06-booking-fixes`), остальные девять — хвосты чужой работы, доехавшие
+той же веткой: пять коммитов `T9 *` (закрытие неблокирующих находок ревью цикла 8 — см. §9 T8-2),
+две правки документов состояния, `.gitignore` и сам мёрж `develop`. Полный список —
+`git log --oneline 14a7fb6..aac6231`.
+Документ обновлялся **точечно по диапазону**: разделы, которых цикл 6 не касался, остались в
+редакции цикла 8 (и, глубже, цикла 5).
+
+🗓 **Главное отличие от редакции цикла 8: цикл 6 — противоположность ему по характеру.** Цикл 8
+почти не трогал продуктовый код; цикл 6 трогает **только** его. Изменились: вход и регистрация
+(различимые причины отказа), телефон (жёсткий российский формат при создании новых данных),
+членство в компании (признак «оказывает услуги»), подписки (дата окончания стала обязательной,
+появилась диагностика), выбор мастера (шаг пропускается, если специалист один), **календарь
+доступности месяца одним запросом**, **рабочее окно по умолчанию вместо «сутки напролёт»** и
+**несколько услуг за один визит**. Четыре новые миграции, одна новая сущность, три новых эндпоинта,
+шесть изменённых. Тестовой инфраструктуры цикл не касался — она осталась ровно такой, какой её
+сделал цикл 8.
+
+🔬 **Диапазон прошлой редакции (цикл 8): `7b382d8..6562a86`, 56 коммитов, +9 910 / −1 369
 строк, 75 файлов.** Это **весь цикл 8 «изоляция тестовой и локальной среды»** (ветка
 `cycle/08-test-env-isolation`, смёржена в `develop`, CI зелёный), обе его фазы — изоляция прогонов
 друг от друга и параллелизм внутри прогона. Полный список — `git log --oneline 7b382d8..HEAD`.
@@ -60,23 +83,34 @@ product-analyst'ом**, сделанная параллельно с этой р
 Все утверждения ниже получены чтением исходников, конфигов и git-истории. Где чего-то не нашлось —
 так и написано.
 
-**Числа прогонов на `6562a86`** (автор этого документа работает только на чтение и тесты не
-запускает; числа взяты из приёмки цикла 8, `ARCHITECTURE_CYCLE8_PHASE2.md` §98.4, и перепроверены
+🗓 **Числа прогонов на `aac6231`** (автор этого документа работает только на чтение и тесты не
+запускает; числа получены от того, кто выполнял прогон на слитом дереве цикла 6, и сходятся со
 статическим подсчётом атрибутов):
 
-| Команда | Результат | Было в прошлой редакции |
+| Команда | Результат | Было в редакции цикла 8 |
 |---|---|---|
 | `dotnet build ServiceBooking.sln -warnaserror` | **0 warnings, 0 errors** | 0 / 0 |
-| `dotnet test ServiceBooking.UnitTests` | 🔬 **691 / 691** | 591 / 591 |
-| `dotnet test ServiceBooking.Tests` | **465 / 465** | 465 / 465 |
-| `npm run test:run` (в `frontend/`) | **181 / 181** | 181 / 181 |
+| `dotnet test ServiceBooking.UnitTests` | 🗓 **777 / 777** | 691 / 691 |
+| `dotnet test ServiceBooking.Tests` | 🗓 **488 / 488** (по правилам цикла 8, нужен Docker) | 465 / 465 |
+| `npm run test:run` (в `frontend/`) | 🗓 **283 / 283**, 43 файла | 181 / 181, 32 файла |
 | `npx tsc --noEmit` (в `frontend/`) | чисто | чисто |
 | `npm run build` (в `frontend/`) | успешно | успешно |
+| 🗓 `npx @redocly/cli lint openapi-cycle6.yaml` | валидно, **одно предупреждение про `localhost`** в `servers` | контракта не было |
 
-Статический подсчёт на `6562a86` сходится: `[Fact]`+`[InlineData]` — **691** в
-`ServiceBooking.UnitTests` (423 + 268), **465** в `ServiceBooking.Tests` (449 + 16; ещё одно
-вхождение `[Fact` там — внутри комментария, в счёт не идёт; атрибуты идут парой
-`[Fact, TestCase("ID")]`), вызовов `it(...)` в `frontend/src` — **181** в 32 файлах.
+Статический подсчёт на `aac6231` сходится: вызовов `it(...)` в `frontend/src` — **283** в
+**43** файлах; файлов в `ServiceBooking.UnitTests` — 60 (было 53), в `ServiceBooking.Tests/Tests/` —
+30 (было 29). В `ServiceBooking.Tests` атрибуты идут парой `[Fact, TestCase("ID")]`, голого `[Fact]`
+там не встретить; одно вхождение `[Fact` там — внутри комментария, в счёт не идёт.
+Числа промежуточных редакций (691 → 711 после закрытия находок T9 → **777** после цикла 6) в
+тексте ниже местами встречаются как есть — это история, а не расхождение.
+
+🗓 **Прирост цикла 6 распределён по всем трём наборам:** юнит +66 (чистые правила цикла:
+`LoginOutcome`, `BookingHorizon`, `BookingServiceSelection`, `SubscriptionDiagnostics`,
+`ModelValidationErrorFormatter`, доработки `SlotCalculator`/`PhoneNormalizer`) плюс +20 от закрытия
+находок T9; функциональный +23 (в том числе новый файл `MultiServiceBookingTests.cs` и переписанные
+кейсы входа и слотов); фронтенд +102 в 11 новых файлах — впервые покрыты **экраны записи**
+(`BookingCalendar`, `ManualBookingModal`, `RescheduleModal`, `PhoneInput`, `LoginPage`, `AdminPage`,
+`CompanyManagePage`) и пять новых утилит.
 
 🔬 **Весь прирост цикла 8 (+100 юнит-тестов) — покрытие самой тестовой инфраструктуры**
 (`ServiceBooking.TestKit`: имена баз, ключ прогона, метки, арифметика бюджета соединений,
@@ -93,6 +127,13 @@ product-analyst'ом**, сделанная параллельно с этой р
 
 ## 1. Стек и версии
 
+🗓 **Цикл 6 стек не менял вообще.** Диф по всем `*.csproj`, `ServiceBooking.sln`,
+`frontend/package.json` и `frontend/package-lock.json` в диапазоне `14a7fb6..aac6231` — **пустой**:
+ни одной новой зависимости, ни одного обновления версии, ни одного нового проекта. Это осознанное
+решение цикла, записанное в `ARCHITECTURE_CYCLE6.md` §41 («Стек: ничего не добавляем, и вот
+почему»): маска телефона, календарь месяца и мультивыбор услуг сделаны на том, что уже есть, без
+`react-imask`, `react-day-picker` и им подобных.
+
 ### Бэкенд
 
 | Что | Значение | Откуда |
@@ -104,7 +145,7 @@ product-analyst'ом**, сделанная параллельно с этой р
 | СУБД | PostgreSQL (в docker-compose — `postgres:16-alpine`) 🔬 версия пина сверяется скриптом `deploy/ci/check-image-pins.sh` между `TestKit/TestInfrastructure.cs`, обоими compose-файлами и `ci.yml` | `docker-compose.yml`, `docker-compose.prod.yml` |
 | Аутентификация | ASP.NET Core Identity (`IdentityDbContext<AppUser>`) + JWT Bearer 8.0.11 | `Program.cs`, `Services/TokenService.cs` |
 | Обработка изображений | **SkiaSharp 2.88.8** + `SkiaSharp.NativeAssets.Linux.NoDependencies` (цикл 2) — декод, ориентация по EXIF, ресайз, ре-энкод | `ServiceBooking.API.csproj`, `Services/ImageProcessor.cs` |
-| Rate limiting | `Microsoft.AspNetCore.RateLimiting` (встроенный в ASP.NET Core 8), ⚖️ **семь** именованных политик: `uploads`, `auth-login`, `auth-register`, `booking-create`, `data-export`, `notifications-webhook` (600/мин на IP), ⚖️ `subject-request` (3/час на IP); глобального лимитера нет | `Program.cs`, секция `RateLimits` |
+| Rate limiting | `Microsoft.AspNetCore.RateLimiting` (встроенный в ASP.NET Core 8), 🗓 **восемь** именованных политик: `uploads`, `auth-login`, `auth-register`, `booking-create`, `data-export`, `notifications-webhook` (600/мин на IP), ⚖️ `subject-request` (3/час на IP), 🗓 `availability` (60/мин на IP); глобального лимитера нет | `Program.cs`, секция `RateLimits` |
 | 🆕 **Шифрование секретов** | **AES-GCM напрямую** (`System.Security.Cryptography`), мастер-ключ из конфигурации (`Notifications:EncryptionKey`, 32 байта base64). ASP.NET Core Data Protection **отвергнут осознанно** — его key ring в контейнере эфемерен и молча перестал бы читать ранее зашифрованные токены после передеплоя. Формат шифротекста `v1.<keyId>.<base64(nonce12‖tag16‖ct)>`, AAD — id канала. ⚖️ Цикл 5 добавил **строковую перегрузку связанных данных** (`Encrypt/Decrypt(…, string associatedData)`) и обёртку `HealthNoteProtector` над ней — **второй криптографии в проекте намеренно не заводили**: один ключ, одна процедура ротации. Обратная совместимость подтверждена ревью побайтово — старые токены каналов читаются | `Services/Notifications/SecretProtector.cs`, `ChannelKeyFingerprint.cs`, ⚖️ `Services/Legal/HealthNoteProtector.cs` |
 | 🆕 **HTTP-клиент наружу** | `IHttpClientFactory`, именованный клиент `green-api` с keep-alive и **IPv4-first `ConnectCallback`**; логирование этого клиента заглушено на уровне категорий (токен в URL) | `Program.cs`, `Services/Notifications/GreenApi/GreenApiHandlerFactory.cs`, `PreferIPv4.cs` |
 | 🆕 Кеш в памяти | `IMemoryCache` (`AddMemoryCache`) — кеш QR-ответа и 60-секундный кеш `PlatformSettings` | `Program.cs` |
@@ -276,6 +317,17 @@ Vite и куда мапится docker-compose.
 - В `appsettings.Testing.json` добавлены выключение `data-retention` и поднятый лимит политики
   `subject-request`.
 
+🗓 **Новая секция цикла 6 в `appsettings.json` — ровно одна, и она маленькая:**
+
+- **`Booking:DefaultWorkWindow`** (`Start: "09:00"`, `End: "21:00"`) — рабочее окно «по умолчанию»
+  для ручной записи персонала на дату, на которую расписание не задано (US-66). До цикла 6 такой
+  день раскрывался на **целые сутки 00:00–24:00**; теперь это окно, а сутки целиком доступны только
+  по явному запросу (`extendedHours=true`, см. §4.5). Значение разбирается
+  `DeploymentSafetyChecks.ParseDefaultWorkWindow` и **роняет старт**, если оно отсутствует, не
+  парсится или перевёрнуто, — вместо тихого отката к суткам напролёт.
+- Туда же, в `RateLimits`, добавлена восьмая политика — **`availability`** (60/мин на IP): новый
+  эндпоинт `GET /api/bookings/availability` анонимный, гостевой сценарий записи без него не работает.
+
 ---
 
 ## 2. Структура репозитория
@@ -286,8 +338,10 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 │   ├── Program.cs                  🆕 784 строки: Serilog, fail-fast прод-конфига (через DeploymentSafetyChecks),
 │   │                               DI, Identity, JWT (+ перечитывание ролей, SecurityStamp и claim'ы согласия),
 │   │                               CORS, Swagger (только Dev), exception handler, ForwardedHeaders,
-│   │                               5 политик rate limiting, глобальный LegalConsentFilter, health-эндпоинты,
-│   │                               регистрация фоновых задач, миграции, сид
+│   │                               рейт-лимиты (🗓 +политика `availability`), глобальный LegalConsentFilter,
+│   │                               health-эндпоинты, регистрация фоновых задач, миграции, сид,
+│   │                               🗓 InvalidModelStateResponseFactory (форма тела 400 автоматической
+│   │                               валидации, ГЛОБАЛЬНО для всех контроллеров — см. §6)
 │   ├── Controllers/                ⚖️ 20 контроллеров (21 класс — в Reviews их два); цикл 4 добавил
 │   │                               CitiesController, NotificationChannelsController, NotificationsController,
 │   │                               CompanyNotificationsController; ⚖️ цикл 5 — ClientConsentsController,
@@ -295,7 +349,11 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 │   ├── DTOs/                       Auth / Bookings / ⭐ Common (PagedResult, 🆕 Optional<T>) / 🆕 Cities /
 │   │                               ClientNotes / Companies / 🆕 Notifications (Channel/Log/Settings/Template/Unsubscribe) /
 │   │                               Services / WorkingHours
-│   ├── Services/                   SlotService+SlotCalculator, SubscriptionResolver, CaptchaService, TokenService,
+│   ├── Services/                   🗓 +AvailabilityService (статус дней месяца), +BookingHorizon (горизонт записи),
+│   │                               +BookingServiceSelection (состав визита), +MasterCapability (умеет ли мастер),
+│   │                               +LoginOutcome (исходы входа), +SubscriptionDiagnostics (состояние тарифа),
+│   │                               +ModelValidationErrorFormatter (тело 400 автовалидации);
+│   │                               SlotService+SlotCalculator, SubscriptionResolver, CaptchaService, TokenService,
 │   │   │                           AdvisoryLock, BookingFilters, CompanyMembership, PhoneNormalizer, FileStorage,
 │   │   │                           ImageSignature, ImageProcessor, ImageUploadService, PhotoQuota,
 │   │   │                           ⭐ DeploymentSafetyChecks, ⭐ IdentityRoleSync, ⭐ LogMasking, ⭐ PhoneMaskingEnricher,
@@ -329,14 +387,16 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 │   ├── Dockerfile                  multi-stage, aspnet:8.0, EXPOSE 8080 (комментарий «не менять на -alpine»)
 │   └── appsettings*.json           appsettings.json и appsettings.Testing.json в git; Development/Production — в .gitignore
 ├── ServiceBooking.Core/            только сущности и перечисления, зависимость одна — Identity.EFCore
-│   ├── Entities/                   ⚖️ 32 класса (−UserConsent, +ConsentRecord, +ClientHealthNote,
+│   ├── Entities/                   🗓 33 класса (+BookingService — строка визита, см. §3); ⚖️ было 32
+│   │                               (−UserConsent, +ConsentRecord, +ClientHealthNote,
 │   │                               +SubjectRequest; 🆕 12 сущностей цикла 4, см. §3)
 │   └── Enums/                      BookingStatus, ⭐ LegalDocumentType (⚖️ пять членов), PaymentStatus,
 │                                   PhotoRetention (⚖️ без Forever), UserRole, 🆕 +7 цикла 4;
 │                                   ⚖️ +7 цикла 5: LegalGate, ConsentPurpose, ConsentAct, ConsentSource,
 │                                   SubjectRequestKind/Status, LegalEntityForm, ProviderDeliveryConsentMode;
 │                                   ⚖️ LegalTextKey — СТРОКИ, а не перечисление
-├── ServiceBooking.Infrastructure/  AppDbContext + ⚖️ 36 миграций EF Core (циклом 8 не тронуты)
+├── ServiceBooking.Infrastructure/  AppDbContext + 🗓 40 миграций EF Core (было 36; цикл 8 их не трогал,
+│                                   цикл 6 добавил четыре — см. §3)
 ├── 🔬 ServiceBooking.TestKit/      НОВЫЙ ПРОЕКТ (цикл 8): среда тестового прогона. Библиотека для обоих
 │                                   тестовых проектов И CLI (status/sweep/doctor, --json).
 │                                   TestRunKey (ключ прогона, 8 hex, статика в процессе),
@@ -347,20 +407,22 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 │                                   где выполняется DROP DATABASE), Sweeper (уборка после убитых прогонов),
 │                                   EnvStatus (status/doctor), ResourceLabels, StableHash, TestKitJson,
 │                                   TestInfrastructure (единственный источник пинов/лимитов),
-│                                   TestSafetyException
-├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; 🔬 53 файла, 691 запуск
-│                                   (🔬 +9 файлов цикла 8 — покрытие TestKit, см. §7.1)
-├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; 29 файлов, 465 запусков
+│                                   TestSafetyException,
+│                                   ⚠️ TestSlot и TestData ПЕРЕЕХАЛИ СЮДА из ServiceBooking.Tests/Infrastructure/
+│                                   (коммит `7d99394`, закрытие находки T9 L5 — искать их по старому пути больше не нужно)
+├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; 🗓 60 файлов, 777 запусков
+│                                   (🔬 +9 файлов цикла 8 — покрытие TestKit; 🗓 +7 файлов цикла 6, см. §7.1)
+├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; 🗓 30 файлов, 488 запусков
 │   ├── Infrastructure/             ApiTestBase, CustomWebApplicationFactory, TestDatabaseFixture, JsonHelpers,
 │   │                               TestCaseAttribute, TestImages, ⭐ LegalDocumentsTestFactory, ⭐ RateLimitTestFactory,
 │   │                               🆕 NotificationTestBase, NotificationTestFactory, NotificationDispatchTestFactory,
 │   │                               🔬 UploadsStaticFilesTestFactory, TestRunEnvironment (одна среда на процесс),
-│   │                               TestSlot (слот класса «c07»), TestHostSettings (единственное место настройки
-│   │                               всех тестовых хостов), TestData (уникальные значения на класс), TestPhones,
-│   │                               TestParallelism, RandomTestCaseOrderer (случайный порядок с семенем)
+│   │                               TestHostSettings (единственное место настройки всех тестовых хостов),
+│   │                               TestPhones, TestParallelism, RandomTestCaseOrderer (случайный порядок с семенем);
+│   │                               ⚠️ TestSlot и TestData отсюда УЕХАЛИ в ServiceBooking.TestKit/ (`7d99394`)
 │   ├── 🔬 xunit.runner.json        maxParallelThreads=4, parallelizeTestCollections=true
 │   ├── 🔬 AssemblyInfo.cs          TestCaseOrderer + ОДНА ЗАКОММЕНТИРОВАННАЯ строка отката параллелизма
-│   └── Tests/                      🆕 28 файлов по доменам
+│   └── Tests/                      🗓 30 файлов по доменам (+MultiServiceBookingTests.cs — визит из нескольких услуг)
 ├── frontend/                       React SPA
 │   ├── src/api/                    ⚖️ 23 модуля — тонкая обёртка над axios, по одному на домен
 │   │                               (⭐ +legal.ts; 🆕 +cities.ts, +notifications.ts, +notificationChannels.ts,
@@ -372,10 +434,11 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 │   │                               NotificationTemplatesTab, NotificationLogTab}.tsx, admin/NotificationsAdminTab.tsx;
 │   │                               ⚖️ +ConsentsPage.tsx, +SubjectRequestPage.tsx,
 │   │                               admin/SubjectRequestsTab.tsx, owner/TemplateAcknowledgementModal.tsx
-│   ├── src/components/             booking/, clientNotes/ (⚖️ +HealthNoteCard, +PhotoConsentBadge,
+│   ├── src/components/             booking/ (🗓 +BookingCalendar.tsx — месячный календарь доступности),
+│   │                               clientNotes/ (⚖️ +HealthNoteCard, +PhotoConsentBadge,
 │   │                               +ClientConsentModal), ⭐ legal/ (ConsentGate, LegalUpdateBanner,
 │   │                               ⚖️ +OwnerTermsGateModal), layout/, review/, schedule/,
-│   │                               ui/ (⭐ +Pagination, 🆕 +CityCombobox),
+│   │                               ui/ (⭐ +Pagination, 🆕 +CityCombobox, 🗓 +PhoneInput — маска +7),
 │   │                               🆕 notifications/ (QrModal, AssignCompanyDialog, RiskAcceptanceModal,
 │   │                               ChannelBreachBanner, ⚖️ +ChannelRequestModal)
 │   ├── src/hooks/                  useOverlayDismiss, useAuthedImage, ⭐ useExportData, ⭐ useDebouncedValue,
@@ -384,7 +447,9 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 │   ├── src/test/setup.ts           setup Vitest (jest-dom + cleanup Testing Library)
 │   ├── src/types/index.ts          общие TS-типы (ручная копия серверных DTO)
 │   ├── src/utils/                  мапперы ошибок HTTP → русский текст (⭐ +authError, +legalError,
-│   │                               🆕 +notificationError) + phone.ts, 🆕 timezone.ts, 🆕 channelBanner.ts
+│   │                               🆕 +notificationError, 🗓 +providesServicesError) + phone.ts (🗓 маска и
+│   │                               looksRussian), 🆕 timezone.ts, 🆕 channelBanner.ts,
+│   │                               🗓 +bookingHorizon.ts, +bookingServices.ts
 │   ├── eslint.config.js            ⭐ ESLint 9 flat-config + Prettier
 │   └── design_handoff_site_redesign/  HTML-макеты редизайна, не участвуют в сборке
 ├── .editorconfig                   ⭐ описывает уже сложившийся C#-стиль; в CI НЕ проверяется
@@ -424,6 +489,9 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 │                                   с плейсхолдерами {{…}}, приложение их НЕ читает
 ├── LEGAL_REVIEW.md                 ⚖️ ~205 КБ, юридическое заключение по продукту, редакция 4
 ├── SPEC.md                         🔬 ~71 КБ, спека ЦИКЛА 8 (изоляция тестовой и локальной среды)
+├── 🗓 SPEC_CYCLE6_BOOKING_FIXES.md ~88 КБ, спека ЦИКЛА 6 (SPEC.md занят циклом 8), истории US-60…US-67
+├── 🗓 ARCHITECTURE_CYCLE6.md (~138 КБ, §41–§54) / API_CONTRACT_CYCLE6.md (~59 КБ, §38–§46)
+├── 🗓 openapi-cycle6.yaml          ~64 КБ, OpenAPI 3.0.3 — машиночитаемый контракт цикла 6 (12 путей)
 ├── 🔬 SPEC_CYCLE5_LEGAL.md         ~163 КБ, сохранённая спека цикла 5 (SPEC.md занят циклом 8)
 ├── 🔬 ARCHITECTURE_CYCLE8.md (~88 КБ, §61–§81) / ARCHITECTURE_CYCLE8_PHASE2.md (~108 КБ, §89–§99)
 ├── 🔬 API_CONTRACT_CYCLE8.md (~27 КБ, §82–§88) / API_CONTRACT_CYCLE8_PHASE2.md (~17 КБ)
@@ -446,6 +514,9 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 (диапазон `6369266..0e61369`). 🆕 — появилось в **цикле 4** (диапазон `0e61369..7a36543`).
 ⚖️ — появилось или **переделано** в **цикле 5** (диапазон `7a36543..071fc11`).
 🔬 — появилось или переделано в **цикле 8** (диапазон `7b382d8..6562a86`).
+🗓 — появилось или переделано в **цикле 6** (диапазон `14a7fb6..aac6231`; цикл 6 делался
+параллельно циклам 5 и 8 и влился в `develop` после них, поэтому его значок в тексте встречается
+позже «восьмёрки», хотя номер меньше).
 Значки прежних циклов намеренно оставлены как были: так видно, что именно в каком цикле возникло.
 
 ### Точка входа и слои
@@ -487,6 +558,12 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
   по claim'ам JWT против снимка в памяти, без запросов в БД. Чистых классов цикл 5 добавил меньше, чем
   цикл 4, но они есть и покрыты юнит-тестами: `InnValidator`, `WorkingDays`, `TemplateAdHeuristics`,
   `ClientKey`, `RetentionPlan`, `SubjectRequestReference`, `HealthNoteProtector`.
+- 🗓 **Цикл 6 следовал той же линии:** шесть новых чистых классов (`LoginOutcome`/`LoginOutcomeMapper`,
+  `BookingHorizon`, `BookingServiceSelection`, `SubscriptionDiagnostics`,
+  `ModelValidationErrorFormatter` и почти чистый `MasterCapability` — у него один запрос в БД,
+  поэтому он проверяется функциональными тестами, а не юнитом). `SlotCalculator` цикл переработал
+  (`ScheduleFallback` вместо `bool`), а `AvailabilityService` намеренно оставил тонкой обёрткой над
+  тремя запросами, отдав всю арифметику дня тому же `SlotCalculator.Calculate`.
 - 🆕 **Файлы цикла 4 поделены между двумя бэкенд-разработчиками:** `Services/Notifications/**` —
   один, `Services/Notification*.cs` в корне `Services/` (`NotificationScheduler`, `NotificationTexts`,
   `NotificationRiskText`) — другой. Это объясняет, почему презентационный код лежит не рядом с
@@ -510,14 +587,15 @@ Blazor Server-шаблон из первого коммита удалён це�
 | Сущность | Ключ | Ключевые поля | Связи |
 |---|---|---|---|
 | `AppUser : IdentityUser` | string | `FirstName`, `LastName`, `AvatarUrl`, `CreatedAt`, ⭐ **`DeletedAtUtc?`** (надгробие удалённого аккаунта, цикл 3) | 1—N: CompanyMemberships, ClientBookings, MasterBookings, MasterServices, WorkingHours |
-| `Company` | Guid | `Name`, `Slug` (**уникальный индекс**), `Description`, `LogoUrl`, `Address`, `Phone`, `Email`, `AllowSelfBooking`, `RequirePrepayment`, `ShowInPublicListing`, `IsActive`, `OwnerUserId`, 🆕 **`CityId?`** (FK `Restrict`), 🆕 **`TimeZoneId`** (IANA, дефолт `Europe/Moscow`), 🆕 **`TimeZoneIsManual`** | N—1 Owner (`Restrict`), 🆕 N—1 City (`Restrict`), 1—N Members / Services / Bookings |
-| `CompanyMember` | Guid | `CompanyId`, `UserId`, `Role: UserRole`, `Bio`, **`CommissionPercent`** (переехал сюда с `AppUser` в цикле 1), `JoinedAt`; **уникальный индекс `(CompanyId, UserId)`** | «многие-ко-многим» User↔Company с ролью |
+| `Company` | Guid | `Name`, `Slug` (**уникальный индекс**), `Description`, `LogoUrl`, `Address`, `Phone`, `Email`, `AllowSelfBooking`, `RequirePrepayment`, `ShowInPublicListing`, `IsActive`, `OwnerUserId`, 🆕 **`CityId?`** (FK `Restrict`), 🆕 **`TimeZoneId`** (IANA, дефолт `Europe/Moscow`), 🆕 **`TimeZoneIsManual`**, 🗓 **`BookingHorizonDays`** (дефолт 90, допустимо 1..365; насколько вперёд клиент может записаться сам — персонала не касается) | N—1 Owner (`Restrict`), 🆕 N—1 City (`Restrict`), 1—N Members / Services / Bookings |
+| `CompanyMember` | Guid | `CompanyId`, `UserId`, `Role: UserRole`, `Bio`, **`CommissionPercent`** (переехал сюда с `AppUser` в цикле 1), `JoinedAt`, 🗓 **`ProvidesServices`** (дефолт `true` — виден ли участник в публичном списке «выбрать мастера»; имеет смысл для ролей `Master`/`CompanyOwner`) | «многие-ко-многим» User↔Company с ролью |
 | `Service` | Guid | `CompanyId`, `Name`, `DurationMinutes`, `Price decimal(10,2)`, `ImageUrl`, `IsActive` | 1—N MasterServices, Bookings |
 | `MasterService` | Guid | `MasterId`, `ServiceId` | связка «мастер умеет услугу» |
 | `WorkingHours` | Guid | `MasterId`, `CompanyId`, **`Date: DateOnly`**, `StartTime`, `EndTime`, `IsWorking`; **уникальный индекс `(MasterId, CompanyId, Date)`** (цикл 1) | 1—N `ScheduleBreak` |
 | `ScheduleBreak` | Guid | `WorkingHoursId`, `StartTime`, `EndTime` | перерывы внутри дня |
 | `WeeklyScheduleTemplate` | Guid | `MasterId`, `CompanyId`, `DayOfWeek` (ISO 1..7), `IsWorking`, `StartTime`, `EndTime`; индекс `(MasterId, CompanyId)` | шаблон, «раскатываемый» в `WorkingHours` |
-| `Booking` | Guid | `CompanyId`, `ServiceId`, `MasterId`, `ClientId?`, `GuestName/Phone/Email`, `Date`, `StartTime`, `EndTime`, **`Price` (снимок цены)**, **`CommissionPercent` (снимок комиссии, цикл 1)**, `Status`, `PaymentStatus`, `Notes`, `CancellationReason`, ⭐ **`ConsentPrivacyVersion?` / `ConsentTermsVersion?` / `ConsentAcceptedAtUtc?`** (снимок согласия, заполняет сервер, в т.ч. для гостя; ⚖️ `ConsentTermsVersion` **сохранил имя цикла 3**, но держит теперь версию `TermsClient`), ⭐ **`ClientDeleted`**, ⚖️ **`BookedForOther`**, **`GuardianConfirmedAtUtc?`**, **`GuardianConfirmationVersion?`** (запись за другого человека — только для самозаписи клиента/гостя/виджета, не для ручной записи персоналом), ⚖️ **`BookingNoticeVersion?`** (версия уведомления по ст. 18, сервер пишет **на каждую** запись, включая записи персонала) | Master `Restrict`, Client `SetNull` |
+| `Booking` | Guid | `CompanyId`, `ServiceId`, `MasterId`, `ClientId?`, `GuestName/Phone/Email`, `Date`, `StartTime`, `EndTime`, **`Price` (снимок цены)**, **`CommissionPercent` (снимок комиссии, цикл 1)**, `Status`, `PaymentStatus`, `Notes`, `CancellationReason`, ⭐ **`ConsentPrivacyVersion?` / `ConsentTermsVersion?` / `ConsentAcceptedAtUtc?`** (снимок согласия, заполняет сервер, в т.ч. для гостя; ⚖️ `ConsentTermsVersion` **сохранил имя цикла 3**, но держит теперь версию `TermsClient`), ⭐ **`ClientDeleted`**, ⚖️ **`BookedForOther`**, **`GuardianConfirmedAtUtc?`**, **`GuardianConfirmationVersion?`** (запись за другого человека — только для самозаписи клиента/гостя/виджета, не для ручной записи персоналом), ⚖️ **`BookingNoticeVersion?`** (версия уведомления по ст. 18, сервер пишет **на каждую** запись, включая записи персонала); 🗓 навигация **`BookingServices`** (состав визита) | Master `Restrict`, Client `SetNull`, 🗓 1—N `BookingService` (`Cascade`) |
+| 🗓 **`BookingService`** | Guid | `BookingId`, `ServiceId`, `Position` (0-based, он же порядок показа), `NameSnapshot` (≤200, снимок имени на момент записи), `DurationMinutes`, `Price decimal(10,2)`; **уникальный индекс `(BookingId, Position)`** | US-67: одна строка на каждую услугу визита. `Booking.ServiceId`/`Booking.Price` сохранили смысл «первая услуга» / **«итог по визиту»**, а эта таблица — разбивка под итогом. После backfill'а миграции **никогда не пуста**: у записи, созданной до цикла 6, ровно одна строка. Booking `Cascade`, Service `Restrict` |
 | `Review` | Guid | `BookingId` (**уникальный индекс** — 1 отзыв на запись), `CompanyId`, `MasterId`, `ClientId?`, `ReviewerName`, `Rating 1..5`, `Comment` | Booking `Cascade` |
 | `ClientNote` | Guid | `CompanyId`, `MasterId` (автор), `ClientId?` / `GuestPhone?`, `Note`, **`BookingId?`** (визит, к которому написана заметка; `SetNull`), `CreatedAt`; индексы `(CompanyId, ClientId)` и `(CompanyId, GuestPhone)` | заметки общие для компании; удалять может **автор или владелец компании** (решение Q16); 1—N `ClientNotePhoto` |
 | `ClientNotePhoto` | Guid | `ClientNoteId`, `CompanyId` (денормализованная копия), `StoragePath`, `ThumbnailPath`, `ContentType`, `SizeBytes` (полный размер + миниатюра), `Width`, `Height`, `ContentHash` (SHA-256 **обработанных** байт), `UploadedByUserId?` (`SetNull`), `CreatedAt`; индексы `ClientNoteId`, `(CompanyId, CreatedAt)`, **уникальный `(ClientNoteId, ContentHash)`** | фото к заметке; каскад от заметки; ≤5 на заметку |
@@ -646,7 +724,7 @@ ChannelRiskNotice = 4 }`** — пять членов вместо двух; `Ter
   HTTP-вызова и работает маркером «в полёте» на `InFlightGraceMinutes`.
 - 🆕 **Отписка живёт по номеру телефона, а не по человеку** — см. комментарий на `NotificationOptOut`.
 
-### Миграции (⚖️ 36, все в `ServiceBooking.Infrastructure/Migrations/`)
+### Миграции (🗓 40, все в `ServiceBooking.Infrastructure/Migrations/`)
 
 Первые 13 — как раньше: `InitialCreate` → `DateBasedSchedule` → `AddSubscriptionAndCommission` →
 `AddReviewsTemplatesNotes` → `AddPromoGiftMailPlans` → `AddPrepaymentSupport` →
@@ -709,9 +787,29 @@ ChannelRiskNotice = 4 }`** — пять членов вместо двух; `Ter
 7. **`AddRedactionAndWidenSettings`** — `ContentRedactedAtUtc` и расширение полей настроек.
 8. **`AddSubjectRequests`** — таблица обращений субъектов.
 
-Итого **разрушительных по данным миграций в проекте теперь три**: `NormalizePhoneNumbers` (цикл 2),
-`ConsentJournal` и `RemovePhotoRetentionForever` (обе — цикл 5). Проект не в продакшене, боевых
-данных нет.
+🗓 **Цикл 6 добавил четыре**, в порядке применения:
+
+1. **`20260921191620_BackfillSubscriptionPaidUntil`** — **миграция данных**: подпискам без даты
+   окончания ставит «оплачено на год вперёд» (`PaidUntil IS NULL` → `now() + interval '1 year'`),
+   потому что с этого цикла дата окончания обязательна и состояние «дата не задана» должно
+   перестать существовать. **`Down` — намеренный no-op**: какие строки были `NULL` до прогона,
+   обратно уже не восстановить.
+2. **`20260921191736_AddMemberProvidesServices`** — колонка `CompanyMembers.ProvidesServices`
+   с дефолтом `true`, так что видимость существующих участников не меняется.
+3. **`20260921192244_AddCompanyBookingHorizonDays`** — колонка `Companies.BookingHorizonDays`
+   с дефолтом 90.
+4. **`20260922053047_AddBookingServices`** — таблица `BookingServices` (уникальный индекс
+   `(BookingId, Position)` + индекс по `ServiceId`, FK на `Bookings` `Cascade` и на `Services`
+   `Restrict`) **плюс backfill одним `INSERT…SELECT`**: каждой существующей записи заводится ровно
+   одна строка с `Position = 0`, именем услуги (`COALESCE(s."Name", 'Услуга')` — услуга могла быть
+   удалена), длительностью, посчитанной из `EndTime - StartTime`, и ценой записи. Благодаря этому
+   «у визита всегда есть хотя бы одна строка состава» — инвариант, а не пожелание.
+   `Down` дропает таблицу целиком.
+
+Итого **разрушительных по данным миграций в проекте теперь четыре**: `NormalizePhoneNumbers`
+(цикл 2), `ConsentJournal` и `RemovePhotoRetentionForever` (обе — цикл 5) и 🗓
+`BackfillSubscriptionPaidUntil` (цикл 6 — переписывает `NULL` на дату без возможности отката).
+Проект не в продакшене, боевых данных нет.
 
 История по-прежнему видна прямо в названиях: промокоды и подарочные сертификаты были добавлены и затем
 **удалены целиком**, а подписка переехала с компании на аккаунт владельца. Остатков этих фич в коде нет.
@@ -722,6 +820,12 @@ ChannelRiskNotice = 4 }`** — пять членов вместо двух; `Ter
 
 Ниже — по функциональным блокам. Все эндпоинты выписаны из атрибутов контроллеров, а не из документации.
 
+🗓 **Где искать цикл 6:** §4.1 (вход, регистрация, телефон — US-60/US-61), §4.2 (признак «оказывает
+услуги» — US-62; горизонт записи в настройках компании — US-65), §4.5 (слоты, календарь месяца,
+рабочее окно, несколько услуг за визит, перенос записи — US-64…US-67), §4.6 и §4.10 (подписки и
+диагностика тарифа — US-63), §4.9 (как визит из нескольких услуг попадает в отчёты), §4.11 (почему
+виджет остался на одной услуге).
+
 ### 4.1 Аутентификация и профиль — работает
 
 `ServiceBooking.API/Controllers/AuthController.cs`, `ProfileController.cs`, `Services/TokenService.cs`
@@ -729,7 +833,7 @@ ChannelRiskNotice = 4 }`** — пять членов вместо двух; `Ter
 | Метод | Путь | Доступ |
 |---|---|---|
 | POST | `/api/auth/register` | анонимно; телефон нормализуется, невалидный → 400; выдаёт роль `Client`; ⚖️ **требует объект `legal` с двумя версиями** (`privacyAcknowledgedVersion`, `termsAcceptedVersion`) вместо прежнего `acceptedLegal: true` — **ломающее изменение цикла 5**, версии сверяются со снимком на сервере; согласие на обработку ПДн (`PdnConsent`) через этот вызов принять нельзя **by design**; лимит `auth-register` 5/час на IP |
-| POST | `/api/auth/login` | анонимно; поиск по канонической форме телефона, lockout после 5 попыток на 15 мин; невалидный номер даёт тот же 401, а не 400; ⭐ лимит `auth-login` 10/мин на IP |
+| POST | `/api/auth/login` | анонимно; поиск по канонической форме телефона, lockout после 5 попыток на 15 мин; невалидный номер даёт тот же 401, а не 400; ⭐ лимит `auth-login` 10/мин на IP. 🗓 **Причины отказа различаются с цикла 6** (`Services/LoginOutcome.cs`): **423** — аккаунт временно заблокирован Identity, **403** — вход запрещён (`IsNotAllowed`), **401** — и «аккаунт не найден», и «неверный пароль». Одинаковый 401 у двух последних — **намеренная защита от перебора номеров**, а не недоделка |
 | GET / PUT | `/api/profile` | авторизованные |
 | POST | `/api/profile/change-password` | авторизованные |
 | POST | `/api/profile/change-phone` | авторизованные; требует текущий пароль, через `SetUserNameAsync` |
@@ -750,6 +854,29 @@ JWT: HS256, срок **7 дней**, claims `sub/phone/given_name/family_name/jt
 Фронт: `LoginPage.tsx`, `RegisterPage.tsx`, `ProfilePage.tsx`, `store/authStore.ts` (persist в localStorage),
 `api/client.ts` — интерцептор на 401 делает `logout()` + редирект на `/login`.
 
+🗓 **Что цикл 6 изменил здесь (US-60, US-61):**
+
+- **Тело ошибки регистрации от Identity — это МАССИВ `{code, description}`** (`application/json`),
+  а не строка, и это намеренно оставлено как есть. Разбирает его теперь фронт:
+  `frontend/src/utils/authError.ts` переводит коды (`PasswordTooShort`, `PasswordRequiresDigit`,
+  `DuplicateUserName` → «Этот телефон уже зарегистрирован» и т.д.) в русский текст. До цикла 6
+  любое тело-не-строка молча превращалось в «Проверьте введённые данные» — именно это и прятало
+  настоящую причину отказа.
+- **Форма регистрации показывает требования к паролю до отправки**, а не после отказа сервера.
+- ⚠️ **Парольная политика Identity НЕ менялась — это прямое решение заказчика.** Один агент в
+  середине цикла «согласовал» её с документацией, ослабив; коммит `1615e8f` **откачен** коммитом
+  `95a2b14`, а документация приведена к фактической политике (`d54caf8`). Не ослаблять повторно.
+- **Телефон: при СОЗДАНИИ новых данных принимается только российский формат.**
+  `PhoneNormalizer.IsRussian` / `TryNormalizeRussian` (длина 11, первая цифра `7`) вызывается ровно
+  в четырёх точках: `AuthController.Register`, `ProfileController.ChangePhone`,
+  `CompaniesController.AddMember`, гостевая запись в `BookingsController.Create`. **Вход по-прежнему
+  зовёт `Normalize`** — аккаунт с иностранным номером, заведённый раньше, продолжает работать.
+  Известное принятое следствие: код `+7` общий с Казахстаном, казахстанский номер проверку проходит.
+- **Фронт: `components/ui/PhoneInput.tsx`**, маска `+7 (800) 800-80-01`. У формы входа режим
+  `restrictToRussia={false}`: маска держится, **пока введённое похоже на российский номер**
+  (`utils/phone.ts` → `looksRussian`), и отпускает, как только появился чужой код страны — дальше
+  поле работает как обычный текст, а цифры из него извлекает сервер.
+
 ### 4.2 Компании — работает
 
 `Controllers/CompaniesController.cs` (635 строк — самый большой контроллер)
@@ -760,15 +887,16 @@ JWT: HS256, срок **7 дней**, claims `sub/phone/given_name/family_name/jt
 | GET | `/api/companies/my` | владелец — свои компании |
 | GET | `/api/companies/member` | все компании, где я участник любой роли |
 | GET | `/api/companies/{slug}` | публично |
-| GET | `/api/companies/{id}/masters?serviceId=` | публично; **фильтр по ролям `Master`/`CompanyOwner`** (цикл 1) |
+| GET | `/api/companies/{id}/masters?serviceId=` | публично; **фильтр по ролям `Master`/`CompanyOwner`** (цикл 1); 🗓 **+ фильтр по `ProvidesServices == true`**; 🗓 кривой `serviceId` теперь даёт 400, а не игнорируется |
 | GET | `/api/companies/{id}/members` | владелец/SuperAdmin |
 | POST | `/api/companies` | авторизованные; **лимит `MaxCompanies`** под advisory lock, 402 при превышении. 🆕 **ЛОМАЮЩЕЕ: `cityId` обязателен** — без него 400. Опционально `timeZoneId` (перебивает зону города и ставит `TimeZoneIsManual`) |
-| PUT | `/api/companies/{id}` | владелец; 🆕 принимает `cityId` и `timeZoneId`, разрешает их через `CompanyTimeZoneResolver.ForUpdate` (ручная зона переживает смену города) |
+| PUT | `/api/companies/{id}` | владелец; 🆕 принимает `cityId` и `timeZoneId`, разрешает их через `CompanyTimeZoneResolver.ForUpdate` (ручная зона переживает смену города); 🗓 принимает `bookingHorizonDays`: поле не прислали или `null` → не трогаем, `0` → явный сброс в дефолт 90, вне `[1, 365]` → **400** (`BookingHorizon.TryNormalize`) |
 | POST | `/api/companies/{id}/logo` | владелец; ≤5 МБ, rate limit `uploads`, **тип определяется по сигнатуре файла**, ре-энкод профилем `CompanyLogo` (512 px), старый файл удаляется **после** коммита нового URL |
 | GET | `/api/companies/{id}/photo-usage` | персонал компании **или SuperAdmin**; занятый объём, число фото, квота, % и срок хранения — единственное место, где SuperAdmin получает цифры по клиентским фото (содержимое ему недоступно) |
 | POST | `/api/companies/{id}/members` | владелец; **лимит `MaxEmployees`** под advisory lock, 402; телефон нормализуется; неизвестное имя роли → 400 |
 | PUT | `/api/companies/{id}/members/{memberId}/services` | владелец |
 | PUT | `/api/companies/{id}/members/{memberId}/commission` | владелец; clamp 0..100; пишет в `CompanyMember.CommissionPercent` |
+| 🗓 PUT | `/api/companies/{id}/members/{memberId}/provides-services` | владелец; тело `{ providesServices, confirm }`. Включение — всегда без вопросов; **выключение у участника с будущими записями → 409**, и повторить нужно с `confirm: true`. Уже созданные записи при этом не отменяются — участник просто перестаёт предлагаться новым клиентам |
 | DELETE | `/api/companies/{id}/members/{memberId}` | владелец |
 | GET | `/api/companies/{id}/stats?from&to` | владелец; выручка, новые клиенты, топ услуг, по мастерам, по дням |
 
@@ -817,7 +945,8 @@ rate limit `uploads`).
 | Метод | Путь | Доступ |
 |---|---|---|
 | GET | `/api/bookings/occupied?masterId&date` | **`[Authorize]`** (цикл 1): SuperAdmin, сам мастер или персонал компании, где этот мастер тоже состоит. Занятость намеренно **не** скоупится по компании — один человек занят у всех работодателей |
-| GET | `/api/bookings/slots?companyId&masterId&serviceId&date&manual` | публично; **`companyId` обязателен** (цикл 1), проверяется тройка «услуга принадлежит компании» + «мастер работает в компании»; `manual=true` учитывается **только для персонала этой компании** |
+| GET | `/api/bookings/slots?companyId&masterId&serviceId&date&manual` 🗓 `&extendedHours&serviceIds&excludeBookingId` | публично; **`companyId` обязателен** (цикл 1), проверяется тройка «услуга принадлежит компании» + «мастер работает в компании»; `manual=true` учитывается **только для персонала этой компании**. 🗓 Три новых параметра — см. разбор ниже |
+| 🗓 GET | `/api/bookings/availability?companyId&masterId&serviceId\|serviceIds&from&to&manual` | публично (лимит `availability` 60/мин на IP); статус **каждого дня диапазона одним запросом** — для месячного календаря |
 | POST | `/api/bookings` | публично (гость) и авторизованно |
 | GET | `/api/bookings/{id}` | владелец записи или персонал |
 | GET | `/api/bookings/client?status=` | мои записи как клиента, с фильтром статуса |
@@ -829,11 +958,46 @@ rate limit `uploads`).
 `GET /api/bookings/my` **удалён** в цикле 2 как мёртвый дубль `/api/bookings/client`.
 
 Логика слотов вынесена в чистый `Services/SlotCalculator.cs` (без БД и EF), `SlotService` остался
-тонкой обёрткой над запросами. Шаг сетки **по-прежнему жёстко 30 минут** (`SlotCalculator.StepMinutes`),
-слот занят, если пересекается с бронью (статус ≠ Cancelled) или перерывом. Без строки `WorkingHours`
-на дату — пустой список, кроме `allowWithoutSchedule` (`manual`-режим), где берётся весь день
-00:00–24:00 с защитой от переполнения `TimeOnly`. Проверка при самой записи (`IsSlotAllowed`) построена
-**поверх той же `Calculate`**, а не отдельным предикатом — чтобы выдача слотов и их валидация не разошлись.
+тонкой обёрткой над запросами. Шаг сетки **по-прежнему жёстко 30 минут** (`SlotCalculator.StepMinutes`
+— цикл 6 это не менял, см. §9.22), слот занят, если пересекается с бронью (статус ≠ Cancelled) или
+перерывом. Проверка при самой записи (`IsSlotAllowed`) построена **поверх той же `Calculate`**, а не
+отдельным предикатом — чтобы выдача слотов и их валидация не разошлись.
+
+🗓 **US-66: `bool allowWithoutSchedule` заменён перечислением `ScheduleFallback`** — три значения
+вместо двух состояний, чтобы забытый вызов не мог молча раскрыть сутки напролёт:
+
+| Значение | Когда | Что делает |
+|---|---|---|
+| `None` | публичный/гостевой путь — без изменений | нет строки `WorkingHours` на дату → пустой список |
+| `DefaultWindow` | `manual=true` от персонала этой компании | нет расписания на дату → окно **09:00–21:00** из `Booking:DefaultWorkWindow` |
+| `WholeDay` | `manual=true` **и** `extendedHours=true` от персонала | **сутки 00:00–24:00, при этом расписание И перерывы игнорируются всегда** — в том числе на дату, где строка `WorkingHours` есть |
+
+⚠️ Про `WholeDay` важно не ошибиться при чтении: это **не «фоллбек на случай отсутствия
+расписания»**, а явный запрос персонала «покажи любое время». Поэтому окно расписания и перерывы
+игнорируются и тогда, когда расписание на дату задано — иначе тумблер «показать другие часы» был бы
+пустышкой на любом рабочем дне. Сервер такие записи персонала принимает, поэтому прятать это время
+из сетки было бы враньём в другую сторону.
+
+🗓 **US-65: `GET /api/bookings/availability`** (`Services/AvailabilityService.cs`) отдаёт
+`{ from, to, totalDurationMinutes, stepMinutes, horizonDays, horizonLastDate, days[] }`, где у дня
+одно из трёх серверных состояний — `Available` (плюс `lastFreeSlotStart`), `FullyBooked`, `DayOff`.
+Четвёртое состояние («прошедший день») сервер **не присылает намеренно** — браузер знает свою
+локальную дату лучше. Статус дня считает **та же `SlotCalculator.Calculate`**, что отвечает и на
+`/slots`, поэтому календарь и сетка слотов разойтись не могут.
+
+🗓 **US-65/Q5: горизонт записи стал настройкой компании** — `Companies.BookingHorizonDays`
+(дефолт 90, `Services/BookingHorizon.cs` — чистая логика, ровно три точки вызова: сохранение
+настройки, `/availability`, клиентский путь `POST /api/bookings`). **Персонала горизонт не
+касается**: ручная запись и перенос ограничения не знают.
+
+🗓 **Перенос записи: `excludeBookingId` у `GET /api/bookings/slots`.** Сетка для переноса не должна
+блокироваться собственным интервалом переносимой записи, и должна продолжать работать, если услугу
+с тех пор деактивировали, убрали из умений мастера или мастер уволился из компании. Поэтому на этом
+пути длительность и состав берутся **из самой записи** (`BookingServices`/`Service`), а не
+перерешиваются по текущему каталогу. Порядок проверок **намеренный и важен**: сначала
+`CanManageBookingAsync` (нет прав → 403), и только потом сверка `companyId`/`masterId` с записью
+(не совпало → 400). Обратный порядок превратил бы эндпоинт в оракул «принадлежит ли запись X
+компании Y и мастеру Z» для любого, кто знает публичный id.
 
 Гейты в `POST /api/bookings` (цикл 1 их существенно перебрал):
 1. **компания должна существовать — для любого вызывающего**, а не только для гостя (раньше
@@ -847,13 +1011,39 @@ rate limit `uploads`).
 5. тариф: `!AllowOnlineBooking && !isStaffManualBooking` → **402**;
 6. предоплата: `PaymentStatus = Pending` только если `plan.AllowOnlinePayment && company.RequirePrepayment` и это не ручная запись;
 7. проверка конфликта слота внутри транзакции с `pg_advisory_xact_lock` (`Services/AdvisoryLock.cs`) → 409;
-8. снимаются `Price` и `CommissionPercent`.
+8. снимаются `Price` и `CommissionPercent`;
+9. 🗓 **горизонт записи** — для клиентского/гостевого пути дата дальше `BookingHorizonDays` → 400
+   (персонал этой проверке не подлежит);
+10. 🗓 **состав визита** — `serviceIds` (1..5, без повторов; если прислан и `serviceId`, он обязан
+    совпадать с первым элементом) проверяется `Services/BookingServiceSelection.cs`, умение мастера
+    по **каждой** услуге — `Services/MasterCapability.cs` (услуга, у которой вообще нет привязок
+    к мастерам, по-прежнему считается доступной всем — прежний фоллбек сохранён).
+
+🗓 **US-67: несколько услуг за один визит.** `serviceIds` принимают три эндпоинта —
+`GET /api/bookings/slots`, `GET /api/bookings/availability`, `POST /api/bookings`;
+`BookingDto` получил `services[]` и `totalDurationMinutes`. Инварианты, на которые можно опираться:
+`Σ services[].price == price`, `Σ services[].durationMinutes == totalDurationMinutes`,
+`services[0].serviceId == serviceId`, и `services[]` **никогда не пуст** (у записей, созданных до
+цикла 6, там ровно одна строка — backfill миграции). Текст уведомления перечисляет услуги визита
+через запятую (`NotificationScheduler`).
 
 Фронт: `components/booking/BookingModal.tsx` (гость/клиент, выбор услуги → мастера → даты → слота, капча),
 `ManualBookingModal.tsx` (персонал записывает клиента), `RescheduleModal.tsx`,
 `pages/MyBookingsPage.tsx` (персонал; под записью раскрывается панель с историей клиента и заметками),
 `pages/ClientBookingsPage.tsx` (клиент; маршрут `/my-visits` теперь доступен **всем**
 аутентифицированным ролям, включая мастера и владельца).
+
+🗓 **Что цикл 6 изменил на фронте в этом блоке:**
+- **`components/booking/BookingCalendar.tsx`** — месячный календарь вместо списка ближайших дат.
+  Четыре состояния дня: свободен / **«Занято»** (сервер сказал `FullyBooked` либо сегодня уже
+  прошёл последний слот) / выходной / вне горизонта и прошедшие (некликабельны). Формулировку
+  «Занято» выбрал заказчик, она вынесена в одну константу `DAY_FULL_LABEL`.
+- **US-64: шаг выбора мастера пропускается**, если в компании ровно один активный специалист,
+  оказывающий услуги.
+- `ManualBookingModal.tsx` — мультивыбор услуг и тумблер «показать другие часы» (`extendedHours`);
+  `RescheduleModal.tsx` — читает слоты с сервера и передаёт `excludeBookingId`, а пустую сетку
+  объясняет причиной, а не «попробуйте снова»; визит из нескольких услуг рисуется **одной строкой**
+  в списках записей.
 
 ### 4.6 Тарифы и подписки — работает административно
 
@@ -869,6 +1059,26 @@ rate limit `uploads`).
 - собственные тумблеры владельца: `AllowSelfBooking`, `RequirePrepayment`, `ShowInPublicListing`;
 - вычисленные «реально работает»: `OnlineBookingEnabled`, `PrepaymentEnabled`, `PublicListingEnabled`;
 - «сырые» возможности тарифа: `PlanAllowsOnlineBooking`, `PlanAllowsOnlinePayment`, `PlanAllowsPublicListing`, `MaxEmployees`.
+
+🗓 **Что цикл 6 изменил в подписках (US-63) — три вещи, и все три ломающие для того, кто звал
+`PUT /api/admin/owners/{ownerUserId}/subscription` по-старому:**
+1. **Дата окончания стала обязательной**: план задан, а `paidUntil` нет → **400** «Укажите дату
+   окончания подписки», причём проверка идёт **до записи** — отказ не трогает ни подписку, ни
+   журнал изменений. Старые строки без даты закрыты миграцией `BackfillSubscriptionPaidUntil`.
+2. **Дата без времени суток трактуется как «включительно до конца этого дня»**
+   (`23:59:59.999`), как её читает человек, а не как полночь в его начале. Явно присланное время
+   суток сохраняется как есть.
+3. **`isActive` отсутствует или `null` теперь означает `true`**, а не молчаливое `false`: раньше
+   «просто продлить» роняло владельца во Free.
+
+🗓 Плюс новый диагностический эндпоинт **`GET /api/admin/owners/{ownerUserId}/subscription`**
+(`Services/SubscriptionDiagnostics.cs`) — отвечает на вопрос «тариф назначен, почему не работает»
+одним запросом вместо перебора шести независимых точек отказа: общий статус
+(`NoSubscription` / `Active` / `Expired` / `Deactivated` / `PlanRetired`) с русским текстом и, **по
+каждой компании владельца**, точная причина, по которой онлайн-запись выключена
+(`PlanDisallowsOnlineBooking` — упёрлись в тариф, 402 при записи; `SelfBookingDisabledByOwner` —
+владелец сам выключил тумблер, 403). Для клиента симптом один и тот же, а чинится по-разному.
+В админке это отдельная панель фактического состояния.
 
 ⭐ Цикл 3 добавил в `CompanyDto` поля `AverageRating` (`double?`) и `ReviewCount` — **агрегат считается
 в БД**, а не подтягиванием отзывов на клиент; витрина компании показывает рейтинг без отдельного запроса.
@@ -925,6 +1135,12 @@ PhotoGallery, PhotoViewerModal}.tsx`.
 - `GET /api/companies/{id}/stats` (`CompaniesController`) — сводка по компании. Фронт: `pages/owner/DashboardTab.tsx`.
 - `GET /api/admin/stats` — платформенная сводка.
 
+🗓 **Как цикл 6 разложил визит из нескольких услуг по отчётам — сознательное упрощение, которое
+надо знать перед тем, как читать цифры:** «топ услуг» (`popularServices`) считает **вхождения
+услуг** — визит из трёх услуг даёт три засчитанные строки; а **выручка считается по визиту ровно
+один раз** (из `Booking.Price`). То есть **раскладки выручки по услугам в продукте нет**: на вопрос
+«сколько принесло окрашивание против стрижки» отчёты сейчас не отвечают (§9, долг цикла 6).
+
 ### 4.10 Админка — работает
 
 `Controllers/AdminController.cs`, все методы `[Authorize(Roles = "SuperAdmin")]`:
@@ -934,7 +1150,9 @@ PhotoGallery, PhotoViewerModal}.tsx`.
 `GET /api/admin/companies?search&page&pageSize` (⭐ тоже `PagedResult<T>`), `PUT /api/admin/companies/{id}` (тело — `Name`, `IsActive`,
 `AllowSelfBooking`; блокировка/разблокировка компании доступна из UI, US-04),
 `PUT /api/admin/companies/{id}/owner`,
-`PUT /api/admin/owners/{ownerUserId}/subscription`, `GET /api/admin/owners/{ownerUserId}/subscription-history`,
+`PUT /api/admin/owners/{ownerUserId}/subscription` (🗓 дата окончания обязательна, см. §4.6),
+🗓 **`GET /api/admin/owners/{ownerUserId}/subscription`** (диагностика тарифа, §4.6),
+`GET /api/admin/owners/{ownerUserId}/subscription-history`,
 `GET /api/admin/bookings` (лимит `Take(500)`), `GET|POST|PUT|DELETE /api/admin/plans[/{id}]`
 (delete — мягкий, `IsActive = false`; **вернуть тариф в продажу теперь можно через `PUT`**, US-05),
 `GET /api/admin/scheduled-tasks` (цикл 2, см. §4.13).
@@ -948,6 +1166,11 @@ PhotoGallery, PhotoViewerModal}.tsx`.
 услуг компании + `BookingModal`. В цикле 2 (US-03) в настройках компании
 (`pages/owner/CompanyManagePage.tsx`) появился блок с готовым `<iframe …>`-сниппетом, ссылкой, кнопкой
 «Скопировать» и предпросмотром; имя компании экранируется для атрибута `title`.
+
+🗓 **Виджет сознательно остался на одной услуге за визит.** Мультивыбор услуг (US-67) в
+`/embed/:slug` **не выведен** — это решение цикла 6, а не пропущенный экран: виджет живёт в чужом
+iframe с неизвестной высотой, и множественный выбор там требует отдельного разговора о вёрстке.
+Горизонт записи компании виджет при этом уважает — он приезжает в `CompanyDto`.
 
 ### 4.12 Фото к заметкам о клиентах — функция цикла 2
 
@@ -1485,6 +1708,11 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
    (каналы, состояния, шаблоны, журнал, города). ⚖️ Цикл 5 добавил ещё **+190** (пять типов
    документов, тексты интерфейса, цели согласий, обращения субъектов, заметка о здоровье, ИНН) —
    поверхность ручного копирования продолжает расти линейно с каждым циклом.
+   🗓 Цикл 6 добавил ещё +20 строк (состав визита, статусы дня календаря, горизонт, диагностика
+   тарифа) — и это **первый цикл, у которого есть машиночитаемая схема того же контракта**
+   (`openapi-cycle6.yaml`, §10.3). Генерации типов из неё всё равно нет: схема используется для
+   проверки (`npx openapi-typescript … && npx tsc --noEmit`), а `src/types/index.ts` по-прежнему
+   пишется руками.
 
 5. ⭐ **Пагинация `GET /api/masters/clients` — единственная из четырёх, которая считается в памяти.**
    Контроллер материализует весь список клиентов компании, применяет `search` и режет `Skip/Take`
@@ -1502,6 +1730,13 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 расхождение `BookingDto` и TS-типов.
 
 ### 5.4 Документация, которая может быть устаревшей
+
+🗓 **Что отстало от кода после цикла 6** (перепроверено на `aac6231`):
+- **`API_DOCUMENTATION.md`** — не знает ни одного эндпоинта и параметра цикла 6 (§10.3).
+- **`CHANGELOG.md`** — записи про цикл 6 нет вовсе (её вносит product-analyst).
+- **`README.md`** и **все ролевые гайды в `docs/`** — цикл их не трогал: описание сценария записи
+  там соответствует состоянию до календаря, мультивыбора услуг и маски телефона.
+- **`TEST_CATALOG.md`**, наоборот, обновлён вместе с кодом (§10.4).
 
 - 🆕 **Расхождение README/CHANGELOG с фактом развёртывания, бывшее «самым крупным» в прошлой
   редакции, ЗАКРЫТО** коммитом `d4137dd` (в начале этого диапазона): README теперь пишет, где сервис
@@ -1593,6 +1828,19 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
   `NotFound()`, `Forbid()`, `BadRequest("...")`, `Conflict(...)`, `StatusCode(402, "...")`,
   `NoContent()` — фронтовые мапперы (`src/utils/*Error.ts`) читают `response.data` как строку, поэтому
   ValidationProblemDetails там, где нужен свой текст, намеренно не используется.
+  🗓 **Цикл 6 распространил эту конвенцию на автоматическую валидацию модели.** Раньше 400 от
+  `[ApiController]` (пустой/невалидный query- или body-параметр, пойманный до входа в метод) уезжал
+  как `application/problem+json` с машинными именами полей в `errors` — фронтовые мапперы такое
+  тело не понимали и показывали «Проверьте введённые данные», пряча настоящую причину (это и был
+  блокер US-60). Теперь `ApiBehaviorOptions.InvalidModelStateResponseFactory` в `Program.cs`
+  приводит их к тому же виду: **голая строка `text/plain`, по-русски, с названием поля**
+  (`Services/ModelValidationErrorFormatter.cs`, словарь понятных имён полей; незнакомое имя поля
+  даёт общую фразу, а не сырой C#-идентификатор). ⚠️ Это **глобальная** правка: она действует на
+  **все** контроллеры, включая те, которых цикл 6 не касался. Какие запросы получают 400, а какие
+  нет, она не меняет — только форму тела.
+  ⚠️ Единственное намеренное исключение из «4xx — строка»: **400 от Identity при регистрации** —
+  это **массив `{code, description}`** (`application/json`), и трогать его не стали; разбирает его
+  фронт (`utils/authError.ts`, §4.1).
   **Необработанные исключения** (цикл 1) вне Development ловит `app.UseExceptionHandler` и отдаёт
   `application/problem+json` с `traceId`; в Development работает developer exception page.
   **402 Payment Required — проектная конвенция для «упёрлись в тариф»** (лимит компаний, лимит
@@ -1687,14 +1935,37 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
   `OnRejected` — иначе фронтовым мапперам `*Error.ts` нечего было бы показать.
 - **Комментарии — развёрнутые, объясняющие «почему», на английском.** Это заметная черта кодовой базы:
   почти каждое неочевидное решение прокомментировано абзацем (`Program.cs` про `OnTokenValidated`,
-  `SlotService` про `allowWithoutSchedule`, `EffectivePlan.Free` про Free-базлайн). XML-документация
-  включена (`GenerateDocumentationFile`) и подхватывается Swagger'ом.
+  🗓 `SlotCalculator` про `ScheduleFallback` (бывший `allowWithoutSchedule`), `EffectivePlan.Free`
+  про Free-базлайн). XML-документация включена (`GenerateDocumentationFile`) и подхватывается
+  Swagger'ом.
 - **Локализация:** сообщения об ошибках API — **в основном английские** (`"Time slot is no longer
   available"`, `"Company limit reached for the current tariff plan."`), но есть русские вкрапления
   в `ProfileController` (`"Неверный текущий пароль"`) и `MailingController`. Единой конвенции нет.
+  🗓 Цикл 6 перевёл на русский **шесть** сообщений сервера (отказы при записи — 402/403, состав
+  визита, горизонт, дата подписки) и все тексты новых эндпоинтов. Общего правила это по-прежнему не
+  задаёт: **новые сообщения пишутся по-русски, старые английские никто массово не переводил.**
 - **Миграции:** EF Core Code First, применяются автоматически при старте
   (`await db.Database.MigrateAsync()` в `Program.cs`). Имена — `PascalCase` описанием изменения.
   Скриптов отката/сидов данных (кроме ролей и SuperAdmin) нет.
+
+🗓 **Конвенции, которые подтвердил и ужесточил цикл 6** (им следовать, а не заводить рядом своё):
+
+- **Чистая логика живёт вне контроллеров, в `Services/*.cs`, без EF и без HTTP** — и тем самым
+  покрывается юнит-тестами. Цикл 6 добавил по этому образцу шесть файлов: `LoginOutcome`,
+  `BookingHorizon`, `BookingServiceSelection`, `MasterCapability`, `SubscriptionDiagnostics`,
+  `ModelValidationErrorFormatter`. Всё, что требует запроса в БД, остаётся у вызывающего.
+- **Правило, выраженное перечислением, а не `bool`.** Замена `allowWithoutSchedule` на
+  `ScheduleFallback` — прямое следствие находки ревью: булев флаг у третьего вызова означает уже не
+  то, что задумывалось. Новое состояние с тремя и более исходами оформляется enum'ом.
+- **Временное ограничение — отдельный предикат, а не правка постоянной валидации.**
+  `PhoneNormalizer.IsRussian` намеренно **не** вложен в `IsValid` (техническая граница E.164, на
+  которую опираются миграция, поиск по телефону и номер самого GREEN-API): снять «только Россия»
+  потом — это правка одной функции, а не ревизия всех вызовов.
+- **Снимок вместо ссылки в исторических данных.** `BookingService.NameSnapshot`/`DurationMinutes`/
+  `Price` копируются на момент записи — переименование или подорожание услуги не переписывает уже
+  состоявшийся визит. Тем же приёмом раньше сделаны `Booking.Price` и `Booking.CommissionPercent`.
+- **Порядок проверок в эндпоинте — часть контракта, а не деталь.** Сначала права, потом сверка
+  принадлежности (см. `excludeBookingId`, §4.5): обратный порядок делает из кода ответа оракул.
 
 ⚖️ **Конвенции, которые добавил цикл 5** (им следовать, а не заводить рядом своё):
 
@@ -1740,10 +2011,20 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 - **Формы:** `react-hook-form` там, где полей много (создание компании, услуги), иначе — управляемые `useState`.
 - **Ошибки HTTP → текст пользователю** через `src/utils/*Error.ts` — 🆕 сейчас их двенадцать
   (`authError`, `bookingError`, `cancelError`, `companyError`, `companyAdminError`, `companyManageError`,
-  `legalError`, `memberError`, `planError`, `scheduleError`, `uploadError`, 🆕 `notificationError`)
+  `legalError`, `memberError`, `planError`, `scheduleError`, `uploadError`, 🆕 `notificationError`,
+  🗓 `providesServicesError`)
   — `switch` по `status` с явной обработкой
   402/403/409/429. Это устоявшийся паттерн: новый пользовательский сценарий с гейтом должен получить
   свой маппер, а не строить текст на месте.
+  🗓 Цикл 6 добавил к этому правилу оговорку: маппер обязан пережить тело, которое **не строка** —
+  `authError.ts` умеет разобрать массив ошибок Identity и, как страховка, вытащить текст из
+  `ProblemDetails`/`ValidationProblemDetails`. Молча схлопывать чужую форму тела в общую фразу
+  нельзя: именно так и потерялась настоящая причина отказа в US-60.
+- 🗓 **Ввод телефона — только через `components/ui/PhoneInput.tsx`**, а не собственный `<Input>` с
+  ручной маской. У компонента два режима: `restrictToRussia` по умолчанию `true` (формы, которые
+  **создают** номер — регистрация, смена телефона, добавление сотрудника, гостевая запись) и
+  `false` для формы входа, где номер может быть иностранным. Отдельного клиентского нормализатора
+  для входа больше нет — дублирующий удалён (`d536650`).
 - **Приватные изображения грузятся как blob,** а не через `<img src>`: `hooks/useAuthedImage.ts` +
   `components/ui/AuthedImage.tsx`, `IntersectionObserver` для ленивой загрузки, `staleTime: Infinity`
   в react-query. Публичные картинки (логотип, аватар, картинка услуги) — обычный `<img src>`.
@@ -1852,9 +2133,13 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 | Набор | Проект/каталог | Что нужно на машине | Команда | Объём |
 |---|---|---|---|---|
-| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | ничего | `dotnet test ServiceBooking.UnitTests` | 🔬 **691** запуск (было 591) |
-| **Функциональные (API) тесты** | `ServiceBooking.Tests` | 🔬 **запущенный Docker** (не PostgreSQL!) | `dotnet test ServiceBooking.Tests` | **465** запусков |
-| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | Node 20 | `npm run test:run` (в `frontend/`) | **181** тест, 32 файла |
+| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | ничего | `dotnet test ServiceBooking.UnitTests` | 🗓 **777** запусков (было 691) |
+| **Функциональные (API) тесты** | `ServiceBooking.Tests` | 🔬 **запущенный Docker** (не PostgreSQL!) | `dotnet test ServiceBooking.Tests` | 🗓 **488** запусков (было 465) |
+| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | Node 20 | `npm run test:run` (в `frontend/`) | 🗓 **283** теста, 43 файла (было 181 / 32) |
+
+🗓 **Набор, команда и предусловия цикл 6 не менял** — всё, что описано ниже про Docker, одноразовые
+базы и параллелизм, осталось ровно таким, каким его сделал цикл 8. Цикл 6 добавил тесты, а не
+механику прогона.
 
 🔬 **Главное изменение цикла 8 для всех, кто прогоняет тесты: заранее поднятая PostgreSQL больше не
 нужна и не используется — нужен Docker.** Прогон сам поднимает контейнер `postgres:16-alpine` на
@@ -1888,21 +2173,33 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 | Файл | Что покрывает | `[Fact]` + `[InlineData]` |
 |---|---|---|
-| **`DeploymentSafetyChecksTests.cs`** ⭐🆕⚖️ | fail-fast прод-конфига: Jwt-ключ, пароль SuperAdmin, приватный корень внутри `wwwroot`, доверенные сети, 🆕 секреты уведомлений, отпечаток ключа, наличие tzdata, ⚖️ режим согласия на передачу, страна сервера провайдера, минимальные сроки хранения | ⚖️ **84** (было 59) |
+| **`DeploymentSafetyChecksTests.cs`** ⭐🆕⚖️ | fail-fast прод-конфига: Jwt-ключ, пароль SuperAdmin, приватный корень внутри `wwwroot`, доверенные сети, 🆕 секреты уведомлений, отпечаток ключа, наличие tzdata, ⚖️ режим согласия на передачу, страна сервера провайдера, минимальные сроки хранения, 🗓 разбор `Booking:DefaultWorkWindow` | 🗓 **88** (было 84) |
 | **`LegalDocumentProviderTests.cs`** ⭐ | чтение и перечитывание `legal.json`, версии, `isDraft`, `changeKind` | 9 + 11 = 20 |
 | **`PaginationTests.cs`** ⭐ | `Pagination.Normalize`: кламп снизу и **сверху** (переполнение `(page-1)*pageSize`), `HasNext` | 7 + 14 = 21 |
 | **`LogMaskingTests.cs`** ⭐ | маскирование телефонов в логах | 5 + 11 = 16 |
 | **`LegalConsentFilterTests.cs`** ⭐ | решение фильтра «требуется ли новое согласие» | 4 |
 | `BookingFiltersTests.cs` | разбор `?status=`, предикат `Upcoming` | 11 + 6 = 17 |
-| `SlotCalculatorTests.cs` | сетка слотов, перерывы, `allowWithoutSchedule`, граница суток | 15 |
+| `SlotCalculatorTests.cs` | сетка слотов, перерывы, 🗓 три режима `ScheduleFallback` (включая «`WholeDay` игнорирует и расписание, и перерывы»), граница суток | 🗓 выросли в цикле 6 |
 | `ImageProcessorTests.cs` | ресайз, кроп, EXIF, формат вывода | 15 |
-| `PhoneNormalizerTests.cs` | каноническая форма, валидность | 10 + 12 = 22 |
+| `PhoneNormalizerTests.cs` | каноническая форма, валидность, 🗓 `IsRussian`/`TryNormalizeRussian` | 🗓 выросли в цикле 6 |
 | `ScheduledTaskScheduleTests.cs` | `IsDue` / `IsOverdue` | 10 |
 | `SubscriptionResolverRulesTests.cs` | правило разрешения тарифа, включая `PlanConfig.IsActive` | 10 |
 | `PhotoQuotaTests.cs` | окно хранения (⚖️ без `Forever`) | ⚖️ 8 |
 | `ImageSignatureTests.cs` | определение JPEG/PNG/WEBP по байтам | 7 |
 | `TokenServiceTests.cs` | claims, хеш `SecurityStamp` | 5 |
 | `FileStorageTests.cs` | containment-проверка путей, ключи vs URL | 8 |
+
+🗓 **Файлы цикла 6** (семь новых; плюс выросли `SlotCalculatorTests` и `PhoneNormalizerTests`):
+
+| Файл | Что покрывает | `[Fact]` + `[InlineData]` |
+|---|---|---|
+| `BookingServiceSelectionTests.cs` | состав визита: 1..5 услуг, повторы, совпадение `serviceId` с первым элементом, суммы длительности и цены | 15 |
+| `BookingHorizonTests.cs` | горизонт записи: нормализация `null`/`0`/отрицательного, границы `[1, 365]`, последняя доступная дата | 12 |
+| `LoginOutcomeTests.cs` | отображение `SignInResult` → исход → код ответа (401/403/423), включая неразличимость двух 401 | 9 |
+| `SubscriptionDiagnosticsTests.cs` | статус подписки и причина, по которой онлайн-запись выключена | 9 |
+| `ModelValidationErrorFormatterTests.cs` | текст 400 автовалидации: известное поле, неизвестное поле, тело без имени поля | 7 |
+| `TestSlotTests.cs` 🔬 | слоты тест-классов, переполнение за `c999` (закрытие находки T9 L5) | 9 |
+| `TestDataTests.cs` 🔬 | уникальные значения на класс (переехали в TestKit) | 5 |
 
 🆕 **Файлы цикла 4** (22 новых, суммарно ~273 запуска). ⚖️ Числа в этой таблице — **на момент цикла 4**;
 шесть из них цикл 5 увеличил, актуальные значения — в блоке «Существенно выросли» ниже:
@@ -1969,7 +2266,7 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 | `EnvStatusClassifyContainerLivenessTests.cs` | «живой ли контейнер» | 5 |
 | `StableHashTests.cs` | FNV-1a — стабильный между процессами хеш (семя случайного порядка тестов) | 5 |
 
-| **Итого** | | 🔬 **691 запуск** |
+| **Итого** | | 🗓 **777 запусков** (691 на конец цикла 8 → 711 после закрытия находок T9 → 777 после цикла 6) |
 
 ### 7.2 Функциональные (API) тесты — `ServiceBooking.Tests`
 
@@ -2102,10 +2399,19 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 | 🆕 **`Tests/NotificationQueueingTests.cs`** | `NTF-Q001…Q004` (🔬 бывш. коллекция `"Api"`) | ⚖️ 5 (ветка `AccountsOnly`) |
 | 🆕 **`Tests/NotificationDispatchExtraTests.cs`** | `NTF-D03…D05` (коллекция `"NotificationDispatch"`) | 3 |
 | 🆕 **`Tests/NotificationDispatchTests.cs`** | `NTF-D01…D02` (коллекция `"NotificationDispatch"`) | 2 |
-| **Итого** | | **465 запусков** |
+| 🗓 **`Tests/MultiServiceBookingTests.cs`** | `BK-060…BK-067` — визит из нескольких услуг (US-67) | 8 |
+| **Итого** | | 🗓 **488 запусков** (было 465) |
 
 🔬 **Все указания на коллекции в таблице выше — историческая справка.** Цикл 8 распустил обе
-коллекции: каждый из 29 файлов теперь сам себе единица изоляции со своей базой и своим слотом.
+коллекции: каждый из 30 файлов теперь сам себе единица изоляции со своей базой и своим слотом.
+
+🗓 **Что добавил цикл 6 (+23 запуска).** Один новый файл — `MultiServiceBookingTests.cs`
+(`BK-060…BK-067`); остальное разошлось по существующим файлам: `AuthTests` (новые `AUTH-014`,
+`AUTH-015` — 423 при блокировке, 400 на слабый пароль; переписан `AUTH-007` под настоящую семантику
+lockout), `BookingsFlowSmokeTests`/`CompaniesTests`/`AdminTests` (`BK-068…BK-073`, `ADM-045` —
+сетка переноса с `excludeBookingId` и проверка порядка «права → совпадение пары», окно по умолчанию
+и `extendedHours`, признак «оказывает услуги», обязательная дата подписки). Попутно сделаны
+детерминированными `NTF-Q003`/`Q004`, зависевшие от времени на часах машины.
 
 ⚖️ **`LegalPriorityTests.cs` — единственный новый функциональный файл цикла и самый важный для
 понимания цикла.** Он проверяет не эндпоинты, а **инварианты**, которые иначе некому защитить:
@@ -2130,6 +2436,7 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 🔬 **Фреймворк и команда базового прогона — xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing`
 (`WebApplicationFactory`) + реальный Postgres в Docker; команда — `dotnet test ServiceBooking.Tests`.**
+🗓 Цикл 6 здесь ничего не изменил: та же команда, то же предусловие (Docker), те же правила изоляции.
 Отдельного e2e/браузерного набора (Playwright, Cypress и т.п.) в проекте **нет** — ни пакета в
 `frontend/package.json`, ни каталога с такими тестами; «функциональные» здесь означает уровень API.
 Единственная проверка против живого собранного образа — bash-скрипт `deploy/ci/smoke.sh` (запускает
@@ -2160,10 +2467,15 @@ dotnet run --project ServiceBooking.TestKit -- sweep             # сухой п
 dotnet run --project ServiceBooking.TestKit -- sweep --apply     # удалить только мёртвое
 ```
 
-Числа приёмки цикла 8 (на ветке цикла, финальный коммит `691cf96`; выполнял не автор этого
-документа): `ServiceBooking.UnitTests` — **691/691**; `ServiceBooking.Tests` — **465/465**, 13
-зелёных прогонов подряд (10 локально + 3 в CI), медиана 46,2 с;
-`npm run test:run` — **181/181**; `tsc --noEmit` — чисто; `npm run build` — успешно.
+🗓 Числа приёмки **цикла 6** (на слитом дереве ветки `cycle/06-booking-fixes`, коммит `aac6231`;
+выполнял не автор этого документа): `dotnet build ServiceBooking.sln -warnaserror` — **0/0**;
+`ServiceBooking.UnitTests` — **777/777**; `ServiceBooking.Tests` — **488/488** (по правилам цикла 8);
+`npm run test:run` — **283/283** в 43 файлах; `npx tsc --noEmit` — чисто;
+`npx @redocly/cli lint openapi-cycle6.yaml` — валидно, одно предупреждение про `localhost` в `servers`.
+
+Числа приёмки цикла 8 (на ветке цикла, финальный коммит `691cf96`): `ServiceBooking.UnitTests` —
+**691/691**; `ServiceBooking.Tests` — **465/465**, 13 зелёных прогонов подряд (10 локально + 3 в CI),
+медиана 46,2 с; `npm run test:run` — **181/181**; `tsc --noEmit` — чисто; `npm run build` — успешно.
 
 🆕 **Важно для QA, прогоняющего базовый набор:** сетевых вызовов наружу функциональный набор не
 делает — `Notifications:Provider` в `Testing` остаётся `logging`, транспорт-заглушка. Ни одного
@@ -2190,6 +2502,13 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 - **Раннер:** Vitest 3.2, окружение `jsdom` 25, `@testing-library/react` 16 + `jest-dom` + `user-event`.
 - **Конфиг:** `frontend/vitest.config.ts` (намеренно отдельный от `vite.config.ts`),
   `globals: false` (явные импорты `describe`/`it`/`expect`), setup — `src/test/setup.ts`.
+- 🗓 **Что добавил цикл 6 (+102, стало 283 теста в 43 файлах):** впервые покрыты **экраны самой
+  записи**, которые до этого были в списке непокрытых годами. Новые файлы:
+  `components/booking/BookingCalendar.test.tsx`, `ManualBookingModal.test.tsx`,
+  `RescheduleModal.test.tsx`, `components/ui/PhoneInput.test.tsx`, `pages/LoginPage.test.tsx`,
+  `pages/AdminPage.test.tsx`, `pages/owner/CompanyManagePage.test.tsx` и пять утилит
+  (`bookingError`, `bookingHorizon`, `bookingServices`, `providesServicesError` — новые,
+  `authError`/`phone` — существенно дополнены). Дополнен и `BookingModal.test.tsx`.
 - ⚖️ **Что добавил цикл 5 (+81, 32 файла тестов):** впервые заметная доля — **экраны и формы, а не
   утилиты**: `pages/RegisterPage` (новый контракт согласий в форме регистрации),
   `pages/ConsentsPage`, `pages/SubjectRequestPage`, `components/booking/BookingModal`,
@@ -2215,6 +2534,12 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
   Ближайшее к e2e — `deploy/ci/smoke.sh`: bash + curl против **живого контейнера** (health, регистрация,
   загрузка аватара), запускается CI-джобом `docker-build`, а не тест-раннером. 🔬 Цикл 8 этого не
   изменил; скрипт лишь перестал хардкодить порт (`BASE_URL=http://localhost:${SB_API_PORT:-5000}`).
+- 🗓 **Контракт цикла 6 (`openapi-cycle6.yaml`) в CI тоже не проверяется.** Он валиден
+  (`npx @redocly/cli lint` — одно предупреждение про `localhost` в `servers`), в
+  `ARCHITECTURE_CYCLE6.md` §53 расписаны четыре готовых способа сверки (redocly lint, schemathesis
+  против живого API, `openapi-diff` против Swagger приложения, `openapi-typescript` + `tsc`), но
+  **шага в `ci.yml` нет**, пакеты в `package.json` не добавлены. То есть положение ровно такое же,
+  как с инвариантом цикла 8 ниже, — второй машиночитаемый контракт и вторая ручная проверка.
 - 🔬 **Проверка HTTP-поверхности по OpenAPI-инварианту в CI НЕ автоматизирована.** Файл
   `contracts/cycle8/servicebooking-invariant.openapi.yaml` существует и описывает семь операций,
   которые цикл 8 обязан был не сломать, но запускается он **вручную**
@@ -2254,6 +2579,14 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 ---
 
 ## 8. CI и деплой
+
+🗓 **Цикл 6 не изменил здесь ничего.** В диапазоне `14a7fb6..aac6231` нет ни одного изменения в
+`.github/workflows/**`, `deploy/**`, `docker-compose*.yml` и `Dockerfile`. Единственное, что стоит
+держать в голове при выкатке: цикл добавил **четыре миграции**, одна из которых переписывает данные
+(`BackfillSubscriptionPaidUntil`, §3), а миграции применяются **автоматически на старте**
+приложения. И вторая: fail-fast прод-конфига получил новую проверку —
+`DeploymentSafetyChecks.ParseDefaultWorkWindow` роняет старт при отсутствующем, неразбираемом или
+перевёрнутом `Booking:DefaultWorkWindow` (в закоммиченном `appsettings.json` значение есть).
 
 ### CI — есть (`.github/workflows/ci.yml`)
 
@@ -2543,9 +2876,50 @@ Serilog (`ServiceBooking.API/logs/**`), артефакты тестовых пр
 номерами (P0-A…P0-E), чтобы ссылки вида «§9.17» из других документов остались валидными.
 ⚖️ **Цикл 5 поступил так же** — его блок идёт ниже с номерами L1…L6, нумерация 1–30 и P0-A…P0-E
 не тронута.
-🔬 **Цикл 8 поступил так же** — его блок идёт **первым**, с номерами T8-1…T8-8. Нумерация 1–30,
+🔬 **Цикл 8 поступил так же** — его блок идёт с номерами T8-1…T8-8. Нумерация 1–30,
 P0-A…P0-E и L1…L6 не тронута; ⚠️ обратите внимание, что буквы `L` и `M` внутри блока цикла 8 — это
 **номера находок ревью фазы 2**, а не пункты L1…L6 цикла 5, это разные пространства имён.
+🗓 **Цикл 6 — тоже**: его блок идёт **первым**, с номерами C1…C5, остальная нумерация не тронута.
+
+---
+
+**🗓 C — долг и сознательные упрощения цикла 6 (сценарий записи)**
+
+**C1. Раскладки выручки по услугам нет.** Визит из нескольких услуг вносит в выручку **один**
+вклад (`Booking.Price`), а «топ услуг» считает **вхождения** услуг, не деньги. Поэтому вопрос
+«сколько принесло окрашивание против стрижки» отчётами сейчас не закрывается. Это **осознанное
+упрощение цикла 6**, а не дефект: поделить цену визита между услугами честно нельзя без правила
+про скидки на комплекс, а такого правила у заказчика ещё нет. Если раскладка понадобится — это
+отдельная работа (данные для неё уже лежат: `BookingServices.Price` хранит цену каждой услуги на
+момент записи).
+
+**C2. `/embed/:slug` сознательно остался на одной услуге за визит.** Мультивыбор (US-67) в виджет
+не выведен: он живёт в чужом iframe неизвестной высоты. Расхождение поведения основного сайта и
+виджета — **принятое**, а не забытое; см. §4.11.
+
+**C3. Шаг сетки слотов по-прежнему 30 минут — цикл 6 этого не трогал.** Пункт §9.22 остаётся
+открытым, и после US-67 он стал заметнее: визит из нескольких услуг легко даёт нестандартную
+суммарную длительность (45, 75, 105 минут), которая ложится в получасовую сетку с неожиданным для
+пользователя результатом. Цикл добавил расчёт суммарной длительности, но не сделал сетку от неё
+зависимой.
+
+**C4. Часовых поясов в ядре расписания по-прежнему нет — цикл 6 этого не трогал.** Пункт §9.12
+без изменений: `Booking.Date/StartTime/EndTime` — `DateOnly`/`TimeOnly` без зоны, новый
+`GET /api/bookings/availability` и `Companies.BookingHorizonDays` считают горизонт **от
+`DateOnly.FromDateTime(DateTime.UtcNow)`**, то есть от UTC-даты, а не от даты в зоне компании. Для
+российских зон (UTC+2…+12) это значит, что на границе суток «сегодня» у сервера и у пользователя
+может отличаться на день.
+
+**C5. 🧠 Урок цикла про архивирование документов — конвенция §10.5 требует уточнения.**
+Спека цикла 6 была заархивирована в `SPEC_CYCLE6_BOOKING_FIXES.md` (потому что `SPEC.md` занят
+циклом 8), **но 43 ссылки вида «`SPEC.md` §0.1» в коде и документах цикла остались нетронутыми**.
+`SPEC.md` — это теперь спека цикла 8, и у неё **есть свой §0.1 и свой Q7**. То есть читатель,
+идущий по ссылке из комментария в `SlotCalculator.cs`, попадал в связный, аккуратный и совершенно
+чужой текст про make-цель. **Это хуже битой ссылки**: битая видна сразу, а эта молча вводит в
+заблуждение. Исправлено коммитом `aac6231` (ссылки цикла 6 перенаправлены на его спеку; ссылки
+других циклов не тронуты — их `SPEC.md` означал своё). **Вывод для конвенции: переименование спеки
+обязано включать обновление ссылок на неё в том же коммите**, и это должно быть записано в §10.5
+явно, а не подразумеваться.
 
 ---
 
@@ -2849,6 +3223,8 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
    расписания**, и источник ошибок «на границе суток» в ядре бронирования остаётся.
    Побочное следствие: **справочник городов неполон (91 запись) и пополняется только миграцией** —
    админского способа добавить город нет.
+   🗓 Цикл 6 этого не менял и добавил к пункту ещё одну поверхность: горизонт записи и месячный
+   календарь считают «сегодня» **от UTC-даты сервера**, а не от даты в зоне компании (C4 выше).
 13. **Security-заголовки: Linux-контур закрыт, Windows-контур — нет.** `deploy/nginx/ezbook.conf`
    теперь отдаёт `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`,
    `X-Frame-Options: DENY` и полноценный `Content-Security-Policy` (с явными исключениями под
@@ -2878,9 +3254,16 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     Признано приемлемым ревьюером (список ограничен одной компанией) и **задокументировано
     комментарием в коде** — но с ростом базы клиентов это первый кандидат на деградацию.
     Остальные три выборки (`admin/users`, `admin/companies`, публичные отзывы) пагинируются в БД.
-18. **Фронтенд покрыт точечно, но заметно лучше.** ⚖️ 181 тест Vitest (было 100), и **прирост цикла 5
-    (+81) — впервые в основном экраны и формы, а не утилиты** (§7.3). Непокрытым остался весь раздел
-    уведомлений цикла 4 и новый админский журнал обращений. Покрыты мапперы ошибок,
+18. **Фронтенд покрыт точечно, но заметно лучше.** 🗓 **283 теста Vitest в 43 файлах** (было 181 в
+    32 после цикла 5 и 100 после цикла 4). 🗓 **Прирост цикла 6 (+102) закрыл главный пробел,
+    который этот пункт называл годами: экраны записи.** `BookingModal`, `ManualBookingModal`,
+    `RescheduleModal`, новый `BookingCalendar`, `PhoneInput`, `LoginPage`, `AdminPage`,
+    `CompanyManagePage` теперь покрыты. **Остаются непокрытыми**: весь раздел уведомлений цикла 4,
+    админский журнал обращений субъектов, календарь `ScheduleTab`, `DeleteAccountPage`,
+    `useExportData`, `useAuthedImage`.
+    ⚠️ Ниже — список непокрытого в редакции цикла 5, **устаревший в части экранов записи**;
+    оставлен, чтобы было видно, что именно и когда закрыли. ⚖️ Прирост цикла 5
+    (+81) — впервые в основном экраны и формы, а не утилиты (§7.3). Покрыты мапперы ошибок,
     `formatPhone`, `timezone`, `channelBanner`, `PhotoGallery`, `Pagination`, `useDebouncedValue`,
     правовой контур (`ConsentGate`, `LegalUpdateBanner`, `LegalDocumentPage`) и по одному тесту на
     `CompanyPage` и `MasterClientsPage`. **Не покрыты**: `BookingModal`, `ManualBookingModal`,
@@ -2899,6 +3282,8 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     Цикл 3 добавил туда же чтение состояния согласия (claim'ы `consent_*` сверяются с актуальной
     версией документа), то есть путь на каждом запросе стал длиннее, а не короче.
 22. **Шаг сетки слотов по-прежнему захардкожен 30 минутами** (`SlotCalculator.StepMinutes`).
+    🗓 Цикл 6 этого не менял, хотя работал ровно в этом файле; после US-67 пункт стал острее —
+    см. C3 выше.
 23. **Миграция `NormalizePhoneNumbers` необратима и не проверялась на реальных данных.** Сейчас это
     безопасно (боевых данных нет), но повторно применить её к живой базе будет нельзя.
     Рядом появилась вторая миграция с данными — `ResyncIdentityRoles`, у неё **`Down` — no-op**
@@ -3032,6 +3417,19 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
 «`DEPLOY.md` не описывает, что делать при утечке» — `docs/incident-runbook.md`.
 ⚠️ **Частично**: «бэкапы не проверены» — проверены, но восстановление воскрешает удалённое (L2).
 
+🗓 **Закрыто циклом 6** (не переоткрывать без причины): «вход отвечает одинаковым 401 на любую
+причину, и пользователь не понимает, что делать» — 423/403/401 различаются, а два 401 совпадают
+намеренно; «тело ошибки регистрации не показывается человеку» — разбирается и переводится;
+«клиент не видит занятость месяца и щёлкает дни по одному» — `GET /api/bookings/availability`
+плюс месячный календарь; «ручная запись на дату без расписания раскрывает сутки напролёт молча» —
+окно по умолчанию 09:00–21:00, сутки только по явному запросу; «подписку можно сохранить без даты
+окончания, и потом никто не понимает, почему тариф не работает» — дата обязательна плюс
+диагностический эндпоинт; «за визит можно записать только одну услугу» — до пяти;
+«сетка переноса блокируется собственной записью и ломается о деактивированную услугу или
+уволившегося мастера» — `excludeBookingId`; «400 от автоматической валидации приходит в форме,
+которую фронт не понимает» — приведено к конвенции проекта **глобально**;
+«экраны записи не покрыты тестами фронтенда» — покрыты (§7.3).
+
 **Закрыто циклом 3** (не переоткрывать без причины):
 отсутствие политики конфиденциальности, пользовательского соглашения и записи согласия;
 отсутствие прав субъекта данных (выгрузка и удаление аккаунта);
@@ -3064,7 +3462,18 @@ Blazor-проект и мёртвые страницы фронта; расхо�
 Раздел нужен, чтобы следующие агенты **дополняли существующее, а не заводили параллельные версии**.
 Всё перечисленное лежит в репозитории.
 
-🔬 **Состояние на `6562a86`.** `README.md` и `CHANGELOG.md` правятся product-analyst'ом
+🗓 **Состояние на `aac6231`.** Цикл 6 добавил в документацию: `SPEC_CYCLE6_BOOKING_FIXES.md`
+(заархивированная спека цикла — `SPEC.md` занят циклом 8), `ARCHITECTURE_CYCLE6.md`,
+`API_CONTRACT_CYCLE6.md`, **`openapi-cycle6.yaml`** (второй машиночитаемый контракт в репозитории,
+§10.3) и раздел цикла в `TEST_CATALOG.md` (§10.4).
+⚠️ **Чего цикл 6 НЕ сделал в документации, и это надо знать:** в `CHANGELOG.md` **записи про цикл 6
+нет** (его вносит product-analyst — на `aac6231` в файле только разделы циклов 4/5/8), в `README.md`
+ничего про календарь, несколько услуг за визит и российский формат телефона не сказано, и в
+`docs/**` (ролевые гайды `client.md`, `owner.md`, `master.md`, `faq.md`) тоже — **ни один файл
+пользовательской документации цикл 6 не тронул**. То есть описание сценария записи в гайдах
+описывает состояние до цикла 6.
+
+🔬 **Состояние на `6562a86`** (цикл 8). `README.md` и `CHANGELOG.md` правятся product-analyst'ом
 **параллельно с этой редакцией** — конкретные формулировки и размеры смотреть прямо в них.
 Цикл 8 добавил в документацию: `docs/testing-isolation.md` (новый, для команды),
 `docs/README.md` (новый раздел «Не для пользователей: документы команды проекта»),
@@ -3165,21 +3574,46 @@ CSP устроена так, какую ветку катим и почему Al
 окружения (`SB_*` для dev-стека и `SERVICEBOOKING_TEST_*` для прогона), §86 — CLI `TestKit` и схема
 его JSON-вывода.
 
-🔬 **Утверждение прошлой редакции «OpenAPI/Swagger-файла в репозитории нет» БОЛЬШЕ НЕ ВЕРНО.**
-Цикл 8 положил **первые машиночитаемые контракты**:
+🗓 **Контракт цикла 6** — `API_CONTRACT_CYCLE6.md` (~59 КБ, **разделы 38–46**, та же схема
+продолжения нумерации): §38 общее для всех эндпоинтов цикла (в т.ч. **§38.1 — форма тела 4xx**) →
+§39 вход и различимые причины отказа → §40 признак «оказывает услуги» и список специалистов →
+§41 время: слоты, доступность дней, горизонт → §42 тариф → §43 несколько услуг за визит →
+§44 телефон → §45 TS-типы, которые фронтенд обязан обновить → §46 матрица «кто чего ждёт».
+
+🔬 **Утверждение позапрошлой редакции «OpenAPI/Swagger-файла в репозитории нет» БОЛЬШЕ НЕ ВЕРНО.**
+Цикл 8 положил первые машиночитаемые контракты, 🗓 цикл 6 — ещё один, **первый, который описывает
+продуктовые эндпоинты, а не инвариант или среду**:
 
 | Что | Путь | Формат | Структура |
 |---|---|---|---|
+| 🗓 Контракт цикла 6 | `openapi-cycle6.yaml` (~64 КБ) | **OpenAPI 3.0.3 (YAML)**, редакция 2 от 2026-09-22 | **12 путей** — только те, которых цикл касается: `/api/auth/login`, `/api/auth/register`, `/api/companies/{id}`, `/api/companies/{id}/masters`, `/api/companies/{id}/members`, `/api/companies/{id}/members/{memberId}/provides-services`, `/api/bookings/slots`, `/api/bookings/availability`, `/api/bookings`, `/api/bookings/{id}`, `/api/bookings/{id}/reschedule`, `/api/admin/owners/{ownerUserId}/subscription`. **Это НЕ полное описание API** — сказано в шапке файла; остальные 18 контроллеров цикл не трогает, они в `API_DOCUMENTATION.md` и контрактах циклов 3–5. В шапке же зафиксирована **конвенция тел ошибок** (голая строка `text/plain`; исключение — массив Identity на регистрации) и список готовых команд проверки. Смысловые правила, которые схемой не выражаются, живут в `API_CONTRACT_CYCLE6.md` — файлы читаются вместе. ⚠️ **Шага в CI нет**, проверка ручная |
 | 🔬 Инвариант HTTP-поверхности | `contracts/cycle8/servicebooking-invariant.openapi.yaml` (~24 КБ) | **OpenAPI 3.1 (YAML)** | `info` (version `8.0.0-invariant`) → `servers` → `paths` для **семи** операций, отобранных по признаку «цикл 8 технически способен это сломать»: `/api/health/live`, `/api/health/ready`, `/api/legal/documents`, `/api/auth/register`, `/api/auth/login`, `/api/profile/avatar`, `/uploads/{path}`. Снят с `7b382d8`. **Это НЕ полное описание API** — записано прямо в шапке файла; полное по-прежнему `API_DOCUMENTATION.md` + контракты циклов + живой Swagger. Версии правовых документов в схему **сознательно не зашиты** (чтобы не воспроизвести дефект §9 L6). Проверяется вручную: `npx @redocly/cli lint …`, `pipx run schemathesis run … --base-url …`; ⚠️ **шага в CI нет** (§9 T8-5) |
 | 🔬 Схема вывода CLI TestKit | `contracts/cycle8/testkit-status.schema.json` (~17 КБ) | **JSON Schema** | описание `--json` для `status`/`sweep`/`doctor`: `schemaVersion`, ресурсы (`kind` container/database/directory, `runKey`, `slot`, `testClass`, `workdir`, возраст, живость), проверки доктора, блок `parallelism`. ⚠️ Поле `testClass` схема допускает, но код **всегда пишет `null`** (§9 T8-2, M3), а `pattern` слота ограничен `c[0-9]{2,3}` (§9 T8-2, L5) |
 
-Postman-коллекции по-прежнему нет. Генерации TS-типов из схемы нет — и цикл 8 её не заводил,
-потому что осознанно не трогал HTTP-контракт.
+Postman-коллекции по-прежнему нет. Генерации TS-типов из схемы нет — цикл 8 её не заводил, потому
+что осознанно не трогал HTTP-контракт, 🗓 а цикл 6 использует `openapi-typescript` только как
+**проверку** (сгенерировать во временный файл и прогнать `tsc`), не как источник `src/types/index.ts`.
+
+⚠️ 🗓 **`API_DOCUMENTATION.md` циклом 6 не обновлён.** Справочник (~259 КБ) не знает ни про
+`GET /api/bookings/availability`, ни про `serviceIds`, ни про `provides-services`, ни про
+диагностику тарифа, ни про новые коды ответа входа. На время, пока это так, **источник истины по
+эндпоинтам цикла 6 — `openapi-cycle6.yaml` + `API_CONTRACT_CYCLE6.md`**, а не справочник.
 
 ### 10.4 Описания тест-кейсов
 
-**`TEST_CATALOG.md`** (⚖️ ~276 КБ), Markdown, русский — человекочитаемое описание **каждого**
+**`TEST_CATALOG.md`** (🗓 ~304 КБ), Markdown, русский — человекочитаемое описание **каждого**
 автоматизированного кейса, отдельно от самого кода тестов.
+
+🗓 **Цикл 6 добавил в каталог +190 строк**, и, в отличие от цикла 5, **не отдельным разделом в
+конце, а по месту** — внутрь существующих доменных разделов, рядом с кейсами, которые они
+дополняют или заменяют. Новое: `AUTH-014` (400-массив Identity на слабый пароль), `AUTH-015`
+(вход аккаунта с иностранным номером — регрессия, которую цикл едва не создал), переписанный
+`BK-024` (окно 09:00–21:00 вместо суток) и `BK-057` (`extendedHours`), три новых подраздела —
+**«`GET /api/bookings/slots?excludeBookingId=…` — сетка переноса записи»** (`BK-068…BK-073`,
+включая проверку порядка «права → совпадение пары»), **«Горизонт записи»** (`BK-058`, `BK-059`) и
+**«Несколько услуг за визит»** (`BK-060…BK-067`), плюс `ADM-045`. Заголовки кейсов цикла 6 содержат
+ссылки на `ARCHITECTURE_CYCLE6.md`/`API_CONTRACT_CYCLE6.md` с номерами разделов — по ним быстро
+находится, какое решение кейс защищает.
 
 ⚖️ **Цикл 5 добавил раздел «Legal, цикл 5 (US-64…US-82, правовые основания продукта) — приёмка QA»**
 (+128 строк). Его структура отличается от разделов прошлых циклов и это существенно: он начинается с
@@ -3224,8 +3658,8 @@ Postman-коллекции по-прежнему нет. Генерации TS-�
 каталог не описывает.
 
 Отдельного `TESTPLAN.md`, каталога `docs/testing/` или ручных сценариев вне `TEST_CATALOG.md`
-в проекте **по-прежнему не найдено** (🔬 перепроверено на `6562a86`; цикл 8 такого каталога не
-заводил). 🔬 Ближайшее к «описанию тест-плана» из нового — **`ARCHITECTURE_CYCLE8_PHASE2.md` §98.2
+в проекте **по-прежнему не найдено** (🗓 перепроверено на `aac6231`; ни цикл 8, ни цикл 6 такого
+каталога не заводили). 🔬 Ближайшее к «описанию тест-плана» из нового — **`ARCHITECTURE_CYCLE8_PHASE2.md` §98.2
 (критерии приёмки числами) и §98.4 (фактический протокол приёмки: таблица из 10 прогонов с семенами,
 временами и результатами)**, плюс §99.5 — **список приёмочных грепов** (проверок кодовой базы
 командами `grep`, а не тестами). Это не каталог кейсов, но это единственное место, где записано,
@@ -3244,6 +3678,9 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 
 | Документ | Размер | Что это |
 |---|---|---|
+| 🗓 **`SPEC_CYCLE6_BOOKING_FIXES.md`** | ~88 КБ | **ЦИКЛ 6** «доработка сценария записи на услуги», истории **US-60…US-67**. **Заархивирована под этим именем сразу**, потому что `SPEC.md` занят циклом 8. ⚠️ **Ссылки на неё в коде и документах цикла 6 выглядят как `SPEC_CYCLE6_BOOKING_FIXES.md §0.1`** — §0.1 это раздел ответов заказчика (Q1…Q9), на него ссылаются `SlotCalculator`, `PhoneNormalizer`, `BookingsController` и обе миграции. Раньше эти ссылки указывали на `SPEC.md` и после архивирования вели в чужую спеку цикла 8 — см. §9 C5 |
+| 🗓 **`ARCHITECTURE_CYCLE6.md`** | ~138 КБ | **ЦИКЛ 6, разделы 41–54.** Ключевые ссылки из кода: §41 почему стек не расширяется, §42 вход и исходы `LoginOutcome`, §43 тариф (§43.2 диагностика, §43.3 обязательная дата, §43.5 миграция backfill'а), **§44 модель данных цикла** (§44.2 `BookingService`), §45 доступность дней (**§45.7 горизонт записи**), **§46 рабочее окно и `ScheduleFallback`** (§46.2 три режима, §46.3 сетка переноса), §47 несколько услуг за визит (§47.2 текст уведомления), **§48 телефон: почему отдельный предикат, а не правка `IsValid`**, §49 пропуск шага выбора мастера, §50 что добавляется в структуру, §51 разбивка на задачи, §52 риски, **§53 как проверяется, что backend и frontend сошлись** (четыре команды поверх `openapi-cycle6.yaml`), §54 что цикл сознательно не делает |
+| 🗓 **`API_CONTRACT_CYCLE6.md` / `openapi-cycle6.yaml`** | ~59 / ~64 КБ | **ЦИКЛ 6, разделы 38–46** + машиночитаемая схема (OpenAPI 3.0.3, 12 путей), см. §10.3. Читаются вместе: схема описывает форму, контракт — смысл |
 | 🔬 **`SPEC.md`** | ~71 КБ | **ЦИКЛ 8** «изоляция тестовой и локальной среды». Истории US-83…US-101 (US-83…US-93 — фаза 1, изоляция прогонов; US-94…US-101 — фаза 2, параллелизм), §16 — вопросы архитектору |
 | 🔬 **`ARCHITECTURE_CYCLE8.md`** | ~88 КБ | **ЦИКЛ 8, фаза 1, разделы 61–81.** Ключевые ссылки из кода: §65.1/§76 CLI TestKit, §66 жизненный цикл сервера прогона, §68 шаблон и слоты, §69.2/§69.3 переосмысление `SERVICEBOOKING_TEST_CONNECTION` и монополия на `DROP DATABASE`, §70 уборка (Ryuk, sweeper, критерий «мёртвости»), §71 `TestHostSettings` и временные корни, §71.4 `Logs:Directory`, §73.3 порты и Vite, §74 пины образов и CI, §75 параметры эфемерного Postgres, §79 приёмочные грепы фазы 1 |
 | 🔬 **`ARCHITECTURE_CYCLE8_PHASE2.md`** | ~108 КБ | **ЦИКЛ 8, фаза 2, разделы 89–99.** §91 выбор единицы изоляции (база на тест-класс) и §91.5 три операционные ловушки клонирования, §92 механика xUnit (коллекция → `IClassFixture`), §93 параллелизм и бюджет соединений, §94 один механизм уникальности (`TestData`), §95.1 разбор статического состояния поимённо, §96 `Log.Logger` и правка `Program.cs`, **§98.4 протокол приёмки**, §99.5 приёмочные грепы, **§98.5 остаточная хрупкость (фиксированные паузы)** — ⚠️ физически лежит ПОСЛЕ §99 |
@@ -3263,7 +3700,7 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 | **`SPEC_APPENDIX_CHANNELS.md`** ⭐ | ~57 КБ | приложение к нему: исследование каналов доставки |
 
 **Соглашения об архиве (`docs/history/`) в репозитории по-прежнему нет**, каталога такого нет, в
-README оно не описано. ⚖️ **Циклы 4, 5 и 8 решают задачу суффиксом в имени файла**
+README оно не описано. ⚖️ **Циклы 4, 5, 6 и 8 решают задачу суффиксом в имени файла**
 (`*_CYCLE4.md`, `*_CYCLE5.md`, `*_CYCLE8.md`, `SPEC_CYCLE3_PRODUCTION.md`,
 `SPEC_CYCLE4_NOTIFICATIONS.md`, 🔬 `SPEC_CYCLE5_LEGAL.md`), так что документы **четырёх последних
 циклов одновременно лежат в корне**, а `SPEC.md` без суффикса означает 🔬 **цикл 8**, тогда как
@@ -3274,5 +3711,19 @@ README оно не описано. ⚖️ **Циклы 4, 5 и 8 решают з
 `API_CONTRACT_CYCLE8*.md`). Единственное, что цикл 8 действительно «заархивировал» — спеку цикла 5,
 восстановив её из git в `SPEC_CYCLE5_LEGAL.md` перед тем, как занять `SPEC.md` собой. Поэтому эта
 редакция `CURRENT_STATE.md`, как и прошлая, ничего не переносила.
+
+🗓 **Цикл 6 архивировал свою спеку сам** — `SPEC_CYCLE6_BOOKING_FIXES.md`, потому что `SPEC.md`
+к тому моменту занял цикл 8. В корне таким образом одновременно лежат документы **пяти** циклов
+(3, 4, 5, 6, 8), и `SPEC.md` без суффикса означает цикл 8.
+
+⚠️ 🗓 **К конвенции суффикса нужно добавить явное требование, которого в ней сейчас нет:
+переименование спеки обязано включать обновление всех ссылок на неё — в том же коммите.**
+Цикл 6 на этом обжёгся: 43 ссылки вида «`SPEC.md` §0.1» остались висеть после архивирования и
+стали указывать на спеку цикла 8, у которой **есть свой §0.1 и свой Q7**. Ссылка не ломается, она
+приводит в связный, но совершенно чужой текст — и это **хуже битой ссылки**, потому что читатель не
+замечает подмены. Исправлено коммитом `aac6231`; ссылки, принадлежащие другим циклам, тронуты не
+были — их `SPEC.md` означал свою спеку на момент написания. Подробнее — §9 C5.
+Практическая проверка перед архивированием спеки:
+`grep -rn "SPEC\.md" --include="*.cs" --include="*.ts" --include="*.tsx" --include="*.md" .`
 Предыдущие редакции живут только в git-истории: SPEC цикла 2 — `git show 0492092:SPEC.md`,
 цикла 1 — `git show e6b746c:SPEC.md`, ещё более ранняя — `7c86ca2`.
