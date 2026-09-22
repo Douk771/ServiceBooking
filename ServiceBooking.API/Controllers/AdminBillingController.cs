@@ -219,8 +219,17 @@ public class AdminBillingController(
 
         if (!string.IsNullOrWhiteSpace(search))
         {
+            // NB-6 — phones are stored canonical (digits only, US-26); a search string that LOOKS like
+            // a phone number must be normalized the same way before matching PhoneNumber, same
+            // convention as AdminController.GetUsers, or a formatted phone ("+7 (999) 123-45-67")
+            // never matches anything.
+            var digitCount = search.Count(char.IsDigit);
+            var looksLikePhone = digitCount >= 5 && !search.Any(char.IsLetter);
+            var phoneSearch = looksLikePhone ? PhoneNormalizer.Normalize(search) : search;
+
             joined = joined.Where(x =>
-                x.a.Owner.Email!.Contains(search) || x.a.Owner.PhoneNumber!.Contains(search) ||
+                x.a.Owner.Email!.Contains(search) ||
+                (phoneSearch.Length > 0 && x.a.Owner.PhoneNumber!.Contains(phoneSearch)) ||
                 x.a.Owner.FirstName.Contains(search) || x.a.Owner.LastName.Contains(search) ||
                 db.Companies.Any(c => c.BillingAccountId == x.a.Id && c.Name.Contains(search)));
         }
