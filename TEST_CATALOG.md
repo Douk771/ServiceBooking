@@ -3668,14 +3668,14 @@ if (!dto.IsSystemFree && plan.IsSystemFree)
   проходят при создании (10-item write cap редактора), `GET /api/admin/pricing/preview` (тот же маппинг,
   что и публичный `GET /api/pricing`, но без кеша и флага публикации) показывает ровно первые 5.
 - **`ADM-059`** — см. п.1 выше (гонка `SetSystemFree`).
-- **`CO-079`** `CreateCompany_ConcurrentFirstCompanyForSameOwner_AllLandOnTheSameBillingAccount_NoServerError`
+- **`CO-082`** `CreateCompany_ConcurrentFirstCompanyForSameOwner_AllLandOnTheSameBillingAccount_NoServerError`
   — регрессия на `BillingAccountProvisioner` (`c04359f`): у свежего владельца ещё нет `BillingAccount`,
   пять параллельных «создать первую компанию» не должны падать 500 на гонке уникального индекса по
   `OwnerUserId`. **Проверено вручную**: временный откат `c04359f` даёт нестабильный (2 из 3 прогонов)
   провал именно с ассертом на "OnlyContain(201 или 402)" — то есть тест ловит гонку, а не гарантированно
   редко её пропускает; с фиксом — стабильно зелёный. После гонки ровно ОДНА строка `BillingAccounts` на
   владельца (не задвоение), ровно одна компания создаётся (Free-лимит = 1), остальные получают 402.
-- **`CO-080`** `AddMember_SubscriptionExpiredByDate_402TextNamesTheAppliedFreeLimit_NotTheStalePlanNumbers`
+- **`CO-081`** `AddMember_SubscriptionExpiredByDate_402TextNamesTheAppliedFreeLimit_NotTheStalePlanNumbers`
   — регрессия на `e71ef9e` (NB-1): у аккаунта тариф на 8 мест, но подписка истекла ВЧЕРА → реально
   применённый лимит — Free (1), а не 8. Текст 402 должен называть 1, не 8, и не должен упоминать имя
   просроченного тарифа. **Проверено вручную**: откат `e71ef9e` даёт красный тест с буквальным телом
@@ -3766,7 +3766,7 @@ SuperAdmin-токен получен через `/api/auth/login`. `--phases cov
 `dotnet build ServiceBooking.sln -warnaserror` — **0 предупреждений, 0 ошибок**.
 `dotnet test ServiceBooking.UnitTests` — **609/609**.
 `dotnet test ServiceBooking.Tests` — **507/507** (498 из прошлого прохода + 9 новых: `ABA-001…003`,
-`ADM-056…059`, `CO-079…080`), стабильно на двух прогонах подряд, `ADM-052` — **теперь зелёный**
+`ADM-056…059`, `CO-081…082`), стабильно на двух прогонах подряд, `ADM-052` — **теперь зелёный**
 (Б-1 из прошлого раздела исправлен, красных тестов не осталось).
 
 ### Баги, найденные при разборе — все закрыты кем-то ДО этого прохода, подтверждены закрытыми

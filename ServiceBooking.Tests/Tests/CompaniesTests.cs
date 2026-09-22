@@ -1179,7 +1179,7 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be((HttpStatusCode)402);
     }
 
-    [Fact, TestCase("CO-080")]
+    [Fact, TestCase("CO-081")]
     public async Task AddMember_SubscriptionExpiredByDate_402TextNamesTheAppliedFreeLimit_NotTheStalePlanNumbers()
     {
         // Regression (cycle-07 backend report, NB-1): the 402 text used to be built straight off the
@@ -1279,7 +1279,7 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         responses.Count(r => r.StatusCode == (HttpStatusCode)402).Should().Be(4);
     }
 
-    [Fact, TestCase("CO-079")]
+    [Fact, TestCase("CO-082")]
     public async Task CreateCompany_ConcurrentFirstCompanyForSameOwner_AllLandOnTheSameBillingAccount_NoServerError()
     {
         // Regression for BillingAccountProvisioner's own race (cycle-07 backend report, NB-5): a
