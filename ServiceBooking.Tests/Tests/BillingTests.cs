@@ -46,6 +46,12 @@ public class BillingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
                 Kind = OptionKind.Quantity, PricePerMonth = 400m, UnitName = "компания", IsActive = true,
             };
             db.SubscriptionOptions.AddRange(optionA, optionB);
+            // §43.3/N14 fail-closed: a (plan, option) pair with no PlanOptionRule row resolves to
+            // Unavailable and contributes 0 regardless of any AccountSubscriptionOption row/quantity —
+            // both options need an explicit Extra rule on this plan to be purchasable/billable at all.
+            db.PlanOptionRules.AddRange(
+                new PlanOptionRule { Id = Guid.NewGuid(), PlanConfigId = sub.PlanConfigId!.Value, OptionId = optionA.Id, Availability = OptionAvailability.Extra },
+                new PlanOptionRule { Id = Guid.NewGuid(), PlanConfigId = sub.PlanConfigId!.Value, OptionId = optionB.Id, Availability = OptionAvailability.Extra });
             db.AccountSubscriptionOptions.AddRange(
                 new AccountSubscriptionOption { Id = Guid.NewGuid(), BillingAccountId = billingAccountId, OptionId = optionA.Id, Quantity = 3, ActivatedAtUtc = DateTime.UtcNow },
                 new AccountSubscriptionOption { Id = Guid.NewGuid(), BillingAccountId = billingAccountId, OptionId = optionB.Id, Quantity = 1, ActivatedAtUtc = DateTime.UtcNow });
@@ -63,7 +69,7 @@ public class BillingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     [Fact, TestCase("BLL-002")]
-    public async Task AssignSubscription_WithRequestId_ClosesTheOwnersPendingRequest()
+    public async Task AssignSubscription_WithRequestId_ClosesTheRequestAndAppearsInHistory()
     {
         var admin = await LoginAsSuperAdminAsync();
         var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
@@ -92,6 +98,20 @@ public class BillingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             .Content.ReadFromJsonAsync<OwnerSubscriptionDto>();
         before!.PendingRequest.Should().NotBeNull();
 
+        // The admin's queue must show the request's own composition BEFORE it's actioned — this is
+        // what a real assignment form would pre-fill from (US-67 п.1's "approve → form pre-filled with
+        // the request's composition" acceptance criterion).
+        var queueBeforeJson = await (await AuthedClient(admin.Token).GetAsync("/api/admin/subscription-requests?pageSize=100"))
+            .Content.ReadAsStringAsync();
+        using (var queueBeforeDoc = JsonDocument.Parse(queueBeforeJson))
+        {
+            var queuedItem = queueBeforeDoc.RootElement.GetProperty("items").EnumerateArray()
+                .Should().ContainSingle(item => item.GetProperty("billingAccountId").GetGuid() == accountId).Subject;
+            queuedItem.GetProperty("desiredPlanName").GetString().Should().NotBeNullOrEmpty(
+                "the queue item must name the desired plan so the assignment form can pre-fill it");
+            queuedItem.GetProperty("comment").GetString().Should().Be("Хочу перейти на новый тариф");
+        }
+
         var assign = await AuthedClient(admin.Token).PutAsJsonAsync(
             $"/api/admin/billing-accounts/{accountId}/subscription",
             new { planId, isActive = true, paidUntil = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(1)), options = new object[0], requestId = accountId });
@@ -104,6 +124,70 @@ public class BillingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var queue = await (await AuthedClient(admin.Token).GetAsync("/api/admin/subscription-requests"))
             .Content.ReadAsStringAsync();
         queue.Should().NotContain(accountId.ToString(), "a closed request must leave the admin queue");
+
+        // ...and become visible in the account's subscription HISTORY, not just vanish from the queue.
+        var historyJson = await (await AuthedClient(admin.Token).GetAsync($"/api/admin/billing-accounts/{accountId}/subscription-history"))
+            .Content.ReadAsStringAsync();
+        using var historyDoc = JsonDocument.Parse(historyJson);
+        historyDoc.RootElement.GetProperty("items").EnumerateArray().Should().Contain(
+            item => item.GetProperty("newPlanName").GetString() != null,
+            "the approved assignment must leave a row in the account's subscription history");
+    }
+
+    [Fact, TestCase("BLL-002B")]
+    public async Task RejectSubscriptionRequest_ReasonReachesOwner_AndClearsFromQueue()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+
+        var planId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (await db.SubscriptionPlanConfigs.FindAsync(planId))!.IsActive = true;
+            await db.SaveChangesAsync();
+        }
+
+        var submit = await AuthedClient(owner.Token).PostAsJsonAsync("/api/billing/subscription/request",
+            new SubscriptionRequestInputDto(planId, [], "Хочу перейти на новый тариф"));
+        submit.EnsureSuccessStatusCode();
+
+        Guid accountId;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            accountId = await db.BillingAccounts.Where(a => a.OwnerUserId == owner.UserId).Select(a => a.Id).FirstAsync();
+        }
+
+        var reject = await AuthedClient(admin.Token).PostAsJsonAsync(
+            $"/api/admin/subscription-requests/{accountId}/reject",
+            new { comment = "Тариф снят с продажи, выберите другой" });
+        reject.EnsureSuccessStatusCode();
+
+        // Gone from the admin queue...
+        var queueJson = await (await AuthedClient(admin.Token).GetAsync("/api/admin/subscription-requests?pageSize=100"))
+            .Content.ReadAsStringAsync();
+        using (var queueDoc = JsonDocument.Parse(queueJson))
+        {
+            queueDoc.RootElement.GetProperty("items").EnumerateArray()
+                .Should().NotContain(item => item.GetProperty("billingAccountId").GetGuid() == accountId,
+                    "a rejected request must leave the admin queue");
+        }
+
+        // ...and the REASON is visible to the owner in their own cabinet (US-70, N10).
+        var afterReject = await (await AuthedClient(owner.Token).GetAsync("/api/billing/subscription"))
+            .Content.ReadFromJsonAsync<OwnerSubscriptionDto>();
+        afterReject!.PendingRequest.Should().BeNull("a rejected request is no longer pending");
+        afterReject.LastRejectedRequest.Should().NotBeNull("the owner must be told their request was rejected, not just see it silently vanish");
+        afterReject.LastRejectedRequest!.Reason.Should().Be("Тариф снят с продажи, выберите другой");
+
+        // A fresh request after rejection must go through cleanly (not blocked by leftover state).
+        var resubmit = await AuthedClient(owner.Token).PostAsJsonAsync("/api/billing/subscription/request",
+            new SubscriptionRequestInputDto(planId, [], "Пробую снова"));
+        resubmit.EnsureSuccessStatusCode();
+        var afterResubmit = await (await AuthedClient(owner.Token).GetAsync("/api/billing/subscription"))
+            .Content.ReadFromJsonAsync<OwnerSubscriptionDto>();
+        afterResubmit!.PendingRequest.Should().NotBeNull("resubmission after a rejection must succeed and create a fresh pending request");
     }
 
     [Fact, TestCase("BLL-003")]
