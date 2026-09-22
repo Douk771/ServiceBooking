@@ -66,15 +66,23 @@ public class NotificationDispatchExtraTests(DispatchDatabaseFixture fixture)
         // WithWebHostBuilder layers this slow transport IN ADDITION to (registered after, so it wins
         // over) the base factory's instant RecordingTransport, which is otherwise too fast for any
         // BudgetSeconds this test can wait for in real time to ever interrupt a pass. `baseFactory` stays
-        // the handle for seeding; `webFactory` (the one WithWebHostBuilder returns) is the ACTUAL running
-        // host — Services/CreateClient must come from it, not from baseFactory.
+        // an UNSTARTED handle — it exists only because `WithWebHostBuilder` has to be called on some
+        // instance, and `SeedConnectedChannelAsync` needs a `NotificationDispatchTestFactory`-typed
+        // parameter for its signature. Nothing may ever touch `baseFactory.Services`/`.Server`/
+        // `.CreateClient()`: doing so lazily builds AND STARTS a second, independent host pointed at the
+        // very same database, with its OWN ScheduledTaskRunner ticking notification-dispatch on the
+        // ORIGINAL (fast) RecordingTransport — racing `webFactory`'s slow one on the same Pending rows
+        // and defeating the budget-cutoff this test exists to prove (this used to happen via
+        // `SeedConnectedChannelAsync`'s legal-document lookup, which read `factory.Services` — fixed by
+        // passing `legalFactory: webFactory` explicitly below). `webFactory` (the one `WithWebHostBuilder`
+        // returns) is the ACTUAL running host — Services/CreateClient must come from it, always.
         await using var baseFactory = new NotificationDispatchTestFactory(fixture.ConnectionString, budgetSecondsOverride: 1);
         await using var webFactory = baseFactory.WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<INotificationTransport>(slowTransport)));
 
         using var scope = webFactory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var (_, channel, company) = await SeedConnectedChannelAsync(baseFactory, db, client: webFactory.CreateClient());
+        var (_, channel, company) = await SeedConnectedChannelAsync(baseFactory, db, client: webFactory.CreateClient(), legalFactory: webFactory);
 
         string[] ownPhones = ["79990000201", "79990000202", "79990000203"];
         var row1 = NewPendingNotification(company.Id, channel.Id, ownPhones[0]);
@@ -209,11 +217,21 @@ public class NotificationDispatchExtraTests(DispatchDatabaseFixture fixture)
     // ── Seeding / auth helpers (mirrors NotificationDispatchTests.cs) ──────────────────────────────
 
     private static async Task<(string OwnerUserId, NotificationChannel Channel, Company Company)> SeedConnectedChannelAsync(
-        NotificationDispatchTestFactory factory, AppDbContext db, HttpClient? client = null)
+        NotificationDispatchTestFactory factory, AppDbContext db, HttpClient? client = null,
+        Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>? legalFactory = null)
     {
+        // `legalFactory` defaults to `factory`, but a caller running two factories against the same
+        // database (Budget_InterruptedPass below) MUST pass the one that is actually meant to run —
+        // touching ANY WebApplicationFactory's `.Services`/`.Server` for the first time lazily builds
+        // and STARTS its host, including its own ScheduledTaskRunner. `factory.Services` here used to be
+        // read unconditionally via NotificationDispatchTests.CurrentRegisterLegalDto(factory), which for
+        // that test silently started a SECOND, independent notification-dispatch loop (on the fast,
+        // un-overridden RecordingTransport) racing the real one under test on the very same Pending rows
+        // — an intermittent flake, not a real product bug (see the test below for the full story).
         var phone = UniquePhone();
         var registerResponse = await (client ?? factory.CreateClient()).PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "Owner", phone, "Password123!", null, NotificationDispatchTests.CurrentRegisterLegalDto(factory)));
+            new RegisterDto("Test", "Owner", phone, "Password123!", null,
+                NotificationDispatchTests.CurrentRegisterLegalDto(legalFactory ?? factory)));
         registerResponse.EnsureSuccessStatusCode();
         var auth = (await registerResponse.Content.ReadFromJsonAsync<AuthResponseDto>())!;
 
