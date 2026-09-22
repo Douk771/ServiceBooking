@@ -1,0 +1,45 @@
+name: Rollback staging (emergency)
+
+# Emergency companion to deploy-staging.yml: runs the exact `rollback` command already allowlisted by
+# deploy/ssh-deploy-wrapper.sh (`case "$cmd" in ... "rollback") ... exec bash deploy/rollback.sh ;;`).
+# Needed because deploy-remote.sh only PRINTS the rollback hint on a failed readiness check — it never
+# executes it — so a deploy that leaves the API mid-migration/crash-looping stays that way until a
+# human (or this workflow) explicitly rolls back. Uses the same DEPLOY_SSH_KEY/DEPLOY_USER/DEPLOY_HOST
+# secrets and DEPLOY_HOST_KEY variable as deploy-staging.yml; no new secret surface.
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 10
+    steps:
+      - name: Set up deploy SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_HOST_KEY: ${{ vars.DEPLOY_HOST_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "$DEPLOY_HOST_KEY" ]; then
+            printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          else
+            echo "::warning::DEPLOY_HOST_KEY is not set — falling back to ssh-keyscan (trust-on-first-use, see DEPLOY.md §9.1 residual risk)."
+            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+      - name: Roll back to previous release
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "rollback"
