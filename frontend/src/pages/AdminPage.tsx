@@ -16,6 +16,7 @@ import { Pagination } from '../components/ui/Pagination'
 import { getPlanErrorMessage } from '../utils/planError'
 import { getCompanyAdminErrorMessage } from '../utils/companyAdminError'
 import { formatPhone } from '../utils/phone'
+import { formatBookingServiceNames } from '../utils/bookingServices'
 
 // ── Stats tab ─────────────────────────────────────────────────────────────────
 
@@ -632,7 +633,7 @@ function AllBookingsTab() {
                   <span className="text-xs text-muted">{b.companyName}</span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">
-                  {b.serviceName} · {b.masterName} · {b.date} {b.startTime.slice(0, 5)}
+                  {formatBookingServiceNames(b)} · {b.masterName} · {b.date} {b.startTime.slice(0, 5)}
                 </p>
                 {b.clientPhone && (
                   <p className="text-xs text-muted flex items-center gap-1">

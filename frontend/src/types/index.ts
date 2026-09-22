@@ -246,6 +246,14 @@ export interface TimeSlot {
   end: string
 }
 
+/** US-67 (API_CONTRACT_CYCLE6.md §43.2/§45) — one line item of a multi-service visit. */
+export interface BookingServiceLine {
+  serviceId: string
+  name: string
+  durationMinutes: number
+  price: number
+}
+
 export interface Booking {
   id: string
   companyId: string
@@ -253,6 +261,13 @@ export interface Booking {
   companySlug?: string
   serviceId: string
   serviceName: string
+  /**
+   * US-67 — every service of the visit, always non-empty (bookings created before the cycle come
+   * back with a single-element array from the server). `services[0].serviceId === serviceId`.
+   */
+  services?: BookingServiceLine[]
+  /** US-67 — sum of services[].durationMinutes; undefined only for mocks that predate the cycle. */
+  totalDurationMinutes?: number
   masterId: string
   masterName: string
   clientId?: string

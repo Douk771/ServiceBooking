@@ -8,6 +8,7 @@ import { clientNotesApi } from '../api/clientNotes'
 import { getBookingErrorMessage } from '../utils/bookingError'
 import { getCancelErrorMessage } from '../utils/cancelError'
 import { formatPhone } from '../utils/phone'
+import { formatBookingServiceNames } from '../utils/bookingServices'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
@@ -222,7 +223,7 @@ function BookingRow({ booking: b, client, onReschedule, cancel, complete, noShow
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-ink">{b.serviceName}</span>
+              <span className="font-medium text-ink">{formatBookingServiceNames(b)}</span>
               {b.companyName && (
                 <span className="text-xs text-muted flex items-center gap-1">
                   <Icon name="store" size={11} strokeWidth={1.8} /> {b.companyName}

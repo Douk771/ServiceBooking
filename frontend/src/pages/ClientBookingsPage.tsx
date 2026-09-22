@@ -10,6 +10,7 @@ import { StatusBadge } from '../components/ui/Badge'
 import { Icon } from '../components/ui/Icon'
 import { ReviewModal } from '../components/review/ReviewModal'
 import { getCancelErrorMessage } from '../utils/cancelError'
+import { formatBookingServiceNames } from '../utils/bookingServices'
 import type { Booking } from '../types'
 
 type FilterTab = 'all' | 'upcoming' | 'completed' | 'cancelled'
@@ -164,7 +165,7 @@ export function ClientBookingsPage() {
                       {/* Main info */}
                       <div className="flex-1 min-w-[180px]">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-[14.5px] text-ink">{b.serviceName}</span>
+                          <span className="font-semibold text-[14.5px] text-ink">{formatBookingServiceNames(b)}</span>
                           <StatusBadge status={b.status} />
                         </div>
                         {b.companyName && (

@@ -6,6 +6,7 @@ import { bookingsApi } from '../../api/bookings'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
+import { formatBookingServiceNames } from '../../utils/bookingServices'
 import type { Booking } from '../../types'
 
 interface OccupiedRange {
@@ -107,7 +108,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
           <div>
             <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Перенести запись</h2>
             <p className="text-[13px] text-ink-soft">
-              {booking.clientName} · {booking.serviceName}
+              {booking.clientName} · {formatBookingServiceNames(booking)}
             </p>
           </div>
           <button onClick={onClose} className="text-muted hover:text-ink shrink-0">
