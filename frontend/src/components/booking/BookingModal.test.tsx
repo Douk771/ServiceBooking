@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -86,9 +86,13 @@ function monthKey(offsetMonths = 0) {
   return format(d, 'yyyy-MM')
 }
 
-// A date guaranteed to (a) be in the future and (b) fall within the currently displayed month —
-// avoids the test accidentally picking a day that's already past "today" in whatever environment
-// runs it, which the calendar always renders as disabled regardless of server status.
+// The suite pins "now" (see beforeEach below) to a fixed mid-month instant, so results never
+// depend on the wall-clock day/time the test run happens to start at — see review finding re:
+// futureDateInCurrentMonth() previously colliding with "today" (and the calendar's same-day
+// "already passed" disabling) near month-end. With "now" fixed mid-month, today + 3 days always
+// lands safely within the same month, in the future, and never equals "today".
+const FIXED_NOW = new Date('2026-09-15T09:00:00')
+
 function futureDateInCurrentMonth(): string {
   const today = new Date()
   const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
@@ -139,6 +143,9 @@ async function reachInfoStep(user: ReturnType<typeof userEvent.setup>, dateStr: 
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['Date'] })
+  vi.setSystemTime(FIXED_NOW)
+
   getMasters.mockReset()
   getAvailability.mockReset().mockResolvedValue(availabilityFor({}))
   getSlots.mockReset().mockResolvedValue([])
@@ -155,6 +162,10 @@ beforeEach(() => {
       return Promise.resolve({ key, version: '2026-09-21', isDraft: true, contentHtml: GUARDIAN_HTML })
     return Promise.reject(new Error('unknown key'))
   })
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('BookingModal — US-64 single/zero master', () => {
