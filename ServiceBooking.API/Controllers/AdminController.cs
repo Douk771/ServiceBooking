@@ -332,8 +332,17 @@ public class AdminController(
             : await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
         var (status, statusText) = SubscriptionDiagnostics.Describe(sub, nowUtc);
 
-        var companies = await db.Companies.Where(c => c.OwnerUserId == ownerUserId)
-            .Select(c => new { c.Id, c.Name, c.AllowSelfBooking }).ToListAsync();
+        // Merge-review finding: filter by the billing account being diagnosed, not by
+        // Company.OwnerUserId. After US-77 (company transfer) a company can be MANAGED by this
+        // owner while being PAID FOR by a different billing account (or vice versa) — mixing the two
+        // axes here would explain "why the plan doesn't apply" using a plan that isn't even the one
+        // the company is subject to. This endpoint answers for the account, so it must list that
+        // account's companies.
+        var companies = account is null
+            ? new List<Company>()
+            : await db.Companies.Where(c => c.BillingAccountId == account.Id)
+                .Select(c => new Company { Id = c.Id, Name = c.Name, AllowSelfBooking = c.AllowSelfBooking })
+                .ToListAsync();
 
         var companyDtos = companies.Select(c =>
         {
