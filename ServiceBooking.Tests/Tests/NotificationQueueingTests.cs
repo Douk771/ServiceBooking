@@ -165,6 +165,22 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var sub = await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstAsync(s => s.OwnerUserId == ownerUserId);
         sub.PlanConfig!.AllowNotificationChannel = true;
+
+        // Flakiness fix (this QA pass): CreateOwnerWithCompanyAsync (ApiTestBase.GiveAccountPlanAsync)
+        // attaches every owner to the SAME shared, find-or-create-by-name "QA Full Access" plan row —
+        // this method mutates that SAME shared row's AllowNotificationChannel flag rather than creating
+        // its own plan, unlike NotificationTestBase's own GiveNotificationCapablePlanAsync (a fresh,
+        // uniquely-named plan per call). SubscriptionResolver.IsOptionCurrentlyPaid is fail-closed on a
+        // missing PlanOptionRule (N13/N14, the same convention BillingTests.GetSubscription_Total... was
+        // fixed for this pass) — the shared plan starting with NO rule for the WhatsApp option meant
+        // whether THIS test's EnsureWhatsAppPaidAsync call actually counted toward PaidNotificationNumbers
+        // depended entirely on whether some OTHER, unrelated test happened to have already added an
+        // Extra/Included rule for this exact shared plan+option earlier in the SAME process — a pure
+        // test-execution-order accident, observed as this test passing or failing depending on what ran
+        // before it. Ensuring the rule explicitly, here (via the shared helper also used by
+        // NotificationTestBase/NotificationDispatchTests/NotificationDispatchExtraTests for the identical
+        // bug), removes that dependency.
+        await NotificationTestBase.EnsureWhatsAppPlanRuleAsync(db, sub.PlanConfigId!.Value);
         await db.SaveChangesAsync();
     }
 

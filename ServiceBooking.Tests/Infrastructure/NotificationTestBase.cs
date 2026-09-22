@@ -177,14 +177,75 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
             sub.IsActive = true;
             sub.UpdatedAt = DateTime.UtcNow;
         }
+        // Regression fix (this QA pass): SubscriptionResolver.IsOptionCurrentlyPaid is fail-closed on a
+        // missing PlanOptionRule (N13/N14) — a plan with AllowNotificationChannel=true but no explicit
+        // rule for the WhatsApp option still resolves PaidNotificationNumbers to 0 for EVERY account on
+        // it, no matter how many numbers EnsureWhatsAppPaidAsync (below, or by a caller) marks paid. That
+        // silently broke every "funded channel" scenario this helper feeds — Connect_RiskNotAccepted_
+        // Returns409, Connect_DoubleClick_SecondConcurrentRequestGets409_NoSecondInstance, and anything
+        // else built on CreateConnectedChannelAsync/MarkPaidAsync — with a 402 "channel not paid" instead
+        // of the behavior actually under test, deterministically (this plan is freshly created per call,
+        // so no other test's data could ever have supplied the missing rule by accident).
+        await EnsureWhatsAppPlanRuleAsync(db, plan.Id);
         await db.SaveChangesAsync();
 
         // Deliberately does NOT also fund notifications.whatsapp (EnsureWhatsAppPaidAsync) — this helper
         // only grants the PLAN's own AllowNotificationChannel/"may buy the option" flag (§47.2's first
-        // gate check). "Is the option actually paid" is the orthogonal §47.1 axis several tests
-        // (Connect_UnpaidChannel_Returns402, CreateChannel_Allowed_ReturnsNotConnectedNotPaid) exercise
-        // as a DISTINCT, unfunded state — callers that need a funded channel call EnsureWhatsAppPaidAsync
-        // themselves (see CreateConnectedChannelAsync below).
+        // gate check) plus the PLAN-level rule that makes the option purchasable at all (added just
+        // above — a prerequisite for that gate, not the gate itself). "Is the option actually paid" is
+        // the orthogonal §47.1 axis several tests (Connect_UnpaidChannel_Returns402,
+        // CreateChannel_Allowed_ReturnsNotConnectedNotPaid) exercise as a DISTINCT, unfunded state —
+        // callers that need a funded channel call EnsureWhatsAppPaidAsync themselves (see
+        // CreateConnectedChannelAsync below).
+    }
+
+    private static async Task<Guid> GetOrCreateWhatsAppOptionIdAsync(AppDbContext db)
+    {
+        var existingId = await db.SubscriptionOptions
+            .Where(o => o.Code == ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode)
+            .Select(o => o.Id)
+            .FirstOrDefaultAsync();
+        if (existingId != Guid.Empty) return existingId;
+
+        var option = new SubscriptionOption
+        {
+            Id = Guid.NewGuid(), Code = ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode,
+            Name = "Рассылки в WhatsApp", Kind = OptionKind.Quantity, UnitName = "номер", IsActive = true,
+        };
+        db.SubscriptionOptions.Add(option);
+        await db.SaveChangesAsync();
+        return option.Id;
+    }
+
+    /// <summary>
+    /// Shared fix (this QA pass) for the fail-closed PlanOptionRule gap (N13/N14, see
+    /// <see cref="GiveNotificationCapablePlanAsync"/>'s own comment) — every raw-row plan-seeding helper
+    /// across the notification test suite (this class, <c>NotificationDispatchTests</c>,
+    /// <c>NotificationDispatchExtraTests</c>) hit the identical bug: a freshly-created plan with
+    /// <c>AllowNotificationChannel = true</c> but no explicit rule for the WhatsApp option always
+    /// resolves <c>PaidNotificationNumbers = 0</c>, no matter how many numbers
+    /// <see cref="EnsureWhatsAppPaidAsync"/> marks paid on the account — deterministically breaking
+    /// every scenario that depends on a genuinely funded/Connected channel (dispatch actually sending,
+    /// Connect actually succeeding), not merely flaking under load as the cycle-07 backend report
+    /// assumed. Idempotent: safe to call on a plan that already has a rule (only adds one if missing).
+    /// </summary>
+    public static async Task EnsureWhatsAppPlanRuleAsync(AppDbContext db, Guid planConfigId)
+    {
+        var optionId = await GetOrCreateWhatsAppOptionIdAsync(db);
+        var existingRule = await db.PlanOptionRules
+            .FirstOrDefaultAsync(r => r.PlanConfigId == planConfigId && r.OptionId == optionId);
+        if (existingRule is null)
+        {
+            db.PlanOptionRules.Add(new PlanOptionRule
+            {
+                Id = Guid.NewGuid(), PlanConfigId = planConfigId, OptionId = optionId,
+                Availability = OptionAvailability.Extra,
+            });
+        }
+        else if (existingRule.Availability == OptionAvailability.Unavailable)
+        {
+            existingRule.Availability = OptionAvailability.Extra;
+        }
     }
 
     /// <summary>

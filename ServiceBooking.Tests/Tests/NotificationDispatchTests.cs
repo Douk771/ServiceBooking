@@ -44,18 +44,30 @@ public class NotificationDispatchTests
 
         var (ownerUserId, channel, company) = await SeedConnectedChannelAsync(factory, db);
 
-        var row1 = NewPendingNotification(company.Id, channel.Id, "79990000001");
-        var row2 = NewPendingNotification(company.Id, channel.Id, "79990000002");
+        string[] ownPhones = ["79990000001", "79990000002"];
+        var row1 = NewPendingNotification(company.Id, channel.Id, ownPhones[0]);
+        var row2 = NewPendingNotification(company.Id, channel.Id, ownPhones[1]);
         db.OutboundNotifications.AddRange(row1, row2);
         await db.SaveChangesAsync();
 
-        await WaitForAsync(factory, () =>
-            factory.Transport.Calls.Count >= 2, timeoutSeconds: 20);
+        // Filtered to ownPhones, not asserted on Transport.Calls as a whole: this suite's real
+        // dispatcher scans Pending rows PLATFORM-WIDE (ARCHITECTURE_CYCLE4.md §27.1) against the same
+        // shared database every other functional test uses — a leftover Connected-channel row from an
+        // unrelated, differently-isolated test (e.g. NotificationQueueingTests/NotificationChannelsTests,
+        // which run in the "Api" collection with no ticking runner of their own to drain what they queue)
+        // can still be Pending and due when THIS host's runner ticks. Same fix already applied in
+        // NotificationDispatchExtraTests.cs (NTF-D03/NTF-D04) for the identical reason.
+        Func<int> ownCallCount = () => factory.Transport.Calls.Count(c => ownPhones.Contains(c.CanonicalPhone));
+        await WaitForAsync(factory, () => ownCallCount() >= 2, timeoutSeconds: 20);
 
-        factory.Transport.Calls.Should().HaveCount(2);
-        factory.Transport.Calls.Select(c => c.CanonicalPhone).Should().Equal("79990000001", "79990000002");
+        ownCallCount().Should().Be(2);
+        factory.Transport.Calls.Where(c => ownPhones.Contains(c.CanonicalPhone))
+            .Select(c => c.CanonicalPhone).Should().Equal(ownPhones);
 
-        // Exactly one pause between two sends on the SAME channel (§26.1) — not zero, not two.
+        // Exactly one pause between two sends on the SAME channel (§26.1) — not zero, not two. This
+        // channel is exclusive to this test (a freshly registered owner/company/channel), so — unlike
+        // Transport.Calls above — Delay.Requested needs no filtering: nothing else could have paused on
+        // THIS channel's group.
         factory.Delay.Requested.Should().ContainSingle();
         factory.Delay.Requested.Single().TotalMilliseconds.Should().BeInRange(5000, 15000);
 
@@ -74,10 +86,18 @@ public class NotificationDispatchTests
 
         var (_, channel, company) = await SeedConnectedChannelAsync(factory, db);
 
-        factory.Transport.EnqueueOutcome(new SendOutcome.ChannelInvalid("simulated 401"));
+        string[] ownPhones = ["79990000003", "79990000004"];
+        // Phone-scoped (SetOutcomeForPhone), NOT the global FIFO EnqueueOutcome — this suite's real
+        // dispatcher scans Pending rows PLATFORM-WIDE (ARCHITECTURE_CYCLE4.md §27.1), so a
+        // globally-queued outcome could be consumed by whichever channel group the runner happens to
+        // process FIRST in the pass — own or an unrelated leftover row from another, differently-isolated
+        // test (NotificationQueueingTests/NotificationChannelsTests run in the "Api" collection with no
+        // ticking runner of their own to drain what they queue) — silently handing THIS test's row a
+        // default Sent outcome instead and leaving row1 never actually exercising ChannelInvalid at all.
+        factory.Transport.SetOutcomeForPhone(ownPhones[0], new SendOutcome.ChannelInvalid("simulated 401"));
 
-        var row1 = NewPendingNotification(company.Id, channel.Id, "79990000003");
-        var row2 = NewPendingNotification(company.Id, channel.Id, "79990000004");
+        var row1 = NewPendingNotification(company.Id, channel.Id, ownPhones[0]);
+        var row2 = NewPendingNotification(company.Id, channel.Id, ownPhones[1]);
         db.OutboundNotifications.AddRange(row1, row2);
         await db.SaveChangesAsync();
 
@@ -93,8 +113,9 @@ public class NotificationDispatchTests
         }, timeoutSeconds: 20);
 
         // Only the FIRST row was ever attempted — the group stopped immediately (§26.4), the second row
-        // was never even tried this pass.
-        factory.Transport.Calls.Should().ContainSingle();
+        // was never even tried this pass. Filtered to ownPhones for the same platform-wide-scan reason
+        // documented above.
+        factory.Transport.Calls.Where(c => ownPhones.Contains(c.CanonicalPhone)).Should().ContainSingle();
 
         await db.Entry(row1).ReloadAsync();
         await db.Entry(row2).ReloadAsync();
@@ -160,6 +181,12 @@ public class NotificationDispatchTests
         db.Companies.Add(company);
         db.NotificationChannels.Add(channel);
         db.ChannelCompanyAssignments.Add(assignment);
+        // Flakiness fix (this QA pass) — see NotificationTestBase.EnsureWhatsAppPlanRuleAsync's own doc
+        // comment: without an explicit PlanOptionRule, SubscriptionResolver's fail-closed convention
+        // (N13/N14) always resolves PaidNotificationNumbers to 0 for this plan, regardless of
+        // EnsureWhatsAppPaidAsync below — deterministically blocking every row in this test with
+        // NotOnPaidPlan before it ever reaches the transport, not an intermittent load issue.
+        await ServiceBooking.Tests.Infrastructure.NotificationTestBase.EnsureWhatsAppPlanRuleAsync(db, plan.Id);
         await db.SaveChangesAsync();
 
         // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §47.1): funding comes from the account's paid

@@ -70,14 +70,20 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
     }
 
     [Fact, TestCase("NTF-C005")]
-    public async Task CreateChannel_PriceNotSet_Returns409()
+    public async Task CreateChannel_PriceNotSet_StillSucceeds()
     {
+        // Regression, N21 (§59/§47.3): the retired `notifications.channel.price-per-month` platform
+        // setting used to 409 every request the moment nobody had set it — a channel is priced through
+        // the `notifications.whatsapp` subscription option now, and this setting controls nothing at
+        // all. A plan that allows the channel must be enough to request one, price-per-month or not.
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         await GiveNotificationCapablePlanAsync(owner.UserId);
         await SetChannelPriceAsync(null);
 
         var response = await AuthedClient(owner.Token).PostAsync("/api/notification-channels", null);
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var channel = (await response.Content.ReadJsonAsync<ChannelDto>())!;
+        channel.State.Should().Be(ChannelState.NotConnected);
     }
 
     [Fact, TestCase("NTF-C006")]
@@ -93,6 +99,41 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
         channel.State.Should().Be(ChannelState.NotConnected);
         channel.PaymentState.Should().Be(ChannelPaymentStatus.NotPaid);
         channel.RequestedAt.Should().NotBeNull();
+    }
+
+    [Fact, TestCase("NTF-C005B")]
+    public async Task OrderSecondChannel_WithOnlyOneNumberPaid_FirstStaysFundedSecondIsNotPaid()
+    {
+        // §47.1 ranking (ChannelFunding.Rank): funding is "paid for N numbers, M registered" — the
+        // account's live channels are ranked (oldest first) and only the top N read as Funded. Ordering
+        // a second number while only one is paid must leave the FIRST one untouched (still Funded) and
+        // mark the new, second one NotPaid — never silently spread the one paid slot across both, and
+        // never let the newcomer bump the existing one out of its slot.
+        var (owner, _) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        var owned = AuthedClient(owner.Token);
+
+        var first = (await (await owned.PostAsync("/api/notification-channels", null))
+            .Content.ReadJsonAsync<ChannelDto>())!;
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var billingAccountId = await db.NotificationChannels.Where(c => c.Id == first.Id)
+                .Select(c => c.BillingAccountId!.Value).FirstAsync();
+            await NotificationTestBase.EnsureWhatsAppPaidAsync(db, billingAccountId, quantity: 1);
+            await db.SaveChangesAsync();
+        }
+
+        var second = (await (await owned.PostAsync("/api/notification-channels", null))
+            .Content.ReadJsonAsync<ChannelDto>())!;
+
+        var list = (await (await owned.GetAsync("/api/notification-channels"))
+            .Content.ReadJsonAsync<ChannelListDto>())!;
+        list.Channels.Should().ContainSingle(c => c.Id == first.Id).Which.PaymentState
+            .Should().Be(ChannelPaymentStatus.Paid, "the first, already-funded number must keep its slot");
+        list.Channels.Should().ContainSingle(c => c.Id == second.Id).Which.PaymentState
+            .Should().Be(ChannelPaymentStatus.NotPaid, "only 1 number is paid for — the 2nd registered number has nothing left to fund it");
     }
 
     // ── Accept-risk / connect gating ─────────────────────────────────────────────────────────────

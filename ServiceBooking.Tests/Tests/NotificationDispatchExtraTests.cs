@@ -257,6 +257,12 @@ public class NotificationDispatchExtraTests
         db.Companies.Add(company);
         db.NotificationChannels.Add(channel);
         db.ChannelCompanyAssignments.Add(assignment);
+        // Flakiness fix (this QA pass) — see NotificationTestBase.EnsureWhatsAppPlanRuleAsync's own doc
+        // comment: without an explicit PlanOptionRule, SubscriptionResolver's fail-closed convention
+        // (N13/N14) always resolves PaidNotificationNumbers to 0 for this plan, regardless of
+        // EnsureWhatsAppPaidAsync below — deterministically blocking every row in this file's tests with
+        // NotOnPaidPlan before it ever reaches the transport, not an intermittent load issue.
+        await ServiceBooking.Tests.Infrastructure.NotificationTestBase.EnsureWhatsAppPlanRuleAsync(db, plan.Id);
         await db.SaveChangesAsync();
 
         // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §47.1): funding comes from the account's paid
