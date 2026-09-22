@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { format, addDays, isTomorrow } from 'date-fns'
+import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../../api/bookings'
 import { companiesApi } from '../../api/companies'
@@ -13,6 +13,7 @@ import { Link } from 'react-router-dom'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { getBookingErrorMessage } from '../../utils/bookingError'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
+import { BookingCalendar } from './BookingCalendar'
 import type { Company, Service } from '../../types'
 
 interface Props {
@@ -32,6 +33,20 @@ function BackLink({ onClick, children }: { onClick: () => void; children: React.
   )
 }
 
+// US-64: label a date the way the flat list used to ("Сегодня" / "Завтра" / "24 сен, ср") — the
+// calendar picks a specific date, but the rest of the flow (summary, confirmation) still wants a
+// short human label for it.
+function formatDateLabel(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diffDays = Math.round((date.getTime() - today.getTime()) / 86400000)
+  if (diffDays === 0) return 'Сегодня'
+  if (diffDays === 1) return 'Завтра'
+  return format(date, 'd MMM, EEE', { locale: ru })
+}
+
 export function BookingModal({ service, company, onClose }: Props) {
   const { isAuthenticated } = useAuthStore()
   const [step, setStep] = useState<Step>('master')
@@ -44,11 +59,22 @@ export function BookingModal({ service, company, onClose }: Props) {
   const [notes, setNotes] = useState('')
   const [captchaToken, setCaptchaToken] = useState('')
 
-  // Load masters that can perform this service
+  // Load masters that can perform this service. US-62 (backend) already filters out staff who
+  // toggled off "provides services" — this list is the post-filter, active count for US-64.
   const { data: masters, isLoading: mastersLoading } = useQuery({
     queryKey: ['company-masters', company.id, service.id],
     queryFn: () => companiesApi.getMasters(company.id, service.id),
   })
+
+  // US-64: with exactly one active master there's nothing to pick — auto-select and skip the
+  // step entirely. With zero, there's nobody to book with at all; the master step stays on screen
+  // to show that message rather than a broken empty list further down the flow.
+  useEffect(() => {
+    if (masters && masters.length === 1 && !selectedMasterId) {
+      setSelectedMasterId(masters[0].userId)
+      setStep((s) => (s === 'master' ? 'date' : s))
+    }
+  }, [masters, selectedMasterId])
 
   const now = new Date()
   const todayStr = format(now, 'yyyy-MM-dd')
@@ -57,27 +83,6 @@ export function BookingModal({ service, company, onClose }: Props) {
     const [h, m] = t.slice(0, 5).split(':').map(Number)
     return h * 60 + m
   }
-
-  // Today is only offered as a booking date if the master still has at least one slot today
-  // that both isn't already taken and hasn't passed yet — otherwise there's nothing left to pick.
-  const { data: slotsToday = [] } = useQuery({
-    queryKey: ['slots', company.id, selectedMasterId, service.id, todayStr],
-    queryFn: () => bookingsApi.getSlots(company.id, selectedMasterId, service.id, todayStr),
-    enabled: !!selectedMasterId,
-    staleTime: 0,
-  })
-  const hasAvailableSlotToday = slotsToday.some((s) => timeToMinutes(s.start) > nowMinutes)
-
-  const days = [
-    ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
-    ...Array.from({ length: 14 }, (_, i) => {
-      const d = addDays(now, i + 1)
-      return {
-        value: format(d, 'yyyy-MM-dd'),
-        label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }),
-      }
-    }),
-  ]
 
   const { data: rawSlots, isLoading: slotsLoading } = useQuery({
     queryKey: ['slots', company.id, selectedMasterId, service.id, selectedDate],
@@ -104,7 +109,6 @@ export function BookingModal({ service, company, onClose }: Props) {
     onSuccess: () => setStep('done'),
   })
 
-  // Auto-advance past master step if only one master
   const pickMaster = (id: string) => {
     setSelectedMasterId(id)
     setStep('date')
@@ -112,8 +116,12 @@ export function BookingModal({ service, company, onClose }: Props) {
 
   const selectedMaster = masters?.find((m) => m.userId === selectedMasterId)
 
-  // Progress bar steps (exclude 'done', map 'master' only if >1 master)
-  const progressSteps: Step[] = ['master', 'date', 'slot', 'info']
+  // US-64: the progress indicator must reflect the actual number of steps — with a single master
+  // (or while the count isn't known yet) the "choose a master" step never renders, so it shouldn't
+  // be counted either. Only show it when there's a real choice to make.
+  const showMasterStep = !!masters && masters.length > 1
+  const noMastersAvailable = !!masters && masters.length === 0
+  const progressSteps: Step[] = showMasterStep ? ['master', 'date', 'slot', 'info'] : ['date', 'slot', 'info']
   const currentIdx = progressSteps.indexOf(step)
 
   const dismiss = useOverlayDismiss(onClose)
@@ -152,45 +160,58 @@ export function BookingModal({ service, company, onClose }: Props) {
           {/* ── Step: Master ── */}
           {step === 'master' && (
             <div>
-              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите мастера</h3>
-              {mastersLoading ? (
-                <div className="flex flex-col gap-2.5">
-                  {Array.from({ length: 2 }).map((_, i) => (
-                    <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
-                  ))}
-                </div>
-              ) : masters && masters.length > 0 ? (
-                <div className="flex flex-col gap-2.5">
-                  {masters.map((m) => (
-                    <button
-                      key={m.userId}
-                      onClick={() => pickMaster(m.userId)}
-                      className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
-                    >
-                      <Avatar
-                        avatarUrl={m.avatarUrl}
-                        firstName={m.firstName}
-                        lastName={m.lastName}
-                        size={40}
-                        className="text-[13px]"
-                      />
-                      <div>
-                        <p className="font-semibold text-sm text-ink">
-                          {m.firstName} {m.lastName}
-                        </p>
-                        {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
-                      </div>
-                      <Icon
-                        name="chevron-right"
-                        size={16}
-                        strokeWidth={1.8}
-                        className="ml-auto text-line-strong shrink-0"
-                      />
-                    </button>
-                  ))}
+              {!mastersLoading && noMastersAvailable ? (
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 rounded-full bg-cream-deep flex items-center justify-center mx-auto mb-3">
+                    <Icon name="users" size={20} strokeWidth={1.8} className="text-muted" />
+                  </div>
+                  <p className="text-sm font-medium text-ink mb-1">Сейчас записаться нельзя</p>
+                  <p className="text-[13px] text-ink-soft">
+                    На эту услугу временно нет свободных специалистов. Загляните позже или свяжитесь с
+                    салоном напрямую.
+                  </p>
                 </div>
               ) : (
-                <p className="text-center text-muted py-8">Нет доступных мастеров для этой услуги</p>
+                <>
+                  <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите мастера</h3>
+                  {mastersLoading ? (
+                    <div className="flex flex-col gap-2.5">
+                      {Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5">
+                      {masters?.map((m) => (
+                        <button
+                          key={m.userId}
+                          onClick={() => pickMaster(m.userId)}
+                          className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
+                        >
+                          <Avatar
+                            avatarUrl={m.avatarUrl}
+                            firstName={m.firstName}
+                            lastName={m.lastName}
+                            size={40}
+                            className="text-[13px]"
+                          />
+                          <div>
+                            <p className="font-semibold text-sm text-ink">
+                              {m.firstName} {m.lastName}
+                            </p>
+                            {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
+                          </div>
+                          <Icon
+                            name="chevron-right"
+                            size={16}
+                            strokeWidth={1.8}
+                            className="ml-auto text-line-strong shrink-0"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -198,24 +219,22 @@ export function BookingModal({ service, company, onClose }: Props) {
           {/* ── Step: Date ── */}
           {step === 'date' && (
             <div>
-              <BackLink onClick={() => setStep('master')}>
-                {selectedMaster ? `${selectedMaster.firstName} ${selectedMaster.lastName}` : 'Мастер'}
-              </BackLink>
+              {showMasterStep && (
+                <BackLink onClick={() => setStep('master')}>
+                  {selectedMaster ? `${selectedMaster.firstName} ${selectedMaster.lastName}` : 'Мастер'}
+                </BackLink>
+              )}
               <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите дату</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {days.map((d) => (
-                  <button
-                    key={d.value}
-                    onClick={() => {
-                      setSelectedDate(d.value)
-                      setStep('slot')
-                    }}
-                    className="px-3.5 py-3 rounded-xl border border-line bg-white text-[13.5px] hover:border-line-strong transition-all text-left"
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
+              <BookingCalendar
+                companyId={company.id}
+                masterId={selectedMasterId}
+                serviceId={service.id}
+                selectedDate={selectedDate}
+                onSelectDate={(date) => {
+                  setSelectedDate(date)
+                  setStep('slot')
+                }}
+              />
             </div>
           )}
 
@@ -268,7 +287,7 @@ export function BookingModal({ service, company, onClose }: Props) {
                   </div>
                 )}
                 <div className="text-ink-soft mt-0.5">
-                  {days.find((d) => d.value === selectedDate)?.label} · {selectedSlot.slice(0, 5)}
+                  {selectedDate && formatDateLabel(selectedDate)} · {selectedSlot.slice(0, 5)}
                 </div>
               </div>
 
@@ -364,7 +383,7 @@ export function BookingModal({ service, company, onClose }: Props) {
               </div>
               <h3 className="font-serif text-xl font-medium text-ink mb-2">Запись подтверждена!</h3>
               <p className="text-sm text-ink-soft mb-6">
-                Ждём вас {days.find((d) => d.value === selectedDate)?.label} в {selectedSlot.slice(0, 5)}
+                Ждём вас {selectedDate && formatDateLabel(selectedDate)} в {selectedSlot.slice(0, 5)}
               </p>
               <Button onClick={onClose} variant="secondary" size="lg">
                 Закрыть
