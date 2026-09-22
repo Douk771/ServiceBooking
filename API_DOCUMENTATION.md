@@ -2313,28 +2313,12 @@ curl "http://localhost:5000/api/admin/companies?page=1&pageSize=20" -H "Authoriz
 
 #### `PUT /api/admin/owners/{ownerUserId}/subscription`
 
-Назначает/обновляет тариф **аккаунта владельца** (не отдельной компании) — покрывает сразу все компании, которыми он владеет. Если у владельца ещё не было записи `AccountSubscription`, она создаётся; иначе обновляется (upsert), а не дублируется.
-
-**Тело запроса** (`UpdateSubscriptionDto`): `planConfigId` (Guid?, `null` = сброс на Free), `paidUntil` (DateTime?), `isActive` (bool), `comment` (string?).
-
-```bash
-curl -X PUT http://localhost:5000/api/admin/owners/6a9c1e2d-3f4b-4a5c-8d6e-7f8091a2b3c4/subscription \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{ "planConfigId": "dd11ee22-0000-1111-2222-333344445555", "paidUntil": "2027-01-01T00:00:00Z", "isActive": true, "comment": "Оплачено по счёту #4521" }'
-```
-
-Каждый вызов также добавляет запись в `SubscriptionChangeLog` (старое/новое значение плана, срока и активности, кто изменил) — историю можно посмотреть через `GET /api/admin/owners/{ownerUserId}/subscription-history` (новые изменения первыми).
-
-`paidUntil` нормализуется в UTC на сервере перед сохранением — это оправданно тем, что обычный `<input type="date">` в браузере шлёт «голую» дату без времени/зоны (`"2026-08-01"`), а Npgsql требует `Kind=Utc` для колонки `timestamp with time zone`.
-
-**Изменено в цикле санации A (US-08, находка D2/R2).** Раньше несуществующий `ownerUserId` или
-`planConfigId` доходили до `SaveChangesAsync` и падали необработанным исключением FK (`500`). Теперь оба
-проверяются заранее: `404` `"Owner not found"` для несуществующего `ownerUserId`, `404` `"Plan not found"`
-для несуществующего `planConfigId`. Если план существует, но деактивирован (`PlanConfig.IsActive == false`)
-— `400` `"Plan is not active"`, вместо молчаливого назначения неактивного тарифа.
-
-**Успешный ответ:** `204 No Content`. **Ошибки:** `401`, `403`, `404 Not Found` (`"Owner not found"` / `"Plan not found"`), `400 Bad Request` (модельная валидация, либо `"Plan is not active"`).
+**Отозван в цикле 7 (US-77, `contracts/cycle7/openapi.yaml` redaction 2.1).** `AccountSubscription`
+больше не адресуется по владельцу-человеку — тариф теперь привязан к `BillingAccount`, который может
+не совпадать с тем, кто управляет компанией (см. §3.1/ARCHITECTURE_CYCLE7.md §43.4). Эндпоинт всегда
+отвечает `410 Gone` с телом, указывающим замену, и не принимает и не применяет тело запроса. Используйте
+`PUT /api/admin/billing-accounts/{accountId}/subscription` (см. `API_CONTRACT_CYCLE7.md` и
+`contracts/cycle7/openapi.yaml`; отдельного раздела в этом документе для него пока нет).
 
 #### `PUT /api/admin/companies/{id}`
 
