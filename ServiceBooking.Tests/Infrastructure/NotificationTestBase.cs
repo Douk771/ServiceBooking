@@ -141,12 +141,30 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         };
         db.SubscriptionPlanConfigs.Add(plan);
 
+        // Cycle 5 (ARCHITECTURE_CYCLE5.md §45.1): money is read through BillingAccountId now, so a
+        // helper that writes the AccountSubscription row directly must also make sure the owner has an
+        // account (and that any of their companies already created point at it) — mirrors
+        // ApiTestBase.EnsureBillingAccountAsync.
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
+        if (account is null)
+        {
+            account = new BillingAccount { Id = Guid.NewGuid(), OwnerUserId = ownerUserId };
+            db.BillingAccounts.Add(account);
+            await db.SaveChangesAsync();
+        }
+        var orphanedCompanies = await db.Companies
+            .Where(c => c.OwnerUserId == ownerUserId && c.BillingAccountId == null)
+            .ToListAsync();
+        foreach (var company in orphanedCompanies)
+            company.BillingAccountId = account.Id;
+
         var sub = await db.AccountSubscriptions.FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
         if (sub is null)
         {
             db.AccountSubscriptions.Add(new AccountSubscription
             {
                 Id = Guid.NewGuid(), OwnerUserId = ownerUserId, PlanConfigId = plan.Id,
+                BillingAccountId = account.Id,
                 PaidUntil = DateTime.UtcNow.AddMonths(1), IsActive = true,
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
             });
@@ -154,6 +172,7 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         else
         {
             sub.PlanConfigId = plan.Id;
+            sub.BillingAccountId = account.Id;
             sub.PaidUntil = DateTime.UtcNow.AddMonths(1);
             sub.IsActive = true;
             sub.UpdatedAt = DateTime.UtcNow;

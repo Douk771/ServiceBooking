@@ -166,12 +166,15 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
             db.SubscriptionPlanConfigs.Add(planConfig);
         }
 
+        var accountId = await EnsureBillingAccountAsync(db, ownerUserId);
+
         var sub = await db.AccountSubscriptions.FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
         if (sub is null)
         {
             db.AccountSubscriptions.Add(new AccountSubscription
             {
                 Id = Guid.NewGuid(), OwnerUserId = ownerUserId, PlanConfigId = planConfig.Id,
+                BillingAccountId = accountId,
                 PaidUntil = DateTime.UtcNow.AddMonths(1), IsActive = true,
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
             });
@@ -179,11 +182,42 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         else
         {
             sub.PlanConfigId = planConfig.Id;
+            sub.BillingAccountId = accountId;
             sub.PaidUntil = DateTime.UtcNow.AddMonths(1);
             sub.IsActive = true;
             sub.UpdatedAt = DateTime.UtcNow;
         }
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Cycle 5 (ARCHITECTURE_CYCLE5.md §45.1) — test-harness mirror of
+    /// <c>BillingAccountProvisioner.EnsureAccountAsync</c>: money now reads through
+    /// <see cref="BillingAccount"/>, so a helper that writes an <see cref="AccountSubscription"/> row
+    /// directly (bypassing the real HTTP endpoints, which is the whole point of these arrange-only
+    /// helpers) must also make sure the owner has an account, and that any of their already-created
+    /// companies point at it — otherwise the row it writes is invisible to
+    /// <c>SubscriptionResolver.GetEffectivePlanAsync</c>.
+    /// </summary>
+    private static async Task<Guid> EnsureBillingAccountAsync(AppDbContext db, string ownerUserId)
+    {
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
+        if (account is null)
+        {
+            account = new BillingAccount { Id = Guid.NewGuid(), OwnerUserId = ownerUserId };
+            db.BillingAccounts.Add(account);
+            await db.SaveChangesAsync();
+        }
+
+        var orphanedCompanies = await db.Companies
+            .Where(c => c.OwnerUserId == ownerUserId && c.BillingAccountId == null)
+            .ToListAsync();
+        foreach (var company in orphanedCompanies)
+            company.BillingAccountId = account.Id;
+        if (orphanedCompanies.Count > 0)
+            await db.SaveChangesAsync();
+
+        return account.Id;
     }
 
     /// <summary>
@@ -328,6 +362,8 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
             planConfigId = fullAccess.Id;
         }
 
+        var accountId = await EnsureBillingAccountAsync(db, ownerUserId);
+
         var sub = await db.AccountSubscriptions.FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
         var effectivePaidUntil = paidUntil ?? DateTime.UtcNow.AddMonths(1);
         if (sub is null)
@@ -335,6 +371,7 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
             db.AccountSubscriptions.Add(new AccountSubscription
             {
                 Id = Guid.NewGuid(), OwnerUserId = ownerUserId, PlanConfigId = planConfigId,
+                BillingAccountId = accountId,
                 PaidUntil = effectivePaidUntil, IsActive = isActive,
                 CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
             });
@@ -342,6 +379,7 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         else
         {
             sub.PlanConfigId = planConfigId;
+            sub.BillingAccountId = accountId;
             sub.PaidUntil = effectivePaidUntil;
             sub.IsActive = isActive;
             sub.UpdatedAt = DateTime.UtcNow;

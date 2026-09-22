@@ -123,14 +123,19 @@ public class NotificationDispatchTests
         {
             Id = Guid.NewGuid(), Name = Unique("Plan"), AllowNotificationChannel = true, IsActive = true,
         };
+        // Cycle 5 (ARCHITECTURE_CYCLE5.md §45.1): money is resolved through BillingAccountId now, not
+        // OwnerUserId directly — this raw-row seeding helper must wire one up itself.
+        var billingAccount = new BillingAccount { Id = Guid.NewGuid(), OwnerUserId = auth.UserId };
         var subscription = new AccountSubscription
         {
-            Id = Guid.NewGuid(), OwnerUserId = auth.UserId, PlanConfigId = plan.Id, IsActive = true,
+            Id = Guid.NewGuid(), OwnerUserId = auth.UserId, PlanConfigId = plan.Id,
+            BillingAccountId = billingAccount.Id, IsActive = true,
             PaidUntil = DateTime.UtcNow.AddDays(30),
         };
         var company = new Company
         {
             Id = Guid.NewGuid(), Name = Unique("Co"), Slug = Unique("co"), OwnerUserId = auth.UserId,
+            BillingAccountId = billingAccount.Id,
             TimeZoneId = "Europe/Moscow",
         };
         var channel = new NotificationChannel
@@ -150,6 +155,7 @@ public class NotificationDispatchTests
         };
 
         db.SubscriptionPlanConfigs.Add(plan);
+        db.BillingAccounts.Add(billingAccount);
         db.AccountSubscriptions.Add(subscription);
         db.Companies.Add(company);
         db.NotificationChannels.Add(channel);
