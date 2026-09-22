@@ -80,6 +80,11 @@ paths:
               schema: { $ref: "#/components/schemas/HealthHealthy" }
               examples:
                 ok: { value: { status: "Healthy" } }
+        "405":
+          description: |
+            Любой метод, кроме GET (в т.ч. TRACE — раньше отвечал 200 тем же телом, что и GET; закрыто
+            post-8d0405e явным ограничением route'а до GET в Program.cs по находке QA-повторной
+            проверки контракта).
 
   /api/health/ready:
     get:
@@ -105,6 +110,11 @@ paths:
               schema: { $ref: "#/components/schemas/HealthUnhealthy" }
               examples:
                 down: { value: { status: "Unhealthy", failed: "database" } }
+        "405":
+          description: |
+            Любой метод, кроме GET (в т.ч. TRACE — раньше отвечал 200 тем же телом, что и GET; закрыто
+            post-8d0405e явным ограничением route'а до GET в Program.cs по находке QA-повторной
+            проверки контракта).
 
   # ── legal ──────────────────────────────────────────────────────────────────────────────────────
   /api/legal/documents:
@@ -172,6 +182,11 @@ paths:
           description: Правовой гейт закрыт (LegalConsentFilter)
         "503":
           description: Манифест правовых документов не загружен
+        "415":
+          description: |
+            Отсутствует тело или неверный/отсутствующий `Content-Type` (ASP.NET model binding
+            отклоняет запрос до достижения обработчика). Документировано post-8d0405e по находке
+            QA-повторной проверки контракта.
 
   /api/auth/login:
     post:
@@ -205,6 +220,11 @@ paths:
             text/plain: { schema: { type: string } }
         "429":
           description: Лимит `auth-login` исчерпан
+        "415":
+          description: |
+            Отсутствует тело или неверный/отсутствующий `Content-Type` (ASP.NET model binding
+            отклоняет запрос до достижения обработчика). Документировано post-8d0405e по находке
+            QA-повторной проверки контракта.
 
   # ── profile / uploads ──────────────────────────────────────────────────────────────────────────
   /api/profile/avatar:
@@ -417,8 +437,11 @@ components:
       additionalProperties: false
       required: [phone, password]
       properties:
-        phone: { type: string }
-        password: { type: string }
+        # minLength:1 added post-8d0405e (backend fix-up, cycle 8 QA re-check finding): without it an
+        # empty string is "valid by schema" while [Required] on LoginDto actually rejects it with 400 —
+        # RegisterRequest already had this for the equivalent fields, this brings LoginRequest in line.
+        phone: { type: string, minLength: 1 }
+        password: { type: string, minLength: 1 }
 
     AuthResponse:
       type: object
