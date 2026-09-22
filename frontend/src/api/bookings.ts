@@ -14,7 +14,33 @@ export interface CreateBookingPayload {
   captchaToken?: string
 }
 
+/** API_CONTRACT_CYCLE6.md §41.2/§45.1 — server sends only these three; "past" is a client-side concept. */
+export type DayAvailabilityStatus = 'Available' | 'FullyBooked' | 'DayOff'
+
+export interface DayAvailability {
+  date: string
+  status: DayAvailabilityStatus
+  lastFreeSlotStart: string | null
+}
+
+export interface AvailabilityResponse {
+  from: string
+  to: string
+  totalDurationMinutes: number
+  stepMinutes: number
+  horizonDays: number
+  horizonLastDate: string
+  days: DayAvailability[]
+}
+
 export const bookingsApi = {
+  getAvailability: (companyId: string, masterId: string, serviceId: string, from: string, to: string, manual = false) =>
+    api
+      .get<AvailabilityResponse>('/bookings/availability', {
+        params: { companyId, masterId, serviceId, from, to, manual: manual || undefined },
+      })
+      .then((r) => r.data),
+
   getSlots: (companyId: string, masterId: string, serviceId: string, date: string, manual = false) =>
     api
       .get<TimeSlot[]>('/bookings/slots', {

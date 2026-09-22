@@ -32,6 +32,11 @@ export interface Company {
   /** Seat cap for company members (owner included). Null/undefined means unlimited. */
   maxEmployees?: number | null
   /**
+   * How many days ahead a client may book online (API_CONTRACT_CYCLE6.md §41.4/§45.7).
+   * 0/null/undefined means "use the server default" (90 days), not "booking closed".
+   */
+  bookingHorizonDays?: number | null
+  /**
    * Server-computed aggregate over ALL of the company's reviews (not just the current page of
    * `GET /api/companies/{id}/reviews`) — cycle C fix for the QA-found regression where the average
    * was computed client-side from `reviewsData.items` and changed when paging through reviews
