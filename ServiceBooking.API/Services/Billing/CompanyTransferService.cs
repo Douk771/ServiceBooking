@@ -49,7 +49,7 @@ public sealed record TransferResult(bool Success, TransferFailure? Failure)
 /// </summary>
 public class CompanyTransferService(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
-    AccountUsageReader usageReader, CompanyOwnerWriter companyOwnerWriter)
+    AccountUsageReader usageReader, CompanyOwnerWriter companyOwnerWriter, ILogger<CompanyTransferService> logger)
 {
     /// <summary>
     /// §51.1's linkage rule, evaluated against the database, wrapping the pure
@@ -243,12 +243,20 @@ public class CompanyTransferService(
         }
 
         // Step 10: one SubscriptionChangeLog row per account touched (history of A, history of B).
+        // N9, §49: the comment names people, not raw ids — "Мария Иванова (ООО «Ромашка») → аккаунт
+        // Петра Сидорова", same sample shape §49 gives for other change kinds — and says whether the
+        // owner changed, not just that a transfer happened.
         var now = DateTime.UtcNow;
+        var ownerChanged = newOwner is not null;
+        var targetOwnerName = await GetDisplayNameAsync(targetAccount.OwnerUserId);
+        var ownershipSuffix = ownerChanged ? $"; ответственный сменился на {targetOwnerName}" : "; ответственный не менялся";
+
         if (sourceBillingAccountId.HasValue)
         {
             var sourceAccount = await db.BillingAccounts.FindAsync(sourceBillingAccountId.Value);
             if (sourceAccount is not null)
             {
+                var sourceOwnerName = await GetDisplayNameAsync(sourceAccount.OwnerUserId);
                 db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
                 {
                     Id = Guid.NewGuid(),
@@ -258,7 +266,7 @@ public class CompanyTransferService(
                     ChangeKind = SubscriptionChangeKind.CompanyTransferred,
                     ChangedByUserId = changedByUserId,
                     ChangedAt = now,
-                    Comment = $"Компания перенесена в другой аккаунт ({targetBillingAccountId})",
+                    Comment = $"Компания «{company.Name}» перенесена от {sourceOwnerName} к {targetOwnerName}{ownershipSuffix}",
                 });
             }
         }
@@ -273,14 +281,28 @@ public class CompanyTransferService(
             ChangedByUserId = changedByUserId,
             ChangedAt = now,
             Comment = sourceBillingAccountId.HasValue
-                ? $"Компания принята из другого аккаунта ({sourceBillingAccountId})"
-                : "Компания принята в аккаунт (у компании не было плательщика)",
+                ? $"Компания «{company.Name}» принята от {await GetDisplayNameAsync((await db.BillingAccounts.FindAsync(sourceBillingAccountId.Value))?.OwnerUserId)}{ownershipSuffix}"
+                : $"Компания «{company.Name}» принята в аккаунт (у компании не было плательщика){ownershipSuffix}",
         });
 
         // Step 11: WithTransfer = true is already set inside CompanyOwnerWriter's log row above.
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
 
+        // §59: Information-level log for every company transfer — from, to, by whom, whether the owner
+        // changed. Deliberately after the commit: this is an observability trace of a fact that already
+        // happened, not part of the transactional outcome.
+        logger.LogInformation(
+            "Company {CompanyId} ({CompanyName}) transferred from account {SourceAccountId} to {TargetAccountId} by {ChangedByUserId}; owner changed: {OwnerChanged}",
+            companyId, company.Name, sourceBillingAccountId, targetBillingAccountId, changedByUserId, ownerChanged);
+
         return TransferResult.Succeeded;
+    }
+
+    private async Task<string> GetDisplayNameAsync(string? userId)
+    {
+        if (userId is null) return "—";
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        return user is null ? "—" : $"{user.FirstName} {user.LastName}".Trim();
     }
 }

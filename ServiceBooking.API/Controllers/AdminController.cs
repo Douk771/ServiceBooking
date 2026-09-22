@@ -21,7 +21,8 @@ namespace ServiceBooking.API.Controllers;
 [Authorize(Roles = "SuperAdmin")]
 public class AdminController(
     AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager,
-    PricingCatalogCache pricingCatalogCache, CompanyOwnerWriter companyOwnerWriter) : ControllerBase
+    PricingCatalogCache pricingCatalogCache, CompanyOwnerWriter companyOwnerWriter,
+    ILogger<AdminController> logger) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -821,6 +822,11 @@ public class AdminController(
                 db, PricingCatalogCache.PublicEnabledSettingKey,
                 oldPricingPublicEnabled ? "true" : "false", dto.PricingPublicEnabled ? "true" : "false", userId);
             pricingCatalogCache.Invalidate();
+
+            // §59: Information-level log for the price-list publication toggle, by whom.
+            logger.LogInformation(
+                "Public pricing catalog {State} by {UserId}",
+                dto.PricingPublicEnabled ? "enabled" : "disabled", userId);
         }
 
         await db.SaveChangesAsync();

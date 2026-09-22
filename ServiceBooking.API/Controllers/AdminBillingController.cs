@@ -22,7 +22,7 @@ namespace ServiceBooking.API.Controllers;
 public class AdminBillingController(
     AppDbContext db, PricingCatalogCache pricingCatalogCache,
     SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    OwnerSubscriptionService ownerSubscriptionService) : ControllerBase
+    OwnerSubscriptionService ownerSubscriptionService, ILogger<AdminBillingController> logger) : ControllerBase
 {
     // ── Options catalog (US-66) ───────────────────────────────────────────────────
 
@@ -577,6 +577,12 @@ public class AdminBillingController(
         account.UpdatedAtUtc = now;
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
+
+        // §59: Information-level log for a subscription assignment — who, which account, which plan,
+        // and the resulting monthly sum.
+        logger.LogInformation(
+            "Subscription assigned to billing account {AccountId} by {UserId}: plan {PlanName}, options total {OptionsSummary}",
+            accountId, changedByUserId, plan?.Name ?? "Бесплатный", string.IsNullOrEmpty(newOptionsSummary) ? "—" : newOptionsSummary);
 
         var freshAccount = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
         return Ok(await BuildAdminAccountDtoAsync(freshAccount));
