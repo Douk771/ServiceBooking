@@ -1,7 +1,5 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
 import { notificationChannelsApi } from '../../api/notificationChannels'
 import { companiesApi } from '../../api/companies'
 import { Card } from '../../components/ui/Card'
@@ -13,10 +11,6 @@ import { QrModal } from '../../components/notifications/QrModal'
 import { AssignCompanyDialog } from '../../components/notifications/AssignCompanyDialog'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import type { ChannelDto } from '../../types'
-
-function fmt(dateIso: string | null | undefined) {
-  return dateIso ? format(parseISO(dateIso), 'd MMM yyyy', { locale: ru }) : ''
-}
 
 // ── Offer (before any channel is bought) ────────────────────────────────────────
 
@@ -163,12 +157,11 @@ function ChannelCard({
             {channel.state !== 'Blocked' && channel.state !== 'NeedsReconnect' && channel.state !== 'Disconnected' && (
               <p className="text-sm text-ink-soft mt-0.5">{channel.stateText}</p>
             )}
-            <p className="text-xs text-muted mt-1">
-              {channel.paymentState === 'Paid' && channel.paidUntil && <>Оплачен до {fmt(channel.paidUntil)}</>}
-              {channel.paymentState === 'NotPaid' &&
-                (channel.requestedAt ? `Заявка подана ${fmt(channel.requestedAt)} — ожидает оплаты` : 'Не оплачен')}
-              {channel.paymentState === 'Suspended' && 'Оплата приостановлена'}
-            </p>
+            {/* Cycle 5: fundingText is server-composed (BillingTexts) — the frontend never builds its
+                own copy about payment/funding state, per project convention. When fundingState is
+                Unfunded the server's text names the reason, which number works instead, and both
+                ways to fix it (buy another number or delete the extra one). */}
+            <p className="text-xs text-muted mt-1">{channel.fundingText}</p>
           </div>
 
           <div className="flex gap-2 flex-wrap justify-end">

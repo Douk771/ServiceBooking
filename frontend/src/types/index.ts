@@ -93,12 +93,18 @@ export interface ChannelCompanyRef {
   isActive: boolean
 }
 
+/** Cycle 5 (ChannelDtoCycle5Additions, openapi-cycle5.yaml): Funded = входит в оплаченные; Unfunded =
+ *  заведён сверх оплаченного количества (не отправляет, но сохраняет назначения и состояние
+ *  подключения); NotPaid = у аккаунта не оплачено ни одного номера. */
+export type ChannelFundingState = 'Funded' | 'Unfunded' | 'NotPaid'
+
 export interface ChannelDto {
   id: string
   state: ChannelState
   stateText: string
   phoneMasked: string | null
   paymentState: ChannelPaymentState
+  /** @deprecated Cycle 5: paidFrom is always null now — payment is per-account, not per-number. */
   paidFrom: string | null
   paidUntil: string | null
   requestedAt: string | null
@@ -110,6 +116,11 @@ export interface ChannelDto {
   companies: ChannelCompanyRef[]
   canConnect: boolean
   canReplace: boolean
+  /** Cycle 5 addition — see ChannelFundingState. */
+  fundingState: ChannelFundingState
+  /** Server-composed (BillingTexts) — the frontend prints this verbatim, never builds its own copy
+   *  about payment/funding state (project convention, ARCHITECTURE_CYCLE5.md). */
+  fundingText: string
 }
 
 export interface ChannelOffer {
