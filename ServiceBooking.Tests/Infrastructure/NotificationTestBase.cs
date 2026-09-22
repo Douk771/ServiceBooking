@@ -18,22 +18,19 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// and this cycle's channel/webhook/unsubscribe surface needs a host with different
 /// <c>Notifications:*</c> settings (see <see cref="NotificationTestFactory"/>'s own doc comment).
 ///
-/// It IS, however, in the same <c>[Collection("Api")]</c> as <see cref="ApiTestBase"/> — found missing
-/// by the coordinator's own review of this QA pass, and load-bearing for two separate reasons, not one:
-/// (1) it needs the "api" slot's database to exist and be migrated before it boots its own host, which
-/// <see cref="ApiDatabaseFixture"/>/<see cref="TestRunEnvironment"/> guarantee for any class in this
-/// collection; (2) xUnit only guarantees a test class doesn't run concurrently with anything ELSE
-/// touching the same collection's fixture — a class outside every collection is free to run in xUnit's
-/// default parallel bucket while another collection's host is still migrating the same database. This
-/// class still boots its OWN <see cref="NotificationTestFactory"/> per instance (different
-/// <c>Notifications:*</c> settings), never <c>fixture.Factory</c> — the fixture is used only for its
-/// connection string and to establish the collection dependency above.
+/// ARCHITECTURE_CYCLE8_PHASE2.md §91/§92.1: one <see cref="TestDatabaseFixture"/> instance per test
+/// class (<c>IClassFixture</c>, not phase 1's <c>ICollectionFixture</c>/<c>[Collection("Api")]</c>) — the
+/// fixture guarantees this class' own database exists and is migrated before <see cref="NotificationTestFactory"/>
+/// boots against it. This class still boots its OWN <see cref="NotificationTestFactory"/> per instance
+/// (different <c>Notifications:*</c> settings), never <c>fixture.Factory</c> — the fixture is used only
+/// for its connection string, class slot and <see cref="TestData"/> generator.
 /// </summary>
-[Collection("Api")]
-public abstract class NotificationTestBase(ApiDatabaseFixture fixture) : IAsyncDisposable
+public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>, IAsyncDisposable
 {
-    /// <summary>The "api" slot's connection string — for the rare subclass that needs to build a second,
-    /// dedicated host against the same database.</summary>
+    protected readonly TestDatabaseFixture Fixture = fixture;
+
+    /// <summary>This class' database connection string — for the rare subclass that needs to build a
+    /// second, dedicated host against the same database.</summary>
     protected readonly string ConnectionString = fixture.ConnectionString;
 
     protected readonly NotificationTestFactory Factory = Boot(new NotificationTestFactory(fixture.ConnectionString));
@@ -56,9 +53,11 @@ public abstract class NotificationTestBase(ApiDatabaseFixture fixture) : IAsyncD
         return client;
     }
 
-    protected static string Unique(string prefix) => $"{prefix}{Guid.NewGuid():N}"[..Math.Min(prefix.Length + 20, prefix.Length + 12)];
+    /// <summary>Delegates to this class' own <see cref="TestData"/> — see <see cref="ApiTestBase.Unique"/>'s
+    /// own note on why this is no longer static (§94, Q12).</summary>
+    protected string Unique(string prefix) => Fixture.Data.Name(prefix);
 
-    protected static string UniquePhone() => TestPhones.Unique();
+    protected string UniquePhone() => Fixture.Data.Phone();
 
     // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): Legal object
     // read from the live manifest instead of a bool.

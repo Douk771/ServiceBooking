@@ -19,15 +19,19 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// services/working hours/subscription) that almost every scenario needs.
 ///
 /// All helpers use globally-unique emails/slugs (via <see cref="Unique"/>) so tests can run
-/// against the one shared database without cleaning up after themselves.
+/// against this class' own database without cleaning up after themselves.
+///
+/// ARCHITECTURE_CYCLE8_PHASE2.md §91/§92.1: one <see cref="TestDatabaseFixture"/> instance per test
+/// class (<c>IClassFixture</c>, not the phase-1 <c>ICollectionFixture</c>/<c>[Collection("Api")]</c>) —
+/// every subclass gets its own, disjoint database, cloned from the run's shared template.
 /// </summary>
-[Collection("Api")]
-public abstract class ApiTestBase(ApiDatabaseFixture fixture)
+public abstract class ApiTestBase(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
+    protected readonly TestDatabaseFixture Fixture = fixture;
     protected readonly CustomWebApplicationFactory Factory = fixture.Factory;
 
-    /// <summary>The "api" slot's connection string — for the rare subclass that needs to build a second,
-    /// dedicated host against the same database (e.g. <see cref="RateLimitTestFactory"/>).</summary>
+    /// <summary>This class' database connection string — for the rare subclass that needs to build a
+    /// second, dedicated host against the same database (e.g. <see cref="RateLimitTestFactory"/>).</summary>
     protected readonly string ConnectionString = fixture.ConnectionString;
 
     /// <summary>Anonymous (unauthenticated) client — for guest/public endpoint scenarios.</summary>
@@ -41,13 +45,15 @@ public abstract class ApiTestBase(ApiDatabaseFixture fixture)
         return client;
     }
 
-    /// <summary>Produces a collision-free string for emails/slugs/codes shared across a single test run.</summary>
-    protected static string Unique(string prefix) => $"{prefix}{Guid.NewGuid():N}"[..Math.Min(prefix.Length + 20, prefix.Length + 12)];
+    /// <summary>Produces a collision-free string for emails/slugs/codes — delegates to this class' own
+    /// <see cref="TestData"/> (ARCHITECTURE_CYCLE8_PHASE2.md §94, Q12): no longer static, since uniqueness
+    /// is now scoped to (and guaranteed by) this test class' own database, not the whole process.</summary>
+    protected string Unique(string prefix) => Fixture.Data.Name(prefix);
 
-    protected static string UniqueEmail(string prefix) => $"{prefix}{Guid.NewGuid():N}@test.local";
+    protected string UniqueEmail(string prefix) => Fixture.Data.Email(prefix);
 
-    /// <summary>A unique, valid-looking phone number for a single test run (accounts are keyed by phone).</summary>
-    protected static string UniquePhone() => TestPhones.Unique();
+    /// <summary>A unique, valid-looking phone number for this test class (accounts are keyed by phone).</summary>
+    protected string UniquePhone() => Fixture.Data.Phone();
 
     // ── Identity ─────────────────────────────────────────────────────────────
 
