@@ -12,6 +12,7 @@ import { Icon } from '../../components/ui/Icon'
 import { Avatar } from '../../components/ui/Avatar'
 import { CityCombobox } from '../../components/ui/CityCombobox'
 import { ScheduleTab } from './ScheduleTab'
+import { CompanyPhotosSection } from './CompanyPhotosSection'
 import { NotificationSettingsTab } from './NotificationSettingsTab'
 import { NotificationTemplatesTab } from './NotificationTemplatesTab'
 import { NotificationLogTab } from './NotificationLogTab'
@@ -880,6 +881,7 @@ function SettingsTab({ companyId }: { companyId: string }) {
       </Card>
 
       {company && <CityTimeZoneCard company={company} companyId={companyId} />}
+      <CompanyPhotosSection companyId={companyId} />
       {company && <WidgetCard company={company} />}
       <PhotoUsageCard companyId={companyId} />
     </div>
