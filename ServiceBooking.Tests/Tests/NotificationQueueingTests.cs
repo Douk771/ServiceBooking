@@ -182,9 +182,10 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         // every assertion here identically to Connected while staying invisible to the real dispatcher,
         // which skips any non-Connected channel's rows outright (NotificationDispatchTask "channel is
         // null or not connected" branch).
+        var billingAccountId = await db.Companies.Where(c => c.Id == companyId).Select(c => c.BillingAccountId).FirstAsync();
         var channel = new NotificationChannel
         {
-            Id = Guid.NewGuid(), OwnerUserId = ownerUserId, State = ChannelState.Disconnected,
+            Id = Guid.NewGuid(), OwnerUserId = ownerUserId, BillingAccountId = billingAccountId, State = ChannelState.Disconnected,
             PhoneNumber = "79990009999", ProviderInstanceId = Unique("instance"),
             PaidFromUtc = DateTime.UtcNow.AddDays(-1), PaidUntilUtc = DateTime.UtcNow.AddDays(30),
             ConnectedAtUtc = DateTime.UtcNow.AddDays(-1), RiskAcceptedAtUtc = DateTime.UtcNow.AddDays(-1),
@@ -195,6 +196,12 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
             Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = companyId, AssignedByUserId = ownerUserId,
         });
         await db.SaveChangesAsync();
+
+        // §47.1: this helper simulates a working, funded channel — fund it explicitly (distinct from
+        // GiveNotificationCapablePlanAsync's plan-level allowance only).
+        if (billingAccountId.HasValue)
+            await NotificationTestBase.EnsureWhatsAppPaidAsync(db, billingAccountId.Value);
+
         return channel;
     }
 

@@ -128,6 +128,11 @@ public class PricingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.3): AccountSubscriptionOptions now references
+        // SubscriptionOptions with FK Restrict (an account's paid quantity can't dangle if its option
+        // row vanished) — other suites' raw-row seeding (e.g. NotificationTestBase.EnsureWhatsAppPaidAsync)
+        // can leave rows here, which would otherwise make the blanket DELETE below fail.
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM \"AccountSubscriptionOptions\"");
         await db.Database.ExecuteSqlRawAsync("DELETE FROM \"SubscriptionOptions\"");
         // NOTE: AccountSubscription.PlanConfigId is nullable (SetNull on delete) — a plain
         // "NOT IN (SELECT PlanConfigId FROM AccountSubscriptions)" would evaluate to UNKNOWN (i.e.

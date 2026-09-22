@@ -238,7 +238,7 @@ public class NotificationDispatchExtraTests
         };
         var channel = new NotificationChannel
         {
-            Id = Guid.NewGuid(), OwnerUserId = auth.UserId, State = ChannelState.Connected,
+            Id = Guid.NewGuid(), OwnerUserId = auth.UserId, BillingAccountId = billingAccount.Id, State = ChannelState.Connected,
             PhoneNumber = "79990000000",
             ProviderInstanceId = Unique("instance"),
             PaidFromUtc = DateTime.UtcNow.AddDays(-1), PaidUntilUtc = DateTime.UtcNow.AddDays(30),
@@ -258,6 +258,10 @@ public class NotificationDispatchExtraTests
         db.NotificationChannels.Add(channel);
         db.ChannelCompanyAssignments.Add(assignment);
         await db.SaveChangesAsync();
+
+        // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §47.1): funding comes from the account's paid
+        // notifications.whatsapp quantity now, not the channel's own PaidUntilUtc.
+        await ServiceBooking.Tests.Infrastructure.NotificationTestBase.EnsureWhatsAppPaidAsync(db, billingAccount.Id);
 
         return (auth.UserId, channel, company);
     }

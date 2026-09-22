@@ -386,9 +386,18 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var channel = await db.NotificationChannels.FirstAsync(c => c.Id == channelId);
+        // Kept for compatibility with any assertion still reading these historical columns — no longer
+        // what makes the channel funded (ARCHITECTURE_CYCLE5.md §47.3).
         channel.PaidFromUtc = DateTime.UtcNow.AddDays(-1);
         channel.PaidUntilUtc = DateTime.UtcNow.AddDays(30);
         await db.SaveChangesAsync();
+
+        // Cycle 5, stage 3 (§47.1): funding now comes from the account's paid notifications.whatsapp
+        // quantity — mark the OWNING account (not necessarily every account in the test) as paid for at
+        // least this one number.
+        var accountId = channel.BillingAccountId
+            ?? await db.BillingAccounts.Where(a => a.OwnerUserId == channel.OwnerUserId).Select(a => a.Id).FirstAsync();
+        await NotificationTestBase.EnsureWhatsAppPaidAsync(db, accountId);
     }
 
     private async Task SetChannelStateAsync(Guid channelId, ChannelState state, DateTime? riskAcceptedAtUtc)

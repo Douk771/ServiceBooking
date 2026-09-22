@@ -178,6 +178,57 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
             sub.UpdatedAt = DateTime.UtcNow;
         }
         await db.SaveChangesAsync();
+
+        // Deliberately does NOT also fund notifications.whatsapp (EnsureWhatsAppPaidAsync) — this helper
+        // only grants the PLAN's own AllowNotificationChannel/"may buy the option" flag (§47.2's first
+        // gate check). "Is the option actually paid" is the orthogonal §47.1 axis several tests
+        // (Connect_UnpaidChannel_Returns402, CreateChannel_Allowed_ReturnsNotConnectedNotPaid) exercise
+        // as a DISTINCT, unfunded state — callers that need a funded channel call EnsureWhatsAppPaidAsync
+        // themselves (see CreateConnectedChannelAsync below).
+    }
+
+    /// <summary>
+    /// Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §47.1) — funding is no longer read off the channel's
+    /// own PaidUntilUtc; it comes from the account's paid <c>notifications.whatsapp</c> quantity
+    /// (<see cref="ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode"/>). Every raw-row
+    /// seeding helper that wants a channel to actually be <c>Funded</c> must call this too — creates the
+    /// catalog row on first use (idempotent per test database) and one <c>AccountSubscriptionOption</c>
+    /// row for the account.
+    /// </summary>
+    public static async Task EnsureWhatsAppPaidAsync(AppDbContext db, Guid billingAccountId, int quantity = 1)
+    {
+        var option = await db.SubscriptionOptions.FirstOrDefaultAsync(
+            o => o.Code == ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode);
+        if (option is null)
+        {
+            option = new SubscriptionOption
+            {
+                Id = Guid.NewGuid(),
+                Code = ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode,
+                Name = "Рассылки в WhatsApp",
+                Kind = OptionKind.Quantity,
+                UnitName = "номер",
+                IsActive = true,
+            };
+            db.SubscriptionOptions.Add(option);
+            await db.SaveChangesAsync();
+        }
+
+        var existing = await db.AccountSubscriptionOptions.FirstOrDefaultAsync(
+            o => o.BillingAccountId == billingAccountId && o.OptionId == option.Id);
+        if (existing is null)
+        {
+            db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
+            {
+                Id = Guid.NewGuid(), BillingAccountId = billingAccountId, OptionId = option.Id, Quantity = quantity,
+            });
+        }
+        else
+        {
+            existing.Quantity = quantity;
+            existing.EndsAtUtc = null;
+        }
+        await db.SaveChangesAsync();
     }
 
     /// <summary>Sets the platform's channel price/idle-days directly via the database — equivalent to a
@@ -206,9 +257,11 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        var billingAccountId = await db.Companies.Where(c => c.Id == company.Id).Select(c => c.BillingAccountId!.Value).FirstAsync();
+
         var channel = new NotificationChannel
         {
-            Id = Guid.NewGuid(), OwnerUserId = owner.UserId, State = ChannelState.Connected,
+            Id = Guid.NewGuid(), OwnerUserId = owner.UserId, BillingAccountId = billingAccountId, State = ChannelState.Connected,
             PhoneNumber = UniquePhone().TrimStart('+'),
             ProviderInstanceId = Unique("instance"),
             PaidFromUtc = DateTime.UtcNow.AddDays(-1), PaidUntilUtc = paidUntilUtc ?? DateTime.UtcNow.AddDays(30),
@@ -223,6 +276,10 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
             Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = company.Id, AssignedByUserId = owner.UserId,
         });
         await db.SaveChangesAsync();
+
+        // This helper's whole point is "ready to receive queued notifications" — §47.1 funding is part
+        // of that readiness, unlike GiveNotificationCapablePlanAsync above (plan-level allowance only).
+        await EnsureWhatsAppPaidAsync(db, billingAccountId);
 
         return (owner, company, channel);
     }
