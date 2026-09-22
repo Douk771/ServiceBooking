@@ -237,8 +237,9 @@ cd frontend && npm install && npm run dev
 `.github/workflows/ci.yml` на каждый push/PR прогоняет три независимых, параллельных джоба:
 
 - `backend` — сборку solution (`-warnaserror`), юнит-тесты (`ServiceBooking.UnitTests`, без БД),
-  функциональные тесты (`ServiceBooking.Tests`, против Postgres в service-контейнере — БД
-  тестовая, `servicebooking_test`, создаётся и пересоздаётся самим тестовым прогоном);
+  функциональные тесты (`ServiceBooking.Tests`, против Postgres в service-контейнере — с цикла 8
+  каждый прогон заводит СВОИ базы `sbtest_<ключ прогона>_<слот>` и сносит их за собой, поэтому два
+  прогона на одной машине не мешают друг другу; см. `ARCHITECTURE_CYCLE8.md` §61–§81);
 - `frontend` — `tsc --noEmit`, `npm run lint`, юнит-тесты фронтенда (`npm run test:run`, Vitest +
   jsdom + Testing Library) и `npm run build` (результат публикуется артефактом — см. «Деплой» ниже);
 - `docker-build` — собирает боевой Docker-образ API **и запускает его по-настоящему**: поднимает

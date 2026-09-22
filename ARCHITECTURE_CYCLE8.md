@@ -658,12 +658,11 @@ var logDirectory = builder.Configuration["Logs:Directory"] is { Length: > 0 } d 
 
 | Переменная | Дефолт | Кто читает |
 |---|---|---|
-| `SB_PROJECT_NAME` | `servicebooking` | `docker-compose.yml` → `name:` |
+| `COMPOSE_PROJECT_NAME` | не задана — compose выводит имя из каталога | штатная переменная compose (не наша) |
 | `SB_DB_PORT` | `5432` | compose (публикация порта Postgres) |
 | `SB_DB_NAME` | `servicebooking` | compose (`POSTGRES_DB` + строка подключения api) |
 | `SB_API_PORT` | `5000` | compose (публикация порта api), `vite.config.ts` |
 | `SB_WEB_PORT` | `5173` | `vite.config.ts` (`server.port`), `AllowedOrigins` в compose |
-| `SB_VOLUME_SUFFIX` | пусто | имя тома `postgres_data${SB_VOLUME_SUFFIX}` |
 | `SERVICEBOOKING_TEST_CONNECTION` | не задана | `ServiceBooking.Tests` (режим `external`) — **существующая**, не новая |
 | `SERVICEBOOKING_TEST_RUN_KEY` | не задана | `TestRunKey` — только для корреляции логов в CI |
 
@@ -703,10 +702,12 @@ var logDirectory = builder.Configuration["Logs:Directory"] is { Length: > 0 } d 
 ### 73.2 `docker-compose.yml` — целевое содержимое
 
 ```yaml
-# Имя compose-проекта задано ЯВНО, а не выводится из имени каталога — ловушка §9 P0-6
-# (два стека схлопнулись по именам сервисов на боевой машине). Переопределяется через SB_PROJECT_NAME
-# в .env рабочей копии; см. .env.dev.example.
-name: ${SB_PROJECT_NAME:-servicebooking}
+# Верхнеуровневого `name:` здесь СОЗНАТЕЛЬНО нет — он был в первой редакции этого раздела и оказался
+# вреден. Параметризованное имя с дефолтом (`name: ${SB_PROJECT_NAME:-servicebooking}`) даёт всем
+# копиям без .env ОДНО И ТО ЖЕ имя проекта, то есть общие контейнеры, сеть и том, и `docker compose
+# down -v` в копии B сносит данные копии A — ровно то, что US-88 запрещает. Без `name:` compose
+# выводит имя из каталога, и копии расходятся сами. Переопределить можно штатной
+# COMPOSE_PROJECT_NAME в .env; ловушка §9 P0-6 относится к боевому стеку, где каталог один.
 
 services:
   postgres:
@@ -743,12 +744,15 @@ services:
         condition: service_healthy
 
 volumes:
+  # Без явного `name:`: compose неймспейсит том как `<project>_postgres_data`, а имя проекта пришло
+  # из каталога — значит два чекаута получают два тома автоматически.
   postgres_data:
-    name: ${SB_PROJECT_NAME:-servicebooking}_postgres_data${SB_VOLUME_SUFFIX:-}
 ```
 
-Том получает **явное имя**, включающее имя проекта: `docker compose down -v` в копии B не может
-задеть данные копии A (US-88, второй критерий). Секретов не добавилось: `POSTGRES_PASSWORD=postgres`
+Том неймспейсится именем проекта, которое compose вывел из каталога: `docker compose down -v` в
+копии B не может задеть данные копии A (US-88, второй критерий). Проверено делом на приёмке: копия в
+каталоге `ServiceBooking-wt2` получает проект `servicebooking-wt2` и том
+`servicebooking-wt2_postgres_data`, без всякого `.env`. Секретов не добавилось: `POSTGRES_PASSWORD=postgres`
 и плейсхолдер `Jwt__Key` — те же заглушки, что и сегодня.
 
 ### 73.3 `frontend/vite.config.ts` — US-89
@@ -1076,8 +1080,9 @@ grep -rn "RYUK_DISABLED" .                            # пусто
 # 6. Жёстких портов в закоммиченном compose нет
 grep -n '"5432:5432"\|"5000:8080"' docker-compose.yml # пусто
 
-# 7. Имя compose-проекта задано явно
-grep -n "^name:" docker-compose.yml                   # есть
+# 7. Имя compose-проекта НЕ задано в файле — его выводит compose из каталога (см. §73.2)
+grep -n "^name:" docker-compose.yml                   # пусто
+docker compose config | grep "^name:"                 # есть, и равно имени каталога
 
 # 8. Смоук не носит своей копии контракта (§9 L6 не сломан)
 grep -n "privacyAcknowledgedVersion" deploy/ci/smoke.sh   # только в теле, собранном из ответа API
