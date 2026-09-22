@@ -26,6 +26,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<SubscriptionChangeLog> SubscriptionChangeLogs => Set<SubscriptionChangeLog>();
     public DbSet<BillingAccount> BillingAccounts => Set<BillingAccount>();
     public DbSet<CompanyOwnerChangeLog> CompanyOwnerChangeLogs => Set<CompanyOwnerChangeLog>();
+    public DbSet<PlanOptionRule> PlanOptionRules => Set<PlanOptionRule>();
     public DbSet<ClientNotePhoto> ClientNotePhotos => Set<ClientNotePhoto>();
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
@@ -136,6 +137,18 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(a => a.Owner).WithMany().HasForeignKey(a => a.OwnerUserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(a => a.OwnerUserId).IsUnique();
             e.Property(a => a.Name).HasMaxLength(100);
+            // Cycle 5, stage 5 (§49) — the owner's single pending plan/options request; see the
+            // entity's own remarks for why this isn't a separate SubscriptionRequest table.
+            e.HasOne(a => a.RequestedPlan).WithMany().HasForeignKey(a => a.RequestedPlanId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(a => a.RequestedComment).HasMaxLength(500);
+        });
+
+        // Cycle 5, stage 5 (§43.3, US-66) — per-plan option availability matrix.
+        builder.Entity<PlanOptionRule>(e =>
+        {
+            e.HasOne(r => r.PlanConfig).WithMany().HasForeignKey(r => r.PlanConfigId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(r => r.Option).WithMany().HasForeignKey(r => r.OptionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(r => new { r.PlanConfigId, r.OptionId }).IsUnique();
         });
 
         // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3): US-64 p.4 — who manages a company changed, and when.

@@ -25,4 +25,24 @@ public class BillingAccount
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    // Cycle 5, stage 5 (ARCHITECTURE_CYCLE5.md §49, US-70) — the owner's single pending request to
+    // change plan/options. Deliberately modeled as a handful of nullable columns on the account rather
+    // than the separate SubscriptionRequest/SubscriptionRequestItem tables ARCHITECTURE_CYCLE5.md §43.3
+    // sketches: "at most one pending request per account" then falls out of "these columns are either
+    // all null or all set" instead of a partial unique index, and a resubmission is a plain overwrite
+    // (contract requires this anyway — 200, not 201). This is a deliberate, reported deviation — see
+    // the cycle-07 backend report; a later cycle may still want the richer relational shape (e.g. to
+    // keep rejected/approved requests as history instead of just clearing these columns).
+    public Guid? RequestedPlanId { get; set; }
+    public SubscriptionPlanConfig? RequestedPlan { get; set; }
+
+    // JSON-serialized List<RequestedOptionLine> (BillingAccountRequestExtensions) — the full desired
+    // option set, exactly as submitted (SubscriptionRequestInput.options is a full set, not a delta).
+    public string? RequestedOptionsJson { get; set; }
+
+    public DateTime? RequestedAtUtc { get; set; }
+    public string? RequestedByUserId { get; set; }
+    public string? RequestedComment { get; set; }
 }
+
