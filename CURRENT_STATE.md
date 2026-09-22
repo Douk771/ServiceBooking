@@ -2048,7 +2048,7 @@ pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `t
   захардкожены, а **читаются из `GET /api/legal/documents` этого же образа**, с явной проверкой, что
   `Privacy` и `TermsClient` в манифесте вообще присутствуют. До этой правки смоук краснел — и это
   единственная проверка во всём проекте, которая поймала расхождение (§7, §9).
-  Скрипт запускается и руками: `BASE_URL=http://localhost:5000 deploy/ci/smoke.sh`.
+  Скрипт запускается и руками: `BASE_URL=http://localhost:${SB_API_PORT:-5000} deploy/ci/smoke.sh`.
   В самом `ServiceBooking.API/Dockerfile` вверху стоит предупреждение: **не менять тег на `-alpine`**.
 
 Чего в CI нет: `dotnet format --verify-no-changes` (см. §9), сбора покрытия, **авто**деплоя —

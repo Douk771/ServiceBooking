@@ -6,7 +6,9 @@
 #
 # Runnable two ways:
 #   - from CI (docker-build job in .github/workflows/ci.yml), against a container started there;
-#   - by hand, against any running instance: `BASE_URL=http://localhost:5000 deploy/ci/smoke.sh`.
+#   - by hand, against any running instance: `BASE_URL=http://localhost:${SB_API_PORT:-5000} deploy/ci/smoke.sh`
+#     (SB_API_PORT is the cycle-8 env-contract variable, API_CONTRACT_CYCLE8.md §85 — matches whatever
+#     port your dev-compose stack actually published; defaults to 5000, same as before).
 #
 # Any failed step exits 1 — the caller (CI job) is expected to print `docker logs <container>` on
 # failure so the actual crash/exception is visible, not just "smoke failed".
