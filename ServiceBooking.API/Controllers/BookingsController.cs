@@ -81,9 +81,13 @@ public class BookingsController(
             var booking = await db.Bookings.Include(b => b.BookingServices).Include(b => b.Service)
                 .FirstOrDefaultAsync(b => b.Id == excludeBookingId);
             if (booking is null) return NotFound("Booking not found");
+            // Order matters. CanManage first, the pair-match second: the other way round, the
+            // difference between 403 and 400 answers "does this booking belong to company X and
+            // master Y" for anyone holding a booking id they may not manage — both ids are public,
+            // so the pair is brute-forceable. This way a caller without rights learns only that.
+            if (!await CanManageBookingAsync(booking, userId)) return Forbid();
             if (booking.CompanyId != companyId || booking.MasterId != masterId)
                 return BadRequest("excludeBookingId does not match companyId/masterId");
-            if (!await CanManageBookingAsync(booking, userId)) return Forbid();
 
             // NB: the "master works in this company" check below deliberately does NOT run on this
             // path. The pair (companyId, masterId) is pinned to the booking's own CompanyId/MasterId

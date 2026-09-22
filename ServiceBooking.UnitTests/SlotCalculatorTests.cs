@@ -103,7 +103,7 @@ public class SlotCalculatorTests
     [Fact]
     public void Calculate_ScheduleRowPresent_WholeDayAlsoIgnoresBreaks()
     {
-        // Sopутствующее решение (SPEC.md §0.1 Q7): if WholeDay hid break time, staff would see less
+        // Сопутствующее решение (SPEC.md §0.1 Q7): if WholeDay hid break time, staff would see less
         // than the server actually allows them to book — same bug in miniature.
         var breaks = new List<TimeRange> { new(new TimeOnly(12, 0), new TimeOnly(13, 0)) };
 
