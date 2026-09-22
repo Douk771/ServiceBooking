@@ -20,7 +20,7 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/admin/companies")]
 [Authorize(Roles = "SuperAdmin")]
-public class CompanyTransferController(AppDbContext db, CompanyTransferService transferService) : ControllerBase
+public class CompanyTransferController(AppDbContext db, CompanyTransferService transferService, AccountUsageReader usageReader) : ControllerBase
 {
     [HttpGet("{companyId:guid}/transfer/preview")]
     public async Task<IActionResult> Preview(Guid companyId, [FromQuery] Guid targetBillingAccountId, [FromQuery] string? newOwnerUserId)
@@ -52,7 +52,7 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             : result.Preview!;
         var sourceSide = await BuildSideDtoAsync(company.BillingAccountId);
         var targetSide = await BuildSideDtoAsync(targetBillingAccountId);
-        var seatsOfCompany = (await new AccountUsageReader(db).GetCompanySeatsAsync([companyId])).GetValueOrDefault(companyId);
+        var seatsOfCompany = (await usageReader.GetCompanySeatsAsync([companyId])).GetValueOrDefault(companyId);
 
         TransferNewOwnerDto? newOwnerDto = null;
         string? ownerUnchangedNotice = null;
@@ -138,7 +138,7 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
     {
         var sourceSide = await BuildSideDtoAsync(company.BillingAccountId);
         var targetSide = await BuildSideDtoAsync(targetBillingAccountId);
-        var seatsOfCompany = (await new AccountUsageReader(db).GetCompanySeatsAsync([company.Id])).GetValueOrDefault(company.Id);
+        var seatsOfCompany = (await usageReader.GetCompanySeatsAsync([company.Id])).GetValueOrDefault(company.Id);
 
         return new CompanyTransferPreviewDto(
             company.Id, company.Name, seatsOfCompany, sourceSide, targetSide,
