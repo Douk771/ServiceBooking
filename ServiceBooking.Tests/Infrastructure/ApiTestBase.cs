@@ -290,43 +290,63 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
     // ── Subscriptions (unlocks paid-plan-gated features like guest/online booking) ─────
 
     /// <summary>
-    /// Sets the subscription for a company's owner ACCOUNT via the real admin HTTP endpoint (unlike
-    /// <see cref="GiveActivePaidPlanAsync"/>, which writes straight to the database). Takes a companyId
+    /// Sets the subscription for a company's owner ACCOUNT straight in the database. Takes a companyId
     /// for convenience and resolves the owner internally. Defaults to linking the shared full-access
     /// test plan config so callers that only care about "paid vs free" don't need to create their own.
+    ///
+    /// Used to go through the real admin HTTP endpoint (<c>PUT /api/admin/owners/{ownerUserId}/subscription</c>),
+    /// which exercised that endpoint's own validation as a side effect. That endpoint is now contractually
+    /// retired (openapi-cycle5.yaml, redaction 2.1 — see <c>AdminController.UpdateSubscription</c>, answers
+    /// 410 Gone) and its replacement (<c>PUT /admin/billing-accounts/{accountId}/subscription</c>) doesn't
+    /// exist yet (cycle-07 backend report), so this helper — which exists purely to arrange test
+    /// preconditions, not to exercise that endpoint's behavior — writes the row directly, the same way
+    /// <see cref="GiveActivePaidPlanAsync"/> already does. Tests that actually need to exercise an
+    /// admin subscription-assignment endpoint's own behavior should do so explicitly against whichever
+    /// endpoint currently implements it, not through this helper.
     /// </summary>
     protected async Task SetSubscriptionAsync(Guid companyId, Guid? planConfigId = null, DateTime? paidUntil = null, bool isActive = true)
     {
-        string ownerUserId;
-        using (var scope = Factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            ownerUserId = await db.Companies.Where(c => c.Id == companyId).Select(c => c.OwnerUserId).FirstAsync();
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var ownerUserId = await db.Companies.Where(c => c.Id == companyId).Select(c => c.OwnerUserId).FirstAsync();
 
-            if (planConfigId is null)
+        if (planConfigId is null)
+        {
+            var fullAccess = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.Name == FullAccessPlanName);
+            if (fullAccess is null)
             {
-                var fullAccess = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.Name == FullAccessPlanName);
-                if (fullAccess is null)
+                fullAccess = new SubscriptionPlanConfig
                 {
-                    fullAccess = new SubscriptionPlanConfig
-                    {
-                        Id = Guid.NewGuid(), Name = FullAccessPlanName,
-                        PricePerMonth = 0, MaxEmployees = null, MaxCompanies = null,
-                        AllowOnlineBooking = true, AllowMailing = true, AllowAnalytics = true, AllowOnlinePayment = true,
-                        IsActive = true, CreatedAt = DateTime.UtcNow,
-                    };
-                    db.SubscriptionPlanConfigs.Add(fullAccess);
-                    await db.SaveChangesAsync();
-                }
-                planConfigId = fullAccess.Id;
+                    Id = Guid.NewGuid(), Name = FullAccessPlanName,
+                    PricePerMonth = 0, MaxEmployees = null, MaxCompanies = null,
+                    AllowOnlineBooking = true, AllowMailing = true, AllowAnalytics = true, AllowOnlinePayment = true,
+                    IsActive = true, CreatedAt = DateTime.UtcNow,
+                };
+                db.SubscriptionPlanConfigs.Add(fullAccess);
+                await db.SaveChangesAsync();
             }
+            planConfigId = fullAccess.Id;
         }
 
-        var admin = await LoginAsSuperAdminAsync();
-        var client = AuthedClient(admin.Token);
-        var response = await client.PutAsJsonAsync($"/api/admin/owners/{ownerUserId}/subscription",
-            new { planConfigId, paidUntil = paidUntil ?? DateTime.UtcNow.AddMonths(1), isActive, comment = (string?)null });
-        response.EnsureSuccessStatusCode();
+        var sub = await db.AccountSubscriptions.FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
+        var effectivePaidUntil = paidUntil ?? DateTime.UtcNow.AddMonths(1);
+        if (sub is null)
+        {
+            db.AccountSubscriptions.Add(new AccountSubscription
+            {
+                Id = Guid.NewGuid(), OwnerUserId = ownerUserId, PlanConfigId = planConfigId,
+                PaidUntil = effectivePaidUntil, IsActive = isActive,
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            sub.PlanConfigId = planConfigId;
+            sub.PaidUntil = effectivePaidUntil;
+            sub.IsActive = isActive;
+            sub.UpdatedAt = DateTime.UtcNow;
+        }
+        await db.SaveChangesAsync();
     }
 
     protected static DateOnly NextWeekday(DayOfWeek? avoid = null)

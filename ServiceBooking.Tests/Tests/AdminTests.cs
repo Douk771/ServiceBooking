@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
@@ -307,36 +306,42 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         found.PlanName.Should().Be("QA Full Access");
     }
 
-    [Fact, TestCase("ADM-017")]
-    public async Task UpdateSubscription_CalledTwice_UpdatesExistingRowRatherThanDuplicating()
+    // ADM-017 ("UpdateSubscription_CalledTwice_UpdatesExistingRowRatherThanDuplicating") tested
+    // AdminController.UpdateSubscription's own upsert behavior via the now-retired
+    // PUT /api/admin/owners/{ownerUserId}/subscription — see the comment above ADM-022 for why it was
+    // removed rather than rewritten.
+
+    [Fact, TestCase("ADM-048")]
+    public async Task LegacyOwnerSubscriptionEndpoint_ReturnsGoneWithReplacementRoute()
     {
+        // openapi-cycle5.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
+        // favor of PUT /admin/billing-accounts/{accountId}/subscription and must answer 410 Gone,
+        // unconditionally, without touching the body — regression coverage for AdminController's
+        // LegacyEndpointGone so a future change can't silently resurrect the old write behavior.
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
-        var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false);
 
-        var firstConfigId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
-        var secondConfigId = await CreateTestPlanConfigAsync(allowOnlineBooking: true, allowMailing: true);
+        var response = await adminClient.PutAsJsonAsync($"/api/admin/owners/{Guid.NewGuid()}/subscription",
+            new { planConfigId = (Guid?)null, paidUntil = (DateTime?)null, isActive = true, comment = (string?)null });
 
-        var firstPaidUntil = DateTime.UtcNow.AddMonths(1);
-        var first = await adminClient.PutJsonAsync($"/api/admin/owners/{owner.UserId}/subscription",
-            new UpdateSubscriptionDto(firstConfigId, firstPaidUntil, true, "first"));
-        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response.StatusCode.Should().Be(HttpStatusCode.Gone);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("/admin/billing-accounts/{accountId}/subscription");
+    }
 
-        var secondPaidUntil = DateTime.UtcNow.AddMonths(2);
-        var second = await adminClient.PutJsonAsync($"/api/admin/owners/{owner.UserId}/subscription",
-            new UpdateSubscriptionDto(secondConfigId, secondPaidUntil, false, "second"));
-        second.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    [Fact, TestCase("ADM-049")]
+    public async Task LegacyNotificationChannelPaymentEndpoint_ReturnsGoneWithReplacementRoute()
+    {
+        // Same retirement (openapi-cycle5.yaml, legacyChannelPayment) on the notification-channel side.
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
 
-        var listResponse = await adminClient.GetAsync($"/api/admin/companies?search={company.Slug}");
-        var companiesPage = await listResponse.Content.ReadJsonAsync<PagedResult<AdminCompanyDto>>();
-        var companies = companiesPage?.Items;
+        var response = await adminClient.PostAsJsonAsync($"/api/admin/notification-channels/{Guid.NewGuid()}/payment",
+            new { });
 
-        // Exactly one row for this company — a duplicate-insert bug would still show one row here
-        // (GetCompanies groups by company id), but the reflected plan must be the *second* call's value,
-        // proving the existing subscription row was updated in place, not left stale by a duplicate insert.
-        var found = companies.Should().ContainSingle(c => c.Id == company.Id).Subject;
-        found.PlanConfigId.Should().Be(secondConfigId);
-        found.SubscriptionActive.Should().BeFalse();
+        response.StatusCode.Should().Be(HttpStatusCode.Gone);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("/admin/billing-accounts/{accountId}/subscription");
     }
 
     [Fact, TestCase("ADM-018")]
@@ -530,32 +535,28 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var newPlan = NewPlanConfig();
         var createResponse = await adminClient.PostAsJsonAsync("/api/admin/plans", newPlan);
-        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var created = await createResponse.Content.ReadJsonAsync<SubscriptionPlanConfig>();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadJsonAsync<AdminPlanDto>();
         created!.Id.Should().NotBeEmpty();
         created.Name.Should().Be(newPlan.Name);
         // US-24: photo quota/retention travel through the same create/update/GET cycle as every other
-        // tariff field — no separate DTO, the entity is serialized directly (API_CONTRACT.md §11).
+        // tariff field — the response is the contract's AdminPlanDto projection (openapi-cycle5.yaml),
+        // not the entity serialized directly.
         created.PhotoQuotaMb.Should().Be(newPlan.PhotoQuotaMb);
         created.PhotoRetention.Should().Be(newPlan.PhotoRetention);
 
         // GET /plans includes the new plan.
         var listResponse = await adminClient.GetAsync("/api/admin/plans");
         listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var plans = await listResponse.Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
+        var plans = (await listResponse.Content.ReadJsonAsync<AdminPlansListDto>())!.Plans;
         plans.Should().Contain(p => p.Id == created.Id);
 
         // Update.
-        created.Name = "Updated Plan Name";
-        created.PricePerMonth = 999.99m;
-        created.MaxEmployees = 5;
-        created.MaxCompanies = 3;
-        created.AllowAnalytics = true;
-        created.PhotoQuotaMb = 2048;
-        created.PhotoRetention = PhotoRetention.Forever;
-        var updateResponse = await adminClient.PutAsJsonAsync($"/api/admin/plans/{created.Id}", created);
+        var updateDto = ToUpdateDto(created, name: "Updated Plan Name", pricePerMonth: 999.99m,
+            maxEmployees: 5, maxCompanies: 3, allowAnalytics: true, photoQuotaMb: 2048, photoRetention: PhotoRetention.Forever);
+        var updateResponse = await adminClient.PutAsJsonAsync($"/api/admin/plans/{created.Id}", updateDto);
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var updated = await updateResponse.Content.ReadJsonAsync<SubscriptionPlanConfig>();
+        var updated = await updateResponse.Content.ReadJsonAsync<AdminPlanDto>();
         updated!.Name.Should().Be("Updated Plan Name");
         updated.PricePerMonth.Should().Be(999.99m);
         updated.MaxEmployees.Should().Be(5);
@@ -569,52 +570,63 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var listAfterDelete = await adminClient.GetAsync("/api/admin/plans");
-        var plansAfterDelete = await listAfterDelete.Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
+        var plansAfterDelete = (await listAfterDelete.Content.ReadJsonAsync<AdminPlansListDto>())!.Plans;
         var stillPresent = plansAfterDelete.Should().ContainSingle(p => p.Id == created.Id).Subject;
         stillPresent.IsActive.Should().BeFalse();
 
         // 404s for unknown id.
         var unknownId = Guid.NewGuid();
-        (await adminClient.PutAsJsonAsync($"/api/admin/plans/{unknownId}", created)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await adminClient.PutAsJsonAsync($"/api/admin/plans/{unknownId}", updateDto)).StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await adminClient.DeleteAsync($"/api/admin/plans/{unknownId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    [Fact, TestCase("ADM-021")]
-    public async Task UpdateSubscription_WithBareDateStringForPaidUntil_Succeeds()
-    {
-        // Regression test: a plain <input type="date"> on the admin page posts "paidUntil" as a bare
-        // "2026-08-01" string with no time or timezone offset. System.Text.Json deserializes that into
-        // a DateTime with Kind=Unspecified, and Npgsql previously threw
-        // "Cannot write DateTime with Kind=Unspecified to PostgreSQL type 'timestamp with time zone'"
-        // when that value was assigned straight to the subscription's PaidUntil. AdminController.UpdateSubscription
-        // must normalize it to UTC before saving instead of erroring.
-        var admin = await LoginAsSuperAdminAsync();
-        var adminClient = AuthedClient(admin.Token);
-        var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
-
-        var rawJson = "{\"planConfigId\":null,\"paidUntil\":\"2026-08-01\",\"isActive\":true,\"comment\":\"bare date\"}";
-        var content = new StringContent(rawJson, Encoding.UTF8, "application/json");
-        var response = await adminClient.PutAsync($"/api/admin/owners/{owner.UserId}/subscription", content);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-    }
+    // ADM-021 ("UpdateSubscription_WithBareDateStringForPaidUntil_Succeeds") and ADM-017
+    // ("UpdateSubscription_CalledTwice_UpdatesExistingRowRatherThanDuplicating") tested
+    // AdminController.UpdateSubscription's own body-parsing/upsert behavior. That endpoint
+    // (PUT /api/admin/owners/{ownerUserId}/subscription) is now contractually retired
+    // (openapi-cycle5.yaml, redaction 2.1) and answers 410 Gone unconditionally without touching its
+    // body — see ADM-048 below for coverage of the retirement itself. Its replacement
+    // (PUT /admin/billing-accounts/{accountId}/subscription) doesn't exist yet (cycle-07 backend
+    // report), so there is currently no endpoint whose date-parsing/upsert behavior these two tests
+    // could exercise; removed rather than kept red or rewritten against dead code. Re-add equivalent
+    // coverage once the replacement endpoint ships (flagged in the QA report as a follow-up).
 
     [Fact, TestCase("ADM-022")]
     public async Task GetSubscriptionHistory_AfterTwoChanges_ReturnsThemNewestFirstWithOldAndNewValues()
     {
+        // Written against SubscriptionChangeLogDto (openapi-cycle5.yaml)/GetSubscriptionHistory, which
+        // is unaffected by the owners/subscription retirement above — only the write side (previously
+        // AdminController.UpdateSubscription, now gone with no replacement yet) is gone. Nothing in the
+        // running system currently writes SubscriptionChangeLog rows (flagged separately in the QA
+        // report), so this test seeds them directly, the same way ApiTestBase's other helpers seed
+        // AccountSubscription/SubscriptionPlanConfig rows straight into the DB.
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
         var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
-
         var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
 
-        var first = await adminClient.PutJsonAsync($"/api/admin/owners/{owner.UserId}/subscription",
-            new UpdateSubscriptionDto(configId, DateTime.UtcNow.AddMonths(1), true, "activated"));
-        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        var second = await adminClient.PutJsonAsync($"/api/admin/owners/{owner.UserId}/subscription",
-            new UpdateSubscriptionDto(null, null, false, "cancelled"));
-        second.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+            db.SubscriptionChangeLogs.AddRange(
+                new SubscriptionChangeLog
+                {
+                    Id = Guid.NewGuid(), OwnerUserId = owner.UserId, ChangedByUserId = admin.UserId,
+                    ChangedAt = DateTime.UtcNow.AddMinutes(-1),
+                    OldPlanConfigId = null, NewPlanConfigId = configId,
+                    OldPaidUntil = null, NewPaidUntil = DateTime.UtcNow.AddMonths(1),
+                    OldIsActive = false, NewIsActive = true, Comment = "activated",
+                },
+                new SubscriptionChangeLog
+                {
+                    Id = Guid.NewGuid(), OwnerUserId = owner.UserId, ChangedByUserId = admin.UserId,
+                    ChangedAt = DateTime.UtcNow,
+                    OldPlanConfigId = configId, NewPlanConfigId = null,
+                    OldPaidUntil = DateTime.UtcNow.AddMonths(1), NewPaidUntil = null,
+                    OldIsActive = true, NewIsActive = false, Comment = "cancelled",
+                });
+            await db.SaveChangesAsync();
+        }
 
         var response = await adminClient.GetAsync($"/api/admin/owners/{owner.UserId}/subscription-history");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -702,7 +714,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("1");
 
-        var plans = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
+        var plans = (await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<AdminPlansListDto>())!.Plans;
         plans.Should().ContainSingle(p => p.Id == configId && p.IsActive);
     }
 
@@ -717,16 +729,16 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
         await SetSubscriptionAsync(company.Id, configId);
 
-        var existing = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
-        var plan = existing!.Single(p => p.Id == configId);
-        plan.IsActive = false;
+        var existing = (await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<AdminPlansListDto>())!.Plans;
+        var plan = existing.Single(p => p.Id == configId);
+        var updateDto = ToUpdateDto(plan, isActive: false);
 
-        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{configId}", plan);
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{configId}", updateDto);
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await response.Content.ReadAsStringAsync()).Should().Contain("1");
 
-        var after = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
+        var after = (await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<AdminPlansListDto>())!.Plans;
         after.Should().ContainSingle(p => p.Id == configId && p.IsActive);
     }
 
@@ -739,40 +751,24 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var adminClient = AuthedClient(admin.Token);
         var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
 
-        var existing = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
-        var plan = existing!.Single(p => p.Id == configId);
-        plan.IsActive = false;
+        var existing = (await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<AdminPlansListDto>())!.Plans;
+        var plan = existing.Single(p => p.Id == configId);
+        var updateDto = ToUpdateDto(plan, isActive: false);
 
-        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{configId}", plan);
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{configId}", updateDto);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var after = await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<List<SubscriptionPlanConfig>>();
+        var after = (await (await adminClient.GetAsync("/api/admin/plans")).Content.ReadJsonAsync<AdminPlansListDto>())!.Plans;
         after.Should().ContainSingle(p => p.Id == configId && !p.IsActive);
     }
 
-    [Fact, TestCase("ADM-033")]
-    public async Task UpdateSubscription_WithDeactivatedPlan_ReturnsBadRequest()
-    {
-        var admin = await LoginAsSuperAdminAsync();
-        var adminClient = AuthedClient(admin.Token);
-        var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
-        var configId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
-
-        // Deactivate it directly — no active subscriber yet, so DeletePlan itself would succeed too,
-        // but going straight to the DB keeps this test focused on UpdateSubscription's own check.
-        using (var scope = Factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
-            var plan = await db.SubscriptionPlanConfigs.FindAsync(configId);
-            plan!.IsActive = false;
-            await db.SaveChangesAsync();
-        }
-
-        var response = await adminClient.PutJsonAsync($"/api/admin/owners/{owner.UserId}/subscription",
-            new UpdateSubscriptionDto(configId, DateTime.UtcNow.AddMonths(1), true, null));
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
+    // ADM-033 ("UpdateSubscription_WithDeactivatedPlan_ReturnsBadRequest") and ADM-036
+    // ("UpdateSubscription_UnknownOwnerUserId_ReturnsNotFound") tested validation that lived in
+    // AdminController.UpdateSubscription (rejecting an assignment to a deactivated plan / an unknown
+    // owner) via the now-retired PUT /api/admin/owners/{ownerUserId}/subscription — see the comment
+    // above ADM-022 for why they were removed rather than rewritten. Re-add equivalent validation
+    // coverage against the replacement endpoint once it exists — it is exactly the kind of check that's
+    // easy to silently drop while porting an endpoint (this cycle's own QA report flags the risk).
 
     [Fact, TestCase("ADM-034")]
     public async Task Owner_OnDeactivatedPlan_ResolvesToFree()
@@ -796,18 +792,6 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var after = await AnonymousClient().GetAsync($"/api/companies/{company.Slug}");
         (await after.Content.ReadFromJsonAsync<CompanyDto>())!.OnlineBookingEnabled.Should().BeFalse();
-    }
-
-    [Fact, TestCase("ADM-036")]
-    public async Task UpdateSubscription_UnknownOwnerUserId_ReturnsNotFound()
-    {
-        var admin = await LoginAsSuperAdminAsync();
-        var adminClient = AuthedClient(admin.Token);
-
-        var response = await adminClient.PutJsonAsync($"/api/admin/owners/{Guid.NewGuid()}/subscription",
-            new UpdateSubscriptionDto(null, null, true, null));
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     private SubscriptionPlanConfig NewPlanConfig() => new()
@@ -846,10 +830,10 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
         var created = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", NewPlanConfig()))
-            .Content.ReadJsonAsync<SubscriptionPlanConfig>())!;
+            .Content.ReadJsonAsync<AdminPlanDto>())!;
 
-        created.PhotoQuotaMb = -5;
-        var response = await adminClient.PutAsJsonAsync($"/api/admin/plans/{created.Id}", created);
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{created.Id}",
+            ToUpdateDto(created, photoQuotaMb: -5));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -863,8 +847,118 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/plans", plan);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var created = await response.Content.ReadJsonAsync<SubscriptionPlanConfig>();
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await response.Content.ReadJsonAsync<AdminPlanDto>();
         created!.PhotoQuotaMb.Should().BeNull();
     }
+
+    // ── Cycle 5 (SPEC.md П4, US-66): IsSystemFree/Highlights/IsPublic/SortOrder on plan writes ────
+    // Written from the reviewer's finding, independently of AdminController's own implementation:
+    // exactly one plan may be flagged IsSystemFree (§39: "бесплатный тариф публикуется обычной строкой";
+    // a second system-free row would make the "current free plan" lookup ambiguous), and it must not
+    // carry a non-zero price. Both writes below (POST and PUT) must reject bad combinations instead of
+    // letting the DB's partial unique index turn it into an unhandled 500.
+    //
+    // Response bodies are read as AdminPlanDto/AdminPlansListDto (openapi-cycle5.yaml's actual response
+    // shape — highlights as an array), not SubscriptionPlanConfig — see ADM-020 and the QA report for
+    // why deserializing straight into the EF entity is the wrong pattern here. Numbered ADM-050+ (not
+    // ADM-044+, which collided with the pre-existing ADM-044 "GetUsers_SearchOfNonAsciiDigitsOnly").
+
+    [Fact, TestCase("ADM-050")]
+    public async Task CreatePlan_IsSystemFreeWithNonZeroPrice_ReturnsBadRequest()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var plan = NewPlanConfig();
+        plan.IsSystemFree = true;
+        plan.PricePerMonth = 100;
+
+        var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/plans", plan);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("ADM-051")]
+    public async Task CreatePlan_SecondIsSystemFreePlan_ReturnsConflict()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var first = NewPlanConfig();
+        first.IsSystemFree = true;
+        first.PricePerMonth = 0;
+        (await adminClient.PostAsJsonAsync("/api/admin/plans", first)).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var second = NewPlanConfig();
+        second.IsSystemFree = true;
+        second.PricePerMonth = 0;
+        var response = await adminClient.PostAsJsonAsync("/api/admin/plans", second);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact, TestCase("ADM-052")]
+    public async Task UpdatePlan_IsSystemFreeWithNonZeroPrice_ReturnsBadRequest()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var created = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", NewPlanConfig()))
+            .Content.ReadJsonAsync<AdminPlanDto>())!;
+
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{created.Id}",
+            ToUpdateDto(created, isSystemFree: true, pricePerMonth: 50));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("ADM-053")]
+    public async Task UpdatePlan_PersistsHighlightsIsPublicSortOrderAndIsSystemFree()
+    {
+        // Regression: the original PUT silently dropped these four fields, so a plan published via
+        // POST could never be edited, reordered or unpublished again through this endpoint.
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var plan = NewPlanConfig();
+        plan.Highlights = "Было";
+        plan.IsPublic = false;
+        plan.SortOrder = 1;
+        plan.IsSystemFree = false;
+        var created = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", plan))
+            .Content.ReadJsonAsync<AdminPlanDto>())!;
+        created.Highlights.Should().Equal("Было");
+
+        var updateResponse = await adminClient.PutJsonAsync($"/api/admin/plans/{created.Id}",
+            ToUpdateDto(created, highlights: "Стало\nВторая строка", isPublic: true, sortOrder: 42));
+
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await updateResponse.Content.ReadJsonAsync<AdminPlanDto>();
+        updated!.Highlights.Should().Equal("Стало", "Вторая строка");
+        updated.IsPublic.Should().BeTrue();
+        updated.SortOrder.Should().Be(42);
+
+        var reread = (await (await adminClient.GetAsync("/api/admin/plans")).Content
+            .ReadJsonAsync<AdminPlansListDto>())!.Plans;
+        var persisted = reread.Should().ContainSingle(p => p.Id == created.Id).Subject;
+        persisted.Highlights.Should().Equal("Стало", "Вторая строка");
+        persisted.IsPublic.Should().BeTrue();
+        persisted.SortOrder.Should().Be(42);
+    }
+
+    /// <summary>
+    /// Builds a PUT /api/admin/plans/{id} request body from a previously-fetched AdminPlanDto plus
+    /// explicit overrides — the request (UpdatePlanDto) and response (AdminPlanDto) shapes differ (most
+    /// notably: request Highlights is a single newline-joined string, response Highlights is a
+    /// List&lt;string&gt; — see the QA report's note on this being an AdminPlanInput/contract mismatch
+    /// worth a backend follow-up), so the response body can't just be echoed back as the next PUT's body.
+    /// </summary>
+    private static UpdatePlanDto ToUpdateDto(AdminPlanDto plan,
+        string? name = null, decimal? pricePerMonth = null, int? maxEmployees = null, int? maxCompanies = null,
+        bool? allowAnalytics = null, int? photoQuotaMb = null, PhotoRetention? photoRetention = null,
+        bool? isActive = null, string? highlights = null, bool? isPublic = null, int? sortOrder = null,
+        bool? isSystemFree = null) => new(
+            name ?? plan.Name, pricePerMonth ?? plan.PricePerMonth,
+            maxEmployees ?? plan.MaxEmployees, maxCompanies ?? plan.MaxCompanies,
+            plan.AllowOnlineBooking, plan.AllowMailing, allowAnalytics ?? plan.AllowAnalytics,
+            plan.AllowPublicListing, plan.AllowOnlinePayment,
+            photoQuotaMb ?? plan.PhotoQuotaMb, photoRetention ?? plan.PhotoRetention,
+            plan.Description, isActive ?? plan.IsActive, plan.NotifyDaysBefore,
+            highlights, isPublic, sortOrder, isSystemFree);
 }
