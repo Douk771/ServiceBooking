@@ -236,6 +236,18 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         // ARCHITECTURE.md §4.3: a broken manifest on disk (here: isDraft:true without the required
         // "-draft" version suffix) must never take the site down — the last good snapshot keeps serving.
         var v1 = _factory.ResetToDefault();
+        // T8-P11a: LegalDocumentProvider.EnsureFresh throttles re-checks to once per Legal:ReloadSeconds
+        // (1s here), keyed off _lastCheckedUtc — NOT off which manifest version was last requested. This
+        // factory is one instance per test CLASS (shared across every [Fact] here), so if some other test
+        // in this class made its own request within the last second, that request already refreshed the
+        // throttle window; an immediate GetAsync right after ResetToDefault() above would then still be
+        // inside that window and serve whatever snapshot was cached before this test even started — not
+        // the fresh v1 written above. Under a stable/declaration-order run this coincidentally never
+        // happened (the previous test in the file, LEG-017, always ends its own Task.Delay(1200) first),
+        // but random test-case ordering (RandomTestCaseOrderer) can and did place a test here that hadn't
+        // waited, making this assumption visible. Wait out the throttle explicitly instead of relying on
+        // whichever test happened to run immediately before this one.
+        await Task.Delay(1200);
         // Force a successful load of v1 BEFORE corrupting the manifest — otherwise the provider would
         // never have had a good snapshot to fall back to in the first place.
         (await Anon().GetAsync("/api/legal/documents/privacy")).EnsureSuccessStatusCode();

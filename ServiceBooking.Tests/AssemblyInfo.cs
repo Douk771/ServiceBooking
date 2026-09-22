@@ -1,5 +1,11 @@
 using Xunit;
 
+// T8-P11a (US-100, ARCHITECTURE_CYCLE8_PHASE2.md §99.2): randomizes test order WITHIN a class every
+// run, with a reproducible seed (ServiceBooking.Tests/Infrastructure/RandomTestCaseOrderer.cs), to
+// surface hidden "test B only passes after test A" ordering dependencies instead of letting a stable
+// default order hide them indefinitely.
+[assembly: TestCaseOrderer("ServiceBooking.Tests.Infrastructure.RandomTestCaseOrderer", "ServiceBooking.Tests")]
+
 // ARCHITECTURE_CYCLE8_PHASE2.md §91/§92.1/§98.1: every test class now gets its own database, cloned from
 // the run's shared template, via a per-class TestDatabaseFixture (TestSlot.NextForClass) — the isolation
 // this attribute originally protected (a single shared "servicebooking_test"/slot database) no longer
