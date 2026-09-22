@@ -36,25 +36,32 @@ public static class NotificationGate
         bool recipientOptedOut,
         DateTime nowUtc,
         DateTime visitStartUtc,
-        // Cycle 5 (ARCHITECTURE_CYCLE5.md §45.3 p.3): made an explicit, mandatory parameter instead of
-        // an internal ChannelPaymentState.Of(channel, now) call — every caller must now say out loud
-        // where it got "is this number funded" from, rather than the gate quietly re-deriving it. The
-        // full funding rule (paid-N-vs-configured-M, §47.1) is a later slice of this cycle; for now
-        // callers pass today's channel-level payment state (TODO ARCHITECTURE_CYCLE5.md §47 — replace
-        // with the account-level "funded" rule once it exists).
+        // Cycle 5 (ARCHITECTURE_CYCLE5.md §45.3 p.3, §47.2): made an explicit, mandatory parameter
+        // instead of an internal ChannelPaymentState.Of(channel, now) call — every caller must now say
+        // out loud where it got "is this number funded" from, rather than the gate quietly re-deriving
+        // it. Callers compute this via Services.Billing.ChannelFunding.Rank over the account's live
+        // channels and plan.PaidNotificationNumbers (§47.1's N-vs-M rule) — no channel-level payment
+        // read is left in this gate.
         bool channelIsFunded)
     {
         if (recipientOptedOut)
             return NotificationGateResult.Block(NotificationReason.RecipientOptedOut);
 
-        if (!plan.AllowNotificationChannel)
+        // §47.2: "not on a paid plan" now means "the account has 0 paid notification numbers" — the
+        // separate AllowNotificationChannel flag only gates whether the PLAN may buy the option at all,
+        // which is a distinct question from whether it currently has any bought (see EffectivePlan's
+        // own doc comment on the two fields).
+        if (plan.PaidNotificationNumbers == 0)
             return NotificationGateResult.Block(NotificationReason.NotOnPaidPlan);
 
         if (!companyHasAssignment || channel is null)
             return NotificationGateResult.Block(NotificationReason.NoUsableChannel);
 
+        // §47.2: an Unfunded channel (M > N, this one lost the ranking) blocks with the same reason as
+        // "account not paid at all" — NotificationReason is append-only (§59) and NotOnPaidPlan already
+        // honestly covers both "never paid" and "paid for fewer numbers than are configured".
         if (!channelIsFunded)
-            return NotificationGateResult.Block(NotificationReason.NoUsableChannel);
+            return NotificationGateResult.Block(NotificationReason.NotOnPaidPlan);
 
         var enabledTypeMask = settings?.EnabledTypeMask ?? CompanyNotificationSettings.DefaultEnabledTypeMask;
         if ((enabledTypeMask & (1 << (int)type)) == 0)

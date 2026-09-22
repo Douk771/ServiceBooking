@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -91,19 +92,25 @@ public sealed class NotificationDispatchTask(
             var channels = await db.NotificationChannels.Where(c => channelIds.Contains(c.Id)).ToListAsync(linkedCt);
             var channelById = channels.ToDictionary(c => c.Id);
 
-            // Plan resolved by the CHANNEL's own billing account (§45.1) — the account whose
+            // Plan resolved by the CHANNEL's own billing account (§45.1/§47) — the account whose
             // AccountSubscription pays for the option — not the assigned company's own account (a
             // channel may, in principle, be assigned to a company under a different membership than the
-            // one that bought the channel). NotificationChannel doesn't carry BillingAccountId yet
-            // (TODO ARCHITECTURE_CYCLE5.md §47 — a later slice of this cycle); until then, the account is
-            // looked up from the channel's OwnerUserId the same way BillingAccountProvisioner does.
-            var ownerIds = channels.Select(c => c.OwnerUserId).Distinct().ToList();
-            var accountIdByOwner = await db.BillingAccounts
-                .Where(a => ownerIds.Contains(a.OwnerUserId))
-                .Select(a => new { a.OwnerUserId, a.Id })
-                .ToDictionaryAsync(a => a.OwnerUserId, a => a.Id, linkedCt);
-            var accountIds = accountIdByOwner.Values.Distinct();
+            // one that bought the channel).
+            var accountIds = channels.Where(c => c.BillingAccountId.HasValue)
+                .Select(c => c.BillingAccountId!.Value).Distinct().ToList();
             var plansByAccount = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
+
+            // §47.1: funding is ranked across every LIVE channel of the account, not just the ones in
+            // THIS batch — a channel with nothing due right now still occupies a paid slot. One extra
+            // query, grouped by account id, not per channel.
+            var allAccountChannels = await db.NotificationChannels
+                .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value))
+                .ToListAsync(linkedCt);
+            var fundingByAccount = accountIds.ToDictionary(
+                accountId => accountId,
+                accountId => ChannelFunding.Rank(
+                    allAccountChannels.Where(c => c.BillingAccountId == accountId).ToList(),
+                    plansByAccount.TryGetValue(accountId, out var p) ? p.PaidNotificationNumbers : 0));
 
             var companyIds = candidates.Select(n => n.CompanyId).Distinct().ToList();
             var settingsByCompany = await db.CompanyNotificationSettings
@@ -130,15 +137,16 @@ public sealed class NotificationDispatchTask(
                 }
 
                 var channel = row.ChannelId.HasValue && channelById.TryGetValue(row.ChannelId.Value, out var found) ? found : null;
-                var plan = channel is not null && accountIdByOwner.TryGetValue(channel.OwnerUserId, out var accountId)
-                    && plansByAccount.TryGetValue(accountId, out var resolvedPlan)
+                var plan = channel?.BillingAccountId is { } accountId && plansByAccount.TryGetValue(accountId, out var resolvedPlan)
                     ? resolvedPlan
                     : EffectivePlan.Free;
                 settingsByCompany.TryGetValue(row.CompanyId, out var settings);
                 var optedOut = optedOutPhones.Contains(row.RecipientPhone);
-                // TODO(ARCHITECTURE_CYCLE5.md §47): today's channel-level payment state, until the
-                // account-level funding rule (paid N vs configured M) replaces it in a later slice.
-                var channelIsFunded = channel is not null && ChannelPaymentState.Of(channel, now) == ChannelPaymentStatus.Paid;
+                // §47.1/§47.2: ranked once per account above (fundingByAccount), consulted per row here.
+                var channelIsFunded = channel?.BillingAccountId is { } fundingAccountId
+                    && fundingByAccount.TryGetValue(fundingAccountId, out var ranking)
+                    && ranking.TryGetValue(channel.Id, out var fundingState)
+                    && fundingState == ChannelFundingState.Funded;
 
                 var gate = NotificationGate.Evaluate(
                     plan, row.Type, companyHasAssignment: channel is not null, channel, settings, optedOut, now, row.VisitStartUtc,

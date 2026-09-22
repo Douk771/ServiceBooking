@@ -10,8 +10,13 @@ namespace ServiceBooking.UnitTests;
 public class NotificationGateTests
 {
     private static readonly DateTime Now = new(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
-    private static readonly EffectivePlan AllowingPlan = EffectivePlan.Free with { AllowNotificationChannel = true };
-    private static readonly EffectivePlan DenyingPlan = EffectivePlan.Free with { AllowNotificationChannel = false };
+    // Cycle 5 (§47.2): the gate's first check is now PaidNotificationNumbers == 0, not
+    // AllowNotificationChannel — AllowingPlan/DenyingPlan set both together so existing scenarios below
+    // keep meaning "this account currently has the option funded" / "does not".
+    private static readonly EffectivePlan AllowingPlan =
+        EffectivePlan.Free with { AllowNotificationChannel = true, PaidNotificationNumbers = 1 };
+    private static readonly EffectivePlan DenyingPlan =
+        EffectivePlan.Free with { AllowNotificationChannel = false, PaidNotificationNumbers = 0 };
 
     private static NotificationChannel PaidChannel() => new() { PaidUntilUtc = Now.AddDays(10) };
     private static CompanyNotificationSettings DefaultSettings() => new();
@@ -65,15 +70,17 @@ public class NotificationGateTests
     [Fact]
     public void Evaluate_ChannelNotFunded_Blocked()
     {
+        // §47.2: an Unfunded channel blocks with NotOnPaidPlan (append-only NotificationReason honestly
+        // covers both "account never paid" and "paid for fewer numbers than configured", §47.2).
         var result = Evaluate(channel: new NotificationChannel { PaidUntilUtc = null }, channelIsFunded: false);
-        result.Reason.Should().Be(NotificationReason.NoUsableChannel);
+        result.Reason.Should().Be(NotificationReason.NotOnPaidPlan);
     }
 
     [Fact]
     public void Evaluate_ChannelFundingExpired_Blocked()
     {
         var result = Evaluate(channel: new NotificationChannel { PaidUntilUtc = Now.AddDays(-1) }, channelIsFunded: false);
-        result.Reason.Should().Be(NotificationReason.NoUsableChannel);
+        result.Reason.Should().Be(NotificationReason.NotOnPaidPlan);
     }
 
     [Fact]

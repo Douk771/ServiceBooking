@@ -30,6 +30,7 @@ public class NotificationChannelsController(
     IMemoryCache cache,
     IOptions<NotificationOptions> options,
     SubscriptionResolver subscriptionResolver,
+    BillingAccountProvisioner billingAccountProvisioner,
     PlatformSettings platformSettings,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
@@ -53,7 +54,8 @@ public class NotificationChannelsController(
             .ToListAsync();
 
         var idleDays = await PlatformIdleDaysAsync();
-        return Ok(new ChannelListDto(channels.Select(c => MapToDto(c, idleDays)).ToList()));
+        var funding = await LoadFundingAsync(channels);
+        return Ok(new ChannelListDto(channels.Select(c => MapToDto(c, idleDays, funding)).ToList()));
     }
 
     [HttpGet("offer")]
@@ -98,10 +100,15 @@ public class NotificationChannelsController(
         if (price is null)
             return Conflict("Подключение каналов временно недоступно");
 
+        // accountId is guaranteed here — GetOffer/AllowNotificationChannel above already required a
+        // usable plan, and a usable plan requires an AccountSubscription, which requires an account
+        // (BillingAccountProvisioner.EnsureAccountAsync is idempotent if one already exists).
+        var ownerAccountId = accountId ?? await billingAccountProvisioner.EnsureAccountAsync(userId);
         var channel = new NotificationChannel
         {
             Id = Guid.NewGuid(),
             OwnerUserId = userId,
+            BillingAccountId = ownerAccountId,
             State = ChannelState.NotConnected,
             RequestedAtUtc = DateTime.UtcNow,
         };
@@ -109,7 +116,8 @@ public class NotificationChannelsController(
         await db.SaveChangesAsync();
 
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
-        return CreatedAtAction(nameof(GetById), new { id = channel.Id }, MapToDto(channel, idleDays));
+        var funding = await LoadFundingAsync([channel]);
+        return CreatedAtAction(nameof(GetById), new { id = channel.Id }, MapToDto(channel, idleDays, funding));
     }
 
     [HttpGet("{id:guid}")]
@@ -119,7 +127,8 @@ public class NotificationChannelsController(
         if (channel is null) return NotFound();
 
         var idleDays = await PlatformIdleDaysAsync();
-        return Ok(MapToDto(channel, idleDays));
+        var funding = await LoadFundingAsync([channel]);
+        return Ok(MapToDto(channel, idleDays, funding));
     }
 
     [HttpPost("{id:guid}/accept-risk")]
@@ -155,8 +164,11 @@ public class NotificationChannelsController(
             return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
 
         var nowUtc = DateTime.UtcNow;
-        var paymentState = ChannelPaymentState.Of(channel, nowUtc);
-        if (paymentState != ChannelPaymentStatus.Paid)
+        // §47.3: Connect can only bind a FUNDED number — ChannelFunding.Rank over the account's own
+        // live channels, not the channel's own (historical) PaidUntilUtc.
+        var funded = await IsChannelFundedAsync(channel, plan);
+        var paymentState = funded ? ChannelPaymentStatus.Paid : ChannelPaymentStatus.NotPaid;
+        if (!funded)
             return StatusCode(402, "Канал не оплачен");
 
         if (channel.RiskAcceptedAtUtc is null)
@@ -393,6 +405,9 @@ public class NotificationChannelsController(
         {
             Id = Guid.NewGuid(),
             OwnerUserId = userId,
+            // §47.1's stability guarantee is about ranking, not about the row itself losing its
+            // account — a replaced-after-ban number still belongs to the SAME account it always did.
+            BillingAccountId = channel.BillingAccountId,
             State = ChannelState.NotConnected,
             RequestedAtUtc = DateTime.UtcNow,
             PaidFromUtc = channel.PaidFromUtc,
@@ -444,6 +459,14 @@ public class NotificationChannelsController(
 
         var company = await db.Companies.FindAsync(dto.CompanyId);
         if (company is null || company.OwnerUserId != userId) return Forbid();
+
+        // ARCHITECTURE_CYCLE5.md §43.6/§56 last bullet — "a number doesn't serve a company from a
+        // different account", enforced here in application code (the composite FK that pins this down
+        // at the database level is a later stage of this cycle). OwnerUserId matching above is a rights
+        // check, not a money check — this is the money check.
+        if (channel.BillingAccountId.HasValue && company.BillingAccountId.HasValue &&
+            channel.BillingAccountId != company.BillingAccountId)
+            return Forbid();
 
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"channel-assignment:{id}");
@@ -513,7 +536,49 @@ public class NotificationChannelsController(
         await db.Entry(channel).Collection(c => c.Assignments).LoadAsync();
         foreach (var assignment in channel.Assignments)
             await db.Entry(assignment).Reference(a => a.Company).LoadAsync();
-        return StatusCode(201, MapToDto(channel, idleDays));
+        var funding = await LoadFundingAsync([channel]);
+        return StatusCode(201, MapToDto(channel, idleDays, funding));
+    }
+
+    // §47.1/§47.2: single-channel convenience over LoadFundingAsync.
+    private async Task<bool> IsChannelFundedAsync(NotificationChannel channel, EffectivePlan plan)
+    {
+        if (channel.BillingAccountId is not { } accountId) return false;
+        var siblings = await db.NotificationChannels.AsNoTracking().Where(c => c.BillingAccountId == accountId).ToListAsync();
+        var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
+        return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE5.md §47.1 — funding state + user-facing text for every channel in
+    /// <paramref name="channels"/>, grouped by billing account (normally one account per request here:
+    /// this is an owner's own channel list, not an admin-wide scan, so a query per distinct account is
+    /// acceptable — unlike CompaniesController's list endpoints, this is not the R11 hot path).
+    /// </summary>
+    private async Task<Dictionary<Guid, (ChannelFundingState State, string Text)>> LoadFundingAsync(IReadOnlyList<NotificationChannel> channels)
+    {
+        var result = new Dictionary<Guid, (ChannelFundingState, string)>();
+        var accountIds = channels.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct().ToList();
+        if (accountIds.Count == 0) return result;
+
+        var plans = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
+        foreach (var accountId in accountIds)
+        {
+            var plan = plans.TryGetValue(accountId, out var p) ? p : EffectivePlan.Free;
+            var siblings = await db.NotificationChannels.AsNoTracking().Where(c => c.BillingAccountId == accountId).ToListAsync();
+            var live = siblings.Where(c => c.State != ChannelState.Replaced).OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToList();
+            var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
+            var workingChannel = live.FirstOrDefault(c => ranking.TryGetValue(c.Id, out var s) && s == ChannelFundingState.Funded);
+            var workingMasked = workingChannel?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(workingChannel.PhoneNumber);
+
+            foreach (var c in siblings)
+            {
+                var state = ranking.TryGetValue(c.Id, out var s2) ? s2 : ChannelFundingState.NotPaid;
+                var text = BillingTexts.FundingText(state, plan.PaidNotificationNumbers, live.Count, workingMasked);
+                result[c.Id] = (state, text);
+            }
+        }
+        return result;
     }
 
     private async Task DecommissionInstanceAsync(NotificationChannel channel, ChannelState targetState, ChannelStateReason reason)
@@ -641,22 +706,37 @@ public class NotificationChannelsController(
 
     private Task<int> PlatformIdleDaysAsync() => platformSettings.GetChannelIdleDaysAsync();
 
-    private static ChannelDto MapToDto(NotificationChannel channel, int idleDays)
+    // §47.3: PaymentState/PaidFrom/PaidUntil keep their FORM but their SOURCE is now `funding` (the
+    // account's subscription-driven ranking), not the channel's own historical PaidFromUtc/PaidUntilUtc
+    // columns — those are read here ONLY as the (deprecated, always-null-for-PaidFrom) legacy fields the
+    // contract still exposes, never to decide payment state.
+    private static ChannelDto MapToDto(
+        NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, (ChannelFundingState State, string Text)> funding)
     {
-        var nowUtc = DateTime.UtcNow;
-        var paymentState = ChannelPaymentState.Of(channel, nowUtc);
+        var (fundingState, fundingText) = funding.TryGetValue(channel.Id, out var f)
+            ? f
+            : (ChannelFundingState.NotPaid, BillingTexts.FundingText(ChannelFundingState.NotPaid, 0, 1, null));
+        var paymentState = fundingState switch
+        {
+            ChannelFundingState.Funded => ChannelPaymentStatus.Paid,
+            _ when channel.IsSuspendedByAdmin => ChannelPaymentStatus.Suspended,
+            _ => ChannelPaymentStatus.NotPaid,
+        };
         var phoneMasked = channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber);
         var stateText = ChannelPresentation.StateText(channel.State, phoneMasked, idleDays, channel.PaidUntilUtc, channel.LastStateReason);
         var riskAccepted = channel.RiskAcceptedAtUtc is not null;
 
         return new ChannelDto(
             channel.Id, channel.State, stateText, phoneMasked, paymentState,
-            channel.PaidFromUtc, channel.PaidUntilUtc, channel.RequestedAtUtc, channel.ConnectedAtUtc,
+            PaidFrom: null, // §47.3: deprecated, always null — PaidFromUtc is a historical column, not read.
+            channel.PaidUntilUtc, channel.RequestedAtUtc, channel.ConnectedAtUtc,
             channel.RiskAcceptedAtUtc, channel.IdleSinceUtc,
             channel.IdleSinceUtc is not null ? channel.IdleSinceUtc.Value.AddDays(idleDays) : null,
             channel.ReplacedByChannelId,
             channel.Assignments.Select(a => new ChannelCompanyDto(a.CompanyId, a.Company.Name, a.Company.IsActive)).ToList(),
             CanConnect: ChannelPresentation.CanConnect(channel.State, paymentState, riskAccepted),
-            CanReplace: ChannelPresentation.CanReplace(channel.State));
+            CanReplace: ChannelPresentation.CanReplace(channel.State),
+            FundingState: fundingState,
+            FundingText: fundingText);
     }
 }

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Text;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -137,6 +138,23 @@ public sealed class NotificationScheduler(
             recipientPhone, recipientName, optedOut);
     }
 
+    private async Task<bool> IsChannelFundedAsync(NotificationChannel? channel, EffectivePlan plan, CancellationToken ct)
+    {
+        if (channel is null) return false;
+        if (channel.BillingAccountId is not { } accountId)
+        {
+            // Pre-cycle-5-backfill edge case (no BillingAccountId yet on this channel row) — fail
+            // closed rather than guess at funding for a number that isn't tied to an account yet.
+            return false;
+        }
+
+        var siblings = await db.NotificationChannels.AsNoTracking()
+            .Where(c => c.BillingAccountId == accountId)
+            .ToListAsync(ct);
+        var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
+        return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
+    }
+
     private static DateTime ComputeVisitStartUtc(SchedulingContext ctx, Booking booking) =>
         NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, ctx.Company.TimeZoneId);
 
@@ -165,9 +183,11 @@ public sealed class NotificationScheduler(
             return;
         }
 
-        // TODO(ARCHITECTURE_CYCLE5.md §47): today's channel-level payment state, until the account-level
-        // funding rule (paid N vs configured M) replaces it in a later slice of this cycle.
-        var channelIsFunded = ctx.Channel is not null && ChannelPaymentState.Of(ctx.Channel, nowUtc) == ChannelPaymentStatus.Paid;
+        // ARCHITECTURE_CYCLE5.md §47.1/§47.2: funded/unfunded is ranked across every LIVE channel on the
+        // SAME account as ctx.Channel, by plan.PaidNotificationNumbers — one extra scalar-ish query per
+        // queued notification, acceptable here per the class doc comment (booking events, not the
+        // dispatcher's hot list path, §26).
+        var channelIsFunded = await IsChannelFundedAsync(ctx.Channel, ctx.Plan, ct);
         var gate = NotificationGate.Evaluate(
             ctx.Plan, type, ctx.Channel is not null, ctx.Channel, ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc,
             channelIsFunded);

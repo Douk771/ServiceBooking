@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -64,7 +65,7 @@ public class CompanyNotificationsController(
 
         if (!plan.AllowNotificationChannel)
             return StatusCode(402, "Недоступно на вашем тарифе");
-        if (assignment is null || ChannelPaymentState.Of(assignment.Channel, DateTime.UtcNow) != ChannelPaymentStatus.Paid)
+        if (assignment is null || !await IsChannelFundedAsync(assignment.Channel, plan))
             return StatusCode(402, "Канал не оплачен");
 
         var settings = await db.CompanyNotificationSettings.FirstOrDefaultAsync(s => s.CompanyId == companyId);
@@ -124,7 +125,7 @@ public class CompanyNotificationsController(
         var assignment = await db.ChannelCompanyAssignments
             .Include(a => a.Channel).FirstOrDefaultAsync(a => a.CompanyId == companyId);
         if (!plan.AllowNotificationChannel ||
-            assignment is null || ChannelPaymentState.Of(assignment.Channel, DateTime.UtcNow) != ChannelPaymentStatus.Paid)
+            assignment is null || !await IsChannelFundedAsync(assignment.Channel, plan))
             return StatusCode(402, "Канал не оплачен");
 
         // Empty body ("вернуть текст платформы", API_CONTRACT_CYCLE4.md §29.1) bypasses length/placeholder
@@ -302,7 +303,14 @@ public class CompanyNotificationsController(
         var enabledMask = settings?.EnabledTypeMask ?? CompanyNotificationSettings.DefaultEnabledTypeMask;
         var enabledTypes = Enum.GetValues<NotificationType>().Where(t => (enabledMask & (1 << (int)t)) != 0).ToList();
 
-        ChannelPaymentStatus? paymentState = channel is null ? null : ChannelPaymentState.Of(channel, DateTime.UtcNow);
+        // §47.3: ChannelDto/SettingsChannelDto's paymentState keeps its FORM but its SOURCE is now the
+        // account's funding ranking, not the channel's own (historical, unread-by-business-logic)
+        // PaidFromUtc/PaidUntilUtc columns.
+        ChannelPaymentStatus? paymentState = channel is null
+            ? null
+            : channel.IsSuspendedByAdmin
+                ? ChannelPaymentStatus.Suspended
+                : await IsChannelFundedAsync(channel, plan) ? ChannelPaymentStatus.Paid : ChannelPaymentStatus.NotPaid;
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         var stateText = channel is null ? null : ChannelPresentation.StateText(
             channel.State, channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber),
@@ -317,6 +325,16 @@ public class CompanyNotificationsController(
             enabledTypes, settings?.ReminderLeadMinutes ?? new CompanyNotificationSettings().ReminderLeadMinutes,
             settings?.MinLeadMinutes ?? new CompanyNotificationSettings().MinLeadMinutes,
             plan.AllowNotificationChannel, channelDto, blockedReason is null, blockedReason);
+    }
+
+    // ARCHITECTURE_CYCLE5.md §47.1/§47.2: funded/unfunded, ranked across every live channel on the
+    // SAME billing account as `channel` — not a channel-level payment read.
+    private async Task<bool> IsChannelFundedAsync(NotificationChannel? channel, EffectivePlan plan)
+    {
+        if (channel?.BillingAccountId is not { } accountId) return false;
+        var siblings = await db.NotificationChannels.AsNoTracking().Where(c => c.BillingAccountId == accountId).ToListAsync();
+        var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
+        return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
     }
 
     private static int BuildMask(IReadOnlyList<NotificationType> types)

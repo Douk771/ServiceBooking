@@ -28,7 +28,7 @@ public class SubscriptionResolverRulesTests
     [Fact]
     public void Resolve_NoSubscription_ReturnsFree()
     {
-        var plan = SubscriptionResolver.Resolve(null, 0, Now);
+        var plan = SubscriptionResolver.Resolve(null, 0, 0, Now);
 
         plan.Should().Be(EffectivePlan.Free);
     }
@@ -38,7 +38,7 @@ public class SubscriptionResolverRulesTests
     {
         var sub = new AccountSubscription { IsActive = false, PlanConfig = FullPlan() };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.Should().Be(EffectivePlan.Free);
     }
@@ -51,7 +51,7 @@ public class SubscriptionResolverRulesTests
             IsActive = true, PaidUntil = Now.AddDays(-1), PlanConfig = FullPlan()
         };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.Should().Be(EffectivePlan.Free);
     }
@@ -62,7 +62,7 @@ public class SubscriptionResolverRulesTests
         // No PaidUntil means "not on a metered cycle" (e.g. an admin-granted plan), not "expired".
         var sub = new AccountSubscription { IsActive = true, PaidUntil = null, PlanConfig = FullPlan() };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.Should().NotBe(EffectivePlan.Free);
         plan.AllowOnlineBooking.Should().BeTrue();
@@ -73,7 +73,7 @@ public class SubscriptionResolverRulesTests
     {
         var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = null };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.Should().Be(EffectivePlan.Free);
     }
@@ -88,7 +88,7 @@ public class SubscriptionResolverRulesTests
             IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = FullPlan(isActive: false)
         };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.Should().Be(EffectivePlan.Free);
     }
@@ -99,7 +99,7 @@ public class SubscriptionResolverRulesTests
         var config = FullPlan();
         var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.Should().Be(EffectivePlan.FromConfig(config));
     }
@@ -109,7 +109,7 @@ public class SubscriptionResolverRulesTests
     [Fact]
     public void Resolve_NoSubscription_PhotoBaselineIsHundredMegabytesSixMonths()
     {
-        var plan = SubscriptionResolver.Resolve(null, 0, Now);
+        var plan = SubscriptionResolver.Resolve(null, 0, 0, Now);
 
         plan.PhotoQuotaMb.Should().Be(100);
         plan.PhotoRetention.Should().Be(PhotoRetention.SixMonths);
@@ -124,7 +124,7 @@ public class SubscriptionResolverRulesTests
             PlanConfig = FullPlan(isActive: false) // PhotoQuotaMb = 5120, PhotoRetention = TwelveMonths on the config itself
         };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.PhotoQuotaMb.Should().Be(100);
         plan.PhotoRetention.Should().Be(PhotoRetention.SixMonths);
@@ -137,7 +137,7 @@ public class SubscriptionResolverRulesTests
         config.PhotoQuotaMb = null;
         var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.PhotoQuotaMb.Should().BeNull();
         plan.PhotoRetention.Should().Be(PhotoRetention.TwelveMonths);
@@ -152,7 +152,7 @@ public class SubscriptionResolverRulesTests
         var config = FullPlan();
         var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
 
-        var plan = SubscriptionResolver.Resolve(sub, 0, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
 
         plan.AccountMaxEmployees.Should().Be(config.MaxEmployees);
     }
@@ -163,7 +163,7 @@ public class SubscriptionResolverRulesTests
         var config = FullPlan();
         var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
 
-        var plan = SubscriptionResolver.Resolve(sub, 4, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 4, 0, Now);
 
         plan.AccountMaxEmployees.Should().Be(config.MaxEmployees + 4);
     }
@@ -174,7 +174,7 @@ public class SubscriptionResolverRulesTests
         // The bonus survives a downgrade/expiry to Free by design — it was granted because the account
         // already had that many employees at migration time, and losing it the moment the subscription
         // lapses would defeat the whole point of grandfathering.
-        var plan = SubscriptionResolver.Resolve(null, 3, Now);
+        var plan = SubscriptionResolver.Resolve(null, 3, 0, Now);
 
         plan.AccountMaxEmployees.Should().Be(EffectivePlan.Free.AccountMaxEmployees + 3);
     }
@@ -186,7 +186,7 @@ public class SubscriptionResolverRulesTests
         config.MaxEmployees = null;
         var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
 
-        var plan = SubscriptionResolver.Resolve(sub, 5, Now);
+        var plan = SubscriptionResolver.Resolve(sub, 5, 0, Now);
 
         plan.AccountMaxEmployees.Should().BeNull();
     }
@@ -199,8 +199,30 @@ public class SubscriptionResolverRulesTests
         var config = FullPlan();
         var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
 
-        var plan = SubscriptionResolver.Resolve(sub, -1, Now);
+        var plan = SubscriptionResolver.Resolve(sub, -1, 0, Now);
 
         plan.Should().Be(EffectivePlan.FromConfig(config));
+    }
+
+    // ── ARCHITECTURE_CYCLE5.md §47.1: PaidNotificationNumbers is a pass-through the caller resolved
+    // from AccountSubscriptionOptions — Resolve itself does no DB/validity math on it. ─────────────
+
+    [Fact]
+    public void Resolve_PaidNotificationNumbers_PassesThroughUnchanged()
+    {
+        var config = FullPlan();
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
+
+        var plan = SubscriptionResolver.Resolve(sub, 0, 2, Now);
+
+        plan.PaidNotificationNumbers.Should().Be(2);
+    }
+
+    [Fact]
+    public void Resolve_NoSubscription_PaidNotificationNumbersDefaultsToZero()
+    {
+        var plan = SubscriptionResolver.Resolve(null, 0, 0, Now);
+
+        plan.PaidNotificationNumbers.Should().Be(0);
     }
 }
