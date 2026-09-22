@@ -416,7 +416,21 @@ public class AdminBillingController(
 
         // Limit-overflow guard (US-67's last acceptance criterion): if the newly assigned plan's
         // summed limits are lower than what's already occupied, refuse without confirmLimitOverflow.
-        var newEffectivePlan = plan is not null ? EffectivePlan.FromConfig(plan) : EffectivePlan.Free;
+        // N17: must account for the options being assigned IN THIS SAME REQUEST too — an admin handing
+        // out "plan + 10 extra seats" to an account already at 12 employees must not see a false 409
+        // just because the check only looked at the bare plan's own limit.
+        var extraEmployeesInRequest = optionLines
+            .Where(l => options.First(o => o.Id == l.OptionId).CapabilityKey == CapabilityKeys.Employees)
+            .Sum(l => l.Quantity);
+        var extraCompaniesInRequest = optionLines
+            .Where(l => options.First(o => o.Id == l.OptionId).CapabilityKey == CapabilityKeys.Companies)
+            .Sum(l => l.Quantity);
+        var basePlan = plan is not null ? EffectivePlan.FromConfig(plan) : EffectivePlan.Free;
+        var newEffectivePlan = basePlan with
+        {
+            AccountMaxEmployees = basePlan.AccountMaxEmployees is { } maxE ? maxE + extraEmployeesInRequest : null,
+            AccountMaxCompanies = basePlan.AccountMaxCompanies is { } maxC ? maxC + extraCompaniesInRequest : null,
+        };
         var usage = (await usageReader.GetAsync([accountId])).GetValueOrDefault(accountId) ?? new AccountUsage(accountId, 0, 0);
         if (!dto.ConfirmLimitOverflow)
         {
