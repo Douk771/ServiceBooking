@@ -231,6 +231,70 @@ public static class Sweeper
         await using var connection = new NpgsqlConnection(builder.ConnectionString);
         await connection.OpenAsync();
 
+        var rows = await QueryDatabaseRowsAsync(connection);
+
+        foreach (var (name, comment, connections) in rows)
+        {
+            var classified = ClassifyDatabaseRow(name, comment, connections, now, maxAge, workingCopyRoot, onlyRunKey);
+            if (classified is null)
+                continue; // not ours by name, or excluded by --run-key -- never touched, not even listed
+
+            var (resource, eligibleForDeletion) = classified.Value;
+
+            if (eligibleForDeletion)
+            {
+                dead.Add(resource);
+                if (apply)
+                {
+                    try
+                    {
+                        // Sweeper is, by construction, a different process from whichever run created
+                        // this database, so TestDatabaseNaming.EnsureOwnedByThisRun can never pass here --
+                        // DropLeakedAsync is the sweeper-specific, cross-process-safe drop path.
+                        await TestDatabaseLease.DropLeakedAsync(connection, name);
+                        removed.Add(resource);
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add(new SweepError(name, $"\u043d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0443\u0434\u0430\u043b\u0438\u0442\u044c \u0431\u0430\u0437\u0443 {name}: {ex.Message}"));
+                    }
+                }
+            }
+            else if (resource.Liveness == "alive")
+            {
+                alive.Add(resource);
+            }
+            else
+            {
+                undetermined.Add(resource);
+            }
+        }
+    }
+
+    /// <summary>Read-only listing of the sbtest_* databases on the given server -- used both by `sweep`
+    /// (which may then act on the "dead" ones) and, read-only, by `status` (review blocker B1: `status`
+    /// used to report zero database resources ever, so the section 88 acceptance check "after five runs,
+    /// status --json contains no testResources[]" passed vacuously). Never issues DROP.</summary>
+    internal static async Task<TestResource[]> ListDatabaseResourcesAsync(string serverConnectionString, string workingCopyRoot, DateTimeOffset now, TimeSpan maxAge)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(serverConnectionString) { Database = "postgres" };
+        await using var connection = new NpgsqlConnection(builder.ConnectionString);
+        await connection.OpenAsync();
+
+        var rows = await QueryDatabaseRowsAsync(connection);
+        var resources = new List<TestResource>();
+        foreach (var (name, comment, connections) in rows)
+        {
+            var classified = ClassifyDatabaseRow(name, comment, connections, now, maxAge, workingCopyRoot, onlyRunKey: null);
+            if (classified is not null)
+                resources.Add(classified.Value.Resource);
+        }
+
+        return resources.ToArray();
+    }
+
+    private static async Task<List<(string Name, string? Comment, long Connections)>> QueryDatabaseRowsAsync(NpgsqlConnection connection)
+    {
         const string listSql = """
             select d.datname,
                    shobj_description(d.oid, 'pg_database') as comment,
@@ -240,79 +304,83 @@ public static class Sweeper
             """;
 
         var rows = new List<(string Name, string? Comment, long Connections)>();
-        await using (var command = new NpgsqlCommand(listSql, connection))
-        await using (var reader = await command.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-                rows.Add((reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetInt64(2)));
-        }
+        await using var command = new NpgsqlCommand(listSql, connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            rows.Add((reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetInt64(2)));
 
-        foreach (var (name, comment, connections) in rows)
-        {
-            if (!TestDatabaseNaming.IsDisposable(name))
-                continue; // not ours by name — never touched, not even listed
-
-            var metadata = ResourceLabels.TryParseComment(comment);
-            var runKey = metadata?.RunKey ?? name.Split('_', 3).ElementAtOrDefault(1) ?? "unknown0";
-            var slot = name.Split('_', 3).ElementAtOrDefault(2);
-            if (onlyRunKey is not null && runKey != onlyRunKey)
-                continue;
-
-            var age = metadata is not null ? now - metadata.StartedAtUtc : (TimeSpan?)null;
-            var ageSeconds = age is null ? 0 : (int)Math.Max(0, age.Value.TotalSeconds);
-            var processAlive = metadata is not null && IsProcessAlive(metadata.Pid);
-            var mine = metadata?.Workdir == workingCopyRoot;
-
-            var resource = new TestResource(
-                Kind: "database",
-                Id: name,
-                RunKey: runKey,
-                Slot: slot,
-                TestClass: null,
-                Workdir: metadata?.Workdir,
-                StartedAtUtc: metadata is not null ? TestKitJson.ToIso8601(metadata.StartedAtUtc) : TestKitJson.ToIso8601(now),
-                AgeSeconds: ageSeconds,
-                HostPid: metadata?.Pid,
-                HostPidAlive: metadata is null ? null : processAlive,
-                Connections: (int)connections,
-                Mine: mine,
-                Liveness: "undetermined");
-
-            // §86.1: --run-key is the only way to remove an "undetermined" database (e.g. one whose
-            // metadata comment could not be read) — bypasses the normal age gate for that run only.
-            var forcedByRunKey = onlyRunKey is not null;
-
-            if (connections == 0 && !processAlive && ((age is { } a && a > maxAge) || forcedByRunKey))
-            {
-                dead.Add(resource with { Liveness = "dead" });
-                if (apply)
-                {
-                    try
-                    {
-                        // Sweeper is, by construction, a different process from whichever run created
-                        // this database, so TestDatabaseNaming.EnsureOwnedByThisRun can never pass here —
-                        // DropLeakedAsync is the sweeper-specific, cross-process-safe drop path.
-                        await TestDatabaseLease.DropLeakedAsync(connection, name);
-                        removed.Add(resource with { Liveness = "dead" });
-                    }
-                    catch (Exception ex)
-                    {
-                        errors.Add(new SweepError(name, $"не удалось удалить базу {name}: {ex.Message}"));
-                    }
-                }
-            }
-            else if (connections > 0 || processAlive)
-            {
-                alive.Add(resource with { Liveness = "alive" });
-            }
-            else
-            {
-                undetermined.Add(resource with { Liveness = "undetermined" });
-            }
-        }
+        return rows;
     }
 
-    private static bool IsProcessAlive(int pid)
+    /// <summary>
+    /// Classifies one sbtest_* database row into a <see cref="TestResource"/> plus whether it is
+    /// eligible for deletion right now, applying the exact same dead/alive/undetermined conjunction
+    /// regardless of caller (sweep vs. status) -- see section 70.3 and review blocker B2. Returns null when
+    /// the name isn't formally disposable at all, or when <paramref name="onlyRunKey"/> excludes it.
+    /// A pure function over its inputs: no I/O, no clock reads beyond <paramref name="now"/> --
+    /// unit-testable without Docker/Postgres/a real process.
+    /// </summary>
+    internal static (TestResource Resource, bool EligibleForDeletion)? ClassifyDatabaseRow(
+        string name, string? comment, long connections, DateTimeOffset now, TimeSpan maxAge, string workingCopyRoot, string? onlyRunKey)
+    {
+        if (!TestDatabaseNaming.IsDisposable(name))
+            return null; // not ours by name -- never touched, not even listed
+
+        var metadata = ResourceLabels.TryParseComment(comment);
+        var runKey = metadata?.RunKey ?? name.Split('_', 3).ElementAtOrDefault(1) ?? "unknown0";
+        var slot = name.Split('_', 3).ElementAtOrDefault(2);
+        if (onlyRunKey is not null && runKey != onlyRunKey)
+            return null;
+
+        var metadataReadable = metadata is not null;
+
+        // Review blocker B2: metadata.Pid is only comparable to THIS machine's process table when
+        // the database was created on THIS machine. A PID recorded by a different host (e.g. another
+        // CI runner, or a teammate's laptop pointed at a shared "external" dev Postgres) is just a
+        // number that happens not to exist locally -- IsProcessAlive(that number) would almost always
+        // come back false, which used to be read as "the owning process is confirmed dead". Treat PID
+        // evidence as unusable whenever the recorded host doesn't match this one, and never let an
+        // unusable PID contribute to a "dead" verdict.
+        var hostMatchesThisMachine = metadataReadable && string.Equals(metadata!.Host, Environment.MachineName, StringComparison.Ordinal);
+        var pidEvidenceUnusable = metadataReadable && !hostMatchesThisMachine;
+        var processAlive = hostMatchesThisMachine && IsProcessAlive(metadata!.Pid);
+
+        var age = metadataReadable ? now - metadata!.StartedAtUtc : (TimeSpan?)null;
+        var ageSeconds = age is null ? 0 : (int)Math.Max(0, age.Value.TotalSeconds);
+        var mine = metadata?.Workdir == workingCopyRoot;
+
+        // section 86.1/70.3, tightened per review blocker B2: --run-key lifts only the "metadata could not
+        // be read at all" gate (comment missing or malformed, so nothing -- including age -- could be
+        // computed about the database). It never lifts the age gate: a database with readable
+        // metadata is only "dead" once it is actually older than --max-age, run-key or not. This is
+        // what stops `sweep --apply --run-key <key seen in someone else's CI log>` from deleting a
+        // database that is merely between test classes (0 connections) on someone else's machine.
+        var forcedByRunKey = onlyRunKey is not null;
+        var eligibleByAge = age is { } a && a > maxAge;
+        var eligibleByForcedUnreadableMetadata = !metadataReadable && forcedByRunKey;
+
+        var eligibleForDeletion = connections == 0 && !processAlive && !pidEvidenceUnusable && (eligibleByAge || eligibleByForcedUnreadableMetadata);
+        var liveness = eligibleForDeletion ? "dead" : connections > 0 || processAlive ? "alive" : "undetermined";
+
+        var resource = new TestResource(
+            Kind: "database",
+            Id: name,
+            RunKey: runKey,
+            Slot: slot,
+            TestClass: null,
+            Workdir: metadata?.Workdir,
+            StartedAtUtc: metadataReadable ? TestKitJson.ToIso8601(metadata!.StartedAtUtc) : TestKitJson.ToIso8601(now),
+            AgeSeconds: ageSeconds,
+            HostPid: metadata?.Pid,
+            HostPidAlive: pidEvidenceUnusable ? null : (metadataReadable ? processAlive : null),
+            Connections: (int)connections,
+            Mine: mine,
+            Liveness: liveness);
+
+        return (resource, eligibleForDeletion);
+    }
+
+    internal static bool IsProcessAlive(int pid)
     {
         try
         {

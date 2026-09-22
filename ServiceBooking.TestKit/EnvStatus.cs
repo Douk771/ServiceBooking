@@ -35,9 +35,11 @@ public static class EnvStatus
             new[] { dbPort, apiPort, webPort, glitchtipPort }
                 .Select(p => BuildPortInfoAsync(p, projectName, dockerAvailable)));
 
-        var testResources = dockerAvailable
+        var containerResources = dockerAvailable
             ? await CollectContainerResourcesAsync(workingCopyRoot)
             : [];
+        var databaseResources = await CollectDatabaseResourcesAsync(workingCopyRoot);
+        var testResources = containerResources.Concat(databaseResources).ToArray();
 
         if (asJson)
         {
@@ -298,6 +300,34 @@ public static class EnvStatus
         }
 
         return resources.ToArray();
+    }
+
+    /// <summary>Read-only reporting of live sbtest_* databases on the "external" server, when one is
+    /// configured (review blocker B1: `status` used to only ever look at containers — Npgsql was never
+    /// touched — so API_CONTRACT_CYCLE8.md §86.1's "живые тестовые контейнеры И базы" and the §88
+    /// acceptance check were vacuously satisfied no matter what was actually left running). Reuses
+    /// Sweeper's own classification (<see cref="Sweeper.ClassifyDatabaseRow"/>) so `status --json` and
+    /// `sweep --json` can never disagree about the same database, exactly as already guaranteed for
+    /// containers by <see cref="ClassifyContainerLiveness"/> above. Never calls DropLeakedAsync/DROP —
+    /// only <see cref="Sweeper.ListDatabaseResourcesAsync"/>, which is read-only by construction.</summary>
+    private static async Task<TestResource[]> CollectDatabaseResourcesAsync(string workingCopyRoot)
+    {
+        var externalConnection = Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(externalConnection))
+            return []; // container-mode databases live inside an ephemeral Testcontainers instance that
+                        // no longer exists once the test process exits — there is nothing outside that
+                        // process for a separately-run CLI to observe, same as Sweeper.RunAsync (Sweeper.cs:55-57).
+
+        try
+        {
+            return await Sweeper.ListDatabaseResourcesAsync(
+                externalConnection, workingCopyRoot, DateTimeOffset.UtcNow, TestInfrastructure.DefaultSweepMaxAge);
+        }
+        catch
+        {
+            // status is best-effort read-only reporting; an unreachable server here just means an empty list.
+            return [];
+        }
     }
 
     /// <summary>Same conjunction as Sweeper's container classification (§70.3), using the sweeper's
