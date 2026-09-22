@@ -137,7 +137,7 @@ GitHub Actions service-контейнере) и фронтовый `npx tsc --no
 ```bash
 dotnet test ServiceBooking.UnitTests                                    # < 10 с, PostgreSQL не нужна
 dotnet test ServiceBooking.UnitTests --collect:"XPlat Code Coverage"    # cobertura для проверки 80 %
-dotnet test ServiceBooking.Tests                                        # функциональные, нужна PostgreSQL
+dotnet test ServiceBooking.Tests                                        # функциональные, нужен Docker (см. §89 выше) — заранее поднятая PostgreSQL не нужна
 ```
 
 ---

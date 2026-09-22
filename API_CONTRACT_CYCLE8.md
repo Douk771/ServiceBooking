@@ -131,7 +131,7 @@ BASE_URL=http://localhost:5010 bash deploy/ci/smoke.sh
 
 | Переменная | Дефолт | Формат | Читает |
 |---|---|---|---|
-| `SB_PROJECT_NAME` | `servicebooking` | `^[a-z0-9][a-z0-9_-]{0,30}$` | `docker-compose.yml` → `name:`, имя тома; `TestKit status` |
+| `COMPOSE_PROJECT_NAME` | выводится compose из имени каталога | `^[a-z0-9][a-z0-9_-]{0,30}$` | `docker-compose.yml` (штатная переменная compose — namespaces контейнеры/сеть/том разом); `TestKit status`/`doctor` сравнивают с ней же |
 | `SB_DB_PORT` | `5432` | порт 1–65535 | `docker-compose.yml` (публикация Postgres) |
 | `SB_DB_NAME` | `servicebooking` | `^[a-z][a-z0-9_]{0,62}$` | `docker-compose.yml` (`POSTGRES_DB`, строка подключения api) |
 | `SB_API_PORT` | `5000` | порт | `docker-compose.yml` (публикация api), **`vite.config.ts`** |
@@ -209,7 +209,7 @@ dotnet run --project ServiceBooking.TestKit -- doctor [--json]
 |---|---|
 | `0` | успех; для `sweep` без `--apply` — успех независимо от того, найдено ли мёртвое |
 | `1` | ошибка исполнения (нет доступа к Docker и к серверу одновременно, некорректные аргументы) |
-| `2` | `doctor`: предусловия не выполнены (Docker недоступен) — отличается от `1`, чтобы CI мог различить |
+| `2` | `doctor`: хотя бы одна проверка, блокирующая тестовый прогон, не пройдена (Docker и внешний сервер оба недоступны, образ Postgres не в кеше, отсутствует .NET SDK, Ryuk отключён, бюджет параллельных соединений не сходится) — отличается от `1`, чтобы CI мог различить. Занятость портов dev-стека (`ports-free`) в это число **не входит**: она не влияет на готовность самого тестового прогона (container-режим поднимает Postgres на отдельном динамическом порту, server-режим использует `SERVICEBOOKING_TEST_CONNECTION`) и остаётся `ok=true` даже при конфликте — только предупреждение в `detail` |
 | `3` | `sweep --apply`: часть ресурсов удалить не удалось; в JSON — поле `errors[]` |
 
 `status` **никогда** не возвращает ненулевой код из-за состояния машины: «всё занято» — это факт, а
