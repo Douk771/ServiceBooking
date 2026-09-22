@@ -39,11 +39,24 @@ namespace ServiceBooking.Infrastructure.Migrations
         {
             migrationBuilder.Sql(
                 """
-                -- 1. One billing account per existing company owner (skip owners who already have one —
-                -- keeps this migration idempotent if it's ever re-run after a manual Down).
+                -- 1. One billing account per today's owner. §54.2 requires the UNION of all three
+                -- sources that can carry an OwnerUserId with no matching Company row: the decommissioned
+                -- "assign subscription" admin route used to create an AccountSubscription for any
+                -- userId without requiring a company, and a NotificationChannel can likewise be owned by
+                -- someone whose only company has since been deleted. A Companies-only source here would
+                -- leave such a subscription/channel's owner without a BillingAccount, and
+                -- AddCoTenancyConstraints (stage 6) RAISE EXCEPTIONs on exactly that (skip owners who
+                -- already have one — keeps this migration idempotent if it's ever re-run after a manual
+                -- Down).
                 INSERT INTO "BillingAccounts" ("Id", "OwnerUserId", "GrandfatheredEmployeeBonus", "CreatedAtUtc", "UpdatedAtUtc")
                 SELECT gen_random_uuid(), owners."OwnerUserId", 0, now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc'
-                FROM (SELECT DISTINCT "OwnerUserId" FROM "Companies") owners
+                FROM (
+                    SELECT "OwnerUserId" FROM "Companies"
+                    UNION
+                    SELECT "OwnerUserId" FROM "AccountSubscriptions"
+                    UNION
+                    SELECT "OwnerUserId" FROM "NotificationChannels"
+                ) owners
                 WHERE NOT EXISTS (
                     SELECT 1 FROM "BillingAccounts" ba WHERE ba."OwnerUserId" = owners."OwnerUserId"
                 );
