@@ -375,7 +375,8 @@ public class AdminController(
         pricingCatalogCache.Invalidate();
         // A brand-new plan has no subscribers yet — no need for the AccountSubscriptions round trip
         // GetActiveSubscriberCountsAsync does for the list/update endpoints.
-        return Ok(MapAdminPlanDto(dto, subscribedAccounts: 0));
+        // Contract (API_CONTRACT_CYCLE5.md) documents 201 Created for a successful create, not 200.
+        return StatusCode(StatusCodes.Status201Created, MapAdminPlanDto(dto, subscribedAccounts: 0));
     }
 
     [HttpPut("plans/{id:guid}")]
