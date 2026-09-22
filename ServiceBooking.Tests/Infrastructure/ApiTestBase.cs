@@ -158,7 +158,10 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
             planConfig = new SubscriptionPlanConfig
             {
                 Id = Guid.NewGuid(), Name = planName,
-                PricePerMonth = 0, MaxEmployees = null, MaxCompanies = null,
+                // Non-zero: cycle-07 QA finding #1 made PricePerMonth == 0 && IsActive a meaningful
+                // "eligible to become the system free plan" signal on AdminController.SetSystemFree —
+                // this fixture plan must never accidentally qualify.
+                PricePerMonth = 1, MaxEmployees = null, MaxCompanies = null,
                 AllowOnlineBooking = allFeatures, AllowMailing = allFeatures,
                 AllowAnalytics = allFeatures, AllowOnlinePayment = allFeatures,
                 IsActive = true, CreatedAt = DateTime.UtcNow,
@@ -235,7 +238,8 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         var config = new SubscriptionPlanConfig
         {
             Id = Guid.NewGuid(), Name = Unique("Test Plan "),
-            PricePerMonth = 0, MaxEmployees = maxEmployees, MaxCompanies = maxCompanies,
+            // Non-zero for the same reason as GiveAccountPlanAsync above.
+            PricePerMonth = 1, MaxEmployees = maxEmployees, MaxCompanies = maxCompanies,
             AllowOnlineBooking = allowOnlineBooking, AllowMailing = allowMailing,
             AllowAnalytics = allowAnalytics, AllowPublicListing = allowPublicListing, AllowOnlinePayment = allowOnlinePayment,
             PhotoQuotaMb = photoQuotaMb, PhotoRetention = photoRetention,
@@ -352,7 +356,8 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
                 fullAccess = new SubscriptionPlanConfig
                 {
                     Id = Guid.NewGuid(), Name = FullAccessPlanName,
-                    PricePerMonth = 0, MaxEmployees = null, MaxCompanies = null,
+                    // Non-zero for the same reason as GiveAccountPlanAsync above.
+                    PricePerMonth = 1, MaxEmployees = null, MaxCompanies = null,
                     AllowOnlineBooking = true, AllowMailing = true, AllowAnalytics = true, AllowOnlinePayment = true,
                     IsActive = true, CreatedAt = DateTime.UtcNow,
                 };

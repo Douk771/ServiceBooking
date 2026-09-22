@@ -1009,6 +1009,13 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             new { IsSystemFree = true });
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Deactivate this price-0 plan again — leaving it active in this shared, non-transactional
+        // Postgres instance would make it an unintended "transfer candidate" for
+        // SetSystemFree_RemovingTheOnlySystemFreePlan_ReturnsConflict below (which turning off requires
+        // to NOT exist for its Conflict assertion to hold), breaking that test purely based on run order.
+        var deactivate = await adminClient.DeleteAsync($"/api/admin/plans/{createdSecond.Id}");
+        deactivate.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [Fact, TestCase("ADM-052")]
@@ -1044,6 +1051,25 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             .ReadJsonAsync<AdminPlansListDto>())!.Plans;
         reread.Should().ContainSingle(p => p.Id == firstId).Which.IsSystemFree.Should().BeFalse();
         reread.Should().ContainSingle(p => p.Id == createdSecond.Id).Which.IsSystemFree.Should().BeTrue();
+
+        // This test — unlike every other SetSystemFree test — actually completes the move rather than
+        // stopping at the first Conflict, which leaves the DATABASE (not just in-process state) with a
+        // different plan holding the flag than every other test in this shared, non-transactional
+        // Postgres instance assumes. Move it back so SetSystemFree_SecondPlan_ReturnsConflict and
+        // SetSystemFree_RemovingTheOnlySystemFreePlan_ReturnsConflict — both of which rely on "the seeded
+        // plan is always the one currently flagged" — stay correct regardless of run order.
+        var restoreOff = await adminClient.PutJsonAsync($"/api/admin/plans/{createdSecond.Id}/system-free",
+            new { IsSystemFree = false });
+        restoreOff.StatusCode.Should().Be(HttpStatusCode.OK);
+        var restoreOn = await adminClient.PutJsonAsync($"/api/admin/plans/{firstId}/system-free",
+            new { IsSystemFree = true });
+        restoreOn.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Same reasoning as SetSystemFree_SecondPlan_ReturnsConflict's cleanup: an active price-0 plan
+        // left behind here would count as a "transfer candidate" for
+        // SetSystemFree_RemovingTheOnlySystemFreePlan_ReturnsConflict, breaking it based on run order.
+        var deactivateSecond = await adminClient.DeleteAsync($"/api/admin/plans/{createdSecond.Id}");
+        deactivateSecond.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [Fact, TestCase("ADM-054")]

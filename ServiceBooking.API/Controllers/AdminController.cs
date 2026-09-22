@@ -50,6 +50,7 @@ public class AdminController(
         [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        search = Pagination.SanitizeSearch(search);
         var query = db.Users.AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -159,6 +160,7 @@ public class AdminController(
         [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        search = Pagination.SanitizeSearch(search);
         var query = db.Companies
             .Include(c => c.Members)
             .AsQueryable();
@@ -483,7 +485,19 @@ public class AdminController(
         }
 
         if (!dto.IsSystemFree && plan.IsSystemFree)
-            return Conflict("Ровно один тариф должен быть системным бесплатным — назначьте другой, прежде чем снимать этот флаг.");
+        {
+            // §43.4 requires exactly one system free plan at all times, but that invariant can only ever
+            // be enforced across the *pair* of calls an admin needs to move the flag (turn the old one
+            // off, then turn the new one on) — no single request spans both. The best this endpoint can
+            // do is refuse to create a dead end: only allow turning this plan's flag off when another
+            // active, zero-priced plan already exists to receive it next. Without that guard, this used
+            // to refuse turning off unconditionally, which made moving the flag to another plan
+            // impossible altogether (cycle-07 QA finding #1) — the seeded plan could never be replaced.
+            var transferCandidateExists = await db.SubscriptionPlanConfigs
+                .AnyAsync(p => p.Id != id && p.IsActive && p.PricePerMonth == 0);
+            if (!transferCandidateExists)
+                return Conflict("Ровно один тариф должен быть системным бесплатным — создайте или подготовьте тариф с ценой 0, прежде чем снимать этот флаг.");
+        }
 
         var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree, plan.PricePerMonth, existingPlanId: id);
         if (systemFreeError is not null) return systemFreeError;
@@ -593,6 +607,9 @@ public class AdminController(
             return new BadRequestObjectResult("MaxEmployees must not be negative.");
         if (dto.MaxCompanies is < 0)
             return new BadRequestObjectResult("MaxCompanies must not be negative.");
+        var highlightsError = Services.Billing.PricingCatalogBuilder.ValidateHighlights(dto.Highlights);
+        if (highlightsError is not null)
+            return new BadRequestObjectResult(highlightsError);
         return null;
     }
 
