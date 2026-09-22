@@ -105,19 +105,27 @@ public sealed class TestDatabaseLease
     {
         var name = DatabaseNameFor(classSlot);
 
+        // L1 (T9 review): SERVICEBOOKING_TEST_NO_TEMPLATE=1 means there is no `CREATE DATABASE ...
+        // TEMPLATE` at all -- each class database is created and migrated directly, with no shared
+        // template to race against. CloneGate exists ONLY to serialize concurrent clones from one
+        // template (§91.5 п.2); taking it here would instead serialize every class' FULL migration behind
+        // one process-wide lock, turning the escape-hatch mode into a many-minutes-long single-threaded
+        // run instead of the ~46s parallel one it's meant to fall back from.
+        if (_noTemplate)
+        {
+            await using var noTemplateConnection = new NpgsqlConnection(_server.MaintenanceConnectionString);
+            await noTemplateConnection.OpenAsync(cancellationToken);
+            await CreateDatabaseAsync(noTemplateConnection, name, template: null, cancellationToken);
+            lock (_createdDatabasesLock) _createdDatabases.Add(name);
+            await _migrateTemplate!(ConnectionStringFor(classSlot));
+            return name;
+        }
+
         await CloneGate.WaitAsync(cancellationToken);
         try
         {
             await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
             await connection.OpenAsync(cancellationToken);
-
-            if (_noTemplate)
-            {
-                await CreateDatabaseAsync(connection, name, template: null, cancellationToken);
-                lock (_createdDatabasesLock) _createdDatabases.Add(name);
-                await _migrateTemplate!(ConnectionStringFor(classSlot));
-                return name;
-            }
 
             var templateName = DatabaseNameFor(TemplateSlot);
             const int maxAttempts = 3;
