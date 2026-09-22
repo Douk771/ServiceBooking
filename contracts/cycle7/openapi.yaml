@@ -478,6 +478,9 @@ paths:
         немедленного отключения в API нет намеренно.
         requestId, если передан, закрывает заявку как Approved в той же транзакции.
         Операция выполняется под advisory lock billing-account:{accountId}.
+        Межцикловой инвариант (ARCHITECTURE_CYCLE6.md §43.3.6): если planId задан, а paidUntil
+        отсутствует/null — 400 "Укажите дату окончания подписки", ДО записи в AccountSubscriptions
+        и до журнала. planId: null (снятие тарифа) даты не требует.
       requestBody:
         required: true
         content:
@@ -490,7 +493,15 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AdminBillingAccountDto" }
         "415": { $ref: "#/components/responses/UnsupportedMediaType" }
-        "400": { $ref: "#/components/responses/BadRequest" }
+        "400":
+          description: |
+            Голая строка. Помимо общих случаев (paidUntil в прошлом более чем на 1 день;
+            quantity < 1 или > maxQuantity; неизвестный planId/optionId) — planId задан, а
+            paidUntil отсутствует/null: "Укажите дату окончания подписки"
+            (ARCHITECTURE_CYCLE6.md §43.3.6).
+          content:
+            text/plain:
+              schema: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -1613,7 +1624,11 @@ components:
           type: string
           format: date
           nullable: true
-          description: Дата, до которой оплачено. В прошлом более чем на 1 день — 400.
+          description: |
+            Дата, до которой оплачено. В прошлом более чем на 1 день — 400. ОБЯЗАТЕЛЬНО, если
+            planId задан (не выражается в required — условие зависит от planId): отсутствует/null
+            при заданном planId — 400 "Укажите дату окончания подписки" (ARCHITECTURE_CYCLE6.md
+            §43.3.6). Не требуется при planId: null (снятие тарифа).
         options:
           type: array
           description: |
