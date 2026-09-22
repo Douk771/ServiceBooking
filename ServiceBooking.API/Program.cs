@@ -47,7 +47,7 @@ builder.Host.UseSerilog((context, services, loggerConfig) =>
         .Enrich.FromLogContext()
         .Enrich.With<PhoneMaskingEnricher>()
         .WriteTo.Console(new CompactJsonFormatter())
-        .WriteTo.File(new CompactJsonFormatter(), Path.Combine("logs", "app-.json"),
+        .WriteTo.File(new CompactJsonFormatter(), Path.Combine(LogDirectory(context.Configuration), "app-.json"),
             rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14,
             fileSizeLimitBytes: 100 * 1024 * 1024, rollOnFileSizeLimit: true);
 
@@ -526,6 +526,13 @@ builder.Services.AddRateLimiter(o =>
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
     };
 });
+
+// Log directory is configurable (ARCHITECTURE_CYCLE8.md §71.4) so each test-run/slot/factory can point
+// it at its own temp folder instead of colliding on a repo-relative "logs" — the sole behavioural change
+// cycle 8 makes to this file. Default is "logs", exactly as it always was: Development/Production
+// behaviour is unchanged byte-for-byte when Logs:Directory isn't set.
+static string LogDirectory(IConfiguration configuration) =>
+    configuration["Logs:Directory"] is { Length: > 0 } configured ? configured : "logs";
 
 // Shared by auth-login/auth-register: partition purely by the caller's (ForwardedHeaders-resolved) IP,
 // PermitLimit/WindowMinutes read from RateLimits:{policyName}:* with the given defaults.
