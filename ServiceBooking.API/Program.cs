@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
@@ -774,17 +775,20 @@ app.MapControllers();
 // Custom two-field ResponseWriter for both endpoints: the framework's default JSON payload includes
 // each check's exception message, which for "database" would leak a connection string fragment or a
 // driver error straight onto a public, unauthenticated endpoint (US-43 p.3).
+// .WithMetadata(new HttpMethodMetadata(...)) restricts routing to GET only, so any other verb
+// (including TRACE, which MapHealthChecks otherwise answers with the same 200 body — a cycle 8
+// contract-check finding) now gets ASP.NET's standard 405 Method Not Allowed instead.
 app.MapHealthChecks("/api/health/live", new HealthCheckOptions
 {
     Predicate = _ => false, // no checks run at all — this route never touches the database
     ResponseWriter = WriteHealthResponse
-}).AllowAnonymous();
+}).WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get })).AllowAnonymous();
 
 app.MapHealthChecks("/api/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
     ResponseWriter = WriteHealthResponse
-}).AllowAnonymous();
+}).WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get })).AllowAnonymous();
 
 // Seed roles and super-admin on startup
 using (var scope = app.Services.CreateScope())
