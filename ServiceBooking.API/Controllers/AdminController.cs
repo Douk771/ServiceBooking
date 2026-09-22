@@ -292,6 +292,15 @@ public class AdminController(
         // handing the company to someone else must not leave it (and its clients' replies) going through
         // the previous owner's personal number. §25.3 names this exact call site. Same transaction as the
         // ownership move: no window where the assignment survives a committed owner change.
+        //
+        // NOT YET removed here despite ARCHITECTURE_CYCLE5.md §47.4 calling for exactly that ("a number
+        // belongs to the account, not the manager, so a manager change must not touch it") — this
+        // developer left it alone deliberately: §47.4's own text names this call site alongside §50's
+        // "смена ответственного" rewrite, which is stage 4's CompanyOwnerWriter/CompanyTransferService
+        // work, not this stage's. Removing it here, unaccompanied, would also flip
+        // NotificationChannelsTests.ChangeCompanyOwner_UnassignsChannel_CancelsPendingRows_OldOwnerStillSeesChannelInList
+        // (a currently-green functional test asserting exactly this cycle-4 behavior) to red — see the
+        // cycle report's note to stage 4 and qa-engineer.
         if (oldOwnerUserId != newOwner.Id)
         {
             var assignment = await db.ChannelCompanyAssignments.FirstOrDefaultAsync(a => a.CompanyId == id);
