@@ -21,6 +21,9 @@ interface Props {
 
 type Step = 'company' | 'service' | 'master' | 'datetime' | 'client' | 'done'
 
+// US-67 (API_CONTRACT_CYCLE6.md §41.1/§43.1) — server rejects a visit of more than 5 services.
+const MAX_SERVICES = 5
+
 function timeToMinutes(t: string): number {
   const [h, m] = t.slice(0, 5).split(':').map(Number)
   return h * 60 + m
@@ -39,7 +42,9 @@ export function ManualBookingModal({ onClose }: Props) {
   const qc = useQueryClient()
   const [step, setStep] = useState<Step>('company')
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null)
-  const [selectedService, setSelectedService] = useState<Service | null>(null)
+  // US-67: staff picks the same way the client does — one or more services, up to MAX_SERVICES.
+  const [selectedServices, setSelectedServices] = useState<Service[]>([])
+  const [servicesLimitMessage, setServicesLimitMessage] = useState('')
   const [selectedMasterId, setSelectedMasterId] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
@@ -71,11 +76,29 @@ export function ManualBookingModal({ onClose }: Props) {
     enabled: !!selectedCompany,
   })
 
+  // Primary service drives master filtering (§40.1 only takes one `serviceId`) and is required to
+  // equal `serviceIds[0]` on create (§43.1).
+  const primaryService = selectedServices[0] ?? null
+  const extraServiceIds = selectedServices.slice(1).map((s) => s.id)
+  const totalDurationMinutes = selectedServices.reduce((sum, s) => sum + s.durationMinutes, 0)
+  const totalPrice = selectedServices.reduce((sum, s) => sum + s.price, 0)
+
   const { data: masters, isLoading: mastersLoading } = useQuery({
-    queryKey: ['company-masters', selectedCompany?.id, selectedService?.id],
-    queryFn: () => companiesApi.getMasters(selectedCompany!.id, selectedService!.id),
-    enabled: !!selectedCompany && !!selectedService,
+    queryKey: ['company-masters', selectedCompany?.id, primaryService?.id],
+    queryFn: () => companiesApi.getMasters(selectedCompany!.id, primaryService!.id),
+    enabled: !!selectedCompany && !!primaryService,
   })
+
+  // US-64: same rule as the client-facing BookingModal — exactly one active master means there's
+  // nothing to pick, so auto-select and skip the step ("сделать единообразно").
+  // Keyed on `step` — masters can finish loading while the operator is still on the services step,
+  // and a one-shot "masters just arrived" effect would then miss the skip entirely.
+  useEffect(() => {
+    if (step === 'master' && masters && masters.length === 1 && !selectedMasterId) {
+      setSelectedMasterId(masters[0].userId)
+      setStep('datetime')
+    }
+  }, [step, masters, selectedMasterId])
 
   const now = new Date()
   const todayStr = format(now, 'yyyy-MM-dd')
@@ -84,18 +107,33 @@ export function ManualBookingModal({ onClose }: Props) {
   // Today is only offered as a booking date if the master still has at least one slot today
   // that both respects working hours/breaks and hasn't passed yet.
   const { data: slotsToday = [] } = useQuery({
-    queryKey: ['slots', selectedCompany?.id, selectedMasterId, selectedService?.id, todayStr, 'manual'],
-    queryFn: () => bookingsApi.getSlots(selectedCompany!.id, selectedMasterId, selectedService!.id, todayStr, true),
-    enabled: !!selectedCompany && !!selectedMasterId && !!selectedService,
+    queryKey: ['slots', selectedCompany?.id, selectedMasterId, primaryService?.id, extraServiceIds, todayStr, 'manual'],
+    queryFn: () =>
+      bookingsApi.getSlots(selectedCompany!.id, selectedMasterId, primaryService!.id, extraServiceIds, todayStr, true),
+    enabled: !!selectedCompany && !!selectedMasterId && !!primaryService,
     staleTime: 0,
   })
   const hasAvailableSlotToday = slotsToday.some((s) => timeToMinutes(s.start) > nowMinutes)
 
-  const { data: rawSlots, isLoading: slotsLoading } = useQuery({
-    queryKey: ['slots', selectedCompany?.id, selectedMasterId, selectedService?.id, selectedDate, 'manual'],
-    queryFn: () => bookingsApi.getSlots(selectedCompany!.id, selectedMasterId, selectedService!.id, selectedDate, true),
-    enabled: !!selectedCompany && !!selectedMasterId && !!selectedService && !!selectedDate,
+  const {
+    data: rawSlots,
+    isLoading: slotsLoading,
+    error: slotsError,
+  } = useQuery({
+    queryKey: [
+      'slots',
+      selectedCompany?.id,
+      selectedMasterId,
+      primaryService?.id,
+      extraServiceIds,
+      selectedDate,
+      'manual',
+    ],
+    queryFn: () =>
+      bookingsApi.getSlots(selectedCompany!.id, selectedMasterId, primaryService!.id, extraServiceIds, selectedDate, true),
+    enabled: !!selectedCompany && !!selectedMasterId && !!primaryService && !!selectedDate,
     staleTime: 0,
+    retry: false,
   })
   const slots = (rawSlots ?? []).filter((s) => selectedDate !== todayStr || timeToMinutes(s.start) > nowMinutes)
 
@@ -103,7 +141,8 @@ export function ManualBookingModal({ onClose }: Props) {
     mutationFn: () =>
       bookingsApi.create({
         companyId: selectedCompany!.id,
-        serviceId: selectedService!.id,
+        serviceId: primaryService!.id,
+        serviceIds: selectedServices.map((s) => s.id),
         masterId: selectedMasterId,
         date: selectedDate,
         startTime: selectedTime,
@@ -118,6 +157,19 @@ export function ManualBookingModal({ onClose }: Props) {
     },
   })
 
+  const toggleService = (s: Service) => {
+    setServicesLimitMessage('')
+    setSelectedServices((prev) => {
+      const exists = prev.some((p) => p.id === s.id)
+      if (exists) return prev.filter((p) => p.id !== s.id)
+      if (prev.length >= MAX_SERVICES) {
+        setServicesLimitMessage(`За один визит можно выбрать не больше ${MAX_SERVICES} услуг`)
+        return prev
+      }
+      return [...prev, s]
+    })
+  }
+
   const selectedMaster = masters?.find((m) => m.userId === selectedMasterId)
   const days = [
     ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
@@ -130,10 +182,13 @@ export function ManualBookingModal({ onClose }: Props) {
     }),
   ]
 
-  const progressSteps: Step[] =
-    companies?.length === 1
-      ? ['service', 'master', 'datetime', 'client']
-      : ['company', 'service', 'master', 'datetime', 'client']
+  // US-64: mirrors BookingModal — the "choose a master" step is only counted when there's an
+  // actual choice (2+ active masters); with 0 or 1 it never renders.
+  const showMasterStep = !!masters && masters.length > 1
+  const baseSteps: Step[] = showMasterStep
+    ? ['service', 'master', 'datetime', 'client']
+    : ['service', 'datetime', 'client']
+  const progressSteps: Step[] = companies?.length === 1 ? baseSteps : ['company', ...baseSteps]
   const currentIdx = progressSteps.indexOf(step)
 
   const formattedDate = days.find((d) => d.value === selectedDate)?.label ?? ''
@@ -148,10 +203,10 @@ export function ManualBookingModal({ onClose }: Props) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Записать клиента</h2>
-              {selectedService && (
+              {selectedServices.length > 0 && (
                 <p className="text-[13px] text-ink-soft">
-                  {selectedService.name} · {selectedService.durationMinutes} мин ·{' '}
-                  {selectedService.price.toLocaleString('ru-RU')} ₽
+                  {selectedServices.map((s) => s.name).join(', ')} · {totalDurationMinutes} мин ·{' '}
+                  {totalPrice.toLocaleString('ru-RU')} ₽
                 </p>
               )}
             </div>
@@ -216,13 +271,13 @@ export function ManualBookingModal({ onClose }: Props) {
             </div>
           )}
 
-          {/* ── Service ── */}
+          {/* ── Service (US-67: staff picks 1..5 services, same as the client) ── */}
           {step === 'service' && (
             <div>
               {companies && companies.length > 1 && (
                 <BackLink onClick={() => setStep('company')}>{selectedCompany?.name}</BackLink>
               )}
-              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите услугу</h3>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите услуги</h3>
               {servicesLoading ? (
                 <div className="flex flex-col gap-2.5">
                   {[1, 2, 3].map((i) => (
@@ -230,26 +285,57 @@ export function ManualBookingModal({ onClose }: Props) {
                   ))}
                 </div>
               ) : services && services.length > 0 ? (
-                <div className="flex flex-col gap-2.5">
-                  {services.map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => {
-                        setSelectedService(s)
-                        setStep('master')
-                      }}
-                      className="flex items-center justify-between p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
-                    >
-                      <div>
-                        <p className="font-semibold text-sm text-ink">{s.name}</p>
-                        <p className="text-xs text-muted mt-0.5">
-                          {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
-                        </p>
-                      </div>
-                      <Icon name="chevron-right" size={16} strokeWidth={1.8} className="text-line-strong shrink-0" />
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div className="flex flex-col gap-2.5 mb-4">
+                    {services.map((s) => {
+                      const checked = selectedServices.some((p) => p.id === s.id)
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => toggleService(s)}
+                          aria-pressed={checked}
+                          className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all text-left ${
+                            checked ? 'border-ink bg-cream-deep' : 'border-line bg-white hover:border-line-strong'
+                          }`}
+                        >
+                          <div>
+                            <p className="font-semibold text-sm text-ink">{s.name}</p>
+                            <p className="text-xs text-muted mt-0.5">
+                              {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                            </p>
+                          </div>
+                          <Icon
+                            name={checked ? 'check' : 'plus'}
+                            size={16}
+                            strokeWidth={1.8}
+                            className={checked ? 'text-ink shrink-0' : 'text-line-strong shrink-0'}
+                          />
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {servicesLimitMessage && (
+                    <p className="text-sm text-danger text-center mb-3">{servicesLimitMessage}</p>
+                  )}
+
+                  {selectedServices.length > 0 && (
+                    <div className="flex items-center justify-between text-[13.5px] font-semibold text-ink bg-cream-deep rounded-xl px-3.5 py-2.5 mb-4">
+                      <span>Итого</span>
+                      <span>
+                        {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
+                      </span>
+                    </div>
+                  )}
+
+                  <Button
+                    className="w-full"
+                    disabled={selectedServices.length === 0}
+                    onClick={() => setStep('master')}
+                  >
+                    Продолжить
+                  </Button>
+                </>
               ) : (
                 <p className="text-center text-muted py-8">Нет доступных услуг</p>
               )}
@@ -259,7 +345,7 @@ export function ManualBookingModal({ onClose }: Props) {
           {/* ── Master ── */}
           {step === 'master' && (
             <div>
-              <BackLink onClick={() => setStep('service')}>{selectedService?.name}</BackLink>
+              <BackLink onClick={() => setStep('service')}>Изменить услуги</BackLink>
               <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите мастера</h3>
               {mastersLoading ? (
                 <div className="flex flex-col gap-2.5">
@@ -303,8 +389,12 @@ export function ManualBookingModal({ onClose }: Props) {
           {/* ── DateTime ── */}
           {step === 'datetime' && (
             <div>
-              <BackLink onClick={() => setStep('master')}>
-                {selectedMaster ? `${selectedMaster.firstName} ${selectedMaster.lastName}` : 'Мастер'}
+              <BackLink onClick={() => setStep(showMasterStep ? 'master' : 'service')}>
+                {showMasterStep && selectedMaster
+                  ? `${selectedMaster.firstName} ${selectedMaster.lastName}`
+                  : showMasterStep
+                    ? 'Мастер'
+                    : 'Изменить услуги'}
               </BackLink>
 
               {/* Date grid */}
@@ -358,6 +448,10 @@ export function ManualBookingModal({ onClose }: Props) {
                         )
                       })}
                     </div>
+                  ) : slotsError ? (
+                    // US-67 (§41.1): an added service the master doesn't do surfaces as an explicit
+                    // 400 — show it instead of a plain "no slots" that would hide the real reason.
+                    <p className="text-center text-danger py-4 text-sm">{getBookingErrorMessage(slotsError)}</p>
                   ) : (
                     <p className="text-center text-muted py-4 text-sm">Нет доступных слотов на этот день</p>
                   )}
@@ -380,7 +474,10 @@ export function ManualBookingModal({ onClose }: Props) {
               <BackLink onClick={() => setStep('datetime')}>Изменить дату / время</BackLink>
 
               <div className="bg-cream-deep rounded-2xl p-4 text-[13.5px] text-ink">
-                <div className="font-semibold">{selectedService?.name}</div>
+                <div className="font-semibold">{selectedServices.map((s) => s.name).join(', ')}</div>
+                <div className="text-ink-soft mt-0.5">
+                  {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
+                </div>
                 {selectedMaster && (
                   <div className="text-ink-soft mt-0.5">
                     {selectedMaster.firstName} {selectedMaster.lastName}
