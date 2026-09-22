@@ -163,7 +163,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(r => new { r.PlanConfigId, r.OptionId }).IsUnique();
         });
 
-        // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4): US-64 p.4 — who manages a company changed, and when.
+        // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3): US-64 p.4 — who manages a company changed, and when.
         builder.Entity<CompanyOwnerChangeLog>(e =>
         {
             e.HasOne(l => l.Company).WithMany().HasForeignKey(l => l.CompanyId).OnDelete(DeleteBehavior.Cascade);
