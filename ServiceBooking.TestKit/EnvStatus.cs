@@ -230,7 +230,7 @@ public static class EnvStatus
 
         var maxParallelThreads = ResolveMaxParallelThreads(workingCopyRoot, fallbackMaxParallelThreads);
         var poolSizePerHost = TestInfrastructure.PoolMaxSize;
-        var required = maxParallelThreads * hostsPerClass * poolSizePerHost + 4;
+        var required = RequiredConnections(maxParallelThreads, hostsPerClass, poolSizePerHost);
 
         var externalConnection = Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_CONNECTION");
         int? serverMaxConnections;
@@ -270,8 +270,8 @@ public static class EnvStatus
                 $"P={maxParallelThreads}, пул={poolSizePerHost}, хостов на класс={hostsPerClass}."), parallelism);
         }
 
-        var safeLimit = serverMaxConnections.Value * 0.9;
-        var ok = required <= safeLimit;
+        var safeLimit = SafeConnectionLimit(serverMaxConnections.Value);
+        var ok = FitsConnectionBudget(required, serverMaxConnections.Value);
 
         var detail = ok
             ? $"Бюджет сходится: нужно {required} соединений (P={maxParallelThreads}, пул={poolSizePerHost}, " +
@@ -286,10 +286,23 @@ public static class EnvStatus
         return (new DoctorCheck("parallel-connection-budget", ok, detail), parallelism);
     }
 
+    /// <summary>T8-P9 review: no unit coverage existed for the budget arithmetic (verified only manually
+    /// via CLI + ajv per backend's report). Pure, no I/O — testable directly from ServiceBooking.UnitTests
+    /// via InternalsVisibleTo. §93.4's formula, unchanged, just named and given a seam.</summary>
+    internal static int RequiredConnections(int maxParallelThreads, int hostsPerClass, int poolSizePerHost) =>
+        maxParallelThreads * hostsPerClass * poolSizePerHost + 4;
+
+    /// <summary>The 90% safety margin from §93.4 — kept in one place so "safe limit" always means the
+    /// same number in the detail message and in the Ok decision below.</summary>
+    internal static double SafeConnectionLimit(int serverMaxConnections) => serverMaxConnections * 0.9;
+
+    internal static bool FitsConnectionBudget(int required, int serverMaxConnections) =>
+        required <= SafeConnectionLimit(serverMaxConnections);
+
     /// <summary>Mirrors ServiceBooking.Tests/Infrastructure/TestParallelism.cs's precedence (env var
     /// override, else xunit.runner.json's own maxParallelThreads, else a documented fallback) without
     /// referencing that project — TestKit is referenced BY ServiceBooking.Tests, not the reverse.</summary>
-    private static int ResolveMaxParallelThreads(string workingCopyRoot, int fallback)
+    internal static int ResolveMaxParallelThreads(string workingCopyRoot, int fallback)
     {
         var envValue = Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS");
         if (int.TryParse(envValue, out var configured) && configured > 0)
@@ -316,10 +329,16 @@ public static class EnvStatus
     /// <summary>Reads the "300" straight out of TestInfrastructure.PostgresCommand — the same array the
     /// ephemeral Testcontainers instance is actually started with (§93.3) — instead of a second literal
     /// that could drift from it.</summary>
-    private static int? ReadContainerMaxConnections()
+    private static int? ReadContainerMaxConnections() =>
+        ParseMaxConnectionsFromCommand(TestInfrastructure.PostgresCommand);
+
+    /// <summary>Pure parsing, split out of <see cref="ReadContainerMaxConnections"/> so the "-c
+    /// key=value" scanning logic is testable without depending on TestInfrastructure.PostgresCommand's
+    /// actual current value (which review finding N9-adjacent reasoning says must never be duplicated
+    /// as a hardcoded literal in a test either — so tests feed it synthetic arrays instead).</summary>
+    internal static int? ParseMaxConnectionsFromCommand(IReadOnlyList<string> command)
     {
-        var command = TestInfrastructure.PostgresCommand;
-        for (var i = 0; i < command.Length - 1; i++)
+        for (var i = 0; i < command.Count - 1; i++)
         {
             if (command[i] != "-c")
                 continue;
