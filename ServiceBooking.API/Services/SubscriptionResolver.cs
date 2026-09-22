@@ -72,6 +72,12 @@ public class SubscriptionResolver(AppDbContext db)
     /// <paramref name="grandfatheredEmployeeBonus"/> is <see cref="BillingAccount.GrandfatheredEmployeeBonus"/>
     /// — added to the seat limit regardless of subscription state (it survives a downgrade to Free by
     /// design, §54.4/§44.3 p.8) but never surfaced as money.
+    ///
+    /// Convenience overload for callers resolving a plan with no purchased extra-seat/extra-company
+    /// options in hand (equivalent to the 6-argument overload with both extras at 0). No product code
+    /// calls this directly as of this cycle — <see cref="GetEffectivePlanForAccountAsync"/> always has
+    /// the extras available and calls the 6-argument overload — but it's kept as a deliberately small
+    /// public entry point for exactly that case, and unit tests exercise it directly.
     /// </summary>
     public static EffectivePlan Resolve(
         AccountSubscription? sub, int grandfatheredEmployeeBonus, int paidNotificationNumbers, DateTime nowUtc) =>
