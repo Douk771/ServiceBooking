@@ -285,7 +285,9 @@ public class AdminBillingController(
             var accountOptions = subscribedOptions.Where(o => o.BillingAccountId == a.Id);
             var optionsMonthly = accountOptions.Select(o =>
             {
-                var rule = planRules.FirstOrDefault(r => r.OptionId == o.OptionId && r.PlanConfigId == sub!.PlanConfigId);
+                var rule = sub?.PlanConfigId is { } subPlanConfigId
+                    ? planRules.FirstOrDefault(r => r.OptionId == o.OptionId && r.PlanConfigId == subPlanConfigId)
+                    : null;
                 var availability = rule?.Availability ?? OptionAvailability.Unavailable;
                 return BillingCalculator.MonthlyPriceFor(availability, o.Quantity, o.Option.PricePerMonth ?? 0m, rule?.IncludedQuantity);
             });
@@ -732,6 +734,11 @@ public class AdminBillingController(
     {
         // The request is keyed by its billing account id (see BillingAccount's own remarks — there is
         // no separate SubscriptionRequest row to look up by its own id).
+        // US-70 — the owner must learn WHY the request was rejected; an empty/whitespace-only comment
+        // would leave LastRejectionReason meaningless to them, so it's mandatory here rather than
+        // silently accepted like the (owner-authored, optional) RequestedComment it replaces.
+        if (string.IsNullOrWhiteSpace(dto?.Comment)) return BadRequest("Комментарий обязателен при отклонении заявки.");
+
         var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.Id == id);
         if (account is null) return NotFound();
         if (account.RequestedAtUtc is null) return Conflict("Заявка уже обработана.");
@@ -744,7 +751,7 @@ public class AdminBillingController(
         // N10, US-70 — the reason goes to the owner-visible LastRejectionReason pair, not into
         // RequestedComment (that field belongs to the OWNER's own words, and is already being cleared
         // here anyway — nobody reads it once RequestedAtUtc is null).
-        account.LastRejectionReason = dto?.Comment;
+        account.LastRejectionReason = dto!.Comment;
         account.LastRejectedAtUtc = DateTime.UtcNow;
         account.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();
