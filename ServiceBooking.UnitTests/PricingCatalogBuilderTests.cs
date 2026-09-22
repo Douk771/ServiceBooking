@@ -155,14 +155,19 @@ public class PricingCatalogBuilderTests
     }
 
     [Fact]
-    public void Build_SplitsHighlightsOnNewlineAndCapsAtFive()
+    public void Build_SplitsHighlightsOnNewlineAndCapsAtMaxHighlights()
     {
-        var plan = Plan(highlights: "Первая\nВторая\nТретья\nЧетвёртая\nПятая\nШестая");
+        // N25 — the cap is shared with AdminController.SplitHighlights/JoinHighlights
+        // (PricingCatalogBuilder.MaxHighlights) so the admin editor and the public storefront agree on
+        // how many bullets a saved plan keeps; a previous split (10 admin-side, 5 here) let an admin
+        // save 8 and never understand why the public page only showed 5.
+        var lines = Enumerable.Range(1, PricingCatalogBuilder.MaxHighlights + 2).Select(i => $"Пункт {i}").ToList();
+        var plan = Plan(highlights: string.Join('\n', lines));
 
         var result = PricingCatalogBuilder.Build("v1", [plan], [], legalNotice: null);
 
-        result.Plans.Single().Highlights.Should().HaveCount(5)
-            .And.Equal("Первая", "Вторая", "Третья", "Четвёртая", "Пятая");
+        result.Plans.Single().Highlights.Should().HaveCount(PricingCatalogBuilder.MaxHighlights)
+            .And.Equal(lines.Take(PricingCatalogBuilder.MaxHighlights));
     }
 
     [Fact]

@@ -555,13 +555,18 @@ public class AdminController(
             .Select(r => new AdminPlanOptionRuleDto(r.OptionId, r.Availability.ToString(), r.IncludedQuantity)).ToList(),
         subscribedAccounts);
 
+    // N25 — shares its cap with PricingCatalogBuilder.MaxHighlights so the admin editor and the public
+    // storefront agree on how many bullets survive.
     internal static List<string> SplitHighlights(string? raw) =>
         string.IsNullOrWhiteSpace(raw)
             ? []
-            : raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(10).ToList();
+            : raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Take(Services.Billing.PricingCatalogBuilder.MaxHighlights).ToList();
 
     private static string? JoinHighlights(List<string>? highlights) =>
-        highlights is null || highlights.Count == 0 ? null : string.Join('\n', highlights.Take(10));
+        highlights is null || highlights.Count == 0
+            ? null
+            : string.Join('\n', highlights.Take(Services.Billing.PricingCatalogBuilder.MaxHighlights));
 
     private static IActionResult? ValidatePlanInput(AdminPlanInput dto)
     {

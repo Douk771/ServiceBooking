@@ -15,6 +15,12 @@ public static class PricingCatalogBuilder
     public const string DefaultNotice =
         "Подключение тарифа и опций выполняет администратор платформы — оставьте заявку, и мы свяжемся с вами.";
 
+    /// <summary>N25 — the one cap on how many highlight bullets survive, shared with
+    /// <c>AdminController.SplitHighlights/JoinHighlights</c> so the admin editor and the public storefront
+    /// agree on how many bullets a saved plan actually keeps. A previous split (10 here, 5 there) let an
+    /// admin save 8 bullets and never understand why the public page only showed 5.</summary>
+    public const int MaxHighlights = 10;
+
     public static PublicPricingDto Build(
         string version,
         IEnumerable<SubscriptionPlanConfig> plans,
@@ -88,7 +94,7 @@ public static class PricingCatalogBuilder
 
         return raw
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Take(5)
+            .Take(MaxHighlights)
             .ToList();
     }
 }
