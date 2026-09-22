@@ -15,11 +15,45 @@ public static class PricingCatalogBuilder
     public const string DefaultNotice =
         "Подключение тарифа и опций выполняет администратор платформы — оставьте заявку, и мы свяжемся с вами.";
 
-    /// <summary>N25 — the one cap on how many highlight bullets survive, shared with
-    /// <c>AdminController.SplitHighlights/JoinHighlights</c> so the admin editor and the public storefront
-    /// agree on how many bullets a saved plan actually keeps. A previous split (10 here, 5 there) let an
-    /// admin save 8 bullets and never understand why the public page only showed 5.</summary>
+    /// <summary>openapi-cycle5.yaml AdminPlanDto/AdminPlanInput.highlights: <c>maxItems: 10</c> — the cap
+    /// on how many bullets an admin may SAVE for a plan, shared with
+    /// <c>AdminController.SplitHighlights/JoinHighlights</c> and enforced at write time by
+    /// <see cref="ValidateHighlights"/> (cycle-07 QA finding #4).</summary>
     public const int MaxHighlights = 10;
+
+    /// <summary>openapi-cycle5.yaml AdminPlanDto/AdminPlanInput.highlights item: <c>maxLength: 120</c> —
+    /// enforced at write time by <see cref="ValidateHighlights"/> (cycle-07 QA finding #3). Before this,
+    /// nothing stopped an admin from saving a bullet longer than the contract's own documented ceiling.</summary>
+    public const int MaxHighlightLength = 120;
+
+    /// <summary>openapi-cycle5.yaml PublicPlanDto.highlights: <c>maxItems: 5</c> — DELIBERATELY separate
+    /// from <see cref="MaxHighlights"/>. The storefront shows fewer bullets than an admin may save (10),
+    /// so this only ever trims what <see cref="Build"/> displays; it must never be used as the write-time
+    /// cap in <c>AdminController</c> or an admin who saved 8 bullets would silently lose 3 with no error
+    /// (cycle-07 QA finding #4 — the previous fix only synced the two display-side Take() calls, not the
+    /// write-time validation, which is why this constant and <see cref="ValidateHighlights"/> now live in
+    /// exactly one place each).</summary>
+    public const int PublicMaxHighlights = 5;
+
+    /// <summary>
+    /// The one highlights validator for both admin write endpoints (<c>AdminController.CreatePlan</c>/
+    /// <c>UpdatePlan</c>) — returns a human-readable error, or null when <paramref name="highlights"/> is
+    /// within both the count and per-item length ceilings the contract documents. A missing/empty list is
+    /// always valid; "no highlights" is not this validator's problem.
+    /// </summary>
+    public static string? ValidateHighlights(List<string>? highlights)
+    {
+        if (highlights is null || highlights.Count == 0) return null;
+
+        if (highlights.Count > MaxHighlights)
+            return $"Тариф может иметь не более {MaxHighlights} пунктов преимуществ.";
+
+        var tooLong = highlights.FirstOrDefault(h => h.Length > MaxHighlightLength);
+        if (tooLong is not null)
+            return $"Пункт преимущества не может быть длиннее {MaxHighlightLength} символов.";
+
+        return null;
+    }
 
     public static PublicPricingDto Build(
         string version,
@@ -94,7 +128,7 @@ public static class PricingCatalogBuilder
 
         return raw
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Take(MaxHighlights)
+            .Take(PublicMaxHighlights)
             .ToList();
     }
 }

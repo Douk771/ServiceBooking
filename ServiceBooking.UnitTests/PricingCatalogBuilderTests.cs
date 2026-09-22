@@ -155,19 +155,19 @@ public class PricingCatalogBuilderTests
     }
 
     [Fact]
-    public void Build_SplitsHighlightsOnNewlineAndCapsAtMaxHighlights()
+    public void Build_SplitsHighlightsOnNewlineAndCapsAtPublicMaxHighlights()
     {
-        // N25 — the cap is shared with AdminController.SplitHighlights/JoinHighlights
-        // (PricingCatalogBuilder.MaxHighlights) so the admin editor and the public storefront agree on
-        // how many bullets a saved plan keeps; a previous split (10 admin-side, 5 here) let an admin
-        // save 8 and never understand why the public page only showed 5.
+        // openapi-cycle5.yaml PublicPlanDto.highlights: maxItems 5 — deliberately LOWER than
+        // AdminPlanDto/AdminPlanInput's write-time cap of 10 (PricingCatalogBuilder.MaxHighlights).
+        // cycle-07 QA finding #4: the display side must cap at PublicMaxHighlights, not MaxHighlights,
+        // or an admin can save up to 10 bullets that the storefront silently trims to 5 with no warning.
         var lines = Enumerable.Range(1, PricingCatalogBuilder.MaxHighlights + 2).Select(i => $"Пункт {i}").ToList();
         var plan = Plan(highlights: string.Join('\n', lines));
 
         var result = PricingCatalogBuilder.Build("v1", [plan], [], legalNotice: null);
 
-        result.Plans.Single().Highlights.Should().HaveCount(PricingCatalogBuilder.MaxHighlights)
-            .And.Equal(lines.Take(PricingCatalogBuilder.MaxHighlights));
+        result.Plans.Single().Highlights.Should().HaveCount(PricingCatalogBuilder.PublicMaxHighlights)
+            .And.Equal(lines.Take(PricingCatalogBuilder.PublicMaxHighlights));
     }
 
     [Fact]
@@ -193,5 +193,51 @@ public class PricingCatalogBuilderTests
 
         result.Currency.Should().Be("RUB");
         result.Version.Should().Be("abc123");
+    }
+
+    // ── ValidateHighlights (cycle-07 QA findings #3 and #4) ─────────────────────────────────────────
+
+    [Fact]
+    public void ValidateHighlights_NullOrEmpty_IsValid()
+    {
+        PricingCatalogBuilder.ValidateHighlights(null).Should().BeNull();
+        PricingCatalogBuilder.ValidateHighlights([]).Should().BeNull();
+    }
+
+    [Fact]
+    public void ValidateHighlights_AtMaxCount_IsValid()
+    {
+        var highlights = Enumerable.Range(1, PricingCatalogBuilder.MaxHighlights).Select(i => $"Пункт {i}").ToList();
+
+        PricingCatalogBuilder.ValidateHighlights(highlights).Should().BeNull();
+    }
+
+    // openapi-cycle5.yaml AdminPlanInput.highlights: maxItems 10 — writing 11 must be rejected, not
+    // silently truncated (the previous behaviour let an admin save more than the contract allows and
+    // never find out).
+    [Fact]
+    public void ValidateHighlights_OverMaxCount_ReturnsError()
+    {
+        var highlights = Enumerable.Range(1, PricingCatalogBuilder.MaxHighlights + 1).Select(i => $"Пункт {i}").ToList();
+
+        PricingCatalogBuilder.ValidateHighlights(highlights).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ValidateHighlights_ItemAtMaxLength_IsValid()
+    {
+        var highlights = new List<string> { new string('x', PricingCatalogBuilder.MaxHighlightLength) };
+
+        PricingCatalogBuilder.ValidateHighlights(highlights).Should().BeNull();
+    }
+
+    // openapi-cycle5.yaml AdminPlanDto/AdminPlanInput.highlights item: maxLength 120 — writing 121 must
+    // be rejected (cycle-07 QA finding #3: this used to not be checked at write time at all).
+    [Fact]
+    public void ValidateHighlights_ItemOverMaxLength_ReturnsError()
+    {
+        var highlights = new List<string> { new string('x', PricingCatalogBuilder.MaxHighlightLength + 1) };
+
+        PricingCatalogBuilder.ValidateHighlights(highlights).Should().NotBeNull();
     }
 }
