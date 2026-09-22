@@ -1,11 +1,5 @@
 import type { AssignOptionInput, AssignSubscriptionInput, SubscriptionStatus } from '../../api/adminBilling'
 
-export const STATUS_LABEL_RU: Record<SubscriptionStatus, string> = {
-  Free: 'бесплатный',
-  Active: 'активна',
-  Expired: 'истекла',
-}
-
 export const STATUS_BADGE_CLASS: Record<SubscriptionStatus, string> = {
   Free: 'bg-cream-deep text-ink-soft',
   Active: 'bg-success-bg text-success',

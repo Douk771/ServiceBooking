@@ -19,7 +19,6 @@ import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
 import { getAdminBillingErrorMessage as getBillingErrorMessage, isLimitOverflowConflict } from '../../utils/adminBillingError'
 import {
-  STATUS_LABEL_RU,
   STATUS_BADGE_CLASS,
   formatRub,
   computeExpectedTotal,
@@ -332,7 +331,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE_CLASS[account.status]}`}
               >
-                {STATUS_LABEL_RU[account.status]}
+                {account.statusText}
               </span>
               <span className="text-xs text-muted">{account.ownerPhoneMasked}</span>
               <span className="text-xs text-muted">оплачено до {fmtDate(account.paidUntil)}</span>
@@ -471,7 +470,7 @@ function AccountRow({ item, onOpen }: { item: AdminBillingAccountListItem; onOpe
           <span className="font-medium text-ink">{item.ownerName}</span>
           {item.name && <span className="text-xs text-muted">({item.name})</span>}
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
-            {STATUS_LABEL_RU[item.status]}
+            {item.statusText}
           </span>
           {item.hasPendingRequest && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-info-bg text-info">заявка</span>
