@@ -40,6 +40,15 @@ ServiceBooking.API/App_Data/*
 # Serilog's rolling file sink (US-45, ARCHITECTURE.md §11.1) — a runtime artifact, not data or config.
 ServiceBooking.API/logs/
 
+# Repo-root /logs — QA/local run logs (app-*.json when the API is launched with cwd=repo root instead
+# of ServiceBooking.API/, plus ad-hoc contract-check/schemathesis run logs). Same reasoning as
+# ServiceBooking.API/logs/ above: a runtime artifact of running the app/tools locally, not source.
+/logs/
+
+# schemathesis's own working directory (contract checks against contracts/openapi-cycle5.yaml) —
+# cassettes/state from local runs, not something to commit.
+/.schemathesis/
+
 # Repo-root /legal — the operator-owned directory docker-compose.prod.yml bind-mounts onto the VPS
 # (DEPLOY.md §2.1, ARCHITECTURE.md §4.1). It only exists on the VPS itself, created there from the
 # committed ServiceBooking.API/App_Data/legal draft; never meant to be a tracked path in this repo.
