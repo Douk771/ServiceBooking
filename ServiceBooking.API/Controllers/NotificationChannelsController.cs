@@ -559,9 +559,9 @@ public class NotificationChannelsController(
     /// this is an owner's own channel list, not an admin-wide scan, so a query per distinct account is
     /// acceptable — unlike CompaniesController's list endpoints, this is not the R11 hot path).
     /// </summary>
-    private async Task<Dictionary<Guid, (ChannelFundingState State, string Text)>> LoadFundingAsync(IReadOnlyList<NotificationChannel> channels)
+    private async Task<Dictionary<Guid, (ChannelFundingState State, string Text, DateTime? PaidUntil)>> LoadFundingAsync(IReadOnlyList<NotificationChannel> channels)
     {
-        var result = new Dictionary<Guid, (ChannelFundingState, string)>();
+        var result = new Dictionary<Guid, (ChannelFundingState, string, DateTime?)>();
         var accountIds = channels.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct().ToList();
         if (accountIds.Count == 0) return result;
 
@@ -575,11 +575,25 @@ public class NotificationChannelsController(
             var workingChannel = live.FirstOrDefault(c => ranking.TryGetValue(c.Id, out var s) && s == ChannelFundingState.Funded);
             var workingMasked = workingChannel?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(workingChannel.PhoneNumber);
 
+            // N6, §47.3: ChannelDto.paidUntil's SOURCE is the account's notifications.whatsapp option,
+            // not the channel's own (no-longer-written) PaidUntilUtc column. A row with no own
+            // PaidUntilUtc rides the subscription's own paid period instead (same convention
+            // SubscriptionResolver uses), so falls back to the subscription's PaidUntil.
+            var whatsappOption = await db.AccountSubscriptionOptions
+                .Include(o => o.Option)
+                .Where(o => o.BillingAccountId == accountId && o.Option.Code == SubscriptionResolver.WhatsAppOptionCode)
+                .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > DateTime.UtcNow)
+                .FirstOrDefaultAsync();
+            var subPaidUntil = whatsappOption?.PaidUntilUtc is null
+                ? await db.AccountSubscriptions.Where(s => s.BillingAccountId == accountId).Select(s => s.PaidUntil).FirstOrDefaultAsync()
+                : null;
+            var optionPaidUntil = whatsappOption?.PaidUntilUtc ?? subPaidUntil;
+
             foreach (var c in siblings)
             {
                 var state = ranking.TryGetValue(c.Id, out var s2) ? s2 : ChannelFundingState.NotPaid;
                 var text = BillingTexts.FundingText(state, plan.PaidNotificationNumbers, live.Count, workingMasked);
-                result[c.Id] = (state, text);
+                result[c.Id] = (state, text, optionPaidUntil);
             }
         }
         return result;
@@ -715,11 +729,11 @@ public class NotificationChannelsController(
     // columns — those are read here ONLY as the (deprecated, always-null-for-PaidFrom) legacy fields the
     // contract still exposes, never to decide payment state.
     private static ChannelDto MapToDto(
-        NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, (ChannelFundingState State, string Text)> funding)
+        NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, (ChannelFundingState State, string Text, DateTime? PaidUntil)> funding)
     {
-        var (fundingState, fundingText) = funding.TryGetValue(channel.Id, out var f)
+        var (fundingState, fundingText, subscriptionPaidUntil) = funding.TryGetValue(channel.Id, out var f)
             ? f
-            : (ChannelFundingState.NotPaid, BillingTexts.FundingText(ChannelFundingState.NotPaid, 0, 1, null));
+            : (ChannelFundingState.NotPaid, BillingTexts.FundingText(ChannelFundingState.NotPaid, 0, 1, null), (DateTime?)null);
         var paymentState = fundingState switch
         {
             ChannelFundingState.Funded => ChannelPaymentStatus.Paid,
@@ -727,13 +741,16 @@ public class NotificationChannelsController(
             _ => ChannelPaymentStatus.NotPaid,
         };
         var phoneMasked = channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber);
-        var stateText = ChannelPresentation.StateText(channel.State, phoneMasked, idleDays, channel.PaidUntilUtc, channel.LastStateReason);
+        // N6, §47.3: StateText/ChannelDto.paidUntil both read the SUBSCRIPTION's paid-until now, not
+        // channel.PaidUntilUtc (that column is no longer written by anything — see the field's own
+        // remarks below).
+        var stateText = ChannelPresentation.StateText(channel.State, phoneMasked, idleDays, subscriptionPaidUntil, channel.LastStateReason);
         var riskAccepted = channel.RiskAcceptedAtUtc is not null;
 
         return new ChannelDto(
             channel.Id, channel.State, stateText, phoneMasked, paymentState,
             PaidFrom: null, // §47.3: deprecated, always null — PaidFromUtc is a historical column, not read.
-            channel.PaidUntilUtc, channel.RequestedAtUtc, channel.ConnectedAtUtc,
+            subscriptionPaidUntil, channel.RequestedAtUtc, channel.ConnectedAtUtc,
             channel.RiskAcceptedAtUtc, channel.IdleSinceUtc,
             channel.IdleSinceUtc is not null ? channel.IdleSinceUtc.Value.AddDays(idleDays) : null,
             channel.ReplacedByChannelId,
