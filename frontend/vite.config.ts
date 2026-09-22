@@ -17,8 +17,8 @@ export default defineConfig(({ mode }) => {
   // also carries unrelated secrets (e.g. GLITCHTIP_POSTGRES_PASSWORD, GLITCHTIP_SECRET_KEY,
   // consumed by docker-compose.glitchtip.yml), which must never be loaded here.
   const fileEnv = loadEnv(mode, repoRoot, ['VITE_', 'SB_'])
-  // Empty-string values are a normal shape for this .env (see .env.dev.example's
-  // SB_VOLUME_SUFFIX=) but must be treated as "not set", not as a literal empty override.
+  // An empty value is a normal shape for a hand-edited .env (a knob left blank rather than
+  // removed) and must be treated as "not set", not as a literal empty override.
   const env = (key: string) => {
     const fromProcess = process.env[key]
     if (fromProcess !== undefined && fromProcess.trim() !== '') return fromProcess.trim()
