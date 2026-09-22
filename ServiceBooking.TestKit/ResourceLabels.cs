@@ -25,15 +25,19 @@ public static class ResourceLabels
         [RunKeyLabel] = runKey,
         [HostPidLabel] = Environment.ProcessId.ToString(),
         [StartedAtLabel] = DateTimeOffset.UtcNow.ToString("O"),
-        [WorkdirLabel] = Environment.CurrentDirectory,
+        [WorkdirLabel] = TestInfrastructure.WorkingCopyRoot,
     };
 
     /// <summary>JSON payload written via <c>COMMENT ON DATABASE</c> for server-mode (external) databases —
     /// see ARCHITECTURE_CYCLE8.md §70.3, point 3. Read back by the sweeper via <see cref="TryParseComment"/>.</summary>
     public sealed record DatabaseMetadata(string RunKey, string Host, int Pid, DateTimeOffset StartedAtUtc, string Workdir);
 
-    public static string ToComment(DatabaseMetadata metadata) => JsonSerializer.Serialize(metadata);
+    public static string ToComment(DatabaseMetadata metadata) => JsonSerializer.Serialize(metadata, TestKitJson.Options);
 
+    /// <summary>Parses a <c>COMMENT ON DATABASE</c> payload written by <see cref="ToComment"/>. Returns
+    /// null both on malformed JSON and on a JSON object that parses but is missing the fields required
+    /// to compute an age — a database with unreadable metadata must be treated as "undetermined", never
+    /// as "started at the Unix epoch" (which would make it look millennia old and eligible for deletion).</summary>
     public static DatabaseMetadata? TryParseComment(string? comment)
     {
         if (string.IsNullOrWhiteSpace(comment))
@@ -41,7 +45,14 @@ public static class ResourceLabels
 
         try
         {
-            return JsonSerializer.Deserialize<DatabaseMetadata>(comment);
+            var metadata = JsonSerializer.Deserialize<DatabaseMetadata>(comment, TestKitJson.Options);
+            if (metadata is null)
+                return null;
+
+            if (string.IsNullOrWhiteSpace(metadata.RunKey) || metadata.StartedAtUtc == default)
+                return null;
+
+            return metadata;
         }
         catch (JsonException)
         {

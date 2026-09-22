@@ -31,8 +31,37 @@ public static class TestInfrastructure
         "-c", "shared_buffers=128MB",
     ];
 
-    /// <summary>Npgsql connection-string tail applied by <see cref="TestDatabaseLease"/> so a
-    /// handful of short-lived WebApplicationFactory hosts can't exhaust the server's connection
-    /// budget — see ARCHITECTURE_CYCLE8.md §75.</summary>
-    public const string PoolLimitTail = "Maximum Pool Size=15;Connection Idle Lifetime=10;Timeout=15";
+    /// <summary>Pool limits applied by <see cref="TestDatabaseLease"/>, via
+    /// <see cref="Npgsql.NpgsqlConnectionStringBuilder"/> properties (not string concatenation — a
+    /// concatenated tail can silently duplicate keys already present in an operator-supplied
+    /// SERVICEBOOKING_TEST_CONNECTION), so a handful of short-lived WebApplicationFactory hosts can't
+    /// exhaust the server's connection budget — see ARCHITECTURE_CYCLE8.md §75.</summary>
+    public const int PoolMaxSize = 15;
+    public const int PoolConnectionIdleLifetimeSeconds = 10;
+    public const int PoolTimeoutSeconds = 15;
+
+    /// <summary>Resolves the working-copy root (directory containing ServiceBooking.sln) by walking up
+    /// from <see cref="Environment.CurrentDirectory"/>. Both the resource-creating side (test host,
+    /// running from a bin/Debug/net8.0 subfolder) and the resource-reading side (TestKit CLI, run from
+    /// the repo root) must agree on this value, or the "mine vs. someone else's" comparison in
+    /// EnvStatus/Sweeper is meaningless — see non-blocking review finding on TestServerLease.cs:82.</summary>
+    public static string WorkingCopyRoot
+    {
+        get
+        {
+            var directory = new DirectoryInfo(Environment.CurrentDirectory);
+            while (directory is not null)
+            {
+                if (File.Exists(Path.Combine(directory.FullName, "ServiceBooking.sln")) ||
+                    Directory.Exists(Path.Combine(directory.FullName, ".git")))
+                {
+                    return directory.FullName;
+                }
+
+                directory = directory.Parent;
+            }
+
+            return Environment.CurrentDirectory;
+        }
+    }
 }

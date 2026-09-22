@@ -83,6 +83,10 @@ public sealed record DoctorDocument(
     int ExitCode,
     DoctorCheck[] Checks);
 
+public sealed record SweepError(
+    string? ResourceId,
+    string Message);
+
 public sealed record SweepDocument(
     string Command,
     int SchemaVersion,
@@ -95,7 +99,8 @@ public sealed record SweepDocument(
     TestResource[] Dead,
     TestResource[] Alive,
     TestResource[] Undetermined,
-    TestResource[] Removed);
+    TestResource[] Removed,
+    SweepError[] Errors);
 
 /// <summary>
 /// Простейший разбор `.env` (KEY=VALUE, `#`-комментарии, пустые строки) — нужен, чтобы CLI мог отличить

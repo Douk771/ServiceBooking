@@ -32,8 +32,11 @@ public sealed class TestDatabaseLease
         var builder = new NpgsqlConnectionStringBuilder(_server.MaintenanceConnectionString)
         {
             Database = DatabaseNameFor(slot),
+            MaxPoolSize = TestInfrastructure.PoolMaxSize,
+            ConnectionIdleLifetime = TestInfrastructure.PoolConnectionIdleLifetimeSeconds,
+            Timeout = TestInfrastructure.PoolTimeoutSeconds,
         };
-        return $"{builder.ConnectionString};{TestInfrastructure.PoolLimitTail}";
+        return builder.ConnectionString;
     }
 
     /// <summary>
@@ -89,12 +92,33 @@ public sealed class TestDatabaseLease
         // also goes through the same disposability check that guards DROP DATABASE.
         TestDatabaseNaming.EnsureDisposable(name);
 
+        await using (var existsCommand = new NpgsqlCommand("select 1 from pg_database where datname = @name", connection))
+        {
+            existsCommand.Parameters.AddWithValue("name", name);
+            if (await existsCommand.ExecuteScalarAsync(cancellationToken) is not null)
+                return; // already created by an earlier call for this slot — EnsureSlotsAsync is idempotent per slot.
+        }
+
         var sql = template is null
             ? $"CREATE DATABASE \"{name}\""
             : $"CREATE DATABASE \"{name}\" TEMPLATE \"{template}\"";
 
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        // §70.3 п.3: metadata is written at creation time so the sweeper can later compute an age for
+        // this database without guessing. Without this, every server-mode database stays "undetermined"
+        // forever (age unknown => never eligible for deletion), which defeats the sweeper entirely.
+        var metadata = new ResourceLabels.DatabaseMetadata(
+            RunKey: TestRunKey.Current,
+            Host: Environment.MachineName,
+            Pid: Environment.ProcessId,
+            StartedAtUtc: DateTimeOffset.UtcNow,
+            Workdir: TestInfrastructure.WorkingCopyRoot);
+
+        var commentJson = ResourceLabels.ToComment(metadata).Replace("'", "''");
+        await using var commentCommand = new NpgsqlCommand($"COMMENT ON DATABASE \"{name}\" IS '{commentJson}'", connection);
+        await commentCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
@@ -120,10 +144,34 @@ public sealed class TestDatabaseLease
         _createdDatabases.Clear();
     }
 
+    /// <summary>Drops a database belonging to <em>this</em> run (the run whose in-process
+    /// <see cref="TestRunKey.Current"/> matches the run-key segment of the name). Used by test teardown,
+    /// never by the sweeper — see <see cref="DropLeakedAsync"/> for the cross-process case.</summary>
     public static async Task DropAsync(NpgsqlConnection connection, string databaseName, CancellationToken cancellationToken = default)
     {
         TestDatabaseNaming.EnsureOwnedByThisRun(databaseName);
+        await DropUncheckedAsync(connection, databaseName, cancellationToken);
+    }
 
+    /// <summary>
+    /// Drops a database left behind by a DIFFERENT run. This is the only place in the repository allowed
+    /// to drop a database whose run-key does not match <see cref="TestRunKey.Current"/> — the sweeper
+    /// (<see cref="Sweeper"/>) is, by definition, a separate process cleaning up after other processes, so
+    /// <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/> can never pass for it (see review finding
+    /// blocker #1: sweep --apply could not delete anything). Safety here comes from two things instead:
+    /// the caller (Sweeper) verifies <see cref="TestDatabaseNaming.IsDisposable"/> AND applies its own dead/
+    /// alive/undetermined classification before calling this, and this method re-asserts the name is at
+    /// least formally disposable so nothing outside the sbtest_&lt;key&gt;_&lt;slot&gt; namespace can ever
+    /// reach DROP DATABASE.
+    /// </summary>
+    public static async Task DropLeakedAsync(NpgsqlConnection connection, string databaseName, CancellationToken cancellationToken = default)
+    {
+        TestDatabaseNaming.EnsureDisposable(databaseName);
+        await DropUncheckedAsync(connection, databaseName, cancellationToken);
+    }
+
+    private static async Task DropUncheckedAsync(NpgsqlConnection connection, string databaseName, CancellationToken cancellationToken)
+    {
         await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

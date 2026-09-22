@@ -69,18 +69,17 @@ public sealed class TestServerLease : IAsyncDisposable
         PostgreSqlContainer container;
         try
         {
-            container = new PostgreSqlBuilder()
+            var builder = new PostgreSqlBuilder()
                 .WithImage(TestInfrastructure.PostgresImage)
                 .WithDatabase("postgres")
                 .WithUsername("postgres")
                 .WithPassword("postgres")
-                .WithCommand(TestInfrastructure.PostgresCommand)
-                .WithLabel(ResourceLabels.OwnerLabel, "1")
-                .WithLabel(ResourceLabels.RunKeyLabel, TestRunKey.Current)
-                .WithLabel(ResourceLabels.HostPidLabel, Environment.ProcessId.ToString())
-                .WithLabel(ResourceLabels.StartedAtLabel, DateTimeOffset.UtcNow.ToString("O"))
-                .WithLabel(ResourceLabels.WorkdirLabel, Environment.CurrentDirectory)
-                .Build();
+                .WithCommand(TestInfrastructure.PostgresCommand);
+
+            foreach (var label in ResourceLabels.ForContainer(TestRunKey.Current))
+                builder = builder.WithLabel(label.Key, label.Value);
+
+            container = builder.Build();
 
             await container.StartAsync(cancellationToken);
         }
@@ -93,8 +92,7 @@ public sealed class TestServerLease : IAsyncDisposable
                 "    1) запустить Docker Desktop и повторить — это штатный путь;\n" +
                 "    2) указать свой сервер PostgreSQL:\n" +
                 "       SERVICEBOOKING_TEST_CONNECTION=\"Host=localhost;Port=5432;Username=postgres;Password=...\"\n" +
-                "       (имя базы в строке игнорируется, прогон создаёт свои базы sbtest_<ключ>_<слот>)\n" +
-                "  Подробности: docs/testing-isolation.md",
+                "       (имя базы в строке игнорируется, прогон создаёт свои базы sbtest_<ключ>_<слот>)",
                 ex);
         }
 
