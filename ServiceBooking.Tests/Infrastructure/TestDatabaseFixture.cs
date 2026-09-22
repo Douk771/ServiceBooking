@@ -52,8 +52,18 @@ public sealed class ApiDatabaseFixture : SlotDatabaseFixture
 
     public override async Task DisposeAsync()
     {
-        await Factory.DisposeAsync();
-        await base.DisposeAsync();
+        // Factory.DisposeAsync() stopping the host is not guaranteed to succeed (e.g. a background
+        // dispatcher that never finished starting) -- base.DisposeAsync() (TestRunEnvironment.ReleaseAsync)
+        // must still run so the shared refcount is decremented and the container/databases are torn
+        // down; otherwise a host-stop failure leaks the environment for the rest of the process.
+        try
+        {
+            await Factory.DisposeAsync();
+        }
+        finally
+        {
+            await base.DisposeAsync();
+        }
     }
 }
 

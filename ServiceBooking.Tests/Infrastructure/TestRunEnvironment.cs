@@ -33,10 +33,27 @@ public static class TestRunEnvironment
 
             if (_databases is null)
             {
-                _server = await TestServerLease.AcquireAsync(cancellationToken);
-                _databases = new TestDatabaseLease(_server);
-                await _databases.EnsureSlotsAsync(TestSlot.All, MigrateTemplateAsync, cancellationToken);
-                PrintBanner(_server);
+                try
+                {
+                    _server = await TestServerLease.AcquireAsync(cancellationToken);
+                    _databases = new TestDatabaseLease(_server);
+                    await _databases.EnsureSlotsAsync(TestSlot.All, MigrateTemplateAsync, cancellationToken);
+                    PrintBanner(_server);
+                }
+                catch
+                {
+                    // Partial initialization (e.g. template migration failed) must not leave a live
+                    // container/refcount behind for the next fixture to inherit -- xUnit never calls
+                    // DisposeAsync on a fixture whose InitializeAsync threw, so this is the only chance
+                    // to roll everything back before the exception propagates.
+                    if (_server is not null)
+                        await _server.DisposeAsync();
+
+                    _server = null;
+                    _databases = null;
+                    _refCount--;
+                    throw;
+                }
             }
 
             return _databases;
@@ -96,8 +113,9 @@ public static class TestRunEnvironment
 
         var mode = server.Mode == TestServerMode.Container ? "container" : "external";
         var databases = string.Join(",", TestSlot.All);
+        var user = new Npgsql.NpgsqlConnectionStringBuilder(server.MaintenanceConnectionString).Username ?? "?";
         var line = $"[sb-test] run={TestRunKey.Current}  mode={mode}  server={server.Host}:{server.Port}  " +
-                   $"databases=sbtest_{TestRunKey.Current}_{{{databases}}}";
+                   $"user={user}  databases=sbtest_{TestRunKey.Current}_{{{databases}}}";
         Console.WriteLine(line);
 
         try
@@ -109,6 +127,7 @@ public static class TestRunEnvironment
                 runKey = TestRunKey.Current,
                 mode,
                 server = $"{server.Host}:{server.Port}",
+                user,
                 databases = TestSlot.All.Select(slot => $"sbtest_{TestRunKey.Current}_{slot}").ToArray(),
             }, TestKitJson.Options);
             File.WriteAllText(Path.Combine(resultsDirectory, "sb-test-run.json"), json);
