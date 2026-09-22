@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -201,6 +202,54 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
         // The channel itself still exists (it belongs to the SOURCE account, unaffected) — only the
         // assignment to this particular company is gone.
         (await db.NotificationChannels.AnyAsync(c => c.Id == channelId)).Should().BeTrue();
+    }
+
+    // ── Diagnostics after transfer (merge-review finding, GET /admin/owners/{ownerUserId}/subscription
+    // must list companies by BillingAccountId — the payer — not by Company.OwnerUserId — the manager;
+    // US-77 is exactly the scenario where those two diverge) ────────────────────────────────────────
+
+    [Fact, TestCase("TRF-006")]
+    public async Task Diagnostics_AfterTransferWithoutOwnerChange_ListsCompanyUnderThePayerAccount_NotTheManager()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var (sourceOwner, company) = await CreateOwnerWithCompanyAsync();
+        var (targetOwner, _) = await CreateOwnerWithCompanyAsync();
+        var (_, targetAccountId) = await GetAccountIdsAsync(company.Id, targetOwner.UserId);
+
+        // Transfer WITHOUT a new owner: sourceOwner keeps managing the company (Company.OwnerUserId
+        // unchanged), but targetOwner's billing account now pays for it — precisely the "two axes"
+        // split the merge-review finding was about.
+        var response = await AuthedClient(admin.Token).PostAsJsonAsync(
+            $"/api/admin/companies/{company.Id}/transfer", new CompanyTransferInput(targetAccountId, null));
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var reloaded = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == company.Id);
+            reloaded.OwnerUserId.Should().Be(sourceOwner.UserId, "no owner change was requested — sourceOwner still MANAGES the company");
+            reloaded.BillingAccountId.Should().Be(targetAccountId, "the company is now PAID FOR by the target account");
+        }
+
+        // The manager's own diagnostics must no longer explain a plan the company isn't even subject
+        // to anymore. Parsed as raw JSON (not the DTO type) because SubscriptionDiagnosticsDto.Status
+        // is a real enum and the test HttpClient's default JsonSerializerOptions don't carry the
+        // API's JsonStringEnumConverter (Program.cs) — the same reason other tests in this file parse
+        // responses with JsonDocument rather than ReadFromJsonAsync<T> for enum-bearing DTOs.
+        var managerDiagJson = await (await AuthedClient(admin.Token).GetAsync($"/api/admin/owners/{sourceOwner.UserId}/subscription"))
+            .Content.ReadAsStringAsync();
+        using var managerDiagDoc = JsonDocument.Parse(managerDiagJson);
+        managerDiagDoc.RootElement.GetProperty("companies").EnumerateArray()
+            .Should().NotContain(c => c.GetProperty("companyId").GetGuid() == company.Id,
+                "the diagnostic answers for the billing account it resolved a plan from — it must not list a company that's no longer on that account, even though this owner still manages it");
+
+        // The payer's diagnostics must show it, explained by the payer's own effective plan.
+        var payerDiagJson = await (await AuthedClient(admin.Token).GetAsync($"/api/admin/owners/{targetOwner.UserId}/subscription"))
+            .Content.ReadAsStringAsync();
+        using var payerDiagDoc = JsonDocument.Parse(payerDiagJson);
+        payerDiagDoc.RootElement.GetProperty("companies").EnumerateArray()
+            .Should().Contain(c => c.GetProperty("companyId").GetGuid() == company.Id,
+                "the transferred company is now on the target account and must be explained by ITS plan");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────

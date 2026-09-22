@@ -261,4 +261,87 @@ public class BillingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         dto!.AvailableOptions.Should().NotContain(o => o.OptionId != Guid.Empty && o.Name.Contains("WhatsApp", StringComparison.OrdinalIgnoreCase) && o.PricePerMonth != null,
             "US-74: WhatsApp must not appear as a purchasable, priced option by default");
     }
+
+    // ── QA cycle 7, final pass before merge — the merge-review finding that RequiresPaidUntil's 400
+    // was reintroduced into AdminBillingController.AssignSubscription but only exercised by a unit
+    // test of the pure helper (SubscriptionAssignmentValidatorTests), not by anything that calls the
+    // actual endpoint. Before this file, ServiceBooking.Tests had zero occurrences of the literal
+    // "Укажите дату окончания подписки" — so a future rewrite of the endpoint that stops calling
+    // RequiresPaidUntil would leave the unit test green and this exact hole open again. ─────────────
+
+    [Fact, TestCase("BLL-005")]
+    public async Task AssignSubscription_PaidPlanWithoutPaidUntil_Returns400_AndWritesNothing()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var planId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            (await db.SubscriptionPlanConfigs.FindAsync(planId))!.IsActive = true;
+            await db.SaveChangesAsync();
+        }
+
+        Guid accountId;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            accountId = await db.BillingAccounts.Where(a => a.OwnerUserId == owner.UserId).Select(a => a.Id).FirstAsync();
+        }
+
+        int logsBefore;
+        AccountSubscription? subBefore;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            logsBefore = await db.SubscriptionChangeLogs.CountAsync();
+            subBefore = await db.AccountSubscriptions.AsNoTracking().FirstOrDefaultAsync(s => s.BillingAccountId == accountId);
+            subBefore.Should().BeNull("this account must start with no subscription row at all — otherwise the 'nothing changed' assertion below is meaningless");
+        }
+
+        var response = await AuthedClient(admin.Token).PutAsJsonAsync(
+            $"/api/admin/billing-accounts/{accountId}/subscription",
+            new { planId, isActive = true, paidUntil = (DateOnly?)null, options = Array.Empty<object>() });
+
+        ((int)response.StatusCode).Should().Be(400);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("Укажите дату окончания подписки");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            // The check must fire BEFORE any write, not roll one back: no subscription row must have
+            // been created at all, and the change log must be untouched.
+            (await db.AccountSubscriptions.AnyAsync(s => s.BillingAccountId == accountId)).Should().BeFalse(
+                "a rejected assignment must never create the subscription row in the first place");
+            (await db.SubscriptionChangeLogs.CountAsync()).Should().Be(logsBefore,
+                "a rejected assignment must not append a history row either — the guard runs before any write");
+        }
+    }
+
+    [Fact, TestCase("BLL-006")]
+    public async Task AssignSubscription_RemovingPlanWithoutPaidUntil_Succeeds()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var (owner, _) = await CreateOwnerWithCompanyAsync(); // starts on a paid plan with a PaidUntil date
+
+        Guid accountId;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            accountId = await db.BillingAccounts.Where(a => a.OwnerUserId == owner.UserId).Select(a => a.Id).FirstAsync();
+        }
+
+        var response = await AuthedClient(admin.Token).PutAsJsonAsync(
+            $"/api/admin/billing-accounts/{accountId}/subscription",
+            new { planId = (Guid?)null, isActive = true, paidUntil = (DateOnly?)null, options = Array.Empty<object>() });
+
+        response.EnsureSuccessStatusCode();
+
+        using var scope2 = Factory.Services.CreateScope();
+        var db2 = scope2.ServiceProvider.GetRequiredService<AppDbContext>();
+        var sub = await db2.AccountSubscriptions.AsNoTracking().FirstAsync(s => s.BillingAccountId == accountId);
+        sub.PlanConfigId.Should().BeNull("removing the plan (Free) never requires a PaidUntil date");
+        sub.PaidUntil.Should().BeNull();
+    }
 }
