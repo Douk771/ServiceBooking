@@ -23,7 +23,7 @@ namespace ServiceBooking.API.Controllers;
 public class AdminController(
     AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager,
     PricingCatalogCache pricingCatalogCache, CompanyOwnerWriter companyOwnerWriter,
-    ILogger<AdminController> logger) : ControllerBase
+    SubscriptionResolver subscriptionResolver, ILogger<AdminController> logger) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -303,6 +303,16 @@ public class AdminController(
     /// US-63 diagnostic endpoint (ARCHITECTURE_CYCLE6.md §43.2, API_CONTRACT_CYCLE6.md §42.2):
     /// answers "the plan is assigned — why doesn't it work" in one round trip, instead of a support
     /// engineer guessing across six independent failure points (§43.1).
+    ///
+    /// Merge-review finding (cycle 7 on top of cycle 6): this survived the BillingAccount rework
+    /// keyed off <c>AccountSubscription.OwnerUserId</c>, which ARCHITECTURE_CYCLE7.md §43.4 says
+    /// business logic no longer reads, and resolved the effective plan with
+    /// <c>grandfatheredEmployeeBonus: 0, paidNotificationNumbers: 0</c> hard-coded — any purchased
+    /// options were invisible, so this could show a plan poorer than what's actually applied.
+    /// Repointed at the owner's <see cref="BillingAccount"/> (1:1, same guarantee the old unique
+    /// index gave) and <see cref="SubscriptionResolver.GetEffectivePlanForAccountAsync"/>, the same
+    /// option-aware resolution every other endpoint uses. Not retired by §54: the frontend doesn't
+    /// call it, but the contract didn't mark it Gone, and support engineers may still hit it directly.
     /// </summary>
     [HttpGet("owners/{ownerUserId}/subscription")]
     public async Task<ActionResult<SubscriptionDiagnosticsDto>> GetSubscriptionDiagnostics(string ownerUserId)
@@ -310,12 +320,16 @@ public class AdminController(
         var owner = await db.Users.FirstOrDefaultAsync(u => u.Id == ownerUserId);
         if (owner is null) return NotFound("Owner not found");
 
-        var sub = await db.AccountSubscriptions
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
+
+        var sub = account is null ? null : await db.AccountSubscriptions
             .Include(s => s.PlanConfig)
-            .FirstOrDefaultAsync(s => s.OwnerUserId == ownerUserId);
+            .FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
 
         var nowUtc = DateTime.UtcNow;
-        var effective = SubscriptionResolver.Resolve(sub, grandfatheredEmployeeBonus: 0, paidNotificationNumbers: 0, nowUtc);
+        var effective = account is null
+            ? EffectivePlan.Free
+            : await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
         var (status, statusText) = SubscriptionDiagnostics.Describe(sub, nowUtc);
 
         var companies = await db.Companies.Where(c => c.OwnerUserId == ownerUserId)
