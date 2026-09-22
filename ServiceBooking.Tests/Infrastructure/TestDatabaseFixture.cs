@@ -1,47 +1,81 @@
-using Microsoft.EntityFrameworkCore;
-using ServiceBooking.Infrastructure.Data;
+using ServiceBooking.TestKit;
 
 namespace ServiceBooking.Tests.Infrastructure;
 
 /// <summary>
-/// Collection fixture: wipes the "servicebooking_test" database exactly once before any
-/// test in the collection runs, then boots a single shared CustomWebApplicationFactory
-/// (whose own Program.cs startup code re-applies migrations and seeds roles/SuperAdmin).
+/// Base for the three slot fixtures (ARCHITECTURE_CYCLE8.md §66/§70.1). Each fixture registers with the
+/// process-wide <see cref="TestRunEnvironment"/> on <see cref="InitializeAsync"/> and unregisters on
+/// <see cref="DisposeAsync"/> — the shared server/databases are created once, by whichever fixture
+/// initializes first, and torn down once, by whichever releases last.
 /// </summary>
-public class TestDatabaseFixture : IAsyncLifetime
+public abstract class SlotDatabaseFixture : IAsyncLifetime
 {
-    // Overridable via SERVICEBOOKING_TEST_CONNECTION so CI (and any dev box with a differently
-    // configured Postgres) can point the whole suite at a different database without editing code —
-    // falls back to the same literal that has always worked locally when the variable isn't set.
-    public static readonly string ConnectionString =
-        Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_CONNECTION")
-        ?? "Host=localhost;Database=servicebooking_test;Username=postgres;Password=";
+    protected abstract string Slot { get; }
+
+    /// <summary>Connection string for this fixture's slot database. Only valid after
+    /// <see cref="InitializeAsync"/> has run — xUnit guarantees that before any test in the owning
+    /// collection executes.</summary>
+    public string ConnectionString { get; private set; } = null!;
+
+    public virtual async Task InitializeAsync()
+    {
+        var lease = await TestRunEnvironment.AcquireAsync();
+        ConnectionString = lease.ConnectionStringFor(Slot);
+    }
+
+    public virtual Task DisposeAsync() => TestRunEnvironment.ReleaseAsync();
+}
+
+/// <summary>
+/// Collection fixture for the "Api" xUnit collection: owns the <see cref="TestSlot.Api"/> database and
+/// the single shared <see cref="CustomWebApplicationFactory"/> most functional tests run against.
+/// Replaces the old TestDatabaseFixture, which wiped and re-migrated a single, hardcoded
+/// "servicebooking_test" database — that database is now one of three per-run, per-slot databases
+/// created by <see cref="TestRunEnvironment"/>, and nothing ever calls EnsureDeletedAsync on it (§69.3):
+/// each run gets its own fresh database instead of wiping a shared one.
+/// </summary>
+public sealed class ApiDatabaseFixture : SlotDatabaseFixture
+{
+    protected override string Slot => TestSlot.Api;
 
     public CustomWebApplicationFactory Factory { get; private set; } = null!;
 
-    public async Task InitializeAsync()
+    public override async Task InitializeAsync()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(ConnectionString)
-            .Options;
+        await base.InitializeAsync();
 
-        await using (var db = new AppDbContext(options))
-        {
-            // Drop first so the factory's own startup migration+seed logic runs against a clean schema.
-            await db.Database.EnsureDeletedAsync();
-        }
-
-        Factory = new CustomWebApplicationFactory();
+        Factory = new CustomWebApplicationFactory(ConnectionString);
 
         // Touching Services boots the host, which runs Program.cs's migrate + role/SuperAdmin seed.
         _ = Factory.Services;
     }
 
-    public async Task DisposeAsync()
+    public override async Task DisposeAsync()
     {
         await Factory.DisposeAsync();
+        await base.DisposeAsync();
     }
 }
 
+/// <summary>
+/// Collection fixture (also part of the "Api" xUnit collection, alongside <see cref="ApiDatabaseFixture"/>
+/// — a collection definition may back more than one <c>ICollectionFixture</c>) owning the
+/// <see cref="TestSlot.Legal"/> database, used by <see cref="LegalDocumentsTestFactory"/> and the classes
+/// that construct one directly.
+/// </summary>
+public sealed class LegalDatabaseFixture : SlotDatabaseFixture
+{
+    protected override string Slot => TestSlot.Legal;
+}
+
+/// <summary>
+/// Collection fixture for the "NotificationDispatch" xUnit collection: owns the
+/// <see cref="TestSlot.Dispatch"/> database used by <see cref="NotificationDispatchTestFactory"/>.
+/// </summary>
+public sealed class DispatchDatabaseFixture : SlotDatabaseFixture
+{
+    protected override string Slot => TestSlot.Dispatch;
+}
+
 [CollectionDefinition("Api")]
-public class ApiCollection : ICollectionFixture<TestDatabaseFixture>;
+public sealed class ApiCollection : ICollectionFixture<ApiDatabaseFixture>, ICollectionFixture<LegalDatabaseFixture>;
