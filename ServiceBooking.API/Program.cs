@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
@@ -136,35 +135,6 @@ builder.Services.AddControllers(options =>
         o.JsonSerializerOptions.Converters.Add(new ServiceBooking.API.DTOs.Common.OptionalJsonConverterFactory());
     });
 builder.Services.AddEndpointsApiExplorer();
-
-// Cycle 8 contract-check finding (schemathesis, POST /api/auth/login with empty phone/password): every
-// 4xx body on this API is documented as plain text (API_CONTRACT.md §0.2, RegisterDto.Legal's own note,
-// utils/authError.ts) — EXCEPT for [Required]-tagged fields (LoginDto.Phone/Password, RegisterDto.
-// FirstName/LastName/Phone/Password), where the default [ApiController] automatic model-validation short-
-// circuits the action entirely and answers with a generic `application/problem+json` ValidationProblem-
-// Details blob before AuthController.Login/Register ever runs a single line of its own hand-written
-// validation. This wasn't a deliberate exception, just an oversight nobody had a tool to catch until this
-// cycle's OpenAPI invariant/schemathesis run surfaced it — RegisterDto.Legal/RegisterLegalDto and
-// OwnerTermsDto/CreateChannelRequestDto etc. already document the SAME reasoning for why their own fields
-// are deliberately left un-[Required] (checked by hand instead), so unifying every automatic ModelState
-// failure onto the same plain-text shape those hand-written checks use is the fix that keeps the whole
-// surface consistent with one invariant, not two.
-builder.Services.Configure<Microsoft.AspNetCore.Mvc.ApiBehaviorOptions>(options =>
-{
-    options.InvalidModelStateResponseFactory = context =>
-    {
-        var message = string.Join(" ", context.ModelState.Values
-            .SelectMany(entry => entry.Errors)
-            .Select(error => error.ErrorMessage)
-            .Where(text => !string.IsNullOrWhiteSpace(text)));
-        return new Microsoft.AspNetCore.Mvc.ContentResult
-        {
-            StatusCode = StatusCodes.Status400BadRequest,
-            Content = string.IsNullOrWhiteSpace(message) ? "Invalid request." : message,
-            ContentType = "text/plain"
-        };
-    };
-});
 
 // Swagger / OpenAPI — Development only (US-10): the API surface, including auth flows, shouldn't be
 // browsable/probeable in Production or in any deployed environment.
@@ -782,20 +752,17 @@ app.MapControllers();
 // Custom two-field ResponseWriter for both endpoints: the framework's default JSON payload includes
 // each check's exception message, which for "database" would leak a connection string fragment or a
 // driver error straight onto a public, unauthenticated endpoint (US-43 p.3).
-// .WithMetadata(new HttpMethodMetadata(...)) restricts routing to GET only, so any other verb
-// (including TRACE, which MapHealthChecks otherwise answers with the same 200 body — a cycle 8
-// contract-check finding) now gets ASP.NET's standard 405 Method Not Allowed instead.
 app.MapHealthChecks("/api/health/live", new HealthCheckOptions
 {
     Predicate = _ => false, // no checks run at all — this route never touches the database
     ResponseWriter = WriteHealthResponse
-}).WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get })).AllowAnonymous();
+}).AllowAnonymous();
 
 app.MapHealthChecks("/api/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
     ResponseWriter = WriteHealthResponse
-}).WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get })).AllowAnonymous();
+}).AllowAnonymous();
 
 // Seed roles and super-admin on startup
 using (var scope = app.Services.CreateScope())
