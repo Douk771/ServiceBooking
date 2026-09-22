@@ -49,7 +49,16 @@ interface Props {
 export function BookingCalendar({ companyId, masterId, serviceId, extraServiceIds, selectedDate, onSelectDate }: Props) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
 
-  const from = toDateStr(startOfMonth(month))
+  // API_CONTRACT_CYCLE6.md §41.2 / openapi-cycle6.yaml: the server rejects `from` earlier than
+  // `today - 1` with a bare-string 400 ("from is too far in the past"). Requesting the 1st of the
+  // CURRENT month — which is what "one request per displayed month" naturally asks for — trips that
+  // rule on every day of the month except the 1st and 2nd, and the horizon retry below does not
+  // apply (it only recognises the horizon message), so the whole calendar came back empty and
+  // unclickable. Days before today are rendered from the browser's own local date anyway (the
+  // `past` branch below), so they never needed server data: clamp the request's start to today.
+  const monthStart = startOfMonth(month)
+  const todayStart = startOfDay(new Date())
+  const from = toDateStr(isAfter(todayStart, monthStart) ? todayStart : monthStart)
   const to = toDateStr(endOfMonth(month))
   const serviceKey = extraServiceIds ? [serviceId, ...extraServiceIds].join(',') : serviceId
 
@@ -93,6 +102,10 @@ export function BookingCalendar({ companyId, masterId, serviceId, extraServiceId
   const horizonLastDate = data?.horizonLastDate ? new Date(`${data.horizonLastDate}T00:00:00`) : undefined
   const nextMonthStart = startOfMonth(addMonths(month, 1))
   const nextMonthDisabled = !!horizonLastDate && isAfter(nextMonthStart, horizonLastDate)
+  // A month entirely in the past has nothing bookable in it, and asking for it would now send
+  // `from` (clamped to today) after `to` (that month's end) — a different 400 from the same §41.2
+  // rule set. Booking only ever goes forward, so the arrow is disabled on the current month.
+  const prevMonthDisabled = !isAfter(monthStart, startOfMonth(new Date()))
 
   return (
     <div>
@@ -101,8 +114,9 @@ export function BookingCalendar({ companyId, masterId, serviceId, extraServiceId
         <button
           type="button"
           aria-label="Предыдущий месяц"
+          disabled={prevMonthDisabled}
           onClick={() => setMonth((m) => subMonths(m, 1))}
-          className="w-[30px] h-[30px] rounded-full bg-cream-deep hover:bg-line flex items-center justify-center text-ink-soft transition-colors"
+          className="w-[30px] h-[30px] rounded-full bg-cream-deep hover:bg-line flex items-center justify-center text-ink-soft transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-cream-deep"
         >
           <Icon name="chevron-left" size={14} strokeWidth={1.8} />
         </button>
