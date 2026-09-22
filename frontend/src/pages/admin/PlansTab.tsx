@@ -21,6 +21,17 @@ const RETENTION_LABELS: Record<PhotoRetention, string> = {
   TwelveMonths: '12 месяцев',
 }
 
+// A server on an older release (pre cycle-7 AdminPlanDto) never sent highlights/options/isSystemFree/
+// photoRetention at all — `plan.photoRetention` can then be `undefined` and miss this map entirely.
+// Falling back to a plain label instead of indexing straight into RETENTION_LABELS keeps the card
+// readable instead of throwing (§100.2 / US-110).
+const UNKNOWN_RETENTION_LABEL = 'срок не указан'
+
+function retentionLabel(retention: PhotoRetention | undefined | null): string {
+  if (!retention) return UNKNOWN_RETENTION_LABEL
+  return RETENTION_LABELS[retention] ?? UNKNOWN_RETENTION_LABEL
+}
+
 // AdminPlanDto.highlights allows up to 10 entries on write (contract + PricingCatalogBuilder.MaxHighlights).
 // The PUBLIC pricing page only ever shows the first 5 (PricingPlanDto.highlights maxItems, and
 // PricingCatalogBuilder.PublicMaxHighlights) — that's a display cap, not a write cap, so the editor
@@ -125,7 +136,11 @@ export function PlansTab() {
     queryFn: plansApi.list,
   })
 
-  const { data: catalogOptions, isLoading: optionsLoading } = useQuery({
+  const {
+    data: catalogOptions,
+    isLoading: optionsLoading,
+    isError: optionsError,
+  } = useQuery({
     queryKey: ['admin-options'],
     queryFn: plansApi.listOptions,
   })
@@ -192,12 +207,12 @@ export function PlansTab() {
         description: plan.description,
         notifyDaysBefore: plan.notifyDaysBefore,
         photoQuotaMb: plan.photoQuotaMb,
-        photoRetention: plan.photoRetention,
+        photoRetention: plan.photoRetention ?? 'TwelveMonths',
         isActive: true,
         isPublic: plan.isPublic,
         sortOrder: plan.sortOrder,
-        highlights: plan.highlights,
-        options: plan.options,
+        highlights: plan.highlights ?? [],
+        options: plan.options ?? [],
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
   })
@@ -206,7 +221,8 @@ export function PlansTab() {
   // AdminPlanInput (см. плансApi.setSystemFree), чтобы обычное сохранение полей не могло случайно
   // переставить системный бесплатный тариф.
   const systemFreeMut = useMutation({
-    mutationFn: ({ id, isSystemFree }: { id: string; isSystemFree: boolean }) => plansApi.setSystemFree(id, isSystemFree),
+    mutationFn: ({ id, isSystemFree }: { id: string; isSystemFree: boolean }) =>
+      plansApi.setSystemFree(id, isSystemFree),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
   })
 
@@ -246,7 +262,7 @@ export function PlansTab() {
       description: plan.description ?? '',
       notifyDaysBefore: String(plan.notifyDaysBefore),
       photoQuotaMb: plan.photoQuotaMb != null ? String(plan.photoQuotaMb) : '',
-      photoRetention: plan.photoRetention,
+      photoRetention: plan.photoRetention ?? 'TwelveMonths',
       highlights: plan.highlights ?? [],
       optionRules: optionRulesToForm(plan.options ?? []),
     })
@@ -307,12 +323,17 @@ export function PlansTab() {
   const inactive = plans?.filter((p) => !p.isActive) ?? []
 
   const renderOptionRow = (option: AdminOptionDto) => {
-    const rule = form.optionRules[option.id] ?? { availability: 'Unavailable' as OptionAvailability, includedQuantity: '' }
+    const rule = form.optionRules[option.id] ?? {
+      availability: 'Unavailable' as OptionAvailability,
+      includedQuantity: '',
+    }
     return (
       <div key={option.id} className="flex items-center justify-between gap-3 py-2 border-b border-line last:border-0">
         <div className="min-w-0">
           <p className="text-sm font-medium text-ink truncate">{option.name}</p>
-          <p className="text-xs text-muted">{option.kind === 'Quantity' ? option.unitName ?? 'за единицу' : 'вкл/выкл'}</p>
+          <p className="text-xs text-muted">
+            {option.kind === 'Quantity' ? (option.unitName ?? 'за единицу') : 'вкл/выкл'}
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <select
@@ -388,9 +409,9 @@ export function PlansTab() {
                         <FeatureBadge label="В общем списке" enabled={plan.allowPublicListing} />
                         <FeatureBadge label="Онлайн-оплата" enabled={plan.allowOnlinePayment} />
                       </div>
-                      {plan.highlights.length > 0 && (
+                      {(plan.highlights ?? []).length > 0 && (
                         <ul className="text-xs text-ink-soft list-disc list-inside mb-1">
-                          {plan.highlights.map((h, i) => (
+                          {(plan.highlights ?? []).map((h, i) => (
                             <li key={i}>{h}</li>
                           ))}
                         </ul>
@@ -401,7 +422,7 @@ export function PlansTab() {
                       </p>
                       <p className="text-xs text-muted mt-0.5">
                         Фото клиентов: {plan.photoQuotaMb != null ? `до ${plan.photoQuotaMb} МБ` : 'без ограничения'} ·{' '}
-                        хранятся {RETENTION_LABELS[plan.photoRetention]}
+                        хранятся {retentionLabel(plan.photoRetention)}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -579,13 +600,19 @@ export function PlansTab() {
                 <p className="text-sm font-medium text-ink-soft">
                   Пункты тарифа ({form.highlights.length}/{MAX_HIGHLIGHTS})
                 </p>
-                <Button type="button" variant="ghost" size="sm" onClick={addHighlight} disabled={form.highlights.length >= MAX_HIGHLIGHTS}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={addHighlight}
+                  disabled={form.highlights.length >= MAX_HIGHLIGHTS}
+                >
                   <Icon name="plus" size={13} strokeWidth={2} /> Добавить
                 </Button>
               </div>
               <p className="text-xs text-muted mb-2">
-                На витрине показываются только первые {PUBLIC_MAX_HIGHLIGHTS} — остальные хранятся, но
-                посетители их не увидят.
+                На витрине показываются только первые {PUBLIC_MAX_HIGHLIGHTS} — остальные хранятся, но посетители их не
+                увидят.
               </p>
               <div className="flex flex-col gap-2">
                 {form.highlights.map((h, i) => (
@@ -608,7 +635,9 @@ export function PlansTab() {
                       </button>
                     </div>
                     {i >= PUBLIC_MAX_HIGHLIGHTS && (
-                      <p className="text-[11px] text-muted pl-0.5">Не показывается на витрине (свыше {PUBLIC_MAX_HIGHLIGHTS}-го пункта)</p>
+                      <p className="text-[11px] text-muted pl-0.5">
+                        Не показывается на витрине (свыше {PUBLIC_MAX_HIGHLIGHTS}-го пункта)
+                      </p>
                     )}
                   </div>
                 ))}
@@ -621,6 +650,11 @@ export function PlansTab() {
               <p className="text-sm font-medium text-ink-soft mb-2">Доступность опций на тарифе</p>
               {optionsLoading ? (
                 <div className="h-24 bg-cream-deep rounded-xl animate-pulse" />
+              ) : optionsError ? (
+                <p className="text-xs text-danger">
+                  Не удалось загрузить каталог опций. Матрица недоступна, остальные поля тарифа можно сохранить как
+                  обычно.
+                </p>
               ) : catalogOptions && catalogOptions.length > 0 ? (
                 <div className="rounded-xl border border-line px-3">{catalogOptions.map(renderOptionRow)}</div>
               ) : (
