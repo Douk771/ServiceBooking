@@ -29,7 +29,16 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
         if (company is null) return NotFound();
 
         var result = await transferService.PreviewAsync(companyId, targetBillingAccountId, newOwnerUserId);
-        if (!result.Success)
+        // N8, §51.1 — an invalid new-owner (not found/deleted/not linked) must NOT collapse the whole
+        // preview into a zeroed-out "blocked" shape: the transfer of the COMPANY itself (money side) is
+        // still perfectly previewable, just without the requested owner change. Only re-run the
+        // company-side preview with newOwnerUserId cleared (real numbers, ownerWillChange forced false)
+        // and report the owner problem through NewOwner (isValid: false), exactly as the contract's own
+        // shape for this requires — never through BlockReason/zeroed limits, which is reserved for an
+        // actual company/seat limit block.
+        var isNewOwnerFailure = !result.Success && result.Failure!.Kind is
+            TransferFailureKind.NewOwnerNotFound or TransferFailureKind.NewOwnerDeleted or TransferFailureKind.NewOwnerNotLinkedToTargetAccount;
+        if (!result.Success && !isNewOwnerFailure)
         {
             return result.Failure!.Kind switch
             {
@@ -38,7 +47,9 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             };
         }
 
-        var preview = result.Preview!;
+        var preview = isNewOwnerFailure
+            ? (await transferService.PreviewAsync(companyId, targetBillingAccountId, newOwnerUserId: null)).Preview!
+            : result.Preview!;
         var sourceSide = await BuildSideDtoAsync(company.BillingAccountId);
         var targetSide = await BuildSideDtoAsync(targetBillingAccountId);
         var seatsOfCompany = (await new AccountUsageReader(db).GetCompanySeatsAsync([companyId])).GetValueOrDefault(companyId);
@@ -156,8 +167,12 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
         var name = $"{user!.FirstName} {user.LastName}".Trim();
         var oldOwnerName = await GetUserDisplayNameAsync((await db.Companies.Where(c => c.Id == companyId).Select(c => c.OwnerUserId).FirstAsync()));
 
-        var notice = $"Ответственным станет {name}." +
-            (willOccupySeat ? "" : $" {oldOwnerName} останется сотрудником компании.");
+        // N7, §51.4: CompanyOwnerWriter ALWAYS demotes the previous owner to Master and keeps them on
+        // staff (it never removes them) — this notice must say so unconditionally, not only when the
+        // new owner doesn't occupy a seat of their own. The two facts are independent: whether the new
+        // owner takes a NEW seat is about the new owner; the old owner staying on staff is about the
+        // old owner, and happens every time.
+        var notice = $"Ответственным станет {name}. {oldOwnerName} останется сотрудником компании.";
 
         return new TransferNewOwnerDto(user.Id, name, true, isHolder ? "AccountHolder" : "AccountMember", willOccupySeat, notice);
     }
