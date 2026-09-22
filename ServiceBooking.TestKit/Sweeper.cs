@@ -20,14 +20,28 @@ public static class Sweeper
         string? onlyRunKey;
         try
         {
+            // Review finding N6(a): an option present without a following value used to be silently
+            // ignored (index+1 out of range => the `if` just never ran), so `sweep --apply --run-key`
+            // (operator forgot the value) silently swept EVERY run instead of failing loudly.
             var maxAgeArgIndex = Array.IndexOf(args, "--max-age");
-            if (maxAgeArgIndex >= 0 && maxAgeArgIndex + 1 < args.Length)
+            if (maxAgeArgIndex >= 0)
+            {
+                if (maxAgeArgIndex + 1 >= args.Length)
+                    throw new TestSafetyException("[sb-sweep] Отказ: --max-age указан без значения. Ожидался формат вроде 30m, 2h или 1d.");
                 maxAge = ParseAge(args[maxAgeArgIndex + 1]);
+            }
 
             var onlyRunKeyIndex = Array.IndexOf(args, "--run-key");
-            onlyRunKey = onlyRunKeyIndex >= 0 && onlyRunKeyIndex + 1 < args.Length
-                ? TestRunKey.Normalize(args[onlyRunKeyIndex + 1])
-                : null;
+            if (onlyRunKeyIndex >= 0)
+            {
+                if (onlyRunKeyIndex + 1 >= args.Length)
+                    throw new TestSafetyException("[sb-sweep] Отказ: --run-key указан без значения.");
+                onlyRunKey = TestRunKey.Normalize(args[onlyRunKeyIndex + 1]);
+            }
+            else
+            {
+                onlyRunKey = null;
+            }
         }
         catch (TestSafetyException ex)
         {
@@ -56,7 +70,16 @@ public static class Sweeper
         if (!string.IsNullOrWhiteSpace(externalConnection))
             await SweepDatabasesAsync(externalConnection, workingCopyRoot, now, maxAge, onlyRunKey, apply, dead, alive, undetermined, removed, errors);
 
-        var exitCode = apply && errors.Count > 0 ? 3 : 0;
+        var externalConnectionConfigured = !string.IsNullOrWhiteSpace(externalConnection);
+
+        // Review finding N5: §86.2 reserves exit code 1 for "no access to Docker AND no access to the
+        // server at the same time" — sweep couldn't observe anything at all. This used to fall through to
+        // the general-purpose 0, so CI had no way to tell "genuinely nothing to clean up" apart from
+        // "couldn't check". Only fires when neither source was even attempted (not when one/both merely
+        // errored mid-operation — that's still errors[]/exit 3 below).
+        var exitCode = !dockerAvailable && !externalConnectionConfigured
+            ? 1
+            : apply && errors.Count > 0 ? 3 : 0;
 
         if (asJson)
         {
@@ -115,34 +138,65 @@ public static class Sweeper
     internal static TimeSpan ParseAge(string value)
     {
         // "30m", "2h", "1d" — §86.1 documents all three units.
-        if (value.EndsWith('m') && int.TryParse(value[..^1], out var minutes))
-            return TimeSpan.FromMinutes(minutes);
-        if (value.EndsWith('h') && int.TryParse(value[..^1], out var hours))
-            return TimeSpan.FromHours(hours);
-        if (value.EndsWith('d') && int.TryParse(value[..^1], out var days))
-            return TimeSpan.FromDays(days);
-        throw new TestSafetyException($"[sb-sweep] Не понимаю --max-age \"{value}\". Ожидался формат вроде 30m, 2h или 1d.");
-    }
+        int amount;
+        Func<int, TimeSpan> unit;
+        if (value.EndsWith('m') && int.TryParse(value[..^1], out amount))
+            unit = m => TimeSpan.FromMinutes(m);
+        else if (value.EndsWith('h') && int.TryParse(value[..^1], out amount))
+            unit = h => TimeSpan.FromHours(h);
+        else if (value.EndsWith('d') && int.TryParse(value[..^1], out amount))
+            unit = d => TimeSpan.FromDays(d);
+        else
+            throw new TestSafetyException($"[sb-sweep] Не понимаю --max-age \"{value}\". Ожидался формат вроде 30m, 2h или 1d.");
 
-    private static async Task SweepContainersAsync(string workingCopyRoot, DateTimeOffset now, TimeSpan maxAge, string? onlyRunKey, bool apply,
-        List<TestResource> dead, List<TestResource> alive, List<TestResource> undetermined, List<TestResource> removed, List<SweepError> errors)
-    {
-        string psOutput;
+        // Review finding N6(b): a negative amount (e.g. "-1h") used to produce a negative TimeSpan, which
+        // makes `age > maxAge` true for every resource regardless of its actual age — --max-age would
+        // switch off the age gate entirely instead of tightening it.
+        if (amount < 0)
+            throw new TestSafetyException($"[sb-sweep] Отказ: --max-age \"{value}\" отрицательное. Ожидалось неотрицательное число.");
+
         try
         {
-            psOutput = await RunDockerAsync(["ps", "-a", "--filter", $"label={ResourceLabels.OwnerLabel}=1", "--format", "{{json .}}"]);
+            // Review finding N6(c): TimeSpan.FromDays/FromHours/FromMinutes throws an unhandled
+            // OverflowException for a large-enough amount (e.g. "999999999d"), which used to escape
+            // RunAsync as a raw stack trace instead of the documented exit code 1.
+            return unit(amount);
         }
-        catch (Exception ex)
+        catch (OverflowException)
         {
-            errors.Add(new SweepError(null, $"docker недоступен, контейнеры пропущены: {ex.Message}"));
-            return;
+            throw new TestSafetyException($"[sb-sweep] Отказ: --max-age \"{value}\" слишком велико.");
         }
+    }
 
+    /// <summary>One container that carries our ownership label, as parsed from `docker ps` + `docker
+    /// inspect`. Split out of SweepContainersAsync (review finding N8: ~60 lines of this ps/inspect/label
+    /// parsing used to be duplicated near-verbatim in EnvStatus, and the two copies had already drifted
+    /// once) so EnvStatus.CollectContainerResourcesAsync can share the exact same listing code.</summary>
+    internal sealed record LabeledContainer(string Id, string Name, string RunKey, string? Workdir, int? HostPid, DateTimeOffset StartedAt);
+
+    /// <summary>Lists every Docker container carrying <see cref="ResourceLabels.OwnerLabel"/>, regardless
+    /// of run key or liveness — read-only, never removes anything. A container is skipped (not an error)
+    /// when its `docker ps` line can't be parsed as JSON (review finding N7: this used to be an unguarded
+    /// JsonDocument.Parse that crashed the whole command on one malformed line) or when it disappears
+    /// between `ps` and `inspect` (a normal race with Ryuk, not a sweep failure).</summary>
+    internal static async Task<List<LabeledContainer>> ListLabeledContainersAsync(DateTimeOffset now)
+    {
+        var psOutput = await RunDockerAsync(["ps", "-a", "--filter", $"label={ResourceLabels.OwnerLabel}=1", "--format", "{{json .}}"]);
+
+        var result = new List<LabeledContainer>();
         foreach (var line in psOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            using var doc = JsonDocument.Parse(line);
-            var id = doc.RootElement.GetProperty("ID").GetString()!;
-            var name = doc.RootElement.GetProperty("Names").GetString() ?? id;
+            string id, name;
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                id = doc.RootElement.GetProperty("ID").GetString()!;
+                name = doc.RootElement.GetProperty("Names").GetString() ?? id;
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
 
             string inspect;
             try
@@ -165,27 +219,52 @@ public static class Sweeper
             var runKey = labels.TryGetProperty(ResourceLabels.RunKeyLabel, out var rk) ? rk.GetString() : null;
             if (runKey is null)
                 continue;
-            if (onlyRunKey is not null && runKey != onlyRunKey)
-                continue;
 
             var workdir = labels.TryGetProperty(ResourceLabels.WorkdirLabel, out var wd) ? wd.GetString() : null;
             var hostPidRaw = labels.TryGetProperty(ResourceLabels.HostPidLabel, out var pidProp) ? pidProp.GetString() : null;
             var startedAtRaw = labels.TryGetProperty(ResourceLabels.StartedAtLabel, out var saProp) ? saProp.GetString() : null;
 
             var hostPid = int.TryParse(hostPidRaw, out var pid) ? (int?)pid : null;
-            var processAlive = hostPid is not null && IsProcessAlive(hostPid.Value);
             var startedAt = startedAtRaw is not null && DateTimeOffset.TryParse(startedAtRaw, out var started) ? started : now;
-            var ageSeconds = (int)Math.Max(0, (now - startedAt).TotalSeconds);
-            var mine = workdir == workingCopyRoot;
+
+            result.Add(new LabeledContainer(id, name, runKey, workdir, hostPid, startedAt));
+        }
+
+        return result;
+    }
+
+    private static async Task SweepContainersAsync(string workingCopyRoot, DateTimeOffset now, TimeSpan maxAge, string? onlyRunKey, bool apply,
+        List<TestResource> dead, List<TestResource> alive, List<TestResource> undetermined, List<TestResource> removed, List<SweepError> errors)
+    {
+        List<LabeledContainer> containers;
+        try
+        {
+            containers = await ListLabeledContainersAsync(now);
+        }
+        catch (Exception ex)
+        {
+            errors.Add(new SweepError(null, $"docker недоступен, контейнеры пропущены: {ex.Message}"));
+            return;
+        }
+
+        foreach (var container in containers)
+        {
+            if (onlyRunKey is not null && container.RunKey != onlyRunKey)
+                continue;
+
+            var hostPid = container.HostPid;
+            var processAlive = hostPid is not null && IsProcessAlive(hostPid.Value);
+            var ageSeconds = (int)Math.Max(0, (now - container.StartedAt).TotalSeconds);
+            var mine = container.Workdir == workingCopyRoot;
 
             var resource = new TestResource(
                 Kind: "container",
-                Id: name,
-                RunKey: runKey,
+                Id: container.Name,
+                RunKey: container.RunKey,
                 Slot: null,
                 TestClass: null,
-                Workdir: workdir,
-                StartedAtUtc: TestKitJson.ToIso8601(startedAt),
+                Workdir: container.Workdir,
+                StartedAtUtc: TestKitJson.ToIso8601(container.StartedAt),
                 AgeSeconds: ageSeconds,
                 HostPid: hostPid,
                 HostPidAlive: processAlive,
@@ -204,12 +283,12 @@ public static class Sweeper
                 {
                     try
                     {
-                        await RunDockerAsync($"rm -f {id}");
+                        await RunDockerAsync($"rm -f {container.Id}");
                         removed.Add(resource with { Liveness = "dead" });
                     }
                     catch (Exception ex)
                     {
-                        errors.Add(new SweepError(name, $"не удалось удалить контейнер {name}: {ex.Message}"));
+                        errors.Add(new SweepError(container.Name, $"не удалось удалить контейнер {container.Name}: {ex.Message}"));
                     }
                 }
             }
@@ -380,14 +459,23 @@ public static class Sweeper
         return (resource, eligibleForDeletion);
     }
 
+    /// <summary>Single home for the "is this PID still running" check (review finding N8: this used to
+    /// be duplicated between Sweeper and EnvStatus, and the two copies had already drifted once before).
+    /// Disposes the <see cref="Process"/> handle it opens, and treats a process that exits in the
+    /// microseconds between the id lookup and reading its properties (InvalidOperationException) the
+    /// same as "not found" rather than letting it escape as an unhandled exception.</summary>
     internal static bool IsProcessAlive(int pid)
     {
         try
         {
-            _ = Process.GetProcessById(pid);
+            using var process = Process.GetProcessById(pid);
             return true;
         }
         catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
         {
             return false;
         }

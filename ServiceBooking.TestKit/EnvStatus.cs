@@ -251,43 +251,30 @@ public static class EnvStatus
 
         try
         {
-            var psOutput = await Sweeper.RunDockerAsync(["ps", "-a", "--filter", $"label={ResourceLabels.OwnerLabel}=1", "--format", "{{json .}}"]);
-            foreach (var line in psOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            // Review finding N8: the `docker ps` + `docker inspect` + label parsing here used to be a
+            // ~40-line near-duplicate of Sweeper.SweepContainersAsync, and the two copies had already
+            // drifted once (that's how status/sweep disagreed about liveness before — see
+            // ClassifyContainerLiveness's own docs below). Shares Sweeper.ListLabeledContainersAsync
+            // instead so there is exactly one place that knows how to read a labeled container.
+            var containers = await Sweeper.ListLabeledContainersAsync(now);
+            foreach (var container in containers)
             {
-                using var doc = JsonDocument.Parse(line);
-                var id = doc.RootElement.GetProperty("ID").GetString()!;
-                var name = doc.RootElement.GetProperty("Names").GetString() ?? id;
-
-                var inspect = await Sweeper.RunDockerAsync($"inspect {id}");
-                using var inspectDoc = JsonDocument.Parse(inspect);
-                var labels = inspectDoc.RootElement[0].GetProperty("Config").GetProperty("Labels");
-
-                var workdir = labels.TryGetProperty(ResourceLabels.WorkdirLabel, out var w) ? w.GetString() : null;
-                var runKey = labels.TryGetProperty(ResourceLabels.RunKeyLabel, out var rk) ? rk.GetString() : null;
-                var hostPidRaw = labels.TryGetProperty(ResourceLabels.HostPidLabel, out var pidProp) ? pidProp.GetString() : null;
-                var startedAtRaw = labels.TryGetProperty(ResourceLabels.StartedAtLabel, out var saProp) ? saProp.GetString() : null;
-
-                if (runKey is null)
-                    continue;
-
-                var hostPid = int.TryParse(hostPidRaw, out var pid) ? (int?)pid : null;
-                var hostPidAlive = hostPid is null ? (bool?)null : IsProcessAlive(hostPid.Value);
-                var startedAt = startedAtRaw is not null && DateTimeOffset.TryParse(startedAtRaw, out var sa) ? sa : now;
-                var age = (int)Math.Max(0, (now - startedAt).TotalSeconds);
-                var mine = workdir == workingCopyRoot;
+                var hostPidAlive = container.HostPid is null ? (bool?)null : Sweeper.IsProcessAlive(container.HostPid.Value);
+                var age = (int)Math.Max(0, (now - container.StartedAt).TotalSeconds);
+                var mine = container.Workdir == workingCopyRoot;
 
                 var liveness = ClassifyContainerLiveness(hostPidAlive, age);
 
                 resources.Add(new TestResource(
                     Kind: "container",
-                    Id: name,
-                    RunKey: runKey,
+                    Id: container.Name,
+                    RunKey: container.RunKey,
                     Slot: null,
                     TestClass: null,
-                    Workdir: workdir,
-                    StartedAtUtc: TestKitJson.ToIso8601(startedAt),
+                    Workdir: container.Workdir,
+                    StartedAtUtc: TestKitJson.ToIso8601(container.StartedAt),
                     AgeSeconds: age,
-                    HostPid: hostPid,
+                    HostPid: container.HostPid,
                     HostPidAlive: hostPidAlive,
                     Connections: null,
                     Mine: mine,
@@ -360,19 +347,6 @@ public static class EnvStatus
         catch (SocketException)
         {
             return true;
-        }
-    }
-
-    private static bool IsProcessAlive(int pid)
-    {
-        try
-        {
-            _ = System.Diagnostics.Process.GetProcessById(pid);
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            return false;
         }
     }
 

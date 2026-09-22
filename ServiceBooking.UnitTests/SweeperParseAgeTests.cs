@@ -34,4 +34,28 @@ public class SweeperParseAgeTests
 
         act.Should().Throw<TestSafetyException>();
     }
+
+    [Theory]
+    [InlineData("-1h")]
+    [InlineData("-30m")]
+    [InlineData("-1d")]
+    public void ParseAge_rejects_negative_amounts_instead_of_disabling_the_age_gate(string input)
+    {
+        // Review finding N6(b): TimeSpan.FromHours(-1) etc. used to succeed and produce a negative
+        // TimeSpan, which makes "age > maxAge" true for every resource — effectively switching the age
+        // gate off entirely instead of the operator's evident intent of tightening it.
+        var act = () => Sweeper.ParseAge(input);
+
+        act.Should().Throw<TestSafetyException>();
+    }
+
+    [Fact]
+    public void ParseAge_rejects_an_overflowing_amount_with_a_safety_exception_not_a_crash()
+    {
+        // Review finding N6(c): "999999999d" used to escape as an unhandled OverflowException from
+        // TimeSpan.FromDays instead of the documented exit code 1.
+        var act = () => Sweeper.ParseAge("999999999d");
+
+        act.Should().Throw<TestSafetyException>();
+    }
 }
