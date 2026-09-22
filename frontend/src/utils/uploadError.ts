@@ -23,6 +23,10 @@ export function getUploadErrorMessage(error: unknown): string {
         : 'Место под фото закончилось. Смените тариф, чтобы загрузить больше.'
     }
     if (body.includes('5 photos')) return 'К одной заметке можно приложить не больше 5 фото.'
+    // API_CONTRACT_CYCLE10.md §127.1 — the one cycle-10 upload error, already Russian at the source
+    // (it's the only text unique to this endpoint), so it's matched by the exact server string rather
+    // than translated — no second error dictionary (ARCHITECTURE_CYCLE10.md §109.2).
+    if (body.includes('В галерее салона может быть не больше 10 фотографий')) return body
     if (body.includes('too large')) return 'Файл больше 5 МБ. Уменьшите изображение и попробуйте снова.'
     if (body.includes('Unsupported image type') || body.includes('not a valid image'))
       return 'Поддерживаются только JPEG, PNG и WEBP.'
