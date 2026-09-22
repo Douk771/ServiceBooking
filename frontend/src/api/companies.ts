@@ -1,6 +1,15 @@
 import { api } from './client'
 import type { Company } from '../types'
 
+/** contracts/cycle9/openapi.yaml — PagedCompanyDto (US-115). */
+export interface PagedCompanyDto {
+  items: Company[]
+  page: number
+  pageSize: number
+  total: number
+  hasNext: boolean
+}
+
 export interface MasterPublicDto {
   userId: string
   firstName: string
@@ -85,6 +94,13 @@ export interface CompanyPhotoUsage {
 
 export const companiesApi = {
   getAll: () => api.get<Company[]>('/companies').then((r) => r.data),
+  /**
+   * US-115 (contracts/cycle9/openapi.yaml GET /companies/public). Anonymous public catalog for the
+   * homepage. Filtering by cityId/search and paging happen server-side — never fetch getAll() and
+   * filter in the browser (SPEC §6/§9.17 regression).
+   */
+  getPublic: (params: { cityId?: number; search?: string; page?: number; pageSize?: number } = {}) =>
+    api.get<PagedCompanyDto>('/companies/public', { params }).then((r) => r.data),
   getBySlug: (slug: string) => api.get<Company>(`/companies/${slug}`).then((r) => r.data),
   getMy: () => api.get<Company[]>('/companies/my').then((r) => r.data),
   getMemberOf: () => api.get<Company[]>('/companies/member').then((r) => r.data),
