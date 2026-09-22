@@ -354,8 +354,11 @@ components:
           type: string
           description: Маршрут SPA, по которому лежит читаемый текст.
         purposes:
-          type: array
-          description: Только у `PdnConsent`. Фронтенд берёт цели отсюда, а не из зашитого массива.
+          type: [array, "null"]
+          description: |
+            Только у `PdnConsent`. Фронтенд берёт цели отсюда, а не из зашитого массива.
+            У остальных документов сериализуется как `null` (LegalController.cs: `Purposes.Count == 0 ? null : ...`,
+            Program.cs не выставляет `DefaultIgnoreCondition = WhenWritingNull`).
           items:
             type: object
             required: [key, title]
