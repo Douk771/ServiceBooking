@@ -63,4 +63,23 @@ public class BillingTextsTests
 
         text.Should().Contain("8").And.Contain("Лимит общий на все ваши точки.");
     }
+
+    // ── §51.1/§51.2 transfer texts ────────────────────────────────────────────
+
+    [Fact]
+    public void TransferRejectedUnlinkedOwner_NamesAllThreeWaysOut()
+    {
+        var text = BillingTexts.TransferRejectedUnlinkedOwner("Мария Сидорова");
+
+        text.Should().Contain("Мария Сидорова");
+        text.Should().Contain("держателем").And.Contain("сотрудником").And.Contain("без смены");
+    }
+
+    [Fact]
+    public void TransferRejectedCompanyLimit_NamesPlanUsedAndLimit()
+    {
+        var text = BillingTexts.TransferRejectedCompanyLimit("Базовый", used: 2, limit: 2);
+
+        text.Should().Contain("Базовый").And.Contain("2").And.Contain("Дополнительная компания");
+    }
 }

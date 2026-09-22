@@ -15,6 +15,31 @@ public static class BillingTexts
     public static string CompanyLimitReached(int used, int limit) =>
         $"Открыто {used} из {limit} точек, доступных на вашем тарифе.";
 
+    /// <summary>§51.1's 409 body when the proposed new owner isn't linked to the receiving account —
+    /// names both fixes plus the third way out (transfer without changing the owner), per acceptance
+    /// criteria.</summary>
+    public static string TransferRejectedUnlinkedOwner(string newOwnerName) =>
+        $"{newOwnerName} не связан(а) с принимающим аккаунтом. Сделайте его(её) держателем этого " +
+        "аккаунта, добавьте сотрудником в любую его компанию — или выполните перенос без смены " +
+        "ответственного и смените ответственного отдельно.";
+
+    /// <summary>§51.2's 402 body — the transfer is rejected outright, nothing is written.</summary>
+    public static string TransferRejectedCompanyLimit(string planName, int used, int limit) =>
+        $"На тарифе «{planName}» — {limit} {CompaniesWord(limit)}, занято {used}. Чтобы принять ещё " +
+        "одну, подключите опцию «Дополнительная компания».";
+
+    private static string CompaniesWord(int n)
+    {
+        var lastTwo = n % 100;
+        if (lastTwo is >= 11 and <= 14) return "компаний";
+        return (n % 10) switch
+        {
+            1 => "компания",
+            2 or 3 or 4 => "компании",
+            _ => "компаний",
+        };
+    }
+
     /// <summary>
     /// §47.1's four required texts. <paramref name="workingPhoneMasked"/> is the earliest-created
     /// funded channel's masked phone — required (not just nice-to-have) for <c>Unfunded</c>, since the
