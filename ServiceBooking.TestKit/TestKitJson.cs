@@ -10,7 +10,11 @@ namespace ServiceBooking.TestKit;
 /// </summary>
 public static class TestKitJson
 {
-    public const int SchemaVersion = 1;
+    /// <summary>Bumped to 2 in ARCHITECTURE_CYCLE8_PHASE2.md §102 (T8-P9/T8-P10): adds
+    /// doctorDocument.parallelism and the "parallel-connection-budget" check, and widens
+    /// testResource.slot to the class-slot pattern c01..c999 (§91.3). schemaVersion 1 artifacts
+    /// produced before this remain valid per the schema's own backward-compatible enum [1, 2].</summary>
+    public const int SchemaVersion = 2;
 
     public static readonly JsonSerializerOptions Options = new()
     {
@@ -76,12 +80,23 @@ public sealed record DoctorCheck(
     bool Ok,
     string Detail);
 
+/// <summary>Схема §102: расшифровка расчёта из проверки "parallel-connection-budget" — чтобы число
+/// в DoctorCheck.Detail можно было перепроверить, а не принимать на веру. ServerMaxConnections
+/// null, если сервер недоступен и проверка не выполнялась.</summary>
+public sealed record ParallelismInfo(
+    int MaxParallelThreads,
+    int PoolSizePerHost,
+    int HostsPerClass,
+    int RequiredConnections,
+    int? ServerMaxConnections);
+
 public sealed record DoctorDocument(
     string Command,
     int SchemaVersion,
     string GeneratedAtUtc,
     int ExitCode,
-    DoctorCheck[] Checks);
+    DoctorCheck[] Checks,
+    ParallelismInfo? Parallelism = null);
 
 public sealed record SweepError(
     string? ResourceId,

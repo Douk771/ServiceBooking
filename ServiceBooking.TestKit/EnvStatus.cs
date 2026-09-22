@@ -117,6 +117,9 @@ public static class EnvStatus
         checks.Add(await CheckPortsFreeAsync(workingCopyRoot, envFile, dockerAvailable));
         checks.Add(CheckRyukEnabled());
 
+        var (budgetCheck, parallelism) = await CheckParallelConnectionBudgetAsync(workingCopyRoot, dockerAvailable);
+        checks.Add(budgetCheck);
+
         var ok = checks.All(c => c.Ok);
         var exitCode = ok ? 0 : 2;
 
@@ -127,7 +130,8 @@ public static class EnvStatus
                 SchemaVersion: TestKitJson.SchemaVersion,
                 GeneratedAtUtc: TestKitJson.ToIso8601(DateTimeOffset.UtcNow),
                 ExitCode: exitCode,
-                Checks: checks.ToArray());
+                Checks: checks.ToArray(),
+                Parallelism: parallelism);
 
             TestKitJson.WriteJson(document);
         }
@@ -203,6 +207,151 @@ public static class EnvStatus
             disabled
                 ? "TESTCONTAINERS_RYUK_DISABLED=true запрещено (§70.2). Что сделать: снимите переменную окружения."
                 : "Ryuk не отключён.");
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE8_PHASE2.md §93.4/§102 (T8-P9): the same arithmetic
+    /// TestRunEnvironment.EnsureConnectionBudgetAsync enforces fail-fast at the start of a run, but run
+    /// here so `doctor --json` answers "does my parallelism fit the server?" BEFORE a run even starts.
+    /// Every number in the formula is read from a single source, never duplicated as a literal:
+    ///   - poolSizePerHost / hostsPerClass-implied server ceiling come from TestInfrastructure;
+    ///   - maxParallelThreads comes from the same override env var / xunit.runner.json convention
+    ///     ServiceBooking.Tests/TestParallelism.cs documents (TestKit cannot reference that project —
+    ///     ServiceBooking.Tests references TestKit, not the other way around — so the file is read here
+    ///     directly instead of re-declaring the number);
+    ///   - serverMaxConnections comes from SHOW max_connections against the configured external server
+    ///     when SERVICEBOOKING_TEST_CONNECTION is set, or from parsing TestInfrastructure.PostgresCommand
+    ///     (the same array the ephemeral Testcontainers instance is actually booted with) when running in
+    ///     container mode — never a second hardcoded "300".</summary>
+    private static async Task<(DoctorCheck Check, ParallelismInfo Parallelism)> CheckParallelConnectionBudgetAsync(
+        string workingCopyRoot, bool dockerAvailable)
+    {
+        const int hostsPerClass = 2; // §92.4: class fixture's own host + one dedicated per-test factory.
+        const int fallbackMaxParallelThreads = 4; // xunit.runner.json's own default (§93.1), used only if the file can't be read.
+
+        var maxParallelThreads = ResolveMaxParallelThreads(workingCopyRoot, fallbackMaxParallelThreads);
+        var poolSizePerHost = TestInfrastructure.PoolMaxSize;
+        var required = maxParallelThreads * hostsPerClass * poolSizePerHost + 4;
+
+        var externalConnection = Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_CONNECTION");
+        int? serverMaxConnections;
+        string serverSource;
+
+        if (!string.IsNullOrWhiteSpace(externalConnection))
+        {
+            serverMaxConnections = await TryReadExternalMaxConnectionsAsync(externalConnection);
+            serverSource = serverMaxConnections is null
+                ? "SERVICEBOOKING_TEST_CONNECTION задан, но сервер недоступен — проверка не выполнена."
+                : $"SHOW max_connections на внешнем сервере (SERVICEBOOKING_TEST_CONNECTION) = {serverMaxConnections}.";
+        }
+        else if (dockerAvailable)
+        {
+            serverMaxConnections = ReadContainerMaxConnections();
+            serverSource = $"container-режим: ephemeral Postgres поднимается с max_connections={serverMaxConnections} (TestInfrastructure.PostgresCommand).";
+        }
+        else
+        {
+            serverMaxConnections = null;
+            serverSource = "ни SERVICEBOOKING_TEST_CONNECTION, ни Docker недоступны — проверка не выполнена.";
+        }
+
+        var parallelism = new ParallelismInfo(
+            MaxParallelThreads: maxParallelThreads,
+            PoolSizePerHost: poolSizePerHost,
+            HostsPerClass: hostsPerClass,
+            RequiredConnections: required,
+            ServerMaxConnections: serverMaxConnections);
+
+        if (serverMaxConnections is null)
+        {
+            return (new DoctorCheck(
+                "parallel-connection-budget",
+                true,
+                $"Не удалось определить max_connections сервера: {serverSource} Нужно {required} соединений при " +
+                $"P={maxParallelThreads}, пул={poolSizePerHost}, хостов на класс={hostsPerClass}."), parallelism);
+        }
+
+        var safeLimit = serverMaxConnections.Value * 0.9;
+        var ok = required <= safeLimit;
+
+        var detail = ok
+            ? $"Бюджет сходится: нужно {required} соединений (P={maxParallelThreads}, пул={poolSizePerHost}, " +
+              $"хостов на класс={hostsPerClass}) из безопасных {safeLimit:F0} (max_connections={serverMaxConnections}). {serverSource}"
+            : $"Бюджет не сходится: нужно {required} соединений (P={maxParallelThreads}, пул={poolSizePerHost}, " +
+              $"хостов на класс={hostsPerClass}), безопасный предел {safeLimit:F0} из max_connections={serverMaxConnections}. " +
+              "Что сделать (любое из): " +
+              "1) снизить параллелизм: SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2; " +
+              $"2) поднять потолок сервера: max_connections >= {(int)Math.Ceiling(required / 0.9)}; " +
+              "3) убрать SERVICEBOOKING_TEST_CONNECTION и дать прогону поднять свой контейнер (там потолок 300).";
+
+        return (new DoctorCheck("parallel-connection-budget", ok, detail), parallelism);
+    }
+
+    /// <summary>Mirrors ServiceBooking.Tests/Infrastructure/TestParallelism.cs's precedence (env var
+    /// override, else xunit.runner.json's own maxParallelThreads, else a documented fallback) without
+    /// referencing that project — TestKit is referenced BY ServiceBooking.Tests, not the reverse.</summary>
+    private static int ResolveMaxParallelThreads(string workingCopyRoot, int fallback)
+    {
+        var envValue = Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS");
+        if (int.TryParse(envValue, out var configured) && configured > 0)
+            return configured;
+
+        try
+        {
+            var path = Path.Combine(workingCopyRoot, "ServiceBooking.Tests", "xunit.runner.json");
+            if (!File.Exists(path))
+                return fallback;
+
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            if (document.RootElement.TryGetProperty("maxParallelThreads", out var value) && value.TryGetInt32(out var parsed) && parsed > 0)
+                return parsed;
+
+            return fallback;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return fallback;
+        }
+    }
+
+    /// <summary>Reads the "300" straight out of TestInfrastructure.PostgresCommand — the same array the
+    /// ephemeral Testcontainers instance is actually started with (§93.3) — instead of a second literal
+    /// that could drift from it.</summary>
+    private static int? ReadContainerMaxConnections()
+    {
+        var command = TestInfrastructure.PostgresCommand;
+        for (var i = 0; i < command.Length - 1; i++)
+        {
+            if (command[i] != "-c")
+                continue;
+
+            var pair = command[i + 1];
+            var separator = pair.IndexOf('=');
+            if (separator <= 0 || !pair[..separator].Equals("max_connections", StringComparison.Ordinal))
+                continue;
+
+            if (int.TryParse(pair[(separator + 1)..], out var value))
+                return value;
+        }
+
+        return null;
+    }
+
+    private static async Task<int?> TryReadExternalMaxConnectionsAsync(string connectionString)
+    {
+        try
+        {
+            await using var connection = new Npgsql.NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = new Npgsql.NpgsqlCommand("SHOW max_connections", connection);
+            var raw = (string?)await command.ExecuteScalarAsync();
+            return raw is not null && int.TryParse(raw, out var value) ? value : null;
+        }
+        catch
+        {
+            // doctor is best-effort read-only reporting; an unreachable server means the budget check
+            // simply cannot be evaluated (ServerMaxConnections stays null), not that doctor crashes.
+            return null;
+        }
     }
 
     private static (string Value, string Source) ResolveVariable(string name, IReadOnlyDictionary<string, string> envFile, string fallback)
