@@ -44,6 +44,48 @@ public class CompaniesController(
                 c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null)));
     }
 
+    // GET /api/companies/public — US-115 (API_CONTRACT_CYCLE9.md §113.2). Anonymous; replaces GET
+    // /api/companies for the home page while GET /api/companies keeps working unchanged. Filtering by
+    // city/search and the page limit are all applied in SQL — no "download everything, filter in the
+    // browser" regression. An unknown cityId yields an empty page, not 404 (a public, anonymous catalog
+    // never confirms whether a reference row exists).
+    [HttpGet("public")]
+    public async Task<ActionResult<ServiceBooking.API.DTOs.Common.PagedResult<CompanyDto>>> GetPublic(
+        [FromQuery] int? cityId, [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
+    {
+        var (normalizedPage, normalizedPageSize) = ServiceBooking.API.DTOs.Common.Pagination.Normalize(page, pageSize);
+        var sanitizedSearch = ServiceBooking.API.DTOs.Common.Pagination.SanitizeSearch(search);
+
+        // Visibility rules are unchanged from GET /api/companies: isActive AND ShowInPublicListing AND
+        // the tariff's AllowPublicListing. EffectivePlan is resolved per company, so the plan half of
+        // that predicate can only be applied after loading candidates — same shape as GetAll() above.
+        var query = db.Companies.Where(c => c.IsActive && c.ShowInPublicListing);
+
+        if (cityId.HasValue) query = query.Where(c => c.CityId == cityId.Value);
+        if (!string.IsNullOrWhiteSpace(sanitizedSearch))
+            query = query.Where(c => EF.Functions.ILike(c.Name, $"%{sanitizedSearch}%")
+                                      || (c.Address != null && EF.Functions.ILike(c.Address, $"%{sanitizedSearch}%")));
+
+        // Plan.AllowPublicListing is resolved outside SQL (SubscriptionResolver), so we can't filter by
+        // it in the query itself — fetch the (already city/search/isActive/ShowInPublicListing-narrowed)
+        // candidate set, resolve plans in bulk, apply the last predicate, then page in memory. Candidate
+        // sets here are the public directory, not "all companies ever", so this stays bounded.
+        var candidates = await query.OrderBy(c => c.Name).ThenBy(c => c.Id).ToListAsync();
+        var plans = await subscriptionResolver.GetEffectivePlansAsync(candidates.Select(c => c.Id));
+        var visible = candidates.Where(c => plans[c.Id].AllowPublicListing).ToList();
+
+        var total = visible.Count;
+        var pageItems = visible.Skip((normalizedPage - 1) * normalizedPageSize).Take(normalizedPageSize).ToList();
+
+        var ratings = await GetReviewAggregatesAsync(pageItems.Select(c => c.Id));
+        var cities = await GetCitiesAsync(pageItems.Select(c => c.CityId));
+
+        var items = pageItems.Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
+            c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null)).ToList();
+
+        return Ok(ServiceBooking.API.DTOs.Common.Pagination.Create(items, normalizedPage, normalizedPageSize, total));
+    }
+
     [HttpGet("my")]
     [Authorize]
     public async Task<ActionResult<List<CompanyDto>>> GetMy()
