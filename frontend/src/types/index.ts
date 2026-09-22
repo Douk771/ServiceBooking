@@ -98,7 +98,7 @@ export interface ChannelCompanyRef {
   isActive: boolean
 }
 
-/** Cycle 7 (ChannelDtoCycle5Additions, contracts/cycle7/openapi.yaml): Funded = входит в оплаченные; Unfunded =
+/** Cycle 7 (ChannelDtoCycle7Additions, contracts/cycle7/openapi.yaml): Funded = входит в оплаченные; Unfunded =
  *  заведён сверх оплаченного количества (не отправляет, но сохраняет назначения и состояние
  *  подключения); NotPaid = у аккаунта не оплачено ни одного номера. */
 export type ChannelFundingState = 'Funded' | 'Unfunded' | 'NotPaid'
