@@ -206,6 +206,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/plans/{id}/system-free": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Назначить/снять с тарифа признак системного бесплатного (cycle-07, unreleased)
+         * @description Выделен из AdminPlanInput в цикле 7: у AdminPlanInput additionalProperties: false, а
+         *     isSystemFree управляет полем с частичным уникальным индексом (ровно один активный тариф
+         *     с этим флагом), поэтому запись через обычный PUT /admin/plans/{id} для него не годится.
+         *
+         *     §43.4 требует, чтобы системный бесплатный тариф существовал всегда — но ни один
+         *     ОДИНОЧНЫЙ вызов этого эндпоинта не может гарантировать это в одиночку, потому что
+         *     перенос флага с одного тарифа на другой — это два последовательных вызова (снять со
+         *     старого, поставить на новый), не один атомарный. Эндпоинт поэтому охраняет только то,
+         *     что может проверить в границах одного запроса:
+         *
+         *     - isSystemFree: true → 400, если pricePerMonth тарифа не равен 0; 409, если флаг уже
+         *       стоит на другом тарифе (снимите его оттуда первым запросом).
+         *     - isSystemFree: false → 409, если это привело бы к тому, что ни один активный тариф с
+         *       pricePerMonth = 0 не остался бы кандидатом на замену (т.е. нет другого активного
+         *       тарифа с ценой 0, готового принять флаг следующим вызовом). Иными словами — снять
+         *       флаг можно, только когда уже есть реальный тариф-преемник; иначе он был бы снят в
+         *       никуда, и в системе не осталось бы бесплатного тарифа вовсе.
+         *     - Запрос, не меняющий текущее значение флага (idempotent no-op), всегда 200 — без обеих
+         *       проверок выше.
+         *     - Гонка (два одновременных запроса ставят флаг на разные тарифы) ловится частичным
+         *       уникальным индексом БД и возвращается как 409 с тем же текстом, что и синхронная
+         *       проверка выше, а не как 500.
+         */
+        put: operations["setAdminPlanSystemFree"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/billing-accounts": {
         parameters: {
             query?: never;
@@ -648,6 +691,18 @@ export interface components {
             availableOptions: components["schemas"]["AvailableOptionDto"][];
             pendingRequest?: components["schemas"]["SubscriptionRequestDto"] | null;
             canRequestChanges: boolean;
+            /**
+             * @description Unreleased (cycle 07 backend report, N10/US-70). Set once when an admin rejects the
+             *     owner's last request; cleared on the next submission or approval — a one-shot "here's
+             *     why", not a running log.
+             */
+            lastRejectedRequest?: components["schemas"]["RejectedRequestDto"] | null;
+        };
+        /** @description Unreleased (cycle 07 backend report, N10/US-70). */
+        RejectedRequestDto: {
+            reason: string;
+            /** Format: date-time */
+            rejectedAtUtc: string;
         };
         /** @description Суммарный расход лимитов подписки. Лимиты null = без ограничения (НЕ 0). */
         SubscriptionUsageDto: {
@@ -918,6 +973,10 @@ export interface components {
             /** @default 0 */
             sortOrder: number;
             options: components["schemas"]["PlanOptionRuleDto"][];
+        };
+        AdminPlanSetSystemFreeInput: {
+            /** @description true — сделать этот тариф системным бесплатным (требует pricePerMonth = 0 и отсутствия другого тарифа с уже стоящим флагом). false — снять флаг (требует другого активного тарифа с pricePerMonth = 0 в качестве кандидата на замену). */
+            isSystemFree: boolean;
         };
         CapabilityDto: {
             key: string;
@@ -1256,13 +1315,14 @@ export interface components {
         };
     };
     responses: {
-        /** @description Ошибка валидации — ГОЛАЯ СТРОКА (text/plain) */
+        /** @description Ошибка валидации. ГОЛАЯ СТРОКА (text/plain) для бизнес-правил, отклонённых явным кодом обработчика; application/problem+json (ValidationProblemDetails) для автоматической валидации модели ASP.NET Core (не распознанное значение поля, отсутствующее обязательное поле и т.п.) — оба варианта штатные, без изменений с прошлых циклов (API_CONTRACT.md). */
         BadRequest: {
             headers: {
                 [name: string]: unknown;
             };
             content: {
                 "text/plain": string;
+                "application/problem+json": Record<string, never>;
             };
         };
         /** @description Упёрлись в тариф или лимит — ГОЛАЯ СТРОКА (text/plain) */
@@ -1303,6 +1363,13 @@ export interface components {
             content: {
                 "text/plain": string;
             };
+        };
+        /** @description Content-Type запроса не application/json — ПУСТОЕ тело */
+        UnsupportedMediaType: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content?: never;
         };
     };
     parameters: {
@@ -1428,6 +1495,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     cancelSubscriptionRequest: {
@@ -1502,6 +1570,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     updateAdminOption: {
@@ -1533,6 +1602,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     deactivateAdminOption: {
@@ -1631,6 +1701,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     updateAdminPlan: {
@@ -1662,6 +1733,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     deactivateAdminPlan: {
@@ -1686,6 +1758,46 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    setAdminPlanSystemFree: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPlanSetSystemFreeInput"];
+            };
+        };
+        responses: {
+            /** @description OK — новое значение флага (или то же самое, если оно не менялось) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlanDto"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description ГОЛАЯ СТРОКА (text/plain). Либо флаг уже стоит на другом тарифе (при попытке поставить), либо снятие флага не оставило бы ни одного тарифа-кандидата на замену (при попытке снять) — см. описание операции. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     getAdminBillingAccounts: {
@@ -1781,6 +1893,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     getAccountSubscriptionHistory: {
@@ -1860,10 +1973,12 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     previewCompanyTransfer: {
@@ -1890,6 +2005,7 @@ export interface operations {
                     "application/json": components["schemas"]["CompanyTransferPreviewDto"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -1955,6 +2071,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     getCompanyOwnerHistory: {
@@ -2012,6 +2129,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     getPlatformSettings: {
@@ -2061,6 +2179,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     legacyAssignOwnerSubscription: {
@@ -2078,6 +2197,8 @@ export interface operations {
             };
         };
         responses: {
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             /** @description Голая строка с указанием замены */
             410: {
                 headers: {
@@ -2087,6 +2208,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
     legacyChannelPayment: {
@@ -2104,6 +2226,8 @@ export interface operations {
             };
         };
         responses: {
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             /** @description Голая строка с указанием замены */
             410: {
                 headers: {
@@ -2113,6 +2237,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
+            415: components["responses"]["UnsupportedMediaType"];
         };
     };
 }
