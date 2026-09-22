@@ -14,9 +14,26 @@ public class TestDatabaseNamingTests
     [InlineData("sbtest_00000000_template")]
     [InlineData("sbtest_deadbeef_legal")]
     [InlineData("sbtest_deadbeef_dispatch")]
+    // T9 review: the phase-2 class-per-database scheme (ARCHITECTURE_CYCLE8_PHASE2.md §91.3) rests
+    // entirely on the claim "the regexp already accepts c01..c999, nothing needed to change" — not one
+    // class slot was in this theory before, so that claim, which the safety of every phase-2 DROP DATABASE
+    // depends on, was unverified.
+    [InlineData("sbtest_a3f19c7b_c01")]
+    [InlineData("sbtest_a3f19c7b_c99")]
+    [InlineData("sbtest_a3f19c7b_c999")]
     public void IsDisposable_returns_true_for_well_formed_names(string databaseName)
     {
         TestDatabaseNaming.IsDisposable(databaseName).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsDisposable_returns_true_for_a_class_slot_at_TestDatabaseNamings_own_length_ceiling()
+    {
+        // §91.3: TestDatabaseNaming's own regexp (^[a-z][a-z0-9]{0,11}$, up to 12 chars) is looser than
+        // the schema's c[0-9]{2,3} — TestSlot.FormatOrThrow refuses past c999 (L5), but this class'
+        // defence-in-depth against dropping the wrong database must not ALSO be the thing relied on to
+        // catch that; it is verified separately, on its own regexp, here.
+        TestDatabaseNaming.IsDisposable("sbtest_a3f19c7b_c1000").Should().BeTrue();
     }
 
     [Theory]
