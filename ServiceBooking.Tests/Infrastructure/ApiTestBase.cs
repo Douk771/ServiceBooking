@@ -22,9 +22,13 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// against the one shared database without cleaning up after themselves.
 /// </summary>
 [Collection("Api")]
-public abstract class ApiTestBase(TestDatabaseFixture fixture)
+public abstract class ApiTestBase(ApiDatabaseFixture fixture)
 {
     protected readonly CustomWebApplicationFactory Factory = fixture.Factory;
+
+    /// <summary>The "api" slot's connection string — for the rare subclass that needs to build a second,
+    /// dedicated host against the same database (e.g. <see cref="RateLimitTestFactory"/>).</summary>
+    protected readonly string ConnectionString = fixture.ConnectionString;
 
     /// <summary>Anonymous (unauthenticated) client — for guest/public endpoint scenarios.</summary>
     protected HttpClient AnonymousClient() => Factory.CreateClient();
@@ -43,13 +47,7 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
     protected static string UniqueEmail(string prefix) => $"{prefix}{Guid.NewGuid():N}@test.local";
 
     /// <summary>A unique, valid-looking phone number for a single test run (accounts are keyed by phone).</summary>
-    protected static string UniquePhone()
-    {
-        // 11 digits after "+", collision-free within a run (Guid-derived), fits a plausible RU format.
-        var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(10).ToArray();
-        var suffix = new string(digits).PadRight(10, '0');
-        return $"+79{suffix[..9]}";
-    }
+    protected static string UniquePhone() => TestPhones.Unique();
 
     // ── Identity ─────────────────────────────────────────────────────────────
 
@@ -108,8 +106,9 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         return await client.PostAsJsonAsync("/api/auth/login", new LoginDto(phone, password));
     }
 
-    /// <summary>Logs in as the SuperAdmin seeded at startup (phone from CustomWebApplicationFactory).</summary>
-    protected Task<AuthResponseDto> LoginAsSuperAdminAsync() => LoginAsync("+70000000001", "SuperAdmin123!");
+    /// <summary>Logs in as the SuperAdmin seeded at startup for this host's factoryTag (§71.1).</summary>
+    protected Task<AuthResponseDto> LoginAsSuperAdminAsync() =>
+        LoginAsync(Factory.Identity.SuperAdminPhone, Factory.Identity.SuperAdminPassword);
 
     // ── Companies ────────────────────────────────────────────────────────────
 

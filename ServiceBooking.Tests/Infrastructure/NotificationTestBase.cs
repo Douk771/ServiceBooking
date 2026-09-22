@@ -20,29 +20,32 @@ namespace ServiceBooking.Tests.Infrastructure;
 ///
 /// It IS, however, in the same <c>[Collection("Api")]</c> as <see cref="ApiTestBase"/> — found missing
 /// by the coordinator's own review of this QA pass, and load-bearing for two separate reasons, not one:
-/// (1) <see cref="TestDatabaseFixture"/> wipes "servicebooking_test" exactly once, the first time ANY
-/// test in the "Api" collection runs — a class outside every collection never triggers that wipe, so
-/// rows accumulate silently across repeated `dotnet test` invocations (confirmed: a webhook test using a
-/// literal, non-unique <c>ProviderMessageId</c> picked up a SEVEN-deep pile of same-named rows from prior
-/// runs and updated the wrong one — see NotificationWebhookUnsubscribeTests.cs's own fix for the second,
-/// independent line of defense against that); (2) xUnit only guarantees a test class doesn't run
-/// concurrently with anything ELSE touching the same collection's fixture — a class outside every
-/// collection is free to run in xUnit's default parallel bucket WHILE "Api"'s <c>TestDatabaseFixture</c>
-/// is still mid-<c>EnsureDeletedAsync</c>+migrate, racing this factory's own independent Program.cs
-/// migrate call against the SAME physical database (the exact "index/column already exists" class of
-/// failure backend-developer reported before this cycle). The fixture parameter itself is intentionally
-/// unused beyond establishing that dependency — this class still boots its OWN <see cref="NotificationTestFactory"/>
-/// per instance (different <c>Notifications:*</c> settings), never <c>fixture.Factory</c>.
+/// (1) it needs the "api" slot's database to exist and be migrated before it boots its own host, which
+/// <see cref="ApiDatabaseFixture"/>/<see cref="TestRunEnvironment"/> guarantee for any class in this
+/// collection; (2) xUnit only guarantees a test class doesn't run concurrently with anything ELSE
+/// touching the same collection's fixture — a class outside every collection is free to run in xUnit's
+/// default parallel bucket while another collection's host is still migrating the same database. This
+/// class still boots its OWN <see cref="NotificationTestFactory"/> per instance (different
+/// <c>Notifications:*</c> settings), never <c>fixture.Factory</c> — the fixture is used only for its
+/// connection string and to establish the collection dependency above.
 /// </summary>
 [Collection("Api")]
-public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsyncDisposable
+public abstract class NotificationTestBase(ApiDatabaseFixture fixture) : IAsyncDisposable
 {
-    // Referenced only to document/enforce the collection dependency above (see the class doc comment) —
-    // deliberately never used to obtain a factory or connection string; every method below talks to its
-    // own NotificationTestFactory instead.
-    private readonly TestDatabaseFixture _collectionFixture = fixture;
+    /// <summary>The "api" slot's connection string — for the rare subclass that needs to build a second,
+    /// dedicated host against the same database.</summary>
+    protected readonly string ConnectionString = fixture.ConnectionString;
 
-    protected readonly NotificationTestFactory Factory = new();
+    protected readonly NotificationTestFactory Factory = Boot(new NotificationTestFactory(fixture.ConnectionString));
+
+    /// <summary>Boots the host eagerly (rather than lazily on first <see cref="WebApplicationFactory{TEntryPoint}.CreateClient"/>)
+    /// so <see cref="NotificationTestFactory.Identity"/> — populated inside <c>ConfigureWebHost</c> — is
+    /// always available by the time <see cref="LoginAsSuperAdminAsync"/> reads it.</summary>
+    private static NotificationTestFactory Boot(NotificationTestFactory factory)
+    {
+        _ = factory.Services;
+        return factory;
+    }
 
     protected HttpClient AnonymousClient() => Factory.CreateClient();
 
@@ -55,12 +58,7 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
 
     protected static string Unique(string prefix) => $"{prefix}{Guid.NewGuid():N}"[..Math.Min(prefix.Length + 20, prefix.Length + 12)];
 
-    protected static string UniquePhone()
-    {
-        var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(10).ToArray();
-        var suffix = new string(digits).PadRight(10, '0');
-        return $"+79{suffix[..9]}";
-    }
+    protected static string UniquePhone() => TestPhones.Unique();
 
     // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): Legal object
     // read from the live manifest instead of a bool.
@@ -86,7 +84,8 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }
 
-    protected Task<AuthResponseDto> LoginAsSuperAdminAsync() => LoginAsync("+70000000001", "SuperAdmin123!");
+    protected Task<AuthResponseDto> LoginAsSuperAdminAsync() =>
+        LoginAsync(Factory.Identity.SuperAdminPhone, Factory.Identity.SuperAdminPassword);
 
     private int? _anyCityId;
     protected async Task<int> AnyCityIdAsync()
