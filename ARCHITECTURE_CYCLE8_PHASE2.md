@@ -1049,8 +1049,11 @@ HTTP-контракта, ни одной переменной из §85. Его 
 
 ```bash
 # P1. Параллелизм действительно включён (замена грепа №4 из §79, который проверял обратное)
-grep -rn "DisableTestParallelization" ServiceBooking.Tests/AssemblyInfo.cs          # пусто
-grep -rn "DisableParallelization" ServiceBooking.Tests/                              # только [Collection("Sequential")], если он есть
+# T9 review (L6): якорь ^\[assembly — иначе греп находит ЗАКОММЕНТИРОВАННУЮ строку отката (§98.1,
+# "# [assembly: CollectionBehavior(DisableTestParallelization = true)]") и ложно "не проходит", хотя
+# параллелизм на самом деле включён (закомментированная строка ничего не делает).
+grep -rn "^\[assembly.*DisableTestParallelization" ServiceBooking.Tests/AssemblyInfo.cs   # пусто
+grep -rn "^\[assembly.*DisableParallelization" ServiceBooking.Tests/                      # только [Collection("Sequential")], если он есть
 test -f ServiceBooking.Tests/xunit.runner.json                                       # есть
 
 # P2. Статическая строка подключения мертва
