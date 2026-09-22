@@ -74,6 +74,12 @@ public class OwnerSubscriptionService(
 
         var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planDto.PricePerMonth, optionDtos.Select(o => o.PricePerMonth));
 
+        // N24 — planDto's Name/Price come from the raw subscription row (sub.PlanConfig, so the owner
+        // can see WHAT they were on even after it lapsed), while `plan`/planDto.Includes come from the
+        // RESOLVED EffectivePlan, which falls back to Free the moment status is Expired. That mismatch
+        // — a paid plan's name/price next to a Free feature list — is deliberate, not accidental, but
+        // it must never go unexplained: the warning below names the actual subscribed plan explicitly
+        // so "Профи, 4990 ₽/мес" next to "Онлайн-запись: нет" doesn't read as a bug on screen.
         var warning = BuildWarning(status, isExpiringSoon, expiresInDays, sub);
 
         // B10: an already-subscribed Quantity option must stay listed here too — otherwise the owner
@@ -191,8 +197,28 @@ public class OwnerSubscriptionService(
     private static SubscriptionWarningDto? BuildWarning(string status, bool isExpiringSoon, int? expiresInDays, AccountSubscription? sub)
     {
         if (status == "Expired")
-            return new SubscriptionWarningDto("Expired", "Подписка истекла — доступны только возможности бесплатного тарифа.",
-                ["Онлайн-запись", "Рассылки клиентам", "Аналитика"]);
+        {
+            // N24 — name the actual lapsed plan explicitly, so a screen showing that plan's name/price
+            // right next to a Free-tier feature list reads as "this is why", not as a data bug. Affected
+            // features are the ones THIS plan actually had (not a hardcoded guess) that Free doesn't.
+            var planName = sub?.PlanConfig?.Name;
+            var text = planName is null
+                ? "Подписка истекла — доступны только возможности бесплатного тарифа."
+                : $"Подписка на тариф «{planName}» истекла — доступны только возможности бесплатного тарифа.";
+            var affected = new List<string>();
+            if (sub?.PlanConfig is { } p)
+            {
+                if (p.AllowOnlineBooking) affected.Add("Онлайн-запись");
+                if (p.AllowMailing) affected.Add("Рассылки клиентам");
+                if (p.AllowAnalytics) affected.Add("Аналитика");
+                if (p.AllowOnlinePayment) affected.Add("Онлайн-оплата");
+            }
+            else
+            {
+                affected.AddRange(["Онлайн-запись", "Рассылки клиентам", "Аналитика"]);
+            }
+            return new SubscriptionWarningDto("Expired", text, affected);
+        }
 
         if (isExpiringSoon && expiresInDays is >= 0)
             return new SubscriptionWarningDto("Expiring", $"Подписка истекает через {expiresInDays} дн. — продлите её, чтобы не потерять возможности тарифа.",
