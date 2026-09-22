@@ -461,6 +461,9 @@ public class AdminBillingController(
         if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
             return BadRequest("Дата окончания оплаты не может быть в прошлом.");
 
+        if (SubscriptionAssignmentValidator.RequiresPaidUntil(dto.PlanId, dto.PaidUntil))
+            return BadRequest(SubscriptionAssignmentValidator.MissingPaidUntilError);
+
         // B6: contract requires an omitted `options` field to behave as "no options", not to 500.
         var optionLines = dto.Options ?? [];
 
