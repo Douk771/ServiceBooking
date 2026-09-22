@@ -185,7 +185,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
               ) : slotsError ? (
                 // Same reader ManualBookingModal uses on the same endpoint: GET /api/bookings/slots
                 // answers with a bare string that says WHY there is no grid ("Мастер не оказывает
-                // услугу: …", "Service is not available", the rate limit) — a fixed "попробуйте
+                // услугу: …", «Услуга сейчас недоступна», the rate limit) — a fixed "попробуйте
                 // снова" throws that away and leaves the operator guessing, which is the exact
                 // failure mode US-60 was about.
                 <p className="text-center text-danger py-4 text-sm mb-6">{getBookingErrorMessage(slotsError)}</p>

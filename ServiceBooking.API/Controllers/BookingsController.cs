@@ -109,7 +109,7 @@ public class BookingsController(
             // would be a weaker back door to exactly what GetOccupied above closes. 400, not 404: every
             // object exists, it is the combination that is wrong (API_CONTRACT.md §2.2).
             if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
-                return BadRequest("Master does not work for this company");
+                return BadRequest("Этот мастер не работает в выбранной компании");
 
             // US-67 (ARCHITECTURE_CYCLE6.md §47.2): serviceIds is the multi-service form of serviceId;
             // when absent this is exactly the pre-cycle single-service path.
@@ -144,9 +144,9 @@ public class BookingsController(
         var services = await db.Services.Where(s => orderedIds.Contains(s.Id)).ToListAsync();
         if (services.Count != orderedIds.Distinct().Count()) return (null, NotFound("Service not found"));
         if (services.Any(s => s.CompanyId != companyId))
-            return (null, BadRequest("Service does not belong to this company"));
+            return (null, BadRequest("Услуга не относится к выбранной компании"));
         if (services.Any(s => !s.IsActive))
-            return (null, BadRequest("Service is not available"));
+            return (null, BadRequest("Услуга сейчас недоступна"));
 
         var unsupported = await MasterCapability.FindUnsupportedServicesAsync(db, masterId, orderedIds);
         if (unsupported.Count > 0)
@@ -196,7 +196,7 @@ public class BookingsController(
             return BadRequest($"Записаться можно не дальше чем на {horizonDays} дней вперёд");
 
         if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
-            return BadRequest("Master does not work for this company");
+            return BadRequest("Этот мастер не работает в выбранной компании");
 
         // US-67 (ARCHITECTURE_CYCLE6.md §47.2): same resolution GetSlots uses, so the calendar and the
         // day's slot grid can never disagree about the visit's total duration.
@@ -296,8 +296,8 @@ public class BookingsController(
         if (services.Count != orderedServiceIds.Distinct().Count()) return NotFound("Service not found");
         // Objects exist but their combination doesn't make sense — 400, not 404 (ARCHITECTURE.md §14.4).
         if (services.Any(s => s.CompanyId != dto.CompanyId))
-            return BadRequest("Service does not belong to this company");
-        if (services.Any(s => !s.IsActive)) return BadRequest("Service is not available");
+            return BadRequest("Услуга не относится к выбранной компании");
+        if (services.Any(s => !s.IsActive)) return BadRequest("Услуга сейчас недоступна");
         if (!await CompanyMembership.IsStaffAsync(db, dto.CompanyId, dto.MasterId))
             return BadRequest("Master is not a staff member of this company");
 
