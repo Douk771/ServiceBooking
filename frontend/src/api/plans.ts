@@ -1,31 +1,29 @@
 import { api } from './client'
+import type { components } from '../types/api-cycle5.generated'
 
-export type PhotoRetention = 'SixMonths' | 'TwelveMonths' | 'Forever'
+type Schemas = components['schemas']
 
-export interface PlanConfig {
-  id: string
-  name: string
-  pricePerMonth: number
-  maxEmployees: number | null
-  maxCompanies: number | null
-  allowOnlineBooking: boolean
-  allowMailing: boolean
-  allowAnalytics: boolean
-  allowPublicListing: boolean
-  allowOnlinePayment: boolean
-  description: string | null
-  isActive: boolean
-  notifyDaysBefore: number
-  /** Photo storage quota in MB for client-note photos (US-24); null = unlimited. */
-  photoQuotaMb: number | null
-  /** How long client-note photos are kept before the cleanup task removes them (US-21, US-24). */
-  photoRetention: PhotoRetention
-}
+export type PhotoRetention = Schemas['PhotoRetention']
+export type OptionAvailability = Schemas['OptionAvailability']
+
+/** Full admin-facing plan, including the highlight bullets and the plan→option availability
+ *  matrix (B4) — kept in sync with the generated AdminPlanDto rather than hand-duplicated. */
+export type PlanConfig = Schemas['AdminPlanDto']
+export type PlanOptionRuleDto = Schemas['PlanOptionRuleDto']
+export type AdminPlanInput = Schemas['AdminPlanInput']
+export type AdminOptionDto = Schemas['AdminOptionDto']
 
 export const plansApi = {
   list: () => api.get<PlanConfig[]>('/admin/plans').then((r) => r.data),
-  create: (data: Partial<PlanConfig>) => api.post<PlanConfig>('/admin/plans', data).then((r) => r.data),
-  update: (id: string, data: Partial<PlanConfig>) =>
+  create: (data: AdminPlanInput) => api.post<PlanConfig>('/admin/plans', data).then((r) => r.data),
+  update: (id: string, data: AdminPlanInput) =>
     api.put<PlanConfig>(`/admin/plans/${id}`, data).then((r) => r.data),
   deactivate: (id: string) => api.delete(`/admin/plans/${id}`),
+  /** PUT /api/admin/plans/{id}/system-free — separate from the ordinary field-edit PUT on purpose
+   *  (contract note on AdminPlanInput: no `isSystemFree` field there at all), so this flag can only
+   *  ever change here, never as an accidental side effect of an unrelated plan edit. */
+  setSystemFree: (id: string, isSystemFree: boolean) =>
+    api.put<PlanConfig>(`/admin/plans/${id}/system-free`, { isSystemFree }).then((r) => r.data),
+  /** GET /api/admin/options — catalog used to build the plan↔option availability matrix (US-66). */
+  listOptions: () => api.get<{ options: AdminOptionDto[] }>('/admin/options').then((r) => r.data.options),
 }

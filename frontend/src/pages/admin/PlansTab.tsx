@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { plansApi, type PlanConfig, type PhotoRetention } from '../../api/plans'
+import {
+  plansApi,
+  type PlanConfig,
+  type PhotoRetention,
+  type OptionAvailability,
+  type PlanOptionRuleDto,
+  type AdminPlanInput,
+  type AdminOptionDto,
+} from '../../api/plans'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
@@ -12,6 +20,16 @@ const RETENTION_LABELS: Record<PhotoRetention, string> = {
   SixMonths: '6 месяцев',
   TwelveMonths: '12 месяцев',
   Forever: 'Бессрочно',
+}
+
+// Витрина показывает не более пяти буллетов на тариф (PricingPlanDto.highlights) — не даём сохранить
+// больше, чем реально будет видно.
+export const MAX_HIGHLIGHTS = 5
+
+const AVAILABILITY_LABELS: Record<OptionAvailability, string> = {
+  Unavailable: 'Недоступна',
+  Included: 'Включена',
+  Extra: 'За доплату',
 }
 
 interface PlanForm {
@@ -28,6 +46,10 @@ interface PlanForm {
   notifyDaysBefore: string
   photoQuotaMb: string
   photoRetention: PhotoRetention
+  highlights: string[]
+  /** optionId -> rule. An option absent here is Unavailable, matching the contract's "missing means
+   *  Unavailable" rule for AdminPlanDto.options. */
+  optionRules: Record<string, { availability: OptionAvailability; includedQuantity: string }>
 }
 
 const defaultForm: PlanForm = {
@@ -44,6 +66,8 @@ const defaultForm: PlanForm = {
   notifyDaysBefore: '7',
   photoQuotaMb: '1024',
   photoRetention: 'TwelveMonths',
+  highlights: [],
+  optionRules: {},
 }
 
 function featureIcon(enabled: boolean) {
@@ -62,21 +86,48 @@ function FeatureBadge({ label, enabled }: { label: string; enabled: boolean }) {
   )
 }
 
+export function optionRulesToForm(rules: PlanOptionRuleDto[]): PlanForm['optionRules'] {
+  const map: PlanForm['optionRules'] = {}
+  for (const r of rules) {
+    map[r.optionId] = {
+      availability: r.availability,
+      includedQuantity: r.includedQuantity != null ? String(r.includedQuantity) : '',
+    }
+  }
+  return map
+}
+
+export function optionRulesToPayload(rules: PlanForm['optionRules']): PlanOptionRuleDto[] {
+  return Object.entries(rules)
+    .filter(([, rule]) => rule.availability !== 'Unavailable')
+    .map(([optionId, rule]) => ({
+      optionId,
+      availability: rule.availability,
+      includedQuantity:
+        rule.availability === 'Included' && rule.includedQuantity.trim() !== ''
+          ? parseInt(rule.includedQuantity)
+          : null,
+    }))
+}
+
 export function PlansTab() {
   const qc = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState<PlanForm>(defaultForm)
   const [editingPlan, setEditingPlan] = useState<PlanConfig | null>(null)
+  const [highlightsError, setHighlightsError] = useState('')
 
   const { data: plans, isLoading } = useQuery({
     queryKey: ['admin-plans'],
     queryFn: plansApi.list,
   })
 
-  // Always sends isActive: true — deliberate (US-05): saving the edit form is also how a deactivated
-  // plan gets reactivated, so "Сохранить" on an inactive plan doubles as "Активировать". The dedicated
-  // "Активировать" button below is the same call with the plan's current values, unchanged.
-  const formToPayload = () => ({
+  const { data: catalogOptions, isLoading: optionsLoading } = useQuery({
+    queryKey: ['admin-options'],
+    queryFn: plansApi.listOptions,
+  })
+
+  const formToPayload = (): AdminPlanInput => ({
     name: form.name,
     pricePerMonth: parseFloat(form.pricePerMonth) || 0,
     maxEmployees: form.maxEmployees ? parseInt(form.maxEmployees) : null,
@@ -91,6 +142,10 @@ export function PlansTab() {
     photoQuotaMb: form.photoQuotaMb.trim() === '' ? null : parseInt(form.photoQuotaMb),
     photoRetention: form.photoRetention,
     isActive: true,
+    isPublic: true,
+    sortOrder: 0,
+    highlights: form.highlights,
+    options: optionRulesToPayload(form.optionRules),
   })
 
   const createMut = useMutation({
@@ -136,7 +191,19 @@ export function PlansTab() {
         photoQuotaMb: plan.photoQuotaMb,
         photoRetention: plan.photoRetention,
         isActive: true,
+        isPublic: plan.isPublic,
+        sortOrder: plan.sortOrder,
+        highlights: plan.highlights,
+        options: plan.options,
       }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
+  })
+
+  // Отдельный маршрут PUT /admin/plans/{id}/system-free — контракт нарочно убрал isSystemFree из
+  // AdminPlanInput (см. плансApi.setSystemFree), чтобы обычное сохранение полей не могло случайно
+  // переставить системный бесплатный тариф.
+  const systemFreeMut = useMutation({
+    mutationFn: ({ id, isSystemFree }: { id: string; isSystemFree: boolean }) => plansApi.setSystemFree(id, isSystemFree),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
   })
 
@@ -147,6 +214,7 @@ export function PlansTab() {
     setShowCreate(false)
     createMut.reset()
     updateMut.reset()
+    setHighlightsError('')
   }
 
   const openCreate = () => {
@@ -154,17 +222,19 @@ export function PlansTab() {
     setEditingPlan(null)
     createMut.reset()
     updateMut.reset()
+    setHighlightsError('')
     setShowCreate(true)
   }
 
   const openEdit = (plan: PlanConfig) => {
     createMut.reset()
     updateMut.reset()
+    setHighlightsError('')
     setForm({
       name: plan.name,
       pricePerMonth: String(plan.pricePerMonth),
-      maxEmployees: plan.maxEmployees !== null ? String(plan.maxEmployees) : '',
-      maxCompanies: plan.maxCompanies !== null ? String(plan.maxCompanies) : '',
+      maxEmployees: plan.maxEmployees != null ? String(plan.maxEmployees) : '',
+      maxCompanies: plan.maxCompanies != null ? String(plan.maxCompanies) : '',
       allowOnlineBooking: plan.allowOnlineBooking,
       allowMailing: plan.allowMailing,
       allowAnalytics: plan.allowAnalytics,
@@ -172,15 +242,96 @@ export function PlansTab() {
       allowOnlinePayment: plan.allowOnlinePayment,
       description: plan.description ?? '',
       notifyDaysBefore: String(plan.notifyDaysBefore),
-      photoQuotaMb: plan.photoQuotaMb !== null ? String(plan.photoQuotaMb) : '',
+      photoQuotaMb: plan.photoQuotaMb != null ? String(plan.photoQuotaMb) : '',
       photoRetention: plan.photoRetention,
+      highlights: plan.highlights ?? [],
+      optionRules: optionRulesToForm(plan.options ?? []),
     })
     setEditingPlan(plan)
     setShowCreate(true)
   }
 
+  const addHighlight = () => {
+    if (form.highlights.length >= MAX_HIGHLIGHTS) {
+      setHighlightsError(`На витрине показывается не больше ${MAX_HIGHLIGHTS} пунктов — добавить ещё нельзя.`)
+      return
+    }
+    setHighlightsError('')
+    setForm((f) => ({ ...f, highlights: [...f.highlights, ''] }))
+  }
+
+  const updateHighlight = (index: number, value: string) => {
+    setForm((f) => ({ ...f, highlights: f.highlights.map((h, i) => (i === index ? value : h)) }))
+  }
+
+  const removeHighlight = (index: number) => {
+    setHighlightsError('')
+    setForm((f) => ({ ...f, highlights: f.highlights.filter((_, i) => i !== index) }))
+  }
+
+  const setOptionAvailability = (optionId: string, availability: OptionAvailability) => {
+    setForm((f) => ({
+      ...f,
+      optionRules: {
+        ...f.optionRules,
+        [optionId]: {
+          availability,
+          includedQuantity: f.optionRules[optionId]?.includedQuantity ?? '',
+        },
+      },
+    }))
+  }
+
+  const setOptionIncludedQuantity = (optionId: string, value: string) => {
+    setForm((f) => ({
+      ...f,
+      optionRules: {
+        ...f.optionRules,
+        [optionId]: {
+          availability: f.optionRules[optionId]?.availability ?? 'Included',
+          includedQuantity: value,
+        },
+      },
+    }))
+  }
+
   const active = plans?.filter((p) => p.isActive) ?? []
   const inactive = plans?.filter((p) => !p.isActive) ?? []
+
+  const renderOptionRow = (option: AdminOptionDto) => {
+    const rule = form.optionRules[option.id] ?? { availability: 'Unavailable' as OptionAvailability, includedQuantity: '' }
+    return (
+      <div key={option.id} className="flex items-center justify-between gap-3 py-2 border-b border-line last:border-0">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-ink truncate">{option.name}</p>
+          <p className="text-xs text-muted">{option.kind === 'Quantity' ? option.unitName ?? 'за единицу' : 'вкл/выкл'}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            value={rule.availability}
+            onChange={(e) => setOptionAvailability(option.id, e.target.value as OptionAvailability)}
+            className="rounded-lg border border-line px-2.5 py-1.5 text-xs outline-none focus:border-gold bg-white text-ink"
+          >
+            {(Object.keys(AVAILABILITY_LABELS) as OptionAvailability[]).map((a) => (
+              <option key={a} value={a}>
+                {AVAILABILITY_LABELS[a]}
+              </option>
+            ))}
+          </select>
+          {option.kind === 'Quantity' && rule.availability === 'Included' && (
+            <input
+              type="number"
+              min={1}
+              placeholder="кол-во"
+              value={rule.includedQuantity}
+              onChange={(e) => setOptionIncludedQuantity(option.id, e.target.value)}
+              className="w-20 rounded-lg border border-line px-2 py-1.5 text-xs outline-none focus:border-gold"
+            />
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -207,14 +358,19 @@ export function PlansTab() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2 flex-wrap">
                         <h3 className="font-semibold text-ink text-lg">{plan.name}</h3>
+                        {plan.isSystemFree && (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-cream-deep text-gold-dark">
+                            Системный бесплатный
+                          </span>
+                        )}
                         <span className="text-sm font-medium text-gold-dark">
                           {plan.pricePerMonth > 0 ? `${plan.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : 'Бесплатно'}
                         </span>
                         <span className="text-xs text-muted">
-                          Сотрудников: {plan.maxEmployees !== null ? `до ${plan.maxEmployees}` : '∞'}
+                          Сотрудников суммарно: {plan.maxEmployees != null ? `до ${plan.maxEmployees}` : '∞'}
                         </span>
                         <span className="text-xs text-muted">
-                          Компаний: {plan.maxCompanies !== null ? `до ${plan.maxCompanies}` : '∞'}
+                          Компаний суммарно: {plan.maxCompanies != null ? `до ${plan.maxCompanies}` : '∞'}
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-1.5 mb-2">
@@ -224,12 +380,19 @@ export function PlansTab() {
                         <FeatureBadge label="В общем списке" enabled={plan.allowPublicListing} />
                         <FeatureBadge label="Онлайн-оплата" enabled={plan.allowOnlinePayment} />
                       </div>
+                      {plan.highlights.length > 0 && (
+                        <ul className="text-xs text-ink-soft list-disc list-inside mb-1">
+                          {plan.highlights.map((h, i) => (
+                            <li key={i}>{h}</li>
+                          ))}
+                        </ul>
+                      )}
                       {plan.description && <p className="text-sm text-muted">{plan.description}</p>}
                       <p className="text-xs text-muted mt-1">
                         Уведомление за {plan.notifyDaysBefore} дн. до деактивации
                       </p>
                       <p className="text-xs text-muted mt-0.5">
-                        Фото клиентов: {plan.photoQuotaMb !== null ? `до ${plan.photoQuotaMb} МБ` : 'без ограничения'} ·{' '}
+                        Фото клиентов: {plan.photoQuotaMb != null ? `до ${plan.photoQuotaMb} МБ` : 'без ограничения'} ·{' '}
                         хранятся {RETENTION_LABELS[plan.photoRetention]}
                       </p>
                     </div>
@@ -247,9 +410,24 @@ export function PlansTab() {
                           Деактивировать
                         </Button>
                       </div>
+                      {!plan.isSystemFree && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          loading={systemFreeMut.isPending && systemFreeMut.variables?.id === plan.id}
+                          onClick={() => systemFreeMut.mutate({ id: plan.id, isSystemFree: true })}
+                        >
+                          Сделать системным бесплатным
+                        </Button>
+                      )}
                       {deactivateMut.isError && deactivateMut.variables === plan.id && (
                         <p className="text-xs text-danger text-right max-w-[220px]">
                           {getPlanErrorMessage(deactivateMut.error)}
+                        </p>
+                      )}
+                      {systemFreeMut.isError && systemFreeMut.variables?.id === plan.id && (
+                        <p className="text-xs text-danger text-right max-w-[220px]">
+                          {getPlanErrorMessage(systemFreeMut.error, 'Не удалось изменить системный бесплатный тариф.')}
                         </p>
                       )}
                     </div>
@@ -326,7 +504,7 @@ export function PlansTab() {
                 onChange={(e) => setForm((f) => ({ ...f, pricePerMonth: e.target.value }))}
               />
               <Input
-                label="Макс. сотрудников (∞)"
+                label="Макс. сотрудников суммарно (∞)"
                 type="number"
                 min={1}
                 value={form.maxEmployees}
@@ -334,7 +512,7 @@ export function PlansTab() {
                 placeholder="∞"
               />
               <Input
-                label="Макс. компаний (∞)"
+                label="Макс. компаний суммарно (∞)"
                 type="number"
                 min={1}
                 value={form.maxCompanies}
@@ -387,6 +565,50 @@ export function PlansTab() {
                   </label>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-ink-soft">
+                  Буллеты на витрине ({form.highlights.length}/{MAX_HIGHLIGHTS})
+                </p>
+                <Button type="button" variant="ghost" size="sm" onClick={addHighlight} disabled={form.highlights.length >= MAX_HIGHLIGHTS}>
+                  <Icon name="plus" size={13} strokeWidth={2} /> Добавить
+                </Button>
+              </div>
+              <div className="flex flex-col gap-2">
+                {form.highlights.map((h, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      value={h}
+                      onChange={(e) => updateHighlight(i, e.target.value)}
+                      placeholder="Онлайн-запись без ограничений"
+                      className="flex-1 rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeHighlight(i)}
+                      aria-label="Удалить буллет"
+                      className="text-muted hover:text-danger shrink-0"
+                    >
+                      <Icon name="x" size={14} strokeWidth={2} />
+                    </button>
+                  </div>
+                ))}
+                {form.highlights.length === 0 && <p className="text-xs text-muted">Буллетов пока нет</p>}
+              </div>
+              {highlightsError && <p className="text-xs text-danger mt-1.5">{highlightsError}</p>}
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-ink-soft mb-2">Доступность опций на тарифе</p>
+              {optionsLoading ? (
+                <div className="h-24 bg-cream-deep rounded-xl animate-pulse" />
+              ) : catalogOptions && catalogOptions.length > 0 ? (
+                <div className="rounded-xl border border-line px-3">{catalogOptions.map(renderOptionRow)}</div>
+              ) : (
+                <p className="text-xs text-muted">Опций в каталоге ещё нет</p>
+              )}
             </div>
 
             <div className="flex flex-col gap-1">
