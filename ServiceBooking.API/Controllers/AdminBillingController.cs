@@ -592,9 +592,15 @@ public class AdminBillingController(
     [HttpGet("billing-accounts/{accountId:guid}/subscription-history")]
     public async Task<IActionResult> GetSubscriptionHistory(Guid accountId)
     {
-        if (!await db.BillingAccounts.AnyAsync(a => a.Id == accountId)) return NotFound();
+        var ownerUserId = await db.BillingAccounts.Where(a => a.Id == accountId).Select(a => a.OwnerUserId).FirstOrDefaultAsync();
+        if (ownerUserId is null) return NotFound();
 
-        var logs = await db.SubscriptionChangeLogs.Where(l => l.BillingAccountId == accountId)
+        // N3, §49: pre-cycle-5 rows (cycles 1-4) have BillingAccountId == NULL — the column didn't
+        // exist yet — so they only match by OwnerUserId, and their ChangeKind is Legacy (the backfilled
+        // default, §43.4). Without the OR, every subscription event from before this cycle shipped is
+        // invisible in the admin's own history screen (US-73).
+        var logs = await db.SubscriptionChangeLogs
+            .Where(l => l.BillingAccountId == accountId || (l.BillingAccountId == null && l.OwnerUserId == ownerUserId))
             .OrderByDescending(l => l.ChangedAt).ToListAsync();
 
         var planIds = logs.SelectMany(l => new[] { l.OldPlanConfigId, l.NewPlanConfigId }).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
