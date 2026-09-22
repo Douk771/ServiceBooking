@@ -153,6 +153,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SubscriptionRequestDto" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -207,6 +208,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminOptionDto" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -230,6 +232,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminOptionDto" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -309,6 +312,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminPlanDto" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -331,6 +335,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminPlanDto" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -429,6 +434,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminBillingAccountDto" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -517,6 +523,8 @@ paths:
       responses:
         "204":
           description: Отклонена
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -599,6 +607,7 @@ paths:
       responses:
         "204":
           description: Перенос выполнен
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400":
           description: |
             newOwnerUserId указывает на несуществующего или удалённого пользователя (голая строка).
@@ -683,6 +692,7 @@ paths:
       responses:
         "204":
           description: Ответственный сменён; деньги и номер не затронуты
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -718,6 +728,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PlatformSettingsDto" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -745,6 +756,9 @@ paths:
           application/json:
             schema: { type: object }
       responses:
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "410":
           description: Голая строка с указанием замены
           content:
@@ -769,6 +783,9 @@ paths:
           application/json:
             schema: { type: object }
       responses:
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "410":
           description: Голая строка с указанием замены
           content:
@@ -834,6 +851,12 @@ components:
       content:
         text/plain:
           schema: { type: string }
+    UnsupportedMediaType:
+      # Framework-level (ASP.NET Core's [ApiController] body-model-binding), not a handler-written
+      # response — a request with a body but a missing/wrong Content-Type (not application/json) is
+      # rejected before the action runs, on every operation below that declares a requestBody
+      # (cycle-07 QA contract pass, "стандартные ответы уровня фреймворка").
+      description: Content-Type запроса не application/json — ПУСТОЕ тело
 
   schemas:
 
