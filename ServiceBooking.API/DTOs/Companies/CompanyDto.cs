@@ -39,9 +39,27 @@ public record CompanyDto(
     bool PlanAllowsOnlineBooking,
     bool PlanAllowsOnlinePayment,
     bool PlanAllowsPublicListing,
-    // Seat cap for CompanyMembers rows (owner included — see CompaniesController.AddMember's seat-limit
-    // check, which counts ALL members the same way). Null means unlimited.
+    // Cycle 5 (ARCHITECTURE_CYCLE5.md §53.1) — DEPRECATED, kept only because the response's FORM never
+    // changes (§41 п. 4): this used to mean "seat cap for THIS company" and now means the account's
+    // SUMMED seat cap across every company it owns (§46). A consumer still comparing
+    // members.length >= maxEmployees for one company will undercount and show an active "add" button
+    // that then 402s — use AccountSeatsUsed/AccountSeatsLimit/CanAddEmployee instead, which are computed
+    // by the server with the exact same rule the 402 uses.
+    // Marked `deprecated: true` in the OpenAPI contract (not a C# [Obsolete] — that would turn every
+    // remaining read of it, including this DTO's own construction, into a build error under
+    // `-warnaserror`). Use AccountSeatsUsed/AccountSeatsLimit/CanAddEmployee instead.
     int? MaxEmployees,
+    // How many CompanyMembers rows THIS company has (local figure). 0 on the fully anonymous
+    // GET /api/companies and GET /api/companies/{slug} (§46.2 — no AccountUsageReader call at all on
+    // those paths); computed for every caller that manages the company.
+    int EmployeeCount,
+    // Account-wide seat usage/limit and whether AddMember would currently succeed — computed by
+    // AccountUsageReader with the exact same rule CompaniesController.AddMember's 402 enforces (§46.4).
+    // null on every field means "the caller doesn't manage this company, not computed" (§46.2) — NOT
+    // "unlimited"; that's AccountSeatsLimit == null while AccountSeatsUsed has a value.
+    int? AccountSeatsUsed,
+    int? AccountSeatsLimit,
+    bool? CanAddEmployee,
     // QA cycle C regression fix: company-wide average rating and review count, computed by the
     // database over ALL of the company's reviews (CompaniesController.GetReviewAggregateAsync /
     // GetReviewAggregatesAsync) — NOT derived from a single page of GET /api/companies/{id}/reviews,

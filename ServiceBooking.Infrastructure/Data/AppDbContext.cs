@@ -44,6 +44,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
     public DbSet<PlatformSettingChangeLog> PlatformSettingChangeLogs => Set<PlatformSettingChangeLog>();
 
+    // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.3): what's paid for on an account's subscription —
+    // today, only read for the "notifications.whatsapp" option's Quantity (§47.1's N).
+    public DbSet<AccountSubscriptionOption> AccountSubscriptionOptions => Set<AccountSubscriptionOption>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -229,6 +233,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasOne(c => c.Owner).WithMany().HasForeignKey(c => c.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(c => c.OwnerUserId);
+            // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.4, §47): who PAYS for/owns this number —
+            // OwnerUserId stays "who set it up and manages it". Restrict (like Company.BillingAccountId)
+            // — an account can't be deleted out from under a number it still owns. Nullable in this
+            // slice: no NOT NULL/composite alt-key yet (§43.6 lands in a later stage), backfilled by
+            // AddChannelBillingAccountId for existing rows, populated going forward by
+            // NotificationChannelsController.Create/Replace via BillingAccountProvisioner.
+            e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(c => c.BillingAccountId);
             // Filtered unique index: a channel with no instance yet has ProviderInstanceId == null, and
             // there is exactly one live column value we must never see twice.
             e.HasIndex(c => c.ProviderInstanceId).IsUnique().HasFilter("\"ProviderInstanceId\" IS NOT NULL");
@@ -350,5 +362,32 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(o => o.PricePerMonth).HasPrecision(10, 2);
             e.Property(o => o.UnitName).HasMaxLength(32);
         });
+
+        // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.3): what's paid for on an account's
+        // subscription — one row per (account, option). The request-workflow fields
+        // (RequestedQuantity/RequestedAtUtc/RequestedByUserId, US-70) are carried in the entity now so a
+        // later stage's admin approval endpoint doesn't need its own migration, but nothing writes them
+        // yet in this stage.
+        builder.Entity<AccountSubscriptionOption>(e =>
+        {
+            e.HasOne(o => o.BillingAccount).WithMany().HasForeignKey(o => o.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(o => o.Option).WithMany().HasForeignKey(o => o.OptionId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(o => new { o.BillingAccountId, o.OptionId }).IsUnique();
+        });
+
+        // AccountUsageReader's raw-SQL projection (§46.1) — never queried through normal LINQ, and
+        // backed by no real table (ToView(null)) so it never shows up as an empty migrated table.
+        builder.Entity<AccountUsageRow>().HasNoKey().ToView(null);
     }
+}
+
+/// <summary>Keyless row shape for <c>AccountUsageReader.GetAsync</c>'s raw SQL projection
+/// (ARCHITECTURE_CYCLE5.md §46.1) — lives here (not in ServiceBooking.API, which depends on this
+/// project, not the other way around) purely so <c>AppDbContext</c> can map it; never queried through
+/// normal LINQ, only ever the target of <c>FromSqlInterpolated</c>.</summary>
+public sealed class AccountUsageRow
+{
+    public Guid BillingAccountId { get; set; }
+    public int CompaniesUsed { get; set; }
+    public int SeatsUsed { get; set; }
 }

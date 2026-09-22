@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -17,6 +18,7 @@ namespace ServiceBooking.API.Controllers;
 public class CompaniesController(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
     ServiceBooking.API.Services.Billing.BillingAccountProvisioner billingAccountProvisioner,
+    ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader,
     ImageUploadService imageUploadService, FileStorage storage) : ControllerBase
 {
     [HttpGet]
@@ -30,10 +32,14 @@ public class CompaniesController(
         // The public directory additionally requires both the owner's own opt-in (ShowInPublicListing)
         // and the tariff's AllowPublicListing — unlike GetMy/GetMemberOf/GetBySlug, which show the
         // company to people who already know about it regardless of directory placement.
+        //
+        // §46.2: the hottest, fully anonymous list on the site — AccountUsageReader is NOT called here
+        // at all (not "called and cached", not called), so employeeCount/accountSeatsUsed/
+        // accountSeatsLimit/canAddEmployee cost this endpoint exactly zero extra queries.
         return Ok(companies
             .Where(c => c.ShowInPublicListing && plans[c.Id].AllowPublicListing)
             .Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
-                c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null)));
+                c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null)));
     }
 
     [HttpGet("my")]
@@ -48,10 +54,13 @@ public class CompaniesController(
         var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
         var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
         var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
+        var (employeeCounts, usageByAccount) = await GetUsageAsync(memberships.Select(cm => cm.Company));
 
         return Ok(memberships.Select(cm =>
             MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount,
-                cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null)));
+                cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
+                employeeCounts.GetValueOrDefault(cm.CompanyId),
+                cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null)));
     }
 
     // Returns all companies where the current user is a member (any role)
@@ -67,10 +76,13 @@ public class CompaniesController(
         var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
         var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
         var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
+        var (employeeCounts, usageByAccount) = await GetUsageAsync(memberships.Select(cm => cm.Company));
 
         return Ok(memberships.Select(cm =>
             MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount,
-                cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null)));
+                cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
+                employeeCounts.GetValueOrDefault(cm.CompanyId),
+                cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null)));
     }
 
     [HttpGet("{slug}")]
@@ -86,7 +98,8 @@ public class CompaniesController(
         // caller paged through reviews — ARCHITECTURE.md §11.2/§21.5 pagination note).
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(c.Id);
         var city = c.CityId.HasValue ? await db.Cities.FindAsync(c.CityId.Value) : null;
-        return Ok(MapToDto(c, plan, averageRating, reviewCount, city));
+        // Reachable anonymously (no [Authorize]) — same §46.2 treatment as GetAll: no usage computed.
+        return Ok(MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null));
     }
 
     // Public: list masters for a company, optionally filtered by serviceId
@@ -268,7 +281,9 @@ public class CompaniesController(
         // reflects the owner's real plan (e.g. their existing paid plan when opening a 2nd+ branch),
         // instead of assuming Free.
         // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
-        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, MapToDto(company, plan, null, 0, city));
+        var createUsage = accountId != Guid.Empty ? await accountUsageReader.GetAsync([accountId]) : new Dictionary<Guid, AccountUsage>();
+        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug },
+            MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId)));
     }
 
     [HttpPut("{id:guid}")]
@@ -325,7 +340,10 @@ public class CompaniesController(
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
-        return Ok(MapToDto(company, plan, averageRating, reviewCount, city));
+        var (updateEmployeeCounts, updateUsageByAccount) = await GetUsageAsync([company]);
+        return Ok(MapToDto(company, plan, averageRating, reviewCount, city,
+            updateEmployeeCounts.GetValueOrDefault(company.Id),
+            company.BillingAccountId.HasValue ? updateUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null));
     }
 
     // Uploads/replaces the company's logo. US-25 p.6: moved onto the same ImageUploadService every other
@@ -368,7 +386,10 @@ public class CompaniesController(
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
         var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
-        return Ok(MapToDto(company, plan, averageRating, reviewCount, city));
+        var (logoEmployeeCounts, logoUsageByAccount) = await GetUsageAsync([company]);
+        return Ok(MapToDto(company, plan, averageRating, reviewCount, city,
+            logoEmployeeCounts.GetValueOrDefault(company.Id),
+            company.BillingAccountId.HasValue ? logoUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null));
     }
 
     // US-24 p.4 / US-19 p.7: the only place a company's client-photo storage usage is exposed. NOT
@@ -414,22 +435,29 @@ public class CompaniesController(
         // unhandled 500 (audit D3). Reject an unknown role name explicitly instead.
         if (!Enum.TryParse<UserRole>(dto.Role, out _)) return BadRequest("Unknown role");
 
-        // Tariff seat limit: counts ALL members (the owner already occupies one seat), so a Free plan
-        // (MaxEmployees = 1) leaves room for the owner only — no staff can be added until upgraded.
-        // Only blocks adding NEW members once at/over the cap; existing members are never removed.
+        // Tariff seat limit (ARCHITECTURE_CYCLE5.md §46.4): SUMMED across every company on the
+        // account, not just this one — a customer with 3 branches on an 8-seat plan can put all 8
+        // anywhere, not 8-per-branch. Only blocks adding NEW members once at/over the cap; existing
+        // members are never removed.
         //
-        // Serialize concurrent adds for this company: without a lock, two simultaneous requests could
-        // both count the same (pre-insert) number of members, both pass the check, and both insert —
-        // letting the company end up over the seat limit the plan was supposed to enforce.
+        // Serialize concurrent adds ACROSS THE WHOLE ACCOUNT: without a lock keyed on the account (not
+        // just this company), two simultaneous adds to two DIFFERENT companies of the same account could
+        // each count the same pre-insert account-wide total, both pass the check, and both insert —
+        // letting the account end up over the seat limit the plan was supposed to enforce. Falls back to
+        // a per-company key only for the (pre-cycle-5-backfill) edge case of a company with no billing
+        // account yet.
+        var billingAccountId = await db.Companies.Where(c => c.Id == id).Select(c => c.BillingAccountId).FirstOrDefaultAsync();
         await using var limitTransaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
+        await AdvisoryLock.AcquireAsync(db, billingAccountId.HasValue ? $"billing-account-seats:{billingAccountId}" : $"company-members:{id}");
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
         if (plan.AccountMaxEmployees.HasValue)
         {
-            var currentCount = await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id);
-            if (currentCount >= plan.AccountMaxEmployees.Value)
-                return StatusCode(402, "Employee limit reached for the current tariff plan.");
+            var seatsUsed = billingAccountId.HasValue
+                ? (await accountUsageReader.GetAsync([billingAccountId.Value])).GetValueOrDefault(billingAccountId.Value)?.SeatsUsed ?? 0
+                : await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id);
+            if (seatsUsed >= plan.AccountMaxEmployees.Value)
+                return StatusCode(402, BillingTexts.SeatLimitReached(seatsUsed, plan.AccountMaxEmployees.Value));
         }
 
         // US-26: search AND auto-create both use the canonical form — otherwise adding a colleague by
@@ -644,9 +672,21 @@ public class CompaniesController(
     // the seven call sites that return a CompanyDto. `city` is the resolved City row for c.CityId, or
     // null when CityId is null (pre-cycle-4 edge case, §31.4's doc comment) — resolved by the caller,
     // batched via GetCitiesAsync for the three list endpoints, so this stays a pure mapping function.
-    private static CompanyDto MapToDto(Company c, EffectivePlan plan, double? averageRating, int reviewCount, City? city)
+    // `employeeCount`/`usage` (ARCHITECTURE_CYCLE5.md §46, §53.1): `usage` is null for a caller who
+    // doesn't manage this company (§46.2's public paths pass 0/null explicitly) — that null propagates
+    // to AccountSeatsUsed/AccountSeatsLimit/CanAddEmployee, deliberately distinct from "no limit"
+    // (AccountSeatsLimit is a real null when the plan itself is unlimited, WITH a non-null usage).
+    private static CompanyDto MapToDto(
+        Company c, EffectivePlan plan, double? averageRating, int reviewCount, City? city,
+        int employeeCount, AccountUsage? usage)
     {
         TimeZoneOffset.TryGetUtcOffsetMinutes(c.TimeZoneId, DateTime.UtcNow, out var utcOffsetMinutes);
+        var accountSeatsUsed = usage?.SeatsUsed;
+        var accountSeatsLimit = usage is null ? (int?)null : plan.AccountMaxEmployees;
+        var canAddEmployee = usage is null
+            ? (bool?)null
+            : !plan.AccountMaxEmployees.HasValue || usage.SeatsUsed < plan.AccountMaxEmployees.Value;
+
         return new(
             c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email,
             c.AllowSelfBooking, c.RequirePrepayment,
@@ -660,9 +700,26 @@ public class CompaniesController(
             plan.AllowOnlinePayment,
             plan.AllowPublicListing,
             plan.AccountMaxEmployees,
+            employeeCount,
+            accountSeatsUsed,
+            accountSeatsLimit,
+            canAddEmployee,
             averageRating,
             reviewCount,
             c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes);
+    }
+
+    // ARCHITECTURE_CYCLE5.md §46.1: batched account-usage lookup for the two AUTHENTICATED list/detail
+    // endpoints (GetMy/GetMemberOf/Update/UploadLogo) — two grouped queries total regardless of how
+    // many companies/accounts are in `companies`, never one query per company.
+    private async Task<(Dictionary<Guid, int> EmployeeCounts, Dictionary<Guid, AccountUsage> UsageByAccount)> GetUsageAsync(
+        IEnumerable<Company> companies)
+    {
+        var companyList = companies.ToList();
+        var employeeCounts = await accountUsageReader.GetCompanySeatsAsync(companyList.Select(c => c.Id));
+        var accountIds = companyList.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct();
+        var usageByAccount = await accountUsageReader.GetAsync(accountIds);
+        return (employeeCounts, usageByAccount);
     }
 
     // Cycle 4: batched City lookup for the three list endpoints (GetAll, GetMy, GetMemberOf) — same
