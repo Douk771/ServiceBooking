@@ -118,6 +118,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<SubscriptionChangeLog>(e =>
         {
             e.HasIndex(l => l.OwnerUserId);
+            // Cycle 5 (§43.4, §51.3) — the account and (for CompanyTransferred rows) company axes of
+            // this log. Restrict: a billing account/company that still has history behind it can't be
+            // deleted out from under that history.
+            e.HasOne(l => l.BillingAccount).WithMany().HasForeignKey(l => l.BillingAccountId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(l => l.BillingAccountId);
+            e.HasOne(l => l.Company).WithMany().HasForeignKey(l => l.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(l => l.CompanyId);
+            e.Property(l => l.OldOptionsSummary).HasMaxLength(500);
+            e.Property(l => l.NewOptionsSummary).HasMaxLength(500);
         });
 
         // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3): payer/rules-owner of companies and subscriptions —
