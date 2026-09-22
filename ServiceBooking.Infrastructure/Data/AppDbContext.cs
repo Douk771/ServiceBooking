@@ -16,6 +16,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<WorkingHours> WorkingHours => Set<WorkingHours>();
     public DbSet<ScheduleBreak> ScheduleBreaks => Set<ScheduleBreak>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<BookingService> BookingServices => Set<BookingService>();
     public DbSet<AccountSubscription> AccountSubscriptions => Set<AccountSubscription>();
     public DbSet<WeeklyScheduleTemplate> WeeklyScheduleTemplates => Set<WeeklyScheduleTemplate>();
     public DbSet<Review> Reviews => Set<Review>();
@@ -116,6 +117,19 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(b => b.Service).WithMany(s => s.Bookings).HasForeignKey(b => b.ServiceId);
             e.HasOne(b => b.Master).WithMany(u => u.MasterBookings).HasForeignKey(b => b.MasterId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(b => b.Client).WithMany(u => u.ClientBookings).HasForeignKey(b => b.ClientId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<BookingService>(e =>
+        {
+            e.Property(bs => bs.NameSnapshot).HasMaxLength(200);
+            e.Property(bs => bs.Price).HasColumnType("decimal(10,2)");
+            e.HasIndex(bs => new { bs.BookingId, bs.Position }).IsUnique();
+            e.HasIndex(bs => bs.ServiceId);
+            e.HasOne(bs => bs.Booking).WithMany(b => b.BookingServices).HasForeignKey(bs => bs.BookingId).OnDelete(DeleteBehavior.Cascade);
+            // Restrict, not Cascade: a service that has ever been part of a visit can't be hard-deleted
+            // out from under the historical record — the product already only soft-deletes services
+            // (Service.IsActive) for exactly this reason.
+            e.HasOne(bs => bs.Service).WithMany().HasForeignKey(bs => bs.ServiceId).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Review>(e =>

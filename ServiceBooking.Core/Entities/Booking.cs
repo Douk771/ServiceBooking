@@ -54,4 +54,9 @@ public class Booking
     public Service Service { get; set; } = null!;
     public AppUser Master { get; set; } = null!;
     public AppUser? Client { get; set; }
+
+    // US-67 (ARCHITECTURE_CYCLE6.md §44.2): the itemised breakdown of this visit's services, ordered by
+    // BookingService.Position. Never empty after the AddBookingServices migration's backfill — even a
+    // pre-cycle single-service booking gets exactly one row here.
+    public ICollection<BookingService> BookingServices { get; set; } = new List<BookingService>();
 }
