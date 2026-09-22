@@ -10,7 +10,7 @@ function ControlledPhoneInput() {
   return <PhoneInput label="Телефон" value={value} onChange={setValue} />
 }
 
-/** Lenient (`restrictToRussia={false}`) mode, as used by the login form (SPEC.md §0.1 Q8). */
+/** Lenient (`restrictToRussia={false}`) mode, as used by the login form (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q8). */
 function ControlledLenientPhoneInput() {
   const [value, setValue] = useState('')
   return <PhoneInput label="Телефон" value={value} onChange={setValue} restrictToRussia={false} />
@@ -56,7 +56,7 @@ describe('PhoneInput', () => {
   })
 })
 
-describe('PhoneInput — lenient mode (restrictToRussia={false}, SPEC.md §0.1 Q8)', () => {
+describe('PhoneInput — lenient mode (restrictToRussia={false}, `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q8)', () => {
   it('keeps the Russian mask for Russian-shaped input, same as the default mode', async () => {
     const user = userEvent.setup()
     render(<ControlledLenientPhoneInput />)

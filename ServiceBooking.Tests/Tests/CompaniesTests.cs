@@ -1311,14 +1311,14 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         dto.PlanAllowsOnlinePayment.Should().BeTrue();
     }
 
-    // ── US-62: "provides services" (ARCHITECTURE_CYCLE6.md §40.3, SPEC.md US-62) ──────────
+    // ── US-62: "provides services" (ARCHITECTURE_CYCLE6.md §40.3, `SPEC_CYCLE6_BOOKING_FIXES.md` US-62) ──────────
 
     [Fact, TestCase("CO-079")]
     public async Task DisablingOwnerProvidesServices_RemovesThemFromPublicMastersListAndCount()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var member = await GetMemberAsync(owner.Token, company.Id, owner.UserId);
-        // SPEC.md US-62 "low-risk assumption": existing/new owners default to enabled, so rollout
+        // `SPEC_CYCLE6_BOOKING_FIXES.md` US-62 "low-risk assumption": existing/new owners default to enabled, so rollout
         // doesn't silently hide a specialist who actually works in the chair.
         member.ProvidesServices.Should().BeTrue();
 

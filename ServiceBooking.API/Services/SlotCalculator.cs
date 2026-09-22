@@ -51,7 +51,7 @@ public static class SlotCalculator
             }
         }
 
-        // SPEC.md §0.1 Q7 (поправка 2026-09-22): WholeDay is explicit staff request for "any time
+        // `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q7 (поправка 2026-09-22): WholeDay is explicit staff request for "any time
         // convenient for the master", regardless of whether a schedule row exists for the date. The
         // schedule window must be ignored, not only its absence — otherwise the "show other hours"
         // toggle is a no-op on any date that does have a WorkingHours row.
@@ -70,7 +70,7 @@ public static class SlotCalculator
             var slotStart = TimeOnly.FromTimeSpan(current);
             var slotEnd = TimeOnly.FromTimeSpan(current + duration);
 
-            // WholeDay also ignores breaks (SPEC.md §0.1 Q7): the server accepts staff bookings that
+            // WholeDay also ignores breaks (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q7): the server accepts staff bookings that
             // overlap a break, so hiding break time from the grid would show staff less than they're
             // actually allowed to book.
             var isBreak = !ignoreSchedule && breaks.Any(b => b.Start < slotEnd && b.End > slotStart);

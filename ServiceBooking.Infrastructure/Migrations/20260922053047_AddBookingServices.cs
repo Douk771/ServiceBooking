@@ -54,7 +54,7 @@ namespace ServiceBooking.Infrastructure.Migrations
             // ARCHITECTURE_CYCLE6.md §44.2 p.3: one BookingService row per existing Booking, Position 0,
             // so BookingDto.services is non-empty for every booking, old and new alike, and no screen
             // needs to branch on "was this booking created before this cycle". Not a data-preservation
-            // measure — SPEC.md §0.1 explicitly allows deleting/recreating stage data this cycle — this
+            // measure — `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 explicitly allows deleting/recreating stage data this cycle — this
             // exists purely so downstream code has one shape to read, not two.
             migrationBuilder.Sql("""
                 INSERT INTO "BookingServices" ("Id", "BookingId", "ServiceId", "Position", "NameSnapshot", "DurationMinutes", "Price")

@@ -89,7 +89,7 @@ public class SlotCalculatorTests
     [Fact]
     public void Calculate_ScheduleRowPresent_WholeDayIgnoresScheduleWindow()
     {
-        // SPEC.md §0.1 Q7 (поправка 2026-09-22): a master working 10:00-14:00 on a normal weekday
+        // `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q7 (поправка 2026-09-22): a master working 10:00-14:00 on a normal weekday
         // must still be reachable at 19:00 via the "show other hours" toggle — the server itself
         // accepts a staff booking at any free time regardless of schedule (isStaffManualBooking), so
         // the grid must offer it too. Before the fix, WholeDay only took effect when there was no
@@ -103,7 +103,7 @@ public class SlotCalculatorTests
     [Fact]
     public void Calculate_ScheduleRowPresent_WholeDayAlsoIgnoresBreaks()
     {
-        // Сопутствующее решение (SPEC.md §0.1 Q7): if WholeDay hid break time, staff would see less
+        // Сопутствующее решение (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q7): if WholeDay hid break time, staff would see less
         // than the server actually allows them to book — same bug in miniature.
         var breaks = new List<TimeRange> { new(new TimeOnly(12, 0), new TimeOnly(13, 0)) };
 

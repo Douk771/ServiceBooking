@@ -48,7 +48,7 @@ export function ManualBookingModal({ onClose }: Props) {
   const [selectedMasterId, setSelectedMasterId] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
-  // Q7 (SPEC.md §0.1) — 09:00–21:00 is only the default suggestion, not a boundary staff is bound
+  // Q7 (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1) — 09:00–21:00 is only the default suggestion, not a boundary staff is bound
   // to; this toggle lets them see the whole day (API_CONTRACT_CYCLE6.md §41.1, extendedHours=true).
   const [showExtendedHours, setShowExtendedHours] = useState(false)
   const [clientName, setClientName] = useState('')

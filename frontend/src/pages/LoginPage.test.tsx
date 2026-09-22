@@ -10,7 +10,7 @@ import { LoginPage } from './LoginPage'
 // number physically impossible to log into, even though the server (AuthController.cs) deliberately
 // still accepts it (ARCHITECTURE_CYCLE6.md §48.4).
 //
-// SPEC.md §0.1 Q8 follow-up: the fix is a soft mask (PhoneInput `restrictToRussia={false}`) that
+// `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q8 follow-up: the fix is a soft mask (PhoneInput `restrictToRussia={false}`) that
 // holds the `+7 (900) 000-00-00` mask while input looks Russian and releases it, unmangled, once a
 // foreign country code is typed — no client-side normalization happens for login, the raw text goes
 // straight to the server (`PhoneNormalizer.Normalize` extracts digits from anything).

@@ -270,7 +270,7 @@ public sealed class NotificationScheduler(
 
         var templateContext = new TemplateContext(
             ClientName: ctx.RecipientName,
-            // US-67 (SPEC.md §2, US-67): comma-joined, no trailing/leading blanks, never "undefined" —
+            // US-67 (SPEC_CYCLE6_BOOKING_FIXES.md §2, US-67): comma-joined, no trailing/leading blanks, never "undefined" —
             // ServiceNames is never empty (see BuildContextAsync).
             ServiceName: string.Join(", ", ctx.ServiceNames),
             MasterName: $"{ctx.Master.FirstName} {ctx.Master.LastName}",

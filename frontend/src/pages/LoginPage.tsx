@@ -91,7 +91,7 @@ export function LoginPage() {
                   error={errors.phone?.message}
                   value={field.value}
                   onChange={field.onChange}
-                  // Sign-in is exempt from the Russian-only policy (§48.2, SPEC.md §0.1 Q8): an
+                  // Sign-in is exempt from the Russian-only policy (§48.2, `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q8): an
                   // account may already have a foreign number on file, and the server still
                   // normalizes logins with `Normalize`, not `TryNormalizeRussian`.
                   restrictToRussia={false}

@@ -126,7 +126,7 @@ describe('isRussianPhone', () => {
   })
 })
 
-// US-61/US-60 fix (SPEC.md §0.1 Q8, ARCHITECTURE_CYCLE6.md §48.3/§48.4): the login form's mask must
+// US-61/US-60 fix (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q8, ARCHITECTURE_CYCLE6.md §48.3/§48.4): the login form's mask must
 // hold while the input still looks Russian and release once a different country code is decided —
 // `looksRussian` is what `PhoneInput` uses to make that call on every keystroke. Deliberately NOT a
 // second normalizer (that was the bug in the removed `toCanonicalPhoneLenient`, §48.3's "one function"

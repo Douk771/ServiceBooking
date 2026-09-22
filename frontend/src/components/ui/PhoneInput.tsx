@@ -18,7 +18,7 @@ interface PhoneInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'v
    * canonical digit string (`79990000000`) and the field always shows the live `+7 (900) 000-00-00`
    * mask.
    *
-   * `false` is the sign-in form's mode (SPEC.md §0.1 Q8): an account may already have a foreign
+   * `false` is the sign-in form's mode (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q8): an account may already have a foreign
    * number on file (the server's `AuthController.Login` deliberately still normalizes with
    * `Normalize`, not `TryNormalizeRussian`, §48.2), so the field can't reject non-Russian input
    * outright the way registration does. Per the customer's answer, it also can't just drop the mask

@@ -71,7 +71,7 @@ public class BookingsController(
         int totalDuration;
         if (excludeBookingId is not null)
         {
-            // R2/R3 (SPEC.md §0.1 Q7, review of cycle 6): reschedule's own grid must (a) not block the
+            // R2/R3 (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q7, review of cycle 6): reschedule's own grid must (a) not block the
             // booking's own current interval against itself, and (b) keep working when the service was
             // later deactivated, dropped from the master's capability list, or the master left the
             // company — none of that should make an existing booking un-reschedulable. Duration is
@@ -709,7 +709,7 @@ public class BookingsController(
         // "the reschedule grid is generated client-side and knows nothing of the master's schedule" —
         // stopped being true when F7 moved that grid onto GET /api/bookings/slots. The reason now is
         // the requirement itself: staff may book any time that suits them, schedule or no schedule
-        // (SPEC.md §0.1, Q7). Validating here would take that away.
+        // (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1, Q7). Validating here would take that away.
         if (!IsBookableMoment(dto.Date, dto.StartTime, totalDurationMinutes))
             return Conflict("Time slot is no longer available");
 

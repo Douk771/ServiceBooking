@@ -52,7 +52,7 @@ public static class PhoneNormalizer
     }
 
     /// <summary>
-    /// Temporary (cycle 6, SPEC.md §0.1 Q4) country policy: only the Russian number format is accepted
+    /// Temporary (cycle 6, `SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q4) country policy: only the Russian number format is accepted
     /// for NEW data. Lifting this restriction later is a one-line change to this predicate alone — no
     /// caller is touched (ARCHITECTURE_CYCLE6.md §48.1). Deliberately a separate predicate from
     /// <see cref="IsValid"/> (the permanent E.164 technical bound, also relied on by the historical
