@@ -468,7 +468,23 @@ public class CompaniesController(
                 ? (await accountUsageReader.GetAsync([billingAccountId.Value])).GetValueOrDefault(billingAccountId.Value)?.SeatsUsed ?? 0
                 : await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id);
             if (seatsUsed >= plan.AccountMaxEmployees.Value)
-                return StatusCode(402, BillingTexts.SeatLimitReached(seatsUsed, plan.AccountMaxEmployees.Value));
+            {
+                // §53.4 breakdown: how much of the summed limit is "included in the plan" vs
+                // "purchased as an option" vs "grandfathered bonus" — the plan's own included quantity
+                // is whatever's left after subtracting the bonus and every option's contribution from
+                // the already-resolved total (both are 0 when there's no billing account at all, the
+                // pre-cycle-5-backfill edge case).
+                var bonus = billingAccountId.HasValue
+                    ? await db.BillingAccounts.Where(a => a.Id == billingAccountId.Value).Select(a => a.GrandfatheredEmployeeBonus).FirstOrDefaultAsync()
+                    : 0;
+                var sub = billingAccountId.HasValue
+                    ? await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == billingAccountId.Value)
+                    : null;
+                var planIncluded = sub?.PlanConfig?.MaxEmployees ?? EffectivePlan.Free.AccountMaxEmployees!.Value;
+                var purchased = Math.Max(0, plan.AccountMaxEmployees.Value - planIncluded - bonus);
+                var planName = sub?.PlanConfig?.Name ?? "Бесплатный";
+                return StatusCode(402, BillingTexts.SeatLimitReached(seatsUsed, planName, planIncluded, purchased, bonus));
+            }
         }
 
         // US-26: search AND auto-create both use the canonical form — otherwise adding a colleague by

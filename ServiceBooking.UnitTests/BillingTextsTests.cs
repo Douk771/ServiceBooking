@@ -59,9 +59,41 @@ public class BillingTextsTests
     [Fact]
     public void SeatLimitReached_MentionsUsedAndLimit()
     {
-        var text = BillingTexts.SeatLimitReached(used: 8, limit: 8);
+        var text = BillingTexts.SeatLimitReached(used: 8, planName: "Базовый", planIncluded: 5, purchased: 3, bonus: 0);
 
         text.Should().Contain("8").And.Contain("Лимит общий на все ваши точки.");
+    }
+
+    [Fact]
+    public void SeatLimitReached_BreaksDownPlanIncludedVsPurchased_PerSample53_4()
+    {
+        // §53.4's own sample text: "Занято 8 из 8 мест: 5 включено в тариф «Базовый», 3 докуплено."
+        var text = BillingTexts.SeatLimitReached(used: 8, planName: "Базовый", planIncluded: 5, purchased: 3, bonus: 0);
+
+        text.Should().Contain("8 из 8 мест");
+        text.Should().Contain("5 включено в тариф «Базовый»");
+        text.Should().Contain("3 докуплено");
+        text.Should().Contain("подключите опцию «Дополнительные сотрудники»");
+    }
+
+    [Fact]
+    public void SeatLimitReached_NoPurchasedOptions_OmitsTheDokuplenoClause()
+    {
+        var text = BillingTexts.SeatLimitReached(used: 5, planName: "Базовый", planIncluded: 5, purchased: 0, bonus: 0);
+
+        text.Should().NotContain("докуплено");
+        text.Should().Contain("5 включено в тариф «Базовый»");
+    }
+
+    [Fact]
+    public void SeatLimitReached_GrandfatheredBonus_FoldedIntoIncludedFigure_NeverNamedByItself()
+    {
+        // The bonus is an internal migration artifact (§54.4) never surfaced to the owner by name —
+        // it silently widens "included in the plan" instead of appearing as its own line item.
+        var text = BillingTexts.SeatLimitReached(used: 6, planName: "Базовый", planIncluded: 5, purchased: 0, bonus: 1);
+
+        text.Should().Contain("6 включено в тариф «Базовый»");
+        text.Should().NotContain("бонус");
     }
 
     // ── §51.1/§51.2 transfer texts ────────────────────────────────────────────

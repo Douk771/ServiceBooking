@@ -6,11 +6,23 @@ namespace ServiceBooking.API.Services.Billing;
 /// the OWNER, not an admin.</summary>
 public static class BillingTexts
 {
-    /// <summary>402 body for <c>CompaniesController.AddMember</c> (§46.4) — the seat limit is now
-    /// summed across every company on the account, so the text says so explicitly rather than leaving
-    /// the owner to wonder why a company with 2 staff hit an 8-seat cap.</summary>
-    public static string SeatLimitReached(int used, int limit) =>
-        $"Занято {used} из {limit} мест. Лимит общий на все ваши точки.";
+    /// <summary>402 body for <c>CompaniesController.AddMember</c> (§46.4/§53.4) — the seat limit is
+    /// summed across every company on the account, and the breakdown of WHY the limit is what it is
+    /// (plan-included vs purchased vs grandfathered bonus) is spelled out explicitly, with a call to
+    /// action to buy the "extra employees" option, rather than leaving the owner to guess why a company
+    /// with 2 staff hit an 8-seat cap. <paramref name="bonus"/> is never mentioned by name to the owner
+    /// (it is an internal migration artifact, §54.4) — it is folded into the "included in the plan"
+    /// figure silently instead.</summary>
+    public static string SeatLimitReached(int used, string planName, int planIncluded, int purchased, int bonus)
+    {
+        var limit = planIncluded + purchased + bonus;
+        var included = planIncluded + bonus;
+        var breakdown = purchased > 0
+            ? $"{included} включено в тариф «{planName}», {purchased} докуплено."
+            : $"{included} включено в тариф «{planName}».";
+        return $"Занято {used} из {limit} мест: {breakdown} Лимит общий на все ваши точки. " +
+            "Чтобы добавить сотрудника, подключите опцию «Дополнительные сотрудники».";
+    }
 
     public static string CompanyLimitReached(int used, int limit) =>
         $"Открыто {used} из {limit} точек, доступных на вашем тарифе.";
