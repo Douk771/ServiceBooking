@@ -1092,9 +1092,6 @@ public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, 
     int MemberCount, int BookingCount, string OwnerUserId, string OwnerEmail,
     Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive);
 
-// IsActive is bool? (was bool, ARCHITECTURE_CYCLE6.md §43.3.1): a request that omits it must keep
-// meaning "leave it enabled", not silently deactivate the subscription (H1).
-public record UpdateSubscriptionDto(Guid? PlanConfigId, DateTime? PaidUntil, bool? IsActive, string? Comment);
 
 public record SubscriptionDiagnosticsDto(
     string OwnerUserId, string OwnerName, Guid? PlanConfigId, string? PlanName, DateTime? PaidUntil,
