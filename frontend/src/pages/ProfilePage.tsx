@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { Link } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { format } from 'date-fns'
@@ -13,7 +13,8 @@ import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Icon } from '../components/ui/Icon'
 import { Avatar } from '../components/ui/Avatar'
-import { formatPhone } from '../utils/phone'
+import { PhoneInput } from '../components/ui/PhoneInput'
+import { formatPhone, isRussianPhone } from '../utils/phone'
 import { getUploadErrorMessage } from '../utils/uploadError'
 
 const roleLabel: Record<string, string> = {
@@ -193,11 +194,12 @@ export function ProfilePage() {
     handleSubmit: hsPhone,
     reset: resetPhone,
     setError: setPhoneError,
+    control: phoneControl,
     formState: { errors: phoneErrors },
   } = useForm<{
     currentPassword: string
     newPhone: string
-  }>()
+  }>({ defaultValues: { newPhone: '' } })
 
   const phoneMut = useMutation({
     mutationFn: (d: { currentPassword: string; newPhone: string }) =>
@@ -353,12 +355,22 @@ export function ProfilePage() {
       <Card className="p-[26px] mt-[18px]">
         <h2 className="text-[15.5px] font-semibold text-ink mb-[18px]">Смена телефона</h2>
         <form onSubmit={hsPhone((d) => phoneMut.mutate(d))} className="flex flex-col gap-4">
-          <Input
-            label="Новый телефон"
-            type="tel"
-            placeholder="+7 999 000 00 00"
-            error={phoneErrors.newPhone?.message}
-            {...regPhone('newPhone', { required: 'Введите телефон' })}
+          <Controller
+            name="newPhone"
+            control={phoneControl}
+            rules={{
+              required: 'Введите телефон',
+              validate: (v) =>
+                isRussianPhone(v) || 'Пока принимаем только российские номера, в формате +7 (900) 000-00-00',
+            }}
+            render={({ field }) => (
+              <PhoneInput
+                label="Новый телефон"
+                error={phoneErrors.newPhone?.message}
+                value={field.value}
+                onChange={field.onChange}
+              />
+            )}
           />
           <Input
             label="Текущий пароль"

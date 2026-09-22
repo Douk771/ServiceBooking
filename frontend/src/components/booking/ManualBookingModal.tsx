@@ -7,7 +7,9 @@ import { companiesApi } from '../../api/companies'
 import { servicesApi } from '../../api/services'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { PhoneInput } from '../ui/PhoneInput'
 import { Icon } from '../ui/Icon'
+import { isRussianPhone } from '../../utils/phone'
 import { Avatar } from '../ui/Avatar'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { getBookingErrorMessage } from '../../utils/bookingError'
@@ -397,12 +399,15 @@ export function ManualBookingModal({ onClose }: Props) {
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
               />
-              <Input
+              <PhoneInput
                 label="Телефон *"
-                type="tel"
-                placeholder="+7 999 000 00 00"
                 value={clientPhone}
-                onChange={(e) => setClientPhone(e.target.value)}
+                onChange={setClientPhone}
+                error={
+                  clientPhone && !isRussianPhone(clientPhone)
+                    ? 'Пока принимаем только российские номера, в формате +7 (900) 000-00-00'
+                    : undefined
+                }
               />
               <Input
                 label="Email (необязательно)"
@@ -427,7 +432,7 @@ export function ManualBookingModal({ onClose }: Props) {
                 size="lg"
                 loading={mutation.isPending}
                 onClick={() => mutation.mutate()}
-                disabled={!clientName || !clientPhone}
+                disabled={!clientName || !isRussianPhone(clientPhone)}
                 className="w-full"
               >
                 Записать клиента
