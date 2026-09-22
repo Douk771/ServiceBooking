@@ -100,4 +100,25 @@ public class PaginationTests
         result.Total.Should().Be(42);
         result.Items.Should().Equal("a");
     }
+
+    // Cycle-07 backend report, item 1: contracts/openapi-cycle5.yaml's PagedAdminBillingAccounts /
+    // PagedAdminSubscriptionRequests are `additionalProperties: false` with
+    // required [items, page, pageSize, totalCount] — no `total`, no `hasNext`. CreateContract is the
+    // envelope those two cycle-5 endpoints use instead of Create/PagedResult<T>.
+    [Fact]
+    public void CreateContract_PropagatesPageAndPageSizeAndTotalCountUnchanged()
+    {
+        var result = Pagination.CreateContract(new[] { "a" }, page: 3, pageSize: 10, totalCount: 42);
+        result.Page.Should().Be(3);
+        result.PageSize.Should().Be(10);
+        result.TotalCount.Should().Be(42);
+        result.Items.Should().Equal("a");
+    }
+
+    [Fact]
+    public void CreateContract_HasNoHasNextProperty_TheContractOnlyDeclaresTotalCount() =>
+        // ContractPagedResult<T> intentionally does not declare HasNext at all — a compile-time
+        // guarantee, not just a runtime assertion, that the two billing-admin list endpoints never
+        // regrow the extra field schemathesis flagged as undocumented.
+        typeof(ContractPagedResult<string>).GetProperty("HasNext").Should().BeNull();
 }

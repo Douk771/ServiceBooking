@@ -555,6 +555,12 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CompanyTransferPreviewDto" }
+        # cycle-07 backend report, item 4: targetBillingAccountId is `required: true` above — an empty
+        # or malformed value never reaches the action; [ApiController]'s own automatic model validation
+        # rejects it first, the same as any other required query parameter that fails to bind. Behaviour
+        # kept as-is (it is the correct, intended behaviour for a required parameter); this response was
+        # simply missing from the contract.
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -796,10 +802,22 @@ components:
 
   responses:
     BadRequest:
-      description: Ошибка валидации — ГОЛАЯ СТРОКА (text/plain)
+      # Established project-wide convention (API_CONTRACT.md §"Коды ответа"), unchanged by this cycle:
+      # a deliberate business-rule 400 (BadRequest("текст")) is a bare text/plain string, but a 400
+      # from [ApiController]'s own automatic model validation (a missing required field, a value that
+      # doesn't deserialize into its declared type, an unparseable enum) is untouched framework
+      # behaviour and comes back as application/problem+json (ValidationProblemDetails). Both are valid
+      # 400 shapes for every endpoint below that accepts a body — cycle-07 backend report, item 2.
+      description: >-
+        Ошибка валидации. ГОЛАЯ СТРОКА (text/plain) для бизнес-правил, отклонённых явным кодом
+        обработчика; application/problem+json (ValidationProblemDetails) для автоматической валидации
+        модели ASP.NET Core (не распознанное значение поля, отсутствующее обязательное поле и т.п.) —
+        оба варианта штатные, без изменений с прошлых циклов (API_CONTRACT.md).
       content:
         text/plain:
           schema: { type: string }
+        application/problem+json:
+          schema: { type: object }
     PaymentRequired:
       description: Упёрлись в тариф или лимит — ГОЛАЯ СТРОКА (text/plain)
       content:

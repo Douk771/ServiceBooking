@@ -4,6 +4,19 @@ namespace ServiceBooking.API.DTOs.Common;
 public record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int Total, bool HasNext);
 
 /// <summary>
+/// Cycle 5 billing-admin envelope (contracts/openapi-cycle5.yaml PagedAdminBillingAccounts /
+/// PagedAdminSubscriptionRequests, `additionalProperties: false`, required
+/// [items, page, pageSize, totalCount]) — deliberately a SEPARATE shape from <see cref="PagedResult{T}"/>
+/// rather than a rename of it. Renaming PagedResult itself would also change the wire shape of the four
+/// pre-cycle-5 endpoints (AdminController users/companies/channels, ReviewsController, MastersController,
+/// CompanyNotificationsController) that this cycle's contract does not govern and did not ask to change —
+/// out of scope here, and a needless breaking change for whatever consumes them today (§3.11 in
+/// CURRENT_STATE.md/API_CONTRACT.md documents `{items,page,pageSize,total,hasNext}` as the established,
+/// still-current convention for those). Only the two cycle-5 billing-admin list endpoints use this one.
+/// </summary>
+public record ContractPagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount);
+
+/// <summary>
 /// Normalizes the two query parameters every paginated endpoint accepts, and builds the envelope —
 /// one place so "page &lt; 1 → 1" and "pageSize &gt; 100 → clamped, not 400" (US-49 p.6) can't drift
 /// between the four call sites.
@@ -42,4 +55,8 @@ public static class Pagination
 
     public static PagedResult<T> Create<T>(IReadOnlyList<T> items, int page, int pageSize, int total) =>
         new(items, page, pageSize, total, (long)page * pageSize < total);
+
+    /// <summary>See <see cref="ContractPagedResult{T}"/> — the cycle-5 billing-admin envelope only.</summary>
+    public static ContractPagedResult<T> CreateContract<T>(IReadOnlyList<T> items, int page, int pageSize, int totalCount) =>
+        new(items, page, pageSize, totalCount);
 }

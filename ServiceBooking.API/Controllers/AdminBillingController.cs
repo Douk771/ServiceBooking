@@ -115,7 +115,18 @@ public class AdminBillingController(
     private static readonly System.Text.RegularExpressions.Regex CodePattern =
         new("^[a-z0-9.\\-]{2,64}$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
-    private static IActionResult? ValidateOptionInput(Billing_AdminOptionInput dto, string? existingCode)
+    // N — SubscriptionOption.PricePerMonth is `numeric(10,2)` (AppDbContext), 8 integer digits + 2
+    // decimal, so anything at or above 10^8 overflows the column and Npgsql throws a raw
+    // PostgresException ("numeric field overflow") on SaveChangesAsync — an unhandled 500, not a 400
+    // (cycle-07 backend report, item 3, confirmed against the actual column precision). Validated here,
+    // before the row ever reaches the DbContext, same as every other business rule in this method.
+    public const decimal MaxOptionPricePerMonth = 99_999_999.99m;
+    // No column-precision reason for this one (MaxQuantity is a plain `int`) — just a sane upper bound
+    // so a denormalized value here can't later blow up a `decimal * int` multiplication elsewhere
+    // (BillingCalculator.MonthlyPriceFor multiplies a subscribed quantity by the option's price).
+    public const int MaxOptionMaxQuantity = 1_000_000;
+
+    internal static IActionResult? ValidateOptionInput(Billing_AdminOptionInput dto, string? existingCode)
     {
         if (string.IsNullOrWhiteSpace(dto.Code) || !CodePattern.IsMatch(dto.Code))
             return new BadRequestObjectResult("Код опции обязателен и должен соответствовать формату ^[a-z0-9.-]{2,64}$.");
@@ -123,8 +134,12 @@ public class AdminBillingController(
             return new BadRequestObjectResult("Название обязательно (до 100 символов).");
         if (dto.PricePerMonth is < 0)
             return new BadRequestObjectResult("Цена не может быть отрицательной.");
+        if (dto.PricePerMonth > MaxOptionPricePerMonth)
+            return new BadRequestObjectResult($"Цена не может превышать {MaxOptionPricePerMonth}.");
         if (dto.MaxQuantity is not null && dto.MaxQuantity < 1)
             return new BadRequestObjectResult("Максимальное количество должно быть не меньше 1.");
+        if (dto.MaxQuantity > MaxOptionMaxQuantity)
+            return new BadRequestObjectResult($"Максимальное количество не может превышать {MaxOptionMaxQuantity}.");
 
         if (TryParseKind(dto.Kind) is not { } kind)
             return new BadRequestObjectResult("kind должен быть Toggle или Quantity.");
@@ -187,33 +202,69 @@ public class AdminBillingController(
         [FromQuery] string? search, [FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
-        var query = db.BillingAccounts.Include(a => a.Owner).AsQueryable();
+        var now = DateTime.UtcNow;
+
+        // N19 — status, search and pagination all happen in SQL now; only the page's own rows (plus the
+        // handful of batched lookups below, keyed by just those rows' ids) are ever materialized, not
+        // every billing account in the system. The inline CASE below must stay behaviourally identical
+        // to OwnerSubscriptionService.SubscriptionStatusFor — see OwnerSubscriptionStatusTests for the
+        // truth table both are checked against — because EF Core cannot translate a call to that shared method
+        // into SQL; it can only translate an expression written out in the query itself.
+        var joined =
+            from a in db.BillingAccounts.Include(a => a.Owner)
+            join s in db.AccountSubscriptions.Include(s => s.PlanConfig) on a.Id equals s.BillingAccountId into subGroup
+            from sub in subGroup.DefaultIfEmpty()
+            select new { a, sub };
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            query = query.Where(a =>
-                a.Owner.Email!.Contains(search) || a.Owner.PhoneNumber!.Contains(search) ||
-                a.Owner.FirstName.Contains(search) || a.Owner.LastName.Contains(search) ||
-                db.Companies.Any(c => c.BillingAccountId == a.Id && c.Name.Contains(search)));
+            joined = joined.Where(x =>
+                x.a.Owner.Email!.Contains(search) || x.a.Owner.PhoneNumber!.Contains(search) ||
+                x.a.Owner.FirstName.Contains(search) || x.a.Owner.LastName.Contains(search) ||
+                db.Companies.Any(c => c.BillingAccountId == x.a.Id && c.Name.Contains(search)));
         }
 
-        var all = await query.OrderBy(a => a.CreatedAtUtc).ToListAsync();
-        var accountIds = all.Select(a => a.Id).ToList();
-        var now = DateTime.UtcNow;
+        var withStatus = joined.Select(x => new
+        {
+            x.a,
+            x.sub,
+            status = x.sub == null || x.sub.PlanConfigId == null ? "Free"
+                : !x.sub.IsActive || (x.sub.PaidUntil.HasValue && x.sub.PaidUntil < now) ? "Expired"
+                : "Active",
+        });
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            // Normalize once in C# against the three known values (case-insensitively, as the old
+            // in-memory filter did) so the SQL comparison itself can stay a simple, translatable
+            // equality rather than an untranslatable StringComparison.OrdinalIgnoreCase call.
+            var canonicalStatus = new[] { "Free", "Active", "Expired" }
+                .FirstOrDefault(s => string.Equals(s, status, StringComparison.OrdinalIgnoreCase));
+            // An unrecognized status value matches nothing — same as the old in-memory
+            // string.Equals(...) filter, which also never matched an unknown value.
+            withStatus = withStatus.Where(x => x.status == (canonicalStatus ?? string.Empty));
+        }
+
+        var total = await withStatus.CountAsync();
+        var page1 = await withStatus.OrderBy(x => x.a.CreatedAtUtc)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
+            .ToListAsync();
+
+        var accountIds = page1.Select(x => x.a.Id).ToList();
         var plans = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
         var usages = await usageReader.GetAsync(accountIds);
-        var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
-            .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync();
 
         // N4 — the same two figures the account's own card already gets right (BuildAccountCardAsync):
         // numbersRegistered from an actual COUNT, and totalMonthlyPrice including every subscribed
         // option's price, not just the bare plan. Batched (§46) — one query for every account's options,
-        // one for every account's registered-channel count, not one per row.
+        // one for every account's registered-channel count, not one per row — and now scoped to just
+        // this page's account ids rather than every account in the system.
         var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
             .Where(o => accountIds.Contains(o.BillingAccountId))
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
             .ToListAsync();
-        var planConfigIds = subs.Where(s => s.PlanConfigId.HasValue).Select(s => s.PlanConfigId!.Value).Distinct().ToList();
+        var planConfigIds = page1.Where(x => x.sub != null && x.sub.PlanConfigId.HasValue)
+            .Select(x => x.sub!.PlanConfigId!.Value).Distinct().ToList();
         var planRules = planConfigIds.Count == 0
             ? []
             : await db.PlanOptionRules.Where(r => planConfigIds.Contains(r.PlanConfigId)).ToListAsync();
@@ -223,12 +274,12 @@ public class AdminBillingController(
             .Select(g => new { AccountId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.AccountId, g => g.Count);
 
-        var items = all.Select(a =>
+        var result = page1.Select(x =>
         {
-            var sub = subs.FirstOrDefault(s => s.BillingAccountId == a.Id);
+            var a = x.a;
+            var sub = x.sub;
             var plan = plans.GetValueOrDefault(a.Id, EffectivePlan.Free);
             var usage = usages.GetValueOrDefault(a.Id) ?? new AccountUsage(a.Id, 0, 0);
-            var subStatus = OwnerSubscriptionService.SubscriptionStatusFor(sub, now);
 
             var accountOptions = subscribedOptions.Where(o => o.BillingAccountId == a.Id);
             var optionsMonthly = accountOptions.Select(o =>
@@ -242,44 +293,26 @@ public class AdminBillingController(
             return new
             {
                 id = a.Id,
-                account = a,
-                sub,
-                plan,
-                usage,
-                status = subStatus,
+                name = a.Name,
+                ownerUserId = a.OwnerUserId,
+                ownerName = $"{a.Owner.FirstName} {a.Owner.LastName}".Trim(),
+                ownerPhoneMasked = a.Owner.PhoneNumber is null ? null : PhoneDisplayMask.Mask(a.Owner.PhoneNumber),
+                planName = sub?.PlanConfig?.Name,
+                status = x.status,
+                paidUntil = sub?.PaidUntil,
                 totalMonthlyPrice,
+                currency = "RUB",
+                companiesUsed = usage.CompaniesUsed,
+                companiesLimit = plan.AccountMaxCompanies,
+                employeesUsed = usage.SeatsUsed,
+                employeesLimit = plan.AccountMaxEmployees,
+                numbersPaid = plan.PaidNotificationNumbers,
                 numbersRegistered = registeredCounts.GetValueOrDefault(a.Id, 0),
+                hasPendingRequest = a.RequestedAtUtc is not null,
             };
         }).ToList();
 
-        if (!string.IsNullOrWhiteSpace(status))
-            items = items.Where(x => string.Equals(x.status, status, StringComparison.OrdinalIgnoreCase)).ToList();
-
-        var total = items.Count;
-        var page1 = items.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
-
-        var result = page1.Select(x => new
-        {
-            id = x.account.Id,
-            name = x.account.Name,
-            ownerUserId = x.account.OwnerUserId,
-            ownerName = $"{x.account.Owner.FirstName} {x.account.Owner.LastName}".Trim(),
-            ownerPhoneMasked = x.account.Owner.PhoneNumber is null ? null : PhoneDisplayMask.Mask(x.account.Owner.PhoneNumber),
-            planName = x.sub?.PlanConfig?.Name,
-            status = x.status,
-            paidUntil = x.sub?.PaidUntil,
-            totalMonthlyPrice = x.totalMonthlyPrice,
-            currency = "RUB",
-            companiesUsed = x.usage.CompaniesUsed,
-            companiesLimit = x.plan.AccountMaxCompanies,
-            employeesUsed = x.usage.SeatsUsed,
-            employeesLimit = x.plan.AccountMaxEmployees,
-            numbersPaid = x.plan.PaidNotificationNumbers,
-            numbersRegistered = x.numbersRegistered,
-            hasPendingRequest = x.account.RequestedAtUtc is not null,
-        }).ToList();
-
-        return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
+        return Ok(Pagination.CreateContract(result, currentPage, currentPageSize, total));
     }
 
     [HttpGet("billing-accounts/{accountId:guid}")]
@@ -649,15 +682,16 @@ public class AdminBillingController(
         // Only "Pending" is ever non-empty — see BillingAccount's own remarks: an approved/rejected/
         // cancelled request simply clears its columns rather than being kept as a history row.
         if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "Pending", StringComparison.OrdinalIgnoreCase))
-            return Ok(Pagination.Create(new List<object>(), currentPage, currentPageSize, 0));
+            return Ok(Pagination.CreateContract(new List<object>(), currentPage, currentPageSize, 0));
 
-        var accounts = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan)
-            .Where(a => a.RequestedAtUtc != null)
+        // N19 — filtered, ordered and paged entirely in SQL; only the page's own rows come back, not
+        // every pending request in the system.
+        var pendingQuery = db.BillingAccounts.Where(a => a.RequestedAtUtc != null);
+        var total = await pendingQuery.CountAsync();
+        var page1 = await pendingQuery.Include(a => a.Owner).Include(a => a.RequestedPlan)
             .OrderBy(a => a.RequestedAtUtc)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
             .ToListAsync();
-
-        var total = accounts.Count;
-        var page1 = accounts.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
         var allOptions = await db.SubscriptionOptions.ToListAsync();
 
         var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
@@ -689,7 +723,7 @@ public class AdminBillingController(
             };
         }).ToList();
 
-        return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
+        return Ok(Pagination.CreateContract(items, currentPage, currentPageSize, total));
     }
 
     [HttpPost("subscription-requests/{id:guid}/reject")]
