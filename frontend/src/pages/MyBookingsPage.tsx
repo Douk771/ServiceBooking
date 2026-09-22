@@ -14,6 +14,7 @@ import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
 import { Icon } from '../components/ui/Icon'
 import { BookingModal } from '../components/booking/BookingModal'
+import { BookingHistoryPanel } from '../components/booking/BookingHistoryPanel'
 import { RescheduleModal } from '../components/booking/RescheduleModal'
 import { NoteCard } from '../components/clientNotes/NoteCard'
 import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
@@ -210,6 +211,10 @@ interface BookingRowProps {
 
 function BookingRow({ booking: b, client, onReschedule, cancel, complete, noShow, markPaid, error }: BookingRowProps) {
   const [historyOpen, setHistoryOpen] = useState(false)
+  // ARCHITECTURE_CYCLE10.md §109.1 — the booking's change journal, distinct from `historyOpen`
+  // above (client notes/"История клиента"). Named separately so the two panels can be open
+  // independently and neither hides the other's toggle.
+  const [journalOpen, setJournalOpen] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const isFinalized = b.status === 'Completed' || b.status === 'Cancelled' || b.status === 'NoShow'
 
@@ -269,6 +274,25 @@ function BookingRow({ booking: b, client, onReschedule, cancel, complete, noShow
                 Причина отмены: {b.cancellationReason}
               </p>
             )}
+            {/* §109.1/§123 — the button exists ONLY when the server actually counted events; a
+                `0`/`null` historyEventCount renders no block at all, not an empty one. */}
+            {!!b.historyEventCount && (
+              <button
+                type="button"
+                onClick={() => setJournalOpen((v) => !v)}
+                className="mt-1.5 flex items-center gap-1 text-xs text-ink-soft hover:text-ink"
+              >
+                <Icon name="clock" size={12} strokeWidth={1.8} />
+                История записи
+                <Icon
+                  name="chevron-down"
+                  size={12}
+                  strokeWidth={1.8}
+                  className={`transition-transform ${journalOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+            )}
+            {journalOpen && !!b.historyEventCount && <BookingHistoryPanel bookingId={b.id} />}
           </div>
         </div>
         <div className="flex gap-2 flex-wrap sm:justify-end">
