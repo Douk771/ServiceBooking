@@ -20,7 +20,7 @@ openapi: 3.0.3
 
 info:
   title: ServiceBooking API — цикл 5 (биллинг-аккаунт, тарифы, опции)
-  version: "5.3.0"
+  version: "5.4.0"
   description: |
     Конвенции проекта, действующие без изменений:
       * camelCase в JSON, enum — строками, DateTime — ISO-8601 UTC, DateOnly — YYYY-MM-DD;
@@ -355,6 +355,61 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/plans/{id}/system-free:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [billing-admin]
+      operationId: setAdminPlanSystemFree
+      summary: Назначить/снять с тарифа признак системного бесплатного (cycle-07, unreleased)
+      description: |
+        Выделен из AdminPlanInput в цикле 7: у AdminPlanInput additionalProperties: false, а
+        isSystemFree управляет полем с частичным уникальным индексом (ровно один активный тариф
+        с этим флагом), поэтому запись через обычный PUT /admin/plans/{id} для него не годится.
+
+        §43.4 требует, чтобы системный бесплатный тариф существовал всегда — но ни один
+        ОДИНОЧНЫЙ вызов этого эндпоинта не может гарантировать это в одиночку, потому что
+        перенос флага с одного тарифа на другой — это два последовательных вызова (снять со
+        старого, поставить на новый), не один атомарный. Эндпоинт поэтому охраняет только то,
+        что может проверить в границах одного запроса:
+
+        - isSystemFree: true → 400, если pricePerMonth тарифа не равен 0; 409, если флаг уже
+          стоит на другом тарифе (снимите его оттуда первым запросом).
+        - isSystemFree: false → 409, если это привело бы к тому, что ни один активный тариф с
+          pricePerMonth = 0 не остался бы кандидатом на замену (т.е. нет другого активного
+          тарифа с ценой 0, готового принять флаг следующим вызовом). Иными словами — снять
+          флаг можно, только когда уже есть реальный тариф-преемник; иначе он был бы снят в
+          никуда, и в системе не осталось бы бесплатного тарифа вовсе.
+        - Запрос, не меняющий текущее значение флага (idempotent no-op), всегда 200 — без обеих
+          проверок выше.
+        - Гонка (два одновременных запроса ставят флаг на разные тарифы) ловится частичным
+          уникальным индексом БД и возвращается как 409 с тем же текстом, что и синхронная
+          проверка выше, а не как 500.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlanSetSystemFreeInput" }
+      responses:
+        "200":
+          description: OK — новое значение флага (или то же самое, если оно не менялось)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlanDto" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >-
+            ГОЛАЯ СТРОКА (text/plain). Либо флаг уже стоит на другом тарифе (при попытке
+            поставить), либо снятие флага не оставило бы ни одного тарифа-кандидата на замену
+            (при попытке снять) — см. описание операции.
+          content:
+            text/plain:
+              schema: { type: string }
 
   # ─────────────────────────────── Биллинг-аккаунты (админ) ───────────────────────────────
 
@@ -1394,6 +1449,18 @@ components:
         options:
           type: array
           items: { $ref: "#/components/schemas/PlanOptionRuleDto" }
+      additionalProperties: false
+
+    AdminPlanSetSystemFreeInput:
+      type: object
+      required: [isSystemFree]
+      properties:
+        isSystemFree:
+          type: boolean
+          description: >-
+            true — сделать этот тариф системным бесплатным (требует pricePerMonth = 0 и
+            отсутствия другого тарифа с уже стоящим флагом). false — снять флаг (требует
+            другого активного тарифа с pricePerMonth = 0 в качестве кандидата на замену).
       additionalProperties: false
 
     CapabilityDto:
