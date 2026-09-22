@@ -1177,6 +1177,113 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         persisted.SortOrder.Should().Be(42);
     }
 
+    // ── Race: two concurrent system-free toggles to two DIFFERENT plans ──────────────────────────────
+
+    [Fact, TestCase("ADM-059")]
+    public async Task SetSystemFree_TwoConcurrentTogglesToDifferentPlans_BothRefused_ExactlyOneRemainsSystemFree()
+    {
+        // A fresh database always seeds exactly one system-free plan (§54.3, 20260922121140_
+        // SeedBillingCatalog) — two admins racing to make TWO OTHER, different plans "the" system free
+        // plan at the same time must both come away with a sensible refusal (409), never a 500 and never
+        // an inconsistent end state (zero or two system-free plans).
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var before = (await (await adminClient.GetAsync("/api/admin/plans")).Content
+            .ReadJsonAsync<AdminPlansListDto>())!.Plans;
+        var originalSystemFreeId = before.Should().ContainSingle(p => p.IsSystemFree).Subject.Id;
+
+        var planX = NewPlanConfig();
+        planX.PricePerMonth = 0;
+        var planY = NewPlanConfig();
+        planY.PricePerMonth = 0;
+        var createdX = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", planX)).Content.ReadJsonAsync<AdminPlanDto>())!;
+        var createdY = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", planY)).Content.ReadJsonAsync<AdminPlanDto>())!;
+
+        var responses = await Task.WhenAll(
+            adminClient.PutJsonAsync($"/api/admin/plans/{createdX.Id}/system-free", new { IsSystemFree = true }),
+            adminClient.PutJsonAsync($"/api/admin/plans/{createdY.Id}/system-free", new { IsSystemFree = true }));
+
+        // Neither succeeds — the ORIGINAL seeded plan still holds the flag, so both concurrent attempts
+        // to claim it for a different plan must be refused (409), not crash (500) and not silently let
+        // one through while leaving the system in a two-system-free-plans state.
+        responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.Conflict,
+            "with the seeded plan still flagged, both concurrent claims by OTHER plans must be refused, not crash");
+
+        var reread = (await (await adminClient.GetAsync("/api/admin/plans")).Content
+            .ReadJsonAsync<AdminPlansListDto>())!.Plans;
+        reread.Should().ContainSingle(p => p.IsSystemFree).Which.Id.Should().Be(originalSystemFreeId,
+            "exactly one plan must be system-free after the race, and it must still be the original one — no double, no zero");
+
+        await adminClient.DeleteAsync($"/api/admin/plans/{createdX.Id}");
+        await adminClient.DeleteAsync($"/api/admin/plans/{createdY.Id}");
+    }
+
+    // ── Price ceiling: reject, don't 500 (cycle-07 QA brief item "цена выше допустимого потолка") ────
+
+    [Fact, TestCase("ADM-056")]
+    public async Task CreatePlan_PriceAboveCeiling_ReturnsBadRequest_NotServerError()
+    {
+        // SubscriptionPlanConfigs.PricePerMonth is an unbounded `numeric` column, so an extreme value
+        // doesn't overflow the DB the way SubscriptionOption's numeric(10,2) does — but it still must be
+        // rejected with a 400 (AdminController.MaxPlanPricePerMonth), because a denormalized plan price
+        // is exactly the kind of value that turns a LATER addition/multiplication (BillingCalculator.
+        // TotalMonthlyPrice) into an unhandled OverflowException — a 500 far away from where the bad
+        // data was actually written.
+        var admin = await LoginAsSuperAdminAsync();
+        var plan = NewPlanConfig();
+        plan.PricePerMonth = AdminController.MaxPlanPricePerMonth + 1;
+
+        var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/plans", plan);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact, TestCase("ADM-057")]
+    public async Task CreateOption_PriceAboveCeiling_ReturnsBadRequest_NotServerError()
+    {
+        // SubscriptionOptions.PricePerMonth IS numeric(10,2) — above this ceiling, SaveChangesAsync
+        // itself would throw a raw Npgsql "numeric field overflow" (an unhandled 500), which is exactly
+        // why AdminBillingController.ValidateOptionInput checks this BEFORE the row ever reaches the
+        // DbContext (AdminBillingController.MaxOptionPricePerMonth).
+        var admin = await LoginAsSuperAdminAsync();
+        var input = new AdminOptionInput(
+            Unique("opt-cap-"), "Слишком дорогая опция", null, "Toggle", null,
+            AdminBillingController.MaxOptionPricePerMonth + 1, null, null);
+
+        var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/options", input);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // ── Highlights: admin may save 6-10 bullets, public storefront still shows only the first 5 ──────
+
+    [Fact, TestCase("ADM-058")]
+    public async Task CreatePlan_WithSixToTenHighlights_Succeeds_PublicPricingShowsOnlyFirstFive()
+    {
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+
+        var eightHighlights = Enumerable.Range(1, 8).Select(i => $"Преимущество {i}").ToList();
+        var input = new AdminPlanInput(
+            Name: Unique("Highlights Plan "), Description: null, Highlights: eightHighlights,
+            PricePerMonth: 500, MaxEmployees: null, MaxCompanies: null,
+            AllowOnlineBooking: true, IsPublic: true, IsActive: true, SortOrder: 0);
+
+        var createResponse = await adminClient.PostAsJsonAsync("/api/admin/plans", input);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, "6-10 bullets are within the admin editor's own 10-item write cap");
+        var created = (await createResponse.Content.ReadJsonAsync<AdminPlanDto>())!;
+        created.Highlights.Should().Equal(eightHighlights, "the admin editor itself must keep everything the admin typed, up to 10 items");
+
+        // /api/admin/pricing/preview: same PricingCatalogBuilder.Build mapping as the public /api/pricing
+        // (including the storefront's 5-item highlight trim), but never cached and not gated behind the
+        // "pricing.public-enabled" platform switch this test doesn't otherwise care about.
+        var pricing = await (await adminClient.GetAsync("/api/admin/pricing/preview"))
+            .Content.ReadFromJsonAsync<PublicPricingDto>();
+        var publicPlan = pricing!.Plans.Should().ContainSingle(p => p.Id == created.Id).Subject;
+        publicPlan.Highlights.Should().HaveCount(5, "the public storefront caps highlights at 5 regardless of how many the admin saved");
+        publicPlan.Highlights.Should().Equal(eightHighlights.Take(5), "the storefront must show the FIRST five, not an arbitrary subset");
+    }
+
     /// <summary>
     /// Builds a PUT /api/admin/plans/{id} request body from a previously-fetched AdminPlanDto plus
     /// explicit overrides — the request (UpdatePlanDto) and response (AdminPlanDto) shapes differ (most
