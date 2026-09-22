@@ -1,12 +1,20 @@
+# Cycle 8 env contract (API_CONTRACT_CYCLE8.md §85): every SB_* variable below has a working default,
+# so `docker compose up` with no `.env` at the repo root behaves exactly as before this cycle (project
+# name from the directory... no — see SB_PROJECT_NAME below; ports 5432/5000; same DB name). The `.env`
+# file itself stays gitignored (see .env.dev.example, committed, for what to put in it) and is what
+# lets two working copies of this repo run side by side on one machine without colliding on compose
+# project name, published ports, or the named volume.
+name: ${SB_PROJECT_NAME:-servicebooking}
+
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: servicebooking
+      POSTGRES_DB: ${SB_DB_NAME:-servicebooking}
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "${SB_DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,20 +28,26 @@ services:
       context: .
       dockerfile: ServiceBooking.API/Dockerfile
     ports:
-      - "5000:8080"
+      - "${SB_API_PORT:-5000}:8080"
     environment:
       # Without this the runtime defaults to Production (the aspnet base image sets no environment),
       # and the Production fail-fast in Program.cs rejects the placeholder Jwt__Key below — the dev
       # stack would refuse to start.
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Host=postgres;Database=servicebooking;Username=postgres;Password=postgres
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=${SB_DB_NAME:-servicebooking};Username=postgres;Password=postgres
       - Jwt__Key=CHANGE_ME_TO_A_LONG_SECRET_KEY_AT_LEAST_32_CHARS
       - Jwt__Issuer=ServiceBooking
       - Jwt__Audience=ServiceBookingClient
-      - AllowedOrigins=http://localhost:5173
+      - AllowedOrigins=http://localhost:${SB_WEB_PORT:-5173}
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
+  # Compose normally namespaces this as `${SB_PROJECT_NAME}_postgres_data` (the top-level `name:`
+  # above), which already keeps two working copies from sharing data as long as SB_PROJECT_NAME
+  # differs. SB_VOLUME_SUFFIX is a second, independent knob for the rare case that isn't enough
+  # (e.g. two stacks that deliberately share SB_PROJECT_NAME) — it sets the actual volume NAME, not
+  # just a compose-internal key, since compose keys can't take variable substitution.
   postgres_data:
+    name: ${SB_PROJECT_NAME:-servicebooking}_postgres_data${SB_VOLUME_SUFFIX:-}
