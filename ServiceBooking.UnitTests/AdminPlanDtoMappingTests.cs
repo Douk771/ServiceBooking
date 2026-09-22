@@ -23,7 +23,7 @@ public class AdminPlanDtoMappingTests
     [Fact]
     public void MapAdminPlanDto_AlwaysReportsCurrencyAsRub()
     {
-        var dto = AdminController.MapAdminPlanDto(NewPlan(), subscribedAccounts: 0);
+        var dto = AdminController.MapAdminPlanDto(NewPlan(), subscribedAccounts: 0, rules: []);
 
         dto.Currency.Should().Be("RUB");
     }
@@ -34,19 +34,34 @@ public class AdminPlanDtoMappingTests
         var plan = NewPlan();
         plan.Highlights = null;
 
-        var dto = AdminController.MapAdminPlanDto(plan, subscribedAccounts: 0);
+        var dto = AdminController.MapAdminPlanDto(plan, subscribedAccounts: 0, rules: []);
 
         dto.Highlights.Should().NotBeNull().And.BeEmpty();
     }
 
     [Fact]
-    public void MapAdminPlanDto_OptionsIsAlwaysEmpty_UntilTheOptionCatalogExists()
+    public void MapAdminPlanDto_OptionsReflectsTheRuleMatrix()
     {
-        // Documents a known, deliberate gap (see the comment on MapAdminPlanDto): the schema's
-        // `options` field depends on the BillingAccount/option catalog, which isn't built yet.
-        var dto = AdminController.MapAdminPlanDto(NewPlan(), subscribedAccounts: 3);
+        // cycle-07 backend report: the earlier always-`[]` gap is fixed — a plan's `options` now
+        // reflects its actual PlanOptionRule rows, and an explicit Unavailable rule is omitted (the
+        // schema's own documented default for a missing rule), not materialized.
+        var plan = NewPlan();
+        var includedOptionId = Guid.NewGuid();
+        var extraOptionId = Guid.NewGuid();
+        var unavailableOptionId = Guid.NewGuid();
+        var rules = new List<PlanOptionRule>
+        {
+            new() { PlanConfigId = plan.Id, OptionId = includedOptionId, Availability = OptionAvailability.Included, IncludedQuantity = 2 },
+            new() { PlanConfigId = plan.Id, OptionId = extraOptionId, Availability = OptionAvailability.Extra },
+            new() { PlanConfigId = plan.Id, OptionId = unavailableOptionId, Availability = OptionAvailability.Unavailable },
+        };
 
-        dto.Options.Should().BeEmpty();
+        var dto = AdminController.MapAdminPlanDto(plan, subscribedAccounts: 3, rules);
+
+        dto.Options.Should().HaveCount(2);
+        dto.Options.Should().Contain(o => o.OptionId == includedOptionId && o.Availability == "Included" && o.IncludedQuantity == 2);
+        dto.Options.Should().Contain(o => o.OptionId == extraOptionId && o.Availability == "Extra");
+        dto.Options.Should().NotContain(o => o.OptionId == unavailableOptionId);
         dto.SubscribedAccounts.Should().Be(3);
     }
 

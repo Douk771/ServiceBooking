@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
@@ -326,27 +327,55 @@ public class AdminController(
     {
         var plans = await db.SubscriptionPlanConfigs.OrderBy(p => p.PricePerMonth).ToListAsync();
         var subscriberCounts = await GetActiveSubscriberCountsAsync(plans.Select(p => p.Id));
-        return Ok(new AdminPlansListDto(plans.Select(p => MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id))).ToList()));
+        var rules = await db.PlanOptionRules.Where(r => plans.Select(p => p.Id).Contains(r.PlanConfigId)).ToListAsync();
+        return Ok(new AdminPlansListDto(plans.Select(p =>
+            MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id), rules.Where(r => r.PlanConfigId == p.Id).ToList())).ToList()));
     }
 
+    // openapi-cycle5.yaml AdminPlanInput (BREAKING fix, cycle-07 backend report): the previous shape
+    // bound straight into SubscriptionPlanConfig (Highlights as a raw newline-separated string) and had
+    // no `options` field at all — every plan created/updated through this endpoint left the whole
+    // option-availability matrix untouched, silently leaving every option Unavailable. Both endpoints
+    // below now accept the contract's array-of-strings Highlights and a full options matrix.
     [HttpPost("plans")]
-    public async Task<IActionResult> CreatePlan([FromBody] SubscriptionPlanConfig dto)
+    public async Task<IActionResult> CreatePlan([FromBody] AdminPlanInput dto)
     {
-        // Negative quota has no sensible meaning (unlike null, which means "unlimited") — reject before
-        // the row exists, the same way every other tariff validation in this controller does (US-24 p.3).
-        if (dto.PhotoQuotaMb is < 0) return BadRequest("Photo quota must not be negative.");
+        var validationError = ValidatePlanInput(dto);
+        if (validationError is not null) return validationError;
 
-        var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree, dto.PricePerMonth, existingPlanId: null);
+        var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree ?? false, dto.PricePerMonth, existingPlanId: null);
         if (systemFreeError is not null) return systemFreeError;
 
-        dto.Id = Guid.NewGuid();
-        dto.CreatedAt = DateTime.UtcNow;
-        db.SubscriptionPlanConfigs.Add(dto);
+        var plan = new SubscriptionPlanConfig
+        {
+            Id = Guid.NewGuid(),
+            Name = dto.Name,
+            Description = dto.Description,
+            Highlights = JoinHighlights(dto.Highlights),
+            PricePerMonth = dto.PricePerMonth,
+            MaxEmployees = dto.MaxEmployees,
+            MaxCompanies = dto.MaxCompanies,
+            AllowOnlineBooking = dto.AllowOnlineBooking,
+            AllowMailing = dto.AllowMailing,
+            AllowAnalytics = dto.AllowAnalytics,
+            AllowPublicListing = dto.AllowPublicListing,
+            AllowOnlinePayment = dto.AllowOnlinePayment,
+            PhotoQuotaMb = dto.PhotoQuotaMb,
+            PhotoRetention = dto.PhotoRetention,
+            NotifyDaysBefore = dto.NotifyDaysBefore,
+            IsPublic = dto.IsPublic ?? false,
+            IsActive = dto.IsActive,
+            SortOrder = dto.SortOrder ?? 0,
+            IsSystemFree = dto.IsSystemFree ?? false,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.SubscriptionPlanConfigs.Add(plan);
+        await ApplyOptionRulesAsync(plan.Id, dto.Options);
         try
         {
             await db.SaveChangesAsync();
         }
-        catch (DbUpdateException) when (dto.IsSystemFree)
+        catch (DbUpdateException) when (plan.IsSystemFree)
         {
             // See UpdatePlan for why this races the AnyAsync check above; same translation to 409.
             return Conflict("Another plan is already marked as the system free plan.");
@@ -355,21 +384,19 @@ public class AdminController(
         // A brand-new plan has no subscribers yet — no need for the AccountSubscriptions round trip
         // GetActiveSubscriberCountsAsync does for the list/update endpoints.
         // Contract (API_CONTRACT_CYCLE5.md) documents 201 Created for a successful create, not 200.
-        return StatusCode(StatusCodes.Status201Created, MapAdminPlanDto(dto, subscribedAccounts: 0));
+        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync();
+        return StatusCode(StatusCodes.Status201Created, MapAdminPlanDto(plan, subscribedAccounts: 0, rules));
     }
 
     [HttpPut("plans/{id:guid}")]
-    public async Task<IActionResult> UpdatePlan(Guid id, [FromBody] UpdatePlanDto dto)
+    public async Task<IActionResult> UpdatePlan(Guid id, [FromBody] AdminPlanInput dto)
     {
-        if (dto.PhotoQuotaMb is < 0) return BadRequest("Photo quota must not be negative.");
+        var validationError = ValidatePlanInput(dto);
+        if (validationError is not null) return validationError;
 
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
 
-        // Cycle-5 fields (Highlights/IsPublic/SortOrder/IsSystemFree) are nullable on this DTO and left
-        // untouched when the caller omits them — the existing admin UI (frontend/src/pages/admin/
-        // PlansTab.tsx) doesn't send them yet, and binding straight into the entity used to reset them
-        // to false/0/null on every save, silently unpublishing plans (code review finding, blocking).
         var effectiveIsSystemFree = dto.IsSystemFree ?? plan.IsSystemFree;
         var systemFreeError = await ValidateSystemFreeAsync(effectiveIsSystemFree, dto.PricePerMonth, existingPlanId: id);
         if (systemFreeError is not null) return systemFreeError;
@@ -387,12 +414,11 @@ public class AdminController(
         plan.PhotoRetention = dto.PhotoRetention;
         plan.Description = dto.Description;
         plan.NotifyDaysBefore = dto.NotifyDaysBefore;
-        // Cycle 5 additions (ARCHITECTURE_CYCLE5.md §43.4): applied only when the caller actually sent
-        // them, so clients that don't yet know about these fields can't wipe them out by omission.
-        if (dto.Highlights is not null) plan.Highlights = dto.Highlights;
+        plan.Highlights = JoinHighlights(dto.Highlights);
         if (dto.IsPublic.HasValue) plan.IsPublic = dto.IsPublic.Value;
         if (dto.SortOrder.HasValue) plan.SortOrder = dto.SortOrder.Value;
         plan.IsSystemFree = effectiveIsSystemFree;
+        await ApplyOptionRulesAsync(id, dto.Options);
 
         // Deactivating through this endpoint has exactly the effect DeletePlan refuses below: the
         // resolver treats PlanConfig.IsActive == false as Free, so every subscriber silently loses
@@ -416,7 +442,7 @@ public class AdminController(
         {
             await db.SaveChangesAsync();
         }
-        catch (DbUpdateException) when (effectiveIsSystemFree)
+        catch (DbUpdateException) when (plan.IsSystemFree)
         {
             // Two concurrent requests can both pass the AnyAsync check above before either commits —
             // the partial unique index on IsSystemFree (AppDbContext) is the real guard; translate its
@@ -425,7 +451,8 @@ public class AdminController(
         }
         pricingCatalogCache.Invalidate();
         var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
-        return Ok(MapAdminPlanDto(plan, subscribedAccounts));
+        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
+        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules));
     }
 
     [HttpDelete("plans/{id:guid}")]
@@ -467,22 +494,68 @@ public class AdminController(
     // openapi-cycle5.yaml AdminPlanDto: projects the entity onto the contract shape rather than
     // returning it directly — the entity also carries AllowNotificationChannel and CreatedAt (neither
     // in the schema, which sets additionalProperties: false) and stores Highlights as a single
-    // newline-separated string rather than the array the schema requires. `options`/`subscribedAccounts`
-    // are cycle-5 additions tied to the not-yet-built BillingAccount/option catalog (see the cycle-07
-    // backend report): `options` is always `[]` until that catalog exists — every option availability
-    // rule for this plan is therefore reported as "unavailable" by omission, which is the schema's own
-    // documented default for a missing rule, not a made-up placeholder.
-    internal static AdminPlanDto MapAdminPlanDto(SubscriptionPlanConfig plan, int subscribedAccounts) => new(
+    // newline-separated string rather than the array the schema requires. `options` is now the real
+    // PlanOptionRule matrix for this plan (cycle-07 backend report fixes the earlier always-`[]` gap);
+    // an option with no row is Unavailable by the schema's own documented default, so it's simply
+    // omitted here rather than materialized as an explicit Unavailable row.
+    internal static AdminPlanDto MapAdminPlanDto(SubscriptionPlanConfig plan, int subscribedAccounts, List<PlanOptionRule> rules) => new(
         plan.Id, plan.Name, plan.Description, SplitHighlights(plan.Highlights), plan.PricePerMonth, "RUB",
         plan.MaxEmployees, plan.MaxCompanies, plan.AllowOnlineBooking, plan.AllowMailing, plan.AllowAnalytics,
         plan.AllowPublicListing, plan.AllowOnlinePayment, plan.PhotoQuotaMb, plan.PhotoRetention,
         plan.NotifyDaysBefore, plan.IsPublic, plan.IsActive, plan.IsSystemFree, plan.SortOrder,
-        Options: [], subscribedAccounts);
+        Options: rules.Where(r => r.Availability != OptionAvailability.Unavailable)
+            .Select(r => new AdminPlanOptionRuleDto(r.OptionId, r.Availability.ToString(), r.IncludedQuantity)).ToList(),
+        subscribedAccounts);
 
     internal static List<string> SplitHighlights(string? raw) =>
         string.IsNullOrWhiteSpace(raw)
             ? []
             : raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(10).ToList();
+
+    private static string? JoinHighlights(List<string>? highlights) =>
+        highlights is null || highlights.Count == 0 ? null : string.Join('\n', highlights.Take(10));
+
+    private static IActionResult? ValidatePlanInput(AdminPlanInput dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Length > 100)
+            return new BadRequestObjectResult("Название тарифа обязательно (до 100 символов).");
+        if (dto.PricePerMonth < 0)
+            return new BadRequestObjectResult("Цена не может быть отрицательной.");
+        if (dto.PhotoQuotaMb is < 0)
+            return new BadRequestObjectResult("Photo quota must not be negative.");
+        return null;
+    }
+
+    // openapi-cycle5.yaml AdminPlanInput.options: the FULL desired availability matrix for the plan —
+    // rows not present are removed (an option that used to be Included/Extra and is now omitted becomes
+    // Unavailable), matching the contract's "полная матрица" wording for the read side.
+    private async Task ApplyOptionRulesAsync(Guid planId, List<AdminPlanOptionRuleDtoV2>? desired)
+    {
+        var existing = await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync();
+        var desiredList = desired ?? [];
+
+        foreach (var row in existing.Where(e => desiredList.All(d => d.OptionId != e.OptionId)))
+            db.PlanOptionRules.Remove(row);
+
+        foreach (var d in desiredList)
+        {
+            var availability = Enum.Parse<OptionAvailability>(d.Availability);
+            var row = existing.FirstOrDefault(e => e.OptionId == d.OptionId);
+            if (row is null)
+            {
+                db.PlanOptionRules.Add(new PlanOptionRule
+                {
+                    Id = Guid.NewGuid(), PlanConfigId = planId, OptionId = d.OptionId,
+                    Availability = availability, IncludedQuantity = d.IncludedQuantity,
+                });
+            }
+            else
+            {
+                row.Availability = availability;
+                row.IncludedQuantity = d.IncludedQuantity;
+            }
+        }
+    }
 
     /// <summary>ARCHITECTURE_CYCLE5.md §43.4: exactly one row may have <c>IsSystemFree == true</c>, and
     /// that row's price must be 0 — validated here so a violation surfaces as 400/409 instead of the
