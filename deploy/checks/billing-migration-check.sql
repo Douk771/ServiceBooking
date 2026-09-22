@@ -79,7 +79,7 @@ new_plan AS (
                               FROM "AccountSubscriptionOptions" aso
                               JOIN "SubscriptionOptions" so ON so."Id" = aso."OptionId"
                               WHERE aso."BillingAccountId" = c."BillingAccountId"
-                                AND so."CapabilityKey" = 'employees'
+                                AND so."CapabilityKey" = 'extra-employees'
                                 AND (aso."EndsAtUtc" IS NULL OR aso."EndsAtUtc" > now())
                           ), 0)
                 END

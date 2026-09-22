@@ -225,4 +225,56 @@ public class SubscriptionResolverRulesTests
 
         plan.PaidNotificationNumbers.Should().Be(0);
     }
+
+    // ── ARCHITECTURE_CYCLE5.md §44.3 п.6: employees = plan.MaxEmployees + Σ extra-employees + bonus,
+    // companies = plan.MaxCompanies + Σ extra-companies. (B1) ──────────────────────────────────────
+
+    [Fact]
+    public void Resolve_ExtraEmployeesAndBonus_AreBothAddedToPlanMax()
+    {
+        var config = FullPlan();
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
+
+        var plan = SubscriptionResolver.Resolve(sub, grandfatheredEmployeeBonus: 2, extraEmployees: 3, extraCompanies: 0, paidNotificationNumbers: 0, Now);
+
+        plan.AccountMaxEmployees.Should().Be(10 + 2 + 3);
+    }
+
+    [Fact]
+    public void Resolve_ExtraCompanies_AddedToPlanMaxCompanies()
+    {
+        var config = FullPlan();
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
+
+        var plan = SubscriptionResolver.Resolve(sub, 0, extraEmployees: 0, extraCompanies: 4, paidNotificationNumbers: 0, Now);
+
+        plan.AccountMaxCompanies.Should().Be(5 + 4);
+    }
+
+    [Fact]
+    public void Resolve_UnlimitedPlan_ExtraOptionsDoNotIntroduceALimit()
+    {
+        var config = FullPlan();
+        config.MaxEmployees = null;
+        config.MaxCompanies = null;
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), PlanConfig = config };
+
+        var plan = SubscriptionResolver.Resolve(sub, 1, extraEmployees: 3, extraCompanies: 2, paidNotificationNumbers: 0, Now);
+
+        plan.AccountMaxEmployees.Should().BeNull();
+        plan.AccountMaxCompanies.Should().BeNull();
+    }
+
+    [Fact]
+    public void Resolve_ExpiredSubscription_StillAppliesGrandfatheredBonusButNotExtraOptions()
+    {
+        var config = FullPlan();
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(-1), PlanConfig = config };
+
+        // The caller is expected to have already zeroed extraEmployees/extraCompanies for an expired
+        // subscription (N12) before calling Resolve — verify Free's baseline of 1 plus the bonus alone.
+        var plan = SubscriptionResolver.Resolve(sub, grandfatheredEmployeeBonus: 2, extraEmployees: 0, extraCompanies: 0, paidNotificationNumbers: 0, Now);
+
+        plan.AccountMaxEmployees.Should().Be(EffectivePlan.Free.AccountMaxEmployees + 2);
+    }
 }
