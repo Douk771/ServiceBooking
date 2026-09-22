@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { companiesApi } from '../../api/companies'
 import { servicesApi } from '../../api/services'
 import { Card } from '../../components/ui/Card'
@@ -17,8 +17,11 @@ import { NotificationTemplatesTab } from './NotificationTemplatesTab'
 import { NotificationLogTab } from './NotificationLogTab'
 import { getAddMemberErrorMessage } from '../../utils/memberError'
 import { getCompanyManageErrorMessage, getLogoErrorMessage } from '../../utils/companyManageError'
+import { getProvidesServicesErrorMessage } from '../../utils/providesServicesError'
+import { parseBookingHorizonInput } from '../../utils/bookingHorizon'
 import { getUploadErrorMessage } from '../../utils/uploadError'
-import { formatPhone } from '../../utils/phone'
+import { PhoneInput } from '../../components/ui/PhoneInput'
+import { formatPhone, isRussianPhone } from '../../utils/phone'
 import { formatCityTimeZone } from '../../utils/timezone'
 import type { Service, City } from '../../types'
 
@@ -309,6 +312,32 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
   const [commissionDirty, setCommissionDirty] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [commissionError, setCommissionError] = useState('')
+  const [providesServices, setProvidesServices] = useState(m.providesServices)
+  const [providesError, setProvidesError] = useState('')
+  const [pendingConfirm, setPendingConfirm] = useState(false)
+
+  const providesMut = useMutation({
+    mutationFn: (vars: { value: boolean; confirm: boolean }) =>
+      companiesApi.updateMemberProvidesServices(companyId, m.id, vars.value, vars.confirm),
+    onSuccess: (_res, vars) => {
+      setProvidesError('')
+      setPendingConfirm(false)
+      setProvidesServices(vars.value)
+      qc.invalidateQueries({ queryKey: ['company-members', companyId] })
+    },
+    onError: (err: unknown) => {
+      const { message, needsConfirmation } = getProvidesServicesErrorMessage(err)
+      setProvidesError(message)
+      setPendingConfirm(needsConfirmation)
+    },
+  })
+
+  const toggleProvidesServices = () => {
+    const next = !providesServices
+    setProvidesError('')
+    setPendingConfirm(false)
+    providesMut.mutate({ value: next, confirm: false })
+  }
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -358,6 +387,16 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <label className="flex items-center gap-1.5 cursor-pointer" title="Показывать этого сотрудника клиенту при онлайн-записи">
+            <input
+              type="checkbox"
+              className="w-4 h-4 rounded accent-gold"
+              checked={providesServices}
+              disabled={providesMut.isPending}
+              onChange={toggleProvidesServices}
+            />
+            <span className="text-xs text-muted whitespace-nowrap">Оказывает услуги</span>
+          </label>
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-muted whitespace-nowrap">Комиссия:</label>
             <input
@@ -398,6 +437,29 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
           </Button>
         </div>
       </div>
+
+      {providesError && (
+        <div className="mx-4 mb-3 rounded-xl bg-warning-bg text-warning text-xs px-3 py-2.5 flex flex-col gap-2">
+          <span>{providesError}</span>
+          {pendingConfirm && (
+            <div className="flex gap-2">
+              <Button size="sm" variant="danger" loading={providesMut.isPending} onClick={() => providesMut.mutate({ value: false, confirm: true })}>
+                Всё равно выключить
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setProvidesError('')
+                  setPendingConfirm(false)
+                }}
+              >
+                Отмена
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       {expanded && (
         <div className="border-t border-line px-4 py-3 bg-cream-deep">
@@ -444,11 +506,17 @@ function MemberCard({ member: m, companyId, services, onRemove, removeLoading }:
   )
 }
 
-function MembersTab({ companyId }: { companyId: string }) {
+export function MembersTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [removeError, setRemoveError] = useState('')
-  const { register, handleSubmit, reset } = useForm<{
+  const {
+    register,
+    handleSubmit,
+    reset,
+    control,
+    formState: { errors },
+  } = useForm<{
     phone: string
     firstName: string
     lastName: string
@@ -456,7 +524,7 @@ function MembersTab({ companyId }: { companyId: string }) {
     bio: string
     email: string
   }>({
-    defaultValues: { role: 'Master' },
+    defaultValues: { role: 'Master', phone: '' },
   })
 
   const { data: members, isLoading } = useQuery({
@@ -567,11 +635,17 @@ function MembersTab({ companyId }: { companyId: string }) {
               Временный пароль: <strong>Sb + последние 6 цифр телефона</strong> (например, <em>+7 999 123‑45‑67</em> →{' '}
               <em>Sb234567</em>)
             </p>
-            <Input
-              label="Телефон *"
-              type="tel"
-              placeholder="+7 999 000 00 00"
-              {...register('phone', { required: true })}
+            <Controller
+              name="phone"
+              control={control}
+              rules={{
+                required: 'Введите телефон',
+                validate: (v) =>
+                  isRussianPhone(v) || 'Пока принимаем только российские номера, в формате +7 (900) 000-00-00',
+              }}
+              render={({ field }) => (
+                <PhoneInput label="Телефон *" error={errors.phone?.message} value={field.value} onChange={field.onChange} />
+              )}
             />
             <div className="grid grid-cols-2 gap-3">
               <Input label="Имя *" placeholder="Иван" {...register('firstName', { required: true })} />
@@ -636,6 +710,7 @@ function SettingsTab({ companyId }: { companyId: string }) {
           allowSelfBooking: company.allowSelfBooking,
           requirePrepayment: company.requirePrepayment ?? false,
           showInPublicListing: company.showInPublicListing ?? true,
+          bookingHorizonDays: company.bookingHorizonDays || '',
         }
       : undefined,
   })
@@ -705,7 +780,17 @@ function SettingsTab({ companyId }: { companyId: string }) {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit((d) => updateMut.mutate(d))} className="flex flex-col gap-4">
+        <form
+          onSubmit={handleSubmit((d) => {
+            const horizon = parseBookingHorizonInput(String(d.bookingHorizonDays ?? ''))
+            if (horizon.error) {
+              setSettingsError(horizon.error)
+              return
+            }
+            updateMut.mutate({ ...d, bookingHorizonDays: horizon.value })
+          })}
+          className="flex flex-col gap-4"
+        >
           <Input label="Название" {...register('name')} />
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-ink-soft">Описание</label>
@@ -719,6 +804,17 @@ function SettingsTab({ companyId }: { companyId: string }) {
           <div className="grid grid-cols-2 gap-3">
             <Input label="Телефон" {...register('phone')} />
             <Input label="Email" type="email" {...register('email')} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Input
+              label="На сколько дней вперёд клиент может записаться"
+              type="number"
+              min={0}
+              max={365}
+              placeholder="90"
+              {...register('bookingHorizonDays')}
+            />
+            <p className="text-xs text-muted">Пусто или 0 — 90 дней по умолчанию</p>
           </div>
           <div>
             <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">

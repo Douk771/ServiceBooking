@@ -21,6 +21,12 @@ export interface MemberDto {
   bio?: string
   serviceIds: string[]
   commissionPercent: number
+  /**
+   * US-62 (API_CONTRACT_CYCLE6.md §40.2): whether this member is offered to clients as a specialist.
+   * Scoped to this person's membership in THIS company, not their account — the same person can have
+   * a different value in another company. Defaults to `true` for every existing member post-migration.
+   */
+  providesServices: boolean
 }
 
 export interface CreateCompanyPayload {
@@ -49,6 +55,11 @@ export interface UpdateCompanyPayload {
   /** API_CONTRACT_CYCLE4.md §31.3 — `timeZoneId: null` explicitly resets to the city-derived zone. */
   cityId?: number
   timeZoneId?: string | null
+  /**
+   * US-65/Q5 (API_CONTRACT_CYCLE6.md §41.4): how many days ahead a client may book online.
+   * Omitted/undefined = leave unchanged; `0` = reset to the server default (90 days), never "closed".
+   */
+  bookingHorizonDays?: number
 }
 
 export interface CompanyPhotoUsage {
@@ -89,6 +100,13 @@ export const companiesApi = {
     api.put(`/companies/${companyId}/members/${memberId}/services`, serviceIds),
   updateMemberCommission: (companyId: string, memberId: string, commissionPercent: number) =>
     api.put(`/companies/${companyId}/members/${memberId}/commission`, { commissionPercent }),
+  /**
+   * US-62 (API_CONTRACT_CYCLE6.md §40.3). Turning the flag OFF for someone with future bookings
+   * returns 409 unless `confirm` is `true` — callers retry with `confirm: true` after the operator
+   * accepts the warning. Turning it ON never needs confirmation.
+   */
+  updateMemberProvidesServices: (companyId: string, memberId: string, providesServices: boolean, confirm = false) =>
+    api.put(`/companies/${companyId}/members/${memberId}/provides-services`, { providesServices, confirm }),
   uploadLogo: (id: string, file: File) => {
     const form = new FormData()
     form.append('file', file)
