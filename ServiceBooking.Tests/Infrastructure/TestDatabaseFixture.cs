@@ -3,89 +3,75 @@ using ServiceBooking.TestKit;
 namespace ServiceBooking.Tests.Infrastructure;
 
 /// <summary>
-/// Base for the three slot fixtures (ARCHITECTURE_CYCLE8.md §66/§70.1). Each fixture registers with the
-/// process-wide <see cref="TestRunEnvironment"/> on <see cref="InitializeAsync"/> and unregisters on
-/// <see cref="DisposeAsync"/> — the shared server/databases are created once, by whichever fixture
-/// initializes first, and torn down once, by whichever releases last.
+/// ARCHITECTURE_CYCLE8_PHASE2.md §91/§92.2 — one instance per test class (<c>IClassFixture</c>, not
+/// <c>ICollectionFixture</c>): takes this class' own slot ("c07", <see cref="TestSlot.NextForClass"/>),
+/// clones a fresh database for it from the run's template, boots the one shared
+/// <see cref="CustomWebApplicationFactory"/> most functional tests in the class run against, and hands
+/// out this class' <see cref="TestData"/> generator.
+///
+/// Replaces phase 1's <c>SlotDatabaseFixture</c>/<c>ApiDatabaseFixture</c>/<c>LegalDatabaseFixture</c>/
+/// <c>DispatchDatabaseFixture</c> trio, which shared exactly three fixed databases ("api"/"legal"/
+/// "dispatch") across the whole assembly — the shared suite state (US-96…US-98) that made those three
+/// databases unsafe to run in parallel. A class database is created once per class and dropped once the
+/// class finishes; <c>EnsureDeletedAsync</c> is still never called on it anywhere (§69.3/§79 п.1 remain
+/// in force) — teardown is always DROP DATABASE, guarded by <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/>.
 /// </summary>
-public abstract class SlotDatabaseFixture : IAsyncLifetime
+public sealed class TestDatabaseFixture : IAsyncLifetime
 {
-    protected abstract string Slot { get; }
+    private TestClassDatabaseLease _lease = null!;
 
-    /// <summary>Connection string for this fixture's slot database. Only valid after
-    /// <see cref="InitializeAsync"/> has run — xUnit guarantees that before any test in the owning
-    /// collection executes.</summary>
-    public string ConnectionString { get; private set; } = null!;
+    /// <summary>This test class' database slot ("c07") — xUnit v2 never hands a class fixture its owning
+    /// type (§92.2), so this is a bare per-process counter value, not derived from the class name; each
+    /// base class logs the slot↔class pairing itself on first use (see <see cref="ApiTestBase"/>/
+    /// <see cref="NotificationTestBase"/>).</summary>
+    public string ClassSlot { get; private set; } = null!;
 
-    public virtual async Task InitializeAsync()
-    {
-        var lease = await TestRunEnvironment.AcquireAsync();
-        ConnectionString = lease.ConnectionStringFor(Slot);
-    }
+    /// <summary>This class' host identity (SuperAdmin credentials, file roots, connection string, ...) —
+    /// see <see cref="TestHostSettings"/>. Built from the "api" factoryTag; a class that boots a
+    /// secondary, differently-configured host (e.g. <see cref="NotificationDispatchTestFactory"/>) calls
+    /// <c>TestHostSettings.Apply</c> again with its own factoryTag but the SAME <see cref="ClassSlot"/>/
+    /// <see cref="ConnectionString"/>, so every host in the class still shares one database and one set
+    /// of file roots.</summary>
+    public TestHostIdentity Identity { get; private set; } = null!;
 
-    public virtual Task DisposeAsync() => TestRunEnvironment.ReleaseAsync();
-}
-
-/// <summary>
-/// Collection fixture for the "Api" xUnit collection: owns the <see cref="TestSlot.Api"/> database and
-/// the single shared <see cref="CustomWebApplicationFactory"/> most functional tests run against.
-/// Replaces the old TestDatabaseFixture, which wiped and re-migrated a single, hardcoded
-/// "servicebooking_test" database — that database is now one of three per-run, per-slot databases
-/// created by <see cref="TestRunEnvironment"/>, and nothing ever calls EnsureDeletedAsync on it (§69.3):
-/// each run gets its own fresh database instead of wiping a shared one.
-/// </summary>
-public sealed class ApiDatabaseFixture : SlotDatabaseFixture
-{
-    protected override string Slot => TestSlot.Api;
+    /// <summary>This class' database connection string — shorthand for <c>Identity.ConnectionString</c>,
+    /// kept so the many call sites written against phase 1's <c>fixture.ConnectionString</c> compile
+    /// unchanged.</summary>
+    public string ConnectionString => Identity.ConnectionString;
 
     public CustomWebApplicationFactory Factory { get; private set; } = null!;
 
-    public override async Task InitializeAsync()
+    /// <summary>This class' single source of collision-free unique values (§94, Q12).</summary>
+    public TestData Data { get; private set; } = null!;
+
+    public async Task InitializeAsync()
     {
-        await base.InitializeAsync();
+        ClassSlot = TestSlot.NextForClass();
+        _lease = await TestRunEnvironment.LeaseClassDatabaseAsync(ClassSlot);
+        Data = new TestData(ClassSlot);
 
-        Factory = new CustomWebApplicationFactory(ConnectionString);
+        Factory = new CustomWebApplicationFactory(_lease.ConnectionString);
 
-        // Touching Services boots the host, which runs Program.cs's migrate + role/SuperAdmin seed.
+        // Touching Services boots the host, which runs Program.cs's migrate + role/SuperAdmin seed, and
+        // populates Factory.Identity (ConfigureWebHost's return value).
         _ = Factory.Services;
+        Identity = Factory.Identity;
     }
 
-    public override async Task DisposeAsync()
+    public async Task DisposeAsync()
     {
         // Factory.DisposeAsync() stopping the host is not guaranteed to succeed (e.g. a background
-        // dispatcher that never finished starting) -- base.DisposeAsync() (TestRunEnvironment.ReleaseAsync)
-        // must still run so the shared refcount is decremented and the container/databases are torn
-        // down; otherwise a host-stop failure leaks the environment for the rest of the process.
+        // dispatcher that never finished starting) -- the lease must still be released so the class
+        // database is dropped and the process-wide refcount is decremented; otherwise a host-stop
+        // failure leaks the database (and, if this was the last class, the whole container) for the
+        // rest of the process.
         try
         {
             await Factory.DisposeAsync();
         }
         finally
         {
-            await base.DisposeAsync();
+            await _lease.DropAsync();
         }
     }
 }
-
-/// <summary>
-/// Collection fixture (also part of the "Api" xUnit collection, alongside <see cref="ApiDatabaseFixture"/>
-/// — a collection definition may back more than one <c>ICollectionFixture</c>) owning the
-/// <see cref="TestSlot.Legal"/> database, used by <see cref="LegalDocumentsTestFactory"/> and the classes
-/// that construct one directly.
-/// </summary>
-public sealed class LegalDatabaseFixture : SlotDatabaseFixture
-{
-    protected override string Slot => TestSlot.Legal;
-}
-
-/// <summary>
-/// Collection fixture for the "NotificationDispatch" xUnit collection: owns the
-/// <see cref="TestSlot.Dispatch"/> database used by <see cref="NotificationDispatchTestFactory"/>.
-/// </summary>
-public sealed class DispatchDatabaseFixture : SlotDatabaseFixture
-{
-    protected override string Slot => TestSlot.Dispatch;
-}
-
-[CollectionDefinition("Api")]
-public sealed class ApiCollection : ICollectionFixture<ApiDatabaseFixture>, ICollectionFixture<LegalDatabaseFixture>;
