@@ -3,9 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { adminApi, type AdminUser, type AdminCompany } from '../api/admin'
-import { plansApi } from '../api/plans'
 import { PlansTab } from './admin/PlansTab'
 import { NotificationsAdminTab } from './admin/NotificationsAdminTab'
+import { BillingAccountsAdminTab } from './admin/BillingAccountsAdminTab'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -13,7 +13,6 @@ import { StatusBadge } from '../components/ui/Badge'
 import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
 import { Pagination } from '../components/ui/Pagination'
-import { getPlanErrorMessage } from '../utils/planError'
 import { getCompanyAdminErrorMessage } from '../utils/companyAdminError'
 import { formatPhone } from '../utils/phone'
 
@@ -47,142 +46,6 @@ function StatsTab() {
         </Card>
       ))}
     </div>
-  )
-}
-
-// ── Account subscription modal (owner-scoped) ───────────────────────────────────
-
-interface OwnerSubscription {
-  ownerUserId: string
-  ownerEmail: string
-  planConfigId?: string
-  paidUntil?: string
-  subscriptionActive: boolean
-}
-
-function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClose: () => void }) {
-  const qc = useQueryClient()
-  const [planConfigId, setPlanConfigId] = useState(owner.planConfigId ?? '')
-  const [paidUntil, setPaidUntil] = useState(owner.paidUntil ? owner.paidUntil.slice(0, 10) : '')
-  const [isActive, setIsActive] = useState(owner.subscriptionActive)
-  const [comment, setComment] = useState('')
-
-  const { data: plans } = useQuery({ queryKey: ['admin-plans'], queryFn: plansApi.list })
-  const activePlans = (plans ?? []).filter((p) => p.isActive)
-  // The owner's current plan may have been deactivated after assignment (US-08). It stays selected
-  // and visible, marked "(неактивен)", so saving without touching the dropdown doesn't silently drop
-  // the owner to Free — but it isn't offered to switch a different owner onto it.
-  const currentPlan = plans?.find((p) => p.id === owner.planConfigId)
-  const currentPlanInactive = !!currentPlan && !currentPlan.isActive
-
-  const { data: history } = useQuery({
-    queryKey: ['admin-subscription-history', owner.ownerUserId],
-    queryFn: () => adminApi.getSubscriptionHistory(owner.ownerUserId),
-  })
-
-  const mut = useMutation({
-    mutationFn: () =>
-      adminApi.updateSubscription(
-        owner.ownerUserId,
-        planConfigId || null,
-        paidUntil || null,
-        isActive,
-        comment || undefined,
-      ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-users'] })
-      qc.invalidateQueries({ queryKey: ['admin-companies'] })
-      qc.invalidateQueries({ queryKey: ['admin-subscription-history', owner.ownerUserId] })
-      onClose()
-    },
-  })
-
-  return (
-    <Modal title={`Подписка аккаунта — ${owner.ownerEmail}`} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <p className="text-xs text-muted bg-warning-bg rounded-xl px-3 py-2">
-          Тариф привязан к аккаунту владельца и покрывает <span className="font-medium">все его компании</span>.
-        </p>
-        <div>
-          <label className="text-sm font-medium text-ink-soft block mb-1">Тарифный план</label>
-          <select
-            value={planConfigId}
-            onChange={(e) => setPlanConfigId(e.target.value)}
-            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
-          >
-            <option value="">Free (без тарифа)</option>
-            {currentPlanInactive && <option value={currentPlan!.id}>{currentPlan!.name} (неактивен)</option>}
-            {activePlans.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} {p.pricePerMonth > 0 ? `— ${p.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="text-sm font-medium text-ink-soft block mb-1">Оплачено до</label>
-          <input
-            type="date"
-            value={paidUntil}
-            onChange={(e) => setPaidUntil(e.target.value)}
-            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
-          />
-        </div>
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={isActive}
-            onChange={(e) => setIsActive(e.target.checked)}
-            className="w-4 h-4 rounded accent-gold"
-          />
-          <span className="text-sm text-ink-soft">Подписка активна</span>
-        </label>
-        <div>
-          <label className="text-sm font-medium text-ink-soft block mb-1">Комментарий к изменению</label>
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            rows={2}
-            className="w-full rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
-            placeholder="Способ оплаты, счёт и т.д."
-          />
-        </div>
-        {mut.isError && (
-          <p className="text-sm text-danger">{getPlanErrorMessage(mut.error, 'Не удалось сохранить подписку.')}</p>
-        )}
-
-        <div className="flex gap-3 pt-1">
-          <Button variant="secondary" className="flex-1" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button className="flex-1" loading={mut.isPending} onClick={() => mut.mutate()}>
-            Сохранить
-          </Button>
-        </div>
-
-        {history && history.length > 0 && (
-          <div className="pt-3 border-t border-line">
-            <p className="text-xs font-medium text-muted uppercase tracking-wide mb-2">История изменений</p>
-            <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
-              {history.map((h) => (
-                <div key={h.id} className="text-xs bg-cream-deep rounded-xl p-2.5">
-                  <div className="flex items-center justify-between text-muted">
-                    <span>{format(parseISO(h.changedAt), 'd MMM yyyy, HH:mm', { locale: ru })}</span>
-                    <span>{h.changedByEmail}</span>
-                  </div>
-                  <div className="text-ink-soft mt-1">
-                    {h.oldPlanName} → <span className="font-medium">{h.newPlanName}</span>
-                    {h.newPaidUntil && <> · до {format(parseISO(h.newPaidUntil), 'd MMM yyyy', { locale: ru })}</>}
-                    {!h.newIsActive && <span className="text-danger"> · выключена</span>}
-                  </div>
-                  {h.comment && <div className="text-muted mt-0.5 italic">{h.comment}</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </Modal>
   )
 }
 
@@ -468,7 +331,6 @@ function UsersTab() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [editUser, setEditUser] = useState<AdminUser | null>(null)
-  const [editSub, setEditSub] = useState<AdminUser | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users', search, page],
     queryFn: () => adminApi.getUsers(search || undefined, page),
@@ -481,18 +343,9 @@ function UsersTab() {
   return (
     <div>
       {editUser && <RolesModal user={editUser} onClose={() => setEditUser(null)} />}
-      {editSub && (
-        <SubscriptionModal
-          owner={{
-            ownerUserId: editSub.id,
-            ownerEmail: editSub.email ?? editSub.phone,
-            planConfigId: editSub.planConfigId,
-            paidUntil: editSub.paidUntil,
-            subscriptionActive: editSub.subscriptionActive,
-          }}
-          onClose={() => setEditSub(null)}
-        />
-      )}
+      <p className="text-xs text-muted mb-3">
+        Подписка, тариф и опции держателя — во вкладке «Биллинг-аккаунты».
+      </p>
       <div className="mb-4">
         <Input placeholder="Поиск по email, имени..." value={search} onChange={(e) => handleSearch(e.target.value)} />
       </div>
@@ -536,11 +389,6 @@ function UsersTab() {
                 </div>
               </div>
               <div className="flex gap-2 shrink-0">
-                {u.ownedCompanyCount > 0 && (
-                  <Button size="sm" variant="secondary" onClick={() => setEditSub(u)}>
-                    Подписка
-                  </Button>
-                )}
                 <Button size="sm" variant="secondary" onClick={() => setEditUser(u)}>
                   Роли
                 </Button>
@@ -654,7 +502,7 @@ function AllBookingsTab() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-type Tab = 'stats' | 'companies' | 'users' | 'bookings' | 'plans' | 'notifications'
+type Tab = 'stats' | 'companies' | 'users' | 'bookings' | 'plans' | 'billing' | 'notifications'
 
 export function AdminPage() {
   const [tab, setTab] = useState<Tab>('stats')
@@ -665,6 +513,7 @@ export function AdminPage() {
     { key: 'users', label: 'Пользователи' },
     { key: 'bookings', label: 'Записи' },
     { key: 'plans', label: 'Тарифы' },
+    { key: 'billing', label: 'Биллинг-аккаунты' },
     { key: 'notifications', label: 'Каналы уведомлений' },
   ]
 
@@ -687,6 +536,7 @@ export function AdminPage() {
       {tab === 'users' && <UsersTab />}
       {tab === 'bookings' && <AllBookingsTab />}
       {tab === 'plans' && <PlansTab />}
+      {tab === 'billing' && <BillingAccountsAdminTab />}
       {tab === 'notifications' && <NotificationsAdminTab />}
     </div>
   )
