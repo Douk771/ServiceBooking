@@ -29,6 +29,7 @@ export type SubscriptionWarningDto = Schemas['SubscriptionWarningDto']
 export type SubscriptionRequestItemDto = Schemas['SubscriptionRequestItemDto']
 export type SubscriptionRequestDto = Schemas['SubscriptionRequestDto']
 export type OwnerSubscriptionDto = Schemas['OwnerSubscriptionDto']
+export type RejectedRequestDto = Schemas['RejectedRequestDto']
 export type RequestedOptionInput = Schemas['RequestedOptionInput']
 export type SubscriptionRequestInput = Schemas['SubscriptionRequestInput']
 

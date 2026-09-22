@@ -194,6 +194,13 @@ export function BillingPage() {
         </Card>
       )}
 
+      {data.lastRejectedRequest && !data.pendingRequest && (
+        <Card className="p-[26px] mb-6 border border-danger bg-danger-bg">
+          <h2 className="text-[15.5px] font-semibold text-ink mb-2">Заявка отклонена</h2>
+          <p className="text-sm text-ink-soft">{data.lastRejectedRequest.reason}</p>
+        </Card>
+      )}
+
       {data.pendingRequest && !isEditing && (
         <Card className="p-[26px] mb-6 border border-line">
           <h2 className="text-[15.5px] font-semibold text-ink mb-2">Заявка на рассмотрении</h2>
