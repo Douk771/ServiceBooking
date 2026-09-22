@@ -329,6 +329,27 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         response.EnsureSuccessStatusCode();
     }
 
+    /// <summary>
+    /// Creates an Identity account directly (bypassing POST /api/auth/register and its
+    /// PhoneNormalizer.TryNormalizeRussian gate — ARCHITECTURE_CYCLE6.md §48.1/§48.4), for tests that
+    /// need to simulate an account that predates the cycle 6 Russian-only restriction (or was created by
+    /// an admin) with a non-Russian phone number. US-61/Q4 only blocks NEW data; existing accounts with
+    /// a foreign number must keep logging in and being found by search.
+    /// </summary>
+    protected async Task CreateRawAccountAsync(string canonicalPhone, string password, string role = "Client")
+    {
+        using var scope = Factory.Services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<AppUser>>();
+        var user = new AppUser
+        {
+            FirstName = "Foreign", LastName = "Account", UserName = canonicalPhone, PhoneNumber = canonicalPhone,
+        };
+        var result = await userManager.CreateAsync(user, password);
+        if (!result.Succeeded)
+            throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
+        await userManager.AddToRoleAsync(user, role);
+    }
+
     protected static DateOnly NextWeekday(DayOfWeek? avoid = null)
     {
         var date = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1);

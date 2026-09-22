@@ -1209,4 +1209,49 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // ── US-65/Q5: booking horizon (ARCHITECTURE_CYCLE6.md §45.7) ───────────────────
+
+    [Fact, TestCase("BK-058")]
+    public async Task ClientBookingBeyondHorizon_ReturnsBadRequest()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var horizonUpdate = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}", new { bookingHorizonDays = 1 });
+        horizonUpdate.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var farDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30);
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, farDate);
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, farDate, new TimeOnly(10, 0), null, null, null, null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "US-65/Q5: an online self-booking client may not book further ahead than the company's horizon");
+    }
+
+    [Fact, TestCase("BK-059")]
+    public async Task StaffManualBookingBeyondHorizon_Succeeds()
+    {
+        // Q5/§45.7 p.2: the horizon governs the public storefront only — staff recording a walk-in or a
+        // regular must always be able to book ahead of it.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var horizonUpdate = await AuthedClient(owner.Token).PutAsJsonAsync(
+            $"/api/companies/{company.Id}", new { bookingHorizonDays = 1 });
+        horizonUpdate.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var farDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30);
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, farDate);
+
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, farDate, new TimeOnly(10, 0),
+                null, "Walk-in guest", "+79990001234", null, null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
 }

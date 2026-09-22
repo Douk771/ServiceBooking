@@ -133,6 +133,25 @@ public class AuthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         body.Should().Be("Account temporarily locked");
     }
 
+    // US-61/Q4 (ARCHITECTURE_CYCLE6.md §48.2 "Login" bullet, §48.4): the Russian-only format is a
+    // restriction on creating NEW data — it must not lock out accounts that already have a foreign
+    // number (pre-cycle registrations, or ones an admin created).
+    [Fact, TestCase("AUTH-015")]
+    public async Task Login_WithPreExistingForeignPhoneAccount_Succeeds()
+    {
+        var digits = new string(Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(6).ToArray()).PadRight(6, '1');
+        var foreignPhone = "447911" + digits; // UK-shaped: 12 digits, not "7" + 10 digits
+        const string password = "Password123!";
+        await CreateRawAccountAsync(foreignPhone, password);
+
+        var response = await LoginRawAsync(foreignPhone, password);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK,
+            "the country restriction (§48.1) applies only where new data is created, never to login");
+        var body = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
+        body!.Phone.Should().Be(foreignPhone);
+    }
+
     [Fact, TestCase("AUTH-008")]
     public async Task ProtectedEndpoint_WithoutToken_ReturnsUnauthorized()
     {

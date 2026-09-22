@@ -46,6 +46,44 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         rows.Should().OnlyContain(r => r.ChannelId == channel.Id);
     }
 
+    [Fact, TestCase("NTF-Q005")]
+    public async Task BookingCreated_WithMultipleServices_RendersCommaJoinedServiceList_NoEmptySegmentsOrUndefined()
+    {
+        // US-67 (SPEC.md's acceptance criterion, ARCHITECTURE_CYCLE6.md §47.2): the service placeholder
+        // in the (unsent, since Provider=logging in Testing) notification body must be a clean
+        // comma-joined list for 1, 2 and 5 services — no "undefined", no empty segments, no trailing
+        // "/leading comma.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        await SeedConnectedAssignedChannelAsync(owner.UserId, company.Id);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var services = new List<ServiceBooking.API.DTOs.Services.ServiceDto>();
+        for (var i = 0; i < 5; i++)
+            services.Add(await CreateServiceAsync(owner.Token, company.Id, name: $"Услуга{i}"));
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, services[0].Id, master.UserId, date, new TimeOnly(9, 0),
+                null, null, null, null, null, ServiceIds: services.Select(s => s.Id).ToList()));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var booking = (await response.Content.ReadJsonAsync<BookingDto>())!;
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var confirmed = await db.OutboundNotifications
+            .FirstAsync(n => n.BookingId == booking.Id && n.Type == NotificationType.BookingConfirmed);
+
+        foreach (var s in services)
+            confirmed.Body.Should().Contain(s.Name);
+        confirmed.Body.Should().NotContain("undefined");
+        confirmed.Body.Should().NotContain(", ,", "no empty segment between service names");
+        confirmed.Body.Should().NotContain(",,");
+        // The five names, in order, joined by ", " — this is the exact §47.2 rendering rule.
+        confirmed.Body.Should().Contain(string.Join(", ", services.Select(s => s.Name)));
+    }
+
     [Fact, TestCase("NTF-Q002")]
     public async Task OptedOutClient_BookingCreated_RowsQueuedButSkipped_WithReason()
     {

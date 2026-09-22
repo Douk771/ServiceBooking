@@ -156,6 +156,24 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         users.Should().NotContain(u => u.Id == controlUser.UserId);
     }
 
+    // US-61/Q4 (ARCHITECTURE_CYCLE6.md §48.4): the Russian-only restriction is about creating new data,
+    // not about finding data that already exists — admin phone search must still find an account whose
+    // number is not in the Russian format.
+    [Fact, TestCase("ADM-045")]
+    public async Task GetUsers_SearchByForeignPhoneNumber_FindsAccount()
+    {
+        var digits = new string(Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(6).ToArray()).PadRight(6, '2');
+        var foreignPhone = "447911" + digits;
+        await CreateRawAccountAsync(foreignPhone, "Password123!");
+
+        var admin = await LoginAsSuperAdminAsync();
+        var response = await AuthedClient(admin.Token).GetAsync($"/api/admin/users?search={foreignPhone}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var usersPage = await response.Content.ReadFromJsonAsync<PagedResult<AdminUserDto>>();
+        usersPage!.Items.Should().ContainSingle(u => u.Phone == foreignPhone);
+    }
+
     [Fact, TestCase("ADM-011")]
     public async Task UpdateRoles_AsSuperAdmin_ReplacesOldRolesWithNewOnes()
     {
