@@ -215,6 +215,19 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         // this is the automated equivalent: swap legal.json/*.html on disk while the host keeps running,
         // no process restart, and confirm the NEW text is served once ReloadSeconds has elapsed.
         var v1 = _factory.ResetToDefault();
+        // T8-P11 (QA acceptance run, ARCHITECTURE_CYCLE8_PHASE2.md §98.2): same class of bug already
+        // documented and fixed below in LEG-018 — Program.cs forces an immediate LegalDocumentProvider
+        // load when this factory's host boots (`_ = _factory.Services;` in InitializeAsync, which runs
+        // BEFORE this test method), stamping `_lastCheckedUtc` with THAT load's time and snapshot — not
+        // with the `ResetToDefault()` version written one line above. Reading `/api/legal/documents/privacy`
+        // immediately afterward can still be inside the 1s `Legal:ReloadSeconds` throttle window and would
+        // then serve the stale boot-time snapshot instead of v1, making `before!.Version.Should().Be(v1)`
+        // fail intermittently. Caught by RandomTestCaseOrderer (T8-P11a) under P=4 parallel load, where
+        // per-call scheduling delays compress enough for the race to land inside the 1s window (seed
+        // 316303319, 10 sequential local reruns, run 5/10 — replaying the class alone does not reproduce
+        // it: the race needs the wall-clock compression the full parallel run produces). Waiting out the
+        // throttle explicitly, like LEG-018 already does, removes the dependency on ambient timing.
+        await Task.Delay(1200);
         var before = await (await Anon().GetAsync("/api/legal/documents/privacy")).Content
             .ReadFromJsonAsync<LegalDocumentDto>();
         before!.Version.Should().Be(v1);
