@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
+using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.Core.Entities;
@@ -964,63 +965,171 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // why deserializing straight into the EF entity is the wrong pattern here. Numbered ADM-050+ (not
     // ADM-044+, which collided with the pre-existing ADM-044 "GetUsers_SearchOfNonAsciiDigitsOnly").
 
+    // openapi-cycle5.yaml's AdminPlanInput has no `isSystemFree` property (additionalProperties: false)
+    // — the flag moved to its own route, `PUT /api/admin/plans/{id}/system-free` (cycle-07 code review
+    // finding B "isSystemFree removal"), specifically so an ordinary field edit through POST/PUT
+    // /api/admin/plans can no longer accidentally flip the flag guarded by the partial unique index
+    // (AppDbContext). The three tests below exercised the OLD shape (isSystemFree inside the plan
+    // body) and silently passed a no-op field that the current AdminPlanInput model binder ignores —
+    // rewritten against the new route; the two invariants (exactly one system-free plan, and its price
+    // must be zero) are unchanged.
+
     [Fact, TestCase("ADM-050")]
-    public async Task CreatePlan_IsSystemFreeWithNonZeroPrice_ReturnsBadRequest()
+    public async Task SetSystemFree_NonZeroPrice_ReturnsBadRequest()
     {
         var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
         var plan = NewPlanConfig();
-        plan.IsSystemFree = true;
         plan.PricePerMonth = 100;
+        var created = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", plan))
+            .Content.ReadJsonAsync<AdminPlanDto>())!;
 
-        var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/plans", plan);
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{created.Id}/system-free",
+            new { IsSystemFree = true });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact, TestCase("ADM-051")]
-    public async Task CreatePlan_SecondIsSystemFreePlan_ReturnsConflict()
+    public async Task SetSystemFree_SecondPlan_ReturnsConflict()
     {
+        // 20260922121140_SeedBillingCatalog seeds exactly one system-free plan into every fresh
+        // database (§54.3, П4/§64 п.5: "the system free plan always exists") — there is never a
+        // zero-system-free-plans baseline to build up from in this environment, so this test doesn't
+        // create and flag a "first" plan itself; it relies on the seeded one already holding the flag
+        // and asserts that a brand-new second plan can't also claim it.
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
-        var first = NewPlanConfig();
-        first.IsSystemFree = true;
-        first.PricePerMonth = 0;
-        (await adminClient.PostAsJsonAsync("/api/admin/plans", first)).StatusCode.Should().Be(HttpStatusCode.Created);
-
         var second = NewPlanConfig();
-        second.IsSystemFree = true;
         second.PricePerMonth = 0;
-        var response = await adminClient.PostAsJsonAsync("/api/admin/plans", second);
+        var createdSecond = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", second))
+            .Content.ReadJsonAsync<AdminPlanDto>())!;
+
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{createdSecond.Id}/system-free",
+            new { IsSystemFree = true });
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
     [Fact, TestCase("ADM-052")]
-    public async Task UpdatePlan_IsSystemFreeWithNonZeroPrice_ReturnsBadRequest()
+    public async Task SetSystemFree_TogglingOffThenOnAnotherPlan_MovesTheFlag()
     {
+        // Regression: with only one plan ever flagged, an admin must be able to move the "current free
+        // plan" designation from one row to another — turning it off the old one first, then on for the
+        // new one — without either step 500ing or leaving zero/two system-free plans in between. Uses
+        // the seed-provided system-free plan (see SetSystemFree_SecondPlan_ReturnsConflict above) as
+        // "first", since a fresh database is never without one.
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
-        var created = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", NewPlanConfig()))
+        var before = (await (await adminClient.GetAsync("/api/admin/plans")).Content
+            .ReadJsonAsync<AdminPlansListDto>())!.Plans;
+        var firstId = before.Should().ContainSingle(p => p.IsSystemFree).Subject.Id;
+
+        var second = NewPlanConfig();
+        second.PricePerMonth = 0;
+        var createdSecond = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", second))
             .Content.ReadJsonAsync<AdminPlanDto>())!;
 
-        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{created.Id}",
-            ToUpdateDto(created, isSystemFree: true, pricePerMonth: 50));
+        var offResponse = await adminClient.PutJsonAsync($"/api/admin/plans/{firstId}/system-free",
+            new { IsSystemFree = false });
+        offResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var onResponse = await adminClient.PutJsonAsync($"/api/admin/plans/{createdSecond.Id}/system-free",
+            new { IsSystemFree = true });
+        onResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var second2 = await onResponse.Content.ReadJsonAsync<AdminPlanDto>();
+        second2!.IsSystemFree.Should().BeTrue();
+
+        var reread = (await (await adminClient.GetAsync("/api/admin/plans")).Content
+            .ReadJsonAsync<AdminPlansListDto>())!.Plans;
+        reread.Should().ContainSingle(p => p.Id == firstId).Which.IsSystemFree.Should().BeFalse();
+        reread.Should().ContainSingle(p => p.Id == createdSecond.Id).Which.IsSystemFree.Should().BeTrue();
+    }
+
+    [Fact, TestCase("ADM-054")]
+    public async Task SetSystemFree_RemovingTheOnlySystemFreePlan_ReturnsConflict()
+    {
+        // §43.4: exactly one plan must be the system free plan at all times — turning the flag off
+        // without a replacement already in place must be refused, or the public price list would
+        // silently lose its "Бесплатно" row. Uses the seeded system-free plan directly (see
+        // SetSystemFree_SecondPlan_ReturnsConflict above for why a fresh database is never without one)
+        // rather than creating a new one, so this test doesn't depend on any other test's ordering.
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var plans = (await (await adminClient.GetAsync("/api/admin/plans")).Content
+            .ReadJsonAsync<AdminPlansListDto>())!.Plans;
+        var systemFreeId = plans.Should().ContainSingle(p => p.IsSystemFree).Subject.Id;
+
+        var response = await adminClient.PutJsonAsync($"/api/admin/plans/{systemFreeId}/system-free",
+            new { IsSystemFree = false });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact, TestCase("ADM-055")]
+    public async Task PlanEditor_FullCycle_CreateWithHighlightsAndOptionMatrix_EditPreservesMatrix()
+    {
+        // Full round trip through the admin plan editor (US-66): create with bullet highlights AND an
+        // option-availability matrix, then edit an unrelated field (Description) and confirm the matrix
+        // survived untouched — a PUT that omits `options` must leave existing rules alone (same "apply
+        // only if present" convention already covered for Highlights/IsPublic/SortOrder, ADM-053).
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+
+        var optionA = (await (await adminClient.PostAsJsonAsync("/api/admin/options",
+            new AdminOptionInput(Unique("opt-a-"), "Доп. сотрудник", null, "Quantity", null, 150, "сотрудник", null)))
+            .Content.ReadJsonAsync<AdminOptionDto>())!;
+        var optionB = (await (await adminClient.PostAsJsonAsync("/api/admin/options",
+            new AdminOptionInput(Unique("opt-b-"), "Доп. компания", null, "Quantity", null, 400, "компания", null)))
+            .Content.ReadJsonAsync<AdminOptionDto>())!;
+
+        var input = new AdminPlanInput(
+            Name: Unique("Full Cycle Plan "), Description: "Исходное описание",
+            Highlights: ["Первый буллет", "Второй буллет"],
+            PricePerMonth: 500, MaxEmployees: 5, MaxCompanies: 2,
+            AllowOnlineBooking: true, AllowMailing: true, AllowAnalytics: true,
+            Options:
+            [
+                new AdminPlanOptionRuleDtoV2(optionA.Id, "Included", 2),
+                new AdminPlanOptionRuleDtoV2(optionB.Id, "Extra", null),
+            ]);
+
+        var createResponse = await adminClient.PostAsJsonAsync("/api/admin/plans", input);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = (await createResponse.Content.ReadJsonAsync<AdminPlanDto>())!;
+        created.Highlights.Should().Equal("Первый буллет", "Второй буллет");
+        created.Options.Should().Contain(o => o.OptionId == optionA.Id && o.Availability == "Included" && o.IncludedQuantity == 2);
+        created.Options.Should().Contain(o => o.OptionId == optionB.Id && o.Availability == "Extra");
+
+        // Edit: change ONLY the description, sending no `options` at all — the existing matrix must not
+        // be wiped (regression this pass guards, mirroring the Highlights/IsPublic/SortOrder fix ADM-053
+        // already covers).
+        var editResponse = await adminClient.PutJsonAsync($"/api/admin/plans/{created.Id}",
+            ToUpdateDto(created, name: created.Name) with { Description = "Обновлённое описание" });
+        editResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var edited = (await editResponse.Content.ReadJsonAsync<AdminPlanDto>())!;
+        edited.Description.Should().Be("Обновлённое описание");
+
+        var reread = (await (await adminClient.GetAsync("/api/admin/plans")).Content
+            .ReadJsonAsync<AdminPlansListDto>())!.Plans.Should().ContainSingle(p => p.Id == created.Id).Subject;
+        reread.Options.Should().Contain(o => o.OptionId == optionA.Id && o.Availability == "Included" && o.IncludedQuantity == 2,
+            "editing an unrelated field must not silently clear the option matrix");
+        reread.Options.Should().Contain(o => o.OptionId == optionB.Id && o.Availability == "Extra");
     }
 
     [Fact, TestCase("ADM-053")]
-    public async Task UpdatePlan_PersistsHighlightsIsPublicSortOrderAndIsSystemFree()
+    public async Task UpdatePlan_PersistsHighlightsIsPublicAndSortOrder()
     {
-        // Regression: the original PUT silently dropped these four fields, so a plan published via
+        // Regression: the original PUT silently dropped these fields, so a plan published via
         // POST could never be edited, reordered or unpublished again through this endpoint.
+        // (IsSystemFree used to be covered here too, but it moved to its own route/DTO — see
+        // SetSystemFree_* above.)
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
         var plan = NewPlanConfig();
         plan.Highlights = "Было";
         plan.IsPublic = false;
         plan.SortOrder = 1;
-        plan.IsSystemFree = false;
         var created = (await (await adminClient.PostAsJsonAsync("/api/admin/plans", plan))
             .Content.ReadJsonAsync<AdminPlanDto>())!;
         created.Highlights.Should().Equal("Было");
