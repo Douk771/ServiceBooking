@@ -14,6 +14,12 @@ public class NotificationChannel
     public string OwnerUserId { get; set; } = string.Empty;
     public AppUser Owner { get; set; } = null!;
 
+    // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4, §47) — who PAYS for and owns this number; OwnerUserId
+    // above stays "who set it up and manages it" (same OwnerUserId/BillingAccountId split as
+    // Company). Nullable in this slice — no NOT NULL/composite alt-key yet (§43.6 is a later stage).
+    public Guid? BillingAccountId { get; set; }
+    public BillingAccount? BillingAccount { get; set; }
+
     public NotificationTransport Transport { get; set; } = NotificationTransport.WhatsApp;
     public ChannelState State { get; set; } = ChannelState.NotConnected;
 
