@@ -9,66 +9,50 @@ import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { formatBookingServiceNames } from '../../utils/bookingServices'
 import type { Booking } from '../../types'
 
-interface OccupiedRange {
-  start: string
-  end: string
-}
-
 interface Props {
   booking: Booking
   onClose: () => void
 }
 
-function generateTimeGrid(): string[] {
-  const times: string[] = []
-  for (let h = 8; h <= 21; h++) {
-    times.push(`${String(h).padStart(2, '0')}:00`)
-    if (h < 21) times.push(`${String(h).padStart(2, '0')}:30`)
-  }
-  return times
-}
-
 function timeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number)
+  const [h, m] = t.slice(0, 5).split(':').map(Number)
   return h * 60 + m
 }
 
-function durationMinutes(start: string, end: string): number {
-  return timeToMinutes(end.slice(0, 5)) - timeToMinutes(start.slice(0, 5))
-}
-
-function isTimeOccupied(time: string, durationMin: number, occupied: OccupiedRange[], currentStart: string): boolean {
-  const start = timeToMinutes(time)
-  const end = start + durationMin
-  return occupied.some((r) => {
-    // Skip the current booking's own slot
-    if (r.start.slice(0, 5) === currentStart.slice(0, 5)) return false
-    const rStart = timeToMinutes(r.start.slice(0, 5))
-    const rEnd = timeToMinutes(r.end.slice(0, 5))
-    return start < rEnd && end > rStart
-  })
-}
-
-const TIME_GRID = generateTimeGrid()
-
 export function RescheduleModal({ booking, onClose }: Props) {
   const qc = useQueryClient()
-  const duration = durationMinutes(booking.startTime, booking.endTime)
+
+  // US-67: after multi-service visits, every service of the booking counts toward duration —
+  // same rule `ManualBookingModal`/`BookingModal` use for the primary/extra split.
+  const extraServiceIds = (booking.services ?? []).slice(1).map((s) => s.serviceId)
 
   const now = new Date()
   const todayStr = format(now, 'yyyy-MM-dd')
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
 
-  // Today is only offered as a reschedule target if at least one grid slot both hasn't
-  // passed yet and isn't already booked — otherwise there's nothing left to pick today.
-  const { data: occupiedToday = [] } = useQuery<OccupiedRange[]>({
-    queryKey: ['occupied', booking.masterId, todayStr],
-    queryFn: () => bookingsApi.getOccupied(booking.masterId, todayStr),
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedTime, setSelectedTime] = useState('')
+  // F7 (ARCHITECTURE_CYCLE6.md §46.4) — same "show the rest of the hours" toggle as
+  // `ManualBookingModal`, on the same rule: 09:00–21:00 is only the default, not a boundary.
+  const [showExtendedHours, setShowExtendedHours] = useState(false)
+
+  // Today is only offered as a reschedule target if the server still has at least one slot left
+  // for it — mirrors `ManualBookingModal`'s "slots today" check, now via the same endpoint.
+  const { data: slotsToday = [] } = useQuery({
+    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, todayStr, 'manual', showExtendedHours],
+    queryFn: () =>
+      bookingsApi.getSlots(
+        booking.companyId,
+        booking.masterId,
+        booking.serviceId,
+        extraServiceIds,
+        todayStr,
+        true,
+        showExtendedHours,
+      ),
     staleTime: 0,
   })
-  const hasAvailableSlotToday = TIME_GRID.some(
-    (time) => timeToMinutes(time) > nowMinutes && !isTimeOccupied(time, duration, occupiedToday, booking.startTime),
-  )
+  const hasAvailableSlotToday = slotsToday.some((s) => timeToMinutes(s.start) > nowMinutes)
 
   const days = [
     ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
@@ -81,15 +65,27 @@ export function RescheduleModal({ booking, onClose }: Props) {
     }),
   ]
 
-  const [selectedDate, setSelectedDate] = useState('')
-  const [selectedTime, setSelectedTime] = useState('')
-
-  const { data: occupied = [] } = useQuery<OccupiedRange[]>({
-    queryKey: ['occupied', booking.masterId, selectedDate],
-    queryFn: () => bookingsApi.getOccupied(booking.masterId, selectedDate),
+  const {
+    data: rawSlots,
+    isLoading: slotsLoading,
+    error: slotsError,
+  } = useQuery({
+    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, selectedDate, 'manual', showExtendedHours],
+    queryFn: () =>
+      bookingsApi.getSlots(
+        booking.companyId,
+        booking.masterId,
+        booking.serviceId,
+        extraServiceIds,
+        selectedDate,
+        true,
+        showExtendedHours,
+      ),
     enabled: !!selectedDate,
     staleTime: 0,
+    retry: false,
   })
+  const slots = (rawSlots ?? []).filter((s) => selectedDate !== todayStr || timeToMinutes(s.start) > nowMinutes)
 
   const mutation = useMutation({
     mutationFn: () => bookingsApi.reschedule(booking.id, selectedDate, selectedTime),
@@ -141,27 +137,53 @@ export function RescheduleModal({ booking, onClose }: Props) {
           {/* Time grid */}
           {selectedDate && (
             <>
-              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-3">Новое время</h3>
-              <div className="grid grid-cols-4 gap-2 mb-6">
-                {TIME_GRID.filter(
-                  (time) =>
-                    !isTimeOccupied(time, duration, occupied, booking.startTime) &&
-                    (selectedDate !== todayStr || timeToMinutes(time) > nowMinutes),
-                ).map((time) => {
-                  const isSelected = selectedTime === time
-                  return (
-                    <button
-                      key={time}
-                      onClick={() => setSelectedTime(isSelected ? '' : time)}
-                      className={`py-2 rounded-xl text-[13.5px] font-medium border transition-all ${
-                        isSelected ? 'bg-ink text-cream border-ink' : 'border-line bg-white hover:border-line-strong'
-                      }`}
-                    >
-                      {time}
-                    </button>
-                  )
-                })}
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[14.5px] font-semibold text-[#4A4038]">Новое время</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowExtendedHours((v) => !v)
+                    setSelectedTime('')
+                  }}
+                  className="text-[12.5px] font-medium text-gold-dark hover:underline"
+                >
+                  {showExtendedHours ? 'Скрыть остальные часы' : 'Показать остальные часы'}
+                </button>
               </div>
+              {showExtendedHours && (
+                <p className="text-[12px] text-ink-soft -mt-1.5 mb-3">
+                  Мастер в это время не работает — запись вне графика.
+                </p>
+              )}
+              {slotsLoading ? (
+                <div className="grid grid-cols-4 gap-2 mb-6">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="h-9 bg-cream-deep rounded-xl animate-pulse" />
+                  ))}
+                </div>
+              ) : slots.length > 0 ? (
+                <div className="grid grid-cols-4 gap-2 mb-6">
+                  {slots.map((s) => {
+                    const time = s.start.slice(0, 5)
+                    const isSelected = selectedTime === time
+                    return (
+                      <button
+                        key={time}
+                        onClick={() => setSelectedTime(isSelected ? '' : time)}
+                        className={`py-2 rounded-xl text-[13.5px] font-medium border transition-all ${
+                          isSelected ? 'bg-ink text-cream border-ink' : 'border-line bg-white hover:border-line-strong'
+                        }`}
+                      >
+                        {time}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : slotsError ? (
+                <p className="text-center text-danger py-4 text-sm mb-6">Не удалось загрузить время. Попробуйте снова.</p>
+              ) : (
+                <p className="text-center text-muted py-4 text-sm mb-6">Нет доступных слотов на этот день</p>
+              )}
             </>
           )}
 
