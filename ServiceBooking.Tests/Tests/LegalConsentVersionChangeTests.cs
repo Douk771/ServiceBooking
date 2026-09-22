@@ -125,6 +125,29 @@ public class LegalConsentVersionChangeTests : IAsyncLifetime
         status.ShowBanner.Should().BeFalse();
     }
 
+    // API_CONTRACT_CYCLE5.md §39 / SPEC.md US-71: the frontend deliberately routes a user with a
+    // pending Material consent to the public pricing page anyway (CONSENT_GATE_BYPASS_PATHS), so the
+    // legal gate must never turn that route into a 451 — written from the contract, independently of
+    // LegalConsentFilter's own allow-list implementation.
+    [Fact, TestCase("LEG-037")]
+    public async Task MaterialChange_DoesNotBlock_GetApiPricing()
+    {
+        _factory.ResetToDefault();
+        var user = await RegisterAsync();
+
+        _factory.WriteManifest("v2-pricing-material-draft", isDraft: true, changeKind: "Material");
+        await Task.Delay(1200);
+
+        var client = Authed(user.Token);
+
+        // Sanity check that this user really is in the blocked state everywhere else...
+        (await client.GetAsync("/api/companies/my")).StatusCode.Should().Be((HttpStatusCode)451);
+        // ...yet GET /api/pricing is unaffected (200 or 404 depending on the publication switch — the
+        // one status it must never be is 451).
+        var pricing = await client.GetAsync("/api/pricing");
+        pricing.StatusCode.Should().NotBe((HttpStatusCode)451);
+    }
+
     [Fact, TestCase("LEG-014")]
     public async Task EditorialChange_NeverBlocks_ButShowsBanner()
     {
