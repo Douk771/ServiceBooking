@@ -7,6 +7,7 @@ using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Enums;
+using ServiceBooking.Infrastructure.Data;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -1174,6 +1175,29 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         response.StatusCode.Should().Be((HttpStatusCode)402);
     }
 
+    [Fact, TestCase("CO-080")]
+    public async Task AddMember_SubscriptionExpiredByDate_402TextNamesTheAppliedFreeLimit_NotTheStalePlanNumbers()
+    {
+        // Regression (cycle-07 backend report, NB-1): the 402 text used to be built straight off the
+        // raw AccountSubscription/PlanConfig row without checking whether that subscription is actually
+        // USABLE right now — so an EXPIRED subscription's own plan name/MaxEmployees leaked into the
+        // error text ("8 включено в тариф «Профи»") while the limit that was actually ENFORCED had
+        // already fallen back to Free (1). The text must name what was really applied, not what's
+        // sitting unused in a lapsed row.
+        var (owner, company) = await CreateOwnerWithCompanyAsync(onlineBooking: false);
+        var configId = await CreateTestPlanConfigAsync(maxEmployees: 8);
+        await SetSubscriptionAsync(company.Id, configId, paidUntil: DateTime.UtcNow.AddDays(-1)); // expired yesterday
+        var toAdd = await RegisterAsync();
+
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
+            new { phone = toAdd.Phone, firstName = toAdd.FirstName, lastName = toAdd.LastName, role = "Master", bio = (string?)null });
+
+        response.StatusCode.Should().Be((HttpStatusCode)402);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("из 1 мест", "the ENFORCED limit (Free, after the expired subscription fell back) is 1, not the lapsed plan's 8");
+        body.Should().NotContain("«Test Plan", "the lapsed plan's own name must not appear as if it were still granting anything");
+    }
+
     // ── POST /api/companies — branch (MaxCompanies) limit ────────────────────
 
     [Fact, TestCase("CO-048")]
@@ -1245,6 +1269,37 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         responses.Count(r => r.StatusCode == HttpStatusCode.Created).Should().Be(1);
         responses.Count(r => r.StatusCode == (HttpStatusCode)402).Should().Be(4);
+    }
+
+    [Fact, TestCase("CO-079")]
+    public async Task CreateCompany_ConcurrentFirstCompanyForSameOwner_AllLandOnTheSameBillingAccount_NoServerError()
+    {
+        // Regression for BillingAccountProvisioner's own race (cycle-07 backend report, NB-5): a
+        // brand-new owner has NO BillingAccount row at all yet, so the FIRST "create a company" request
+        // is also the FIRST call to EnsureAccountAsync for them — and that call happens BEFORE the
+        // per-account advisory lock (CompaniesController.CreateCompany's own comment: the lock is keyed
+        // by the account id, which doesn't exist yet). Two simultaneous first-company requests can both
+        // miss the "does this owner already have an account" read and both try to INSERT one, tripping
+        // the unique index on OwnerUserId. Before the fix, the loser of that race got a raw 500; after
+        // it, the loser is silently hollow re-pointed at the winner's row and continues normally into the
+        // (correctly serialized) company-limit check below — Free's MaxCompanies=1 then refuses every
+        // request but the very first to actually insert a company, with a 402, never a 500.
+        var owner = await RegisterAsync();
+        var cityId = await AnyCityIdAsync();
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(i =>
+            AuthedClient(owner.Token).PostAsJsonAsync("/api/companies",
+                new CreateCompanyDto($"First Branch {Unique(i.ToString())}", Unique("first-branch-"), null, null, null, null, cityId, null))));
+
+        responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.Created || r.StatusCode == (HttpStatusCode)402,
+            "the provisioning race must never surface as an unhandled 500");
+        responses.Count(r => r.StatusCode == HttpStatusCode.Created).Should().Be(1, "Free's MaxCompanies = 1 lets exactly one of these through");
+        responses.Count(r => r.StatusCode == (HttpStatusCode)402).Should().Be(4);
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.BillingAccounts.Count(a => a.OwnerUserId == owner.UserId).Should().Be(1,
+            "exactly one BillingAccount row must exist for this owner even though multiple requests raced to create it");
     }
 
     // ── Raw tariff capability flags (PlanAllows*, MaxEmployees) ──────────────
