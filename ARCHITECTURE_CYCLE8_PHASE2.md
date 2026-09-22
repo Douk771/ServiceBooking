@@ -307,9 +307,15 @@ N = число тест-классов ≈ **29** сегодня. Верхняя
    один `SemaphoreSlim(1)` в `TestDatabaseLease` + **ретрай 3 × 200 мс**. Цена сериализации — те же
    0,2–0,4 с на клон, что и так заложены; параллелизм тестов от этого не страдает, потому что клон
    делается один раз на класс, а не на тест.
-3. **Дроп базы класса при живом соединении.** Хост класса диспозится первым, потом
-   `NpgsqlConnection.ClearAllPools()`, потом `DROP DATABASE … WITH (FORCE)` (PG 13+; у нас 16).
-   Порядок — часть контракта `TestDatabaseFixture.DisposeAsync`, а не деталь реализации.
+3. **Дроп базы класса при живом соединении.** Хост класса диспозится первым, потом точечный
+   `NpgsqlConnection.ClearPool(...)` **для строки подключения именно этого класса** (НЕ
+   `ClearAllPools()` — на процесс приходится P классов в полёте одновременно, §91.4, и
+   `ClearAllPools()` снёс бы пул ещё живого соседнего класса, идущего параллельно), потом
+   `DROP DATABASE … WITH (FORCE)` (PG 13+; у нас 16). Порядок — часть контракта
+   `TestDatabaseFixture.DisposeAsync`/`TestDatabaseLease.DropClassDatabaseAsync`, а не деталь реализации.
+   (Цикл 9, находка M2: до этой правки точечный `ClearPool` в коде отсутствовал вовсе — `WITH (FORCE)`
+   на практике всё равно срабатывал, потому что он terminate'ит серверные backend'ы сам, но контракт не
+   соблюдался буквально.)
 
 ### 91.6 Сидирование: шаблон оставляем «сырым» по умолчанию
 
@@ -1043,8 +1049,11 @@ HTTP-контракта, ни одной переменной из §85. Его 
 
 ```bash
 # P1. Параллелизм действительно включён (замена грепа №4 из §79, который проверял обратное)
-grep -rn "DisableTestParallelization" ServiceBooking.Tests/AssemblyInfo.cs          # пусто
-grep -rn "DisableParallelization" ServiceBooking.Tests/                              # только [Collection("Sequential")], если он есть
+# T9 review (L6): якорь ^\[assembly — иначе греп находит ЗАКОММЕНТИРОВАННУЮ строку отката (§98.1,
+# "# [assembly: CollectionBehavior(DisableTestParallelization = true)]") и ложно "не проходит", хотя
+# параллелизм на самом деле включён (закомментированная строка ничего не делает).
+grep -rn "^\[assembly.*DisableTestParallelization" ServiceBooking.Tests/AssemblyInfo.cs   # пусто
+grep -rn "^\[assembly.*DisableParallelization" ServiceBooking.Tests/                      # только [Collection("Sequential")], если он есть
 test -f ServiceBooking.Tests/xunit.runner.json                                       # есть
 
 # P2. Статическая строка подключения мертва

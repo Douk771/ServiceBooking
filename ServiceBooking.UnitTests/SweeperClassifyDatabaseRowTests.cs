@@ -136,4 +136,31 @@ public class SweeperClassifyDatabaseRowTests
         result!.Value.EligibleForDeletion.Should().BeFalse();
         result.Value.Resource.Liveness.Should().Be("undetermined");
     }
+
+    // T9 review (M3): TestResource.TestClass used to be hardcoded to null at every call site regardless
+    // of what the comment actually carried — these two guard the fix (ResourceLabels.DatabaseMetadata's
+    // new optional ClassName field, surfaced through here).
+    [Fact]
+    public void TestClass_is_surfaced_from_metadata_when_present()
+    {
+        var comment = ResourceLabels.ToComment(new ResourceLabels.DatabaseMetadata(
+            "a3f19c7b", Environment.MachineName, Environment.ProcessId, Now, Workdir, ClassName: "AdminTests"));
+
+        var result = Sweeper.ClassifyDatabaseRow("sbtest_a3f19c7b_c07", comment, connections: 0, Now, MaxAge, Workdir, onlyRunKey: null);
+
+        result!.Value.Resource.TestClass.Should().Be("AdminTests");
+    }
+
+    [Fact]
+    public void TestClass_is_null_when_not_yet_recorded()
+    {
+        // §92.2: xUnit v2 never hands a class fixture its own class, so the class database is created
+        // (and commented) BEFORE the class name is knowable — a comment without ClassName is the normal,
+        // expected state right after CREATE DATABASE, not a bug.
+        var comment = CommentFor(Now, Environment.MachineName, Environment.ProcessId);
+
+        var result = Sweeper.ClassifyDatabaseRow("sbtest_a3f19c7b_c07", comment, connections: 0, Now, MaxAge, Workdir, onlyRunKey: null);
+
+        result!.Value.Resource.TestClass.Should().BeNull();
+    }
 }

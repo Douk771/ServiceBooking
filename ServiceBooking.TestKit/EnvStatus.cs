@@ -229,9 +229,10 @@ public static class EnvStatus
     }
 
     /// <summary>ARCHITECTURE_CYCLE8_PHASE2.md §93.4/§102 (T8-P9): the same arithmetic
-    /// TestRunEnvironment.EnsureConnectionBudgetAsync enforces fail-fast at the start of a run, but run
-    /// here so `doctor --json` answers "does my parallelism fit the server?" BEFORE a run even starts.
-    /// Every number in the formula is read from a single source, never duplicated as a literal:
+    /// TestRunEnvironment.EnsureConnectionBudgetCheckedOnceAsync enforces fail-fast at the start of a run
+    /// (via the shared <see cref="RequiredConnections"/>, T9 M4), but run here so `doctor --json` answers
+    /// "does my parallelism fit the server?" BEFORE a run even starts. Every number in the formula is read
+    /// from a single source, never duplicated as a literal:
     ///   - poolSizePerHost / hostsPerClass-implied server ceiling come from TestInfrastructure;
     ///   - maxParallelThreads comes from the same override env var / xunit.runner.json convention
     ///     ServiceBooking.Tests/TestParallelism.cs documents (TestKit cannot reference that project —
@@ -240,11 +241,28 @@ public static class EnvStatus
     ///   - serverMaxConnections comes from SHOW max_connections against the configured external server
     ///     when SERVICEBOOKING_TEST_CONNECTION is set, or from parsing TestInfrastructure.PostgresCommand
     ///     (the same array the ephemeral Testcontainers instance is actually booted with) when running in
-    ///     container mode — never a second hardcoded "300".</summary>
+    ///     container mode — never a second hardcoded "300".
+    ///
+    /// T9 review (M4) — what "hostsPerClass=2" actually means: <see cref="TestInfrastructure.PoolMaxSize"/>
+    /// is an Npgsql pool ceiling keyed by CONNECTION STRING, and every host inside one test class is given
+    /// the exact same connection string (one database per class, §91) — so the true ceiling is ONE pool of
+    /// 8 PER CLASS, not "8 per host". A class like NotificationTestBase that boots a second, per-test host
+    /// (§92.4) does not get a second independent budget of 8; both hosts (the fixture's own, plus the
+    /// short-lived per-test one) draw from that SAME single pool, and during the moment one is disposing
+    /// while the next test's is booting, both are transiently alive against it at once. Multiplying by
+    /// hostsPerClass=2 anyway is therefore a deliberate SAFETY MARGIN, not a second independent 8-connection
+    /// budget — it holds room for that transient overlap (plus this process' own migration/seed/TestKit
+    /// connections) rather than modeling "two separate pools". It is conservative in the direction that
+    /// matters for the SERVER (never asks for fewer connections than could really be open), which is why
+    /// it was safe to ship even though the accompanying prose used to claim a stronger, incorrect model
+    /// ("8 per host"). 8 itself is not raised here: even with two hosts transiently sharing one pool, a
+    /// class' tests are strictly sequential (§92.1) and never hold more than 2-3 connections at once in
+    /// steady state — the margin this formula already reserves absorbs the transient overlap.</summary>
     private static async Task<(DoctorCheck Check, ParallelismInfo Parallelism)> CheckParallelConnectionBudgetAsync(
         string workingCopyRoot, bool dockerAvailable)
     {
-        const int hostsPerClass = 2; // §92.4: class fixture's own host + one dedicated per-test factory.
+        const int hostsPerClass = 2; // §92.4 + T9 M4 above: safety margin for one shared per-class pool,
+                                      // not two independent 8-connection pools.
         const int fallbackMaxParallelThreads = 4; // xunit.runner.json's own default (§93.1), used only if the file can't be read.
 
         var maxParallelThreads = ResolveMaxParallelThreads(workingCopyRoot, fallbackMaxParallelThreads);
@@ -311,15 +329,22 @@ public static class EnvStatus
 
     /// <summary>T8-P9 review: no unit coverage existed for the budget arithmetic (verified only manually
     /// via CLI + ajv per backend's report). Pure, no I/O — testable directly from ServiceBooking.UnitTests
-    /// via InternalsVisibleTo. §93.4's formula, unchanged, just named and given a seam.</summary>
-    internal static int RequiredConnections(int maxParallelThreads, int hostsPerClass, int poolSizePerHost) =>
+    /// via InternalsVisibleTo. §93.4's formula, unchanged, just named and given a seam.
+    ///
+    /// T9 review (M4): made PUBLIC (not just internal) so <c>TestRunEnvironment.EnsureConnectionBudgetCheckedOnceAsync</c>
+    /// in ServiceBooking.Tests — which cannot see TestKit's internals (no <c>InternalsVisibleTo</c> for that
+    /// project, and adding one just for this single call felt like the wrong kind of coupling for a
+    /// one-line formula) — can call the SAME implementation instead of re-deriving the arithmetic as a
+    /// second literal. Previously this formula was typed out twice with a comment on each copy claiming "no
+    /// number duplicated twice"; now there is exactly one multiplication in the repository.</summary>
+    public static int RequiredConnections(int maxParallelThreads, int hostsPerClass, int poolSizePerHost) =>
         maxParallelThreads * hostsPerClass * poolSizePerHost + 4;
 
     /// <summary>The 90% safety margin from §93.4 — kept in one place so "safe limit" always means the
     /// same number in the detail message and in the Ok decision below.</summary>
-    internal static double SafeConnectionLimit(int serverMaxConnections) => serverMaxConnections * 0.9;
+    public static double SafeConnectionLimit(int serverMaxConnections) => serverMaxConnections * 0.9;
 
-    internal static bool FitsConnectionBudget(int required, int serverMaxConnections) =>
+    public static bool FitsConnectionBudget(int required, int serverMaxConnections) =>
         required <= SafeConnectionLimit(serverMaxConnections);
 
     /// <summary>Mirrors ServiceBooking.Tests/Infrastructure/TestParallelism.cs's precedence (env var
@@ -508,8 +533,8 @@ public static class EnvStatus
                     Kind: "container",
                     Id: container.Name,
                     RunKey: container.RunKey,
-                    Slot: null,
-                    TestClass: null,
+                    Slot: null,       // a container is the whole server, not one class' database
+                    TestClass: null,  // T9 M3: intentional here — a container has no single owning test class
                     Workdir: container.Workdir,
                     StartedAtUtc: TestKitJson.ToIso8601(container.StartedAt),
                     AgeSeconds: age,

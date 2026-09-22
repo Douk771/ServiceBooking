@@ -23,6 +23,15 @@ namespace ServiceBooking.Tests.Tests;
 /// </summary>
 public class NotificationDispatchExtraTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
+    // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(NotificationDispatchExtraTests));
+
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    {
+        fixture.RecordTestClass(className);
+        return 0;
+    }
+
     private const string EncryptionKey = NotificationDispatchTestFactory.TestEncryptionKeyBase64;
 
     [Fact, TestCase("NTF-D03")]

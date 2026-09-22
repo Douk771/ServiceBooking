@@ -21,6 +21,7 @@ public sealed class TestDatabaseLease
 
     private readonly TestServerLease _server;
     private readonly List<string> _createdDatabases = [];
+    private readonly Dictionary<string, ResourceLabels.DatabaseMetadata> _metadataByDatabase = [];
     private readonly object _createdDatabasesLock = new();
     private bool _noTemplate;
     private Func<string, Task>? _migrateTemplate;
@@ -105,19 +106,27 @@ public sealed class TestDatabaseLease
     {
         var name = DatabaseNameFor(classSlot);
 
+        // L1 (T9 review): SERVICEBOOKING_TEST_NO_TEMPLATE=1 means there is no `CREATE DATABASE ...
+        // TEMPLATE` at all -- each class database is created and migrated directly, with no shared
+        // template to race against. CloneGate exists ONLY to serialize concurrent clones from one
+        // template (§91.5 п.2); taking it here would instead serialize every class' FULL migration behind
+        // one process-wide lock, turning the escape-hatch mode into a many-minutes-long single-threaded
+        // run instead of the ~46s parallel one it's meant to fall back from.
+        if (_noTemplate)
+        {
+            await using var noTemplateConnection = new NpgsqlConnection(_server.MaintenanceConnectionString);
+            await noTemplateConnection.OpenAsync(cancellationToken);
+            await CreateDatabaseAsync(noTemplateConnection, name, template: null, cancellationToken);
+            lock (_createdDatabasesLock) _createdDatabases.Add(name);
+            await _migrateTemplate!(ConnectionStringFor(classSlot));
+            return name;
+        }
+
         await CloneGate.WaitAsync(cancellationToken);
         try
         {
             await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
             await connection.OpenAsync(cancellationToken);
-
-            if (_noTemplate)
-            {
-                await CreateDatabaseAsync(connection, name, template: null, cancellationToken);
-                lock (_createdDatabasesLock) _createdDatabases.Add(name);
-                await _migrateTemplate!(ConnectionStringFor(classSlot));
-                return name;
-            }
 
             var templateName = DatabaseNameFor(TemplateSlot);
             const int maxAttempts = 3;
@@ -153,14 +162,34 @@ public sealed class TestDatabaseLease
 
     /// <summary>Drops one test class' own database (ARCHITECTURE_CYCLE8_PHASE2.md §92.2,
     /// <c>TestDatabaseFixture.DisposeAsync</c>) — guarded by the same
-    /// <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/> check as every other drop in this class.</summary>
+    /// <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/> check as every other drop in this class.
+    /// §91.5 п.3: the caller (<c>TestDatabaseFixture.DisposeAsync</c>) disposes its own host FIRST, so by
+    /// the time this runs there are no live application connections to this class' database left to clear
+    /// — but this process' own Npgsql pool for THIS class' connection string can still hold idle ones, and
+    /// <c>DROP DATABASE ... WITH (FORCE)</c> alone does not reach into this process' pool to release them
+    /// before dropping (it only terminates the *server-side* backends, which is enough for the DROP to
+    /// succeed, but leaves a stale pooled <see cref="NpgsqlConnection"/> around in this process pointing at
+    /// a database that no longer exists). Cleared with a connection-string-scoped
+    /// <see cref="NpgsqlConnection.ClearPool"/> — deliberately NOT <c>ClearAllPools()</c>, which would also
+    /// tear down the still-live pools of every other class running concurrently in this same process
+    /// (P classes in flight at once, §91.4).</summary>
     public async Task DropClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
     {
         var name = DatabaseNameFor(classSlot);
+
+        await using (var poolProbe = new NpgsqlConnection(ConnectionStringFor(classSlot)))
+        {
+            NpgsqlConnection.ClearPool(poolProbe);
+        }
+
         await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
         await DropAsync(connection, name, cancellationToken);
-        lock (_createdDatabasesLock) _createdDatabases.Remove(name);
+        lock (_createdDatabasesLock)
+        {
+            _createdDatabases.Remove(name);
+            _metadataByDatabase.Remove(name);
+        }
     }
 
     private async Task CreateDatabaseAsync(NpgsqlConnection connection, string name, string? template, CancellationToken cancellationToken)
@@ -211,8 +240,52 @@ public sealed class TestDatabaseLease
             StartedAtUtc: DateTimeOffset.UtcNow,
             Workdir: TestInfrastructure.WorkingCopyRoot);
 
+        lock (_createdDatabasesLock) _metadataByDatabase[name] = metadata;
+
+        await WriteCommentAsync(connection, name, metadata, cancellationToken);
+    }
+
+    /// <summary>T9 review (M3): records which test class a class database belongs to, so a stuck
+    /// <c>sbtest_&lt;key&gt;_c07</c> found by <c>status</c>/<c>sweep</c> can be traced back to its owner —
+    /// the promise ARCHITECTURE_CYCLE8_PHASE2.md §91.3/§92.2 and the schema's <c>testClass</c> field both
+    /// already made, but that nothing previously implemented (every call site passed <c>TestClass: null</c>).
+    /// Called a SECOND time, after <see cref="CreateClassDatabaseAsync"/> already created and commented the
+    /// database — the class name is only knowable once a test-base constructor first runs (§92.2: xUnit v2
+    /// never hands a class fixture its own class' <see cref="Type"/>). A no-op if the database was already
+    /// dropped (class finished, or InitializeAsync failed) before any test constructed — nothing left to
+    /// annotate, and re-creating a comment for a database that no longer exists would just fail.</summary>
+    public async Task RecordTestClassAsync(string classSlot, string testClassName, CancellationToken cancellationToken = default)
+    {
+        var name = DatabaseNameFor(classSlot);
+
+        ResourceLabels.DatabaseMetadata? metadata;
+        lock (_createdDatabasesLock) _metadataByDatabase.TryGetValue(name, out metadata);
+        if (metadata is null)
+            return;
+
+        var updated = metadata with { ClassName = testClassName };
+        lock (_createdDatabasesLock) _metadataByDatabase[name] = updated;
+
+        await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        try
+        {
+            await WriteCommentAsync(connection, name, updated, cancellationToken);
+        }
+        catch (PostgresException)
+        {
+            // Best-effort diagnostics: the class database can legitimately be gone by the time this
+            // fires (a fast-finishing class racing its own teardown) — losing the testClass annotation
+            // must never fail the test run itself.
+        }
+    }
+
+    private static async Task WriteCommentAsync(NpgsqlConnection connection, string databaseName,
+        ResourceLabels.DatabaseMetadata metadata, CancellationToken cancellationToken)
+    {
         var commentJson = ResourceLabels.ToComment(metadata).Replace("'", "''");
-        await using var commentCommand = new NpgsqlCommand($"COMMENT ON DATABASE \"{name}\" IS '{commentJson}'", connection);
+        await using var commentCommand = new NpgsqlCommand($"COMMENT ON DATABASE \"{databaseName}\" IS '{commentJson}'", connection);
         await commentCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 

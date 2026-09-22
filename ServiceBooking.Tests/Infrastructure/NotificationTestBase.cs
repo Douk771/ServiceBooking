@@ -25,15 +25,25 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// (different <c>Notifications:*</c> settings), never <c>fixture.Factory</c> — the fixture is used only
 /// for its connection string, class slot and <see cref="TestData"/> generator.
 /// </summary>
-public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>, IAsyncDisposable
+public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>, IAsyncDisposable
 {
-    protected readonly TestDatabaseFixture Fixture = fixture;
+    protected readonly TestDatabaseFixture Fixture;
 
     /// <summary>This class' database connection string — for the rare subclass that needs to build a
     /// second, dedicated host against the same database.</summary>
-    protected readonly string ConnectionString = fixture.ConnectionString;
+    protected readonly string ConnectionString;
 
-    protected readonly NotificationTestFactory Factory = Boot(new NotificationTestFactory(fixture.ConnectionString));
+    protected readonly NotificationTestFactory Factory;
+
+    protected NotificationTestBase(TestDatabaseFixture fixture)
+    {
+        Fixture = fixture;
+        ConnectionString = fixture.ConnectionString;
+        Factory = Boot(new NotificationTestFactory(fixture.ConnectionString));
+        // T9 M3: records the slot↔class pairing this fixture's own doc comment promised — see
+        // TestDatabaseFixture.RecordTestClass.
+        fixture.RecordTestClass(GetType().Name);
+    }
 
     /// <summary>Boots the host eagerly (rather than lazily on first <see cref="WebApplicationFactory{TEntryPoint}.CreateClient"/>)
     /// so <see cref="NotificationTestFactory.Identity"/> — populated inside <c>ConfigureWebHost</c> — is

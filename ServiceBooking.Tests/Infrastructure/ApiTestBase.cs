@@ -25,14 +25,24 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// class (<c>IClassFixture</c>, not the phase-1 <c>ICollectionFixture</c>/<c>[Collection("Api")]</c>) —
 /// every subclass gets its own, disjoint database, cloned from the run's shared template.
 /// </summary>
-public abstract class ApiTestBase(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
+public abstract class ApiTestBase : IClassFixture<TestDatabaseFixture>
 {
-    protected readonly TestDatabaseFixture Fixture = fixture;
-    protected readonly CustomWebApplicationFactory Factory = fixture.Factory;
+    protected readonly TestDatabaseFixture Fixture;
+    protected readonly CustomWebApplicationFactory Factory;
+
+    protected ApiTestBase(TestDatabaseFixture fixture)
+    {
+        Fixture = fixture;
+        Factory = fixture.Factory;
+        ConnectionString = fixture.ConnectionString;
+        // T9 M3: records the slot↔class pairing this fixture's own doc comment promised — see
+        // TestDatabaseFixture.RecordTestClass.
+        fixture.RecordTestClass(GetType().Name);
+    }
 
     /// <summary>This class' database connection string — for the rare subclass that needs to build a
     /// second, dedicated host against the same database (e.g. <see cref="RateLimitTestFactory"/>).</summary>
-    protected readonly string ConnectionString = fixture.ConnectionString;
+    protected readonly string ConnectionString;
 
     /// <summary>Anonymous (unauthenticated) client — for guest/public endpoint scenarios.</summary>
     protected HttpClient AnonymousClient() => Factory.CreateClient();

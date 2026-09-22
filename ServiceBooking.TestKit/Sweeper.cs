@@ -261,8 +261,8 @@ public static class Sweeper
                 Kind: "container",
                 Id: container.Name,
                 RunKey: container.RunKey,
-                Slot: null,
-                TestClass: null,
+                Slot: null,       // a container is the whole server, not one class' database
+                TestClass: null,  // T9 M3: intentional here — a container has no single owning test class
                 Workdir: container.Workdir,
                 StartedAtUtc: TestKitJson.ToIso8601(container.StartedAt),
                 AgeSeconds: ageSeconds,
@@ -446,7 +446,7 @@ public static class Sweeper
             Id: name,
             RunKey: runKey,
             Slot: slot,
-            TestClass: null,
+            TestClass: metadata?.ClassName, // T9 M3: was always null — see ResourceLabels.DatabaseMetadata.ClassName.
             Workdir: metadata?.Workdir,
             StartedAtUtc: metadataReadable ? TestKitJson.ToIso8601(metadata!.StartedAtUtc) : TestKitJson.ToIso8601(now),
             AgeSeconds: ageSeconds,
