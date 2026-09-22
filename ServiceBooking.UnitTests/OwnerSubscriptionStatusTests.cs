@@ -43,7 +43,7 @@ public class OwnerSubscriptionStatusTests
             NewSub(isActive: true, planConfigId: Guid.NewGuid(), paidUntil: Now.AddDays(-1)), Now).Should().Be("Expired");
 
     [Fact]
-    public void ActiveSubscription_PaidUntilExactlyNow_IsExpired_NotActive()
+    public void ActiveSubscription_PaidUntilExactlyNow_IsStillActive_NotExpired()
     {
         // sub.PaidUntil < now — "expires at" is exclusive, matching the < comparison in
         // SubscriptionStatusFor (not <=), so this deliberately checks the boundary is NOT off-by-one.
