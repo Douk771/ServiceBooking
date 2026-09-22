@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -15,7 +16,8 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/profile")]
 [Authorize]
 public class ProfileController(
-    UserManager<AppUser> userManager, AppDbContext db, ImageUploadService imageUploadService, FileStorage storage)
+    UserManager<AppUser> userManager, AppDbContext db, ImageUploadService imageUploadService, FileStorage storage,
+    SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader)
     : ControllerBase
 {
     [HttpGet]
@@ -429,24 +431,71 @@ public class ProfileController(
         return Ok(await MapToDtoAsync(user, roles));
     }
 
-    // Plan info is only meaningful for company owners — subscriptions are bound to the owner account
-    // (see SubscriptionResolver). Shows the actual subscription row (including an expired/inactive one)
-    // rather than the normalized "Free" fallback, so the owner can see WHY they're on the Free baseline.
+    // Plan info is only meaningful for company owners. Money reads go through the owner's
+    // BillingAccount (ARCHITECTURE_CYCLE5.md §45.1) — Company.OwnerUserId/AccountSubscriptions.OwnerUserId
+    // stay a rights/visibility question, not a money one; the account is the single source for what's
+    // actually owed and what's actually included (plan + grandfathered bonus + purchased options).
+    // Shows the actual subscription row (including an expired/inactive one) rather than the normalized
+    // "Free" fallback, so the owner can see WHY they're on the Free baseline.
     private async Task<ProfilePlanDto?> GetPlanInfoAsync(string userId, IList<string> roles)
     {
         if (!roles.Contains("CompanyOwner")) return null;
 
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == userId);
+        if (account is null)
+            return new ProfilePlanDto(
+                "Free", 0, true, null, false, false, false, false, MaxEmployees: 1, MaxCompanies: 1,
+                TotalMonthlyPrice: 0, Currency: "RUB", CompaniesUsed: 0, EmployeesUsed: 0,
+                ExpiresInDays: null, IsExpiringSoon: false, OptionCount: 0);
+
+        var now = DateTime.UtcNow;
         var sub = await db.AccountSubscriptions.Include(s => s.PlanConfig)
-            .FirstOrDefaultAsync(s => s.OwnerUserId == userId);
+            .FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
+        var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
+        var usage = (await usageReader.GetAsync([account.Id])).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
+
+        var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
+            .Where(o => o.BillingAccountId == account.Id)
+            .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
+            .ToListAsync();
+        var planRules = sub?.PlanConfigId is { } planConfigId
+            ? await db.PlanOptionRules.Where(r => r.PlanConfigId == planConfigId).ToListAsync()
+            : [];
+
+        decimal OptionMonthly(AccountSubscriptionOption row)
+        {
+            var rule = planRules.FirstOrDefault(r => r.OptionId == row.OptionId);
+            var availability = rule?.Availability ?? OptionAvailability.Extra;
+            var pricePerUnit = row.Option.PricePerMonth ?? 0m;
+            return BillingCalculator.MonthlyPriceFor(availability, row.Quantity, pricePerUnit, rule?.IncludedQuantity);
+        }
+
+        var planPrice = sub?.PlanConfig?.PricePerMonth ?? 0m;
+        var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planPrice, subscribedOptions.Select(OptionMonthly));
+
+        var isExpired = sub is not null && sub.PaidUntil.HasValue && sub.PaidUntil.Value < now;
+        var expiresInDays = BillingCalculator.ExpiresInDays(sub?.PaidUntil, now);
+        var isExpiringSoon = sub?.PlanConfig is not null &&
+            BillingCalculator.IsExpiringSoon(sub.PaidUntil, sub.PlanConfig.NotifyDaysBefore, now);
 
         if (sub is null || sub.PlanConfig is null)
-            return new ProfilePlanDto("Free", 0, true, null, false, false, false, false, MaxEmployees: 1, MaxCompanies: 1);
+            return new ProfilePlanDto(
+                "Free", 0, true, null, false, false, false, false,
+                MaxEmployees: plan.AccountMaxEmployees, MaxCompanies: plan.AccountMaxCompanies,
+                TotalMonthlyPrice: totalMonthlyPrice, Currency: "RUB",
+                CompaniesUsed: usage.CompaniesUsed, EmployeesUsed: usage.SeatsUsed,
+                ExpiresInDays: expiresInDays, IsExpiringSoon: isExpiringSoon, OptionCount: subscribedOptions.Count);
 
-        var isExpired = sub.PaidUntil.HasValue && sub.PaidUntil.Value < DateTime.UtcNow;
         return new ProfilePlanDto(
             sub.PlanConfig.Name, sub.PlanConfig.PricePerMonth, sub.IsActive, sub.PaidUntil, isExpired,
             sub.PlanConfig.AllowOnlineBooking, sub.PlanConfig.AllowMailing, sub.PlanConfig.AllowAnalytics,
-            sub.PlanConfig.MaxEmployees, sub.PlanConfig.MaxCompanies);
+            // Deprecated but kept literal to its old meaning is not possible any more once options/
+            // grandfathering exist (§53.2) — same widening the owner's own /billing/subscription screen
+            // already uses; the UI's real limit comes from there, this field is display-only history.
+            plan.AccountMaxEmployees, plan.AccountMaxCompanies,
+            TotalMonthlyPrice: totalMonthlyPrice, Currency: "RUB",
+            CompaniesUsed: usage.CompaniesUsed, EmployeesUsed: usage.SeatsUsed,
+            ExpiresInDays: expiresInDays, IsExpiringSoon: isExpiringSoon, OptionCount: subscribedOptions.Count);
     }
 
     private async Task<ProfileDto> MapToDtoAsync(AppUser u, IList<string> roles) =>
@@ -459,9 +508,15 @@ public class ProfileController(
 public record ProfileDto(string Id, string Phone, string? Email, string FirstName, string LastName, string? AvatarUrl,
     List<string> Roles, ProfilePlanDto? Plan);
 
+// §53.2 — only additive over the cycle-4 shape: every existing field keeps its old meaning (subscription
+// is bound to the account, not to a person, but that is invisible here), the six new fields below are
+// appended. MaxEmployees/MaxCompanies stay deprecated (same note as /billing/subscription) — a UI
+// should read limits from there, not from here.
 public record ProfilePlanDto(
     string PlanName, decimal PricePerMonth, bool IsActive, DateTime? PaidUntil, bool IsExpired,
-    bool AllowOnlineBooking, bool AllowMailing, bool AllowAnalytics, int? MaxEmployees, int? MaxCompanies);
+    bool AllowOnlineBooking, bool AllowMailing, bool AllowAnalytics, int? MaxEmployees, int? MaxCompanies,
+    decimal TotalMonthlyPrice, string Currency, int CompaniesUsed, int EmployeesUsed,
+    int? ExpiresInDays, bool IsExpiringSoon, int OptionCount);
 
 public record UpdateProfileDto(string FirstName, string LastName);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
