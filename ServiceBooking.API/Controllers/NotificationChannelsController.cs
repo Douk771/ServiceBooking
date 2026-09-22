@@ -96,9 +96,11 @@ public class NotificationChannelsController(
         if (!plan.AllowNotificationChannel)
             return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
 
-        var price = await platformSettings.GetChannelPricePerMonthAsync();
-        if (price is null)
-            return Conflict("Подключение каналов временно недоступно");
+        // N21, §59/§47.3: `notifications.channel.price-per-month` no longer controls anything — the
+        // channel is priced through the `notifications.whatsapp` subscription option now, not this
+        // platform setting (which is being removed from the admin screen for the same reason). Gating
+        // the request on it being non-null blocked every request the moment nobody had bothered to keep
+        // a now-decorative setting non-null, with no way for an owner to tell why.
 
         // accountId is guaranteed here — GetOffer/AllowNotificationChannel above already required a
         // usable plan, and a usable plan requires an AccountSubscription, which requires an account
