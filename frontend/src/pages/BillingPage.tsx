@@ -18,6 +18,14 @@ import { getBillingErrorMessage } from '../utils/billingError'
  * real endpoint from the contract, so it lights up unchanged once the backend exists; until then it
  * renders the error state below (also exercised by unit tests via a mocked client).
  */
+// N23: status badge colour must reflect the actual subscription state — a green "Active" badge on
+// an expired subscription is misleading. Free is neutral, Active is success, Expired is danger.
+export const STATUS_BADGE_CLASS: Record<string, string> = {
+  Free: 'bg-cream-deep text-muted',
+  Active: 'bg-success-bg text-success',
+  Expired: 'bg-danger-bg text-danger',
+}
+
 export function BillingPage() {
   const qc = useQueryClient()
   const [requestError, setRequestError] = useState('')
@@ -94,13 +102,28 @@ export function BillingPage() {
     )
   }
 
+  const startEditing = () => desiredOptions ?? Object.fromEntries(data.options.map((o) => [o.optionId, o.quantity]))
+
   const toggleOption = (option: AvailableOptionDto) => {
     setDesiredOptions((prev) => {
-      const base = prev ?? Object.fromEntries(data.options.map((o) => [o.optionId, o.quantity]))
+      const base = prev ?? startEditing()
       const next = { ...base }
       if (next[option.optionId]) delete next[option.optionId]
-      else next[option.optionId] = 1
+      else {
+        // B10: keep the currently-subscribed quantity when re-adding an option that's already
+        // connected (e.g. it was in the base set but got removed then re-added during editing),
+        // otherwise default to 1 for a brand-new option.
+        const subscribed = data.options.find((o) => o.optionId === option.optionId)
+        next[option.optionId] = subscribed?.quantity ?? 1
+      }
       return next
+    })
+  }
+
+  const setOptionQuantity = (optionId: string, quantity: number) => {
+    setDesiredOptions((prev) => {
+      const base = prev ?? startEditing()
+      return { ...base, [optionId]: Math.max(1, quantity) }
     })
   }
 
@@ -129,7 +152,11 @@ export function BillingPage() {
       <Card className="p-[26px] mb-6">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
           <h2 className="text-[15.5px] font-semibold text-ink">{data.plan.name}</h2>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-success-bg text-success">{data.statusText}</span>
+          <span
+            className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_BADGE_CLASS[data.status] ?? 'bg-cream-deep text-muted'}`}
+          >
+            {data.statusText}
+          </span>
         </div>
         <p className="text-2xl font-bold text-ink mb-1">{formatMonthlyPrice(data.totalMonthlyPrice)}</p>
         <p className="text-xs text-muted mb-4">
@@ -184,24 +211,41 @@ export function BillingPage() {
           <h2 className="text-[15.5px] font-semibold text-ink mb-4">Доступные опции</h2>
           <ul className="grid gap-3 mb-4">
             {data.availableOptions.map((option) => {
-              const selected = isEditing
-                ? !!desiredOptions?.[option.optionId]
-                : data.options.some((o) => o.optionId === option.optionId)
+              const subscribed = data.options.find((o) => o.optionId === option.optionId)
+              const selected = isEditing ? !!desiredOptions?.[option.optionId] : !!subscribed
+              const quantity = isEditing ? desiredOptions?.[option.optionId] ?? 0 : subscribed?.quantity ?? 0
+              const showQuantityInput = option.kind === 'Quantity' && isEditing && selected
               return (
-                <li key={option.optionId} className="flex items-center justify-between text-sm gap-3">
+                <li key={option.optionId} className="flex items-center justify-between text-sm gap-3 flex-wrap">
                   <div>
                     <p className="font-medium text-ink">{option.name}</p>
                     <p className="text-xs text-muted">{option.availabilityText}</p>
+                    {!isEditing && option.kind === 'Quantity' && subscribed && (
+                      <p className="text-xs text-ink-soft mt-0.5">Подключено: {quantity}</p>
+                    )}
                   </div>
-                  {option.canRequest && (
-                    <Button
-                      variant={selected ? 'secondary' : 'primary'}
-                      size="sm"
-                      onClick={() => toggleOption(option)}
-                    >
-                      {selected ? 'Убрать' : 'Добавить'}
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {showQuantityInput && (
+                      <input
+                        type="number"
+                        min={1}
+                        max={option.maxQuantity ?? undefined}
+                        value={quantity}
+                        aria-label={`Количество: ${option.name}`}
+                        onChange={(e) => setOptionQuantity(option.optionId, parseInt(e.target.value) || 1)}
+                        className="w-16 rounded-lg border border-line px-2 py-1.5 text-sm outline-none focus:border-gold"
+                      />
+                    )}
+                    {option.canRequest && (
+                      <Button
+                        variant={selected ? 'secondary' : 'primary'}
+                        size="sm"
+                        onClick={() => toggleOption(option)}
+                      >
+                        {selected ? 'Убрать' : 'Добавить'}
+                      </Button>
+                    )}
+                  </div>
                 </li>
               )
             })}
