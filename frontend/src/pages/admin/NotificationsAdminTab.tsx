@@ -6,11 +6,9 @@ import { adminNotificationsApi } from '../../api/platformSettings'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
-import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
-import type { AdminChannelDto } from '../../types'
 
 function fmt(d: string | null) {
   return d ? format(parseISO(d), 'd MMM yyyy', { locale: ru }) : '—'
@@ -45,80 +43,11 @@ function SummaryRow() {
   )
 }
 
-// ── Payment modal ─────────────────────────────────────────────────────────────
-
-function PaymentModal({ channel, onClose }: { channel: AdminChannelDto; onClose: () => void }) {
-  const qc = useQueryClient()
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const [paidFrom, setPaidFrom] = useState(today)
-  const [paidUntil, setPaidUntil] = useState('')
-  const [amount, setAmount] = useState('')
-  const [comment, setComment] = useState('')
-
-  const mut = useMutation({
-    mutationFn: () =>
-      adminNotificationsApi.markPayment(channel.id, {
-        paidFrom,
-        paidUntil,
-        amount: Number(amount) || 0,
-        comment: comment || undefined,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-channels'] })
-      qc.invalidateQueries({ queryKey: ['admin-channel-summary'] })
-      onClose()
-    },
-  })
-
-  return (
-    <Modal title={`Отметить оплату — ${channel.ownerName}`} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[13px] font-medium text-[#4A4038]">Оплачено с</label>
-            <input
-              type="date"
-              value={paidFrom}
-              onChange={(e) => setPaidFrom(e.target.value)}
-              className="rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[13px] font-medium text-[#4A4038]">Оплачено до</label>
-            <input
-              type="date"
-              value={paidUntil}
-              onChange={(e) => setPaidUntil(e.target.value)}
-              className="rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
-            />
-          </div>
-        </div>
-        <Input label="Сумма (справочно)" type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} />
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[13px] font-medium text-[#4A4038]">Комментарий</label>
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            rows={2}
-            className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
-            placeholder="Счёт 114"
-          />
-        </div>
-        {mut.isError && <p className="text-sm text-danger">{getNotificationErrorMessage(mut.error)}</p>}
-        <div className="flex gap-3 pt-1">
-          <Button variant="secondary" className="flex-1" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button className="flex-1" disabled={!paidUntil} loading={mut.isPending} onClick={() => mut.mutate()}>
-            Сохранить
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
 // ── Channels list ─────────────────────────────────────────────────────────────
+// Оплата номера больше не отмечается здесь — единица оплаты переехала в подписку биллинг-аккаунта
+// (POST /admin/notification-channels/{id}/payment отвечает 410, API_CONTRACT_CYCLE5.md §53).
+// Замена — вкладка «Биллинг-аккаунты» → карточка аккаунта → «Назначить подписку», опция
+// notifications.whatsapp с количеством.
 
 const STATE_LABEL_RU: Record<string, string> = {
   NotConnected: 'не подключён',
@@ -133,7 +62,6 @@ const STATE_LABEL_RU: Record<string, string> = {
 
 function ChannelsList() {
   const [page, setPage] = useState(1)
-  const [payingFor, setPayingFor] = useState<AdminChannelDto | null>(null)
   const [actionError, setActionError] = useState('')
   const qc = useQueryClient()
 
@@ -170,7 +98,6 @@ function ChannelsList() {
 
   return (
     <div>
-      {payingFor && <PaymentModal channel={payingFor} onClose={() => setPayingFor(null)} />}
       {actionError && <p className="text-sm text-danger mb-3">{actionError}</p>}
       <div className="grid gap-3">
         {(data?.items ?? []).map((c) => (
@@ -197,9 +124,6 @@ function ChannelsList() {
               </p>
             </div>
             <div className="flex gap-2 shrink-0">
-              <Button size="sm" onClick={() => setPayingFor(c)}>
-                Отметить оплату
-              </Button>
               {c.paymentState === 'Paid' ? (
                 <Button size="sm" variant="danger" loading={suspendMut.isPending} onClick={() => suspendMut.mutate(c.id)}>
                   Приостановить

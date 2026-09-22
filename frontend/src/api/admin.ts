@@ -44,19 +44,6 @@ export interface AdminCompany {
   subscriptionActive: boolean
 }
 
-export interface SubscriptionChangeLogEntry {
-  id: string
-  changedAt: string
-  changedByEmail: string
-  oldPlanName: string
-  newPlanName: string
-  oldPaidUntil?: string
-  newPaidUntil?: string
-  oldIsActive: boolean
-  newIsActive: boolean
-  comment?: string
-}
-
 export interface AdminBooking {
   id: string
   companyName: string
@@ -89,15 +76,8 @@ export const adminApi = {
   updateUserRoles: (id: string, roles: string[]) => api.put(`/admin/users/${id}/roles`, roles),
   getCompanies: (search?: string, page = 1, pageSize = 20) =>
     api.get<Paged<AdminCompany>>('/admin/companies', { params: { search, page, pageSize } }).then((r) => r.data),
-  updateSubscription: (
-    ownerUserId: string,
-    planConfigId: string | null,
-    paidUntil: string | null,
-    isActive: boolean,
-    comment?: string,
-  ) => api.put(`/admin/owners/${ownerUserId}/subscription`, { planConfigId, paidUntil, isActive, comment }),
-  getSubscriptionHistory: (ownerUserId: string) =>
-    api.get<SubscriptionChangeLogEntry[]>(`/admin/owners/${ownerUserId}/subscription-history`).then((r) => r.data),
+  // updateSubscription / getSubscriptionHistory removed — PUT/GET /admin/owners/{id}/subscription[-history]
+  // are 410 Gone in cycle 5 (API_CONTRACT_CYCLE5.md §53). Replacement: adminBillingApi (billing-accounts).
   updateCompany: (id: string, data: { name: string; isActive: boolean; allowSelfBooking: boolean }) =>
     api.put(`/admin/companies/${id}`, data),
   updateCompanyOwner: (id: string, newOwnerUserId: string) =>

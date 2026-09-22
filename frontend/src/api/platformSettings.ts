@@ -6,10 +6,8 @@ export const adminNotificationsApi = {
   listChannels: (params: { state?: string; paymentState?: string; page?: number; pageSize?: number }) =>
     api.get<Paged<AdminChannelDto>>('/admin/notification-channels', { params }).then((r) => r.data),
   summary: () => api.get<AdminChannelSummary>('/admin/notification-channels/summary').then((r) => r.data),
-  markPayment: (
-    id: string,
-    data: { paidFrom: string; paidUntil: string; amount: number; comment?: string },
-  ) => api.post<AdminChannelDto>(`/admin/notification-channels/${id}/payment`, data).then((r) => r.data),
+  // markPayment removed — POST /admin/notification-channels/{id}/payment is 410 Gone in cycle 5.
+  // Replacement: adminBillingApi.assignSubscription (billing-accounts subscription options).
   suspend: (id: string, comment?: string) => api.post<void>(`/admin/notification-channels/${id}/suspend`, { comment }),
   resume: (id: string, comment?: string) => api.post<void>(`/admin/notification-channels/${id}/resume`, { comment }),
   getSettings: () => api.get<PlatformSettings>('/admin/platform-settings').then((r) => r.data),
