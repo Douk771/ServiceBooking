@@ -22,9 +22,13 @@ const RETENTION_LABELS: Record<PhotoRetention, string> = {
   Forever: 'Бессрочно',
 }
 
-// Витрина показывает не более пяти буллетов на тариф (PricingPlanDto.highlights) — не даём сохранить
-// больше, чем реально будет видно.
-export const MAX_HIGHLIGHTS = 5
+// AdminPlanDto.highlights allows up to 10 entries on write (contract + PricingCatalogBuilder.MaxHighlights).
+// The PUBLIC pricing page only ever shows the first 5 (PricingPlanDto.highlights maxItems, and
+// PricingCatalogBuilder.PublicMaxHighlights) — that's a display cap, not a write cap, so the editor
+// must not block entering a 6th..10th bullet; it just needs to say plainly which ones are shown.
+export const MAX_HIGHLIGHTS = 10
+export const PUBLIC_MAX_HIGHLIGHTS = 5
+export const MAX_HIGHLIGHT_LENGTH = 120
 
 const AVAILABILITY_LABELS: Record<OptionAvailability, string> = {
   Unavailable: 'Недоступна',
@@ -253,7 +257,7 @@ export function PlansTab() {
 
   const addHighlight = () => {
     if (form.highlights.length >= MAX_HIGHLIGHTS) {
-      setHighlightsError(`На витрине показывается не больше ${MAX_HIGHLIGHTS} пунктов — добавить ещё нельзя.`)
+      setHighlightsError(`Больше ${MAX_HIGHLIGHTS} пунктов сохранить нельзя.`)
       return
     }
     setHighlightsError('')
@@ -261,6 +265,11 @@ export function PlansTab() {
   }
 
   const updateHighlight = (index: number, value: string) => {
+    if (value.length > MAX_HIGHLIGHT_LENGTH) {
+      setHighlightsError(`Пункт не может быть длиннее ${MAX_HIGHLIGHT_LENGTH} символов.`)
+      return
+    }
+    setHighlightsError('')
     setForm((f) => ({ ...f, highlights: f.highlights.map((h, i) => (i === index ? value : h)) }))
   }
 
@@ -570,29 +579,39 @@ export function PlansTab() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-medium text-ink-soft">
-                  Буллеты на витрине ({form.highlights.length}/{MAX_HIGHLIGHTS})
+                  Пункты тарифа ({form.highlights.length}/{MAX_HIGHLIGHTS})
                 </p>
                 <Button type="button" variant="ghost" size="sm" onClick={addHighlight} disabled={form.highlights.length >= MAX_HIGHLIGHTS}>
                   <Icon name="plus" size={13} strokeWidth={2} /> Добавить
                 </Button>
               </div>
+              <p className="text-xs text-muted mb-2">
+                На витрине показываются только первые {PUBLIC_MAX_HIGHLIGHTS} — остальные хранятся, но
+                посетители их не увидят.
+              </p>
               <div className="flex flex-col gap-2">
                 {form.highlights.map((h, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <input
-                      value={h}
-                      onChange={(e) => updateHighlight(i, e.target.value)}
-                      placeholder="Онлайн-запись без ограничений"
-                      className="flex-1 rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeHighlight(i)}
-                      aria-label="Удалить буллет"
-                      className="text-muted hover:text-danger shrink-0"
-                    >
-                      <Icon name="x" size={14} strokeWidth={2} />
-                    </button>
+                  <div key={i} className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={h}
+                        onChange={(e) => updateHighlight(i, e.target.value)}
+                        maxLength={MAX_HIGHLIGHT_LENGTH}
+                        placeholder="Онлайн-запись без ограничений"
+                        className="flex-1 rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeHighlight(i)}
+                        aria-label="Удалить буллет"
+                        className="text-muted hover:text-danger shrink-0"
+                      >
+                        <Icon name="x" size={14} strokeWidth={2} />
+                      </button>
+                    </div>
+                    {i >= PUBLIC_MAX_HIGHLIGHTS && (
+                      <p className="text-[11px] text-muted pl-0.5">Не показывается на витрине (свыше {PUBLIC_MAX_HIGHLIGHTS}-го пункта)</p>
+                    )}
                   </div>
                 ))}
                 {form.highlights.length === 0 && <p className="text-xs text-muted">Буллетов пока нет</p>}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { optionRulesToForm, optionRulesToPayload, MAX_HIGHLIGHTS } from './PlansTab'
+import { optionRulesToForm, optionRulesToPayload, MAX_HIGHLIGHTS, PUBLIC_MAX_HIGHLIGHTS, MAX_HIGHLIGHT_LENGTH } from './PlansTab'
 
 describe('optionRulesToForm', () => {
   it('maps each rule by optionId, converting includedQuantity to a string for the input', () => {
@@ -47,7 +47,19 @@ describe('optionRulesToPayload', () => {
 })
 
 describe('MAX_HIGHLIGHTS', () => {
-  it('matches the showcase cap of five bullets', () => {
-    expect(MAX_HIGHLIGHTS).toBe(5)
+  it('matches the write cap the contract/backend enforce (AdminPlanDto.highlights maxItems)', () => {
+    expect(MAX_HIGHLIGHTS).toBe(10)
+  })
+})
+
+describe('PUBLIC_MAX_HIGHLIGHTS', () => {
+  it('matches the showcase cap of five bullets (PricingPlanDto.highlights maxItems)', () => {
+    expect(PUBLIC_MAX_HIGHLIGHTS).toBe(5)
+  })
+})
+
+describe('MAX_HIGHLIGHT_LENGTH', () => {
+  it('matches the per-item length cap the contract/backend enforce', () => {
+    expect(MAX_HIGHLIGHT_LENGTH).toBe(120)
   })
 })
