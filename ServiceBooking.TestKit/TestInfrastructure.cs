@@ -16,8 +16,26 @@ public static class TestInfrastructure
     /// check-image-pins.sh can compare "16" against "16-alpine" without string gymnastics.</summary>
     public const int PostgresMajorVersion = 16;
 
-    /// <summary>Default TTL used by the sweeper (§70.3) when --max-age is not passed.</summary>
-    public static readonly TimeSpan DefaultSweepMaxAge = TimeSpan.FromHours(2);
+    /// <summary>Default TTL used by the sweeper (§70.3) when --max-age is not passed.
+    ///
+    /// T9 review (M7) — lowered 2h → 30m after verifying BOTH crash scenarios by hand (kill -9 a
+    /// testhost mid-run, once in container mode and once in external/server mode):
+    ///   - container mode: Testcontainers' Ryuk sidecar reaps the abandoned Postgres container within
+    ///     ~15s of the client process dying — this TTL never even comes into play there, confirmed by
+    ///     watching `docker ps` go from "container still Up" to gone in that window.
+    ///   - external/server mode (what CI's `postgres:16` service uses): `TestRunEnvironment`'s
+    ///     `AppDomain.ProcessExit` handler — the ONLY thing that drops a leaked class database or
+    ///     template in this mode — never runs on SIGKILL by definition (the OS terminates the process
+    ///     before any user code, including .NET's own handler, gets a chance to run; confirmed by killing
+    ///     -9 mid-run and finding the class database still present seconds later). The sweeper's --max-age
+    ///     window is the ONLY safety net for this case. 2h was generous well past any real run (§98.2:
+    ///     whole-suite target is under a minute at P=4); 30m still comfortably covers a developer pausing
+    ///     mid-run in a debugger while keeping a genuinely abandoned database from lingering for as long
+    ///     as it used to. Not lowered further: `status`/`doctor` are read-only and don't page anyone, and
+    ///     nothing in this repository currently invokes `sweep --apply` on a schedule (see this cycle's own
+    ///     report) — an operator running it by hand needs SOME margin against "is this database still
+    ///     mid-run or already abandoned" without watching a live process table.</summary>
+    public static readonly TimeSpan DefaultSweepMaxAge = TimeSpan.FromMinutes(30);
 
     /// <summary>Command-line flags applied to the ephemeral Testcontainers Postgres instance.
     /// All three "off" settings are safe here because the data is single-run and disposable —

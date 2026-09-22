@@ -198,7 +198,7 @@ dotnet run --project ServiceBooking.TestKit -- doctor [--json]
 | `sweep --apply` | удаляет **только** категорию `dead` | да |
 | `doctor` | проверяет предусловия: Docker доступен, образ Postgres в кеше, .NET SDK, свободные порты | **нет** |
 
-- `--max-age` — длительность вида `30m`, `2h`, `1d`. Дефолт `2h`.
+- `--max-age` — длительность вида `30m`, `2h`, `1d`. Дефолт `30m` (цикл 9, M7: снижено с `2h` — см. ServiceBooking.TestKit/TestInfrastructure.cs.DefaultSweepMaxAge).
 - `--run-key` — точечное удаление конкретного прогона; **единственный** способ тронуть категорию
   `undetermined`.
 - Без `--apply` любая команда безопасна при любом состоянии машины, включая отсутствующий Docker.

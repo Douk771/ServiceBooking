@@ -476,7 +476,9 @@ dotnet run --project ServiceBooking.TestKit -- sweep --apply --max-age 30m
 1. несёт метку `com.servicebooking.test=1` **и** `com.servicebooking.test.run-key` (наш);
 2. **и** нет процесса с PID из метки `com.servicebooking.test.host-pid`
    (`Process.GetProcessById` → `ArgumentException`);
-3. **и** метка `com.servicebooking.test.started-at` старше `--max-age` (по умолчанию **2 часа**).
+3. **и** метка `com.servicebooking.test.started-at` старше `--max-age` (по умолчанию **30 минут**,
+   снижено с 2 часов в цикле 9, находка M7 — см. `ServiceBooking.TestKit/TestInfrastructure.cs`,
+   `DefaultSweepMaxAge`, для обоснования и результатов проверки `kill -9`).
 
 *Для базы на внешнем сервере:*
 1. имя проходит `TestDatabaseNaming.IsDisposable` (§69.3);

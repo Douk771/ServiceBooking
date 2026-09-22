@@ -84,7 +84,7 @@
         "maxAgeSeconds": {
           "type": "integer",
           "minimum": 0,
-          "description": "Порог возраста из --max-age. По умолчанию 7200 (2 часа)."
+          "description": "Порог возраста из --max-age. По умолчанию 1800 (30 минут, снижено с 7200/2ч в цикле 9, M7)."
         },
         "runKeyFilter": {
           "type": ["string", "null"],
@@ -285,7 +285,7 @@
         "liveness": {
           "type": "string",
           "enum": ["alive", "dead", "undetermined"],
-          "description": "НОРМАТИВНО (ARCHITECTURE_CYCLE8.md §70.3). dead — только конъюнкция: наши метки И (PID мёртв ИЛИ connections=0) И возраст > maxAge. alive — есть живой PID либо connections>0 либо возраст <= maxAge. undetermined — всё остальное; удаляется только точечно через --run-key. Правило НЕ изменено фазой 2: классовая база живёт минуты, а не часы, и под порог maxAge (2ч) при живом прогоне не попадает."
+          "description": "НОРМАТИВНО (ARCHITECTURE_CYCLE8.md §70.3). dead — только конъюнкция: наши метки И (PID мёртв ИЛИ connections=0) И возраст > maxAge. alive — есть живой PID либо connections>0 либо возраст <= maxAge. undetermined — всё остальное; удаляется только точечно через --run-key. Правило НЕ изменено фазой 2: классовая база живёт минуты, а не часы, и под порог maxAge (30 минут, цикл 9) при живом прогоне не попадает."
         }
       }
     }
