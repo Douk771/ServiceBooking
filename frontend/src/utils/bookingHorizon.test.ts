@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseBookingHorizonInput, HORIZON_OUT_OF_RANGE_MESSAGE } from './bookingHorizon'
+import { parseBookingHorizonInput, parseHorizonExceededDays, HORIZON_OUT_OF_RANGE_MESSAGE } from './bookingHorizon'
 
 describe('parseBookingHorizonInput', () => {
   it('treats an empty string as "use the default" (sent as 0)', () => {
@@ -35,5 +35,20 @@ describe('parseBookingHorizonInput', () => {
   it('rejects non-integer input', () => {
     const result = parseBookingHorizonInput('90.5')
     expect(result.error).toBe(HORIZON_OUT_OF_RANGE_MESSAGE)
+  })
+})
+
+describe('parseHorizonExceededDays', () => {
+  it('extracts N from the exact server wording', () => {
+    expect(parseHorizonExceededDays('Записаться можно не дальше чем на 7 дней вперёд')).toBe(7)
+  })
+
+  it('extracts N regardless of surrounding text', () => {
+    expect(parseHorizonExceededDays('на 365 дней вперёд')).toBe(365)
+  })
+
+  it('returns null for unrelated 400 messages', () => {
+    expect(parseHorizonExceededDays('Мастер не оказывает услугу: Стрижка')).toBeNull()
+    expect(parseHorizonExceededDays('')).toBeNull()
   })
 })

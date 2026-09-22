@@ -6,6 +6,7 @@ import {
   endOfMonth,
   eachDayOfInterval,
   getDay,
+  addDays,
   addMonths,
   subMonths,
   isToday,
@@ -14,7 +15,9 @@ import {
   startOfDay,
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import { AxiosError } from 'axios'
 import { bookingsApi, type DayAvailability } from '../../api/bookings'
+import { parseHorizonExceededDays } from '../../utils/bookingHorizon'
 import { Icon } from '../ui/Icon'
 
 // US-65, §0.1 Q2/DAY_FULL_LABEL — customer's exact wording for "рабочий день, но свободных часов
@@ -36,19 +39,44 @@ interface Props {
   companyId: string
   masterId: string
   serviceId: string
+  /** US-67: additional services beyond `serviceId` selected for this visit. `undefined` (embed
+   *  widget) omits `serviceIds` from the request entirely — see `api/bookings.ts: serviceParams`. */
+  extraServiceIds?: string[]
   selectedDate: string
   onSelectDate: (date: string) => void
 }
 
-export function BookingCalendar({ companyId, masterId, serviceId, selectedDate, onSelectDate }: Props) {
+export function BookingCalendar({ companyId, masterId, serviceId, extraServiceIds, selectedDate, onSelectDate }: Props) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
 
   const from = toDateStr(startOfMonth(month))
   const to = toDateStr(endOfMonth(month))
+  const serviceKey = extraServiceIds ? [serviceId, ...extraServiceIds].join(',') : serviceId
 
   const { data, isLoading } = useQuery({
-    queryKey: ['availability', companyId, masterId, serviceId, from, to],
-    queryFn: () => bookingsApi.getAvailability(companyId, masterId, serviceId, from, to),
+    queryKey: ['availability', companyId, masterId, serviceKey, from, to],
+    // A company can set its booking horizon shorter than a month (§41.4, 1..365 days). Requesting
+    // the whole displayed month can then legitimately overshoot `horizonLastDate` — which the
+    // calendar can't know in advance, since that value only arrives IN the response. Rather than
+    // guess a safe range up front, request the natural month and, on exactly this 400, clamp `to`
+    // to what the server just told us and retry once.
+    queryFn: async () => {
+      try {
+        return await bookingsApi.getAvailability(companyId, masterId, serviceId, extraServiceIds, from, to)
+      } catch (err) {
+        const ax = err as AxiosError
+        const serverMsg = typeof ax?.response?.data === 'string' ? ax.response.data : ''
+        const horizonDays = ax?.response?.status === 400 ? parseHorizonExceededDays(serverMsg) : null
+        if (horizonDays == null) throw err
+
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const clampedTo = toDateStr(addDays(today, horizonDays))
+        if (clampedTo >= to) throw err // clamped range isn't actually smaller — the 400 was for another reason
+
+        return bookingsApi.getAvailability(companyId, masterId, serviceId, extraServiceIds, from, clampedTo)
+      }
+    },
     enabled: !!masterId && !!serviceId,
     staleTime: 0,
   })

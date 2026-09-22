@@ -20,6 +20,22 @@ export interface ParsedBookingHorizon {
   error?: string
 }
 
+/**
+ * §41.2 — a `GET /api/bookings/availability` request whose `to` lands beyond
+ * `today + Company.bookingHorizonDays` is rejected with 400 and this exact bare-string message
+ * (server fills in N): «Записаться можно не дальше чем на N дней вперёд».
+ *
+ * `BookingCalendar` needs this because it learns the company's horizon FROM the availability
+ * response — so the very first request of a freshly opened calendar (built from `endOfMonth`, with
+ * no known horizon yet) can legitimately overshoot on a company that set a short horizon. Rather
+ * than guess a safe range up front, the calendar requests the natural month range and, on this
+ * specific 400, extracts N and retries once with `to` clamped to it.
+ */
+export function parseHorizonExceededDays(message: string): number | null {
+  const match = message.match(/на (\d+) дн/)
+  return match ? Number(match[1]) : null
+}
+
 export function parseBookingHorizonInput(raw: string): ParsedBookingHorizon {
   const trimmed = raw.trim()
   if (trimmed === '') return { value: 0 }
