@@ -128,3 +128,52 @@ describe('ManualBookingModal — US-67 multiple services per visit', () => {
     expect(await screen.findByText('За один визит можно выбрать не больше 5 услуг')).toBeInTheDocument()
   })
 })
+
+describe('ManualBookingModal — B2: "show the rest of the hours" toggle (Q7)', () => {
+  async function toDateTimeStep() {
+    getMasters.mockResolvedValue([master()])
+    renderModal()
+
+    await screen.findByText('Выберите услуги')
+    ;(await screen.findByText('Стрижка')).click()
+    ;(await screen.findByText('Продолжить')).click()
+
+    // Pick a date so the time grid — and the toggle next to it — render.
+    const dateButtons = await screen.findAllByRole('button', { name: /завтра/i })
+    dateButtons[0].click()
+  }
+
+  it('does not send extendedHours until staff opts in', async () => {
+    await toDateTimeStep()
+
+    await screen.findByText('Показать остальные часы')
+    const call = getSlots.mock.calls.find((c) => c[4] !== undefined) // date-bearing call
+    expect(call?.[6]).toBe(false)
+  })
+
+  it('sends extendedHours=true once the toggle is clicked', async () => {
+    await toDateTimeStep()
+
+    const toggle = await screen.findByText('Показать остальные часы')
+    getSlots.mockClear()
+    toggle.click()
+
+    await screen.findByText('Мастер в это время не работает — запись вне графика.')
+    const call = getSlots.mock.calls[getSlots.mock.calls.length - 1]
+    expect(call[5]).toBe(true) // manual
+    expect(call[6]).toBe(true) // extendedHours
+  })
+})
+
+describe('ManualBookingModal — US-64: empty master list matches BookingModal wording', () => {
+  it('shows "Сейчас записаться нельзя" instead of an empty picker', async () => {
+    getMasters.mockResolvedValue([])
+    renderModal()
+
+    await screen.findByText('Выберите услуги')
+    ;(await screen.findByText('Стрижка')).click()
+    ;(await screen.findByText('Продолжить')).click()
+
+    expect(await screen.findByText('Сейчас записаться нельзя')).toBeInTheDocument()
+  })
+})

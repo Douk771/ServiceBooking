@@ -48,6 +48,9 @@ export function ManualBookingModal({ onClose }: Props) {
   const [selectedMasterId, setSelectedMasterId] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
+  // Q7 (SPEC.md §0.1) — 09:00–21:00 is only the default suggestion, not a boundary staff is bound
+  // to; this toggle lets them see the whole day (API_CONTRACT_CYCLE6.md §41.1, extendedHours=true).
+  const [showExtendedHours, setShowExtendedHours] = useState(false)
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
   const [clientEmail, setClientEmail] = useState('')
@@ -107,9 +110,26 @@ export function ManualBookingModal({ onClose }: Props) {
   // Today is only offered as a booking date if the master still has at least one slot today
   // that both respects working hours/breaks and hasn't passed yet.
   const { data: slotsToday = [] } = useQuery({
-    queryKey: ['slots', selectedCompany?.id, selectedMasterId, primaryService?.id, extraServiceIds, todayStr, 'manual'],
+    queryKey: [
+      'slots',
+      selectedCompany?.id,
+      selectedMasterId,
+      primaryService?.id,
+      extraServiceIds,
+      todayStr,
+      'manual',
+      showExtendedHours,
+    ],
     queryFn: () =>
-      bookingsApi.getSlots(selectedCompany!.id, selectedMasterId, primaryService!.id, extraServiceIds, todayStr, true),
+      bookingsApi.getSlots(
+        selectedCompany!.id,
+        selectedMasterId,
+        primaryService!.id,
+        extraServiceIds,
+        todayStr,
+        true,
+        showExtendedHours,
+      ),
     enabled: !!selectedCompany && !!selectedMasterId && !!primaryService,
     staleTime: 0,
   })
@@ -128,9 +148,18 @@ export function ManualBookingModal({ onClose }: Props) {
       extraServiceIds,
       selectedDate,
       'manual',
+      showExtendedHours,
     ],
     queryFn: () =>
-      bookingsApi.getSlots(selectedCompany!.id, selectedMasterId, primaryService!.id, extraServiceIds, selectedDate, true),
+      bookingsApi.getSlots(
+        selectedCompany!.id,
+        selectedMasterId,
+        primaryService!.id,
+        extraServiceIds,
+        selectedDate,
+        true,
+        showExtendedHours,
+      ),
     enabled: !!selectedCompany && !!selectedMasterId && !!primaryService && !!selectedDate,
     staleTime: 0,
     retry: false,
@@ -346,42 +375,56 @@ export function ManualBookingModal({ onClose }: Props) {
           {step === 'master' && (
             <div>
               <BackLink onClick={() => setStep('service')}>Изменить услуги</BackLink>
-              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите мастера</h3>
-              {mastersLoading ? (
-                <div className="flex flex-col gap-2.5">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
-                  ))}
-                </div>
-              ) : masters && masters.length > 0 ? (
-                <div className="flex flex-col gap-2.5">
-                  {masters.map((m) => (
-                    <button
-                      key={m.userId}
-                      onClick={() => {
-                        setSelectedMasterId(m.userId)
-                        setStep('datetime')
-                      }}
-                      className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
-                    >
-                      <Avatar avatarUrl={m.avatarUrl} firstName={m.firstName} lastName={m.lastName} size={40} />
-                      <div>
-                        <p className="font-semibold text-sm text-ink">
-                          {m.firstName} {m.lastName}
-                        </p>
-                        {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
-                      </div>
-                      <Icon
-                        name="chevron-right"
-                        size={16}
-                        strokeWidth={1.8}
-                        className="ml-auto text-line-strong shrink-0"
-                      />
-                    </button>
-                  ))}
+              {!mastersLoading && (!masters || masters.length === 0) ? (
+                // US-64: same wording as the client-facing BookingModal for the same situation.
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 rounded-full bg-cream-deep flex items-center justify-center mx-auto mb-3">
+                    <Icon name="users" size={20} strokeWidth={1.8} className="text-muted" />
+                  </div>
+                  <p className="text-sm font-medium text-ink mb-1">Сейчас записаться нельзя</p>
+                  <p className="text-[13px] text-ink-soft">
+                    На эту услугу временно нет свободных специалистов. Загляните позже или свяжитесь с
+                    салоном напрямую.
+                  </p>
                 </div>
               ) : (
-                <p className="text-center text-muted py-8">Нет доступных мастеров для этой услуги</p>
+                <>
+                  <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите мастера</h3>
+                  {mastersLoading ? (
+                    <div className="flex flex-col gap-2.5">
+                      {[1, 2].map((i) => (
+                        <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5">
+                      {masters!.map((m) => (
+                        <button
+                          key={m.userId}
+                          onClick={() => {
+                            setSelectedMasterId(m.userId)
+                            setStep('datetime')
+                          }}
+                          className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
+                        >
+                          <Avatar avatarUrl={m.avatarUrl} firstName={m.firstName} lastName={m.lastName} size={40} />
+                          <div>
+                            <p className="font-semibold text-sm text-ink">
+                              {m.firstName} {m.lastName}
+                            </p>
+                            {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
+                          </div>
+                          <Icon
+                            name="chevron-right"
+                            size={16}
+                            strokeWidth={1.8}
+                            className="ml-auto text-line-strong shrink-0"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -421,7 +464,24 @@ export function ManualBookingModal({ onClose }: Props) {
               {/* Time grid — shown only after date selected */}
               {selectedDate && (
                 <>
-                  <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-3">Время</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[14.5px] font-semibold text-[#4A4038]">Время</h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowExtendedHours((v) => !v)
+                        setSelectedTime('')
+                      }}
+                      className="text-[12.5px] font-medium text-gold-dark hover:underline"
+                    >
+                      {showExtendedHours ? 'Скрыть остальные часы' : 'Показать остальные часы'}
+                    </button>
+                  </div>
+                  {showExtendedHours && (
+                    <p className="text-[12px] text-ink-soft -mt-1.5 mb-3">
+                      Мастер в это время не работает — запись вне графика.
+                    </p>
+                  )}
                   {slotsLoading ? (
                     <div className="grid grid-cols-4 gap-2">
                       {Array.from({ length: 8 }).map((_, i) => (
