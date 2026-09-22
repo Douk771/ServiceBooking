@@ -13,8 +13,17 @@ public sealed class TestDatabaseLease
     private const string TemplateSlot = "template";
     private const string NoTemplateEnvironmentVariable = "SERVICEBOOKING_TEST_NO_TEMPLATE";
 
+    /// <summary>Serializes every `CREATE DATABASE ... TEMPLATE` clone (ARCHITECTURE_CYCLE8_PHASE2.md
+    /// §91.5 п.2) — concurrent clones from the same template are the one place this scheme still has a
+    /// process-wide race, and Postgres itself only serializes them with a chance of "source database is
+    /// being accessed by other users" rather than queuing them cleanly.</summary>
+    private static readonly SemaphoreSlim CloneGate = new(1, 1);
+
     private readonly TestServerLease _server;
     private readonly List<string> _createdDatabases = [];
+    private readonly object _createdDatabasesLock = new();
+    private bool _noTemplate;
+    private Func<string, Task>? _migrateTemplate;
 
     public TestDatabaseLease(TestServerLease server)
     {
@@ -26,7 +35,7 @@ public sealed class TestDatabaseLease
     public string DatabaseNameFor(string slot) => $"sbtest_{TestRunKey.Current}_{slot}";
 
     /// <summary>Full Npgsql connection string for a slot's database, with the pool limits from §75
-    /// applied. Does not create anything — call <see cref="EnsureSlotsAsync"/> first.</summary>
+    /// applied. Does not create anything — call <see cref="EnsureTemplateAsync"/>/<see cref="CreateClassDatabaseAsync"/> first.</summary>
     public string ConnectionStringFor(string slot)
     {
         var builder = new NpgsqlConnectionStringBuilder(_server.MaintenanceConnectionString)
@@ -40,50 +49,118 @@ public sealed class TestDatabaseLease
     }
 
     /// <summary>
-    /// Creates the template database, migrates it once via <paramref name="migrateTemplate"/>, then
-    /// creates one database per slot as a copy of the template (§68). Idempotent per slot within a
-    /// lease instance — calling twice for the same slot is a no-op.
+    /// Creates the template database and migrates it once via <paramref name="migrateTemplate"/>
+    /// (ARCHITECTURE_CYCLE8_PHASE2.md §91, replacing the fixed api/legal/dispatch slot list from phase 1
+    /// with the class-per-database scheme). With <c>SERVICEBOOKING_TEST_NO_TEMPLATE=1</c> this becomes a
+    /// no-op — <see cref="CreateClassDatabaseAsync"/> then creates and migrates each class database
+    /// directly, with no `CREATE DATABASE ... TEMPLATE` involved at all.
     /// </summary>
-    public async Task EnsureSlotsAsync(IReadOnlyCollection<string> slots, Func<string, Task> migrateTemplate, CancellationToken cancellationToken = default)
+    public async Task EnsureTemplateAsync(Func<string, Task> migrateTemplate, CancellationToken cancellationToken = default)
     {
-        var noTemplate = Environment.GetEnvironmentVariable(NoTemplateEnvironmentVariable) == "1";
+        _migrateTemplate = migrateTemplate;
+        _noTemplate = Environment.GetEnvironmentVariable(NoTemplateEnvironmentVariable) == "1";
+        if (_noTemplate)
+            return;
 
         await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
 
-        if (!noTemplate)
+        var templateName = DatabaseNameFor(TemplateSlot);
+        await CreateDatabaseAsync(connection, templateName, template: null, cancellationToken);
+        lock (_createdDatabasesLock) _createdDatabases.Add(templateName);
+
+        await migrateTemplate(ConnectionStringFor(TemplateSlot));
+
+        // §91.5 п.1: CREATE DATABASE ... TEMPLATE requires zero live connections to the template —
+        // the migration connection above must be fully released first.
+        await ReleaseTemplateConnectionsAsync(connection, templateName, cancellationToken);
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE8_PHASE2.md §91.5 п.1: clears this process' Npgsql pool for the
+    /// template's connection string, then terminates any OTHER still-open backend connected to it (e.g. a
+    /// stray tool or a previous failed attempt's half-closed session) — `CREATE DATABASE ... TEMPLATE`
+    /// refuses to run while anything is connected to the source database.</summary>
+    private async Task ReleaseTemplateConnectionsAsync(NpgsqlConnection maintenanceConnection, string templateName, CancellationToken cancellationToken)
+    {
+        await using (var templatePoolProbe = new NpgsqlConnection(ConnectionStringFor(TemplateSlot)))
         {
-            var templateName = DatabaseNameFor(TemplateSlot);
-            await CreateDatabaseAsync(connection, templateName, template: null, cancellationToken);
-            _createdDatabases.Add(templateName);
-
-            await migrateTemplate(ConnectionStringFor(TemplateSlot));
-
-            // Postgres refuses CREATE DATABASE ... TEMPLATE while other sessions are connected to the
-            // template — the migration connection must be fully closed first (§68, step 2). Clearing
-            // the pool for that exact connection string releases any pooled Npgsql connections too.
-            await using (var templatePoolProbe = new NpgsqlConnection(ConnectionStringFor(TemplateSlot)))
-            {
-                NpgsqlConnection.ClearPool(templatePoolProbe);
-            }
-
-            foreach (var slot in slots)
-            {
-                var name = DatabaseNameFor(slot);
-                await CreateDatabaseAsync(connection, name, template: templateName, cancellationToken);
-                _createdDatabases.Add(name);
-            }
+            NpgsqlConnection.ClearPool(templatePoolProbe);
         }
-        else
+
+        await using var terminate = new NpgsqlCommand(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @name AND pid <> pg_backend_pid()",
+            maintenanceConnection);
+        terminate.Parameters.AddWithValue("name", templateName);
+        await terminate.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Clones one test class' own database from the run's template (ARCHITECTURE_CYCLE8_PHASE2.md §91 —
+    /// Q10, "database on test class"). Every clone goes through <see cref="CloneGate"/> (one at a time,
+    /// process-wide) and retries up to 3× on the "source database is being accessed by other users" race
+    /// (§91.5 п.2) — concurrent classes cloning from the same template at once is exactly the scenario
+    /// that trips it, and it is otherwise fatal to the whole run.
+    /// </summary>
+    public async Task<string> CreateClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
+    {
+        var name = DatabaseNameFor(classSlot);
+
+        await CloneGate.WaitAsync(cancellationToken);
+        try
         {
-            foreach (var slot in slots)
+            await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            if (_noTemplate)
             {
-                var name = DatabaseNameFor(slot);
                 await CreateDatabaseAsync(connection, name, template: null, cancellationToken);
-                _createdDatabases.Add(name);
-                await migrateTemplate(ConnectionStringFor(slot));
+                lock (_createdDatabasesLock) _createdDatabases.Add(name);
+                await _migrateTemplate!(ConnectionStringFor(classSlot));
+                return name;
             }
+
+            var templateName = DatabaseNameFor(TemplateSlot);
+            const int maxAttempts = 3;
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await ReleaseTemplateConnectionsAsync(connection, templateName, cancellationToken);
+                    await CreateDatabaseAsync(connection, name, template: templateName, cancellationToken);
+                    break;
+                }
+                catch (Npgsql.PostgresException ex) when (attempt < maxAttempts && IsTemplateBusy(ex))
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+                }
+            }
+
+            lock (_createdDatabasesLock) _createdDatabases.Add(name);
+            return name;
         }
+        finally
+        {
+            CloneGate.Release();
+        }
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE8_PHASE2.md §91.5 п.2 — Postgres serializes concurrent
+    /// `CREATE DATABASE ... TEMPLATE` calls against the same source and, rarely, answers one of them with
+    /// "source database ... is being accessed by other users" (SQLSTATE 55006) instead of queuing it.</summary>
+    private static bool IsTemplateBusy(Npgsql.PostgresException ex) =>
+        ex.SqlState == Npgsql.PostgresErrorCodes.ObjectInUse ||
+        ex.Message.Contains("is being accessed by other users", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Drops one test class' own database (ARCHITECTURE_CYCLE8_PHASE2.md §92.2,
+    /// <c>TestDatabaseFixture.DisposeAsync</c>) — guarded by the same
+    /// <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/> check as every other drop in this class.</summary>
+    public async Task DropClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
+    {
+        var name = DatabaseNameFor(classSlot);
+        await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await DropAsync(connection, name, cancellationToken);
+        lock (_createdDatabasesLock) _createdDatabases.Remove(name);
     }
 
     private async Task CreateDatabaseAsync(NpgsqlConnection connection, string name, string? template, CancellationToken cancellationToken)
@@ -97,14 +174,15 @@ public sealed class TestDatabaseLease
             existsCommand.Parameters.AddWithValue("name", name);
             if (await existsCommand.ExecuteScalarAsync(cancellationToken) is not null)
             {
-                // Idempotent only within THIS lease instance (EnsureSlotsAsync calling CreateDatabaseAsync
-                // twice for the same slot) — already-created by a previous call inside _createdDatabases.
-                // A database that exists but was never created by THIS lease belongs to some other
-                // process/run that happens to share a run key (review finding N2: two processes started
-                // with the same SERVICEBOOKING_TEST_RUN_KEY used to silently "adopt" each other's
-                // databases here, and then DropAllAsync would drop the other process's live database out
-                // from under it on teardown). Refuse instead of adopting.
-                if (_createdDatabases.Contains(name))
+                // Idempotent only within THIS lease instance — already-created by a previous call, still
+                // tracked in _createdDatabases. A database that exists but was never created by THIS lease
+                // belongs to some other process/run that happens to share a run key (review finding N2:
+                // two processes started with the same SERVICEBOOKING_TEST_RUN_KEY used to silently "adopt"
+                // each other's databases here, and then teardown would drop the other process's live
+                // database out from under it). Refuse instead of adopting.
+                bool alreadyOurs;
+                lock (_createdDatabasesLock) alreadyOurs = _createdDatabases.Contains(name);
+                if (alreadyOurs)
                     return;
 
                 throw new TestSafetyException(
@@ -139,26 +217,30 @@ public sealed class TestDatabaseLease
     }
 
     /// <summary>
-    /// Drops every database this lease created, guarded by <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/>
-    /// on each one (§69.3, §70.1). Only used in <see cref="TestServerMode.External"/> mode — in
-    /// container mode, disposing the container throws the databases away for free.
+    /// Drops every database this lease still tracks as created (normally just the template — every class
+    /// database is dropped individually by <see cref="DropClassDatabaseAsync"/> as its class finishes),
+    /// guarded by <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/> on each one (§69.3, §70.1). Only
+    /// used in <see cref="TestServerMode.External"/> mode — in container mode, disposing the container
+    /// throws the databases away for free.
     /// </summary>
     public async Task DropAllAsync(CancellationToken cancellationToken = default)
     {
-        if (_createdDatabases.Count == 0)
+        string[] snapshot;
+        lock (_createdDatabasesLock) snapshot = [.. _createdDatabases];
+        if (snapshot.Length == 0)
             return;
 
         await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
 
         // Drop leaf databases before the template they were copied from.
-        foreach (var name in _createdDatabases.Where(n => !n.EndsWith($"_{TemplateSlot}", StringComparison.Ordinal)))
+        foreach (var name in snapshot.Where(n => !n.EndsWith($"_{TemplateSlot}", StringComparison.Ordinal)))
             await DropAsync(connection, name, cancellationToken);
 
-        foreach (var name in _createdDatabases.Where(n => n.EndsWith($"_{TemplateSlot}", StringComparison.Ordinal)))
+        foreach (var name in snapshot.Where(n => n.EndsWith($"_{TemplateSlot}", StringComparison.Ordinal)))
             await DropAsync(connection, name, cancellationToken);
 
-        _createdDatabases.Clear();
+        lock (_createdDatabasesLock) _createdDatabases.Clear();
     }
 
     /// <summary>Drops a database belonging to <em>this</em> run (the run whose in-process
