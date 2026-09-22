@@ -23,6 +23,34 @@ function isIdentityErrorArray(data: unknown): data is IdentityError[] {
   return Array.isArray(data) && data.every((item) => item && typeof item === 'object')
 }
 
+/**
+ * Last-resort reader for a body that is an object rather than a string.
+ *
+ * The server now returns a bare string for every deliberate 4xx, including the automatic
+ * model-validation 400 that used to be `application/problem+json` (cycle 6 contract finding,
+ * API_CONTRACT_CYCLE6.md §38.1). This function is the belt to that fix's braces: it exists so that
+ * an endpoint which was never reconfigured — or a future one added without the convention in mind —
+ * degrades to the server's own wording instead of vanishing into "check your data".
+ *
+ * That silent vanishing is not hypothetical: it is exactly what hid the real cause of US-60, where
+ * a rejected registration reported nothing a user could act on.
+ */
+function readObjectBody(data: unknown): string {
+  if (!data || typeof data !== 'object') return ''
+  const problem = data as { title?: unknown; detail?: unknown; errors?: unknown }
+
+  // ProblemDetails / ValidationProblemDetails: prefer the per-field messages, then detail, then title.
+  if (problem.errors && typeof problem.errors === 'object') {
+    const messages = Object.values(problem.errors as Record<string, unknown>)
+      .flatMap((v) => (Array.isArray(v) ? v : [v]))
+      .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+    if (messages.length > 0) return messages.join(' ')
+  }
+  if (typeof problem.detail === 'string' && problem.detail.trim() !== '') return problem.detail
+  if (typeof problem.title === 'string' && problem.title.trim() !== '') return problem.title
+  return ''
+}
+
 /** Translates one array of Identity errors (§39.6) into the human Russian text(s) shown to the user. */
 export function formatIdentityErrors(errors: IdentityError[]): string {
   return errors
@@ -47,7 +75,7 @@ export function getAuthErrorMessage(error: unknown): string {
   const ax = error as AxiosError
   const status = ax?.response?.status
   const data = ax?.response?.data
-  const body = typeof data === 'string' ? data : ''
+  const body = typeof data === 'string' ? data : readObjectBody(data)
 
   switch (status) {
     case 401:

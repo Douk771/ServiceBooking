@@ -100,3 +100,30 @@ describe('getAuthErrorMessage', () => {
     )
   })
 })
+
+describe('getAuthErrorMessage — object bodies (cycle 6 §38.1 belt-and-braces)', () => {
+  const axiosLike = (status: number, data: unknown) => ({
+    isAxiosError: true,
+    response: { status, data },
+  })
+
+  it('reads per-field messages out of a ValidationProblemDetails body', () => {
+    const message = getAuthErrorMessage(
+      axiosLike(400, {
+        title: 'One or more validation errors occurred.',
+        errors: { Phone: ['Введите телефон'], Password: ['Введите пароль'] },
+      }),
+    )
+    expect(message).toContain('Введите телефон')
+    expect(message).toContain('Введите пароль')
+  })
+
+  it('falls back to detail, then title, when there are no per-field messages', () => {
+    expect(getAuthErrorMessage(axiosLike(400, { title: 'Заголовок', detail: 'Подробность' }))).toBe('Подробность')
+    expect(getAuthErrorMessage(axiosLike(400, { title: 'Заголовок' }))).toBe('Заголовок')
+  })
+
+  it('still falls back to the generic text when the object carries nothing readable', () => {
+    expect(getAuthErrorMessage(axiosLike(400, { traceId: 'abc' }))).toBe('Проверьте введённые данные.')
+  })
+})
