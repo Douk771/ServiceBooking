@@ -199,17 +199,46 @@ public class AdminBillingController(
 
         var all = await query.OrderBy(a => a.CreatedAtUtc).ToListAsync();
         var accountIds = all.Select(a => a.Id).ToList();
+        var now = DateTime.UtcNow;
         var plans = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
         var usages = await usageReader.GetAsync(accountIds);
         var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
             .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync();
+
+        // N4 — the same two figures the account's own card already gets right (BuildAccountCardAsync):
+        // numbersRegistered from an actual COUNT, and totalMonthlyPrice including every subscribed
+        // option's price, not just the bare plan. Batched (§46) — one query for every account's options,
+        // one for every account's registered-channel count, not one per row.
+        var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
+            .Where(o => accountIds.Contains(o.BillingAccountId))
+            .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
+            .ToListAsync();
+        var planConfigIds = subs.Where(s => s.PlanConfigId.HasValue).Select(s => s.PlanConfigId!.Value).Distinct().ToList();
+        var planRules = planConfigIds.Count == 0
+            ? []
+            : await db.PlanOptionRules.Where(r => planConfigIds.Contains(r.PlanConfigId)).ToListAsync();
+        var registeredCounts = await db.NotificationChannels
+            .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value) && c.State != ChannelState.Replaced)
+            .GroupBy(c => c.BillingAccountId!.Value)
+            .Select(g => new { AccountId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.AccountId, g => g.Count);
 
         var items = all.Select(a =>
         {
             var sub = subs.FirstOrDefault(s => s.BillingAccountId == a.Id);
             var plan = plans.GetValueOrDefault(a.Id, EffectivePlan.Free);
             var usage = usages.GetValueOrDefault(a.Id) ?? new AccountUsage(a.Id, 0, 0);
-            var subStatus = OwnerSubscriptionService.SubscriptionStatusFor(sub, DateTime.UtcNow);
+            var subStatus = OwnerSubscriptionService.SubscriptionStatusFor(sub, now);
+
+            var accountOptions = subscribedOptions.Where(o => o.BillingAccountId == a.Id);
+            var optionsMonthly = accountOptions.Select(o =>
+            {
+                var rule = planRules.FirstOrDefault(r => r.OptionId == o.OptionId && r.PlanConfigId == sub!.PlanConfigId);
+                var availability = rule?.Availability ?? OptionAvailability.Unavailable;
+                return BillingCalculator.MonthlyPriceFor(availability, o.Quantity, o.Option.PricePerMonth ?? 0m, rule?.IncludedQuantity);
+            });
+            var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(sub?.PlanConfig?.PricePerMonth ?? 0m, optionsMonthly);
+
             return new
             {
                 id = a.Id,
@@ -218,6 +247,8 @@ public class AdminBillingController(
                 plan,
                 usage,
                 status = subStatus,
+                totalMonthlyPrice,
+                numbersRegistered = registeredCounts.GetValueOrDefault(a.Id, 0),
             };
         }).ToList();
 
@@ -237,14 +268,14 @@ public class AdminBillingController(
             planName = x.sub?.PlanConfig?.Name,
             status = x.status,
             paidUntil = x.sub?.PaidUntil,
-            totalMonthlyPrice = x.sub?.PlanConfig?.PricePerMonth ?? 0m,
+            totalMonthlyPrice = x.totalMonthlyPrice,
             currency = "RUB",
             companiesUsed = x.usage.CompaniesUsed,
             companiesLimit = x.plan.AccountMaxCompanies,
             employeesUsed = x.usage.SeatsUsed,
             employeesLimit = x.plan.AccountMaxEmployees,
             numbersPaid = x.plan.PaidNotificationNumbers,
-            numbersRegistered = 0,
+            numbersRegistered = x.numbersRegistered,
             hasPendingRequest = x.account.RequestedAtUtc is not null,
         }).ToList();
 
