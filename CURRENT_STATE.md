@@ -1,19 +1,38 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `071fc11`, дата: 2026-09-22.**
+**Актуально по состоянию на коммит: `14a7fb6`, дата: 2026-09-22.**
 
 Документ описывает **что есть в репозитории сейчас**, без предложений по развитию.
 
-Точка отсчёта. Ветка — **`develop`**, HEAD — `071fc11`, рабочее дерево чистое (кроме самого этого файла в момент его правки).
+Точка отсчёта. Ветка — **`develop`**, HEAD — `14a7fb6`, рабочее дерево чистое (кроме самого этого
+файла в момент его правки). ⚠️ Последний коммит `14a7fb6` — это **правка `CHANGELOG.md`
+product-analyst'ом**, сделанная параллельно с этой редакцией; кода она не касается. Кодовая часть
+диапазона заканчивается на `6562a86`.
 Модель веток прежняя: `master` ← `release-candidate` ← `develop` ← `cycle/NN-<слаг>`
 (см. §0.0 DEPLOY.md). `develop` — интеграционный ствол и одновременно **та самая ветка, которая
 развёрнута на боевой машине**: `master` отстаёт, тегов нет, релиз формально не объявлен.
 
-Диапазон изменений с прошлой редакции (`7a36543`): **18 коммитов**, `7a36543..071fc11`, полный
-список — `git log --oneline 7a36543..HEAD`. Это **весь цикл 5** (ветка `cycle/05-legal-compliance`,
-смёржена коммитом `14c9331`), плюс два коммита уже на `develop`: починка смоук-теста под новый
-контракт регистрации (`aecddb1`) и документы ночной смены (`071fc11`).
-Объём: **+37 272 / −2 632** строк, 252 файла.
+🔬 **Диапазон изменений этой редакции (цикл 8): `7b382d8..6562a86`, 56 коммитов, +9 910 / −1 369
+строк, 75 файлов.** Это **весь цикл 8 «изоляция тестовой и локальной среды»** (ветка
+`cycle/08-test-env-isolation`, смёржена в `develop`, CI зелёный), обе его фазы — изоляция прогонов
+друг от друга и параллелизм внутри прогона. Полный список — `git log --oneline 7b382d8..HEAD`.
+Документ обновлялся **точечно по диапазону**, а не пересканированием: разделы, которых цикл 8 не
+касался, остались в редакции на `7b382d8` и описывают состояние цикла 5.
+
+🔬 **Главное отличие от прошлой редакции: продуктового кода цикл 8 почти не трогал.** Весь диф по
+`ServiceBooking.API` / `Core` / `Infrastructure` / `frontend/src` — это **+27 / −2 строки в одном
+файле `ServiceBooking.API/Program.cs`** (каталог логов стал конфигурируемым; Serilog в окружении
+`Testing` больше не захватывает статический `Log.Logger`). HTTP-контракт, модель данных, миграции и
+экраны — **без единого изменения**; правки контракта, сделанные в середине цикла, были сознательно
+откачены коммитом `36d56f4` («Undo the API changes that cycle 8 promised not to make»), и сверка
+идёт против зафиксированного инварианта `contracts/cycle8/servicebooking-invariant.openapi.yaml`.
+Всё остальное — **тестовая и локальная инфраструктура**: новый проект `ServiceBooking.TestKit`,
+своя одноразовая база на каждый тест-класс, параллельный прогон, параметризованный dev-стек.
+Поэтому §3 (модель данных), §4 (что реализовано) и большая часть §5 в этой редакции **не менялись**.
+
+Ниже — описание прошлой редакции (цикл 5, диапазон `7a36543..071fc11`, 18 коммитов,
++37 272 / −2 632 строк, 252 файла), оставленное как есть, потому что предметно ничего из него
+циклом 8 не отменено.
 
 **Главное отличие от прошлой редакции: переделан контур согласий, построенный в цикле 3.** Это не
 новая функция рядом, а **переписанное работающее** — через этот контур проходит каждый пользователь
@@ -41,23 +60,30 @@
 Все утверждения ниже получены чтением исходников, конфигов и git-истории. Где чего-то не нашлось —
 так и написано.
 
-**Числа прогонов на `071fc11`** (автор этого документа работает только на чтение и тесты не
-запускает — прогон функционального набора пересоздаёт базу `servicebooking_test`, см. §7; числа
-получены от исполнявшего прогон):
+**Числа прогонов на `6562a86`** (автор этого документа работает только на чтение и тесты не
+запускает; числа взяты из приёмки цикла 8, `ARCHITECTURE_CYCLE8_PHASE2.md` §98.4, и перепроверены
+статическим подсчётом атрибутов):
 
 | Команда | Результат | Было в прошлой редакции |
 |---|---|---|
 | `dotnet build ServiceBooking.sln -warnaserror` | **0 warnings, 0 errors** | 0 / 0 |
-| `dotnet test ServiceBooking.UnitTests` | **591 / 591** | 488 / 488 |
-| `dotnet test ServiceBooking.Tests` | **465 / 465** | 449 / 449 |
-| `npm run test:run` (в `frontend/`) | **181 / 181** | 100 / 100 |
+| `dotnet test ServiceBooking.UnitTests` | 🔬 **691 / 691** | 591 / 591 |
+| `dotnet test ServiceBooking.Tests` | **465 / 465** | 465 / 465 |
+| `npm run test:run` (в `frontend/`) | **181 / 181** | 181 / 181 |
 | `npx tsc --noEmit` (в `frontend/`) | чисто | чисто |
 | `npm run build` (в `frontend/`) | успешно | успешно |
 
-Числа перепроверены **статическим подсчётом** при подготовке этой редакции и сходятся точно:
-`[Fact]`+`[InlineData]` — **591** в `ServiceBooking.UnitTests` (376 + 215), **465** в
-`ServiceBooking.Tests` (449 + 16; там атрибуты идут парой `[Fact, TestCase("ID")]`), вызовов
-`it(...)` в `frontend/src` — **181** в 32 файлах.
+Статический подсчёт на `6562a86` сходится: `[Fact]`+`[InlineData]` — **691** в
+`ServiceBooking.UnitTests` (423 + 268), **465** в `ServiceBooking.Tests` (449 + 16; ещё одно
+вхождение `[Fact` там — внутри комментария, в счёт не идёт; атрибуты идут парой
+`[Fact, TestCase("ID")]`), вызовов `it(...)` в `frontend/src` — **181** в 32 файлах.
+
+🔬 **Весь прирост цикла 8 (+100 юнит-тестов) — покрытие самой тестовой инфраструктуры**
+(`ServiceBooking.TestKit`: имена баз, ключ прогона, метки, арифметика бюджета соединений,
+классификация «живой/мёртвый» ресурс, разбор `--max-age`). Функциональный набор и фронт не
+изменились ни на один тест — цикл менял то, **как** тесты запускаются, а не что они проверяют.
+🔬 **Прогон функционального набора больше не пересоздаёт общую базу `servicebooking_test`** — её
+вообще нет, каждый прогон и каждый тест-класс заводят свою одноразовую (§7).
 
 ⚖️ **Пропорция роста другая, чем в цикле 4.** Фронтенд вырос почти вдвое (+81) — впервые прирост
 фронта обогнал функциональный набор (+16). Причина в том, что цикл 5 менял в основном **формы и
@@ -75,7 +101,7 @@
 | SDK на машине | .NET SDK 8.0.203 | `dotnet --version` |
 | Фреймворк | ASP.NET Core Web API (контроллеры, minimal hosting в `Program.cs`) | `ServiceBooking.API/Program.cs` |
 | ORM | EF Core 8.0.11 + `Npgsql.EntityFrameworkCore.PostgreSQL` 8.0.11 | `ServiceBooking.Infrastructure/ServiceBooking.Infrastructure.csproj` |
-| СУБД | PostgreSQL (в docker-compose — `postgres:16-alpine`) | `docker-compose.yml`, `docker-compose.prod.yml` |
+| СУБД | PostgreSQL (в docker-compose — `postgres:16-alpine`) 🔬 версия пина сверяется скриптом `deploy/ci/check-image-pins.sh` между `TestKit/TestInfrastructure.cs`, обоими compose-файлами и `ci.yml` | `docker-compose.yml`, `docker-compose.prod.yml` |
 | Аутентификация | ASP.NET Core Identity (`IdentityDbContext<AppUser>`) + JWT Bearer 8.0.11 | `Program.cs`, `Services/TokenService.cs` |
 | Обработка изображений | **SkiaSharp 2.88.8** + `SkiaSharp.NativeAssets.Linux.NoDependencies` (цикл 2) — декод, ориентация по EXIF, ресайз, ре-энкод | `ServiceBooking.API.csproj`, `Services/ImageProcessor.cs` |
 | Rate limiting | `Microsoft.AspNetCore.RateLimiting` (встроенный в ASP.NET Core 8), ⚖️ **семь** именованных политик: `uploads`, `auth-login`, `auth-register`, `booking-create`, `data-export`, `notifications-webhook` (600/мин на IP), ⚖️ `subject-request` (3/час на IP); глобального лимитера нет | `Program.cs`, секция `RateLimits` |
@@ -89,13 +115,14 @@
 | Документация API | Swashbuckle.AspNetCore 6.5.0, Swagger **только в Development** (цикл 1) | `Program.cs` |
 | Правовые документы | ⭐ **файлы на диске** (`App_Data/legal/legal.json` + HTML), снимок в памяти с перечитыванием по mtime; не БД и не внешний сервис. ⚖️ Манифест цикла 5 состоит из **двух списков**: `documents[]` — пять версионируемых документов (`Privacy`, `TermsClient`, `TermsOwner`, `PdnConsent`, `ChannelRiskNotice`) с `gate`/`changeKind`/`purposes`, и `uiTexts[]` — **шесть текстов интерфейса**, которые **не являются версионируемыми документами и не участвуют в гейте 451** | `Services/Legal/LegalDocumentProvider.cs`, `App_Data/legal/legal.json` |
 | Стиль кода | ⭐ `.editorconfig` в корне — **описывает** уже сложившийся стиль; `dotnet format` в CI **не подключён** | `.editorconfig` |
+| 🔬 **Тестовая инфраструктура** | **Testcontainers.PostgreSql 3.10.0** + **Npgsql 8.0.5** в отдельном проекте `ServiceBooking.TestKit` (`net8.0`, `OutputType=Exe` — одновременно библиотека для обоих тестовых проектов и CLI `status`/`sweep`/`doctor`). Функциональный прогон **сам поднимает Postgres в Docker** на динамическом порту; заранее установленная PostgreSQL больше не нужна и не используется | `ServiceBooking.TestKit/*`, `docs/testing-isolation.md` |
 | Менеджер пакетов | NuGet, версии зафиксированы в `.csproj` (без `Directory.Packages.props`, без lock-файлов) | — |
 
 ### Фронтенд
 
 | Что | Значение | Откуда |
 |---|---|---|
-| Сборщик | Vite 5.4.x, dev-порт 5173, прокси `/api` и `/uploads` → `process.env.VITE_API_TARGET ?? http://localhost:5000` (порт переопределяется переменной — на macOS 5000 занят AirPlay, коммит `75c5c3c`) | `frontend/vite.config.ts` |
+| Сборщик | Vite 5.4.x. 🔬 **Порты и цель прокси читаются из контракта `SB_*`** (цикл 8): dev-порт `SB_WEB_PORT` (дефолт 5173, `strictPort: false` — занят, возьмёт следующий), прокси `/api` и `/uploads` → `VITE_API_TARGET ?? http://localhost:${SB_API_PORT}` (дефолт 5000). Приоритет: process env → `.env` в корне репозитория → дефолт из контракта; `loadEnv` ограничен префиксами `VITE_`/`SB_`, чтобы не втянуть чужие секреты из общего `.env`; пустое значение трактуется как «не задано», нечисловой/вне диапазона порт — как дефолт | `frontend/vite.config.ts`, `.env.dev.example` |
 | Тест-раннер | **Vitest 3.2 + jsdom 25 + @testing-library/react 16 + @testing-library/jest-dom + user-event** (появился в цикле 2, US-23); конфиг **отдельный от vite.config.ts** | `frontend/vitest.config.ts`, `frontend/src/test/setup.ts` |
 | Библиотека UI | React 18.3 + React DOM 18.3, TypeScript 5.5 (`strict`, `noUnusedLocals`, `noUnusedParameters`) | `frontend/package.json`, `frontend/tsconfig.json` |
 | Роутинг | `react-router-dom` 6.26 | `frontend/src/App.tsx` |
@@ -166,9 +193,18 @@
 
 ### Как собирается и запускается
 
+🔬 **Цикл 8 параметризовал dev-стек через необязательный `.env` в корне репозитория**
+(`.env.dev.example` закоммичен, сам `.env` — в `.gitignore`): `SB_DB_PORT` (5432), `SB_DB_NAME`
+(`servicebooking`), `SB_API_PORT` (5000), `SB_WEB_PORT` (5173), `SB_GLITCHTIP_PORT` (8000). **Свежий
+клон без `.env` ведёт себя ровно как раньше** — все переменные имеют дефолты прямо в
+`docker-compose.yml`. Верхнеуровневого `name:` в `docker-compose.yml` **сознательно нет**: имя
+проекта compose выводит из каталога рабочей копии, и именно это разводит две копии репозитория по
+разным контейнерам, сети и тому (`docker compose down -v` в одной не трогает данные другой).
+Переопределить можно штатной `COMPOSE_PROJECT_NAME`.
+
 ```bash
 # БД (dev)
-docker compose up -d postgres          # docker-compose.yml, порт 5432 наружу
+docker compose up -d postgres          # docker-compose.yml, порт SB_DB_PORT (по умолчанию 5432) наружу
 
 # Бэкенд
 dotnet run --project ServiceBooking.API        # слушает http://localhost:5000 (профиль из launchSettings — 5291)
@@ -245,7 +281,7 @@ Vite и куда мапится docker-compose.
 ## 2. Структура репозитория
 
 ```
-ServiceBooking.sln                  5 проектов (+ папка Solution Items)
+ServiceBooking.sln                  🔬 6 проектов (+ папка Solution Items) — добавлен ServiceBooking.TestKit
 ├── ServiceBooking.API/             ← точка входа, вся бизнес-логика веб-слоя
 │   ├── Program.cs                  🆕 784 строки: Serilog, fail-fast прод-конфига (через DeploymentSafetyChecks),
 │   │                               DI, Identity, JWT (+ перечитывание ролей, SecurityStamp и claim'ы согласия),
@@ -300,12 +336,30 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 │                                   ⚖️ +7 цикла 5: LegalGate, ConsentPurpose, ConsentAct, ConsentSource,
 │                                   SubjectRequestKind/Status, LegalEntityForm, ProviderDeliveryConsentMode;
 │                                   ⚖️ LegalTextKey — СТРОКИ, а не перечисление
-├── ServiceBooking.Infrastructure/  AppDbContext + ⚖️ 36 миграций EF Core
-├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; ⚖️ 44 файла, 591 запуск
-├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; ⚖️ 29 файлов, 465 запусков
+├── ServiceBooking.Infrastructure/  AppDbContext + ⚖️ 36 миграций EF Core (циклом 8 не тронуты)
+├── 🔬 ServiceBooking.TestKit/      НОВЫЙ ПРОЕКТ (цикл 8): среда тестового прогона. Библиотека для обоих
+│                                   тестовых проектов И CLI (status/sweep/doctor, --json).
+│                                   TestRunKey (ключ прогона, 8 hex, статика в процессе),
+│                                   TestDatabaseNaming (имена sbtest_<ключ>_<слот> + защита от сноса
+│                                   не-одноразовой базы), TestServerLease (Postgres через Testcontainers
+│                                   на динамическом порту либо внешний сервер), TestDatabaseLease
+│                                   (шаблон прогона + клон базы на класс, единственное место в репозитории,
+│                                   где выполняется DROP DATABASE), Sweeper (уборка после убитых прогонов),
+│                                   EnvStatus (status/doctor), ResourceLabels, StableHash, TestKitJson,
+│                                   TestInfrastructure (единственный источник пинов/лимитов),
+│                                   TestSafetyException
+├── ServiceBooking.UnitTests/       xUnit, БЕЗ БД и без HTTP — чистая логика; 🔬 53 файла, 691 запуск
+│                                   (🔬 +9 файлов цикла 8 — покрытие TestKit, см. §7.1)
+├── ServiceBooking.Tests/           xUnit, функциональные тесты через WebApplicationFactory; 29 файлов, 465 запусков
 │   ├── Infrastructure/             ApiTestBase, CustomWebApplicationFactory, TestDatabaseFixture, JsonHelpers,
 │   │                               TestCaseAttribute, TestImages, ⭐ LegalDocumentsTestFactory, ⭐ RateLimitTestFactory,
-│   │                               🆕 NotificationTestBase, NotificationTestFactory, NotificationDispatchTestFactory
+│   │                               🆕 NotificationTestBase, NotificationTestFactory, NotificationDispatchTestFactory,
+│   │                               🔬 UploadsStaticFilesTestFactory, TestRunEnvironment (одна среда на процесс),
+│   │                               TestSlot (слот класса «c07»), TestHostSettings (единственное место настройки
+│   │                               всех тестовых хостов), TestData (уникальные значения на класс), TestPhones,
+│   │                               TestParallelism, RandomTestCaseOrderer (случайный порядок с семенем)
+│   ├── 🔬 xunit.runner.json        maxParallelThreads=4, parallelizeTestCollections=true
+│   ├── 🔬 AssemblyInfo.cs          TestCaseOrderer + ОДНА ЗАКОММЕНТИРОВАННАЯ строка отката параллелизма
 │   └── Tests/                      🆕 28 файлов по доменам
 ├── frontend/                       React SPA
 │   ├── src/api/                    ⚖️ 23 модуля — тонкая обёртка над axios, по одному на домен
@@ -339,7 +393,13 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 │   ├── deploy-staging.yml          🚀 деплой стенда по кнопке (ветка develop), environment `staging`
 │   └── deploy-production.yml       🚀 деплой прода по кнопке (только тег на master + ввод слова `deploy`),
 │                                   environment `production` с required reviewer
+├── 🔬 contracts/cycle8/           servicebooking-invariant.openapi.yaml (OpenAPI 3.1 — ИНВАРИАНТ HTTP-поверхности,
+│                                   снятый с `7b382d8`; первый машиночитаемый контракт API в репозитории)
+│                                   и testkit-status.schema.json (JSON Schema вывода CLI TestKit)
+├── 🔬 .env.dev.example             образец `.env` РАБОЧЕЙ КОПИИ (SB_* порты dev-стека); сам `.env` в .gitignore
 ├── deploy/
+│   ├── 🔬 ci/check-image-pins.sh   bash-проверка: мажорная версия postgres одинакова в TestKit,
+│   │                               обоих compose-файлах и ci.yml
 │   ├── deploy.sh / deploy-remote.sh
 │   ├── ssh-deploy-wrapper.sh       🚀 форс-команда в authorized_keys пользователя ezbookdeploy:
 │   │                               закрытый allowlist upload-release/deploy/rollback/health
@@ -356,12 +416,17 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 ├── README.md                       продуктовое описание + «чего пока нет» + ⭐ запуск/секреты/CI/деплой
 ├── CHANGELOG.md                    changelog по датам циклов, самая свежая запись сверху
 ├── docs/                           пользовательская документация по ролям (⭐ +personal-data.md,
-│                                   ⚖️ +incident-runbook.md — утечка ПДн, что делать)
+│                                   ⚖️ +incident-runbook.md — утечка ПДн, что делать;
+│                                   🔬 +testing-isolation.md — запуск тестов и локальная среда,
+│                                   документ ДЛЯ КОМАНДЫ, не для пользователя)
 ├── legal-drafts/                   ⚖️ ДВЕНАДЦАТЬ HTML-документов юриста + README.md +
 │                                   legal.json + legal.manifest.proposed.json; ИСХОДНИКИ
 │                                   с плейсхолдерами {{…}}, приложение их НЕ читает
 ├── LEGAL_REVIEW.md                 ⚖️ ~205 КБ, юридическое заключение по продукту, редакция 4
-├── SPEC.md                         ⚖️ ~163 КБ, спека ЦИКЛА 5 (правовые основания продукта)
+├── SPEC.md                         🔬 ~71 КБ, спека ЦИКЛА 8 (изоляция тестовой и локальной среды)
+├── 🔬 SPEC_CYCLE5_LEGAL.md         ~163 КБ, сохранённая спека цикла 5 (SPEC.md занят циклом 8)
+├── 🔬 ARCHITECTURE_CYCLE8.md (~88 КБ, §61–§81) / ARCHITECTURE_CYCLE8_PHASE2.md (~108 КБ, §89–§99)
+├── 🔬 API_CONTRACT_CYCLE8.md (~27 КБ, §82–§88) / API_CONTRACT_CYCLE8_PHASE2.md (~17 КБ)
 ├── ARCHITECTURE.md / API_CONTRACT.md                документы ЦИКЛА 3 (не перезаписаны!)
 ├── ARCHITECTURE_CYCLE4.md / API_CONTRACT_CYCLE4.md  🆕 документы цикла 4 (разделы 21–40 и 19–37)
 ├── ARCHITECTURE_CYCLE5.md / API_CONTRACT_CYCLE5.md  ⚖️ документы цикла 5 (разделы 41–60 и 38–53)
@@ -379,8 +444,9 @@ ServiceBooking.sln                  5 проектов (+ папка Solution It
 
 ⭐ — появилось в цикле 3. 🚀 — появилось/изменилось при первом реальном развёртывании
 (диапазон `6369266..0e61369`). 🆕 — появилось в **цикле 4** (диапазон `0e61369..7a36543`).
-⚖️ — появилось или **переделано** в **цикле 5** (диапазон `7a36543..071fc11`). Значки прежних циклов
-намеренно оставлены как были: так видно, что именно в каком цикле возникло.
+⚖️ — появилось или **переделано** в **цикле 5** (диапазон `7a36543..071fc11`).
+🔬 — появилось или переделано в **цикле 8** (диапазон `7b382d8..6562a86`).
+Значки прежних циклов намеренно оставлены как были: так видно, что именно в каком цикле возникло.
 
 ### Точка входа и слои
 
@@ -1442,6 +1508,22 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
   работает и почему это стенд, а в CHANGELOG появился верхний раздел **«Не выпущено»** — то, что
   принято командой, но ещё не выкачено. Содержимое цикла 4 в оба файла вносится **параллельно
   product-analyst'ом**, этим документом не описывается.
+- 🔬 **`SPEC.md` в корне — это спека ЦИКЛА 8** (изоляция тестовой и локальной среды). Спека цикла 5
+  восстановлена рядом как **`SPEC_CYCLE5_LEGAL.md`** (первым же действием цикла 8, потому что на неё
+  ссылаются `CURRENT_STATE.md` и `LEGAL_REVIEW.md`). Документы цикла 8 — `ARCHITECTURE_CYCLE8.md`
+  (§61–§81, фаза 1), `ARCHITECTURE_CYCLE8_PHASE2.md` (§89–§99, фаза 2; ⚠️ внутри файла **§98.5
+  физически стоит ПОСЛЕ §99** — порядок разделов в оглавлении и в тексте расходится),
+  `API_CONTRACT_CYCLE8.md` (§82–§88) и `API_CONTRACT_CYCLE8_PHASE2.md`. В корне теперь **четыре
+  поколения** документов цикла одновременно (3, 4, 5, 8); нумерации разделов 21–40 / 41–60 / 61–99
+  сквозные и не пересекаются, но ссылка «§26» без указания файла по-прежнему неоднозначна.
+- 🔬 **`TEST_CATALOG.md` обновлён под цикл 8 точечно** (+20/−17 строк): преамбула и команда запуска
+  больше не обещают заранее поднятую PostgreSQL и базу `servicebooking_test`. Остальной текст
+  каталога — описания кейсов — цикл 8 не трогал, и это корректно: набор кейсов не менялся.
+- 🔬 **`ARCHITECTURE_CYCLE8_PHASE2.md` §99.5 (приёмочные грепы) содержит греп, который больше не
+  проходит буквально.** Грep № P1 ожидает, что `grep -rn "DisableTestParallelization"
+  ServiceBooking.Tests/AssemblyInfo.cs` вернёт пусто; там теперь лежит **закомментированная** строка
+  отката параллелизма (сознательное решение §98.1). Проверять надо не «пусто», а «нет
+  раскомментированной строки».
 - ⚖️ **`ARCHITECTURE.md` и `API_CONTRACT.md` в корне — это документы ЦИКЛА 3.** Цикл 4 положил рядом
   `ARCHITECTURE_CYCLE4.md` (разделы **21–40**) и `API_CONTRACT_CYCLE4.md` (**19–37**), цикл 5 — тем
   же приёмом `ARCHITECTURE_CYCLE5.md` (**41–60**) и `API_CONTRACT_CYCLE5.md` (**38–53**). Нумерация
@@ -1690,6 +1772,35 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 - **Типы дублируются вручную** в `src/types/index.ts` — генерации из OpenAPI нет
   (отсюда риск расхождений, см. §5.3.4).
 
+### 🔬 Тесты (конвенции цикла 8 — им нужно следовать, а не заводить своё рядом)
+
+- **Единица изоляции — тест-класс.** Новый функциональный тест-класс объявляет
+  `IClassFixture<TestDatabaseFixture>` и получает **свою** базу, склонированную из шаблона прогона,
+  плюс свой `CustomWebApplicationFactory`. Коллекций `"Api"`/`"NotificationDispatch"` больше нет —
+  не восстанавливать их «чтобы было как раньше».
+- **Уникальные значения берутся у фикстуры, а не изобретаются на месте:** `fixture.Data.Phone()`,
+  `.Email()`, `.Slug()`, `.Name()`, `.Dir()` (`Infrastructure/TestData.cs`). Уникальность здесь —
+  по построению (слот класса зашит в значение), а не по договорённости; `Guid.NewGuid()` в теле
+  теста считается регрессом, кроме случая, когда сам идентификатор — предмет проверки.
+- **Ни один тестовый хост не настраивается вручную.** Всё, что раньше было ~60 строками
+  `builder.UseSetting(...)` в каждой фабрике, живёт в `Infrastructure/TestHostSettings.Apply`
+  (строка подключения, JWT, суперадмин на фабрику, временные корни `public`/`private`/`state`/
+  `logs`/`legal` под `$TMPDIR/sb-test/<ключ прогона>/<слот класса>/`). Новая фабрика = новый
+  `factoryTag` + запись в закрытый словарь `TestHostSettings.SuperAdmins`, иначе старт падает с
+  объяснением.
+- **`EnsureDeletedAsync` запрещён** — удаление базы только через `TestDatabaseLease`, только для
+  имён `sbtest_<8 hex>_<слот>` и только через проверку `TestDatabaseNaming`. Это не стиль, а
+  защита: `ServiceBooking.TestKit/TestDatabaseLease.cs` — единственное место в репозитории, где
+  вообще выполняется `DROP DATABASE`.
+- **Общего статического состояния между тестовыми классами быть не должно** — оно разобрано
+  поимённо в `ARCHITECTURE_CYCLE8_PHASE2.md` §95.1; новое заводить нельзя, иначе параллелизм
+  снова станет небезопасным.
+- **Пинованные значения инфраструктуры (образ Postgres, `max_connections`, размер пула, TTL
+  уборки) объявляются один раз** в `ServiceBooking.TestKit/TestInfrastructure.cs`; повтор числа
+  литералом в другом файле ловится `deploy/ci/check-image-pins.sh` или ревью.
+- **Порядок тестов внутри класса случайный** (`RandomTestCaseOrderer`) — писать тест, который
+  зависит от соседа по классу, бессмысленно: он покраснеет на следующем семени.
+
 ### Git
 
 - Сообщения коммитов — на английском, одна строка-заголовок в повелительном наклонении +
@@ -1716,6 +1827,18 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
   новый контракт регистрации (`aecddb1`) и документы (`071fc11`). Модель веток соблюдена так же,
   как в цикле 4. Обратите внимание на порядок: **правка смоука пришла после мержа** — в самой ветке
   цикла расхождение не заметили (§9, L6).
+- 🔬 Цикл 8 — **56 коммитов** в диапазоне `7b382d8..6562a86` (ветка `cycle/08-test-env-isolation`,
+  смёржена в `develop`), две фазы в одной ветке: фаза 1 — изоляция прогонов друг от друга, фаза 2 —
+  параллелизм внутри прогона (потребована заказчиком по ходу цикла). Заголовки несут идентификаторы
+  задач архитектуры (`T8-B2`, `T8-P7`, `T8-P11a`) либо номера находок ревью (`N1/N2/N20`,
+  `B1/B2`). Отдельно стоит заметить коммит `36d56f4` «Undo the API changes that cycle 8 promised not
+  to make» — цикл поймал сам себя на нарушении собственного запрета трогать HTTP-контракт и откатил
+  правки.
+  ⚠️ **Процессная находка цикла, не связанная с кодом:** дважды за цикл два агента работали в
+  **одном git-чекауте одновременно** и затирали друг другу незакоммиченные правки (следы — коммит
+  `500362d` «Salvage the sweeper work the network outage interrupted»). Рабочий вывод, записанный
+  здесь для следующих циклов: **отдельный `git worktree` на роль**. Сам цикл 8 это уже использовал
+  на приёмке — второй прогон гнали из `git worktree add --detach`.
 - Цикл 3 — **26 коммитов** (`f3adc6e..7a551eb`), в отличие от цикла 2, уехавшего одним коммитом
   `0492092`. Заголовки мелких коммитов несут идентификатор задачи из ARCHITECTURE (`T-B1`, `T-F5`, …)
   и историю из SPEC (`US-42`), ломающие изменения помечены прямо в заголовке (`BREAKING #1`,
@@ -1727,15 +1850,24 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 ### Что есть — три набора
 
-| Набор | Проект/каталог | Нужна БД? | Команда | Объём |
+| Набор | Проект/каталог | Что нужно на машине | Команда | Объём |
 |---|---|---|---|---|
-| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | нет | `dotnet test ServiceBooking.UnitTests` | ⚖️ **591** запуск (было 488) |
-| **Функциональные (API) тесты** | `ServiceBooking.Tests` | **да, PostgreSQL** | `dotnet test ServiceBooking.Tests` | ⚖️ **465** запусков (было 449) |
-| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | нет | `npm run test:run` (в `frontend/`) | ⚖️ **181** тест (было 100), 32 файла |
+| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | ничего | `dotnet test ServiceBooking.UnitTests` | 🔬 **691** запуск (было 591) |
+| **Функциональные (API) тесты** | `ServiceBooking.Tests` | 🔬 **запущенный Docker** (не PostgreSQL!) | `dotnet test ServiceBooking.Tests` | **465** запусков |
+| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | Node 20 | `npm run test:run` (в `frontend/`) | **181** тест, 32 файла |
 
-Количества посчитаны статически по атрибутам `[Fact]`/`[Theory]`+`[InlineData]` и вызовам `it(...)`
-и совпадают с фактическим прогоном на `071fc11`. В `ServiceBooking.Tests` атрибуты идут парой
-`[Fact, TestCase("ID")]` — голого `[Fact]` там не встретить, искать надо `[Fact`.
+🔬 **Главное изменение цикла 8 для всех, кто прогоняет тесты: заранее поднятая PostgreSQL больше не
+нужна и не используется — нужен Docker.** Прогон сам поднимает контейнер `postgres:16-alpine` на
+свободном порту, заводит в нём свои одноразовые базы и убирает их за собой. Дефолтной строки
+подключения в коде **нет вовсе**: нет Docker и нет явно заданного сервера — прогон отказывается
+стартовать с объяснением, **ничего не удаляя**. Полное человеческое руководство —
+🔬 **`docs/testing-isolation.md`** (~33 КБ), оно подробнее этого раздела и рассчитано на того, кто
+встретил красный прогон.
+
+Количества посчитаны статически по атрибутам `[Fact]`/`[Theory]`+`[InlineData]` и вызовам `it(...)`.
+В `ServiceBooking.Tests` атрибуты идут парой `[Fact, TestCase("ID")]` — голого `[Fact]` там не
+встретить, искать надо `[Fact` (⚠️ один такой хит — внутри комментария в
+`LegalConsentVersionChangeTests.cs`, отсюда 450 вхождений при 449 реальных тестах).
 
 ⚖️ **Пропорция роста в цикле 5 обратная циклу 4:** фронтенд +81 (впервые обогнал функциональный
 набор), юнит +103, функциональный всего +16. Причина не в небрежности, а в предмете: цикл 5 менял
@@ -1819,7 +1951,25 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 побайтовая проверка, что старые токены каналов читаются**), `LegalConsentFilterTests` (7 — области
 блокировки), `PhotoQuotaTests` (8 — без `Forever`).
 
-| **Итого** | | ⚖️ **591 запуск** |
+🔬 **Файлы цикла 8** (9 новых, суммарно **100** запусков — весь прирост набора). Это первое в
+проекте покрытие **самой тестовой инфраструктуры**: раньше `ServiceBooking.Tests/Infrastructure/`
+не был покрыт ничем, и его ошибки проявлялись как необъяснимо красный CI (см. §9, урок цикла 4,
+пункт E). Тестируются `internal`-функции `ServiceBooking.TestKit` через
+`<InternalsVisibleTo Include="ServiceBooking.UnitTests" />` в его `.csproj`:
+
+| Файл | Что покрывает | Запусков |
+|---|---|---|
+| `TestDatabaseNamingTests.cs` | имена `sbtest_<ключ>_<слот>`, якорь регэкспа, отказ удалять чужую/не-одноразовую базу | 25 |
+| `EnvStatusParallelConnectionBudgetTests.cs` | арифметика бюджета соединений и разбор `max_connections` (добавлено QA по итогам ревью — backend проверял её только руками) | 17 |
+| `SweeperParseAgeTests.cs` | разбор `--max-age` (`30m`/`2h`/`1d`, отказ вместо «подмету всё») | 13 |
+| `SweeperClassifyDatabaseRowTests.cs` | классификация базы «мёртвая / живая / неопределённая» | 10 |
+| `EnvStatusDoctorPortsAndProjectNameTests.cs` | имя compose-проекта из каталога и «мой порт vs порт соседа» | 9 |
+| `TestRunKeyTests.cs` | ключ прогона: формат 8 hex, переопределение переменной окружения | 9 |
+| `ResourceLabelsTests.cs` | метки `com.servicebooking.test*` на контейнерах/базах | 7 |
+| `EnvStatusClassifyContainerLivenessTests.cs` | «живой ли контейнер» | 5 |
+| `StableHashTests.cs` | FNV-1a — стабильный между процессами хеш (семя случайного порядка тестов) | 5 |
+
+| **Итого** | | 🔬 **691 запуск** |
 
 ### 7.2 Функциональные (API) тесты — `ServiceBooking.Tests`
 
@@ -1829,10 +1979,46 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
   `Microsoft.NET.Test.Sdk` 17.8.0, `coverlet.collector` 6.0.0 (покрытие настроено, но нигде не собирается).
 - **Характер:** поднимается **реальный HTTP-конвейер** приложения через
   `WebApplicationFactory<Program>` (`Infrastructure/CustomWebApplicationFactory.cs`, окружение `Testing`)
-  и **реальная PostgreSQL-база** `servicebooking_test`. Моков нет вообще.
-- **Изоляция:** `Infrastructure/TestDatabaseFixture.cs` один раз дропает базу (`EnsureDeletedAsync`),
-  затем старт приложения сам накатывает миграции и сидит роли/SuperAdmin. Основная коллекция — `"Api"`,
-  параллелизм отключён (`AssemblyInfo.cs`).
+  и **реальная PostgreSQL-база**. Моков нет вообще.
+- 🔬 **Изоляция — переделана целиком в цикле 8, это главное, что нужно знать про этот набор:**
+  - **Свой Postgres на прогон.** `TestRunEnvironment` (один на процесс) поднимает контейнер
+    `postgres:16-alpine` через Testcontainers на **динамическом** порту (`mode=container`) либо
+    использует внешний сервер из `SERVICEBOOKING_TEST_CONNECTION` (`mode=external` — так работает
+    CI). Контейнер живёт весь прогон; уборка привязана к `AppDomain.ProcessExit`, страховка —
+    сторож Testcontainers (Ryuk) и `TestKit sweep`.
+  - **Своя база на тест-класс.** `TestDatabaseFixture` стал `IClassFixture` (был `ICollectionFixture`):
+    каждый класс берёт свой слот (`TestSlot.NextForClass()` → `c01`, `c02`, …), клонирует базу
+    `sbtest_<ключ прогона>_<слот>` **из шаблона прогона** (`CREATE DATABASE … TEMPLATE`, ~0,2–0,4 с
+    вместо полного прогона миграций) и дропает её, когда класс закончил. Одновременно живых баз —
+    примерно «степень параллелизма + 1».
+  - **Коллекции `"Api"` и `"NotificationDispatch"` распущены**, общих для набора баз
+    `api`/`legal`/`dispatch` фазы 1 больше нет (имена оставлены зарезервированными).
+  - **Файловые корни — под `$TMPDIR/sb-test/<ключ прогона>/<слот класса>/`** (`public`, `private`,
+    `state`, `logs`, `legal`), а не в каталоге репозитория. Привязка к слоту **класса**, а не к типу
+    фабрики: иначе 27 классов бывшей коллекции `"Api"` дрались бы за один временный каталог при
+    копировании `App_Data/legal`.
+  - **`EnsureDeletedAsync` удалён.** Снос базы делает только `TestDatabaseLease` и только через
+    проверку имени `TestDatabaseNaming` — попытка удалить не-одноразовую базу даёт отказ
+    `TestSafetyException`, ничего не удалив.
+- 🔬 **Параллелизм включён: 4 потока локально, 2 в CI.** `ServiceBooking.Tests/xunit.runner.json`
+  (`parallelizeTestCollections: true`, `maxParallelThreads: 4`); в CI — `-- xUnit.MaxParallelThreads=2`
+  плюс `SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2` (второе значение видит только проверка бюджета
+  соединений внутри процесса, реальный параллелизм задаёт первое — их надо держать одинаковыми).
+  Единица параллелизма — класс; **внутри** класса тесты по-прежнему последовательны.
+  **Откат — одна закомментированная строка** `[assembly: CollectionBehavior(DisableTestParallelization = true)]`
+  в `ServiceBooking.Tests/AssemblyInfo.cs`; больше ничего править не нужно.
+- 🔬 **Порядок тестов внутри класса случайный** (`Infrastructure/RandomTestCaseOrderer.cs`, хеш
+  FNV-1a из `TestKit.StableHash`) — чтобы вскрывать зависимости «тест B проходит только после теста
+  A». Семя печатается один раз за прогон и повторяется переменной
+  `SERVICEBOOKING_TEST_ORDER_SEED=<семя>`. Порядок **между** классами семенем не управляется.
+- 🔬 **Fail-fast по бюджету соединений.** До первого теста считается
+  `P × 2 хоста × PoolMaxSize(8) + 4` и сверяется с `max_connections` сервера (в контейнере поднят до
+  300); не сходится — прогон падает сразу с тремя вариантами действий, а не «connection limit
+  exceeded» на трёхсотом тесте. Тот же расчёт заранее показывает
+  `TestKit doctor` (проверка `parallel-connection-budget`).
+- 🔬 **Замеренный эффект (приёмка, `ARCHITECTURE_CYCLE8_PHASE2.md` §98.4):** локальный прогон
+  **178 с → медиана 46,2 с** (~3,6× к последовательному); 13/13 зелёных прогонов (10 локально +
+  3 в CI), ни одного `[Skip]`, ни одного теста, возвращённого в последовательный режим.
 - **Дополнительные фабрики** (каждая поднимает **свой** хост поверх той же базы):
   - ⭐ `Infrastructure/RateLimitTestFactory.cs` — хост с жёсткими лимитами. Основная фабрика в
     `Testing` поднимает все `RateLimits:*` до 10000/мин именно для того, чтобы остальные сотни тестов
@@ -1848,7 +2034,8 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
     которой функциональный набор «починился» почти механически — и одновременно причина, по которой
     он **не мог** поймать расхождение со смоук-скриптом (§9, L6).
   - 🆕 `Infrastructure/NotificationTestFactory.cs` — хост на тест для тестов каналов.
-  - 🆕 `Infrastructure/NotificationTestBase.cs` — общая база в **той же** коллекции `"Api"`.
+  - 🆕 `Infrastructure/NotificationTestBase.cs` — общий базовый класс (🔬 коллекции `"Api"` больше
+    нет; идентичность суперадмина база берёт у фабрики, а не из константы).
   - 🆕 **`Infrastructure/NotificationDispatchTestFactory.cs` — первая в проекте тестовая
     инфраструктура с РЕАЛЬНО тикающим `ScheduledTaskRunner`.** До цикла 4 раннер в тестах был выключен
     целиком, и его собственное поведение (advisory lock, бюджет, частичный проход) проверить было
@@ -1858,10 +2045,26 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
     последняя). Экземпляр **на каждый тест**, не общий. Реальный сетевой вызов через этот хост
     невозможен и без подмены — `Notifications:Provider=logging` уже это гарантирует; подмена нужна
     для наблюдаемости и мгновенности, а не для безопасности.
-    Тесты этой фабрики вынесены в **отдельную коллекцию** `"NotificationDispatch"` с
-    `DisableParallelization = true`.
-- **Строка подключения:** переменная окружения `SERVICEBOOKING_TEST_CONNECTION`, при её отсутствии —
-  литерал `Host=localhost;Database=servicebooking_test;Username=postgres;Password=` (пустой пароль).
+    🔬 Отдельной коллекции `"NotificationDispatch"` с `DisableParallelization = true` **больше нет**
+    — цикл 8 распустил её: эти тесты изолированы собственной базой класса, как и все остальные.
+- 🔬 **Строка подключения:** дефолта больше нет. `SERVICEBOOKING_TEST_CONNECTION` **переосмыслена
+  как строка к СЕРВЕРУ**, а не к базе — компонент `Database` из неё всё равно переписывается на
+  `postgres`, имена баз прогон выбирает сам. Если переменная не задана и Docker недоступен — прогон
+  отказывается стартовать. Остальные переменные (все необязательные):
+  `SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS`, `SERVICEBOOKING_TEST_ORDER_SEED`,
+  `SERVICEBOOKING_TEST_RUN_KEY` (ровно 8 hex), `SERVICEBOOKING_TEST_NO_TEMPLATE` (аварийный
+  выключатель клонирования), `SERVICEBOOKING_TEST_SEEDED_TEMPLATE`. `TESTCONTAINERS_RYUK_DISABLED`
+  **запрещена** — `doctor` отдельно проверяет, что её не выставили.
+- 🔬 **Общая настройка всех тестовых хостов — `Infrastructure/TestHostSettings.Apply`** (раньше ~60
+  строк `UseSetting` копипастой в каждой фабрике). Там же — закрытый словарь суперадминов **на
+  фабрику** (`api`, `ratelimit`, `ntf`, `uploads`, `dispatch`, `legal`): это прямое следствие урока
+  цикла 4 (общий суперадмин решал за всех, с какой версией документов он согласен).
+- 🔬 **Уникальные значения — `Infrastructure/TestData.cs`** (`fixture.Data.Phone()/Email()/Slug()/
+  Name()/Dir()`): один механизм на класс вместо пяти приёмов вразнобой, слот класса зашит в каждое
+  значение — по номеру телефона в логе видно, чей он.
+- 🔬 **Что прогон печатает первыми строками:** `run=` (ключ прогона), `mode=container|external`,
+  `server=`/`user=`, `parallel=`, семя порядка и пары «слот ↔ база». Машиночитаемая копия —
+  `TestResults/sb-test-run.json` (пишется лучшим усилием, отсутствие файла прогон не роняет).
 - **Окружение `Testing`** читает закоммиченный `appsettings.Testing.json`: планировщик фоновых задач
   **выключен**, лимиты загрузок и rate limiting подняты.
 - **Хелперы:** `Infrastructure/ApiTestBase.cs`, `JsonHelpers.cs`, `TestImages.cs`.
@@ -1895,11 +2098,14 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 | `Tests/UploadsStaticFilesTests.cs` | — | 2 |
 | 🆕 **`Tests/NotificationChannelsTests.cs`** | `NTF-C001…C018` (свой `NotificationTestFactory` на тест) | ⚖️ 20 (заявка требует ИНН и оферты) |
 | 🆕 **`Tests/NotificationWebhookUnsubscribeTests.cs`** | `NTF-W*`, `NTF-U*`, `NTF-L*` | 9 |
-| 🆕 **`Tests/NotificationCitiesTimeZoneTests.cs`** | `NTF-G001…G006` (коллекция `"Api"`) | 6 |
-| 🆕 **`Tests/NotificationQueueingTests.cs`** | `NTF-Q001…Q004` (коллекция `"Api"`) | ⚖️ 5 (ветка `AccountsOnly`) |
+| 🆕 **`Tests/NotificationCitiesTimeZoneTests.cs`** | `NTF-G001…G006` (🔬 бывш. коллекция `"Api"`) | 6 |
+| 🆕 **`Tests/NotificationQueueingTests.cs`** | `NTF-Q001…Q004` (🔬 бывш. коллекция `"Api"`) | ⚖️ 5 (ветка `AccountsOnly`) |
 | 🆕 **`Tests/NotificationDispatchExtraTests.cs`** | `NTF-D03…D05` (коллекция `"NotificationDispatch"`) | 3 |
 | 🆕 **`Tests/NotificationDispatchTests.cs`** | `NTF-D01…D02` (коллекция `"NotificationDispatch"`) | 2 |
-| **Итого** | | ⚖️ **465 запусков** |
+| **Итого** | | **465 запусков** |
+
+🔬 **Все указания на коллекции в таблице выше — историческая справка.** Цикл 8 распустил обе
+коллекции: каждый из 29 файлов теперь сам себе единица изоляции со своей базой и своим слотом.
 
 ⚖️ **`LegalPriorityTests.cs` — единственный новый функциональный файл цикла и самый важный для
 понимания цикла.** Он проверяет не эндпоинты, а **инварианты**, которые иначе некому защитить:
@@ -1922,24 +2128,42 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 ### Как запускать (для QA — базовый прогон)
 
+🔬 **Фреймворк и команда базового прогона — xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing`
+(`WebApplicationFactory`) + реальный Postgres в Docker; команда — `dotnet test ServiceBooking.Tests`.**
+Отдельного e2e/браузерного набора (Playwright, Cypress и т.п.) в проекте **нет** — ни пакета в
+`frontend/package.json`, ни каталога с такими тестами; «функциональные» здесь означает уровень API.
+Единственная проверка против живого собранного образа — bash-скрипт `deploy/ci/smoke.sh` (запускает
+CI-джоб `docker-build`, не тест-раннер).
+
 ```bash
-# Предусловие: доступен PostgreSQL на localhost:5432, пользователь postgres, ПУСТОЙ пароль.
-# Иначе — задать SERVICEBOOKING_TEST_CONNECTION со своей строкой подключения.
-# База servicebooking_test создаётся/пересоздаётся автоматически (EnsureDeletedAsync на старте).
+# 🔬 Предусловие изменилось: нужен ЗАПУЩЕННЫЙ DOCKER, а не PostgreSQL.
+# Ничего настраивать не надо — ни переменных окружения, ни строки подключения.
+# Прогон сам поднимает Postgres на свободном порту, заводит свои базы и убирает их за собой.
+# Проверить готовность среды, ничего не меняя и не удаляя:
+dotnet run --project ServiceBooking.TestKit -- doctor     # 0 — ок, 2 — есть непройденные проверки
 
 cd /Users/ikolomeets/RiderProjects/ServiceBooking
 dotnet build ServiceBooking.sln -warnaserror   # так же, как в CI
-dotnet test ServiceBooking.UnitTests     # быстрый, без БД — прогонять первым
-dotnet test ServiceBooking.Tests         # основной функциональный набор, нужна БД
+dotnet test ServiceBooking.UnitTests     # быстрый, без БД и без Docker — прогонять первым
+dotnet test ServiceBooking.Tests         # основной функциональный набор, нужен Docker
 
 cd frontend && npm ci && npm run lint && npx tsc --noEmit && npm run test:run
 ```
 
-Числа последнего фактического прогона (на `071fc11`, выполнял не автор этого документа):
-`dotnet build … -warnaserror` — **0 warnings / 0 errors**; `ServiceBooking.UnitTests` — **591/591**;
-`ServiceBooking.Tests` — **465/465**; `npm run test:run` — **181/181**; `tsc --noEmit` — чисто;
-`npm run build` — успешно. Отдельного набора e2e/браузерных тестов в проекте **нет** — базовый
-прогон QA это `ServiceBooking.Tests` (xUnit + `WebApplicationFactory` + реальная PostgreSQL).
+Полезное при разборе красного прогона (подробности — `docs/testing-isolation.md`):
+
+```bash
+SERVICEBOOKING_TEST_ORDER_SEED=<семя из лога> dotnet test ServiceBooking.Tests   # повторить порядок
+dotnet test ServiceBooking.Tests -- xUnit.MaxParallelThreads=1                   # гонка или поломка?
+dotnet run --project ServiceBooking.TestKit -- status            # что живо на машине
+dotnet run --project ServiceBooking.TestKit -- sweep             # сухой прогон уборки, ничего не трогает
+dotnet run --project ServiceBooking.TestKit -- sweep --apply     # удалить только мёртвое
+```
+
+Числа приёмки цикла 8 (на ветке цикла, финальный коммит `691cf96`; выполнял не автор этого
+документа): `ServiceBooking.UnitTests` — **691/691**; `ServiceBooking.Tests` — **465/465**, 13
+зелёных прогонов подряд (10 локально + 3 в CI), медиана 46,2 с;
+`npm run test:run` — **181/181**; `tsc --noEmit` — чисто; `npm run build` — успешно.
 
 🆕 **Важно для QA, прогоняющего базовый набор:** сетевых вызовов наружу функциональный набор не
 делает — `Notifications:Provider` в `Testing` остаётся `logging`, транспорт-заглушка. Ни одного
@@ -1989,7 +2213,18 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 
 - **Нет e2e-тестов через браузер.** Ни Playwright, ни Cypress. «Функциональные» здесь = API-уровень.
   Ближайшее к e2e — `deploy/ci/smoke.sh`: bash + curl против **живого контейнера** (health, регистрация,
-  загрузка аватара), запускается CI-джобом `docker-build`, а не тест-раннером.
+  загрузка аватара), запускается CI-джобом `docker-build`, а не тест-раннером. 🔬 Цикл 8 этого не
+  изменил; скрипт лишь перестал хардкодить порт (`BASE_URL=http://localhost:${SB_API_PORT:-5000}`).
+- 🔬 **Проверка HTTP-поверхности по OpenAPI-инварианту в CI НЕ автоматизирована.** Файл
+  `contracts/cycle8/servicebooking-invariant.openapi.yaml` существует и описывает семь операций,
+  которые цикл 8 обязан был не сломать, но запускается он **вручную**
+  (`npx @redocly/cli lint …`, `pipx run schemathesis run … --base-url …`) — шага в `ci.yml` нет,
+  пакеты в `package.json` не добавлены. Артефакты schemathesis добавлены в `.gitignore`
+  (`.schemathesis/`), то есть инструментом пользовались локально.
+- 🔬 **Сам `ServiceBooking.TestKit` покрыт юнит-тестами частично.** Покрыты чистые функции (имена,
+  ключ, метки, бюджет, классификация, разбор `--max-age`); **не покрыты** пути, требующие Docker и
+  живого Postgres: `TestServerLease`, клонирование/дроп в `TestDatabaseLease`, реальный
+  `sweep --apply`. Они проверялись руками на приёмке.
 - **Покрытие фронтенда остаётся точечным** — см. §9.18.
 - 🚀 **Ручной чек-лист живых проверок появился** — `DEPLOY.md` §16, семь пунктов, все закрыты с
   датами и результатами (§10.4). Автотестами эти сценарии по-прежнему не покрыты.
@@ -2030,7 +2265,7 @@ pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `t
 
 | Job | Что делает |
 |---|---|
-| `backend` | сервис-контейнер `postgres:16` c health-check; `SERVICEBOOKING_TEST_CONNECTION` указывает на него; кеш `~/.nuget/packages`; `dotnet restore` → **`dotnet build … -c Release -warnaserror`** → `dotnet test ServiceBooking.UnitTests` (быстрый, без БД, идёт первым) → `dotnet test ServiceBooking.Tests` |
+| `backend` | сервис-контейнер `postgres:16` c health-check; 🔬 `SERVICEBOOKING_TEST_CONNECTION` указывает на **сервер** (`Database=postgres`), базы прогон заводит свои — Docker-in-Docker не нужен; 🔬 шаг «Derive test run key» складывает `GITHUB_RUN_ID` с хешем `GITHUB_JOB` в 8 hex (`SERVICEBOOKING_TEST_RUN_KEY`), чтобы два джоба одной сборки не столкнулись на одинаковых именах баз; 🔬 `SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2`; кеш `~/.nuget/packages`; `dotnet restore` → **`dotnet build … -c Release -warnaserror`** → `dotnet test ServiceBooking.UnitTests` (быстрый, без БД, идёт первым) → 🔬 `dotnet test ServiceBooking.Tests --no-build -c Release -- xUnit.MaxParallelThreads=2` → 🔬 `bash deploy/ci/check-image-pins.sh` |
 | `frontend` | Node 20 c npm-кешем; `npm ci` → ⭐ **`npm run lint`** (ESLint) → `npx tsc --noEmit` → `npm run test:run` → `npm run build` (с `VITE_SMARTCAPTCHA_SITEKEY` из **переменной репозитория**, не секрета — site-ключ публичен) → ⭐ **выгрузка артефакта `frontend-dist-<sha>`** (только для `master`/`release-candidate`/`develop` — веток, с которых деплоят; retention 30 дней) |
 | `docker-build` | ⭐ теперь **не только собирает, но и запускает**: `docker build` → поднимает `postgres:16-alpine` в отдельной docker-сети → запускает образ с `ASPNETCORE_ENVIRONMENT=Production` и полным набором переменных из `DEPLOY.md` → `deploy/ci/smoke.sh` → `docker logs` при любом исходе |
 
@@ -2051,7 +2286,14 @@ pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `t
   Скрипт запускается и руками: `BASE_URL=http://localhost:${SB_API_PORT:-5000} deploy/ci/smoke.sh`.
   В самом `ServiceBooking.API/Dockerfile` вверху стоит предупреждение: **не менять тег на `-alpine`**.
 
-Чего в CI нет: `dotnet format --verify-no-changes` (см. §9), сбора покрытия, **авто**деплоя —
+🔬 **Цикл 8 добавил в `backend` пятый шаг — `deploy/ci/check-image-pins.sh`:** быстрый bash,
+краснеющий, если мажорная версия образа Postgres разошлась между
+`ServiceBooking.TestKit/TestInfrastructure.cs`, `docker-compose.yml`, `docker-compose.prod.yml` и
+самим `ci.yml`. Тестов у самого скрипта нет.
+
+Чего в CI нет: `dotnet format --verify-no-changes` (см. §9), сбора покрытия, 🔬 проверки
+OpenAPI-инварианта (`@redocly/cli lint` / `schemathesis` из `contracts/cycle8/` — только вручную),
+**авто**деплоя —
 `ci.yml` только проверяет и складывает артефакт фронта. Деплой — отдельные workflow, запускаемые
 человеком кнопкой (ниже).
 
@@ -2301,6 +2543,82 @@ Serilog (`ServiceBooking.API/logs/**`), артефакты тестовых пр
 номерами (P0-A…P0-E), чтобы ссылки вида «§9.17» из других документов остались валидными.
 ⚖️ **Цикл 5 поступил так же** — его блок идёт ниже с номерами L1…L6, нумерация 1–30 и P0-A…P0-E
 не тронута.
+🔬 **Цикл 8 поступил так же** — его блок идёт **первым**, с номерами T8-1…T8-8. Нумерация 1–30,
+P0-A…P0-E и L1…L6 не тронута; ⚠️ обратите внимание, что буквы `L` и `M` внутри блока цикла 8 — это
+**номера находок ревью фазы 2**, а не пункты L1…L6 цикла 5, это разные пространства имён.
+
+---
+
+**🔬 P0-цикл-8 — что оставил после себя цикл изоляции тестовой среды**
+
+Цикл 8 **закрыл** главный пункт долга прошлой редакции (§9.24d и урок P0-цикл-4 E — «прогон молча
+уничтожает и пересоздаёт разделяемый ресурс»): общей базы `servicebooking_test` больше нет,
+`EnsureDeletedAsync` удалён, два прогона на одной машине проверены на приёмке и не мешают друг
+другу. Ниже — то, что он оставил.
+
+**T8-1. 🔴 Фиксированные `Task.Delay(1200)` в тестах правовых документов — самая хрупкая точка
+набора.** `ARCHITECTURE_CYCLE8_PHASE2.md` §98.5 (находка ревью L8, подтверждённая прогоном):
+тесты `LegalConsentVersionChangeTests` синхронизируются **фиксированными снами**, неявно
+привязанными к `Legal:ReloadSeconds=1`. Работает, пока машина не занята. Из **одиннадцати** прогонов
+приёмки одно падение (1 тест из 465) случилось именно в прогоне, шедшем **одновременно со вторым
+прогоном** на той же машине; повтор с тем же семенем в тишине — зелёный, то есть причина не в
+порядке тестов, а в компрессии времени. Следствие: **порог времени US-101 замерен на незанятой
+машине и на занятой не гарантируется**; прогон тестов хочет машину в своё распоряжение — изоляция
+даёт независимость данных, но не независимость от нехватки CPU. Правильное лечение — заменить сны
+на **ожидание условия** («дождись версии X» с опросом), это около десятка мест и работа отдельного
+цикла, к изоляции отношения не имеющая.
+
+**T8-2. Неблокирующие находки ревью фазы 2, сознательно не закрытые в цикле.** Все проверены по
+коду на `6562a86` и всё ещё актуальны:
+
+| № | Что | Где | Почему это важно / чем компенсировано |
+|---|---|---|---|
+| **M2** | Перед `DROP DATABASE` пул Npgsql **не сбрасывается**: контракт `ARCHITECTURE_CYCLE8_PHASE2.md` §91.5 п. 3 предписывает «диспознуть хост → `NpgsqlConnection.ClearAllPools()` → `DROP … WITH (FORCE)`», в коде `ClearAllPools` нет нигде — только `WITH (FORCE)` | `ServiceBooking.TestKit/TestDatabaseLease.cs` (`DropUncheckedAsync`), `Tests/Infrastructure/TestDatabaseFixture.cs` | На практике `WITH (FORCE)` сам отстреливает чужие сессии, поэтому не падает. Но контракт **не соблюдён буквально**, и если `FORCE` когда-нибудь уберут, дроп начнёт падать на живых соединениях пула |
+| **M3** | Связка «слот ↔ тест-класс» описана и в контракте, и в JSON-схеме (`testClass`), но `TestClass` **везде передаётся `null`** (три места: `EnvStatus.cs:512`, `Sweeper.cs:265`, `Sweeper.cs:449`) | `ServiceBooking.TestKit/` | По повисшей базе `sbtest_<ключ>_c07` **невозможно узнать, чей это класс** — ровно в тот момент, когда это нужно. Причина техническая: xUnit v2 не передаёт фикстуре тип её класса; пара логируется тестом, но в метку не попадает |
+| **M4** | Бюджет соединений считается как `P × 2 хоста × 8` (`RequiredConnections`, 68 при P=4), хотя **оба хоста класса ходят по одной строке подключения и делят один пул Npgsql** | `TestKit/EnvStatus.cs`, `Tests/Infrastructure/TestRunEnvironment.cs` (формула **продублирована** в двух местах) | Ошибка в безопасную сторону — оценка завышена (замер на приёмке дал пик 58–59 при расчётных 68). Но **обоснование числа 8 не соответствует модели**, поэтому и объяснение в сообщении об ошибке вводит в заблуждение |
+| **M7** | Контейнер убирается только по `AppDomain.ProcessExit`; при `kill -9` в режиме `external` базы живут до `--max-age` (2 ч) | `Tests/Infrastructure/TestRunEnvironment.cs` | Компенсировано Ryuk'ом (контейнеры) и `TestKit sweep` (базы), но это **ручной шаг**, а не автоматическая уборка |
+| **L1** | Аварийный режим `SERVICEBOOKING_TEST_NO_TEMPLATE=1` прогоняет миграции каждого класса **внутри общего семафора клонирования** (`CloneGate`), то есть сериализует миграции всех классов | `TestKit/TestDatabaseLease.cs` (`CreateClassDatabaseAsync`) | Аварийный режим станет ещё и очень медленным ровно тогда, когда им придётся воспользоваться |
+| **L5** | Слот в JSON-схеме ограничен `^(template\|api\|legal\|dispatch\|c[0-9]{2,3})$`, а `TestSlot.NextForClass()` формата `c{N:D2}` рано или поздно выдаст `c1000` | `contracts/cycle8/testkit-status.schema.json` vs `Tests/Infrastructure/TestSlot.cs` | Практически недостижимо (29 тест-классов), но `--json` перестанет соответствовать собственной схеме без предупреждения. `TestDatabaseNaming` (защита от сноса) при этом шире и не сломается |
+| **L6** | Приёмочный греп № P1 (`ARCHITECTURE_CYCLE8_PHASE2.md` §99.5) ожидает **пусто** от `grep -rn "DisableTestParallelization" ServiceBooking.Tests/AssemblyInfo.cs`, а там теперь лежит **закомментированная** строка отката | `ServiceBooking.Tests/AssemblyInfo.cs` | Греп как приёмочная проверка сломан: он краснеет на сознательно оставленном механизме отката. Чинить надо греп, а не код |
+
+**T8-3. Ограничение среды: macOS + colima.** Testcontainers ищет сокет Docker в
+`/var/run/docker.sock`, colima его там не создаёт, и подъём падает на Ryuk
+(`invalid mount config for type bind …`). Лечится **двумя переменными, без отключения Ryuk**:
+`DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` и
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`. На Docker Desktop и в CI они не нужны
+и ничего не меняют. ⚠️ Rider, запущенный из Dock/Finder, переменные из `~/.zshrc` **не наследует** —
+их надо задавать в конфигурации запуска IDE. Записано в `docs/testing-isolation.md`.
+
+**T8-4. Защита от разрушительных действий работает по ИМЕНИ базы, а не по адресу сервера.** Если
+подсунуть в `SERVICEBOOKING_TEST_CONNECTION` боевой хост, прогон создаст там свои `sbtest_*` и
+удалит только их — боевая база уцелеет, но мусор и нагрузка на боевом сервере появятся. Именно
+поэтому прогон печатает `server=`/`user=` первой строкой.
+
+**T8-5. OpenAPI-инвариант есть, но в CI не проверяется.** `contracts/cycle8/servicebooking-invariant.openapi.yaml`
+— первый машиночитаемый контракт API в репозитории, но запускается только вручную
+(`@redocly/cli`, `schemathesis`); шага в `ci.yml` нет, пакетов в `package.json` нет. Схема покрывает
+**семь** операций, а не весь API, и правило приоритета в ней — «расхождение схемы и кода означает,
+что сломан код» — верно только для цикла 8 и требует пересмотра, как только API начнут менять.
+
+**T8-6. Покрытие самого TestKit неполное.** Чистые функции покрыты (100 новых юнит-тестов), но пути,
+требующие Docker и живого Postgres (`TestServerLease`, клонирование и дроп в `TestDatabaseLease`,
+реальный `sweep --apply`), проверялись **только руками на приёмке**. Ошибка в них проявится как
+загадочно красный прогон — тот самый класс дефектов, ради которого цикл затевался.
+
+**T8-7. Правка боевого кода за цикл — две строки смысла, обе в `Program.cs`, обе стоит знать.**
+(1) каталог логов стал конфигурируемым (`Logs:Directory`, дефолт `"logs"` — поведение
+Development/Production дословно прежнее); (2) в окружении **`Testing`** Serilog больше не
+захватывает процессный `Log.Logger` (`preserveStaticLogger: true`), а `UseSerilogRequestLogging`
+получил **явный** `opts.Logger` из DI этого хоста. Вне `Testing` поведение не меняется, потому что
+там хост в процессе всегда один. ⚠️ Это значит, что **окружение `Testing` теперь ведёт себя иначе,
+чем прод, в одном конкретном аспекте** — логирование; если когда-нибудь тест начнёт проверять
+поведение статического логгера, он будет проверять не то, что работает на проде.
+
+**T8-8. 🧠 Процессный урок цикла.** Дважды за цикл **два агента работали в одном git-чекауте
+одновременно** и затирали друг другу незакоммиченные правки (след — коммит `500362d` «Salvage the
+sweeper work the network outage interrupted»). Вывод, применимый к любому следующему циклу:
+**отдельный `git worktree` на роль**. Сам цикл 8 это уже использовал на приёмке — второй
+одновременный прогон гнали из `git worktree add --detach`.
 
 ---
 
@@ -2589,10 +2907,13 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     привязку по QR. Защит две (отпечаток + отказ старта, обязательное подтверждение ротации), обе
     **обнаруживают** проблему, но ни одна её не **восстанавливает**.
 
-24d. **Тесты уведомлений делят ту же базу `servicebooking_test`, что и остальные 400+.** Отдельная
-    коллекция `"NotificationDispatch"` отключает параллелизм у себя, но база одна на весь прогон, и
-    новая фабрика поднимает поверх неё свой хост. Именно это уже дало три падения CI (P0-цикл-4,
-    пункт E). Конструкция осталась — изменились только тесты, которые стали фильтровать своё.
+24d. ✅ **ЗАКРЫТО циклом 8.** ~~Тесты уведомлений делят ту же базу `servicebooking_test`, что и
+    остальные 400+; отдельная коллекция `"NotificationDispatch"` отключает параллелизм у себя, но
+    база одна на весь прогон~~. 🔬 Базы `servicebooking_test` больше нет: **у каждого тест-класса
+    своя одноразовая база**, обе коллекции (`"Api"` и `"NotificationDispatch"`) распущены,
+    `EnsureDeletedAsync` удалён (§7.2). Класс дефектов, давший три падения CI в конце цикла 4
+    (P0-цикл-4, пункт E), устранён конструктивно, а не дисциплиной тестов. Остаточная хрупкость
+    этого же набора теперь другая — фиксированные `Task.Delay` в правовых тестах, см. T8-1.
 
 24e. **`AdminController` и `CompaniesController` продолжили расти:** админский контроллер получил
     +211 строк (каналы, оплаты, параметры платформы), компании — +125 (города и зоны). Сервисного
@@ -2718,6 +3039,14 @@ Blazor-проект и мёртвые страницы фронта; расхо�
 Раздел нужен, чтобы следующие агенты **дополняли существующее, а не заводили параллельные версии**.
 Всё перечисленное лежит в репозитории.
 
+🔬 **Состояние на `6562a86`.** `README.md` и `CHANGELOG.md` правятся product-analyst'ом
+**параллельно с этой редакцией** — конкретные формулировки и размеры смотреть прямо в них.
+Цикл 8 добавил в документацию: `docs/testing-isolation.md` (новый, для команды),
+`docs/README.md` (новый раздел «Не для пользователей: документы команды проекта»),
+`contracts/cycle8/` (**первые машиночитаемые контракты в репозитории**), четыре документа цикла
+(`ARCHITECTURE_CYCLE8*.md`, `API_CONTRACT_CYCLE8*.md`), `SPEC_CYCLE5_LEGAL.md` (восстановленная
+спека цикла 5), `.env.dev.example`, плюс точечные правки `TEST_CATALOG.md` и `DEPLOY.md`.
+
 🆕 **Расхождение продуктовой документации с фактом развёртывания, о котором предупреждала прошлая
 редакция, ЗАКРЫТО** коммитом `d4137dd`. ⚖️ Продуктовое описание цикла 5 вносится в `README.md` и
 `CHANGELOG.md` **параллельно, product-analyst'ом**, и этим документом не фиксируется — актуальное
@@ -2760,6 +3089,9 @@ CSP устроена так, какую ветку катим и почему Al
 **§11.2b «обязательный шаг после восстановления: повторно применить удаления»**; новый
 **§11.4 «уничтожение по срокам хранения — сначала сухой прогон»** с переключателем `RETENTION_DRY_RUN`;
 процедура ротации ключа переставлена так, что **начинается с `ClientHealthNotes`**.
+🔬 Цикл 8 дописал в `DEPLOY.md` ровно одну врезку (+6 строк) в §3: **«не путайте с `.env` рабочей
+копии разработчика»** — на боевой машине `docker-compose.prod.yml` не читает ни одной переменной
+`SB_*`, образец боевого файла по-прежнему `.env.production.example`.
 
 ### 10.2 Развёрнутая пользовательская документация
 
@@ -2778,6 +3110,11 @@ CSP устроена так, какую ветку катим и почему Al
 | `docs/schedule.md` | общая: расписание, перерывы, расчёт свободного времени (единственный файл `docs/`, не тронутый циклом 3) |
 | `docs/faq.md` | частые вопросы **и честный список ограничений** |
 | ⚖️ `docs/incident-runbook.md` (~13 КБ) | **утечка ПДн: что делать прямо сейчас** — по фазам, с акцентом на сроки уведомления РКН и субъектов. Документ для команды, не для пользователя |
+| 🔬 **`docs/testing-isolation.md`** (~33 КБ) | **«Запуск тестов и локальная среда»** — тоже документ **для команды, не для пользователя**. Структура: «Коротко» → **«Что изменилось (если вы работали с репозиторием до цикла 8)»** (таблица было/стало) → «Что нужно на машине» → «Как прогнать тесты» (консоль и Rider) → «Что печатает прогон» → **«Если прогон красный или не стартует»** (по симптомам: отказ стартовать, отказ удалять базу, бюджет соединений, «то зелёный, то красный», мусор после прерванного прогона) → «Параллелизм» → «Случайный порядок тестов» → «Инструмент диагностики `ServiceBooking.TestKit`» (`status`/`sweep`/`doctor`) → «Две рабочие копии на одной машине» → **таблица переменных окружения тестов** → «Как это устроено в CI» → **«Известные ограничения среды»** (macOS + colima) → «Куда смотреть дальше». Это **первый документ проекта, адресованный тому, кто встретил красный прогон**, и он подробнее §7 этого файла |
+
+🔬 `docs/README.md` получил в цикле 8 новый последний раздел — **«Не для пользователей: документы
+команды проекта»** со ссылками на `testing-isolation.md` и `incident-runbook.md`: до этого оба
+эксплуатационных документа лежали в пользовательском каталоге без пометки.
 
 Отдельного сайта документации и справочного раздела внутри приложения **нет**. ⚖️ Внутри приложения
 пользователю доступны правовые документы — страницы `/privacy`, `/terms`, `/terms-owner`,
@@ -2797,10 +3134,22 @@ CSP устроена так, какую ветку катим и почему Al
 согласия», добавлены `GET /api/legal/texts/{key}`, `GET|POST /api/profile/consents` и отдельный
 подраздел про режим `T-24` (проверка согласия на передачу привлекаемому лицу).
 
-**OpenAPI/Swagger-файла в репозитории нет** — схема генерируется Swashbuckle во время работы и
-доступна только в Development (`/swagger`). Postman-коллекции нет. Генерации TS-типов из схемы нет.
-⚖️ Цикл 5 этого не изменил, хотя семь ломающих изменений подряд — ровно тот случай, когда
-сгенерированные типы поймали бы расхождение раньше человека.
+🔬 **Контракт цикла 8** — `API_CONTRACT_CYCLE8.md` (~27 КБ, §82–§88) и
+`API_CONTRACT_CYCLE8_PHASE2.md` (~17 КБ). Это **контракт не HTTP-эндпоинтов, а среды**: §83 прямо
+фиксирует, что цикл не добавляет и не меняет ни одного эндпоинта; §85 — таблица переменных
+окружения (`SB_*` для dev-стека и `SERVICEBOOKING_TEST_*` для прогона), §86 — CLI `TestKit` и схема
+его JSON-вывода.
+
+🔬 **Утверждение прошлой редакции «OpenAPI/Swagger-файла в репозитории нет» БОЛЬШЕ НЕ ВЕРНО.**
+Цикл 8 положил **первые машиночитаемые контракты**:
+
+| Что | Путь | Формат | Структура |
+|---|---|---|---|
+| 🔬 Инвариант HTTP-поверхности | `contracts/cycle8/servicebooking-invariant.openapi.yaml` (~24 КБ) | **OpenAPI 3.1 (YAML)** | `info` (version `8.0.0-invariant`) → `servers` → `paths` для **семи** операций, отобранных по признаку «цикл 8 технически способен это сломать»: `/api/health/live`, `/api/health/ready`, `/api/legal/documents`, `/api/auth/register`, `/api/auth/login`, `/api/profile/avatar`, `/uploads/{path}`. Снят с `7b382d8`. **Это НЕ полное описание API** — записано прямо в шапке файла; полное по-прежнему `API_DOCUMENTATION.md` + контракты циклов + живой Swagger. Версии правовых документов в схему **сознательно не зашиты** (чтобы не воспроизвести дефект §9 L6). Проверяется вручную: `npx @redocly/cli lint …`, `pipx run schemathesis run … --base-url …`; ⚠️ **шага в CI нет** (§9 T8-5) |
+| 🔬 Схема вывода CLI TestKit | `contracts/cycle8/testkit-status.schema.json` (~17 КБ) | **JSON Schema** | описание `--json` для `status`/`sweep`/`doctor`: `schemaVersion`, ресурсы (`kind` container/database/directory, `runKey`, `slot`, `testClass`, `workdir`, возраст, живость), проверки доктора, блок `parallelism`. ⚠️ Поле `testClass` схема допускает, но код **всегда пишет `null`** (§9 T8-2, M3), а `pattern` слота ограничен `c[0-9]{2,3}` (§9 T8-2, L5) |
+
+Postman-коллекции по-прежнему нет. Генерации TS-типов из схемы нет — и цикл 8 её не заводил,
+потому что осознанно не трогал HTTP-контракт.
 
 ### 10.4 Описания тест-кейсов
 
@@ -2820,7 +3169,7 @@ CSP устроена так, какую ветку катим и почему Al
 🆕 **Цикл 4 добавил раздел `## Notifications (US-27…US-63)`** с подразделами по файлам и указанием
 **коллекции**, в которой живёт каждый набор (это существенно — см. §9, урок про общие ресурсы):
 `NotificationChannelsTests` (`NTF-C001…C018`, своя фабрика на тест), `NotificationQueueingTests`
-(`NTF-Q001…Q004`, коллекция `"Api"`), `NotificationWebhookUnsubscribeTests`
+(`NTF-Q001…Q004`, коллекция `"Api"` — 🔬 распущена в цикле 8), `NotificationWebhookUnsubscribeTests`
 (`NTF-W*`/`NTF-U*`/`NTF-L*`), `NotificationDispatchTests` и `NotificationDispatchExtraTests`
 (`NTF-D01…D05`, коллекция `"NotificationDispatch"`), `NotificationCitiesTimeZoneTests`
 (`NTF-G001…G006`). В конце раздела — **явный подраздел «Не покрыто функциональными тестами этого
@@ -2842,8 +3191,21 @@ CSP устроена так, какую ветку катим и почему Al
   обновлён ещё раз (+116 строк). Замечание из каталога так и не убрали — читать его как
   актуальное нельзя.
 
+🔬 **Цикл 8 правил `TEST_CATALOG.md` только технически** (+20/−17 строк): преамбула и раздел
+«как запустить» больше не обещают заранее поднятую PostgreSQL и базу `servicebooking_test`, вместо
+этого — Docker и `sbtest_<ключ прогона>_<слот>`. **Описания кейсов не менялись**: набор
+функциональных тестов цикл не трогал (465 до и после). Нового раздела цикла 8 в каталоге нет, и это
+корректно — новых кейсов цикл не добавил, а 100 его юнит-тестов покрывают инфраструктуру, которую
+каталог не описывает.
+
 Отдельного `TESTPLAN.md`, каталога `docs/testing/` или ручных сценариев вне `TEST_CATALOG.md`
-в проекте **не найдено** (⚖️ перепроверено на `071fc11`; цикл 5 такого каталога не заводил).
+в проекте **по-прежнему не найдено** (🔬 перепроверено на `6562a86`; цикл 8 такого каталога не
+заводил). 🔬 Ближайшее к «описанию тест-плана» из нового — **`ARCHITECTURE_CYCLE8_PHASE2.md` §98.2
+(критерии приёмки числами) и §98.4 (фактический протокол приёмки: таблица из 10 прогонов с семенами,
+временами и результатами)**, плюс §99.5 — **список приёмочных грепов** (проверок кодовой базы
+командами `grep`, а не тестами). Это не каталог кейсов, но это единственное место, где записано,
+чем именно цикл 8 доказывал свою приёмку; ⚠️ греп № P1 из §99.5 сейчас не проходит буквально
+(§9 T8-2, L6).
 
 🚀 **Ручной чек-лист живых проверок теперь существует** — это `DEPLOY.md` §16 «Первый запуск на этой
 машине — что проверить вживую». Формат: markdown-чеклист (`- [x]`), семь пунктов, у каждого дата,
@@ -2857,7 +3219,11 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 
 | Документ | Размер | Что это |
 |---|---|---|
-| ⚖️ **`SPEC.md`** | ~163 КБ | **ЦИКЛ 5** «правовые основания продукта». Истории US-64…US-82, §16 — вопросы архитектору (на них отвечает §60 архитектуры) |
+| 🔬 **`SPEC.md`** | ~71 КБ | **ЦИКЛ 8** «изоляция тестовой и локальной среды». Истории US-83…US-101 (US-83…US-93 — фаза 1, изоляция прогонов; US-94…US-101 — фаза 2, параллелизм), §16 — вопросы архитектору |
+| 🔬 **`ARCHITECTURE_CYCLE8.md`** | ~88 КБ | **ЦИКЛ 8, фаза 1, разделы 61–81.** Ключевые ссылки из кода: §65.1/§76 CLI TestKit, §66 жизненный цикл сервера прогона, §68 шаблон и слоты, §69.2/§69.3 переосмысление `SERVICEBOOKING_TEST_CONNECTION` и монополия на `DROP DATABASE`, §70 уборка (Ryuk, sweeper, критерий «мёртвости»), §71 `TestHostSettings` и временные корни, §71.4 `Logs:Directory`, §73.3 порты и Vite, §74 пины образов и CI, §75 параметры эфемерного Postgres, §79 приёмочные грепы фазы 1 |
+| 🔬 **`ARCHITECTURE_CYCLE8_PHASE2.md`** | ~108 КБ | **ЦИКЛ 8, фаза 2, разделы 89–99.** §91 выбор единицы изоляции (база на тест-класс) и §91.5 три операционные ловушки клонирования, §92 механика xUnit (коллекция → `IClassFixture`), §93 параллелизм и бюджет соединений, §94 один механизм уникальности (`TestData`), §95.1 разбор статического состояния поимённо, §96 `Log.Logger` и правка `Program.cs`, **§98.4 протокол приёмки**, §99.5 приёмочные грепы, **§98.5 остаточная хрупкость (фиксированные паузы)** — ⚠️ физически лежит ПОСЛЕ §99 |
+| 🔬 **`API_CONTRACT_CYCLE8.md` / `API_CONTRACT_CYCLE8_PHASE2.md`** | ~27 / ~17 КБ | **ЦИКЛ 8, разделы 82–88 и продолжение.** Контракт среды, а не эндпоинтов: §83 «ни одного изменения HTTP», §85 таблица переменных окружения, §86 CLI и схема JSON |
+| 🔬 **`SPEC_CYCLE5_LEGAL.md`** | ~163 КБ | **сохранённая спека цикла 5** «правовые основания продукта» (истории US-64…US-82) — восстановлена первым действием цикла 8, потому что `SPEC.md` занят циклом 8 |
 | ⚖️ **`ARCHITECTURE_CYCLE5.md`** | ~154 КБ | **ЦИКЛ 5, разделы 41–60.** Ключевые ссылки из кода: §41 принципы цикла, **§43 правовой контент: документы, тексты интерфейса, маршруты**, **§44 модель данных цикла** (§44.2 журнал согласий, §44.3 заметка о здоровье, §44.4 обращения, §44.7 ретенция), §45 где вычисляется «текущее согласие» и почему не кешируется, §46 экран регистрации и owner-гейт, §47 отзыв согласия, §48 спецкатегории и шифрование, **§49 ретенция: сухой прогон и затирание**, §50 права субъекта, §51 реклама в шаблонах, **§52 страна сервера и спорный гейт T-24**, §53–54 таблица оснований обработки, **§55 карта регрессионного риска**, §57 конфигурация и приёмочные грепы, §58 правовые ограничения, §59 расхождения и что нужно от заказчика, §60 карта ответов на §16 SPEC |
 | ⚖️ **`API_CONTRACT_CYCLE5.md`** | ~52 КБ | **ЦИКЛ 5, разделы 38–53**, см. §10.3. Семь ломающих изменений пронумерованы |
 | ⚖️ **`LEGAL_REVIEW.md`** | ~205 КБ | **Юридическое заключение по продукту, редакция 4** — отдельный жанр, которого в проекте раньше не было. Структура: §0 оговорка о статусе → §1 резюме для заказчика → §2 что фактически обрабатывает продукт → §3–8 ответы на семь вопросов (41-ФЗ, роли по 152-ФЗ, передача данных GREEN-API и трансграничность, правомерность рассылки, документы и платная опция, права субъекта) → **§9 «то, чего не было в списке, но что существеннее части списка»** → **§10 что блокирует выпуск, а что можно делать параллельно** → §11 задачи для разработки (вход в SPEC цикла 5) → **§12 действия заказчика, которые команда закрыть не может** → §13 развилки для заказчика (в т.ч. §13.5 таблица сроков хранения, из которой взяты дефолты `Retention`) → §13-бис где лежат тексты и в каком они статусе → §14 источники по состоянию на 2026-09-21 → §15 повторная оговорка. ⚠️ Это **не заключение практикующего юриста** — см. §0 самого документа и L3 в §9 |
@@ -2872,12 +3238,16 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 | **`SPEC_APPENDIX_CHANNELS.md`** ⭐ | ~57 КБ | приложение к нему: исследование каналов доставки |
 
 **Соглашения об архиве (`docs/history/`) в репозитории по-прежнему нет**, каталога такого нет, в
-README оно не описано. ⚖️ **Циклы 4 и 5 решают задачу суффиксом в имени файла**
-(`*_CYCLE4.md`, `*_CYCLE5.md`, `SPEC_CYCLE3_PRODUCTION.md`, `SPEC_CYCLE4_NOTIFICATIONS.md`), так что
-документы **трёх последних циклов одновременно лежат в корне**, а `SPEC.md` без суффикса означает
-**цикл 5**, тогда как `ARCHITECTURE.md`/`API_CONTRACT.md` без суффикса — **цикл 3**. Это следует
-иметь в виду при любой ссылке «см. SPEC» или «см. §26».
-Документы цикла 5 **никуда не переносились** — переносить их некуда, поэтому эта редакция
-`CURRENT_STATE.md`, как и прошлая, ничего не архивировала.
+README оно не описано. ⚖️ **Циклы 4, 5 и 8 решают задачу суффиксом в имени файла**
+(`*_CYCLE4.md`, `*_CYCLE5.md`, `*_CYCLE8.md`, `SPEC_CYCLE3_PRODUCTION.md`,
+`SPEC_CYCLE4_NOTIFICATIONS.md`, 🔬 `SPEC_CYCLE5_LEGAL.md`), так что документы **четырёх последних
+циклов одновременно лежат в корне**, а `SPEC.md` без суффикса означает 🔬 **цикл 8**, тогда как
+`ARCHITECTURE.md`/`API_CONTRACT.md` без суффикса — **цикл 3**. Это следует иметь в виду при любой
+ссылке «см. SPEC» или «см. §26».
+🔬 Документы цикла 8 **никуда не переносились**: каталога `docs/history/` в проекте нет, конвенция
+проекта — суффикс, и документы цикла 8 уже ему следуют (`ARCHITECTURE_CYCLE8*.md`,
+`API_CONTRACT_CYCLE8*.md`). Единственное, что цикл 8 действительно «заархивировал» — спеку цикла 5,
+восстановив её из git в `SPEC_CYCLE5_LEGAL.md` перед тем, как занять `SPEC.md` собой. Поэтому эта
+редакция `CURRENT_STATE.md`, как и прошлая, ничего не переносила.
 Предыдущие редакции живут только в git-истории: SPEC цикла 2 — `git show 0492092:SPEC.md`,
 цикла 1 — `git show e6b746c:SPEC.md`, ещё более ранняя — `7c86ca2`.
