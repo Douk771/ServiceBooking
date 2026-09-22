@@ -6,6 +6,7 @@ import { bookingsApi } from '../../api/bookings'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
+import { getBookingErrorMessage } from '../../utils/bookingError'
 import { formatBookingServiceNames } from '../../utils/bookingServices'
 import type { Booking } from '../../types'
 
@@ -180,7 +181,12 @@ export function RescheduleModal({ booking, onClose }: Props) {
                   })}
                 </div>
               ) : slotsError ? (
-                <p className="text-center text-danger py-4 text-sm mb-6">Не удалось загрузить время. Попробуйте снова.</p>
+                // Same reader ManualBookingModal uses on the same endpoint: GET /api/bookings/slots
+                // answers with a bare string that says WHY there is no grid ("Мастер не оказывает
+                // услугу: …", "Service is not available", the rate limit) — a fixed "попробуйте
+                // снова" throws that away and leaves the operator guessing, which is the exact
+                // failure mode US-60 was about.
+                <p className="text-center text-danger py-4 text-sm mb-6">{getBookingErrorMessage(slotsError)}</p>
               ) : (
                 <p className="text-center text-muted py-4 text-sm mb-6">Нет доступных слотов на этот день</p>
               )}
