@@ -408,6 +408,8 @@ public class AdminBillingController(
             account, subscribedOptions.Select(o => o.Option).Concat(await db.SubscriptionOptions.ToListAsync()).DistinctBy(o => o.Id).ToList(),
             sub?.PlanConfig?.PricePerMonth ?? 0m);
 
+        var subscriptionStatus = OwnerSubscriptionService.SubscriptionStatusFor(sub, now);
+
         return new
         {
             id = account.Id,
@@ -416,8 +418,8 @@ public class AdminBillingController(
             ownerName = $"{account.Owner.FirstName} {account.Owner.LastName}".Trim(),
             ownerPhoneMasked = account.Owner.PhoneNumber is null ? null : PhoneDisplayMask.Mask(account.Owner.PhoneNumber),
             currency = "RUB",
-            status = OwnerSubscriptionService.SubscriptionStatusFor(sub, now),
-            statusText = OwnerSubscriptionService.StatusTextFor(OwnerSubscriptionService.SubscriptionStatusFor(sub, now), sub?.PaidUntil),
+            status = subscriptionStatus,
+            statusText = OwnerSubscriptionService.StatusTextFor(subscriptionStatus, sub?.PaidUntil),
             isActive = sub?.IsActive ?? false,
             planId = sub?.PlanConfigId,
             plan = new { id = sub?.PlanConfigId, name = sub?.PlanConfig?.Name ?? "Бесплатный", description = sub?.PlanConfig?.Description, pricePerMonth = sub?.PlanConfig?.PricePerMonth ?? 0m, includes = Array.Empty<string>() },
