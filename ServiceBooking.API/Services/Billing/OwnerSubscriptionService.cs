@@ -87,9 +87,14 @@ public class OwnerSubscriptionService(
 
         var pendingRequest = BuildPendingRequestDto(account, allOptions.Concat(subscribedOptions.Select(o => o.Option)).DistinctBy(o => o.Id).ToList(), planDto.PricePerMonth);
 
+        var lastRejectedRequest = account.LastRejectionReason is not null && account.LastRejectedAtUtc.HasValue
+            ? new RejectedRequestDto(account.LastRejectionReason, account.LastRejectedAtUtc.Value)
+            : null;
+
         return new OwnerSubscriptionDto(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
-            usageDto, coveredCompanies, warning, availableOptions, pendingRequest, CanRequestChanges: true);
+            usageDto, coveredCompanies, warning, availableOptions, pendingRequest, CanRequestChanges: true,
+            LastRejectedRequest: lastRejectedRequest);
     }
 
     public static string SubscriptionStatusFor(AccountSubscription? sub, DateTime now)

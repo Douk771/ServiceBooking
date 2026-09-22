@@ -18,7 +18,13 @@ public record OwnerSubscriptionDto(
     SubscriptionWarningDto? Warning,
     IReadOnlyList<AvailableOptionDto> AvailableOptions,
     SubscriptionRequestDto? PendingRequest,
-    bool CanRequestChanges);
+    bool CanRequestChanges,
+    // N10, US-70 — set once when an admin rejects the owner's last request, cleared on the next
+    // submission or approval (BillingAccount.LastRejectionReason's own remarks). Additive, defaults to
+    // null so this doesn't become a breaking positional-argument change for existing callers.
+    RejectedRequestDto? LastRejectedRequest = null);
+
+public record RejectedRequestDto(string Reason, DateTime RejectedAtUtc);
 
 public record SubscribedPlanDto(Guid? Id, string Name, string? Description, decimal PricePerMonth, IReadOnlyList<string> Includes);
 

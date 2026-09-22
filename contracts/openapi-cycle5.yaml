@@ -985,6 +985,22 @@ components:
           allOf: [{ $ref: "#/components/schemas/SubscriptionRequestDto" }]
           nullable: true
         canRequestChanges: { type: boolean }
+        lastRejectedRequest:
+          description: |
+            Unreleased (cycle 07 backend report, N10/US-70). Set once when an admin rejects the
+            owner's last request; cleared on the next submission or approval — a one-shot "here's
+            why", not a running log.
+          allOf: [{ $ref: "#/components/schemas/RejectedRequestDto" }]
+          nullable: true
+      additionalProperties: false
+
+    RejectedRequestDto:
+      type: object
+      description: Unreleased (cycle 07 backend report, N10/US-70).
+      required: [reason, rejectedAtUtc]
+      properties:
+        reason: { type: string }
+        rejectedAtUtc: { type: string, format: date-time }
       additionalProperties: false
 
     SubscriptionUsageDto:

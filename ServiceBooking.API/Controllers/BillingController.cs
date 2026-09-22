@@ -77,6 +77,10 @@ public class BillingController(AppDbContext db, OwnerSubscriptionService ownerSu
         account.RequestedAtUtc = DateTime.UtcNow;
         account.RequestedByUserId = userId;
         account.RequestedComment = dto.Comment;
+        // N10 — a fresh request supersedes any previous rejection reason; it stops being relevant the
+        // moment the owner tries again.
+        account.LastRejectionReason = null;
+        account.LastRejectedAtUtc = null;
         account.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();
         await transaction.CommitAsync();

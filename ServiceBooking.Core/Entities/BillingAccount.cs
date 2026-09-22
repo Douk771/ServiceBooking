@@ -44,5 +44,16 @@ public class BillingAccount
     public DateTime? RequestedAtUtc { get; set; }
     public string? RequestedByUserId { get; set; }
     public string? RequestedComment { get; set; }
+
+    // N10, US-70 — the reason an admin gave for rejecting the owner's LAST request. Deliberately its
+    // own pair of columns, not a reuse of RequestedComment (that field is the OWNER's own comment on
+    // THEIR request, already cleared by the time a rejection reason exists — writing the admin's answer
+    // into it would silently overwrite the owner's words with the admin's, and nothing reads it anyway
+    // since RequestedAtUtc is null by the time this is set). Cleared the moment the owner submits a new
+    // request (BillingController.SubmitRequest) or an admin approves one (AssignSubscription) — it is a
+    // one-shot "here's why", not a running log (SubscriptionChangeLog is the append-only log; this is
+    // just the thing to show once on the owner's own screen).
+    public string? LastRejectionReason { get; set; }
+    public DateTime? LastRejectedAtUtc { get; set; }
 }
 

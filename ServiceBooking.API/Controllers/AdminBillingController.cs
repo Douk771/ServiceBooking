@@ -547,6 +547,9 @@ public class AdminBillingController(
             account.RequestedAtUtc = null;
             account.RequestedByUserId = null;
             account.RequestedComment = null;
+            // N10 — an approved request has nothing left to explain a rejection for.
+            account.LastRejectionReason = null;
+            account.LastRejectedAtUtc = null;
         }
 
         var newOptionsSummary = string.Join(", ", optionLines.Select(o =>
@@ -702,7 +705,12 @@ public class AdminBillingController(
         account.RequestedOptionsJson = null;
         account.RequestedAtUtc = null;
         account.RequestedByUserId = null;
-        account.RequestedComment = dto?.Comment;
+        account.RequestedComment = null;
+        // N10, US-70 — the reason goes to the owner-visible LastRejectionReason pair, not into
+        // RequestedComment (that field belongs to the OWNER's own words, and is already being cleared
+        // here anyway — nobody reads it once RequestedAtUtc is null).
+        account.LastRejectionReason = dto?.Comment;
+        account.LastRejectedAtUtc = DateTime.UtcNow;
         account.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();
 
