@@ -29,6 +29,12 @@ public static class ChannelPresentation
         ChannelState.Connected => phoneMasked is null
             ? "Канал работает"
             : $"Канал работает, сообщения уходят с номера {phoneMasked}",
+        // T5-B13 (ARCHITECTURE_CYCLE5.md §52.2): a platform-side misconfiguration, not the owner's own
+        // action — the wording (and, upstream in ChannelPresentation.CanConnect, the absence of a "retry"
+        // path: Disconnected is not one of the three reconnectable states) both say the same thing: this
+        // is not something the owner can fix by clicking Connect again.
+        ChannelState.Disconnected when lastReason == ChannelStateReason.ServerCountryMismatch =>
+            "Требуется вмешательство платформы для восстановления канала",
         ChannelState.Disconnected =>
             "Связь с WhatsApp разорвана — возможно, устройство отключено в приложении. Подключите заново",
         ChannelState.Blocked =>

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -30,6 +31,8 @@ public class NotificationChannelsController(
     IOptions<NotificationOptions> options,
     SubscriptionResolver subscriptionResolver,
     PlatformSettings platformSettings,
+    LegalDocumentProvider legalProvider,
+    ConsentLedger ledger,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
     private const string TestMessageText =
@@ -72,16 +75,27 @@ public class NotificationChannelsController(
     }
 
     [HttpPost]
-    public async Task<ActionResult<ChannelDto>> Create()
+    [RequiresOwnerTerms]
+    public async Task<ActionResult<ChannelDto>> Create([FromBody] CreateChannelRequestDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await IsAnyCompanyOwnerAsync(userId)) return Forbid();
 
-        // The request body is intentionally ignored (API_CONTRACT_CYCLE4.md §22: "тела нет... сервер
-        // его игнорирует и не валидирует" — email collection on this form was cut by the customer, §31.3
-        // of the architecture). The contract also still shows a stale `{ "contactEmail": ... }` example
-        // left over from an earlier draft; this developer flagged the inconsistency rather than silently
-        // picking one reading — see the cover note in the cycle report.
+        // T5-B4 (ARCHITECTURE_CYCLE5.md §43.2, API_CONTRACT_CYCLE5.md §50.1, BREAKING № 7): the request
+        // body used to be ignored entirely (API_CONTRACT_CYCLE4.md §22) — this cycle requires the legal
+        // entity form, a formally-valid ИНН, and acceptance of D9 (the channel offer, an appendix to
+        // TermsOwner, §43.2) before a request can even be created. Checked by hand, same reasoning as
+        // RegisterDto.Legal.
+        if (dto.LegalEntityForm is null || string.IsNullOrWhiteSpace(dto.OfferAccepted?.Version))
+            return BadRequest("Укажите форму юридического лица и примите условия оферты.");
+        if (!InnValidator.IsValid(dto.Inn))
+            return BadRequest("ИНН указан неверно, проверьте цифры");
+
+        var offerDoc = legalProvider.Current?.Get(LegalDocumentType.TermsOwner);
+        if (offerDoc is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+        if (dto.OfferAccepted.Version != offerDoc.Version)
+            return Conflict("Соглашение владельца было обновлено ещё раз — перечитайте и примите новую редакцию.");
 
         var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(userId);
         if (!plan.AllowNotificationChannel)
@@ -97,9 +111,20 @@ public class NotificationChannelsController(
             OwnerUserId = userId,
             State = ChannelState.NotConnected,
             RequestedAtUtc = DateTime.UtcNow,
+            LegalEntityForm = dto.LegalEntityForm,
+            Inn = dto.Inn,
         };
         db.NotificationChannels.Add(channel);
         await db.SaveChangesAsync();
+
+        // D9 is an APPENDIX to TermsOwner, not a sixth document type (§43.2) — the same DocumentKey as
+        // company creation's acceptance, distinguished only by Purpose. Both rows carry the SAME version:
+        // "владелец видел существенные условия платной опции в редакции от такой-то даты" is provable
+        // either way.
+        await ledger.GrantAsync(new ConsentGrant(
+            ConsentSubject.ForUser(userId), LegalDocumentType.TermsOwner.ToString(), offerDoc.Version, offerDoc.ContentHash,
+            Purpose: ConsentPurpose.ChannelOffer, ConsentAct.Accepted, ConsentSource.ChannelRequest,
+            IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()));
 
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         return CreatedAtAction(nameof(GetById), new { id = channel.Id }, MapToDto(channel, idleDays));
@@ -131,6 +156,7 @@ public class NotificationChannelsController(
     }
 
     [HttpPost("{id:guid}/connect")]
+    [RequiresOwnerTerms]
     public async Task<IActionResult> Connect(Guid id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -155,6 +181,12 @@ public class NotificationChannelsController(
         var canConnect = ChannelPresentation.CanConnect(channel.State, paymentState, riskAccepted: true);
         if (!canConnect || channel.ProviderInstanceId is not null)
             return Conflict("Номер уже подключается");
+
+        // T5-B13 (ARCHITECTURE_CYCLE5.md §52.1, API_CONTRACT_CYCLE5.md §50.3): a deliberate stop, not a
+        // provider call that would silently create an instance in an unknown region. State is untouched —
+        // this is a platform-wide pause, not something specific to this channel.
+        if (!options.Value.GreenApi.InstanceCreationEnabled)
+            return Conflict("Создание каналов приостановлено платформой");
 
         var encryptionKey = options.Value.EncryptionKey;
         if (string.IsNullOrEmpty(encryptionKey))
@@ -215,6 +247,47 @@ public class NotificationChannelsController(
             channel.InstanceCreatedAtUtc = null;
             await db.SaveChangesAsync();
             return StatusCode(503, "Сервис подключения временно недоступен, попробуйте позже");
+        }
+
+        // T5-B13 (ARCHITECTURE_CYCLE5.md §52.2): the provider reported a server country that doesn't
+        // match what we expected — the instance is never wired up (no ProviderInstanceId/secret
+        // persisted). This is a PLATFORM-side incident, not a transient failure: the channel goes to
+        // Disconnected (not back to NotConnected, and not left in Connecting) so ChannelPresentation
+        // shows "требуется вмешательство платформы" and CanConnect keeps the retry button hidden — an
+        // owner clicking Connect again would just reproduce the same mismatch.
+        if (instance.ServerCountry is { Length: > 0 } reportedCountry &&
+            !string.Equals(reportedCountry, options.Value.GreenApi.ServerCountry, StringComparison.OrdinalIgnoreCase))
+        {
+            // Only the country values and the channel id — never the token, the full response body, or
+            // the request URL (ARCHITECTURE_CYCLE4.md §24.3's three rungs, unchanged by this cycle).
+            logger.LogError(
+                "GREEN-API server country mismatch for channel {ChannelId}: expected {ExpectedCountry}, provider reported {ReportedCountry}",
+                channel.Id, options.Value.GreenApi.ServerCountry, reportedCountry);
+
+            // Code review В7: the instance already exists at the provider (created, billed) by the
+            // CreateInstanceAsync call above — discarding `instance.InstanceId` here, as an earlier
+            // version did, would leak it: nothing would ever reference it again, so it would go on
+            // living, billing, and sitting in the wrong jurisdiction with no way to shut it down. §30.4's
+            // established "database first" orphan pattern applies exactly here, the same as
+            // ChannelHealthTask.DeleteInstanceAsync uses for every other forced decommission: record
+            // OrphanedInstanceId now (so the id itself, and the fact that it needs cleanup, survive this
+            // request even if the process crashes right after), and let ChannelHealthTask's existing
+            // orphan-retry sweep (RetryOrphanDeletionForAsync) delete it at the provider on its next
+            // pass — reusing tested infrastructure instead of a second, ad hoc deletion call here that
+            // would have no retry if it failed.
+            channel.State = ChannelState.Disconnected;
+            channel.LastStateReason = ChannelStateReason.ServerCountryMismatch;
+            channel.InstanceCreatedAtUtc = null;
+            channel.OrphanedInstanceId = instance.InstanceId;
+            db.ChannelStateEvents.Add(new ChannelStateEvent
+            {
+                Id = Guid.NewGuid(), ChannelId = channel.Id,
+                FromState = ChannelState.Connecting, ToState = ChannelState.Disconnected,
+                Reason = ChannelStateReason.ServerCountryMismatch,
+                Detail = $"expected={options.Value.GreenApi.ServerCountry} reported={reportedCountry} orphanedInstanceId={instance.InstanceId}",
+            });
+            await db.SaveChangesAsync();
+            return StatusCode(503, "Требуется вмешательство платформы для восстановления канала.");
         }
 
         channel.ProviderInstanceId = instance.InstanceId;
@@ -426,6 +499,7 @@ public class NotificationChannelsController(
     }
 
     [HttpPost("{id:guid}/companies")]
+    [RequiresOwnerTerms]
     public async Task<ActionResult<ChannelDto>> AssignCompany(Guid id, [FromBody] AssignCompanyDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -647,6 +721,7 @@ public class NotificationChannelsController(
             channel.ReplacedByChannelId,
             channel.Assignments.Select(a => new ChannelCompanyDto(a.CompanyId, a.Company.Name, a.Company.IsActive)).ToList(),
             CanConnect: ChannelPresentation.CanConnect(channel.State, paymentState, riskAccepted),
-            CanReplace: ChannelPresentation.CanReplace(channel.State));
+            CanReplace: ChannelPresentation.CanReplace(channel.State),
+            Inn: channel.Inn, LegalEntityForm: channel.LegalEntityForm);
     }
 }

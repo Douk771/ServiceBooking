@@ -1,12 +1,23 @@
+# Cycle 8 env contract (API_CONTRACT_CYCLE8.md §85): every SB_* variable below has a working default,
+# so `docker compose up` with no `.env` at the repo root behaves exactly as before this cycle — ports
+# 5432/5000/5173, same DB name, and the project name still derived by compose from the directory the
+# repo is checked out into. That derivation is what already keeps two working copies apart, so this
+# file deliberately does NOT set a top-level `name:`: hardcoding one (even a parameterized one with a
+# default) would give every checkout the SAME project name without an `.env`, and `docker compose
+# down -v` in one copy would then destroy the other copy's volume — the exact collision this cycle
+# exists to prevent. To override the project name explicitly, set COMPOSE_PROJECT_NAME in `.env`;
+# that is compose's own mechanism and it namespaces containers, networks and volumes together.
+# The `.env` file stays gitignored (see .env.dev.example, committed, for what to put in it).
+
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: servicebooking
+      POSTGRES_DB: ${SB_DB_NAME:-servicebooking}
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "${SB_DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,20 +31,23 @@ services:
       context: .
       dockerfile: ServiceBooking.API/Dockerfile
     ports:
-      - "5000:8080"
+      - "${SB_API_PORT:-5000}:8080"
     environment:
       # Without this the runtime defaults to Production (the aspnet base image sets no environment),
       # and the Production fail-fast in Program.cs rejects the placeholder Jwt__Key below — the dev
       # stack would refuse to start.
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Host=postgres;Database=servicebooking;Username=postgres;Password=postgres
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=${SB_DB_NAME:-servicebooking};Username=postgres;Password=postgres
       - Jwt__Key=CHANGE_ME_TO_A_LONG_SECRET_KEY_AT_LEAST_32_CHARS
       - Jwt__Issuer=ServiceBooking
       - Jwt__Audience=ServiceBookingClient
-      - AllowedOrigins=http://localhost:5173
+      - AllowedOrigins=http://localhost:${SB_WEB_PORT:-5173}
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
+  # No explicit `name:` here on purpose. Compose namespaces this as `<project>_postgres_data`, and the
+  # project name comes from the directory (or COMPOSE_PROJECT_NAME), so two working copies get two
+  # separate volumes automatically. Naming it explicitly would defeat that.
   postgres_data:

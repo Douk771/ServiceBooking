@@ -19,12 +19,30 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// services/working hours/subscription) that almost every scenario needs.
 ///
 /// All helpers use globally-unique emails/slugs (via <see cref="Unique"/>) so tests can run
-/// against the one shared database without cleaning up after themselves.
+/// against this class' own database without cleaning up after themselves.
+///
+/// ARCHITECTURE_CYCLE8_PHASE2.md §91/§92.1: one <see cref="TestDatabaseFixture"/> instance per test
+/// class (<c>IClassFixture</c>, not the phase-1 <c>ICollectionFixture</c>/<c>[Collection("Api")]</c>) —
+/// every subclass gets its own, disjoint database, cloned from the run's shared template.
 /// </summary>
-[Collection("Api")]
-public abstract class ApiTestBase(TestDatabaseFixture fixture)
+public abstract class ApiTestBase : IClassFixture<TestDatabaseFixture>
 {
-    protected readonly CustomWebApplicationFactory Factory = fixture.Factory;
+    protected readonly TestDatabaseFixture Fixture;
+    protected readonly CustomWebApplicationFactory Factory;
+
+    protected ApiTestBase(TestDatabaseFixture fixture)
+    {
+        Fixture = fixture;
+        Factory = fixture.Factory;
+        ConnectionString = fixture.ConnectionString;
+        // T9 M3: records the slot↔class pairing this fixture's own doc comment promised — see
+        // TestDatabaseFixture.RecordTestClass.
+        fixture.RecordTestClass(GetType().Name);
+    }
+
+    /// <summary>This class' database connection string — for the rare subclass that needs to build a
+    /// second, dedicated host against the same database (e.g. <see cref="RateLimitTestFactory"/>).</summary>
+    protected readonly string ConnectionString;
 
     /// <summary>Anonymous (unauthenticated) client — for guest/public endpoint scenarios.</summary>
     protected HttpClient AnonymousClient() => Factory.CreateClient();
@@ -37,33 +55,33 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         return client;
     }
 
-    /// <summary>Produces a collision-free string for emails/slugs/codes shared across a single test run.</summary>
-    protected static string Unique(string prefix) => $"{prefix}{Guid.NewGuid():N}"[..Math.Min(prefix.Length + 20, prefix.Length + 12)];
+    /// <summary>Produces a collision-free string for emails/slugs/codes — delegates to this class' own
+    /// <see cref="TestData"/> (ARCHITECTURE_CYCLE8_PHASE2.md §94, Q12): no longer static, since uniqueness
+    /// is now scoped to (and guaranteed by) this test class' own database, not the whole process.</summary>
+    protected string Unique(string prefix) => Fixture.Data.Name(prefix);
 
-    protected static string UniqueEmail(string prefix) => $"{prefix}{Guid.NewGuid():N}@test.local";
+    protected string UniqueEmail(string prefix) => Fixture.Data.Email(prefix);
 
-    /// <summary>A unique, valid-looking phone number for a single test run (accounts are keyed by phone).</summary>
-    protected static string UniquePhone()
-    {
-        // 11 digits after "+", collision-free within a run (Guid-derived), fits a plausible RU format.
-        var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(10).ToArray();
-        var suffix = new string(digits).PadRight(10, '0');
-        return $"+79{suffix[..9]}";
-    }
+    /// <summary>A unique, valid-looking phone number for this test class (accounts are keyed by phone).</summary>
+    protected string UniquePhone() => Fixture.Data.Phone();
 
     // ── Identity ─────────────────────────────────────────────────────────────
 
-    // acceptedLegal defaults to true (cycle C, BREAKING № 1, API_CONTRACT.md §5): almost every existing
-    // scenario in this suite predates the legal consent requirement and only cares about the OTHER
-    // effects of registering, so the default keeps every call site that doesn't care about consent
-    // unchanged. Tests that specifically exercise the consent gate pass acceptedLegal explicitly.
+    // CYCLE5-BREAKING (compile-only adaptation — ARCHITECTURE_CYCLE5.md §46.2, API_CONTRACT_CYCLE5.md
+    // §40.1): `acceptedLegal: bool` is gone from RegisterDto, replaced by a `Legal` object carrying the
+    // versions actually being accepted, read here from the live manifest. `acceptedLegal` is KEPT as this
+    // helper's own parameter name/meaning ("build a request that will pass the legal gate, or one that
+    // won't") so every existing call site in this suite keeps compiling unchanged; whether the RESULTING
+    // behavior (and status code) still matches each test's assertions is exactly the kind of judgment
+    // call this cycle's backend implementer left to QA (see the cycle report) — not touched here.
     protected async Task<AuthResponseDto> RegisterAsync(
         string? phone = null, string password = "Password123!", string firstName = "Test", string lastName = "User",
         string? email = null, bool acceptedLegal = true)
     {
         phone ??= UniquePhone();
         var client = AnonymousClient();
-        var response = await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, acceptedLegal));
+        var legal = acceptedLegal ? CurrentRegisterLegalDto() : null;
+        var response = await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, legal));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }
@@ -73,7 +91,21 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         string? email = null, bool acceptedLegal = true)
     {
         var client = AnonymousClient();
-        return await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, acceptedLegal));
+        var legal = acceptedLegal ? CurrentRegisterLegalDto() : null;
+        return await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(firstName, lastName, phone, password, email, legal));
+    }
+
+    /// <summary>The Legal object a registration call needs to pass the gate right now — read from the
+    /// live manifest via DI, not hardcoded, so a version bump in App_Data/legal never desyncs this
+    /// helper from what the server actually expects (same reasoning as <see cref="AnyCityIdAsync"/>).</summary>
+    protected RegisterLegalDto CurrentRegisterLegalDto()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        return new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version,
+            snapshot.Get(LegalDocumentType.TermsClient)!.Version);
     }
 
     protected async Task<AuthResponseDto> LoginAsync(string phone, string password)
@@ -90,8 +122,9 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         return await client.PostAsJsonAsync("/api/auth/login", new LoginDto(phone, password));
     }
 
-    /// <summary>Logs in as the SuperAdmin seeded at startup (phone from CustomWebApplicationFactory).</summary>
-    protected Task<AuthResponseDto> LoginAsSuperAdminAsync() => LoginAsync("+70000000001", "SuperAdmin123!");
+    /// <summary>Logs in as the SuperAdmin seeded at startup for this host's factoryTag (§71.1).</summary>
+    protected Task<AuthResponseDto> LoginAsSuperAdminAsync() =>
+        LoginAsync(Factory.Identity.SuperAdminPhone, Factory.Identity.SuperAdminPassword);
 
     // ── Companies ────────────────────────────────────────────────────────────
 
@@ -212,15 +245,32 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         return config.Id;
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see RegisterAsync's own note — ARCHITECTURE_CYCLE5.md
+    // §42.1, API_CONTRACT_CYCLE5.md §42.1 BREAKING № 3): CreateCompanyDto needs an `ownerTerms` object
+    // now, and the response is an envelope `{ company, token }`, not a bare CompanyDto — unwrapped here
+    // so every one of this helper's ~50 existing call sites keeps compiling AND keeps getting a real
+    // CompanyDto back unchanged.
     protected async Task<CompanyDto> CreateCompanyAsync(string ownerToken, string? name = null, string? slug = null, bool allowSelfBooking = true)
     {
         slug ??= Unique("company-");
         name ??= $"Company {slug}";
         var client = AuthedClient(ownerToken);
         var response = await client.PostAsJsonAsync("/api/companies",
-            new CreateCompanyDto(name, slug, null, null, null, null, await AnyCityIdAsync(), null, allowSelfBooking));
+            new CreateCompanyDto(name, slug, null, null, null, null, await AnyCityIdAsync(), null, allowSelfBooking,
+                OwnerTerms: CurrentOwnerTermsDto()));
         response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<CompanyDto>())!;
+        var envelope = await response.Content.ReadFromJsonAsync<CreateCompanyResponseDto>();
+        return envelope!.Company;
+    }
+
+    /// <summary>The OwnerTerms object a company-creation call needs to pass the owner gate right now —
+    /// read from the live manifest, same reasoning as CurrentRegisterLegalDto.</summary>
+    protected OwnerTermsDto CurrentOwnerTermsDto()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        return new OwnerTermsDto(snapshot.Get(LegalDocumentType.TermsOwner)!.Version);
     }
 
     // Cycle 4 (API_CONTRACT_CYCLE4.md §31.2): CreateCompanyDto.CityId is required. Tests that don't care
@@ -356,5 +406,55 @@ public abstract class ApiTestBase(TestDatabaseFixture fixture)
         while (avoid.HasValue && date.DayOfWeek == avoid.Value)
             date = date.AddDays(1);
         return date;
+    }
+
+    // ── Cycle 5 consent helpers (ARCHITECTURE_CYCLE5.md §44, §45, §41) ─────────────────────────
+
+    /// <summary>The current version of an interface text (GET /api/legal/texts/{key}) — read from the
+    /// live manifest via DI, same reasoning as <see cref="CurrentRegisterLegalDto"/>.</summary>
+    protected string CurrentTextVersion(string key)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        return scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>()
+            .Current!.GetText(key)!.Version;
+    }
+
+    /// <summary>US-76/T5-B7: records staff-confirmed photo consent for one client of one company — the
+    /// precondition <c>POST /api/client-notes/{id}/photos</c> now enforces (API_CONTRACT_CYCLE5.md
+    /// §44.3). <paramref name="clientKey"/> is either a registered client's userId or
+    /// <c>phone:&lt;canonical&gt;</c> for a guest (ClientKey's own format).</summary>
+    protected async Task GrantPhotoConsentAsync(string staffToken, Guid companyId, string clientKey)
+    {
+        var response = await AuthedClient(staffToken).PostAsJsonAsync(
+            $"/api/companies/{companyId}/clients/{clientKey}/photo-consent",
+            new { textVersion = CurrentTextVersion("PhotoConsent"), confirmed = true });
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>US-77/T5-B6: records staff-confirmed health-data consent for one client of one company —
+    /// the precondition <c>PUT .../health-note</c> enforces (API_CONTRACT_CYCLE5.md §45.2).</summary>
+    protected async Task GrantHealthConsentAsync(string staffToken, Guid companyId, string clientKey)
+    {
+        var response = await AuthedClient(staffToken).PostAsJsonAsync(
+            $"/api/companies/{companyId}/clients/{clientKey}/health-consent",
+            new { textVersion = CurrentTextVersion("HealthDataConsent"), confirmed = true });
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>US-68/T5-B3: grants the registered account holder's own PdnConsent/ProviderDelivery
+    /// purpose — required under the shipped <c>AccountsOnly</c> gate mode (ARCHITECTURE_CYCLE5.md §52.3)
+    /// for a queued notification to actually reach <c>Pending</c> instead of being blocked with
+    /// <c>NoProviderDeliveryConsent</c>. A guest never needs this (the gate treats "no account" as
+    /// automatically satisfied) — only call this for a client who registered via RegisterAsync.</summary>
+    protected async Task GrantProviderDeliveryConsentAsync(string clientToken)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var pdnVersion = provider.Current!.Get(LegalDocumentType.PdnConsent)!.Version;
+
+        var response = await AuthedClient(clientToken).PostAsJsonAsync("/api/profile/consents",
+            new { documentKey = "PdnConsent", version = pdnVersion, purposes = new[] { "ProviderDelivery" } });
+        response.EnsureSuccessStatusCode();
     }
 }

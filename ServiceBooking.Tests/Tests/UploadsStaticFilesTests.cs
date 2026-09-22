@@ -26,18 +26,38 @@ namespace ServiceBooking.Tests.Tests;
 /// dedicated host (<see cref="UploadsStaticFilesTestFactory"/>) at a configuration where the broken and
 /// fixed code paths provably diverge.
 /// </summary>
-public class UploadsStaticFilesTests
+public class UploadsStaticFilesTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
+    // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(UploadsStaticFilesTests));
+
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    {
+        fixture.RecordTestClass(className);
+        return 0;
+    }
+
     private static string RandomPhone()
     {
         var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(9).ToArray();
         return $"+79{new string(digits).PadRight(9, '2')}";
     }
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): only an
+    // HttpClient is available here (no DI scope), so the manifest is read over HTTP from the same host
+    // the registration call itself targets.
+    private static async Task<RegisterLegalDto> CurrentRegisterLegalDtoAsync(HttpClient client)
+    {
+        var manifest = await client.GetFromJsonAsync<LegalManifestDto>("/api/legal/documents");
+        return new RegisterLegalDto(
+            manifest!.Documents.First(d => d.Type == "Privacy").Version,
+            manifest.Documents.First(d => d.Type == "TermsClient").Version);
+    }
+
     private static async Task<string> RegisterAndGetTokenAsync(HttpClient client)
     {
         var response = await client.PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "User", RandomPhone(), "Password123!", null, true));
+            new RegisterDto("Test", "User", RandomPhone(), "Password123!", null, await CurrentRegisterLegalDtoAsync(client)));
         response.EnsureSuccessStatusCode();
         var dto = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
         return dto!.Token;
@@ -74,7 +94,7 @@ public class UploadsStaticFilesTests
         // Deliberately not pre-creating tempPublicRoot itself — Program.cs's Directory.CreateDirectory
         // call is what's expected to create it, same as the default wwwroot/uploads case.
 
-        await using var factory = new UploadsStaticFilesTestFactory(publicRootOverride: tempPublicRoot);
+        await using var factory = new UploadsStaticFilesTestFactory(fixture.ConnectionString, publicRootOverride: tempPublicRoot);
         try
         {
             var client = factory.CreateClient();
@@ -123,7 +143,7 @@ public class UploadsStaticFilesTests
         Directory.Exists(Path.Combine(tempContentRoot, "wwwroot"))
             .Should().BeFalse("sanity check — this scenario is only meaningful if wwwroot genuinely did not exist before the host started");
 
-        await using var factory = new UploadsStaticFilesTestFactory(contentRootOverride: tempContentRoot);
+        await using var factory = new UploadsStaticFilesTestFactory(fixture.ConnectionString, contentRootOverride: tempContentRoot);
         try
         {
             var client = factory.CreateClient();

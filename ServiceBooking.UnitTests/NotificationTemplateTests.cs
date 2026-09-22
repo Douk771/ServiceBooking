@@ -121,6 +121,37 @@ public class NotificationTemplateValidatorTests
         var result = NotificationTemplateValidator.Validate("Спасибо, {КлиентИмя}!", NotificationType.BookingConfirmed);
         result.IsValid.Should().BeTrue();
     }
+
+    // ── T5-B12 hard bans (ARCHITECTURE_CYCLE5.md §51.2, US-69 п. 3) — never bypassable ──────────────
+
+    [Theory]
+    [InlineData("Звоните нам: +7 999 123-45-67")]
+    [InlineData("Звоните нам: 89991234567")]
+    [InlineData("Наш номер (999) 123-45-67, ждём")]
+    public void Validate_PhoneNumberOtherThanCompanyPlaceholder_Fails(string body)
+    {
+        var result = NotificationTemplateValidator.Validate(body, NotificationType.BookingConfirmed);
+        result.IsValid.Should().BeFalse();
+        result.Error.Should().Contain("телефон");
+    }
+
+    [Fact]
+    public void Validate_CompanyPhonePlaceholder_DoesNotTripThePhoneBan()
+    {
+        var result = NotificationTemplateValidator.Validate("Звоните нам: {ТелефонСалона}", NotificationType.BookingConfirmed);
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Пишите нам в Telegram!")]
+    [InlineData("Мы в Инстаграм: @salon")]
+    [InlineData("Подписывайтесь во Вконтакте")]
+    public void Validate_ThirdPartyMessengerOrSocialMention_Fails(string body)
+    {
+        var result = NotificationTemplateValidator.Validate(body, NotificationType.BookingConfirmed);
+        result.IsValid.Should().BeFalse();
+        result.Error.Should().Contain("мессенджер");
+    }
 }
 
 public class DefaultTemplatesTests

@@ -17,7 +17,7 @@ public class AuthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var client = AnonymousClient();
 
         var response = await client.PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Ivan", "Petrov", phone, "Password123!", null, AcceptedLegal: true));
+            new RegisterDto("Ivan", "Petrov", phone, "Password123!", null, CurrentRegisterLegalDto()));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadFromJsonAsync<AuthResponseDto>();

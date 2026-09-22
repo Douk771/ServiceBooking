@@ -33,6 +33,10 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
         var clientUser = await RegisterAsync();
+        // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §52.3, T-24): the shipped `AccountsOnly` gate mode
+        // blocks a registered recipient who never granted PdnConsent/ProviderDelivery — without this the
+        // rows below would queue as Skipped/NoProviderDeliveryConsent, not Pending.
+        await GrantProviderDeliveryConsentAsync(clientUser.Token);
         var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(10, 0), null, null, null, null, null));
         response.StatusCode.Should().Be(HttpStatusCode.Created);
@@ -64,6 +68,11 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
 
         var clientUser = await RegisterAsync();
+        // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §52.3, T-24): the shipped `AccountsOnly` gate mode
+        // blocks a registered recipient who never granted PdnConsent/ProviderDelivery — without this the
+        // BookingConfirmed row below would queue as Skipped/NoProviderDeliveryConsent, with an empty body,
+        // not Pending with the rendered service list.
+        await GrantProviderDeliveryConsentAsync(clientUser.Token);
         var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new CreateBookingDto(company.Id, services[0].Id, master.UserId, date, new TimeOnly(9, 0),
                 null, null, null, null, null, ServiceIds: services.Select(s => s.Id).ToList()));
@@ -82,6 +91,33 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         confirmed.Body.Should().NotContain(",,");
         // The five names, in order, joined by ", " — this is the exact §47.2 rendering rule.
         confirmed.Body.Should().Contain(string.Join(", ", services.Select(s => s.Name)));
+    }
+
+    // LGL-072-01 (SPEC.md §6.3 T-24, ARCHITECTURE_CYCLE5.md §52.3 "AccountsOnly"). The mirror of the test
+    // above: a registered client who never granted ProviderDelivery consent must be BLOCKED, with the
+    // dedicated reason — this is the gate the default mode exists to enforce.
+    [Fact, TestCase("LGL-072-01")]
+    public async Task BookingCreated_RegisteredClientWithoutProviderDeliveryConsent_RowsSkipped_WithReason()
+    {
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        await SeedConnectedAssignedChannelAsync(owner.UserId, company.Id);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync(); // deliberately no GrantProviderDeliveryConsentAsync call
+        var response = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new CreateBookingDto(company.Id, service.Id, master.UserId, date, new TimeOnly(10, 30), null, null, null, null, null));
+        response.StatusCode.Should().Be(HttpStatusCode.Created, "declining a purely optional consent must never block the booking itself (US-67 п.4)");
+        var booking = (await response.Content.ReadJsonAsync<BookingDto>())!;
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var rows = await db.OutboundNotifications.Where(n => n.BookingId == booking.Id).ToListAsync();
+        rows.Should().NotBeEmpty();
+        rows.Should().OnlyContain(r => r.Status == NotificationStatus.Skipped && r.Reason == NotificationReason.NoProviderDeliveryConsent);
     }
 
     [Fact, TestCase("NTF-Q002")]
@@ -175,6 +211,7 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, farDate);
 
         var clientUser = await RegisterAsync();
+        await GrantProviderDeliveryConsentAsync(clientUser.Token); // AccountsOnly gate (§52.3) — see NTF-Q001's own note
         var createResponse = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
             new CreateBookingDto(company.Id, service.Id, master.UserId, farDate, new TimeOnly(9, 0), null, null, null, null, null));
         createResponse.EnsureSuccessStatusCode();

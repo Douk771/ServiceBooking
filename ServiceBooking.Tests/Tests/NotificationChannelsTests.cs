@@ -18,7 +18,7 @@ namespace ServiceBooking.Tests.Tests;
 /// NotificationChannelsController's own implementation, per this cycle's QA brief.
 /// Each test owns its own <see cref="NotificationTestFactory"/> instance (see that class's doc comment).
 /// </summary>
-public class NotificationChannelsTests(TestDatabaseFixture fixture) : NotificationTestBase(fixture)
+public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : NotificationTestBase(apiFixture)
 {
     // ── GET /api/notification-channels, offer, request ──────────────────────────────────────────
 
@@ -64,7 +64,7 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         await SetChannelPriceAsync(990);
 
-        var response = await AuthedClient(owner.Token).PostAsync("/api/notification-channels", null);
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
         response.StatusCode.Should().Be((HttpStatusCode)402);
         (await response.Content.ReadAsStringAsync()).Should().NotBeNullOrWhiteSpace();
     }
@@ -76,8 +76,33 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
         await GiveNotificationCapablePlanAsync(owner.UserId);
         await SetChannelPriceAsync(null);
 
-        var response = await AuthedClient(owner.Token).PostAsync("/api/notification-channels", null);
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    // LGL-082-01 (SPEC.md §10.4 US-82, API_CONTRACT_CYCLE5.md §50.1). ИНН/legal-entity-form/offer
+    // acceptance become required only HERE (paid-function gate), never at registration/company creation
+    // (US-82 п.1) — pinned by NTF-C004/C005/C006 above all succeeding via CreateOwnerWithCompanyAsync's
+    // free path with no ИНН anywhere in that helper.
+    [Fact, TestCase("LGL-082-01")]
+    public async Task CreateChannel_WithoutInnOrOfferAcceptance_ReturnsBadRequest()
+    {
+        var (owner, _) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        await SetChannelPriceAsync(990);
+
+        var noInn = await AuthedClient(owner.Token).PostAsJsonAsync("/api/notification-channels",
+            new { legalEntityForm = "Company", inn = (string?)null, offerAccepted = new { version = OwnerTermsVersion() } });
+        noInn.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var badChecksum = await AuthedClient(owner.Token).PostAsJsonAsync("/api/notification-channels",
+            new { legalEntityForm = "Company", inn = "7707083894", offerAccepted = new { version = OwnerTermsVersion() } });
+        badChecksum.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "ПЛ5/US-82 п.3: only the checksum is validated, but a wrong one must still 400");
+
+        var noOffer = await AuthedClient(owner.Token).PostAsJsonAsync("/api/notification-channels",
+            new { legalEntityForm = "Company", inn = "7707083893", offerAccepted = (object?)null });
+        noOffer.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact, TestCase("NTF-C006")]
@@ -87,7 +112,7 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
         await GiveNotificationCapablePlanAsync(owner.UserId);
         await SetChannelPriceAsync(990);
 
-        var response = await AuthedClient(owner.Token).PostAsync("/api/notification-channels", null);
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var channel = (await response.Content.ReadJsonAsync<ChannelDto>())!;
         channel.State.Should().Be(ChannelState.NotConnected);
@@ -163,6 +188,40 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var channel = await db.NotificationChannels.AsNoTracking().FirstAsync(c => c.Id == created.Id);
         channel.ProviderInstanceId.Should().NotBeNull("the winner must have created exactly one instance");
+    }
+
+    // LGL-071-01 (SPEC.md §6.1 US-71 п.4, ARCHITECTURE_CYCLE5.md §52.1). While ПЛ1 (does the partner API
+    // let us pin the server country) is unconfirmed, `InstanceCreationEnabled` stays false in production
+    // by default — connect must fail closed with a human 409, not create an instance silently. Set up the
+    // owner/channel/risk/payment through this class's OWN factory (InstanceCreationEnabled=true, so every
+    // other test here can reach past this gate — see NotificationTestFactory's own doc comment), then
+    // reach the SAME database from a second host with the flag forced back to its production default.
+    [Fact, TestCase("LGL-071-01")]
+    public async Task Connect_WhenInstanceCreationDisabledByPlatform_Returns409_WithHumanText()
+    {
+        var (owner, _) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        await SetChannelPriceAsync(990);
+        var created = await CreateChannelAsync(owner.Token);
+        await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
+            new AcceptRiskDto(NotificationRiskTextVersion()));
+        await MarkPaidAsync(created.Id);
+
+        await using var disabledFactory = new NotificationTestFactory(ConnectionString).WithWebHostBuilder(builder =>
+            builder.UseSetting("Notifications:GreenApi:InstanceCreationEnabled", "false"));
+        var reLogin = await disabledFactory.CreateClient().PostAsJsonAsync("/api/auth/login",
+            new ServiceBooking.API.DTOs.Auth.LoginDto(owner.Phone, "Password123!"));
+        reLogin.EnsureSuccessStatusCode();
+        var reAuth = (await reLogin.Content.ReadFromJsonAsync<ServiceBooking.API.DTOs.Auth.AuthResponseDto>())!;
+
+        var disabledClient = disabledFactory.CreateClient();
+        disabledClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", reAuth.Token);
+        var response = await disabledClient.PostAsync($"/api/notification-channels/{created.Id}/connect", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotBeNullOrWhiteSpace();
+        body.Should().NotContain("stack", "the text must be human, not a stack trace");
     }
 
     // ── Company assignment ───────────────────────────────────────────────────────────────────────
@@ -376,9 +435,23 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
 
     private async Task<ChannelDto> CreateChannelAsync(string ownerToken)
     {
-        var response = await AuthedClient(ownerToken).PostAsync("/api/notification-channels", null);
+        var response = await AuthedClient(ownerToken).PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadJsonAsync<ChannelDto>())!;
+    }
+
+    // CYCLE5-BREAKING (API_CONTRACT_CYCLE5.md §50.1, US-82): POST /api/notification-channels now requires
+    // legalEntityForm/inn/offerAccepted — a formally-valid ИНН (Sberbank's real, public 10-digit one,
+    // same test vector InnValidatorTests uses) and the current TermsOwner version (D9 is an appendix to
+    // it, §43.2), read from the live manifest so a version bump never desyncs this helper.
+    private object ValidCreateChannelRequest() =>
+        new { legalEntityForm = "Company", inn = "7707083893", offerAccepted = new { version = OwnerTermsVersion() } };
+
+    private string OwnerTermsVersion()
+    {
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        return provider.Current!.Get(ServiceBooking.Core.Enums.LegalDocumentType.TermsOwner)!.Version;
     }
 
     private async Task MarkPaidAsync(Guid channelId)

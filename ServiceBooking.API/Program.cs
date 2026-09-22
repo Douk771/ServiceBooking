@@ -32,6 +32,13 @@ var builder = WebApplication.CreateBuilder(args);
 // both, so a log line is one JSON object whether it's read live or grepped from disk a day later.
 // PhoneMaskingEnricher is the second/third rung of §11.3's defence; it self-limits to Warning+/exception
 // events, so it costs nothing on the Information-level "request completed" line every request produces.
+// Cycle 8 phase 2 (ARCHITECTURE_CYCLE8_PHASE2.md §96): preserveStaticLogger defaults to false, which
+// makes THIS host's logger win the process-wide static Log.Logger — harmless with one host per process,
+// but under per-test-class parallelism (several WebApplicationFactory hosts alive at once, ARCHITECTURE_
+// CYCLE8_PHASE2.md §92.4) the last host to start "wins" the static logger for every other host's writes,
+// and a host's own DisposeAsync can close a Log.Logger some OTHER still-running host is still using.
+// Scoped strictly to the Testing environment so Development/Production keep today's behavior byte-for-
+// byte, including Log.CloseAndFlush's shutdown-time flush semantics that depend on it.
 builder.Host.UseSerilog((context, services, loggerConfig) =>
 {
     loggerConfig
@@ -46,7 +53,7 @@ builder.Host.UseSerilog((context, services, loggerConfig) =>
         .Enrich.FromLogContext()
         .Enrich.With<PhoneMaskingEnricher>()
         .WriteTo.Console(new CompactJsonFormatter())
-        .WriteTo.File(new CompactJsonFormatter(), Path.Combine("logs", "app-.json"),
+        .WriteTo.File(new CompactJsonFormatter(), Path.Combine(LogDirectory(context.Configuration), "app-.json"),
             rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14,
             fileSizeLimitBytes: 100 * 1024 * 1024, rollOnFileSizeLimit: true);
 
@@ -78,7 +85,7 @@ builder.Host.UseSerilog((context, services, loggerConfig) =>
             });
         });
     }
-});
+}, preserveStaticLogger: builder.Environment.IsEnvironment("Testing"));
 
 // Fail-fast on obviously-unsafe deployment configuration (US-10 → US-48, ARCHITECTURE.md §13). Runs
 // before anything reads these values, and BEFORE builder.Build() — so a misconfigured deployment never
@@ -118,6 +125,9 @@ DeploymentSafetyChecks.ValidateNotificationSecrets(builder.Configuration, builde
         warn: message => bootstrapLogger.Warning(message));
 }
 DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentName);
+DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(builder.Configuration);
+DeploymentSafetyChecks.ValidateGreenApiServerCountry(builder.Configuration);
+DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
 
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
@@ -272,6 +282,10 @@ builder.Services.AddScoped<SubscriptionResolver>();
 // this developer's file this cycle.
 builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
 builder.Services.AddHttpClient<CaptchaService>();
+// T5-B10 (ARCHITECTURE_CYCLE5.md §50.1, US-74) — reuses the existing CaptchaService/rate-limiting
+// machinery, no new infrastructure.
+builder.Services.Configure<ServiceBooking.API.Controllers.SubjectRequestOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Controllers.SubjectRequestOptions.SectionName));
 
 // Image uploads (US-19, US-25): FileStorage holds no per-request state (just the two configured roots),
 // so it's a singleton; ImageUploadService is scoped only because everything else in this layer is —
@@ -283,6 +297,12 @@ builder.Services.AddScoped<ImageUploadService>();
 // request instead of re-parsed per scope — the whole point of the ReloadSeconds cache (§4.3).
 builder.Services.Configure<LegalOptions>(builder.Configuration.GetSection("Legal"));
 builder.Services.AddSingleton<LegalDocumentProvider>();
+
+// Consent journal (cycle 5, ARCHITECTURE_CYCLE5.md §45.1) — scoped: it only wraps AppDbContext queries,
+// unlike LegalDocumentProvider above it holds no snapshot of its own to share across requests.
+builder.Services.AddScoped<ConsentLedger>();
+// T5-B6 (ARCHITECTURE_CYCLE5.md §48.1) — reuses Notifications:EncryptionKey, no new secret to provision.
+builder.Services.AddScoped<HealthNoteProtector>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
@@ -449,6 +469,16 @@ builder.Services.AddRateLimiter(o =>
     // month-view, generous for legitimate calendar navigation.
     o.AddPolicy("availability", ctx => IpWindowPolicy(ctx, "availability", defaultPermitLimit: 60, defaultWindowMinutes: 1));
 
+    // subject-request: US-74/§50.1 asks for BOTH a 3/hour and a 10/day cap; this rate limiter middleware
+    // only supports one fixed window per named policy (every other policy in this file has the same
+    // shape), so only the HOURLY limit is actually enforced here.
+    // Code review, "заодно": this is honestly a WEAKER guarantee than the daily cap alone would be, not
+    // a stricter one — 3/hour, sustained, adds up to 72/day, well past the 10/day ceiling §50.1 asks
+    // for. The daily cap is simply not enforced by this policy at all; nothing here catches a caller who
+    // spaces requests out to stay under the hourly limit. 🟡 Known, disclosed simplification: see the
+    // cycle report.
+    o.AddPolicy("subject-request", ctx => IpWindowPolicy(ctx, "subject-request", defaultPermitLimit: 3, defaultWindowMinutes: 60));
+
     // notifications-webhook: the provider calls this anonymously and per-address, keyed the same way
     // as auth-login/auth-register (ARCHITECTURE_CYCLE4.md §32) — 600/min is generous enough for normal
     // delivery-status traffic while still bounding a misbehaving/compromised caller.
@@ -482,12 +512,20 @@ builder.Services.AddRateLimiter(o =>
             "booking-create" => "Слишком много записей с этого адреса. Повторите позже.",
             "availability" => "Слишком много запросов. Повторите через минуту.",
             "data-export" => "Выгрузка доступна не чаще трёх раз в сутки.",
+            "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
             "notifications-webhook" => "Too many requests.",
             _ => "Too many uploads. Try again in a minute."
         };
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
     };
 });
+
+// Log directory is configurable (ARCHITECTURE_CYCLE8.md §71.4) so each test-run/slot/factory can point
+// it at its own temp folder instead of colliding on a repo-relative "logs" — the sole behavioural change
+// cycle 8 makes to this file. Default is "logs", exactly as it always was: Development/Production
+// behaviour is unchanged byte-for-byte when Logs:Directory isn't set.
+static string LogDirectory(IConfiguration configuration) =>
+    configuration["Logs:Directory"] is { } configured && configured.Trim().Length > 0 ? configured : "logs";
 
 // Shared by auth-login/auth-register: partition purely by the caller's (ForwardedHeaders-resolved) IP,
 // PermitLimit/WindowMinutes read from RateLimits:{policyName}:* with the given defaults.
@@ -536,6 +574,40 @@ builder.Services.AddScoped<IScheduledTask, PhotoRetentionCleanupTask>();
 // and channel health (15-minute period — polling, idle detection, orphaned-instance cleanup).
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.NotificationDispatchTask>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelHealthTask>();
+
+// T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
+// is registered individually (not discovered by reflection) so the list here IS the list of what runs —
+// deliberately including the fact that NO rule for NotificationOptOut exists anywhere in this list.
+builder.Services.Configure<ServiceBooking.API.Services.Retention.RetentionPeriods>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Retention.RetentionPeriods.SectionName));
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.NotificationBodyRedactionRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.NotificationMetadataDeletionRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.TemplateHistoryRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ConsentRecordRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.InactiveAccountRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.BookingPersonalizationRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ClientNoteRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ClientNotePhotoRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ClientHealthNoteRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.ChannelStateEventRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.PaymentLogRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.MailLogRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.AppLogAgeRule>();
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
+
 builder.Services.AddHostedService<ScheduledTaskRunner>();
 
 var app = builder.Build();
@@ -561,9 +633,10 @@ if (!isDeveloperEnvironment)
     legalProvider.LoadAtStartup();
     if (legalProvider.Current is null)
         throw new InvalidOperationException(
-            "Legal documents (App_Data/legal/legal.json) failed to load — without a valid Privacy and " +
-            "Terms document the service cannot legally accept registrations. Check the container logs " +
-            "above for the specific validation error and fix legal.json or the mounted files.");
+            "Legal documents (App_Data/legal/legal.json) failed to load — without all five document " +
+            "types and all six interface texts (ARCHITECTURE_CYCLE5.md §43.3) the service cannot legally " +
+            "accept registrations. Check the container logs above for the specific validation error and " +
+            "fix legal.json or the mounted files.");
 }
 
 // One line per request (US-45, ARCHITECTURE.md §11.1) — method, path, status, duration for free, plus
@@ -581,6 +654,17 @@ if (!isDeveloperEnvironment)
 // the same masking as anything else with a phone in it, not through this switch.
 app.UseSerilogRequestLogging(opts =>
 {
+    // Cycle 8 phase 2 (ARCHITECTURE_CYCLE8_PHASE2.md §96): RequestLoggingMiddleware defaults to the
+    // STATIC Serilog.Log.Logger when opts.Logger is left null — the one fallback in this pipeline that
+    // preserveStaticLogger (set above on builder.Host.UseSerilog) does not route around by itself. Under
+    // Testing's per-host preserveStaticLogger=true, that default would mean this middleware's own
+    // request-completed line goes to whichever OTHER host most recently claimed the static logger (or
+    // nowhere, if none has) instead of THIS host's own file sink — resolved here by pointing it
+    // explicitly at the Serilog.ILogger this exact host's DI container built (registered by UseSerilog
+    // regardless of preserveStaticLogger). No behavior change outside Testing: in Development/Production
+    // there is only ever one host per process, so this is the SAME logger the static field would have
+    // pointed at anyway.
+    opts.Logger = app.Services.GetRequiredService<Serilog.ILogger>();
     // Every DELIBERATE 4xx (400/402/403/404/409/429/451) logs at Information, never Warning/Error
     // (US-45 p.5) — they are normal traffic, not incidents. Only an unhandled exception or a 5xx is
     // Warning/Error-worthy from the request-logging middleware's point of view; background-task and
@@ -721,6 +805,7 @@ using (var scope = app.Services.CreateScope())
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var legalDocumentProvider = scope.ServiceProvider.GetRequiredService<LegalDocumentProvider>();
+    var consentLedger = scope.ServiceProvider.GetRequiredService<ConsentLedger>();
 
     await db.Database.MigrateAsync();
 
@@ -765,14 +850,16 @@ using (var scope = app.Services.CreateScope())
             // the manifest is fixed.
             var legalSnapshot = legalDocumentProvider.Current;
             var seededPrivacyDoc = legalSnapshot?.Get(LegalDocumentType.Privacy);
-            var seededTermsDoc = legalSnapshot?.Get(LegalDocumentType.Terms);
+            var seededTermsDoc = legalSnapshot?.Get(LegalDocumentType.TermsClient);
             if (seededPrivacyDoc is not null && seededTermsDoc is not null)
             {
-                var acceptedAt = DateTime.UtcNow;
-                db.UserConsents.AddRange(
-                    new UserConsent { Id = Guid.NewGuid(), UserId = admin.Id, DocumentType = LegalDocumentType.Privacy, Version = seededPrivacyDoc.Version, AcceptedAtUtc = acceptedAt },
-                    new UserConsent { Id = Guid.NewGuid(), UserId = admin.Id, DocumentType = LegalDocumentType.Terms, Version = seededTermsDoc.Version, AcceptedAtUtc = acceptedAt });
-                await db.SaveChangesAsync();
+                var seedSubject = ServiceBooking.API.Services.Legal.ConsentSubject.ForUser(admin.Id);
+                await consentLedger.GrantAsync(new ServiceBooking.API.Services.Legal.ConsentGrant(
+                    seedSubject, LegalDocumentType.Privacy.ToString(), seededPrivacyDoc.Version, seededPrivacyDoc.ContentHash,
+                    Purpose: null, ConsentAct.Acknowledged, ConsentSource.Registration));
+                await consentLedger.GrantAsync(new ServiceBooking.API.Services.Legal.ConsentGrant(
+                    seedSubject, LegalDocumentType.TermsClient.ToString(), seededTermsDoc.Version, seededTermsDoc.ContentHash,
+                    Purpose: null, ConsentAct.Accepted, ConsentSource.Registration));
             }
         }
     }

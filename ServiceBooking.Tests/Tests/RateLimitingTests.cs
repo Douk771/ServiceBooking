@@ -11,12 +11,33 @@ namespace ServiceBooking.Tests.Tests;
 /// shared "Api" collection (whose Testing config deliberately raises every limit to 10000/min so the
 /// other 344 tests are never throttled).
 /// </summary>
-public class RateLimitingTests
+public class RateLimitingTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
+    // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(RateLimitingTests));
+
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    {
+        fixture.RecordTestClass(className);
+        return 0;
+    }
+
     private static string RandomNumericPhone()
     {
         var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(9).ToArray();
         return $"+79{new string(digits).PadRight(9, '1')}";
+    }
+
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): the anonymous
+    // registration payloads below need a `legal` object now, read from the same host they're posting to.
+    private static async Task<object> CurrentLegalPayloadAsync(HttpClient client)
+    {
+        var manifest = await client.GetFromJsonAsync<ServiceBooking.API.Controllers.LegalManifestDto>("/api/legal/documents");
+        return new
+        {
+            privacyAcknowledgedVersion = manifest!.Documents.First(d => d.Type == "Privacy").Version,
+            termsAcceptedVersion = manifest.Documents.First(d => d.Type == "TermsClient").Version
+        };
     }
 
     // ── auth-login: basic trip ───────────────────────────────────────────────
@@ -24,7 +45,7 @@ public class RateLimitingTests
     [Fact, TestCase("SEC-040")]
     public async Task Login_ExceedingPermitLimit_ReturnsTooManyRequests()
     {
-        await using var factory = new RateLimitTestFactory(authLoginPermitLimit: 3, trustedNetworks: ["127.0.0.1/32"]);
+        await using var factory = new RateLimitTestFactory(fixture.ConnectionString, authLoginPermitLimit: 3, trustedNetworks: ["127.0.0.1/32"]);
         var client = factory.CreateClient();
 
         for (var i = 0; i < 3; i++)
@@ -43,7 +64,7 @@ public class RateLimitingTests
     [Fact, TestCase("SEC-041")]
     public async Task Login_DifferentForwardedForAddresses_AreRateLimitedIndependently_WhenProxyIsTrusted()
     {
-        await using var factory = new RateLimitTestFactory(authLoginPermitLimit: 2, trustedNetworks: ["127.0.0.1/32"]);
+        await using var factory = new RateLimitTestFactory(fixture.ConnectionString, authLoginPermitLimit: 2, trustedNetworks: ["127.0.0.1/32"]);
         var client = factory.CreateClient();
 
         for (var i = 0; i < 2; i++)
@@ -93,7 +114,7 @@ public class RateLimitingTests
         // startup test exists), and empty TrustedNetworks stays reachable, and this dangerous, in Testing
         // and Development. This test documents the real, verified behavior rather than the wrong
         // expectation the previous QA pass wrote before actually confirming it against ASP.NET Core.
-        await using var factory = new RateLimitTestFactory(authLoginPermitLimit: 2, trustedNetworks: []);
+        await using var factory = new RateLimitTestFactory(fixture.ConnectionString, authLoginPermitLimit: 2, trustedNetworks: []);
         var client = factory.CreateClient();
 
         client.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.10");
@@ -119,7 +140,7 @@ public class RateLimitingTests
         // operator who forgot to update ForwardedHeaders:TrustedNetworks after moving nginx would actually
         // hit. This is the scenario that is actually reachable in Production (unlike SEC-042's empty
         // list, which Production's fail-fast forbids outright).
-        await using var factory = new RateLimitTestFactory(authLoginPermitLimit: 2, trustedNetworks: ["10.0.0.0/8"]);
+        await using var factory = new RateLimitTestFactory(fixture.ConnectionString, authLoginPermitLimit: 2, trustedNetworks: ["10.0.0.0/8"]);
         var client = factory.CreateClient();
 
         client.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.10");
@@ -139,21 +160,22 @@ public class RateLimitingTests
     [Fact, TestCase("SEC-043")]
     public async Task Register_ExceedingPermitLimit_ReturnsTooManyRequests()
     {
-        await using var factory = new RateLimitTestFactory(authRegisterPermitLimit: 2, trustedNetworks: ["127.0.0.1/32"]);
+        await using var factory = new RateLimitTestFactory(fixture.ConnectionString, authRegisterPermitLimit: 2, trustedNetworks: ["127.0.0.1/32"]);
         var client = factory.CreateClient();
+        var legal = await CurrentLegalPayloadAsync(client);
 
         for (var i = 0; i < 2; i++)
         {
             var response = await client.PostAsJsonAsync("/api/auth/register", new
             {
-                firstName = "Т", lastName = "Т", phone = RandomNumericPhone(), password = "Password123!", acceptedLegal = true
+                firstName = "Т", lastName = "Т", phone = RandomNumericPhone(), password = "Password123!", legal
             });
             response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         }
 
         var third = await client.PostAsJsonAsync("/api/auth/register", new
         {
-            firstName = "Т", lastName = "Т", phone = RandomNumericPhone(), password = "Password123!", acceptedLegal = true
+            firstName = "Т", lastName = "Т", phone = RandomNumericPhone(), password = "Password123!", legal
         });
         third.StatusCode.Should().Be((HttpStatusCode)429);
     }
@@ -163,7 +185,7 @@ public class RateLimitingTests
     [Fact, TestCase("SEC-044")]
     public async Task HealthChecks_AreNeverRateLimited()
     {
-        await using var factory = new RateLimitTestFactory(authLoginPermitLimit: 1, trustedNetworks: ["127.0.0.1/32"]);
+        await using var factory = new RateLimitTestFactory(fixture.ConnectionString, authLoginPermitLimit: 1, trustedNetworks: ["127.0.0.1/32"]);
         var client = factory.CreateClient();
 
         for (var i = 0; i < 20; i++)

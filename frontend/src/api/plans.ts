@@ -1,6 +1,9 @@
 import { api } from './client'
 
-export type PhotoRetention = 'SixMonths' | 'TwelveMonths' | 'Forever'
+/** API_CONTRACT_CYCLE5.md §59.1 — `Forever` was removed from the model (152-ФЗ ч. 7 ст. 5 prohibits
+ *  indefinite retention of personal data); the migration converted existing `Forever` plans to
+ *  `TwelveMonths`. Do not reintroduce the option in the admin UI. */
+export type PhotoRetention = 'SixMonths' | 'TwelveMonths'
 
 export interface PlanConfig {
   id: string

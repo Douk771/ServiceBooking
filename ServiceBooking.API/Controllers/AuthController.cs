@@ -1,13 +1,11 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
-using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
 
@@ -18,26 +16,39 @@ public class AuthController(
     SignInManager<AppUser> signInManager,
     TokenService tokenService,
     LegalDocumentProvider legalProvider,
-    AppDbContext db,
+    ConsentLedger ledger,
     ILogger<AuthController> logger) : ControllerBase
 {
     [HttpPost("register")]
     [EnableRateLimiting("auth-register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
     {
-        // US-37 (BREAKING № 1, API_CONTRACT.md §5): checked before anything else touches the database —
-        // an unaccepted registration must never create a row to begin with.
-        if (!dto.AcceptedLegal)
+        // ARCHITECTURE_CYCLE5.md §46.1/§46.2: registration blocks on acknowledging Privacy and accepting
+        // TermsClient — the only two elements the law makes a precondition of using the product at all
+        // (a one-sided document, and a contract offer). Checked before anything else touches the
+        // database — an unaccepted registration must never create a row to begin with. PdnConsent is
+        // deliberately NOT checked here: §59.2 records that this departs from SPEC's literal wording in
+        // favour of the legal opinion it was written against, which is the authoritative source on this
+        // one point. A caller who never calls POST /api/profile/consents afterwards is registered and
+        // fully functional — that is the intended, not a degraded, outcome.
+        //
+        // Checked by hand, not via [Required] (API_CONTRACT_CYCLE5.md §40.1, RegisterDto's own note):
+        // a missing/incomplete `legal` gets this exact domain string, not a generic ProblemDetails blob —
+        // frontend's utils/authError.ts substring-matches this text.
+        if (string.IsNullOrWhiteSpace(dto.Legal?.PrivacyAcknowledgedVersion) || string.IsNullOrWhiteSpace(dto.Legal?.TermsAcceptedVersion))
             return BadRequest("Consent to the Terms of Service and the Privacy Policy is required.");
 
-        // Registration writes a UserConsent row for BOTH documents, so both must be loaded before the
-        // account is created — the alternative (create the user, then discover a document is missing)
-        // would leave a real account with no recorded consent (ARCHITECTURE.md §6.1).
         var snapshot = legalProvider.Current;
         var privacyDoc = snapshot?.Get(LegalDocumentType.Privacy);
-        var termsDoc = snapshot?.Get(LegalDocumentType.Terms);
+        var termsDoc = snapshot?.Get(LegalDocumentType.TermsClient);
         if (privacyDoc is null || termsDoc is null)
             return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+
+        // The caller's form may have been open while an operator replaced a document — reject stale
+        // versions with 409 rather than silently recording acceptance of a document the person never
+        // actually saw (API_CONTRACT_CYCLE5.md §40.2 p.1).
+        if (dto.Legal.PrivacyAcknowledgedVersion != privacyDoc.Version || dto.Legal.TermsAcceptedVersion != termsDoc.Version)
+            return Conflict("Документы были обновлены ещё раз — перечитайте и примите новую редакцию.");
 
         // US-26: the account is identified by the CANONICAL phone — otherwise "8 999..." and
         // "+7 999..." would register as two different accounts (the exact problem this history fixes).
@@ -63,14 +74,19 @@ public class AuthController(
 
         await userManager.AddToRoleAsync(user, "Client");
 
-        // US-37 p.1: two UserConsent rows, one moment, in the same request as account creation (not the
-        // same DB transaction as CreateAsync — Identity commits that on its own — but nothing else can
-        // observe the account before this write completes, since Register hasn't returned yet).
-        var acceptedAt = DateTime.UtcNow;
-        db.UserConsents.AddRange(
-            new UserConsent { Id = Guid.NewGuid(), UserId = user.Id, DocumentType = LegalDocumentType.Privacy, Version = privacyDoc.Version, AcceptedAtUtc = acceptedAt },
-            new UserConsent { Id = Guid.NewGuid(), UserId = user.Id, DocumentType = LegalDocumentType.Terms, Version = termsDoc.Version, AcceptedAtUtc = acceptedAt });
-        await db.SaveChangesAsync();
+        // Two consent journal rows, one moment, in the same request as account creation (ARCHITECTURE_
+        // CYCLE5.md §40.2 p.2) — not the same DB transaction as CreateAsync (Identity commits that on its
+        // own), but nothing else can observe the account before this write completes, since Register
+        // hasn't returned yet. Each grant carries its own transaction/advisory-lock pair (ConsentLedger).
+        var subject = ConsentSubject.ForUser(user.Id);
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
+        await ledger.GrantAsync(new ConsentGrant(
+            subject, LegalDocumentType.Privacy.ToString(), privacyDoc.Version, privacyDoc.ContentHash,
+            Purpose: null, ConsentAct.Acknowledged, ConsentSource.Registration, ipAddress, userAgent));
+        await ledger.GrantAsync(new ConsentGrant(
+            subject, LegalDocumentType.TermsClient.ToString(), termsDoc.Version, termsDoc.ContentHash,
+            Purpose: null, ConsentAct.Accepted, ConsentSource.Registration, ipAddress, userAgent));
 
         var roles = await userManager.GetRolesAsync(user);
         var token = tokenService.GenerateToken(user, roles, privacyDoc.Version, termsDoc.Version);
@@ -107,14 +123,17 @@ public class AuthController(
 
         var roles = await userManager.GetRolesAsync(user);
 
-        // The claims carry what THIS user actually accepted, from UserConsent — not the document's
-        // current version (ARCHITECTURE.md §6.3 p.1). An account that predates cycle C, or was created
-        // while the legal manifest was unavailable in Dev/Testing, simply has no rows here; the claim is
-        // then omitted (TokenService), and LegalConsentFilter treats that the same as any other mismatch.
-        var consents = await db.UserConsents.Where(c => c.UserId == user.Id).ToListAsync();
-        var privacyVersion = consents.FirstOrDefault(c => c.DocumentType == LegalDocumentType.Privacy)?.Version;
-        var termsVersion = consents.FirstOrDefault(c => c.DocumentType == LegalDocumentType.Terms)?.Version;
-        var token = tokenService.GenerateToken(user, roles, privacyVersion, termsVersion);
+        // The claims carry what THIS user actually accepted, from the ConsentRecord journal — not the
+        // document's current version (ARCHITECTURE.md §6.3 p.1). An account that predates cycle C, or was
+        // created while the legal manifest was unavailable in Dev/Testing, simply has no rows here; the
+        // claim is then omitted (TokenService), and LegalConsentFilter treats that the same as any other
+        // mismatch. Three cold reads (login is not the per-request hot path §45.1 protects) — TermsOwner
+        // comes back null for anyone who never accepted it, which is the correct "not an owner" claim state.
+        var subject = ConsentSubject.ForUser(user.Id);
+        var privacyState = await ledger.CurrentAsync(subject, LegalDocumentType.Privacy.ToString(), purpose: null);
+        var termsState = await ledger.CurrentAsync(subject, LegalDocumentType.TermsClient.ToString(), purpose: null);
+        var ownerTermsState = await ledger.CurrentAsync(subject, LegalDocumentType.TermsOwner.ToString(), purpose: null);
+        var token = tokenService.GenerateToken(user, roles, privacyState?.DocumentVersion, termsState?.DocumentVersion, ownerTermsState?.DocumentVersion);
 
         return Ok(new AuthResponseDto(token, user.Id, user.PhoneNumber!, user.Email, user.FirstName, user.LastName, roles));
     }

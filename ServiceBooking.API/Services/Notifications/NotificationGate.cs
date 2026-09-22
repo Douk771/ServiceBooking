@@ -27,6 +27,14 @@ public readonly record struct NotificationGateResult(NotificationGateOutcome Out
 /// </summary>
 public static class NotificationGate
 {
+    // providerDeliveryConsentMode: T-24 (ARCHITECTURE_CYCLE5.md §52.3) — a config parameter, not a
+    // hardcoded branch; see ProviderDeliveryConsentMode for what each value means. Defaults to
+    // AccountsOnly so every existing caller (and every existing test) that doesn't pass it explicitly
+    // keeps today's behavior for guests (never blocked) and gains the new check only for recipients WITH
+    // an account.
+    // recipientHasProviderDeliveryConsent: null means "no account" (a guest — structurally cannot have
+    // granted anything, §52.3's AccountsOnly row); true/false means the caller already looked up the
+    // recipient's current PdnConsent/ProviderDelivery grant via ConsentLedger.
     public static NotificationGateResult Evaluate(
         EffectivePlan plan,
         NotificationType type,
@@ -35,10 +43,29 @@ public static class NotificationGate
         CompanyNotificationSettings? settings,
         bool recipientOptedOut,
         DateTime nowUtc,
-        DateTime visitStartUtc)
+        DateTime visitStartUtc,
+        ProviderDeliveryConsentMode providerDeliveryConsentMode = ProviderDeliveryConsentMode.AccountsOnly,
+        bool? recipientHasProviderDeliveryConsent = null)
     {
         if (recipientOptedOut)
             return NotificationGateResult.Block(NotificationReason.RecipientOptedOut);
+
+        // T-24 (ARCHITECTURE_CYCLE5.md §52.3). Off: never checked here — reliance is on named disclosure
+        // alone (§52.4 step 1 requires D4 to be rewritten before this value is ever used). AccountsOnly:
+        // a guest (recipientHasProviderDeliveryConsent == null) is never blocked — nobody asked them,
+        // the contractual basis for the booking itself covers delivery; an account holder who has NOT
+        // granted (or has revoked) the purpose IS blocked. Strict: even a guest is blocked, since they
+        // structurally cannot satisfy "has an explicit, current grant" — §52.4's "ужесточение", a
+        // deliberate product decision the flag alone does not soften.
+        var blockedByProviderDeliveryConsent = providerDeliveryConsentMode switch
+        {
+            ProviderDeliveryConsentMode.Off => false,
+            ProviderDeliveryConsentMode.AccountsOnly => recipientHasProviderDeliveryConsent == false,
+            ProviderDeliveryConsentMode.Strict => recipientHasProviderDeliveryConsent != true,
+            _ => throw new ArgumentOutOfRangeException(nameof(providerDeliveryConsentMode))
+        };
+        if (blockedByProviderDeliveryConsent)
+            return NotificationGateResult.Block(NotificationReason.NoProviderDeliveryConsent);
 
         if (!plan.AllowNotificationChannel)
             return NotificationGateResult.Block(NotificationReason.NotOnPaidPlan);

@@ -685,4 +685,160 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ParseDefaultWorkWindow(config);
         act.Should().Throw<InvalidOperationException>();
     }
+
+    // ── ValidateProviderDeliveryConsentMode (cycle 5, T-24, ARCHITECTURE_CYCLE5.md §52.3) ──────────
+
+    [Theory]
+    [InlineData("Strict")]
+    [InlineData("AccountsOnly")]
+    [InlineData("Off")]
+    [InlineData("strict")] // case-insensitive
+    [InlineData(null)]     // absent → NotificationOptions' own AccountsOnly default
+    [InlineData("")]
+    public void ValidateProviderDeliveryConsentMode_RecognizedOrAbsentValue_DoesNotThrow(string? value)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:ProviderDeliveryConsent"] = value });
+        var act = () => DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(config);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateProviderDeliveryConsentMode_UnrecognizedValue_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:ProviderDeliveryConsent"] = "Nonsense" });
+        var act = () => DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(config);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ProviderDeliveryConsent*");
+    }
+
+    // ── ValidateGreenApiServerCountry (cycle 5, T5-B13, ARCHITECTURE_CYCLE5.md §52.1) ───────────────
+
+    [Fact]
+    public void ValidateGreenApiServerCountry_CreationDisabled_EmptyCountry_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApi:InstanceCreationEnabled"] = "false",
+            ["Notifications:GreenApi:ServerCountry"] = ""
+        });
+        var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateGreenApiServerCountry_CreationEnabled_EmptyCountry_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApi:InstanceCreationEnabled"] = "true",
+            ["Notifications:GreenApi:ServerCountry"] = ""
+        });
+        var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ServerCountry*");
+    }
+
+    [Fact]
+    public void ValidateGreenApiServerCountry_CreationEnabled_CountrySet_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApi:InstanceCreationEnabled"] = "true",
+            ["Notifications:GreenApi:ServerCountry"] = "RU"
+        });
+        var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateGreenApiServerCountry_CreationEnabled_WhitespaceCountry_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApi:InstanceCreationEnabled"] = "true",
+            ["Notifications:GreenApi:ServerCountry"] = "   "
+        });
+        var act = () => DeploymentSafetyChecks.ValidateGreenApiServerCountry(config);
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    // ── ValidateRetentionPeriods (T5-B8/B9, ARCHITECTURE_CYCLE5.md §49.1/§49.5) ────────────────
+
+    [Fact]
+    public void ValidateRetentionPeriods_DefaultConfig_DoesNotThrow()
+    {
+        // No Retention section at all — must fall back to RetentionPeriods' own defaults (365/1095),
+        // both of which already satisfy the minimums.
+        var config = BuildConfig(new Dictionary<string, string?>());
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(365)]
+    [InlineData(1095)]
+    [InlineData(3650)]
+    public void ValidateRetentionPeriods_TemplateHistoryAtOrAboveMinimum_DoesNotThrow(int days)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:TemplateHistoryDays"] = days.ToString() });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(364)]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void ValidateRetentionPeriods_TemplateHistoryBelowMinimum_Throws(int days)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:TemplateHistoryDays"] = days.ToString() });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*TemplateHistoryDays*");
+    }
+
+    [Theory]
+    [InlineData(1095)]
+    [InlineData(1096)]
+    [InlineData(3650)]
+    public void ValidateRetentionPeriods_ConsentRecordAtOrAboveMinimum_DoesNotThrow(int days)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:ConsentRecordDays"] = days.ToString() });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(1094)]
+    [InlineData(365)]
+    [InlineData(0)]
+    public void ValidateRetentionPeriods_ConsentRecordBelowMinimum_Throws(int days)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:ConsentRecordDays"] = days.ToString() });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ConsentRecordDays*");
+    }
+
+    [Fact]
+    public void ValidateRetentionPeriods_TemplateHistoryChecked_EvenWhenConsentRecordAlsoInvalid()
+    {
+        // Whichever fails first is fine — the point is that a caller fixing one doesn't get a false
+        // "all clear" while the other minimum is still violated.
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Retention:TemplateHistoryDays"] = "30",
+            ["Retention:ConsentRecordDays"] = "30",
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
 }

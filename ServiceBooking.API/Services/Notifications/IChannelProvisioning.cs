@@ -1,6 +1,10 @@
 namespace ServiceBooking.API.Services.Notifications;
 
-public sealed record ProvisionedInstance(string InstanceId, string Token);
+/// <summary><see cref="ServerCountry"/> is the region/country the PROVIDER'S response reported for this
+/// instance, or null if it reported none (ARCHITECTURE_CYCLE5.md §52.2) — the caller (Connect) compares
+/// it against the configured expectation and refuses to wire up the instance on a mismatch. Null is not
+/// "matched"; it means "nothing to check", the same as before this cycle.</summary>
+public sealed record ProvisionedInstance(string InstanceId, string Token, string? ServerCountry = null);
 
 /// <summary><see cref="Base64Png"/> is null while the instance hasn't produced a QR yet (still
 /// starting up) or once it's already <see cref="Authorized"/> and there's nothing left to scan.

@@ -6,7 +6,9 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.ClientNotes;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
@@ -18,13 +20,15 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/client-notes")]
 public class ClientNotePhotosController(
-    AppDbContext db, ImageUploadService imageUploadService, FileStorage storage, SubscriptionResolver subscriptionResolver)
+    AppDbContext db, ImageUploadService imageUploadService, FileStorage storage, SubscriptionResolver subscriptionResolver,
+    ConsentLedger ledger)
     : ControllerBase
 {
     private const int MaxPhotosPerNote = 5;
 
     [HttpPost("{noteId:guid}/photos")]
     [Authorize]
+    [RequiresOwnerTerms]
     [EnableRateLimiting("uploads")]
     [RequestSizeLimit(5 * 1024 * 1024)]
     public async Task<IActionResult> Upload(Guid noteId, IFormFile? file)
@@ -37,6 +41,33 @@ public class ClientNotePhotosController(
         // hide by distinguishing "not staff here" from "note doesn't exist" — 403, not 404
         // (API_CONTRACT.md §4).
         if (!await CompanyMembership.IsStaffAsync(db, note.CompanyId, userId)) return Forbid();
+
+        // T5-B7 (ARCHITECTURE_CYCLE5.md §44.3, API_CONTRACT_CYCLE5.md §44.3): blocks ONLY the upload —
+        // the note itself, the booking, and every other interaction with this client keep working
+        // without any consent at all (US-76 п. 6). Salon-scoped, phone-keyed — same reasoning as
+        // ClientConsentsController's own subject resolution: a client's identity inside one company's
+        // data is their phone, whether or not they have an account.
+        //
+        // Code review В2: the gate must default to "cannot confirm — do not allow", not fail-open.
+        // hasSubjectIdentity/ResolveSubjectPhoneAsync are deliberately split: a note with NEITHER
+        // ClientId NOR GuestPhone genuinely has no one to ask (MastersController.AddNote's own
+        // validation makes this unreachable in practice, kept as a defensive no-op) — but a note that
+        // DOES name a client, whose phone fails to resolve (an AppUser.PhoneNumber cleared by account
+        // anonymization is the concrete case that was previously fail-open here), must BLOCK, not skip:
+        // there is no canonical phone left to check consent against, which is exactly the state consent
+        // cannot be confirmed in.
+        var hasSubjectIdentity = !string.IsNullOrEmpty(note.GuestPhone) || !string.IsNullOrEmpty(note.ClientId);
+        if (hasSubjectIdentity)
+        {
+            var subjectPhone = await ResolveSubjectPhoneAsync(note);
+            if (subjectPhone is null)
+                return BadRequest("Не удалось подтвердить согласие клиента на фотофиксацию.");
+
+            var subject = ConsentSubject.ForPhoneInCompany(subjectPhone, note.CompanyId);
+            var consent = await ledger.CurrentAsync(subject, LegalTextKey.PhotoConsent, purpose: null);
+            if (consent is null)
+                return BadRequest("Перед загрузкой фото нужно подтвердить согласие клиента на фотофиксацию.");
+        }
 
         var validation = await imageUploadService.ReadAndProcessAsync(
             file, [ImageProfile.ClientNotePhoto, ImageProfile.ClientNotePhotoThumb]);
@@ -174,6 +205,28 @@ public class ClientNotePhotosController(
         storage.DeletePrivate(thumbPath);
 
         return NoContent();
+    }
+
+    /// <summary>The canonical phone identifying this note's client, however they're recorded — null when
+    /// there is no phone to resolve at all (an anonymized AppUser's PhoneNumber is cleared, or — the
+    /// defensive edge case of a note with neither ClientId nor GuestPhone — MastersController.AddNote's
+    /// own validation makes that one unreachable through normal use). Callers must NOT treat a null
+    /// result as "nothing to check" once <see cref="ClientNote.ClientId"/>/<see cref="ClientNote.GuestPhone"/>
+    /// shows a subject identity exists (code review В2) — only the caller knows whether an identity was
+    /// present to begin with. Explicitly re-normalized (code review В2): GuestPhone is written canonical
+    /// by MastersController.AddNote and AppUser.PhoneNumber by AuthController today, but consent is READ
+    /// back keyed by the canonical form (ClientConsentsController.ResolveClientAsync) — re-normalizing
+    /// here removes any dependency on that staying true everywhere phones are ever written.</summary>
+    private async Task<string?> ResolveSubjectPhoneAsync(ClientNote note)
+    {
+        string? rawPhone;
+        if (!string.IsNullOrEmpty(note.GuestPhone)) rawPhone = note.GuestPhone;
+        else if (!string.IsNullOrEmpty(note.ClientId))
+            rawPhone = await db.Users.AsNoTracking().Where(u => u.Id == note.ClientId).Select(u => u.PhoneNumber).FirstOrDefaultAsync();
+        else rawPhone = null;
+
+        if (string.IsNullOrEmpty(rawPhone)) return null;
+        return PhoneNormalizer.TryNormalize(rawPhone, out var canonical) ? canonical : null;
     }
 
     private async Task<ClientNotePhotoDto> BuildDtoAsync(ClientNotePhoto photo, ClientNote note, string callerId)

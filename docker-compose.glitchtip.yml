@@ -63,7 +63,7 @@ services:
     image: glitchtip/glitchtip:v4.1
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8000:8000"   # localhost only — nginx proxies to it, same convention as the api service
+      - "127.0.0.1:${SB_GLITCHTIP_PORT:-8000}:8000"   # localhost only — nginx proxies to it, same convention as the api service
     environment:
       DATABASE_URL: postgres://glitchtip:${GLITCHTIP_POSTGRES_PASSWORD}@postgres:5432/glitchtip
       SECRET_KEY: ${GLITCHTIP_SECRET_KEY}

@@ -169,9 +169,12 @@ public class NotificationWebhookUnsubscribeTests(TestDatabaseFixture fixture) : 
         var phone = "79993334455";
         var unsubscribeToken = UnsubscribeTokens.Build(phone, Encoding.UTF8.GetBytes(NotificationTestFactory.TestUnsubscribeKey));
 
-        var logsDir = FindLogsDirectory();
-        logsDir.Should().NotBeNull("expected the app to have written to a logs/ directory relative to the test process' working directory");
-        var baselineLengths = Directory.GetFiles(logsDir!, "app-*.json").ToDictionary(f => f, f => new FileInfo(f).Length);
+        // ARCHITECTURE_CYCLE8.md §71.4: logs move to a run+factory-scoped temp directory
+        // (Factory.Identity.LogDirectory), so this no longer needs to search upward from
+        // AppContext.BaseDirectory for a directory every host in the process used to share.
+        var logsDir = Factory.Identity.LogDirectory;
+        Directory.Exists(logsDir).Should().BeTrue("expected TestHostSettings to have created this host's own log directory");
+        var baselineLengths = Directory.GetFiles(logsDir, "app-*.json").ToDictionary(f => f, f => new FileInfo(f).Length);
 
         // Hit BOTH the unsubscribe link (phone+signature — PII) and the provider webhook (shared secret)
         // at least once each, including an error path (wrong webhook token) so a failure log line is
@@ -194,19 +197,6 @@ public class NotificationWebhookUnsubscribeTests(TestDatabaseFixture fixture) : 
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
-
-    private static string? FindLogsDirectory()
-    {
-        var dir = AppContext.BaseDirectory;
-        for (var i = 0; i < 6 && dir is not null; i++)
-        {
-            var candidate = Path.Combine(dir, "logs");
-            if (Directory.Exists(candidate) && Directory.GetFiles(candidate, "app-*.json").Length > 0)
-                return candidate;
-            dir = Path.GetDirectoryName(dir.TrimEnd(Path.DirectorySeparatorChar));
-        }
-        return null;
-    }
 
     /// <summary>Reads only the bytes written to each "app-*.json" file (including any NEW file that
     /// didn't exist at baseline — e.g. a run crossing midnight on this test machine's fake 2026 clock)

@@ -27,9 +27,38 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      SERVICEBOOKING_TEST_CONNECTION: "Host=localhost;Database=servicebooking_test;Username=postgres;Password=postgres"
+      # Cycle 8 (ARCHITECTURE_CYCLE8.md §69.2, §74.1): this is a connection string to the SERVER, not a
+      # database — the test run picks its own per-run, per-slot database names (sbtest_<key>_<slot>)
+      # and always rewrites the Database component to "postgres" itself. Simplified here to say so
+      # plainly; the old value (Database=servicebooking_test) would have kept working unchanged.
+      SERVICEBOOKING_TEST_CONNECTION: "Host=localhost;Database=postgres;Username=postgres;Password=postgres"
+      # ARCHITECTURE_CYCLE8_PHASE2.md §93.1/§93.4 (T8-P8): CI runs at P=2, not xunit.runner.json's local
+      # default of 4 (2 CI cores vs. 4 on a dev machine, §93.1) -- via `-- xUnit.MaxParallelThreads=2`
+      # below. TestParallelism.cs cannot see that command-line value in-process (no in-process API to
+      # read it back), so this env var is the second, independent place that has to say the same "2" --
+      # it is what the connection-budget fail-fast (§93.4) actually uses. If these two ever disagree,
+      # TestParallelism.cs prints the value it used so the drift is visible in the CI log, not silent.
+      SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"
     steps:
       - uses: actions/checkout@v4
+
+      # Optional correlation (ARCHITECTURE_CYCLE8.md §74.1): sets SERVICEBOOKING_TEST_RUN_KEY so this
+      # run's database/container names show up tagged with this CI run's id in logs. Not required for
+      # correctness — without it TestRunKey.Current falls back to a random key (TestRunKey.cs) — but the
+      # variable's contract (API_CONTRACT_CYCLE8.md §85.1) is strict: exactly 8 lowercase hex chars. A
+      # raw `github.run_id` (a decimal id of varying length) does NOT satisfy that and would make
+      # TestRunKey throw at process start, so it's folded into 8 hex digits here rather than passed
+      # through as-is.
+      #
+      # Review finding N17: GITHUB_RUN_ID alone is the same for every job of one workflow run, so two
+      # jobs (or, per TestDatabaseLease's N2 fix, two jobs racing on a shared external Postgres) would
+      # derive the identical run key and could collide on the same sbtest_<key>_<slot> database names.
+      # Folding in GITHUB_JOB (a per-job constant) makes the key differ per job while staying stable and
+      # traceable from the CI log for a single job's own re-runs.
+      - name: Derive test run key
+        run: |
+          job_hash="$(printf '%s' "$GITHUB_JOB" | cksum | cut -d' ' -f1)"
+          printf 'SERVICEBOOKING_TEST_RUN_KEY=%08x\n' "$(( (GITHUB_RUN_ID ^ job_hash) % 4294967296 ))" >> "$GITHUB_ENV"
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -56,7 +85,13 @@ jobs:
         run: dotnet test ServiceBooking.UnitTests --no-build -c Release
 
       - name: Functional tests
-        run: dotnet test ServiceBooking.Tests --no-build -c Release
+        run: dotnet test ServiceBooking.Tests --no-build -c Release -- xUnit.MaxParallelThreads=2
+
+      # Fast bash check (ARCHITECTURE_CYCLE8.md §74.1/§74.3): fails if the Postgres image's major
+      # version drifts between ServiceBooking.TestKit/TestInfrastructure.cs, docker-compose.yml,
+      # docker-compose.prod.yml and this file.
+      - name: Check image pins
+        run: bash deploy/ci/check-image-pins.sh
 
   frontend:
     runs-on: ubuntu-latest

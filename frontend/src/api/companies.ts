@@ -41,6 +41,16 @@ export interface CreateCompanyPayload {
   /** API_CONTRACT_CYCLE4.md §31.2 — required; the one breaking change of cycle 4. */
   cityId: number
   timeZoneId?: string | null
+  /** API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3) — acceptance of `TermsOwner`, required. */
+  ownerTerms: { version: string }
+}
+
+/** §42.1 — the response now carries a fresh token (claim `lco`) alongside the company. Without
+ *  saving it immediately, the owner would get owner-gate 451 on their own just-created company until
+ *  their next login. */
+export interface CreateCompanyResponse {
+  company: Company
+  token: string
 }
 
 export interface UpdateCompanyPayload {
@@ -68,7 +78,9 @@ export interface CompanyPhotoUsage {
   photoCount: number
   quotaMb: number | null
   percentUsed: number | null
-  retention: 'SixMonths' | 'TwelveMonths' | 'Forever'
+  /** API_CONTRACT_CYCLE5.md §49.5, §59.1 — `Forever` was removed from the model (152-ФЗ ч. 7 ст. 5
+   *  prohibits indefinite retention); the migration converted existing `Forever` plans to 12 months. */
+  retention: 'SixMonths' | 'TwelveMonths'
 }
 
 export const companiesApi = {
@@ -76,7 +88,7 @@ export const companiesApi = {
   getBySlug: (slug: string) => api.get<Company>(`/companies/${slug}`).then((r) => r.data),
   getMy: () => api.get<Company[]>('/companies/my').then((r) => r.data),
   getMemberOf: () => api.get<Company[]>('/companies/member').then((r) => r.data),
-  create: (data: CreateCompanyPayload) => api.post<Company>('/companies', data).then((r) => r.data),
+  create: (data: CreateCompanyPayload) => api.post<CreateCompanyResponse>('/companies', data).then((r) => r.data),
   update: (id: string, data: UpdateCompanyPayload) => api.put<Company>(`/companies/${id}`, data).then((r) => r.data),
   getMasters: (id: string, serviceId?: string) =>
     api

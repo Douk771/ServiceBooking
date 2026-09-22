@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System.Text;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -26,6 +27,7 @@ namespace ServiceBooking.API.Services;
 public sealed class NotificationScheduler(
     AppDbContext db,
     SubscriptionResolver subscriptionResolver,
+    ConsentLedger consentLedger,
     IOptions<NotificationOptions> options)
 {
     public async Task OnBookingCreatedAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct)
@@ -96,7 +98,8 @@ public sealed class NotificationScheduler(
         // US-67 (ARCHITECTURE_CYCLE6.md §47.2): the visit's service names, in visit order — one element
         // for a pre-cycle single-service booking, several for a multi-service one. The template renders
         // them joined by ", " (NotificationScheduler.RenderBodyAsync).
-        IReadOnlyList<string> ServiceNames, AppUser Master, string? RecipientPhone, string RecipientName, bool RecipientOptedOut);
+        IReadOnlyList<string> ServiceNames, AppUser Master, string? RecipientPhone, string RecipientName, bool RecipientOptedOut,
+        string? RecipientUserId);
 
     /// <param name="booking">The booking the notification is about.</param>
     /// <param name="serviceNames">Known at Create time (the caller already resolved and validated the
@@ -142,32 +145,48 @@ public sealed class NotificationScheduler(
 
         string? recipientPhone;
         string recipientName;
+        // T-24 (ARCHITECTURE_CYCLE5.md §52.3): null here means "no account" — the guest path can never
+        // have granted PdnConsent/ProviderDelivery in the first place, since nobody asked them (they have
+        // no profile to ask through). Kept distinct from the client branch below even though
+        // booking.ClientId itself is already available, so this stays the one place recipient identity is
+        // resolved for both the phone/name AND the consent lookup.
+        string? recipientUserId;
         if (!string.IsNullOrEmpty(booking.GuestPhone))
         {
             recipientPhone = booking.GuestPhone;
             recipientName = booking.GuestName ?? "";
+            recipientUserId = null;
         }
         else if (!string.IsNullOrEmpty(booking.ClientId))
         {
             var client = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == booking.ClientId, ct);
             recipientPhone = client?.PhoneNumber;
             recipientName = client is not null ? $"{client.FirstName} {client.LastName}" : "";
+            recipientUserId = client?.Id;
         }
         else
         {
             recipientPhone = null;
             recipientName = "";
+            recipientUserId = null;
         }
 
         var optedOut = recipientPhone is not null &&
             await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == recipientPhone, ct);
 
         return new SchedulingContext(company, plan, assignment?.Channel, settings, names, master,
-            recipientPhone, recipientName, optedOut);
+            recipientPhone, recipientName, optedOut, recipientUserId);
     }
 
     private static DateTime ComputeVisitStartUtc(SchedulingContext ctx, Booking booking) =>
         NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, ctx.Company.TimeZoneId);
+
+    // DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode already fails startup on an unrecognized
+    // value (runs unconditionally, every environment) — the AccountsOnly fallback here is unreachable in
+    // any process that actually started, not a silent behavior change for a bad config.
+    private static ProviderDeliveryConsentMode ParseProviderDeliveryConsentMode(string raw) =>
+        Enum.TryParse<ProviderDeliveryConsentMode>(raw, ignoreCase: true, out var mode)
+            ? mode : ProviderDeliveryConsentMode.AccountsOnly;
 
     private async Task QueueAsync(
         SchedulingContext ctx, Booking booking, NotificationType type,
@@ -194,8 +213,22 @@ public sealed class NotificationScheduler(
             return;
         }
 
+        // T-24 (ARCHITECTURE_CYCLE5.md §52.3): only looked up for recipients WITH an account — a guest
+        // (RecipientUserId null) passes null through unchanged, which NotificationGate reads as "no
+        // account" and never blocks under the shipped AccountsOnly default. One extra indexed read here,
+        // not on the dispatcher's hot path (§45.1: this method already reads the booking/company/settings).
+        bool? recipientHasProviderDeliveryConsent = null;
+        if (ctx.RecipientUserId is not null)
+        {
+            var consentState = await consentLedger.CurrentAsync(
+                ConsentSubject.ForUser(ctx.RecipientUserId), LegalDocumentType.PdnConsent.ToString(),
+                ConsentPurpose.ProviderDelivery, ct);
+            recipientHasProviderDeliveryConsent = consentState is not null;
+        }
+
         var gate = NotificationGate.Evaluate(
-            ctx.Plan, type, ctx.Channel is not null, ctx.Channel, ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc);
+            ctx.Plan, type, ctx.Channel is not null, ctx.Channel, ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc,
+            ParseProviderDeliveryConsentMode(options.Value.ProviderDeliveryConsent), recipientHasProviderDeliveryConsent);
 
         if (gate.Outcome == NotificationGateOutcome.Blocked)
         {

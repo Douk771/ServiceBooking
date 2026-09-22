@@ -63,6 +63,11 @@ public record CompanyDto(
     int BookingHorizonDays
 );
 
+// ARCHITECTURE_CYCLE5.md §42.1 — the acceptance of TermsOwner (D3) that gates company creation. Checked
+// by hand in the controller (not [Required]), same reasoning as RegisterDto.Legal: a domain-specific
+// text beats a generic ProblemDetails blob.
+public record OwnerTermsDto(string? Version);
+
 public record CreateCompanyDto(
     string Name,
     string Slug,
@@ -78,8 +83,17 @@ public record CreateCompanyDto(
     // Optional override — see CompanyTimeZoneResolver.ForNewCompany.
     string? TimeZoneId,
     bool AllowSelfBooking = true,
-    bool ShowInPublicListing = true
+    bool ShowInPublicListing = true,
+    // ARCHITECTURE_CYCLE5.md §42.1, API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3) — appended at the end
+    // with a default so every existing positional CreateCompanyDto(...) call keeps compiling; the
+    // controller answers 400 at runtime if it's actually missing, same pattern as RegisterDto.Legal.
+    OwnerTermsDto? OwnerTerms = null
 );
+
+// API_CONTRACT_CYCLE5.md §42.1 — replaces the bare CompanyDto response. A fresh token is not an
+// optimization: claims are baked in at issuance, so without one the very next owner-action request would
+// still carry the OLD (missing) "lco" claim and immediately 451 on a company the owner just created.
+public record CreateCompanyResponseDto(CompanyDto Company, string Token);
 
 // Public-facing master info for the booking flow
 public record MasterPublicDto(

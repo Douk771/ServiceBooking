@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -13,16 +14,26 @@ interface Props {
 }
 
 /**
- * Renders /privacy and /terms. Public, no auth required (US-36 п. 1). Text arrives as an HTML
- * fragment from the server (API_CONTRACT.md §2) — dangerouslySetInnerHTML is safe here because the
- * server is the sole author of App_Data/legal (ARCHITECTURE.md §4.2), the same trust level as
- * appsettings.Production.json.
+ * Renders /privacy, /terms, /terms-owner, /pdn-consent, /channel-risk (API_CONTRACT_CYCLE5.md §39.2,
+ * §43). Public, no auth required. Text arrives as an HTML fragment from the server — HTML fragment
+ * (API_CONTRACT.md §2) — dangerouslySetInnerHTML is safe here because the server is the sole author
+ * of App_Data/legal (ARCHITECTURE.md §4.2), the same trust level as appsettings.Production.json.
  */
 export function LegalDocumentPage({ type }: Props) {
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ['legal-document', type],
     queryFn: () => legalApi.getDocument(type),
   })
+
+  // The `/offer-channel` redirect lands here as `/terms-owner#offer-channel` (§43): the offer text is
+  // an appendix inside the TermsOwner document, not a document of its own. The browser's own
+  // hash-scroll only fires once, at initial navigation — before this content has loaded — so once it
+  // arrives we scroll to the anchor ourselves if the URL still points at one.
+  useEffect(() => {
+    if (!data || !window.location.hash) return
+    const el = document.getElementById(window.location.hash.slice(1))
+    el?.scrollIntoView()
+  }, [data])
 
   if (isLoading) {
     return (

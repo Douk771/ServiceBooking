@@ -33,17 +33,24 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// </summary>
 public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
 {
+    private readonly string _connectionString;
+
     public string LegalRoot { get; }
 
-    public LegalDocumentsTestFactory()
+    public LegalDocumentsTestFactory(string connectionString)
     {
+        _connectionString = connectionString;
         LegalRoot = Path.Combine(Path.GetTempPath(), "sb-legal-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(LegalRoot);
         ResetToDefault();
     }
 
-    /// <summary>Restores the manifest to two Material, draft documents with a fresh version tag (unique
-    /// per call so tests don't collide with whatever a previous test in this run already accepted).</summary>
+    /// <summary>Restores the manifest to five Material, draft documents (+ six ui-texts) with a fresh
+    /// version tag (unique per call so tests don't collide with whatever a previous test in this run
+    /// already accepted). Only Privacy/TermsClient's version is what LEG- tests bump in this file — the
+    /// other three documents and the six texts get their own, always-valid version so
+    /// LegalDocumentProvider.LoadSnapshot's "all five types / all six keys present" requirement
+    /// (LegalDocumentProvider.cs's own LoadSnapshot) is satisfied on every call, not just the first.</summary>
     public string ResetToDefault()
     {
         var version = "test-" + DateTime.UtcNow.Ticks + "-draft";
@@ -52,10 +59,15 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
     }
 
     /// <summary>
-    /// Writes a manifest where both documents share the given version/isDraft/changeKind. `version` must
-    /// already end with "-draft" if isDraft is true — the provider rejects an isDraft document whose
-    /// version doesn't carry the suffix (LegalDocumentProvider.LoadDocument), which is itself covered by
-    /// LEG-014 below.
+    /// CYCLE5: rewritten against the five-document/six-text manifest LegalDocumentProvider.LoadSnapshot
+    /// now requires (was two documents, "Privacy"/"Terms") — every LEG- test in this file only ever cares
+    /// about Privacy/TermsClient's version/isDraft/changeKind (the two `gate: Global` documents a Material
+    /// change on either one actually blocks), so those two are the ones driven by this method's
+    /// parameters; TermsOwner/PdnConsent/ChannelRiskNotice and the six ui-texts are written with their own
+    /// fixed, always-non-draft version so they never trip the "isDraft without -draft suffix" or
+    /// "PdnConsent needs purposes" checks. `version` must already end with "-draft" if isDraft is true —
+    /// the provider rejects an isDraft document whose version doesn't carry the suffix
+    /// (LegalDocumentProvider.LoadDocument), which is itself covered by LEG-018 below.
     /// </summary>
     public void WriteManifest(string version, bool isDraft, string changeKind, string? bodyMarker = null)
     {
@@ -63,12 +75,38 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
             $"<p>{(isDraft ? "<strong>Черновая редакция.</strong> " : "")}Политика {version}. {bodyMarker}</p>");
         File.WriteAllText(Path.Combine(LegalRoot, "terms.html"),
             $"<p>{(isDraft ? "<strong>Черновая редакция.</strong> " : "")}Соглашение {version}. {bodyMarker}</p>");
+        foreach (var (file, title) in new[]
+                 {
+                     ("terms-owner.html", "Соглашение с владельцем"), ("pdn-consent.html", "Согласие на обработку ПДн"),
+                     ("channel-risk-notice.html", "Уведомление о рисках канала"),
+                     ("booking-notice.html", "Уведомление при записи"), ("template-ad-warning.html", "Предупреждение о рекламе"),
+                     ("unsubscribe-page.html", "Страница отписки"), ("photo-consent.html", "Согласие на фото"),
+                     ("health-data-consent.html", "Согласие на сведения о здоровье"),
+                     ("guardian-confirmation.html", "Подтверждение полномочий"),
+                 })
+            File.WriteAllText(Path.Combine(LegalRoot, file), $"<p>{title}.</p>");
 
         File.WriteAllText(Path.Combine(LegalRoot, "legal.json"), $$"""
         {
           "documents": [
-            { "type": "Privacy", "version": "{{version}}", "effectiveFrom": "2026-01-01", "isDraft": {{isDraft.ToString().ToLowerInvariant()}}, "changeKind": "{{changeKind}}", "title": "Политика обработки персональных данных", "file": "privacy.html" },
-            { "type": "Terms",   "version": "{{version}}",   "effectiveFrom": "2026-01-01", "isDraft": {{isDraft.ToString().ToLowerInvariant()}}, "changeKind": "{{changeKind}}", "title": "Пользовательское соглашение", "file": "terms.html" }
+            { "type": "Privacy", "version": "{{version}}", "effectiveFrom": "2026-01-01", "isDraft": {{isDraft.ToString().ToLowerInvariant()}}, "changeKind": "{{changeKind}}", "gate": "Global", "title": "Политика обработки персональных данных", "file": "privacy.html" },
+            { "type": "TermsClient", "version": "{{version}}", "effectiveFrom": "2026-01-01", "isDraft": {{isDraft.ToString().ToLowerInvariant()}}, "changeKind": "{{changeKind}}", "gate": "Global", "title": "Пользовательское соглашение", "file": "terms.html" },
+            { "type": "TermsOwner", "version": "fixed-owner-1", "effectiveFrom": "2026-01-01", "isDraft": false, "changeKind": "Material", "gate": "OwnerScope", "title": "Соглашение владельца", "file": "terms-owner.html" },
+            { "type": "PdnConsent", "version": "fixed-pdn-1", "effectiveFrom": "2026-01-01", "isDraft": false, "changeKind": "Material", "gate": "None", "title": "Согласие на обработку ПДн", "file": "pdn-consent.html",
+              "purposes": [
+                { "key": "ProviderDelivery", "title": "Передача привлекаемым лицам для доставки уведомлений" },
+                { "key": "WorkPhotos", "title": "Фотофиксация выполненной работы" },
+                { "key": "HealthData", "title": "Обработка сведений о состоянии здоровья" }
+              ] },
+            { "type": "ChannelRiskNotice", "version": "fixed-risk-1", "effectiveFrom": "2026-01-01", "isDraft": false, "changeKind": "Material", "gate": "None", "title": "Уведомление о рисках канала", "file": "channel-risk-notice.html" }
+          ],
+          "uiTexts": [
+            { "key": "BookingNotice", "version": "fixed-text-1", "isDraft": false, "file": "booking-notice.html" },
+            { "key": "TemplateAdWarning", "version": "fixed-text-1", "isDraft": false, "file": "template-ad-warning.html" },
+            { "key": "UnsubscribePage", "version": "fixed-text-1", "isDraft": false, "file": "unsubscribe-page.html" },
+            { "key": "PhotoConsent", "version": "fixed-text-1", "isDraft": false, "file": "photo-consent.html" },
+            { "key": "HealthDataConsent", "version": "fixed-text-1", "isDraft": false, "file": "health-data-consent.html" },
+            { "key": "GuardianConfirmation", "version": "fixed-text-1", "isDraft": false, "file": "guardian-confirmation.html" }
           ]
         }
         """);
@@ -81,23 +119,15 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:DefaultConnection", TestDatabaseFixture.ConnectionString);
-        builder.UseSetting("Jwt:Key", "TEST_ONLY_SECRET_KEY_AT_LEAST_32_CHARACTERS_LONG");
-        builder.UseSetting("Jwt:Issuer", "ServiceBooking");
-        builder.UseSetting("Jwt:Audience", "ServiceBookingClient");
-        builder.UseSetting("AllowedOrigins", "http://localhost:5173");
-        // Deliberately NOT the shared "+70000000001" every other factory uses — see this class's own doc
-        // comment for why colliding on that phone here specifically poisons every other test's SuperAdmin
-        // login with a UserConsent version nothing else recognizes. No test in this class ever logs in as
-        // SuperAdmin, so a dedicated, never-asserted-on phone costs nothing here.
-        builder.UseSetting("SuperAdmin:Phone", "+70000099999");
-        builder.UseSetting("SuperAdmin:Email", "superadmin-legal-isolated@test.local");
-        builder.UseSetting("SuperAdmin:Password", "SuperAdmin123!");
-        builder.UseSetting("SmartCaptcha:SecretKey", "");
-        builder.UseSetting("SmartCaptcha:SiteKey", "");
-        builder.UseSetting("Logging:LogLevel:Microsoft.EntityFrameworkCore", "Warning");
+        // Deliberately NOT the shared "api" factoryTag's SuperAdmin — see this class's own doc comment
+        // for why colliding on that phone here specifically poisons every other test's SuperAdmin login
+        // with a UserConsent version nothing else recognizes. No test in this class ever logs in as
+        // SuperAdmin, so a dedicated, never-asserted-on phone (TestHostSettings' "legal" entry) costs
+        // nothing here.
+        TestHostSettings.Apply(builder, "legal", _connectionString);
 
+        // Overrides TestHostSettings' own copy of App_Data/legal — this factory manages its own
+        // rewritable manifest (ResetToDefault/WriteManifest) so LEG- tests can bump versions mid-test.
         builder.UseSetting("Legal:Root", LegalRoot);
         builder.UseSetting("Legal:ReloadSeconds", "1");
     }

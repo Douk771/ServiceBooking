@@ -1,0 +1,468 @@
+openapi: 3.1.0
+
+# ──────────────────────────────────────────────────────────────────────────────────────────────────
+# ServiceBooking — ИНВАРИАНТ HTTP-поверхности для цикла 8 (изоляция тестовой и локальной среды).
+#
+# ЧТО ЭТО. Машиночитаемый источник истины по той части API, которую цикл 8 может сломать и обязан
+# НЕ сломать. Цикл не добавляет и не меняет ни одного эндпоинта (API_CONTRACT_CYCLE8.md §83), поэтому
+# этот файл — не описание нового, а ФИКСАЦИЯ существующего, снятая с HEAD develop `7b382d8`.
+#
+# ЧТО ЭТО НЕ. Не полное описание API ServiceBooking. Полное — API_CONTRACT.md (цикл 3) +
+# API_CONTRACT_CYCLE4.md + API_CONTRACT_CYCLE5.md + API_DOCUMENTATION.md + живой Swagger приложения.
+# Эндпоинты записей, компаний, услуг, админки и каналов сюда намеренно НЕ включены: цикл их не
+# касается, а лишние пути делают автоматическую сверку шумной.
+#
+# КАК ПРОВЕРЯТЬ (готовым инструментом, без написания тестов):
+#   npx @redocly/cli lint contracts/cycle8/servicebooking-invariant.openapi.yaml
+#   pipx run schemathesis run contracts/cycle8/servicebooking-invariant.openapi.yaml \
+#        --base-url http://localhost:${SB_API_PORT:-5000} --checks all
+#
+# ПРАВИЛО ПРИОРИТЕТА (API_CONTRACT_CYCLE8.md §84.2): расхождение схемы и кода в цикле 8 означает, что
+# сломан КОД. Схема снята с `7b382d8` и правится только с обоснованием в ревью.
+#
+# ВЕРСИИ ПРАВОВЫХ ДОКУМЕНТОВ СЮДА НЕ ЗАШИТЫ — только форма. Зашитая версия воспроизвела бы дефект
+# CURRENT_STATE.md §9 L6 (внешний потребитель носит свою копию контракта).
+# ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+info:
+  title: ServiceBooking API — инвариант цикла 8
+  version: "8.0.0-invariant"
+  summary: Подмножество API, которое цикл 8 обязан сохранить без изменений
+  description: |
+    Снято с ветки `develop`, HEAD `7b382d8`. Семь операций, отобранных по признаку
+    «цикл 8 технически способен это сломать»:
+
+    * `/api/health/live`, `/api/health/ready` — адрес и порт стека меняются (US-88, US-92);
+    * `/api/legal/documents` — каждая тестовая фабрика получает СВОЮ копию `App_Data/legal`
+      (ARCHITECTURE_CYCLE8.md §71.3), битая копия проявится здесь;
+    * `/api/auth/register`, `/api/auth/login` — сидирование ролей и суперадмина идёт теперь в три
+      базы вместо одной, а телефоны суперадминов стали разными (§71.1);
+    * `/api/profile/avatar`, `/uploads/{path}` — `Storage:PublicRoot` переезжает во временный
+      каталог прогона (§71.3), а прокси Vite — на порт из `.env` (§73.3).
+  contact:
+    name: ServiceBooking team
+
+servers:
+  - url: http://localhost:5000
+    description: dev-стек рабочей копии (порт из SB_API_PORT, дефолт 5000)
+  - url: http://localhost:8080
+    description: контейнер образа при локальном смоуке (deploy/ci/smoke.sh, BASE_URL)
+
+tags:
+  - name: health
+    description: Пробы живости и готовности. Анонимные, не требуют токена.
+  - name: legal
+    description: Правовые документы. Анонимные.
+  - name: auth
+    description: Регистрация и вход.
+  - name: profile
+    description: Профиль и аватар.
+  - name: static
+    description: Статика, отдаваемая приложением из resolved public root.
+
+paths:
+
+  # ── health ─────────────────────────────────────────────────────────────────────────────────────
+  /api/health/live:
+    get:
+      tags: [health]
+      operationId: healthLive
+      summary: Процесс жив и принимает HTTP
+      description: |
+        Не выполняет ни одной проверки и не касается базы (`Predicate = _ => false` в Program.cs).
+        Всегда 200, пока процесс отвечает. Первый шаг `deploy/ci/smoke.sh`.
+      security: []
+      responses:
+        "200":
+          description: Жив
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthHealthy" }
+              examples:
+                ok: { value: { status: "Healthy" } }
+
+  /api/health/ready:
+    get:
+      tags: [health]
+      operationId: healthReady
+      summary: База достижима и миграции накачены
+      description: |
+        Выполняет проверки с тегом `ready` (`DatabaseReadyHealthCheck`). Это ЕДИНСТВЕННОЕ внешнее
+        подтверждение того, что схема на месте — то есть прямая проверка того, что цикл 8 переделал.
+        Тело ответа намеренно двухполевое: сообщение исключения не отдаётся, иначе на публичный
+        анонимный эндпоинт утёк бы фрагмент строки подключения (US-43 п. 3).
+      security: []
+      responses:
+        "200":
+          description: Готов
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthHealthy" }
+        "503":
+          description: Не готов (база недостижима или не мигрирована)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthUnhealthy" }
+              examples:
+                down: { value: { status: "Unhealthy", failed: "database" } }
+
+  # ── legal ──────────────────────────────────────────────────────────────────────────────────────
+  /api/legal/documents:
+    get:
+      tags: [legal]
+      operationId: legalDocuments
+      summary: Метаданные правовых документов и текстов интерфейса
+      description: |
+        Форма зафиксирована циклом 5 (API_CONTRACT_CYCLE5.md §39.1): объект с двумя массивами.
+        HTML здесь не отдаётся. `smoke.sh` читает отсюда версии `Privacy` и `TermsClient` и
+        подставляет их в регистрацию — поэтому любая поломка манифеста в изолированной копии
+        `App_Data/legal` ловится этой операцией.
+      security: []
+      responses:
+        "200":
+          description: Манифест загружен
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalManifest" }
+        "503":
+          description: Манифест не загружен
+          content:
+            text/plain:
+              schema: { type: string }
+
+  # ── auth ───────────────────────────────────────────────────────────────────────────────────────
+  /api/auth/register:
+    post:
+      tags: [auth]
+      operationId: authRegister
+      summary: Регистрация клиента
+      description: |
+        Форма зафиксирована циклом 5 (**BREAKING № 2**, API_CONTRACT_CYCLE5.md §40.1): `acceptedLegal`
+        больше нет, вместо него объект `legal` с двумя версиями, которые сервер сверяет с живым
+        снимком манифеста. Ошибки отдаются ПЛАИН-ТЕКСТОМ, а не ProblemDetails — на этом построен
+        подстрочный маппер ошибок фронтенда (`frontend/src/utils/authError.ts`), и цикл 8 это
+        свойство не трогает.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "200":
+          description: Зарегистрирован, выдан токен
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400":
+          description: |
+            Невалидное тело, слабый пароль, телефон не нормализуется, отсутствует/не совпадает версия
+            правового документа. Тело — строка, не ProblemDetails.
+          content:
+            text/plain:
+              schema: { type: string }
+        "409":
+          description: Телефон уже занят
+          content:
+            text/plain:
+              schema: { type: string }
+        "429":
+          description: Лимит `auth-register` исчерпан (в окружении Testing поднят до 10000/мин)
+        "451":
+          description: Правовой гейт закрыт (LegalConsentFilter)
+        "503":
+          description: Манифест правовых документов не загружен
+        "415":
+          description: |
+            Отсутствует тело или неверный/отсутствующий `Content-Type` — ASP.NET model binding
+            отклоняет запрос до обработчика. Поведение baseline (7b382d8), цикл 8 его не менял;
+            здесь оно просто зафиксировано документально.
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: authLogin
+      summary: Вход по телефону и паролю
+      description: |
+        Используется в том числе для входа суперадмина. Цикл 8 делает телефон суперадмина РАЗНЫМ у
+        разных тестовых хостов (ARCHITECTURE_CYCLE8.md §71.1), поэтому форма ответа здесь —
+        инвариант, на который опираются `ApiTestBase.LoginAsSuperAdminAsync` и
+        `NotificationTestBase.LoginAsSuperAdminAsync` после правки.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Вошёл
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400":
+          description: Невалидное тело
+          content:
+            text/plain: { schema: { type: string } }
+        "401":
+          description: Неверный телефон или пароль
+          content:
+            text/plain: { schema: { type: string } }
+        "429":
+          description: Лимит `auth-login` исчерпан
+        "415":
+          description: |
+            Отсутствует тело или неверный/отсутствующий `Content-Type` — ASP.NET model binding
+            отклоняет запрос до обработчика. Поведение baseline (7b382d8), цикл 8 его не менял;
+            здесь оно просто зафиксировано документально.
+
+  # ── profile / uploads ──────────────────────────────────────────────────────────────────────────
+  /api/profile/avatar:
+    post:
+      tags: [profile]
+      operationId: profileUploadAvatar
+      summary: Загрузка аватара
+      description: |
+        Единственное место продукта, реально вызывающее нативную библиотеку SkiaSharp
+        (декод → EXIF-ориентация → ресайз → перекодирование, ARCHITECTURE.md §4.12), и потому
+        главный шаг `deploy/ci/smoke.sh`. Для цикла 8 важен второй его смысл: файл пишется в
+        resolved public root, а цикл 8 этот корень переносит во временный каталог прогона
+        (ARCHITECTURE_CYCLE8.md §71.3).
+
+        Код успеха — **200**, не 201 (ARCHITECTURE.md §19.5: контракт сильнее формулировки SPEC).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: JPEG/PNG/WebP. Ограничение размера — `Uploads:MaxFileBytes`.
+      responses:
+        "200":
+          description: Загружено
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AvatarUploadResponse" }
+        "400":
+          description: Файл отсутствует, не изображение, либо не проходит валидацию
+          content:
+            text/plain: { schema: { type: string } }
+        "401":
+          description: Нет токена
+        "413":
+          description: Файл больше допустимого
+        "429":
+          description: Лимит загрузок на пользователя исчерпан
+
+  /uploads/{path}:
+    get:
+      tags: [static]
+      operationId: servePublicUpload
+      summary: Отдача загруженного файла
+      description: |
+        Статика отдаётся из `FileStorage.PublicRootFullPath`, а НЕ из безусловного `wwwroot`
+        (правка цикла 3, закреплена тестами UPL-001/UPL-002). В dev-режиме сюда же ходит прокси Vite,
+        и цикл 8 меняет его цель на порт из `.env` (`ARCHITECTURE_CYCLE8.md §73.3`) — значит этот
+        путь обязан продолжать отвечать 200 на URL, полученный из `POST /api/profile/avatar`.
+      security: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: Относительный путь из поля `avatarUrl` ответа загрузки, без ведущего `/uploads/`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Файл
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png:  { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        "404":
+          description: Файла нет
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Токен выдаётся `POST /api/auth/register` или `POST /api/auth/login`. Роли запекаются в токен
+        в момент выдачи — после смены роли нужен новый вход (ARCHITECTURE.md, ApiTestBase).
+
+  schemas:
+
+    HealthHealthy:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: Healthy
+
+    HealthUnhealthy:
+      type: object
+      additionalProperties: false
+      required: [status, failed]
+      properties:
+        status:
+          type: string
+          const: Unhealthy
+        failed:
+          type: string
+          description: |
+            Имя или описание упавшей проверки. Намеренно НЕ содержит текста исключения —
+            иначе утечёт фрагмент строки подключения (US-43 п. 3).
+
+    LegalManifest:
+      type: object
+      additionalProperties: false
+      required: [documents, uiTexts]
+      properties:
+        documents:
+          type: array
+          minItems: 5
+          description: Пять типов документов; `LegalDocumentProvider.LoadSnapshot` требует все пять.
+          items: { $ref: "#/components/schemas/LegalDocumentMeta" }
+        uiTexts:
+          type: array
+          minItems: 6
+          description: Шесть ключей текстов интерфейса; требуются все шесть.
+          items: { $ref: "#/components/schemas/LegalUiTextMeta" }
+
+    LegalDocumentMeta:
+      type: object
+      required: [type, title, version, effectiveFrom, isDraft, changeKind, gate, url]
+      properties:
+        type:
+          type: string
+          enum: [Privacy, TermsClient, TermsOwner, PdnConsent, ChannelRiskNotice]
+        title: { type: string }
+        version:
+          type: string
+          minLength: 1
+          description: |
+            Значение НЕ зафиксировано намеренно. Потребитель (`smoke.sh`, форма регистрации) обязан
+            читать его отсюда, а не носить свою копию — CURRENT_STATE.md §9 L6.
+        effectiveFrom: { type: string, format: date }
+        isDraft: { type: boolean }
+        changeKind:
+          type: string
+          enum: [Material, Editorial]
+        gate:
+          type: string
+          enum: [Global, OwnerScope, None]
+        url:
+          type: string
+          description: Маршрут SPA, по которому лежит читаемый текст.
+        purposes:
+          type: [array, "null"]
+          description: |
+            Только у `PdnConsent`. Фронтенд берёт цели отсюда, а не из зашитого массива.
+            У остальных документов сериализуется как `null` (LegalController.cs: `Purposes.Count == 0 ? null : ...`,
+            Program.cs не выставляет `DefaultIgnoreCondition = WhenWritingNull`).
+          items:
+            type: object
+            required: [key, title]
+            properties:
+              key: { type: string }
+              title: { type: string }
+
+    LegalUiTextMeta:
+      type: object
+      required: [key, version, isDraft]
+      properties:
+        key:
+          type: string
+          enum: [BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation]
+        version: { type: string, minLength: 1 }
+        isDraft: { type: boolean }
+
+    RegisterLegal:
+      type: object
+      additionalProperties: false
+      required: [privacyAcknowledgedVersion, termsAcceptedVersion]
+      description: |
+        Версии, которые вызывающий заявляет как увиденные. Сверяются сервером с живым снимком.
+        `PdnConsent` здесь НЕТ по форме: согласие на обработку ПДн принимается отдельным,
+        неблокирующим вызовом `POST /api/profile/consents` (API_CONTRACT_CYCLE5.md §46.2).
+      properties:
+        privacyAcknowledgedVersion: { type: string, minLength: 1 }
+        termsAcceptedVersion: { type: string, minLength: 1 }
+
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [firstName, lastName, phone, password]
+      properties:
+        firstName: { type: string, minLength: 1 }
+        lastName: { type: string, minLength: 1 }
+        phone:
+          type: string
+          description: |
+            Телефон — идентификатор аккаунта (хранится как `UserName`). Нормализуется сервером;
+            меньше 10 цифр → 400.
+          examples: ["+79991234567"]
+        password: { type: string, minLength: 8 }
+        email:
+          type: [string, "null"]
+          format: email
+          description: Необязателен. null допустим и не валидируется.
+        legal:
+          anyOf:
+            - $ref: "#/components/schemas/RegisterLegal"
+            - type: "null"
+          description: Отсутствие или неполнота → 400 с текстовым сообщением, не ProblemDetails.
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, password]
+      properties:
+        # minLength:1 — [Required] на LoginDto отклоняет пустую строку с 400, без этого
+        # schemathesis считает её валидной по схеме. RegisterRequest уже описан так же.
+        phone: { type: string, minLength: 1 }
+        password: { type: string, minLength: 1 }
+
+    AuthResponse:
+      type: object
+      additionalProperties: false
+      required: [token, userId, phone, firstName, lastName, roles]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          description: JWT. Роли запечены в момент выдачи.
+        userId: { type: string, minLength: 1 }
+        phone: { type: string, minLength: 1 }
+        email: { type: [string, "null"] }
+        firstName: { type: string }
+        lastName: { type: string }
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [Client, Master, CompanyOwner, SuperAdmin]
+
+    AvatarUploadResponse:
+      type: object
+      required: [avatarUrl]
+      properties:
+        avatarUrl:
+          type: string
+          minLength: 1
+          description: |
+            Путь, начинающийся с `/uploads/`. Должен быть немедленно отдаваем
+            операцией `servePublicUpload` — это и проверяет шаг 5 `deploy/ci/smoke.sh`.
+          examples: ["/uploads/avatars/6f1c9b0e.jpg"]
+
+security:
+  - bearerAuth: []

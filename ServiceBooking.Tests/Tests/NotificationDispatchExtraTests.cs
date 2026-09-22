@@ -17,18 +17,27 @@ namespace ServiceBooking.Tests.Tests;
 /// QA cycle 4 — the three dispatcher/idle scenarios the code reviewer named explicitly as missing
 /// coverage that let real defects through: queue priority by visit time, a budget-interrupted pass that
 /// doesn't duplicate sends, and channel idle warn-then-delete. Same real-runner infrastructure as
-/// <c>NotificationDispatchTests.cs</c> (ARCHITECTURE_CYCLE4.md §27) — same collection, so it never
-/// overlaps another test ticking the same background runner against the shared database.
+/// <c>NotificationDispatchTests.cs</c> (ARCHITECTURE_CYCLE4.md §27) — this class now gets its own,
+/// disjoint database (ARCHITECTURE_CYCLE8_PHASE2.md §91), so it never overlaps another test ticking the
+/// same background runner against the same rows.
 /// </summary>
-[Collection("NotificationDispatch")]
-public class NotificationDispatchExtraTests
+public class NotificationDispatchExtraTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
+    // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(NotificationDispatchExtraTests));
+
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    {
+        fixture.RecordTestClass(className);
+        return 0;
+    }
+
     private const string EncryptionKey = NotificationDispatchTestFactory.TestEncryptionKeyBase64;
 
     [Fact, TestCase("NTF-D03")]
     public async Task Priority_ByVisitTime_ClosestVisitSentFirst_RegardlessOfQueueOrder()
     {
-        await using var factory = new NotificationDispatchTestFactory();
+        await using var factory = new NotificationDispatchTestFactory(fixture.ConnectionString);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -66,15 +75,23 @@ public class NotificationDispatchExtraTests
         // WithWebHostBuilder layers this slow transport IN ADDITION to (registered after, so it wins
         // over) the base factory's instant RecordingTransport, which is otherwise too fast for any
         // BudgetSeconds this test can wait for in real time to ever interrupt a pass. `baseFactory` stays
-        // the handle for seeding; `webFactory` (the one WithWebHostBuilder returns) is the ACTUAL running
-        // host — Services/CreateClient must come from it, not from baseFactory.
-        await using var baseFactory = new NotificationDispatchTestFactory(budgetSecondsOverride: 1);
+        // an UNSTARTED handle — it exists only because `WithWebHostBuilder` has to be called on some
+        // instance, and `SeedConnectedChannelAsync` needs a `NotificationDispatchTestFactory`-typed
+        // parameter for its signature. Nothing may ever touch `baseFactory.Services`/`.Server`/
+        // `.CreateClient()`: doing so lazily builds AND STARTS a second, independent host pointed at the
+        // very same database, with its OWN ScheduledTaskRunner ticking notification-dispatch on the
+        // ORIGINAL (fast) RecordingTransport — racing `webFactory`'s slow one on the same Pending rows
+        // and defeating the budget-cutoff this test exists to prove (this used to happen via
+        // `SeedConnectedChannelAsync`'s legal-document lookup, which read `factory.Services` — fixed by
+        // passing `legalFactory: webFactory` explicitly below). `webFactory` (the one `WithWebHostBuilder`
+        // returns) is the ACTUAL running host — Services/CreateClient must come from it, always.
+        await using var baseFactory = new NotificationDispatchTestFactory(fixture.ConnectionString, budgetSecondsOverride: 1);
         await using var webFactory = baseFactory.WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<INotificationTransport>(slowTransport)));
 
         using var scope = webFactory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var (_, channel, company) = await SeedConnectedChannelAsync(baseFactory, db, client: webFactory.CreateClient());
+        var (_, channel, company) = await SeedConnectedChannelAsync(baseFactory, db, client: webFactory.CreateClient(), legalFactory: webFactory);
 
         string[] ownPhones = ["79990000201", "79990000202", "79990000203"];
         var row1 = NewPendingNotification(company.Id, channel.Id, ownPhones[0]);
@@ -123,7 +140,7 @@ public class NotificationDispatchExtraTests
     [Fact, TestCase("NTF-D05")]
     public async Task Idle_WarnsBeforeDeleting_ThenDeletesInstance_KeepsAssignmentPeriodAndPendingQueue()
     {
-        await using var factory = new NotificationDispatchTestFactory(channelHealthEnabled: true);
+        await using var factory = new NotificationDispatchTestFactory(fixture.ConnectionString, channelHealthEnabled: true);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -209,11 +226,21 @@ public class NotificationDispatchExtraTests
     // ── Seeding / auth helpers (mirrors NotificationDispatchTests.cs) ──────────────────────────────
 
     private static async Task<(string OwnerUserId, NotificationChannel Channel, Company Company)> SeedConnectedChannelAsync(
-        NotificationDispatchTestFactory factory, AppDbContext db, HttpClient? client = null)
+        NotificationDispatchTestFactory factory, AppDbContext db, HttpClient? client = null,
+        Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program>? legalFactory = null)
     {
+        // `legalFactory` defaults to `factory`, but a caller running two factories against the same
+        // database (Budget_InterruptedPass below) MUST pass the one that is actually meant to run —
+        // touching ANY WebApplicationFactory's `.Services`/`.Server` for the first time lazily builds
+        // and STARTS its host, including its own ScheduledTaskRunner. `factory.Services` here used to be
+        // read unconditionally via NotificationDispatchTests.CurrentRegisterLegalDto(factory), which for
+        // that test silently started a SECOND, independent notification-dispatch loop (on the fast,
+        // un-overridden RecordingTransport) racing the real one under test on the very same Pending rows
+        // — an intermittent flake, not a real product bug (see the test below for the full story).
         var phone = UniquePhone();
         var registerResponse = await (client ?? factory.CreateClient()).PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "Owner", phone, "Password123!", null, true));
+            new RegisterDto("Test", "Owner", phone, "Password123!", null,
+                NotificationDispatchTests.CurrentRegisterLegalDto(legalFactory ?? factory)));
         registerResponse.EnsureSuccessStatusCode();
         var auth = (await registerResponse.Content.ReadFromJsonAsync<AuthResponseDto>())!;
 
@@ -273,7 +300,7 @@ public class NotificationDispatchExtraTests
     private static async Task<AuthResponseDto> LoginAsSuperAdminAsync(NotificationDispatchTestFactory factory)
     {
         var response = await factory.CreateClient().PostAsJsonAsync("/api/auth/login",
-            new LoginDto("+70000000001", "SuperAdmin123!"));
+            new LoginDto(factory.Identity.SuperAdminPhone, factory.Identity.SuperAdminPassword));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }

@@ -25,20 +25,30 @@ namespace ServiceBooking.Tests.Tests;
 /// Kept deliberately small (two scenarios): the point is proving the wiring end-to-end, not exhaustively
 /// re-testing gate/timing/classification rules already covered by unit tests elsewhere.
 ///
-/// <see cref="DisableParallelization"/> is essential, not incidental: this collection's tests run a REAL
-/// background tick against the shared "servicebooking_test" database, same as every other functional
-/// test — but unlike them, this one deliberately turns a normally-off background service back on, so it
-/// must never overlap with itself.
+/// ARCHITECTURE_CYCLE8_PHASE2.md §91/§92.1: this class now gets its OWN database via
+/// <see cref="TestDatabaseFixture"/> (<c>IClassFixture</c>, not phase 1's <c>ICollectionFixture</c>/
+/// <c>[Collection("NotificationDispatch")]</c>) — it never shares a database with
+/// <see cref="NotificationDispatchExtraTests"/> or any other class, so the "must never overlap a real
+/// background tick against a shared database" concern the phase-1 collection existed for no longer
+/// applies: there is no other test touching this class' rows to overlap with.
 /// </summary>
-[Collection("NotificationDispatch")]
-public class NotificationDispatchTests
+public class NotificationDispatchTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
+    // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(NotificationDispatchTests));
+
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    {
+        fixture.RecordTestClass(className);
+        return 0;
+    }
+
     private const string EncryptionKey = NotificationDispatchTestFactory.TestEncryptionKeyBase64;
 
     [Fact, TestCase("NTF-D01")]
     public async Task RealRunner_SendsQueuedMessages_AndRequestsAPauseBetweenThem()
     {
-        await using var factory = new NotificationDispatchTestFactory();
+        await using var factory = new NotificationDispatchTestFactory(fixture.ConnectionString);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -68,7 +78,7 @@ public class NotificationDispatchTests
     [Fact, TestCase("NTF-D02")]
     public async Task RealRunner_ChannelInvalid_StopsTheRestOfThatChannelsGroup_RowsStayPending()
     {
-        await using var factory = new NotificationDispatchTestFactory();
+        await using var factory = new NotificationDispatchTestFactory(fixture.ConnectionString);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -110,12 +120,24 @@ public class NotificationDispatchTests
 
     // ── Seeding helpers ──────────────────────────────────────────────────────────────────────────
 
+    // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): reads the
+    // live manifest through the same factory the registration call itself targets, so this stays correct
+    // even if a future test class points its factory at a non-default Legal:Root.
+    internal static RegisterLegalDto CurrentRegisterLegalDto(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory)
+    {
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        return new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
+    }
+
     private static async Task<(string OwnerUserId, NotificationChannel Channel, Company Company)> SeedConnectedChannelAsync(
         NotificationDispatchTestFactory factory, AppDbContext db)
     {
         var phone = UniquePhone();
         var registerResponse = await factory.CreateClient().PostAsJsonAsync("/api/auth/register",
-            new RegisterDto("Test", "Owner", phone, "Password123!", null, true));
+            new RegisterDto("Test", "Owner", phone, "Password123!", null, CurrentRegisterLegalDto(factory)));
         registerResponse.EnsureSuccessStatusCode();
         var auth = (await registerResponse.Content.ReadFromJsonAsync<AuthResponseDto>())!;
 
@@ -204,11 +226,3 @@ public class NotificationDispatchTests
         return $"+79{suffix[..9]}";
     }
 }
-
-/// <summary>§27.1: not parallel with itself — a real background tick against the shared functional-test
-/// database must never race another test in the same collection. Plate cost: a few extra seconds of
-/// total suite time. Radius even if this ever overlapped another collection: empty, by construction — no
-/// OTHER functional test gives any company a paid, assigned, Connected channel, so this collection's
-/// runner never finds a Pending row belonging to anyone else (ARCHITECTURE_CYCLE4.md §27.1).</summary>
-[CollectionDefinition("NotificationDispatch", DisableParallelization = true)]
-public class NotificationDispatchCollection;

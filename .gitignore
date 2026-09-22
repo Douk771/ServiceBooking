@@ -59,6 +59,7 @@ ServiceBooking.API/logs/
 # the test suite behaves the same for every developer and in CI.
 !ServiceBooking.API/appsettings.Testing.json
 
-# Кеш schemathesis — контрактная проверка цикла 6 (ARCHITECTURE_CYCLE6.md §53.2).
-# Инструмент запускается по месту через pipx/npx, в репозитории ему делать нечего.
+# Кеш schemathesis. Циклы 6 и 8 добавили этот игнор независимо друг от друга, каждый после
+# собственной контрактной проверки (ARCHITECTURE_CYCLE6.md §53.2, цикл 8 §86.3) — инструмент
+# запускается по месту через pipx/npx, и его локальный вывод в репозитории не нужен.
 .schemathesis/

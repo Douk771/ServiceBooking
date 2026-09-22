@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://servicebooking.local/contracts/cycle8/testkit-status.schema.json",
+  "title": "ServiceBooking.TestKit — машиночитаемый вывод CLI (цикл 8, фазы 1 и 2)",
+  "description": "Схема вывода `dotnet run --project ServiceBooking.TestKit -- <status|sweep|doctor> --json`. Нормативна: см. API_CONTRACT_CYCLE8.md §86, API_CONTRACT_CYCLE8_PHASE2.md §102, ARCHITECTURE_CYCLE8.md §70.3/§73.4 и ARCHITECTURE_CYCLE8_PHASE2.md §91.3/§93.4. Проверяется готовым инструментом: npx ajv-cli validate -s contracts/cycle8/testkit-status.schema.json -d out.json --spec=draft2020. Версия 2 добавляет классовые слоты (c01..c999), поле testClass и проверку parallel-connection-budget; артефакты фазы 1 (schemaVersion=1) остаются валидными.",
+
+  "type": "object",
+  "required": ["command", "schemaVersion", "generatedAtUtc"],
+  "unevaluatedProperties": false,
+
+  "properties": {
+    "command": {
+      "type": "string",
+      "enum": ["status", "sweep", "doctor"],
+      "description": "Какая команда сформировала документ. Различает варианты oneOf ниже."
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "enum": [1, 2],
+      "description": "Версия ЭТОЙ схемы. 1 — фаза 1 цикла 8 (три фиксированных слота). 2 — фаза 2 (слот на тест-класс, параллелизм внутри прогона). Оба значения принимаются, чтобы артефакты, снятые до включения параллелизма, продолжали валидироваться той же схемой."
+    },
+    "generatedAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC, ISO 8601 с суффиксом Z."
+    },
+    "exitCode": {
+      "type": "integer",
+      "enum": [0, 1, 2, 3],
+      "description": "Дублирует код возврата процесса (API_CONTRACT_CYCLE8.md §86.2): 0 успех, 1 ошибка исполнения, 2 предусловия не выполнены (только doctor), 3 часть ресурсов удалить не удалось (только sweep --apply)."
+    },
+    "errors": {
+      "type": "array",
+      "description": "Непустой только при exitCode 1 или 3.",
+      "items": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "resourceId": { "type": ["string", "null"] },
+          "message": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+
+  "oneOf": [
+    { "$ref": "#/$defs/statusDocument" },
+    { "$ref": "#/$defs/sweepDocument" },
+    { "$ref": "#/$defs/doctorDocument" }
+  ],
+
+  "$defs": {
+
+    "statusDocument": {
+      "title": "status — US-90, только чтение",
+      "type": "object",
+      "properties": {
+        "command": { "const": "status" },
+        "workingCopy": { "$ref": "#/$defs/workingCopy" },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/portInfo" }
+        },
+        "docker": { "$ref": "#/$defs/dockerInfo" },
+        "testResources": {
+          "type": "array",
+          "description": "Живые и мёртвые тестовые ресурсы, найденные на машине. Пустой массив — нормальное состояние чистой машины и приёмочный критерий T8-Q3. При параллельном прогоне (фаза 2) здесь одновременно видно до P классовых баз sbtest_<runkey>_cNN, а не три фиксированных слота.",
+          "items": { "$ref": "#/$defs/testResource" }
+        }
+      },
+      "required": ["command", "workingCopy", "ports", "docker", "testResources"]
+    },
+
+    "sweepDocument": {
+      "title": "sweep — US-86; без --apply ничего не удаляет",
+      "type": "object",
+      "properties": {
+        "command": { "const": "sweep" },
+        "applied": {
+          "type": "boolean",
+          "description": "false = сухой прогон (по умолчанию). Приём принят в проекте на data-retention (цикл 5) и закрывает риск R3."
+        },
+        "maxAgeSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Порог возраста из --max-age. По умолчанию 1800 (30 минут, снижено с 7200/2ч в цикле 9, M7)."
+        },
+        "runKeyFilter": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{8}$",
+          "description": "Значение --run-key. Единственный способ тронуть ресурсы категории undetermined."
+        },
+        "docker": { "$ref": "#/$defs/dockerInfo" },
+        "dead": {
+          "type": "array",
+          "description": "Удаляется при --apply. Только конъюнкция всех признаков мёртвости (ARCHITECTURE_CYCLE8.md §70.3).",
+          "items": { "$ref": "#/$defs/testResource" }
+        },
+        "alive": {
+          "type": "array",
+          "description": "Не трогается никогда.",
+          "items": { "$ref": "#/$defs/testResource" }
+        },
+        "undetermined": {
+          "type": "array",
+          "description": "Не трогается никогда без явного --run-key. Существование этой категории — и есть ответ на риск R3.",
+          "items": { "$ref": "#/$defs/testResource" }
+        },
+        "removed": {
+          "type": "array",
+          "description": "Фактически удалённое. Пустой при applied=false.",
+          "items": { "$ref": "#/$defs/testResource" }
+        }
+      },
+      "required": ["command", "applied", "maxAgeSeconds", "docker", "dead", "alive", "undetermined", "removed"]
+    },
+
+    "doctorDocument": {
+      "title": "doctor — предусловия прогона",
+      "type": "object",
+      "properties": {
+        "command": { "const": "doctor" },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "ok", "detail"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "enum": [
+                  "docker-available",
+                  "postgres-image-cached",
+                  "dotnet-sdk",
+                  "test-connection-env",
+                  "ports-free",
+                  "ryuk-enabled",
+                  "parallel-connection-budget"
+                ],
+                "description": "parallel-connection-budget (schemaVersion 2, ARCHITECTURE_CYCLE8_PHASE2.md §93.4): сходится ли бюджет соединений при текущей степени параллелизма. Формула P * 2 * PoolSize + 4 <= max_connections * 0.9. Та же проверка выполняется fail-fast при старте прогона; doctor даёт ответ ДО прогона."
+              },
+              "ok": { "type": "boolean" },
+              "detail": {
+                "type": "string",
+                "description": "Человекочитаемое пояснение; при ok=false обязано содержать действие, которое нужно выполнить."
+              }
+            }
+          }
+        },
+        "parallelism": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "description": "Только schemaVersion 2. Расшифровка расчёта из проверки parallel-connection-budget — чтобы число в detail можно было перепроверить, а не принимать на веру.",
+          "required": ["maxParallelThreads", "poolSizePerHost", "hostsPerClass", "requiredConnections", "serverMaxConnections"],
+          "properties": {
+            "maxParallelThreads": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Действующее значение из xunit.runner.json или из -- xUnit.MaxParallelThreads. Дефолт проекта — 4 (ARCHITECTURE_CYCLE8_PHASE2.md §93.1)."
+            },
+            "poolSizePerHost": { "type": "integer", "minimum": 1, "description": "Maximum Pool Size в тестовой строке подключения. Дефолт фазы 2 — 8." },
+            "hostsPerClass": { "type": "integer", "minimum": 1, "description": "Сколько WebApplicationFactory живёт на один активный тест-класс. 2 для классов с фабрикой-на-тест (§92.4)." },
+            "requiredConnections": { "type": "integer", "minimum": 1 },
+            "serverMaxConnections": { "type": ["integer", "null"], "minimum": 1, "description": "SHOW max_connections целевого сервера; null — сервер недоступен, проверка не выполнялась." }
+          }
+        }
+      },
+      "required": ["command", "checks"]
+    },
+
+    "workingCopy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "composeProjectName", "devDatabaseName", "envFilePresent"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Абсолютный путь корня рабочей копии. Он же — признак «мой/чужой» для ресурсов (сверяется с меткой workdir)."
+        },
+        "composeProjectName": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,30}$",
+          "description": "SB_PROJECT_NAME или дефолт `servicebooking`. Задаётся ЯВНО, а не из имени каталога — ловушка CURRENT_STATE.md §9 P0-6."
+        },
+        "devDatabaseName": {
+          "type": "string",
+          "description": "SB_DB_NAME или дефолт `servicebooking`."
+        },
+        "envFilePresent": {
+          "type": "boolean",
+          "description": "Есть ли `.env` в корне рабочей копии. false — штатное состояние свежего клона: все переменные имеют дефолты."
+        }
+      }
+    },
+
+    "portInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "source", "inUse", "ownedByThisCopy"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": ["SB_DB_PORT", "SB_API_PORT", "SB_WEB_PORT", "SB_GLITCHTIP_PORT"]
+        },
+        "value": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "source": {
+          "type": "string",
+          "enum": ["default", "env-file", "process-env"],
+          "description": "Приоритет разрешения — API_CONTRACT_CYCLE8.md §85.3."
+        },
+        "inUse": {
+          "type": "boolean",
+          "description": "Определяется попыткой bind с немедленным закрытием. Состояние машины не меняется."
+        },
+        "ownedByThisCopy": {
+          "type": "boolean",
+          "description": "Порт занят контейнером compose-проекта ЭТОЙ рабочей копии. false при inUse=true означает конфликт с соседом — именно та диагностика, ради которой US-90 существует."
+        }
+      }
+    },
+
+    "dockerInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "error": {
+          "type": ["string", "null"],
+          "description": "Текст ошибки при available=false. Недоступный Docker НЕ является ошибкой для status (exitCode остаётся 0)."
+        }
+      }
+    },
+
+    "testResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "runKey", "startedAtUtc", "ageSeconds", "mine", "liveness"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["container", "database", "directory"],
+          "description": "container — Postgres/Ryuk с меткой com.servicebooking.test=1; database — sbtest_<runkey>_<slot> на внешнем сервере; directory — $TMPDIR/sb-test/<runkey>."
+        },
+        "id": {
+          "type": "string",
+          "description": "Имя контейнера, имя базы или путь каталога."
+        },
+        "runKey": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}$"
+        },
+        "slot": {
+          "type": ["string", "null"],
+          "pattern": "^(template|api|legal|dispatch|c[0-9]{2,3})$",
+          "description": "Только для kind=database. `template` — шаблон прогона (ARCHITECTURE_CYCLE8.md §68). `api`/`legal`/`dispatch` — фиксированные слоты фазы 1, зарезервированы и после фазы 2 (нужны, если воронка US-95 вернёт часть классов в общую базу). `cNN` — слот тест-класса при параллелизме (ARCHITECTURE_CYCLE8_PHASE2.md §91.3): их одновременно живо примерно столько же, сколько степень параллелизма. Регэксп СОГЛАСОВАН с TestDatabaseNaming.IsDisposable (^[a-z][a-z0-9]{0,11}$) — расширение слотов не потребовало ослабления защиты от сноса (US-85)."
+        },
+        "testClass": {
+          "type": ["string", "null"],
+          "description": "schemaVersion 2, необязательное: короткое имя тест-класса, которому принадлежит слот. Может быть null — xUnit v2 не передаёт имя класса в конструктор фикстуры (ARCHITECTURE_CYCLE8_PHASE2.md §92.2), поэтому связь проставляется базовым классом при первом обращении и для ещё не стартовавшего класса неизвестна. null НЕ является признаком мёртвости."
+        },
+        "workdir": {
+          "type": ["string", "null"],
+          "description": "Рабочая копия, породившая ресурс (метка com.servicebooking.test.workdir)."
+        },
+        "startedAtUtc": { "type": "string", "format": "date-time" },
+        "ageSeconds": { "type": "integer", "minimum": 0 },
+        "hostPid": { "type": ["integer", "null"], "minimum": 1 },
+        "hostPidAlive": {
+          "type": ["boolean", "null"],
+          "description": "null — проверить нельзя (например, ресурс на внешнем сервере, PID с другой машины). null НЕ считается признаком мёртвости сам по себе."
+        },
+        "connections": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Только для kind=database: число строк в pg_stat_activity по этой базе. >0 означает alive безусловно."
+        },
+        "mine": {
+          "type": "boolean",
+          "description": "workdir совпадает с workingCopy.path."
+        },
+        "liveness": {
+          "type": "string",
+          "enum": ["alive", "dead", "undetermined"],
+          "description": "НОРМАТИВНО (ARCHITECTURE_CYCLE8.md §70.3). dead — только конъюнкция: наши метки И (PID мёртв ИЛИ connections=0) И возраст > maxAge. alive — есть живой PID либо connections>0 либо возраст <= maxAge. undetermined — всё остальное; удаляется только точечно через --run-key. Правило НЕ изменено фазой 2: классовая база живёт минуты, а не часы, и под порог maxAge (30 минут, цикл 9) при живом прогоне не попадает."
+        }
+      }
+    }
+  }
+}

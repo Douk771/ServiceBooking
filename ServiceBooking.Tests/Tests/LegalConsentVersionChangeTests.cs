@@ -2,8 +2,11 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Auth;
+using ServiceBooking.API.DTOs.Companies;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -16,13 +19,22 @@ namespace ServiceBooking.Tests.Tests;
 /// test's Arrange step gives every test its own fresh version tag so tests don't interfere with each
 /// other's accepted-version state.
 /// </summary>
-public class LegalConsentVersionChangeTests : IAsyncLifetime
+public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>, IAsyncLifetime
 {
+    // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(LegalConsentVersionChangeTests));
+
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    {
+        fixture.RecordTestClass(className);
+        return 0;
+    }
+
     private LegalDocumentsTestFactory _factory = null!;
 
     public Task InitializeAsync()
     {
-        _factory = new LegalDocumentsTestFactory();
+        _factory = new LegalDocumentsTestFactory(fixture.ConnectionString);
         _ = _factory.Services; // boot the host now, not lazily inside the first test
         return Task.CompletedTask;
     }
@@ -44,11 +56,20 @@ public class LegalConsentVersionChangeTests : IAsyncLifetime
         return $"+79{new string(digits).PadRight(9, '0')}";
     }
 
+    // CYCLE5-BREAKING: `acceptedLegal: true` replaced by the `legal` object (API_CONTRACT_CYCLE5.md
+    // §40.1) — versions read from this factory's OWN manifest (via LegalDocumentProvider), not hardcoded,
+    // so a version bump from ResetToDefault()/WriteManifest() never desyncs this helper.
     private async Task<AuthResponseDto> RegisterAsync()
     {
+        using var scope = _factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        var snapshot = provider.Current!;
+        var legal = new RegisterLegalDto(
+            snapshot.Get(LegalDocumentType.Privacy)!.Version, snapshot.Get(LegalDocumentType.TermsClient)!.Version);
+
         var response = await Anon().PostAsJsonAsync("/api/auth/register", new
         {
-            firstName = "Т", lastName = "Т", phone = UniquePhone(), password = "Password123!", acceptedLegal = true
+            firstName = "Т", lastName = "Т", phone = UniquePhone(), password = "Password123!", legal
         });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
@@ -156,12 +177,16 @@ public class LegalConsentVersionChangeTests : IAsyncLifetime
         var oldClient = Authed(user.Token);
         (await oldClient.GetAsync("/api/companies/my")).StatusCode.Should().Be((HttpStatusCode)451);
 
+        // CYCLE5-BREAKING (ARCHITECTURE_CYCLE5.md §43.3, API_CONTRACT_CYCLE5.md §39.5): the manifest now
+        // has five documents ("Terms" renamed "TermsClient"), and /api/legal/accept takes a LIST of
+        // {type, version} items, not two fixed fields.
         var docs = await (await Anon().GetAsync("/api/legal/documents")).Content
-            .ReadFromJsonAsync<LegalDocumentListDto>();
+            .ReadFromJsonAsync<LegalManifestDto>();
         var privacy = docs!.Documents.First(d => d.Type == "Privacy").Version;
-        var terms = docs.Documents.First(d => d.Type == "Terms").Version;
+        var terms = docs.Documents.First(d => d.Type == "TermsClient").Version;
 
-        var acceptResponse = await oldClient.PostAsJsonAsync("/api/legal/accept", new { privacyVersion = privacy, termsVersion = terms });
+        var acceptResponse = await oldClient.PostAsJsonAsync("/api/legal/accept", new AcceptLegalRequestDto(
+            [new AcceptLegalItemDto("Privacy", privacy), new AcceptLegalItemDto("TermsClient", terms)]));
         acceptResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var accepted = await acceptResponse.Content.ReadFromJsonAsync<AcceptLegalResponseDto>();
 
@@ -199,6 +224,19 @@ public class LegalConsentVersionChangeTests : IAsyncLifetime
         // this is the automated equivalent: swap legal.json/*.html on disk while the host keeps running,
         // no process restart, and confirm the NEW text is served once ReloadSeconds has elapsed.
         var v1 = _factory.ResetToDefault();
+        // T8-P11 (QA acceptance run, ARCHITECTURE_CYCLE8_PHASE2.md §98.2): same class of bug already
+        // documented and fixed below in LEG-018 — Program.cs forces an immediate LegalDocumentProvider
+        // load when this factory's host boots (`_ = _factory.Services;` in InitializeAsync, which runs
+        // BEFORE this test method), stamping `_lastCheckedUtc` with THAT load's time and snapshot — not
+        // with the `ResetToDefault()` version written one line above. Reading `/api/legal/documents/privacy`
+        // immediately afterward can still be inside the 1s `Legal:ReloadSeconds` throttle window and would
+        // then serve the stale boot-time snapshot instead of v1, making `before!.Version.Should().Be(v1)`
+        // fail intermittently. Caught by RandomTestCaseOrderer (T8-P11a) under P=4 parallel load, where
+        // per-call scheduling delays compress enough for the race to land inside the 1s window (seed
+        // 316303319, 10 sequential local reruns, run 5/10 — replaying the class alone does not reproduce
+        // it: the race needs the wall-clock compression the full parallel run produces). Waiting out the
+        // throttle explicitly, like LEG-018 already does, removes the dependency on ambient timing.
+        await Task.Delay(1200);
         var before = await (await Anon().GetAsync("/api/legal/documents/privacy")).Content
             .ReadFromJsonAsync<LegalDocumentDto>();
         before!.Version.Should().Be(v1);
@@ -220,6 +258,18 @@ public class LegalConsentVersionChangeTests : IAsyncLifetime
         // ARCHITECTURE.md §4.3: a broken manifest on disk (here: isDraft:true without the required
         // "-draft" version suffix) must never take the site down — the last good snapshot keeps serving.
         var v1 = _factory.ResetToDefault();
+        // T8-P11a: LegalDocumentProvider.EnsureFresh throttles re-checks to once per Legal:ReloadSeconds
+        // (1s here), keyed off _lastCheckedUtc — NOT off which manifest version was last requested. This
+        // factory is one instance per test CLASS (shared across every [Fact] here), so if some other test
+        // in this class made its own request within the last second, that request already refreshed the
+        // throttle window; an immediate GetAsync right after ResetToDefault() above would then still be
+        // inside that window and serve whatever snapshot was cached before this test even started — not
+        // the fresh v1 written above. Under a stable/declaration-order run this coincidentally never
+        // happened (the previous test in the file, LEG-017, always ends its own Task.Delay(1200) first),
+        // but random test-case ordering (RandomTestCaseOrderer) can and did place a test here that hadn't
+        // waited, making this assumption visible. Wait out the throttle explicitly instead of relying on
+        // whichever test happened to run immediately before this one.
+        await Task.Delay(1200);
         // Force a successful load of v1 BEFORE corrupting the manifest — otherwise the provider would
         // never have had a good snapshot to fall back to in the first place.
         (await Anon().GetAsync("/api/legal/documents/privacy")).EnsureSuccessStatusCode();

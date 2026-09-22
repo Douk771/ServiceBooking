@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import { BookingModal } from './BookingModal'
 import { DAY_FULL_LABEL } from './BookingCalendar'
+import { useAuthStore } from '../../store/authStore'
 import type { Company, Service } from '../../types'
 import type { MasterPublicDto } from '../../api/companies'
 import type { AvailabilityResponse } from '../../api/bookings'
@@ -14,6 +16,7 @@ const getAvailability = vi.fn()
 const getSlots = vi.fn()
 const createBooking = vi.fn()
 const getByCompany = vi.fn()
+const getText = vi.fn()
 
 vi.mock('../../api/companies', () => ({
   companiesApi: {
@@ -38,6 +41,24 @@ vi.mock('../../api/bookings', async () => {
     },
   }
 })
+
+vi.mock('../../api/legal', () => ({
+  legalApi: { getText: (...args: unknown[]) => getText(...args) },
+}))
+
+vi.mock('./SmartCaptcha', () => ({ smartCaptchaEnabled: false, SmartCaptcha: () => null }))
+
+const BOOKING_NOTICE_HTML = `<p>Meta.</p>
+<h2>Короткая строка (видна всегда)</h2>
+<p>Записываясь, вы передаёте своё имя и номер телефона компании.</p>
+<h2>Полный текст (раскрывается по ссылке «Подробнее»)</h2>
+<p>Полное описание того, кто и зачем обрабатывает данные.</p>`
+
+const GUARDIAN_HTML = `<p>Meta.</p>
+<h2>Текст в форме записи</h2>
+<p>Я записываю другого человека</p>
+<h2>Текст, который появляется после отметки</h2>
+<p>Вы подтверждаете, что вправе действовать в интересах этого человека.</p>`
 
 const company: Company = {
   id: 'co1',
@@ -108,12 +129,32 @@ function renderModal(allowMultipleServices = false) {
   )
 }
 
+// US-65/API_CONTRACT_CYCLE5.md tests below reach the "info" step via a single mocked master (so the
+// US-64 master-step auto-skip kicks in) and a single available day in the current month, picked
+// through the real BookingCalendar rather than the flat date list the old UI used.
+async function reachInfoStep(user: ReturnType<typeof userEvent.setup>, dateStr: string) {
+  const dateLabel = format(new Date(`${dateStr}T00:00:00`), 'd MMMM', { locale: (await import('date-fns/locale')).ru })
+  await user.click(await screen.findByLabelText(dateLabel))
+  await user.click(await screen.findByRole('button', { name: '10:00' }))
+}
+
 beforeEach(() => {
   getMasters.mockReset()
   getAvailability.mockReset().mockResolvedValue(availabilityFor({}))
   getSlots.mockReset().mockResolvedValue([])
   createBooking.mockReset().mockResolvedValue({})
   getByCompany.mockReset().mockResolvedValue([])
+  getText.mockReset()
+  useAuthStore.setState({ user: null, token: null })
+
+  getMasters.mockResolvedValue([master()])
+  getText.mockImplementation((key: string) => {
+    if (key === 'BookingNotice')
+      return Promise.resolve({ key, version: '2026-09-21', isDraft: true, contentHtml: BOOKING_NOTICE_HTML })
+    if (key === 'GuardianConfirmation')
+      return Promise.resolve({ key, version: '2026-09-21', isDraft: true, contentHtml: GUARDIAN_HTML })
+    return Promise.reject(new Error('unknown key'))
+  })
 })
 
 describe('BookingModal — US-64 single/zero master', () => {
@@ -269,5 +310,109 @@ describe('BookingModal — US-67 multiple services per visit', () => {
     dayButton.click()
 
     expect(await screen.findByText('Мастер не оказывает услугу: Окрашивание')).toBeInTheDocument()
+  })
+})
+
+// ── cycle 5: booking notice text, guardian/"записываю другого человека" confirmation ─────────────
+
+describe('BookingModal — cycle 5 legal text additions', () => {
+  it('does not send bookedForOther/guardianConfirmation when the box is left unchecked (today\'s behaviour)', async () => {
+    const user = userEvent.setup()
+    createBooking.mockResolvedValueOnce({ id: 'b1' })
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '11:00:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+    await user.type(screen.getByLabelText('Ваше имя *'), 'Иван Иванов')
+    await user.type(screen.getByLabelText('Телефон *'), '+79991234567')
+    await user.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    const payload = createBooking.mock.calls[0][0]
+    expect(payload.bookedForOther).toBeUndefined()
+    expect(payload.guardianConfirmation).toBeUndefined()
+  })
+
+  it('checking "записываю другого человека" reveals the guardian text and requires it before submit', async () => {
+    const user = userEvent.setup()
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '11:00:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+    await user.type(screen.getByLabelText('Ваше имя *'), 'Иван Иванов')
+    await user.type(screen.getByLabelText('Телефон *'), '+79991234567')
+
+    await user.click(screen.getByLabelText('Я записываю другого человека'))
+
+    expect(await screen.findByText(/вправе действовать в интересах этого человека/)).toBeInTheDocument()
+  })
+
+  it('submitting with the box checked sends bookedForOther and the guardian text version', async () => {
+    const user = userEvent.setup()
+    createBooking.mockResolvedValueOnce({ id: 'b1' })
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '11:00:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+    await user.type(screen.getByLabelText('Ваше имя *'), 'Иван Иванов')
+    await user.type(screen.getByLabelText('Телефон *'), '+79991234567')
+    await user.click(screen.getByLabelText('Я записываю другого человека'))
+    await screen.findByText(/вправе действовать в интересах этого человека/)
+    await user.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+
+    await waitFor(() =>
+      expect(createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookedForOther: true,
+          guardianConfirmation: { textVersion: '2026-09-21', confirmed: true },
+        }),
+      ),
+    )
+  })
+
+  it('renders the short booking-notice line always, with the full text tucked behind a "Подробнее" disclosure', async () => {
+    const user = userEvent.setup()
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '11:00:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+
+    expect(await screen.findByText(/Записываясь, вы передаёте своё имя/)).toBeInTheDocument()
+    // jsdom doesn't hide closed <details> content from text queries the way a real browser does, so
+    // the meaningful assertion here is the structural one: the full text lives inside the
+    // <details>/<summary> disclosure, collapsed by default (no `open` attribute).
+    const details = screen.getByText('Подробнее').closest('details')
+    expect(details).not.toBeNull()
+    expect(details).not.toHaveAttribute('open')
+    expect(details).toHaveTextContent(/Полное описание того, кто и зачем/)
+
+    await user.click(screen.getByText('Подробнее'))
+    expect(details).toHaveAttribute('open')
+  })
+
+  it('falls back to a static notice if the legal text fails to load, instead of showing nothing', async () => {
+    getText.mockRejectedValue(new Error('network'))
+    const user = userEvent.setup()
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '11:00:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+
+    expect(await screen.findByText(/Оставляя номер телефона, вы получите сервисные сообщения/)).toBeInTheDocument()
   })
 })
