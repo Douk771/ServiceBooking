@@ -198,8 +198,8 @@ public class AdminController(
     }
 
     // openapi-cycle5.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
-    // favor of PUT /admin/billing-accounts/{accountId}/subscription (not yet implemented — see the
-    // cycle-07 backend report) and must answer 410 Gone rather than behave as before, so a stale admin
+    // favor of PUT /admin/billing-accounts/{accountId}/subscription (AdminBillingController,
+    // implemented this cycle) and must answer 410 Gone rather than behave as before, so a stale admin
     // client can't silently keep writing tariff/paid-until onto AccountSubscription once the
     // BillingAccount model replaces it.
     [HttpPut("owners/{ownerUserId}/subscription")]
@@ -374,16 +374,13 @@ public class AdminController(
         };
         var optionRulesError = dto.Options is not null ? await ApplyOptionRulesAsync(plan.Id, dto.Options) : null;
         if (optionRulesError is not null) return optionRulesError;
+        // NB-8 (cycle-07 backend report): no try/catch DbUpdateException-when-IsSystemFree here, unlike
+        // UpdatePlan/SetSystemFree — IsSystemFree is hardcoded false a few lines up, so that guard could
+        // never fire; keeping it would have been dead code masking a real conflict as an unhandled 500.
+        // A brand-new plan can never race the "one system-free plan" unique index because it never asks
+        // to be the system-free plan in the first place (see PUT .../system-free for that transition).
         db.SubscriptionPlanConfigs.Add(plan);
-        try
-        {
-            await db.SaveChangesAsync();
-        }
-        catch (DbUpdateException) when (plan.IsSystemFree)
-        {
-            // See UpdatePlan for why this races the AnyAsync check above; same translation to 409.
-            return Conflict("Another plan is already marked as the system free plan.");
-        }
+        await db.SaveChangesAsync();
         pricingCatalogCache.Invalidate();
         // A brand-new plan has no subscribers yet — no need for the AccountSubscriptions round trip
         // GetActiveSubscriberCountsAsync does for the list/update endpoints.
@@ -486,13 +483,18 @@ public class AdminController(
 
         if (!dto.IsSystemFree && plan.IsSystemFree)
         {
-            // §43.4 requires exactly one system free plan at all times, but that invariant can only ever
-            // be enforced across the *pair* of calls an admin needs to move the flag (turn the old one
-            // off, then turn the new one on) — no single request spans both. The best this endpoint can
-            // do is refuse to create a dead end: only allow turning this plan's flag off when another
-            // active, zero-priced plan already exists to receive it next. Without that guard, this used
-            // to refuse turning off unconditionally, which made moving the flag to another plan
-            // impossible altogether (cycle-07 QA finding #1) — the seeded plan could never be replaced.
+            // §43.4 says exactly one system free plan must exist AT ALL TIMES. This endpoint does NOT
+            // guarantee that invariant, and cannot: moving the flag from one plan to another is
+            // necessarily two separate requests (turn the old one off, then turn the new one on), and
+            // between those two requests the system genuinely has ZERO system-free plans for however
+            // long the admin takes to make the second call — there is no transaction spanning both. The
+            // check below only guards against the WORSE failure of a permanent dead end: it refuses to
+            // turn this plan's flag off unless another active, zero-priced candidate already exists to
+            // receive it, so the flag can always eventually be moved. It does not, and cannot, stop an
+            // admin from leaving the system without a system-free plan indefinitely by simply never
+            // making the second call. Before this guard existed, turning the flag off was refused
+            // unconditionally, which made moving it to another plan impossible altogether (cycle-07 QA
+            // finding #1) — the seeded plan could never be replaced.
             var transferCandidateExists = await db.SubscriptionPlanConfigs
                 .AnyAsync(p => p.Id != id && p.IsActive && p.PricePerMonth == 0);
             if (!transferCandidateExists)
@@ -627,6 +629,11 @@ public class AdminController(
         {
             if (!Enum.TryParse<OptionAvailability>(d.Availability, out _))
                 return new BadRequestObjectResult($"Неизвестное значение availability: «{d.Availability}».");
+            // NB-7 — an unvalidated negative IncludedQuantity feeds straight into
+            // BillingCalculator.MonthlyPriceFor's Math.Max(0, quantity - includedQuantity), which for a
+            // negative includedQuantity charges for MORE than the account actually bought.
+            if (d.IncludedQuantity is < 0)
+                return new BadRequestObjectResult("IncludedQuantity must not be negative.");
         }
 
         var optionIds = desiredList.Select(d => d.OptionId).ToList();
@@ -776,8 +783,8 @@ public class AdminController(
     }
 
     // openapi-cycle5.yaml (legacyChannelPayment, redaction 2.1): retired in favor of
-    // PUT /admin/billing-accounts/{accountId}/subscription (not yet implemented — see the cycle-07
-    // backend report), which folds the notification-channel option into the account's option matrix.
+    // PUT /admin/billing-accounts/{accountId}/subscription (AdminBillingController, implemented this
+    // cycle), which folds the notification-channel option into the account's option matrix.
     // Must answer 410 Gone rather than keep writing ChannelPaymentLog rows against a model that's being
     // replaced.
     [HttpPost("notification-channels/{id:guid}/payment")]
