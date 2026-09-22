@@ -72,14 +72,23 @@ new_plan AS (
              THEN p."AllowNotificationChannel" ELSE false END AS new_allow_notification_channel,
         CASE
             WHEN s."IsActive" AND (s."PaidUntil" IS NULL OR s."PaidUntil" >= now()) AND p."IsActive" IS TRUE THEN
+                -- CapabilityKey is 'employees' (ServiceBooking.API/Services/Billing/CapabilityKeys.cs),
+                -- not the option's own 'extra-employees' Code; and, mirroring
+                -- SubscriptionResolver.IsOptionCurrentlyPaid (N13), a purchased option only counts if
+                -- the CURRENT plan's rule for it is Extra or Included — a missing rule, or a rule of
+                -- Unavailable, gates the quantity out even though the option row itself is still paid.
                 CASE WHEN p."MaxEmployees" IS NULL THEN NULL
                      ELSE p."MaxEmployees" + COALESCE(ba."GrandfatheredEmployeeBonus", 0)
                           + COALESCE((
                               SELECT SUM(aso."Quantity")
                               FROM "AccountSubscriptionOptions" aso
                               JOIN "SubscriptionOptions" so ON so."Id" = aso."OptionId"
+                              JOIN "PlanOptionRules" por
+                                ON por."PlanConfigId" = s."PlanConfigId" AND por."OptionId" = aso."OptionId"
                               WHERE aso."BillingAccountId" = c."BillingAccountId"
-                                AND so."CapabilityKey" = 'extra-employees'
+                                AND so."CapabilityKey" = 'employees'
+                                -- OptionAvailability is stored as its numeric enum value: 1 = Included, 2 = Extra
+                                AND por."Availability" IN (1, 2)
                                 AND (aso."EndsAtUtc" IS NULL OR aso."EndsAtUtc" > now())
                           ), 0)
                 END
@@ -92,8 +101,10 @@ new_plan AS (
 ),
 seats_used AS (
     -- Employees currently on the payroll of each company's account (mirrors AccountUsageReader's own
-    -- query) — needed for the "seats_limit_new < seats_used_now" acceptance bullet.
-    SELECT c."BillingAccountId" AS billing_account_id, COUNT(DISTINCT cm."UserId") AS seats_used
+    -- query, AccountUsageReader.cs:33 — COUNT(cm."Id"), i.e. one seat per membership row, NOT
+    -- distinct users; a person on two companies of the same account occupies two seats) — needed for
+    -- the "seats_limit_new < seats_used_now" acceptance bullet.
+    SELECT c."BillingAccountId" AS billing_account_id, COUNT(cm."Id") AS seats_used
     FROM "Companies" c
     JOIN "CompanyMembers" cm ON cm."CompanyId" = c."Id"
     WHERE c."BillingAccountId" IS NOT NULL
