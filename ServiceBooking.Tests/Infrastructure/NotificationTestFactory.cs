@@ -21,7 +21,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// over HTTP. One instance per test (not shared), matching <see cref="RateLimitTestFactory"/>'s own
 /// per-test-state reasoning — each test gets its own in-memory rate limiter / QR cache state.
 /// </summary>
-public sealed class NotificationTestFactory : WebApplicationFactory<Program>
+public sealed class NotificationTestFactory(string connectionString) : WebApplicationFactory<Program>
 {
     /// <summary>Same fixed, deterministic key <see cref="NotificationDispatchTestFactory"/> uses — lets a
     /// channel encrypted under one factory type be read by tests that happen to seed via the other.</summary>
@@ -30,20 +30,13 @@ public sealed class NotificationTestFactory : WebApplicationFactory<Program>
     public const string TestWebhookToken = "qa-cycle4-webhook-token";
     public const string TestUnsubscribeKey = "qa-cycle4-unsubscribe-key-not-secret";
 
+    /// <summary>This host's identity — see <see cref="TestHostSettings"/>. Populated once the host has
+    /// started (e.g. by touching <see cref="WebApplicationFactory{TEntryPoint}.Services"/>).</summary>
+    public TestHostIdentity Identity { get; private set; } = null!;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:DefaultConnection", TestDatabaseFixture.ConnectionString);
-        builder.UseSetting("Jwt:Key", "TEST_ONLY_SECRET_KEY_AT_LEAST_32_CHARACTERS_LONG");
-        builder.UseSetting("Jwt:Issuer", "ServiceBooking");
-        builder.UseSetting("Jwt:Audience", "ServiceBookingClient");
-        builder.UseSetting("AllowedOrigins", "http://localhost:5173");
-        builder.UseSetting("SuperAdmin:Phone", "+70000000001");
-        builder.UseSetting("SuperAdmin:Email", "superadmin@test.local");
-        builder.UseSetting("SuperAdmin:Password", "SuperAdmin123!");
-        builder.UseSetting("SmartCaptcha:SecretKey", "");
-        builder.UseSetting("SmartCaptcha:SiteKey", "");
-        builder.UseSetting("Logging:LogLevel:Microsoft.EntityFrameworkCore", "Warning");
+        Identity = TestHostSettings.Apply(builder, TestSlot.Api, "ntf", connectionString);
 
         builder.UseSetting("Notifications:Provider", "logging"); // US-35 — never a real network call
         builder.UseSetting("Notifications:EncryptionKey", TestEncryptionKeyBase64);

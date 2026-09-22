@@ -33,10 +33,13 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// </summary>
 public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
 {
+    private readonly string _connectionString;
+
     public string LegalRoot { get; }
 
-    public LegalDocumentsTestFactory()
+    public LegalDocumentsTestFactory(string connectionString)
     {
+        _connectionString = connectionString;
         LegalRoot = Path.Combine(Path.GetTempPath(), "sb-legal-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(LegalRoot);
         ResetToDefault();
@@ -116,23 +119,15 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
-        builder.UseSetting("ConnectionStrings:DefaultConnection", TestDatabaseFixture.ConnectionString);
-        builder.UseSetting("Jwt:Key", "TEST_ONLY_SECRET_KEY_AT_LEAST_32_CHARACTERS_LONG");
-        builder.UseSetting("Jwt:Issuer", "ServiceBooking");
-        builder.UseSetting("Jwt:Audience", "ServiceBookingClient");
-        builder.UseSetting("AllowedOrigins", "http://localhost:5173");
-        // Deliberately NOT the shared "+70000000001" every other factory uses — see this class's own doc
-        // comment for why colliding on that phone here specifically poisons every other test's SuperAdmin
-        // login with a UserConsent version nothing else recognizes. No test in this class ever logs in as
-        // SuperAdmin, so a dedicated, never-asserted-on phone costs nothing here.
-        builder.UseSetting("SuperAdmin:Phone", "+70000099999");
-        builder.UseSetting("SuperAdmin:Email", "superadmin-legal-isolated@test.local");
-        builder.UseSetting("SuperAdmin:Password", "SuperAdmin123!");
-        builder.UseSetting("SmartCaptcha:SecretKey", "");
-        builder.UseSetting("SmartCaptcha:SiteKey", "");
-        builder.UseSetting("Logging:LogLevel:Microsoft.EntityFrameworkCore", "Warning");
+        // Deliberately NOT the shared "api" factoryTag's SuperAdmin — see this class's own doc comment
+        // for why colliding on that phone here specifically poisons every other test's SuperAdmin login
+        // with a UserConsent version nothing else recognizes. No test in this class ever logs in as
+        // SuperAdmin, so a dedicated, never-asserted-on phone (TestHostSettings' "legal" entry) costs
+        // nothing here.
+        TestHostSettings.Apply(builder, TestSlot.Legal, "legal", _connectionString);
 
+        // Overrides TestHostSettings' own copy of App_Data/legal — this factory manages its own
+        // rewritable manifest (ResetToDefault/WriteManifest) so LEG- tests can bump versions mid-test.
         builder.UseSetting("Legal:Root", LegalRoot);
         builder.UseSetting("Legal:ReloadSeconds", "1");
     }
