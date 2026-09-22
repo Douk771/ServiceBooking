@@ -68,15 +68,6 @@ public class BookingsController(
         var isStaff = userId is not null &&
             (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, companyId, userId));
 
-        // The same triplet check POST /api/bookings performs, for the same reason: without it the
-        // caller picks companyId for the membership check but masterId/serviceId from anywhere. Staff
-        // of company A could then ask for a master of company B with manual=true and get that master's
-        // whole day minus their occupancy — and occupancy is deliberately cross-company (Q9), so this
-        // would be a weaker back door to exactly what GetOccupied above closes. 400, not 404: every
-        // object exists, it is the combination that is wrong (API_CONTRACT.md §2.2).
-        if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
-            return BadRequest("Master does not work for this company");
-
         int totalDuration;
         if (excludeBookingId is not null)
         {
@@ -94,12 +85,28 @@ public class BookingsController(
                 return BadRequest("excludeBookingId does not match companyId/masterId");
             if (!await CanManageBookingAsync(booking, userId)) return Forbid();
 
+            // NB: the "master works in this company" check below deliberately does NOT run on this
+            // path. The pair (companyId, masterId) is pinned to the booking's own CompanyId/MasterId
+            // by the equality check above, which is strictly stronger than a membership lookup — so
+            // nothing extra becomes addressable. Running it here would instead re-break the case all
+            // three documents (API_CONTRACT_CYCLE6.md §41.1, ARCHITECTURE_CYCLE6.md §46.3 and the
+            // comment right above) promise works: a master who has since left the company still has
+            // future bookings, and the owner must be able to move them.
             totalDuration = booking.BookingServices is { Count: > 0 }
                 ? booking.BookingServices.Sum(bs => bs.DurationMinutes)
                 : booking.Service.DurationMinutes;
         }
         else
         {
+            // The same triplet check POST /api/bookings performs, for the same reason: without it the
+            // caller picks companyId for the membership check but masterId/serviceId from anywhere. Staff
+            // of company A could then ask for a master of company B with manual=true and get that master's
+            // whole day minus their occupancy — and occupancy is deliberately cross-company (Q9), so this
+            // would be a weaker back door to exactly what GetOccupied above closes. 400, not 404: every
+            // object exists, it is the combination that is wrong (API_CONTRACT.md §2.2).
+            if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
+                return BadRequest("Master does not work for this company");
+
             // US-67 (ARCHITECTURE_CYCLE6.md §47.2): serviceIds is the multi-service form of serviceId;
             // when absent this is exactly the pre-cycle single-service path.
             var (resolved, error) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
