@@ -53,7 +53,7 @@ function StatsTab() {
 
 // ── Account subscription modal (owner-scoped) ───────────────────────────────────
 
-interface OwnerSubscription {
+export interface OwnerSubscription {
   ownerUserId: string
   ownerEmail: string
   planConfigId?: string
@@ -61,7 +61,20 @@ interface OwnerSubscription {
   subscriptionActive: boolean
 }
 
-function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClose: () => void }) {
+// Human-readable text for the US-63 diagnostics panel's blockingReason, shown per company
+// (API_CONTRACT_CYCLE6.md §42.2). The overall statusText is the server's own phrase — only this
+// per-company reason needs a client-side label, since the server only sends the enum value.
+const BLOCKING_REASON_TEXT: Record<string, string> = {
+  None: 'Онлайн-запись доступна',
+  NoSubscription: 'Тариф не назначен',
+  SubscriptionInactive: 'Подписка деактивирована администратором',
+  SubscriptionExpired: 'Подписка истекла',
+  PlanRetired: 'Тариф снят с продажи',
+  PlanDisallowsOnlineBooking: 'Тариф не включает онлайн-запись',
+  SelfBookingDisabledByOwner: 'Владелец сам выключил приём онлайн-записей',
+}
+
+export function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClose: () => void }) {
   const qc = useQueryClient()
   const [planConfigId, setPlanConfigId] = useState(owner.planConfigId ?? '')
   const [paidUntil, setPaidUntil] = useState(owner.paidUntil ? owner.paidUntil.slice(0, 10) : '')
@@ -75,10 +88,24 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
   // the owner to Free — but it isn't offered to switch a different owner onto it.
   const currentPlan = plans?.find((p) => p.id === owner.planConfigId)
   const currentPlanInactive = !!currentPlan && !currentPlan.isActive
+  const selectedPlan = activePlans.find((p) => p.id === planConfigId) ?? (currentPlanInactive ? currentPlan : undefined)
+
+  // US-63 (§42.4): choosing "Free" removes the tariff outright — no expiry date applies to it.
+  const isFree = planConfigId === ''
+  // US-63 (§42.1/§42.4): the date is required whenever a plan is selected; blank → can't save.
+  const dateMissing = !isFree && !paidUntil
 
   const { data: history } = useQuery({
     queryKey: ['admin-subscription-history', owner.ownerUserId],
     queryFn: () => adminApi.getSubscriptionHistory(owner.ownerUserId),
+  })
+
+  // US-63 (§42.2): the actual state of the subscription right now, in the server's own words —
+  // this is the panel that turns "владелец не может записаться" from a support mystery into
+  // something visible right next to the form that changes it.
+  const { data: diagnostics, isLoading: diagnosticsLoading } = useQuery({
+    queryKey: ['admin-subscription-diagnostics', owner.ownerUserId],
+    queryFn: () => adminApi.getSubscriptionDiagnostics(owner.ownerUserId),
   })
 
   const mut = useMutation({
@@ -86,7 +113,7 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
       adminApi.updateSubscription(
         owner.ownerUserId,
         planConfigId || null,
-        paidUntil || null,
+        isFree ? null : paidUntil,
         isActive,
         comment || undefined,
       ),
@@ -94,6 +121,7 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
       qc.invalidateQueries({ queryKey: ['admin-users'] })
       qc.invalidateQueries({ queryKey: ['admin-companies'] })
       qc.invalidateQueries({ queryKey: ['admin-subscription-history', owner.ownerUserId] })
+      qc.invalidateQueries({ queryKey: ['admin-subscription-diagnostics', owner.ownerUserId] })
       onClose()
     },
   })
@@ -104,9 +132,35 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
         <p className="text-xs text-muted bg-warning-bg rounded-xl px-3 py-2">
           Тариф привязан к аккаунту владельца и покрывает <span className="font-medium">все его компании</span>.
         </p>
+
+        <div className="rounded-xl border border-line bg-cream-deep p-3">
+          <p className="text-xs font-medium text-muted uppercase tracking-wide mb-1.5">Текущее состояние</p>
+          {diagnosticsLoading && <p className="text-sm text-ink-soft">Загрузка…</p>}
+          {diagnostics && (
+            <div className="flex flex-col gap-1.5">
+              <p className="text-sm text-ink font-medium">{diagnostics.statusText}</p>
+              {diagnostics.companies.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  {diagnostics.companies.map((c) => (
+                    <div key={c.companyId} className="text-xs text-ink-soft flex items-center justify-between gap-2">
+                      <span>{c.name}</span>
+                      <span className={c.onlineBookingEnabled ? 'text-success' : 'text-danger'}>
+                        {BLOCKING_REASON_TEXT[c.blockingReason] ?? c.blockingReason}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div>
-          <label className="text-sm font-medium text-ink-soft block mb-1">Тарифный план</label>
+          <label htmlFor="sub-plan-select" className="text-sm font-medium text-ink-soft block mb-1">
+            Тарифный план
+          </label>
           <select
+            id="sub-plan-select"
             value={planConfigId}
             onChange={(e) => setPlanConfigId(e.target.value)}
             className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
@@ -119,16 +173,32 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
               </option>
             ))}
           </select>
+          {selectedPlan && !selectedPlan.allowOnlineBooking && (
+            <p className="text-xs text-warning mt-1.5 bg-warning-bg rounded-lg px-2.5 py-1.5">
+              В этом тарифе онлайн-запись выключена — клиенты не смогут записаться сами.
+            </p>
+          )}
         </div>
-        <div>
-          <label className="text-sm font-medium text-ink-soft block mb-1">Оплачено до</label>
-          <input
-            type="date"
-            value={paidUntil}
-            onChange={(e) => setPaidUntil(e.target.value)}
-            className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
-          />
-        </div>
+        {!isFree && (
+          <div>
+            <label htmlFor="sub-paid-until" className="text-sm font-medium text-ink-soft block mb-1">
+              Оплачено до
+            </label>
+            <input
+              id="sub-paid-until"
+              type="date"
+              required
+              value={paidUntil}
+              onChange={(e) => setPaidUntil(e.target.value)}
+              className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
+            />
+            <p className="text-xs text-muted mt-1">
+              Тариф действует по конец указанного дня включительно. Обязательное поле — без даты подписка не
+              сохранится.
+            </p>
+            {dateMissing && <p className="text-xs text-danger mt-1">Укажите дату окончания подписки</p>}
+          </div>
+        )}
         <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
@@ -156,7 +226,7 @@ function SubscriptionModal({ owner, onClose }: { owner: OwnerSubscription; onClo
           <Button variant="secondary" className="flex-1" onClick={onClose}>
             Отмена
           </Button>
-          <Button className="flex-1" loading={mut.isPending} onClick={() => mut.mutate()}>
+          <Button className="flex-1" loading={mut.isPending} disabled={dateMissing} onClick={() => mut.mutate()}>
             Сохранить
           </Button>
         </div>
