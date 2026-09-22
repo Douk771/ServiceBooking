@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -33,9 +34,12 @@ public class BillingController(AppDbContext db, OwnerSubscriptionService ownerSu
 
         if (dto.Comment is { Length: > 500 }) return BadRequest("Комментарий не может быть длиннее 500 символов.");
 
-        var optionIds = dto.Options.Select(o => o.OptionId).ToList();
+        // B6: an omitted `options` array is a request with no options, not a 500.
+        var lines = dto.Options ?? [];
+
+        var optionIds = lines.Select(o => o.OptionId).ToList();
         var options = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).ToListAsync();
-        foreach (var line in dto.Options)
+        foreach (var line in lines)
         {
             if (line.Quantity < 1) return BadRequest("Количество должно быть не меньше 1.");
             var option = options.FirstOrDefault(o => o.Id == line.OptionId);
@@ -50,13 +54,20 @@ public class BillingController(AppDbContext db, OwnerSubscriptionService ownerSu
         // Contract: repeated submission OVERWRITES the existing pending request and answers 200 — there
         // is no "already pending" 409 for the owner's own request, only for a superadmin racing an
         // approval against a resubmission (handled where the request is closed, not here).
+        //
+        // §52: lock on the billing account so this overwrite can't interleave with an admin approving/
+        // rejecting the very request being overwritten (AdminBillingController uses the same key).
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"billing-account:{account.Id}");
+
         account.RequestedPlanId = dto.PlanId;
-        account.RequestedOptionsJson = OwnerSubscriptionService.SerializeOptionLines(dto.Options.Select(o => new RequestedOptionLine(o.OptionId, o.Quantity)));
+        account.RequestedOptionsJson = OwnerSubscriptionService.SerializeOptionLines(lines.Select(o => new RequestedOptionLine(o.OptionId, o.Quantity)));
         account.RequestedAtUtc = DateTime.UtcNow;
         account.RequestedByUserId = userId;
         account.RequestedComment = dto.Comment;
         account.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         var full = await ownerSubscriptionService.BuildAsync(account);
         return Ok(full.PendingRequest);

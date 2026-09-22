@@ -14,7 +14,7 @@ public class OwnerSubscriptionService(
     AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader)
 {
     public async Task<BillingAccount?> FindAccountForOwnerAsync(string ownerUserId) =>
-        await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
+        await db.BillingAccounts.Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
 
     public async Task<OwnerSubscriptionDto?> GetAsync(string ownerUserId)
     {
@@ -76,12 +76,14 @@ public class OwnerSubscriptionService(
 
         var warning = BuildWarning(status, isExpiringSoon, expiresInDays, sub);
 
+        // B10: an already-subscribed Quantity option must stay listed here too — otherwise the owner
+        // can never ask to buy MORE of something they already have (e.g. one more WhatsApp number).
+        // The current quantity, if any, is already visible in `optionDtos` (Options[]) by OptionId;
+        // this list only ever answers "can I request this option at all right now".
         var allOptions = await db.SubscriptionOptions.Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
         var availableOptions = allOptions
-            .Where(o => subscribedOptions.All(s => s.OptionId != o.Id))
             .Select(o => ToAvailableOptionDto(o, planRules))
-            .Where(o => o.Availability != nameof(OptionAvailability.Unavailable) || true) // Unavailable IS shown (§70 п.2)
-            .ToList();
+            .ToList(); // Unavailable options ARE shown too (§70 п.2) — no filter beyond IsActive/priced above.
 
         var pendingRequest = BuildPendingRequestDto(account, allOptions.Concat(subscribedOptions.Select(o => o.Option)).DistinctBy(o => o.Id).ToList(), planDto.PricePerMonth);
 

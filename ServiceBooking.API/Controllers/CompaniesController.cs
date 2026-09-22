@@ -225,19 +225,22 @@ public class CompaniesController(
         // (Free) that's 1 — so a brand-new owner can open their first company, but a second branch needs
         // a paid plan with MaxCompanies >= 2. Existing companies over a since-lowered limit are untouched.
         //
-        // Serialize concurrent creates for this owner: without a lock, two simultaneous requests could
-        // both count the same (pre-insert) number of companies, both pass the check, and both insert —
-        // letting the owner end up over the limit the plan was supposed to enforce.
-        await using var limitTransaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"owner-companies:{userId}");
-
+        // Serialize concurrent creates against everything else that can change how many companies fit
+        // on this billing account (§52) — a company transfer moving a company IN, or another create —
+        // by using the SAME lock key ("billing-account:{id}") those operations already take
+        // (AdminBillingController.AssignSubscription, CompanyTransferService). Locking by userId alone
+        // (the previous key) let a create race a concurrent transfer: both would read the pre-write
+        // company count and both pass the limit check.
         var accountId = await billingAccountProvisioner.EnsureAccountAsync(userId);
+        await using var limitTransaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
+
         var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId);
         if (plan.AccountMaxCompanies.HasValue)
         {
             var ownedCount = await db.Companies.CountAsync(c => c.BillingAccountId == accountId);
             if (ownedCount >= plan.AccountMaxCompanies.Value)
-                return StatusCode(402, "Company limit reached for the current tariff plan.");
+                return StatusCode(402, BillingTexts.CompanyLimitReached(ownedCount, plan.AccountMaxCompanies.Value));
         }
 
         var company = new Company
@@ -448,7 +451,10 @@ public class CompaniesController(
         // account yet.
         var billingAccountId = await db.Companies.Where(c => c.Id == id).Select(c => c.BillingAccountId).FirstOrDefaultAsync();
         await using var limitTransaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, billingAccountId.HasValue ? $"billing-account-seats:{billingAccountId}" : $"company-members:{id}");
+        // Same lock key as company create/transfer/admin-assign (§52) — "billing-account-seats:{id}"
+        // used to be a DIFFERENT key from "billing-account:{id}", so a seat add and, say, a company
+        // transfer into the same account could run concurrently and both pass their own limit check.
+        await AdvisoryLock.AcquireAsync(db, billingAccountId.HasValue ? $"billing-account:{billingAccountId}" : $"company-members:{id}");
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
         if (plan.AccountMaxEmployees.HasValue)
