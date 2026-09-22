@@ -188,7 +188,12 @@ public static class TestRunEnvironment
             $"→ нужно {required} соединений.\n" +
             $"  Сервер отдаёт max_connections={maxConnections}, безопасный предел {safeLimit:F0}.\n" +
             "  Что сделать (любое из):\n" +
-            "    1) снизить параллелизм: SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2 (или xUnit.MaxParallelThreads в runsettings)\n" +
+            "    1) снизить параллелизм — ДВА места должны совпадать: SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2\n" +
+            "       (эта переменная влияет только на арифметику этой проверки) И фактический параллелизм раннера,\n" +
+            "       который задают отдельно: `-- xUnit.MaxParallelThreads=2` в командной строке dotnet test либо\n" +
+            "       maxParallelThreads в ServiceBooking.Tests/xunit.runner.json. Если поменять только переменную,\n" +
+            "       раннер по-прежнему будет параллелить на старом значении — либо тот же отказ, либо (хуже) эта\n" +
+            "       проверка пройдёт, а лимит соединений вылезет посреди прогона.\n" +
             "    2) поднять потолок сервера: max_connections >= " + (int)Math.Ceiling(required / 0.9) + "\n" +
             "    3) убрать SERVICEBOOKING_TEST_CONNECTION и дать прогону поднять свой контейнер\n" +
             "  Ничего не создано и не удалено.");
