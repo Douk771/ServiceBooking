@@ -27,9 +27,14 @@ openapi: 3.0.3
 #   npx openapi-typescript openapi-cycle6.yaml -o /tmp/api-cycle6.d.ts   (+ npx tsc --noEmit)
 #   npx @stoplight/prism-cli mock openapi-cycle6.yaml -p 4010            (мок для фронтенда)
 #
-# ВАЖНО ПРО ТЕЛА ОШИБОК: осознанные 4xx в этом продукте отдают ГОЛУЮ СТРОКУ (text/plain), а не
-# ProblemDetails; 401/403 — пустое тело (кроме /api/auth/login, который и раньше слал строку).
-# Это конвенция проекта, а не упущение схемы.
+# ВАЖНО ПРО ТЕЛА ОШИБОК: 4xx в этом продукте отдают ГОЛУЮ СТРОКУ (text/plain), а не ProblemDetails —
+# это верно и для 400 от ручного `BadRequest("...")`, и (с находки контрактной проверки цикла 6) для
+# 400 от автоматической валидации модели ASP.NET (пустой/невалидный query- или body-параметр):
+# ApiBehaviorOptions.InvalidModelStateResponseFactory приводит их к тому же виду с человеческим русским
+# текстом вместо ValidationProblemDetails/`errors`. Исключение по форме — только у
+# POST /api/auth/register: там 400 от Identity — МАССИВ {code, description} (application/json), это
+# намеренно и не трогается (API_CONTRACT_CYCLE6.md §39.6). 401/403 — пустое тело (кроме
+# /api/auth/login, который и раньше слал строку). Это конвенция проекта, а не упущение схемы.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 info:
@@ -89,6 +94,16 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400':
+          description: |
+            Телефон или пароль не переданы (автоматическая валидация модели). Как и остальные 4xx
+            в этом продукте — голая строка, НЕ ValidationProblemDetails/application-problem+json
+            (находка контрактной проверки цикла 6: раньше это был единственный автоматический путь,
+            который ещё не привели к общей форме).
+          content:
+            text/plain:
+              schema: { type: string }
+              example: "Проверьте данные запроса: номер телефона — обязательное поле, оно не заполнено."
         '401':
           description: Неверный телефон или пароль (два случая неразличимы намеренно)
           content:
