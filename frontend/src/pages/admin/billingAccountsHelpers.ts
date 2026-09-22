@@ -60,6 +60,15 @@ export function computeExpectedTotal(planPricePerMonth: number, rows: AssignOpti
   return planPricePerMonth + optionsTotal
 }
 
+/**
+ * Free (planId === '') never carries an expiry — the date field is hidden entirely for it in the
+ * UI. Any paid plan without "Оплачено до" is the last local guard before the server's own 400
+ * (ARCHITECTURE_CYCLE6.md §43.3.6): a never-expiring paid subscription must never reach the API.
+ */
+export function isPaidUntilMissing(planId: string, paidUntil: string): boolean {
+  return planId !== '' && !paidUntil
+}
+
 export function buildAssignInput(params: {
   planId: string | null
   isActive: boolean
@@ -73,7 +82,8 @@ export function buildAssignInput(params: {
   return {
     planId: params.planId,
     isActive: params.isActive,
-    paidUntil: params.paidUntil || null,
+    // Free plan (no planId) never carries an expiry, regardless of what's left in the date field.
+    paidUntil: params.planId ? params.paidUntil || null : null,
     options: optionRowsToPayload(params.rows),
     amount: params.amount.trim() === '' ? null : Number(params.amount),
     comment: params.comment.trim() === '' ? null : params.comment.trim(),

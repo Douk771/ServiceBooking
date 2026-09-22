@@ -24,6 +24,7 @@ import {
   formatRub,
   computeExpectedTotal,
   buildAssignInput,
+  isPaidUntilMissing,
   type AssignOptionRow,
 } from './billingAccountsHelpers'
 
@@ -99,6 +100,11 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
   const pricePerUnitByOption = Object.fromEntries(rows.map((r) => [r.optionId, r.pricePerMonth]))
   const expectedTotal = computeExpectedTotal(planPrice, rows, pricePerUnitByOption)
 
+  // Free plan has no expiry — the field is hidden for it entirely, so a paid plan without a date is
+  // the only real "missing" state. Last local guard before the server's own 400 (ARCHITECTURE_CYCLE6.md §43.3.6).
+  const isFree = planId === ''
+  const dateMissing = isPaidUntilMissing(planId, paidUntil)
+
   const mut = useMutation({
     mutationFn: () =>
       adminBillingApi.assignSubscription(
@@ -106,7 +112,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
         buildAssignInput({
           planId: planId || null,
           isActive,
-          paidUntil: paidUntil || null,
+          paidUntil,
           rows,
           amount,
           comment,
@@ -152,18 +158,27 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
               </option>
             ))}
           </select>
+          {selectedPlan && !selectedPlan.allowOnlineBooking && (
+            <p className="text-xs text-warning mt-1.5 bg-warning-bg rounded-lg px-2.5 py-1.5">
+              В этом тарифе онлайн-запись выключена — клиенты не смогут записаться сами.
+            </p>
+          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[13px] font-medium text-[#4A4038]">Оплачено до</label>
-            <input
-              type="date"
-              value={paidUntil}
-              onChange={(e) => setPaidUntil(e.target.value)}
-              className="rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
-            />
-          </div>
+        <div className={isFree ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'}>
+          {!isFree && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[13px] font-medium text-[#4A4038]">Оплачено до</label>
+              <input
+                type="date"
+                required
+                value={paidUntil}
+                onChange={(e) => setPaidUntil(e.target.value)}
+                className="rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
+              />
+              {dateMissing && <p className="text-xs text-danger">Укажите дату окончания подписки</p>}
+            </div>
+          )}
           <label className="flex items-center gap-2 self-end pb-2.5 cursor-pointer">
             <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="w-4 h-4 accent-gold" />
             <span className="text-sm text-ink-soft">Подписка активна</span>
@@ -234,7 +249,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
           <Button variant="secondary" className="flex-1" onClick={onClose}>
             Отмена
           </Button>
-          <Button className="flex-1" loading={mut.isPending} onClick={() => mut.mutate()}>
+          <Button className="flex-1" loading={mut.isPending} disabled={dateMissing} onClick={() => mut.mutate()}>
             Сохранить
           </Button>
         </div>

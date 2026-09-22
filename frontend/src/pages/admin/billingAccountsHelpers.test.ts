@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { optionRowsToPayload, computeExpectedTotal, buildAssignInput, formatRub, type AssignOptionRow } from './billingAccountsHelpers'
+import {
+  optionRowsToPayload,
+  computeExpectedTotal,
+  buildAssignInput,
+  isPaidUntilMissing,
+  formatRub,
+  type AssignOptionRow,
+} from './billingAccountsHelpers'
 
 const toggleRow: AssignOptionRow = {
   optionId: 'opt-toggle',
@@ -87,6 +94,49 @@ describe('buildAssignInput', () => {
       requestId: 'req-1',
       confirmLimitOverflow: true,
     })
+  })
+})
+
+describe('isPaidUntilMissing', () => {
+  it('requires a date whenever a paid plan is selected', () => {
+    expect(isPaidUntilMissing('plan-1', '')).toBe(true)
+  })
+
+  it('is satisfied once a date is present for a paid plan', () => {
+    expect(isPaidUntilMissing('plan-1', '2026-01-01')).toBe(false)
+  })
+
+  it('never requires a date for the free plan (empty planId)', () => {
+    expect(isPaidUntilMissing('', '')).toBe(false)
+  })
+})
+
+describe('buildAssignInput — free plan never carries an expiry', () => {
+  it('forces paidUntil to null when planId is null (free plan), even if a stale date is still in state', () => {
+    const input = buildAssignInput({
+      planId: null,
+      isActive: true,
+      paidUntil: '2026-01-01',
+      rows: [],
+      amount: '',
+      comment: '',
+      confirmLimitOverflow: false,
+    })
+    expect(input.planId).toBeNull()
+    expect(input.paidUntil).toBeNull()
+  })
+
+  it('keeps the given date for a paid plan', () => {
+    const input = buildAssignInput({
+      planId: 'plan-1',
+      isActive: true,
+      paidUntil: '2026-01-01',
+      rows: [],
+      amount: '',
+      comment: '',
+      confirmLimitOverflow: false,
+    })
+    expect(input.paidUntil).toBe('2026-01-01')
   })
 })
 
