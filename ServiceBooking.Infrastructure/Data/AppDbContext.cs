@@ -50,7 +50,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
     public DbSet<PlatformSettingChangeLog> PlatformSettingChangeLogs => Set<PlatformSettingChangeLog>();
 
-    // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.3): what's paid for on an account's subscription —
+    // Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §43.3): what's paid for on an account's subscription —
     // today, only read for the "notifications.whatsapp" option's Quantity (§47.1's N).
     public DbSet<AccountSubscriptionOption> AccountSubscriptionOptions => Set<AccountSubscriptionOption>();
 
@@ -142,7 +142,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(l => l.NewOptionsSummary).HasMaxLength(500);
         });
 
-        // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3): payer/rules-owner of companies and subscriptions —
+        // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3): payer/rules-owner of companies and subscriptions —
         // see Company.BillingAccountId / AccountSubscription.BillingAccountId remarks.
         builder.Entity<BillingAccount>(e =>
         {
@@ -163,7 +163,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(r => new { r.PlanConfigId, r.OptionId }).IsUnique();
         });
 
-        // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3): US-64 p.4 — who manages a company changed, and when.
+        // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4): US-64 p.4 — who manages a company changed, and when.
         builder.Entity<CompanyOwnerChangeLog>(e =>
         {
             e.HasOne(l => l.Company).WithMany().HasForeignKey(l => l.CompanyId).OnDelete(DeleteBehavior.Cascade);
@@ -345,7 +345,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasOne(c => c.Owner).WithMany().HasForeignKey(c => c.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(c => c.OwnerUserId);
-            // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.4, §47): who PAYS for/owns this number —
+            // Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §43.4, §47): who PAYS for/owns this number —
             // OwnerUserId stays "who set it up and manages it". Restrict (like Company.BillingAccountId)
             // — an account can't be deleted out from under a number it still owns. Stage 6 (§43.6,
             // B5-13): NOT NULL at the database level plus an alternate key on (Id, BillingAccountId)
@@ -483,7 +483,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(p => p.IsSystemFree).IsUnique().HasFilter("\"IsSystemFree\" = true");
         });
 
-        // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3): option catalog for the pricing screen.
+        // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3): option catalog for the pricing screen.
         builder.Entity<SubscriptionOption>(e =>
         {
             e.Property(o => o.Code).HasMaxLength(64);
@@ -495,7 +495,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(o => o.UnitName).HasMaxLength(32);
         });
 
-        // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.3): what's paid for on an account's
+        // Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §43.3): what's paid for on an account's
         // subscription — one row per (account, option). The request-workflow fields
         // (RequestedQuantity/RequestedAtUtc/RequestedByUserId, US-70) are carried in the entity now so a
         // later stage's admin approval endpoint doesn't need its own migration, but nothing writes them

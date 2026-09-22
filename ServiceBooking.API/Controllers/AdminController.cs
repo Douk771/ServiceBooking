@@ -401,7 +401,7 @@ public class AdminController(
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
 
-        // ARCHITECTURE_CYCLE5.md §50/§59 grep 8: this is the ONLY place in the codebase allowed to
+        // ARCHITECTURE_CYCLE7.md §50/§59 grep 8: this is the ONLY place in the codebase allowed to
         // assign Company.OwnerUserId, shared with CompanyTransferService's owner-change branch — see
         // CompanyOwnerWriter's own remarks for why the two call sites must not drift apart.
         var changedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -524,7 +524,7 @@ public class AdminController(
         pricingCatalogCache.Invalidate();
         // A brand-new plan has no subscribers yet — no need for the AccountSubscriptions round trip
         // GetActiveSubscriberCountsAsync does for the list/update endpoints.
-        // Contract (API_CONTRACT_CYCLE5.md) documents 201 Created for a successful create, not 200.
+        // Contract (API_CONTRACT_CYCLE7.md) documents 201 Created for a successful create, not 200.
         var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync();
         return StatusCode(StatusCodes.Status201Created, MapAdminPlanDto(plan, subscribedAccounts: 0, rules));
     }
