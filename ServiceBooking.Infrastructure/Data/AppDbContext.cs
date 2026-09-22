@@ -339,6 +339,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(c => c.SearchName).HasMaxLength(200);
             e.HasIndex(c => c.SearchName);
             e.HasIndex(c => new { c.Region, c.Name });
+            // ARCHITECTURE_CYCLE9.md §103.3 (US-113): added by ExpandCityDirectory alongside a
+            // one-time DELETE of any pre-existing (Name, Region) duplicates — "no duplicates" becomes a
+            // schema property from this migration forward, not something callers have to re-check.
+            e.HasIndex(c => new { c.Name, c.Region }).IsUnique();
         });
 
         builder.Entity<NotificationChannel>(e =>
