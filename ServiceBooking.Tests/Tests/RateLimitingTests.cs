@@ -11,8 +11,7 @@ namespace ServiceBooking.Tests.Tests;
 /// shared "Api" collection (whose Testing config deliberately raises every limit to 10000/min so the
 /// other 344 tests are never throttled).
 /// </summary>
-[Collection("Api")]
-public class RateLimitingTests(ApiDatabaseFixture fixture)
+public class RateLimitingTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
     private static string RandomNumericPhone()
     {

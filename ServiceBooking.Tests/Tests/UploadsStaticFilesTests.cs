@@ -26,8 +26,7 @@ namespace ServiceBooking.Tests.Tests;
 /// dedicated host (<see cref="UploadsStaticFilesTestFactory"/>) at a configuration where the broken and
 /// fixed code paths provably diverge.
 /// </summary>
-[Collection("Api")]
-public class UploadsStaticFilesTests(ApiDatabaseFixture fixture)
+public class UploadsStaticFilesTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
     private static string RandomPhone()
     {

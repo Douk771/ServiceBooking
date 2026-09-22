@@ -20,7 +20,7 @@ namespace ServiceBooking.Tests.Tests;
 /// rate-limit policy (the priority scenario the code reviewer called out first: the webhook used to
 /// return 500 on every call because it referenced an unregistered policy).
 /// </summary>
-public class NotificationWebhookUnsubscribeTests(ApiDatabaseFixture fixture) : NotificationTestBase(fixture)
+public class NotificationWebhookUnsubscribeTests(TestDatabaseFixture fixture) : NotificationTestBase(fixture)
 {
     // ── Webhook end-to-end (priority scenario 1) ─────────────────────────────────────────────────
 

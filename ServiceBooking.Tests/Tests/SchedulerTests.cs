@@ -23,7 +23,7 @@ namespace ServiceBooking.Tests.Tests;
 /// database. The pure "is it due / is it overdue" arithmetic itself is covered by
 /// ScheduledTaskScheduleTests (ServiceBooking.UnitTests).
 /// </summary>
-public class SchedulerTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class SchedulerTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("SCH-001")]
     public async Task PhotoRetentionCleanupTask_DeletesExpiredPhotoAndItsFiles()

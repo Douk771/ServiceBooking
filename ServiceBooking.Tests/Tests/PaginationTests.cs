@@ -10,7 +10,7 @@ namespace ServiceBooking.Tests.Tests;
 
 /// <summary>US-49 (SPEC.md §6.3, ARCHITECTURE.md §15, API_CONTRACT.md §11) — the shared Paged&lt;T&gt; envelope
 /// across the four selections it applies to.</summary>
-public class PaginationTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class PaginationTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("PAG-001")]
     public async Task AdminCompanies_SecondPage_DoesNotOverlapFirst_AndTotalsAreConsistent()

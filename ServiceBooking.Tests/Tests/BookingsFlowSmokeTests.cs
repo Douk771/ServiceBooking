@@ -14,7 +14,7 @@ namespace ServiceBooking.Tests.Tests;
 /// Validates the shared ApiTestBase helper pipeline (register → company → master → service →
 /// working hours → booking) end to end before it's relied on by the full per-controller suites.
 /// </summary>
-public class BookingsFlowSmokeTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("BK-001")]
     public async Task AuthenticatedClient_CanBookAnAvailableSlot()

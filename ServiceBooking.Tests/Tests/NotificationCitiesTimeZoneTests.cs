@@ -14,7 +14,7 @@ namespace ServiceBooking.Tests.Tests;
 /// company creation: <c>cityId</c> is now required, and Barnaul/Novosibirsk are DIFFERENT IANA zones
 /// despite sharing today's UTC+7 offset (the exact confusion §34.2's backfill comment warns against).
 /// </summary>
-public class NotificationCitiesTimeZoneTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class NotificationCitiesTimeZoneTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("NTF-G001")]
     public async Task GetCities_Search_ReturnsBarnaulWithItsOwnZone()

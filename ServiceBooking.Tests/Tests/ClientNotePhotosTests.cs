@@ -12,7 +12,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class ClientNotePhotosTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     private static MultipartFormDataContent JpegUpload(byte[]? bytes = null, string fileName = "photo.jpg")
     {

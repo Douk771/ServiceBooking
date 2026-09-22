@@ -7,7 +7,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class MailingTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class MailingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     private record SendMailResponse(int RecipientCount, string Message);
 

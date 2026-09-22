@@ -18,7 +18,7 @@ namespace ServiceBooking.Tests.Tests;
 /// NotificationChannelsController's own implementation, per this cycle's QA brief.
 /// Each test owns its own <see cref="NotificationTestFactory"/> instance (see that class's doc comment).
 /// </summary>
-public class NotificationChannelsTests(ApiDatabaseFixture apiFixture) : NotificationTestBase(apiFixture)
+public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : NotificationTestBase(apiFixture)
 {
     // ── GET /api/notification-channels, offer, request ──────────────────────────────────────────
 

@@ -13,7 +13,7 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>US-38 (SPEC.md §3.4) and US-39 (SPEC.md §3.5) — subject rights: export and self-deletion.</summary>
-public class DataRightsTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class DataRightsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── GET /api/profile/export — US-38 ──────────────────────────────────────
 

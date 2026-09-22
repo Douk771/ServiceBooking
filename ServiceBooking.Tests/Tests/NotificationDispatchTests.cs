@@ -25,13 +25,14 @@ namespace ServiceBooking.Tests.Tests;
 /// Kept deliberately small (two scenarios): the point is proving the wiring end-to-end, not exhaustively
 /// re-testing gate/timing/classification rules already covered by unit tests elsewhere.
 ///
-/// <see cref="DisableParallelization"/> is essential, not incidental: this collection's tests run a REAL
-/// background tick against the shared "servicebooking_test" database, same as every other functional
-/// test — but unlike them, this one deliberately turns a normally-off background service back on, so it
-/// must never overlap with itself.
+/// ARCHITECTURE_CYCLE8_PHASE2.md §91/§92.1: this class now gets its OWN database via
+/// <see cref="TestDatabaseFixture"/> (<c>IClassFixture</c>, not phase 1's <c>ICollectionFixture</c>/
+/// <c>[Collection("NotificationDispatch")]</c>) — it never shares a database with
+/// <see cref="NotificationDispatchExtraTests"/> or any other class, so the "must never overlap a real
+/// background tick against a shared database" concern the phase-1 collection existed for no longer
+/// applies: there is no other test touching this class' rows to overlap with.
 /// </summary>
-[Collection("NotificationDispatch")]
-public class NotificationDispatchTests(DispatchDatabaseFixture fixture)
+public class NotificationDispatchTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
     private const string EncryptionKey = NotificationDispatchTestFactory.TestEncryptionKeyBase64;
 
@@ -216,11 +217,3 @@ public class NotificationDispatchTests(DispatchDatabaseFixture fixture)
         return $"+79{suffix[..9]}";
     }
 }
-
-/// <summary>§27.1: not parallel with itself — a real background tick against the shared functional-test
-/// database must never race another test in the same collection. Plate cost: a few extra seconds of
-/// total suite time. Radius even if this ever overlapped another collection: empty, by construction — no
-/// OTHER functional test gives any company a paid, assigned, Connected channel, so this collection's
-/// runner never finds a Pending row belonging to anyone else (ARCHITECTURE_CYCLE4.md §27.1).</summary>
-[CollectionDefinition("NotificationDispatch", DisableParallelization = true)]
-public class NotificationDispatchCollection : ICollectionFixture<DispatchDatabaseFixture>;

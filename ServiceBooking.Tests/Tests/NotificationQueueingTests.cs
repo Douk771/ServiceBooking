@@ -19,7 +19,7 @@ namespace ServiceBooking.Tests.Tests;
 /// here is about what gets QUEUED and with what status/reason, not about actual delivery (that's
 /// <c>NotificationDispatchTests.cs</c>, ARCHITECTURE_CYCLE4.md §27).
 /// </summary>
-public class NotificationQueueingTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("NTF-Q001")]
     public async Task BookingCreated_QueuesConfirmedAndReminder_BothPending()

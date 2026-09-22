@@ -8,7 +8,7 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>US-46 (SPEC.md §5.6, ARCHITECTURE.md §8, API_CONTRACT — role recomputation on membership change).</summary>
-public class IdentityRoleSyncTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class IdentityRoleSyncTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("SEC-050")]
     public async Task RemovingSoleMembership_RevokesTheRole_Immediately()

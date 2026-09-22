@@ -19,8 +19,7 @@ namespace ServiceBooking.Tests.Tests;
 /// test's Arrange step gives every test its own fresh version tag so tests don't interfere with each
 /// other's accepted-version state.
 /// </summary>
-[Collection("Api")]
-public class LegalConsentVersionChangeTests(LegalDatabaseFixture fixture) : IAsyncLifetime
+public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>, IAsyncLifetime
 {
     private LegalDocumentsTestFactory _factory = null!;
 

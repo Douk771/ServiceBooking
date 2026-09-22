@@ -17,11 +17,11 @@ namespace ServiceBooking.Tests.Tests;
 /// QA cycle 4 — the three dispatcher/idle scenarios the code reviewer named explicitly as missing
 /// coverage that let real defects through: queue priority by visit time, a budget-interrupted pass that
 /// doesn't duplicate sends, and channel idle warn-then-delete. Same real-runner infrastructure as
-/// <c>NotificationDispatchTests.cs</c> (ARCHITECTURE_CYCLE4.md §27) — same collection, so it never
-/// overlaps another test ticking the same background runner against the shared database.
+/// <c>NotificationDispatchTests.cs</c> (ARCHITECTURE_CYCLE4.md §27) — this class now gets its own,
+/// disjoint database (ARCHITECTURE_CYCLE8_PHASE2.md §91), so it never overlaps another test ticking the
+/// same background runner against the same rows.
 /// </summary>
-[Collection("NotificationDispatch")]
-public class NotificationDispatchExtraTests(DispatchDatabaseFixture fixture)
+public class NotificationDispatchExtraTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
     private const string EncryptionKey = NotificationDispatchTestFactory.TestEncryptionKeyBase64;
 

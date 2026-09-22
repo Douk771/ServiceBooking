@@ -9,7 +9,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class ReviewsTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class ReviewsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     private record CreateReviewResponse(Guid Id);
 

@@ -22,7 +22,7 @@ namespace ServiceBooking.Tests.Tests;
 /// ARCHITECTURE_CYCLE5.md §46.2 — registration blocks ONLY on Privacy/TermsClient; PdnConsent is a
 /// separate, non-blocking call. The assertions below are rewritten against that model.
 /// </summary>
-public class LegalConsentTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
+public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── GET /api/legal/documents — US-64 ────────────────────────────────────
 
