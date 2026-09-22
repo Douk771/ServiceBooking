@@ -1,0 +1,1750 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 5, РЕДАКЦИЯ 2.1
+# (биллинг-аккаунт как единица тарификации, каталог опций, публичный прайс).
+#
+# Редакция 1 (подписка принадлежит компании) отменена заказчиком; см. ARCHITECTURE_CYCLE5.md §63.
+# Редакция 2.1 отличается от 2 ТОЛЬКО переносом компании: POST /admin/companies/{id}/transfer
+# принимает необязательного нового ответственного (ARCHITECTURE_CYCLE5.md §51, §64 п. 2).
+#
+# Источник истины по ФОРМЕ интерфейса. Человекочитаемое объяснение смысла и правил —
+# API_CONTRACT_CYCLE5.md; решения — ARCHITECTURE_CYCLE5.md. При расхождении прав этот файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/openapi-cycle5.yaml --port 4010
+#             npx openapi-typescript contracts/openapi-cycle5.yaml -o frontend/src/types/pricing-api.d.ts
+#   QA        schemathesis run contracts/openapi-cycle5.yaml --base-url http://localhost:5000 --checks all
+#
+# Здесь описаны ТОЛЬКО эндпоинты, которые цикл 5 добавляет или меняет. Остальной API — в
+# API_DOCUMENTATION.md и контрактах циклов 3-4.
+
+info:
+  title: ServiceBooking API — цикл 5 (биллинг-аккаунт, тарифы, опции)
+  version: "5.3.0"
+  description: |
+    Конвенции проекта, действующие без изменений:
+      * camelCase в JSON, enum — строками, DateTime — ISO-8601 UTC, DateOnly — YYYY-MM-DD;
+      * тела ошибок 400/402/409/410/429 — ГОЛАЯ СТРОКА (text/plain), 401/403 — ПУСТОЕ тело;
+      * ProblemDetails не используется (AddProblemDetails запрещён), кроме автовалидации [ApiController];
+      * валюта одна — RUB, поле currency присутствует в каждом денежном ответе.
+
+    СЛОВАРЬ (решение заказчика Р8): слово «биллинг-аккаунт» и поле billingAccountId существуют
+    ТОЛЬКО под /admin/*. Во владельческих ответах их нет — для владельца это «ваша подписка».
+
+    ДВЕ ОСИ: Company.BillingAccountId — «кто платит», Company.OwnerUserId — «кто управляет».
+    Единственная операция, двигающая обе сразу, — перенос компании (POST /admin/companies/{id}/transfer),
+    и она делает это в одной транзакции.
+
+servers:
+  - url: /api
+    description: Тот же base URL, что у axios-инстанса фронта (frontend/src/api/client.ts).
+
+tags:
+  - name: pricing
+    description: Публичный прайс (US-71, US-72)
+  - name: billing-owner
+    description: Экран владельца «Ваша подписка» и заявки (US-65, US-68, US-69, US-70)
+  - name: billing-admin
+    description: Каталог, аккаунты, назначение подписок, очередь заявок (US-66, US-67)
+  - name: company-transfer
+    description: Перенос компании в другой биллинг-аккаунт (US-77) и смена ответственного (US-64)
+  - name: deprecated
+    description: Снятые с эксплуатации маршруты (410 Gone)
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ─────────────────────────────── Публичный прайс ───────────────────────────────
+
+  /pricing:
+    get:
+      tags: [pricing]
+      operationId: getPublicPricing
+      summary: Публичный прайс (анонимно)
+      description: |
+        Единственный анонимный эндпоинт цикла. Правовой гейт (451) его не трогает — маршрут в
+        allow-list LegalConsentFilter, как /privacy и /terms.
+
+        Отдаётся из памяти (кеш 60 с), с ETag. 404 означает, что публикация выключена параметром
+        платформы pricing.public-enabled — фронт в этом случае не рисует ни блок на главной, ни
+        ссылку в навигации.
+      security: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Прайс опубликован
+          headers:
+            ETag:
+              schema: { type: string }
+              description: 'W/"<16 hex>" — совпадает с полем version'
+            Cache-Control:
+              schema: { type: string }
+              description: public, max-age=60
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicPricingDto" }
+        "304":
+          description: Не изменилось с момента If-None-Match (без тела)
+        "404":
+          description: Публикация прайса выключена суперадмином
+
+  /admin/pricing/preview:
+    get:
+      tags: [pricing, billing-admin]
+      operationId: getPricingPreview
+      summary: Предпросмотр публичного прайса (SuperAdmin, игнорирует рубильник публикации)
+      description: Та же форма ответа, что GET /pricing, но всегда 200 и без кеша/ETag.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicPricingDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ─────────────────────────────── Владелец ───────────────────────────────
+
+  /billing/subscription:
+    get:
+      tags: [billing-owner]
+      operationId: getOwnerSubscription
+      summary: Экран владельца «Ваша подписка» — один запрос на весь экран (US-65, US-68, US-70)
+      description: |
+        Область видимости — подписка, держателем которой является вызывающий.
+        Инвариант, проверяемый тестами с обеих сторон:
+        totalMonthlyPrice == plan.pricePerMonth + сумма options[].pricePerMonth.
+
+        Все тексты (statusText, usage.*Text, availabilityText, warning) собирает сервер.
+        404 — у вызывающего нет подписки (он не владелец ни одной компании).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwnerSubscriptionDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /billing/subscription/request:
+    post:
+      tags: [billing-owner]
+      operationId: submitSubscriptionRequest
+      summary: Заявка владельца на подключение тарифа/опций (US-70)
+      description: |
+        options — ПОЛНЫЙ желаемый состав, а не дельта. У подписки не может быть двух ожидающих
+        заявок (частичный уникальный индекс), поэтому повторная отправка ПЕРЕЗАПИСЫВАЕТ
+        существующую и отвечает 200, а не 201.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubscriptionRequestInput" }
+      responses:
+        "200":
+          description: Заявка создана или перезаписана
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscriptionRequestDto" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [billing-owner]
+      operationId: cancelSubscriptionRequest
+      summary: Отозвать свою ожидающую заявку
+      description: Идемпотентен — отсутствие ожидающей заявки тоже даёт 204.
+      responses:
+        "204":
+          description: Отозвана или отсутствовала
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ─────────────────────────────── Каталог опций (админ) ───────────────────────────────
+
+  /admin/options:
+    get:
+      tags: [billing-admin]
+      operationId: getAdminOptions
+      summary: Каталог опций (US-66)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [options]
+                properties:
+                  options:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminOptionDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [billing-admin]
+      operationId: createAdminOption
+      summary: Создать опцию
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminOptionInput" }
+      responses:
+        "201":
+          description: Создана
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOptionDto" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /admin/options/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [billing-admin]
+      operationId: updateAdminOption
+      summary: Изменить опцию (code менять нельзя — 400)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminOptionInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOptionDto" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [billing-admin]
+      operationId: deactivateAdminOption
+      summary: Снять опцию с продажи (мягко, isActive = false)
+      description: |
+        Уже оплаченные строки продолжают действовать до конца оплаченного периода — намеренное
+        отличие от поведения деактивированного тарифа (ARCHITECTURE_CYCLE5.md §44.3 п. 5).
+      responses:
+        "204":
+          description: Снята с продажи
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/option-capabilities:
+    get:
+      tags: [billing-admin]
+      operationId: getOptionCapabilities
+      summary: Известные ключи возможностей для выпадающего списка (US-66, US-76)
+      description: |
+        Каналы рассылки — ЧИСЛОВЫЕ ключи: единица оплаты — номер (Р6), поэтому значение
+        возможности — количество оплаченных номеров, а не флаг.
+        Свободный ввод ключа в редакторе опции остаётся разрешён (ARCHITECTURE_CYCLE5.md §44.2).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [capabilities]
+                properties:
+                  capabilities:
+                    type: array
+                    items: { $ref: "#/components/schemas/CapabilityDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ─────────────────────────────── Каталог тарифов (админ) ───────────────────────────────
+
+  /admin/plans:
+    get:
+      tags: [billing-admin]
+      operationId: getAdminPlans
+      summary: Каталог тарифов (BREAKING — DTO вместо сущности SubscriptionPlanConfig)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plans]
+                properties:
+                  plans:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminPlanDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [billing-admin]
+      operationId: createAdminPlan
+      summary: Создать тариф
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlanInput" }
+      responses:
+        "201":
+          description: Создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlanDto" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/plans/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [billing-admin]
+      operationId: updateAdminPlan
+      summary: Изменить тариф вместе с матрицей доступности опций
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlanInput" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlanDto" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [billing-admin]
+      operationId: deactivateAdminPlan
+      summary: Снять тариф с продажи (мягко)
+      description: |
+        Поведение НЕ меняется относительно цикла 1: аккаунты на этом тарифе при следующем запросе
+        падают на бесплатный. Админка обязана предупредить об этом числом subscribedAccounts.
+      responses:
+        "204":
+          description: Снят с продажи
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ─────────────────────────────── Биллинг-аккаунты (админ) ───────────────────────────────
+
+  /admin/billing-accounts:
+    get:
+      tags: [billing-admin]
+      operationId: getAdminBillingAccounts
+      summary: Список биллинг-аккаунтов (US-67)
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+          description: По имени/телефону/email держателя и по названию компании.
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/SubscriptionStatus" }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Конверт пагинации цикла 3 (PagedResult)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedAdminBillingAccounts" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/billing-accounts/{accountId}:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      tags: [billing-admin]
+      operationId: getAdminBillingAccount
+      summary: Карточка аккаунта — подписка, опции, компании, номера (US-67)
+      description: |
+        channels[] отсортирован по createdAt ASC — это тот же порядок, по которому распределяется
+        оплата номеров (ARCHITECTURE_CYCLE5.md §47.1): оплату получают N заведённых раньше.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBillingAccountDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/billing-accounts/{accountId}/subscription:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    put:
+      tags: [billing-admin]
+      operationId: assignAccountSubscription
+      summary: Назначить тариф, опции и срок одним действием (US-67)
+      description: |
+        options — ПОЛНЫЙ желаемый состав. Опция, отсутствующая в массиве (как и уменьшение
+        quantity), действует до конца оплаченного периода: проставляется endsAt (SPEC §3.3 п. 9);
+        немедленного отключения в API нет намеренно.
+        requestId, если передан, закрывает заявку как Approved в той же транзакции.
+        Операция выполняется под advisory lock billing-account:{accountId}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignSubscriptionInput" }
+      responses:
+        "200":
+          description: Назначено, возможности всех компаний аккаунта изменились немедленно
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBillingAccountDto" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            Голая строка. Три случая: опция недоступна на выбранном тарифе; заявка уже обработана;
+            новые лимиты меньше уже занятого при confirmLimitOverflow != true.
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /admin/billing-accounts/{accountId}/subscription-history:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      tags: [billing-admin]
+      operationId: getAccountSubscriptionHistory
+      summary: Журнал изменений подписки аккаунта (US-66, US-67, US-77)
+      description: |
+        Содержит строки циклов 1-4 (changeKind = Legacy) и строки цикла 5.
+        Самостоятельной смены ответственного за компанию здесь нет и быть не может — она в
+        GET /admin/companies/{companyId}/owner-history (US-64 п. 4). Строка CompanyTransferred
+        появляется здесь только потому, что в этот момент действительно менялись деньги.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/SubscriptionChangeLogDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─────────────────────────────── Очередь заявок (админ) ───────────────────────────────
+
+  /admin/subscription-requests:
+    get:
+      tags: [billing-admin]
+      operationId: getAdminSubscriptionRequests
+      summary: Очередь заявок владельцев (US-67, US-70)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/SubscriptionRequestStatus" }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Конверт пагинации цикла 3 (PagedResult)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedAdminSubscriptionRequests" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /admin/subscription-requests/{id}/reject:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [billing-admin]
+      operationId: rejectSubscriptionRequest
+      summary: Отклонить заявку
+      description: Одобрение отдельной кнопки не имеет — оно происходит через PUT подписки с requestId.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment: { type: string, maxLength: 500, nullable: true }
+      responses:
+        "204":
+          description: Отклонена
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ─────────────────────────────── Перенос компании (US-77) ───────────────────────────────
+
+  /admin/companies/{companyId}/transfer/preview:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+    get:
+      tags: [company-transfer]
+      operationId: previewCompanyTransfer
+      summary: Предпросмотр переноса компании в другой биллинг-аккаунт (US-77)
+      description: |
+        Ничего не меняет. Отказ выражается полями (canTransfer/blockReason), а не кодом, чтобы
+        админка показала причину ДО нажатия. Перерасход мест — предупреждение, а не отказ.
+
+        newOwnerUserId передаётся ТЕМ ЖЕ необязательным параметром, что и в POST: если новый
+        ответственный ещё не сотрудник этой компании, перенос займёт ЕЩЁ ОДНО место в штате
+        принимающего аккаунта, и без этого параметра предпросмотр посчитал бы на место меньше,
+        чем произойдёт (ARCHITECTURE_CYCLE5.md §51.2).
+      parameters:
+        - name: targetBillingAccountId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: newOwnerUserId
+          in: query
+          required: false
+          schema: { type: string }
+          description: Кандидат в ответственные. Не передан — перенос меняет только плательщика.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanyTransferPreviewDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/companies/{companyId}/transfer:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+    post:
+      tags: [company-transfer]
+      operationId: transferCompany
+      summary: Перенести компанию в другой биллинг-аккаунт, при необходимости сменив ответственного (US-77)
+      description: |
+        Одна операция — два сценария (ARCHITECTURE_CYCLE5.md §51.0):
+          * newOwnerUserId НЕ задан — меняется только плательщик (BillingAccountId);
+            ответственный за компанию остаётся прежним;
+          * newOwnerUserId задан — BillingAccountId И OwnerUserId меняются В ОДНОЙ ТРАНЗАКЦИИ.
+
+        Порядок внутри транзакции (§51.3), под локами billing-account по возрастанию Guid плюс
+        company-members, если меняется ответственный:
+          проверки (лимит компаний -> 402; связь нового ответственного -> 409; перерасход мест ->
+          409 без confirmSeatOverflow) -> снятие компании с номера аккаунта-источника и отмена её
+          неотправленных сообщений -> смена BillingAccountId -> смена OwnerUserId и ролей ->
+          две строки журнала подписки (CompanyTransferred) + одна строка журнала ответственных
+          (withTransfer = true), если ответственный сменился.
+
+        Снятие с номера обязано идти до смены BillingAccountId — это гарантирует составной FK
+        (§43.6), а не внимательность разработчика.
+
+        402 при нехватке лимита компаний у приёмника — приёмочный критерий US-77: ничего не
+        меняется молча.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompanyTransferInput" }
+      responses:
+        "204":
+          description: Перенос выполнен
+        "400":
+          description: |
+            newOwnerUserId указывает на несуществующего или удалённого пользователя (голая строка).
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402":
+          description: |
+            У принимающего аккаунта нет свободного места в лимите компаний — перенос ОТКЛОНЁН,
+            компания осталась в исходном аккаунте, ответственный не сменился (голая строка с числами).
+          content:
+            text/plain:
+              schema: { type: string }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            Голая строка. Три случая: перенос в тот же аккаунт; перерасход мест сотрудников без
+            confirmSeatOverflow; новый ответственный не связан с принимающим аккаунтом (он не его
+            держатель и не сотрудник ни одной его компании) — текст называет оба способа это
+            исправить.
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /admin/companies/{companyId}/owner-history:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+    get:
+      tags: [company-transfer]
+      operationId: getCompanyOwnerHistory
+      summary: Журнал смены ответственного за компанию (US-64 п. 4)
+      description: |
+        Отдельный от журнала денег. US-64 требует: смена ответственного видна в журнале, но в
+        журнале подписки записи не появляется — подписка не менялась.
+        withTransfer = true означает, что смена произошла в составе переноса компании (§51) — тогда
+        в журнале подписки обоих аккаунтов есть парная строка CompanyTransferred.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CompanyOwnerChangeDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/companies/{companyId}/owner:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+    put:
+      tags: [company-transfer]
+      operationId: updateCompanyOwner
+      summary: "Сменить ответственного за компанию (US-64) — BREAKING по ПОВЕДЕНИЮ"
+      description: |
+        Форма запроса и ответа не меняется. Меняется поведение (API_CONTRACT_CYCLE5.md §53.5):
+          * подписка, опции, срок и лимиты НЕ затрагиваются — компания остаётся в своём аккаунте;
+          * компания ОСТАЁТСЯ на номере рассылок, её очередь сообщений НЕ отменяется
+            (отмена поведения цикла 4, US-64 п. 3);
+          * пишется строка в журнал смены ответственного (withTransfer = false), в журнал
+            подписки — ничего.
+
+        Это самый простой способ сменить ответственного, когда деньги ни при чём. Если нужно
+        сменить и плательщика — POST /admin/companies/{id}/transfer, одна операция.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newOwnerUserId]
+              properties:
+                newOwnerUserId: { type: string }
+              additionalProperties: false
+      responses:
+        "204":
+          description: Ответственный сменён; деньги и номер не затронуты
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─────────────────────────────── Параметры платформы ───────────────────────────────
+
+  /admin/platform-settings:
+    get:
+      tags: [billing-admin]
+      operationId: getPlatformSettings
+      summary: Параметры платформы (+1 поле цикла 5)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformSettingsDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [billing-admin]
+      operationId: updatePlatformSettings
+      summary: Изменить параметры платформы (каждое изменение — в PlatformSettingChangeLog)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlatformSettingsDto" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformSettingsDto" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ─────────────────────────────── Снятые с эксплуатации ───────────────────────────────
+
+  /admin/owners/{ownerUserId}/subscription:
+    put:
+      tags: [deprecated]
+      operationId: legacyAssignOwnerSubscription
+      deprecated: true
+      summary: "СНЯТ: подписка назначается аккаунту (410 Gone)"
+      description: |
+        Замена — PUT /admin/billing-accounts/{accountId}/subscription. Не алиас и не 404: старый
+        маршрут умеет назначать только тариф и срок и молча оставил бы состав опций прежним,
+        то есть создал бы второй путь записи денег мимо SubscriptionWriter.
+      parameters:
+        - name: ownerUserId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "410":
+          description: Голая строка с указанием замены
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /admin/notification-channels/{id}/payment:
+    post:
+      tags: [deprecated]
+      operationId: legacyChannelPayment
+      deprecated: true
+      summary: "СНЯТ: оплата номеров назначается аккаунту (410 Gone)"
+      description: |
+        Единица оплаты — номер, и живёт она в подписке аккаунта как опция-количество
+        notifications.whatsapp (решение заказчика Р6). Замена —
+        PUT /admin/billing-accounts/{accountId}/subscription.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "410":
+          description: Голая строка с указанием замены
+          content:
+            text/plain:
+              schema: { type: string }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Ошибка валидации — ГОЛАЯ СТРОКА (text/plain)
+      content:
+        text/plain:
+          schema: { type: string }
+    PaymentRequired:
+      description: Упёрлись в тариф или лимит — ГОЛАЯ СТРОКА (text/plain)
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет токена или он недействителен — ПУСТОЕ тело
+    Forbidden:
+      description: Нет прав — ПУСТОЕ тело
+    NotFound:
+      description: Нет такого объекта или он не принадлежит вызывающему
+    Conflict:
+      description: Состояние не позволяет действие — ГОЛАЯ СТРОКА (text/plain)
+      content:
+        text/plain:
+          schema: { type: string }
+
+  schemas:
+
+    # ── Перечисления ────────────────────────────────────────────────────────────
+    OptionKind:
+      type: string
+      enum: [Toggle, Quantity]
+    OptionAvailability:
+      type: string
+      enum: [Unavailable, Included, Extra]
+    SubscriptionStatus:
+      type: string
+      enum: [Free, Active, Expired]
+    OptionStatus:
+      type: string
+      description: Производное состояние строки на экране владельца, в БД не хранится.
+      enum: [Active, PendingPayment, Ending, Unavailable]
+    SubscriptionRequestStatus:
+      type: string
+      enum: [Pending, Approved, Rejected, Cancelled]
+    SubscriptionChangeKind:
+      type: string
+      description: PayerChanged из редакции 1 удалён — смены плательщика как события подписки больше нет (Р2).
+      enum: [Legacy, Plan, Options, Payment, CompanyTransferred, Migration]
+    ChannelFundingState:
+      type: string
+      description: |
+        Funded — номер входит в оплаченные; Unfunded — заведён сверх оплаченного количества
+        (не отправляет, но сохраняет назначения и состояние подключения); NotPaid — у аккаунта
+        не оплачено ни одного номера. Оплату получают N номеров, заведённых РАНЬШЕ
+        (createdAt ASC, id ASC) — ARCHITECTURE_CYCLE5.md §47.1.
+      enum: [Funded, Unfunded, NotPaid]
+    TransferOwnerRelation:
+      type: string
+      description: |
+        Связь кандидата в ответственные с ПРИНИМАЮЩИМ аккаунтом (ARCHITECTURE_CYCLE5.md §51.1):
+        AccountHolder — он держатель этого аккаунта; AccountMember — он уже сотрудник хотя бы одной
+        его компании; None — связи нет, перенос со сменой ответственного получит 409.
+      enum: [AccountHolder, AccountMember, None]
+    CapabilityKind:
+      type: string
+      enum: [Boolean, Numeric]
+    Currency:
+      type: string
+      enum: [RUB]
+    PhotoRetention:
+      type: string
+      enum: [SixMonths, TwelveMonths, Forever]
+
+    # ── Публичный прайс ─────────────────────────────────────────────────────────
+    PublicPricingDto:
+      type: object
+      required: [version, currency, plans, options, notice]
+      description: |
+        Публичные поля публичных тарифов и опций. Внутренних полей (capabilityKey, isActive,
+        isPublic, includedQuantity, photoRetention, идентификаторов правил) здесь НЕТ ФИЗИЧЕСКИ.
+      properties:
+        version:
+          type: string
+          description: Совпадает со значением внутри ETag; по нему фронт не перерисовывает блок.
+        currency: { $ref: "#/components/schemas/Currency" }
+        plans:
+          type: array
+          items: { $ref: "#/components/schemas/PublicPlanDto" }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/PublicOptionDto" }
+        notice:
+          type: string
+          description: Текст про подключение через администратора платформы (SPEC П3).
+        legalNotice:
+          type: string
+          nullable: true
+          description: |
+            Юридические формулировки (оферта/НДС/условия) из SPEC §7. Поле ОТСУТСТВУЕТ, пока текст
+            не вычитан юристом; появление поля и включение публикации — разные действия.
+      additionalProperties: false
+
+    PublicPlanDto:
+      type: object
+      required: [id, name, pricePerMonth, highlights, sortOrder, isFree]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        pricePerMonth: { type: number, format: double, minimum: 0 }
+        highlights:
+          type: array
+          maxItems: 5
+          items: { type: string }
+        includedCompanies:
+          type: integer
+          nullable: true
+          description: Базовый лимит компаний СУММАРНО на подписку (US-71 п. 2). null = без ограничения.
+        includedEmployees:
+          type: integer
+          nullable: true
+          description: Базовый лимит сотрудников СУММАРНО на подписку (Р5). null = без ограничения.
+        sortOrder: { type: integer }
+        isFree:
+          type: boolean
+          description: |
+            Системный бесплатный тариф — публикуемая строка прайса с лимитами 1 компания /
+            1 сотрудник, совпадающая с поведением по умолчанию (П4).
+      additionalProperties: false
+
+    PublicOptionDto:
+      type: object
+      required: [id, name, kind, pricePerMonth, sortOrder]
+      description: Опции без заданной цены или непубличные в массив не попадают вовсе.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        kind: { $ref: "#/components/schemas/OptionKind" }
+        pricePerMonth: { type: number, format: double, minimum: 0 }
+        unitName:
+          type: string
+          nullable: true
+          description: «компания» / «сотрудник» / «номер». Для Quantity обязателен.
+        unitPriceText:
+          type: string
+          nullable: true
+          description: |
+            Готовая строка «дополнительная компания — 490 ₽/мес». Собирает СЕРВЕР: требование
+            US-71 п. 3 (формулировок без единицы на странице быть не должно) держится контрактом,
+            а не вёрсткой. Фронт печатает как есть.
+        sortOrder: { type: integer }
+      additionalProperties: false
+
+    # ── Экран владельца ─────────────────────────────────────────────────────────
+    OwnerSubscriptionDto:
+      type: object
+      required:
+        [currency, status, statusText, plan, options, totalMonthlyPrice, usage,
+         companies, availableOptions, canRequestChanges]
+      description: |
+        Инвариант: totalMonthlyPrice == plan.pricePerMonth + сумма options[].pricePerMonth.
+        Проверяется тестом на бэкенде и на фронте (US-65).
+        Р8: ни одно поле и ни один текст здесь не содержит слова «биллинг-аккаунт».
+      properties:
+        currency: { $ref: "#/components/schemas/Currency" }
+        status: { $ref: "#/components/schemas/SubscriptionStatus" }
+        statusText: { type: string }
+        plan: { $ref: "#/components/schemas/SubscribedPlanDto" }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/SubscribedOptionDto" }
+        totalMonthlyPrice: { type: number, format: double }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        expiresInDays: { type: integer, nullable: true }
+        isExpiringSoon: { type: boolean }
+        usage: { $ref: "#/components/schemas/SubscriptionUsageDto" }
+        companies:
+          type: array
+          description: |
+            Разбивка по компаниям — первый кандидат на урезание (SPEC §10 п. 1). Если урезана,
+            приходит пустым массивом; usage остаётся всегда.
+          items: { $ref: "#/components/schemas/CoveredCompanyDto" }
+        warning:
+          allOf: [{ $ref: "#/components/schemas/SubscriptionWarningDto" }]
+          nullable: true
+        availableOptions:
+          type: array
+          items: { $ref: "#/components/schemas/AvailableOptionDto" }
+        pendingRequest:
+          allOf: [{ $ref: "#/components/schemas/SubscriptionRequestDto" }]
+          nullable: true
+        canRequestChanges: { type: boolean }
+      additionalProperties: false
+
+    SubscriptionUsageDto:
+      type: object
+      required:
+        [companiesUsed, employeesUsed, employeesText, companiesText,
+         numbersPaid, numbersRegistered, numbersText]
+      description: |
+        Суммарный расход лимитов подписки. Лимиты null = без ограничения (НЕ 0).
+      properties:
+        companiesUsed: { type: integer }
+        companiesLimit: { type: integer, nullable: true }
+        employeesUsed: { type: integer }
+        employeesLimit: { type: integer, nullable: true }
+        employeesText: { type: string }
+        companiesText: { type: string }
+        numbersPaid: { type: integer }
+        numbersRegistered: { type: integer }
+        numbersText:
+          type: string
+          description: |
+            Собран сервером. numbersPaid < numbersRegistered — НОРМАЛЬНОЕ состояние, не ошибка:
+            работают номера, заведённые раньше (ARCHITECTURE_CYCLE5.md §47.1). В этом случае текст
+            ОБЯЗАН содержать три вещи: сколько оплачено против скольких заведено, какой номер
+            работает (маскированный) и что сделать, чтобы включить остальные. Фронт печатает строку
+            целиком и ничего не дописывает.
+      additionalProperties: false
+
+    CoveredCompanyDto:
+      type: object
+      required: [companyId, companyName, employeeCount, hasNumber]
+      properties:
+        companyId: { type: string, format: uuid }
+        companyName: { type: string }
+        employeeCount: { type: integer }
+        hasNumber:
+          type: boolean
+          description: Подключена ли компания к номеру рассылок этой подписки.
+      additionalProperties: false
+
+    SubscribedPlanDto:
+      type: object
+      required: [id, name, pricePerMonth, includes]
+      properties:
+        id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        pricePerMonth: { type: number, format: double }
+        includes:
+          type: array
+          items: { type: string }
+          description: Состав тарифа человеческим текстом; собран сервером.
+      additionalProperties: false
+
+    # ВНИМАНИЕ: у этой схемы НЕТ additionalProperties: false намеренно — AdminSubscribedOptionDto
+    # расширяет её через allOf тремя админскими полями. В OpenAPI 3.0 (JSON Schema draft-4)
+    # additionalProperties проверяется в каждой ветке allOf отдельно, и запрет здесь сделал бы
+    # админский ответ невалидным по собственной схеме (ложные падения контрактного прогона QA).
+    SubscribedOptionDto:
+      type: object
+      required: [optionId, name, kind, quantity, pricePerUnit, pricePerMonth, status, statusText, canDisable]
+      properties:
+        optionId: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        kind: { $ref: "#/components/schemas/OptionKind" }
+        unitName: { type: string, nullable: true }
+        quantity: { type: integer, minimum: 1 }
+        pricePerUnit: { type: number, format: double }
+        pricePerMonth:
+          type: number
+          format: double
+          description: pricePerUnit * quantity; 0 для опции, включённой в тариф (availability Included).
+        status: { $ref: "#/components/schemas/OptionStatus" }
+        statusText: { type: string }
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Заполнен при status = Ending — опция работает до этой даты (SPEC §3.3 п. 9).
+        canDisable: { type: boolean }
+
+    AvailableOptionDto:
+      type: object
+      required: [optionId, name, kind, availability, availabilityText, canRequest]
+      description: |
+        Опция с незаданной ценой сюда не попадает, кроме случая availability = Unavailable —
+        он нужен, чтобы написать «доступно на тарифе …» (US-70 п. 2).
+      properties:
+        optionId: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        kind: { $ref: "#/components/schemas/OptionKind" }
+        unitName: { type: string, nullable: true }
+        pricePerMonth: { type: number, format: double, nullable: true }
+        maxQuantity: { type: integer, nullable: true }
+        availability: { $ref: "#/components/schemas/OptionAvailability" }
+        availabilityText: { type: string }
+        canRequest: { type: boolean }
+      additionalProperties: false
+
+    SubscriptionWarningDto:
+      type: object
+      required: [kind, text, affected]
+      properties:
+        kind:
+          type: string
+          enum: [Expiring, Expired]
+        text: { type: string }
+        affected:
+          type: array
+          items: { type: string }
+          description: Что перестанет или перестало работать ВО ВСЕХ компаниях — перечисляет сервер (US-68).
+      additionalProperties: false
+
+    # ── Заявки ──────────────────────────────────────────────────────────────────
+    SubscriptionRequestInput:
+      type: object
+      required: [options]
+      properties:
+        planId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null или опущен — тариф не меняем.
+        options:
+          type: array
+          description: ПОЛНЫЙ желаемый состав, а не дельта. Пустой массив — «никаких опций».
+          items: { $ref: "#/components/schemas/RequestedOptionInput" }
+        comment: { type: string, maxLength: 500, nullable: true }
+      additionalProperties: false
+
+    RequestedOptionInput:
+      type: object
+      required: [optionId, quantity]
+      properties:
+        optionId: { type: string, format: uuid }
+        quantity:
+          type: integer
+          minimum: 1
+          description: Для Toggle допустима только 1 (иначе 400).
+      additionalProperties: false
+
+    SubscriptionRequestDto:
+      type: object
+      required: [id, status, createdAt, estimatedMonthlyPrice, items]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/SubscriptionRequestStatus" }
+        createdAt: { type: string, format: date-time }
+        desiredPlanId: { type: string, format: uuid, nullable: true }
+        desiredPlanName: { type: string, nullable: true }
+        estimatedMonthlyPrice:
+          type: number
+          format: double
+          description: |
+            Снимок ПОЛНОГО итога в месяц, показанного владельцу до подтверждения (US-70 п. 1 —
+            итог целиком, а не дельта).
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SubscriptionRequestItemDto" }
+        comment: { type: string, nullable: true }
+      additionalProperties: false
+
+    SubscriptionRequestItemDto:
+      type: object
+      required: [optionId, name, quantity]
+      properties:
+        optionId: { type: string, format: uuid }
+        name: { type: string }
+        quantity: { type: integer, minimum: 1 }
+      additionalProperties: false
+
+    AdminSubscriptionRequestDto:
+      type: object
+      required: [id, billingAccountId, requestedByName, createdAt, status, items, estimatedMonthlyPrice]
+      properties:
+        id: { type: string, format: uuid }
+        billingAccountId: { type: string, format: uuid }
+        accountName: { type: string, nullable: true }
+        requestedByName: { type: string }
+        requestedByPhoneMasked:
+          type: string
+          nullable: true
+          description: Только маскированный номер (конвенция PhoneDisplayMask цикла 4).
+        createdAt: { type: string, format: date-time }
+        status: { $ref: "#/components/schemas/SubscriptionRequestStatus" }
+        currentPlanName: { type: string, nullable: true }
+        desiredPlanName: { type: string, nullable: true }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SubscriptionRequestItemDto" }
+        estimatedMonthlyPrice: { type: number, format: double }
+        comment: { type: string, nullable: true }
+        companiesCount: { type: integer }
+      additionalProperties: false
+
+    PagedAdminSubscriptionRequests:
+      type: object
+      required: [items, page, pageSize, totalCount]
+      description: Конверт PagedResult<T> цикла 3; форма не меняется.
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminSubscriptionRequestDto" }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalCount: { type: integer }
+      additionalProperties: false
+
+    # ── Админский каталог ───────────────────────────────────────────────────────
+    AdminOptionDto:
+      type: object
+      required: [id, code, name, kind, currency, isPublic, isActive, sortOrder, capabilityKnown, subscribedAccounts]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        kind: { $ref: "#/components/schemas/OptionKind" }
+        capabilityKey: { type: string, nullable: true }
+        capabilityKnown:
+          type: boolean
+          description: |
+            false — ключ не из списка известных; опция продаётся и считается в сумме, но ничего
+            не включает. Админка показывает предупреждение, сохранение НЕ блокируется.
+        pricePerMonth:
+          type: number
+          format: double
+          nullable: true
+          description: |
+            null означает «опция не продаётся» — она исчезает из прайса и из availableOptions.
+            Так сегодня выглядит notifications.whatsapp: ожидаемое состояние, а не дефект (US-74).
+        currency: { $ref: "#/components/schemas/Currency" }
+        unitName:
+          type: string
+          nullable: true
+          description: Обязателен для Quantity (иначе 400); запрещён для Toggle (иначе 400).
+        maxQuantity: { type: integer, nullable: true }
+        isPublic: { type: boolean }
+        isActive: { type: boolean }
+        sortOrder: { type: integer }
+        subscribedAccounts: { type: integer }
+      additionalProperties: false
+
+    AdminOptionInput:
+      type: object
+      required: [code, name, kind]
+      properties:
+        code:
+          type: string
+          pattern: "^[a-z0-9.\\-]{2,64}$"
+          description: При PUT обязан совпадать с текущим — смена кода запрещена (400).
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 500, nullable: true }
+        kind: { $ref: "#/components/schemas/OptionKind" }
+        capabilityKey: { type: string, maxLength: 64, nullable: true }
+        pricePerMonth: { type: number, format: double, minimum: 0, nullable: true }
+        unitName: { type: string, maxLength: 32, nullable: true }
+        maxQuantity: { type: integer, minimum: 1, nullable: true }
+        isPublic: { type: boolean, default: false }
+        isActive: { type: boolean, default: true }
+        sortOrder: { type: integer, minimum: 0, default: 0 }
+      additionalProperties: false
+
+    PlanOptionRuleDto:
+      type: object
+      required: [optionId, availability]
+      properties:
+        optionId: { type: string, format: uuid }
+        availability: { $ref: "#/components/schemas/OptionAvailability" }
+        includedQuantity:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Только для availability = Included у опций-количеств; иначе null.
+      additionalProperties: false
+
+    AdminPlanDto:
+      type: object
+      required:
+        [id, name, pricePerMonth, currency, allowOnlineBooking, allowMailing, allowAnalytics,
+         allowPublicListing, allowOnlinePayment, photoRetention, notifyDaysBefore,
+         isPublic, isActive, isSystemFree, sortOrder, options, subscribedAccounts, highlights]
+      description: |
+        maxEmployees и maxCompanies — БАЗОВЫЕ ЛИМИТЫ, СУММАРНЫЕ НА ПОДПИСКУ (Р4, Р5). Смысл
+        maxEmployees изменился относительно циклов 1-4 («на каждую компанию» -> «на все вместе»);
+        админка обязана подписать поле словом «суммарно».
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        highlights:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 120 }
+        pricePerMonth: { type: number, format: double, minimum: 0 }
+        currency: { $ref: "#/components/schemas/Currency" }
+        maxEmployees: { type: integer, nullable: true }
+        maxCompanies: { type: integer, nullable: true }
+        allowOnlineBooking: { type: boolean }
+        allowMailing: { type: boolean }
+        allowAnalytics: { type: boolean }
+        allowPublicListing: { type: boolean }
+        allowOnlinePayment: { type: boolean }
+        photoQuotaMb: { type: integer, nullable: true }
+        photoRetention: { $ref: "#/components/schemas/PhotoRetention" }
+        notifyDaysBefore:
+          type: integer
+          minimum: 0
+          maximum: 90
+          description: Оживает в цикле 5 — по нему считаются expiresInDays и isExpiringSoon (US-68).
+        isPublic: { type: boolean }
+        isActive: { type: boolean }
+        isSystemFree:
+          type: boolean
+          description: Системный бесплатный тариф. Нельзя удалить/деактивировать (409); цена обязана быть 0 (400).
+        sortOrder: { type: integer }
+        options:
+          type: array
+          description: Полная матрица доступности опций; отсутствующая опция трактуется как Unavailable.
+          items: { $ref: "#/components/schemas/PlanOptionRuleDto" }
+        subscribedAccounts: { type: integer }
+      additionalProperties: false
+
+    AdminPlanInput:
+      type: object
+      required: [name, pricePerMonth, options]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, maxLength: 1000, nullable: true }
+        highlights:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 120 }
+        pricePerMonth: { type: number, format: double, minimum: 0 }
+        maxEmployees: { type: integer, minimum: 1, nullable: true }
+        maxCompanies: { type: integer, minimum: 1, nullable: true }
+        allowOnlineBooking: { type: boolean, default: false }
+        allowMailing: { type: boolean, default: false }
+        allowAnalytics: { type: boolean, default: false }
+        allowPublicListing: { type: boolean, default: true }
+        allowOnlinePayment: { type: boolean, default: false }
+        photoQuotaMb: { type: integer, minimum: 0, nullable: true }
+        photoRetention: { $ref: "#/components/schemas/PhotoRetention" }
+        notifyDaysBefore: { type: integer, minimum: 0, maximum: 90, default: 7 }
+        isPublic: { type: boolean, default: false }
+        isActive: { type: boolean, default: true }
+        sortOrder: { type: integer, minimum: 0, default: 0 }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/PlanOptionRuleDto" }
+      additionalProperties: false
+
+    CapabilityDto:
+      type: object
+      required: [key, kind, name]
+      properties:
+        key: { type: string }
+        kind: { $ref: "#/components/schemas/CapabilityKind" }
+        name: { type: string }
+      additionalProperties: false
+
+    # ── Биллинг-аккаунт глазами администратора ──────────────────────────────────
+    AdminBillingAccountListItemDto:
+      type: object
+      required: [id, ownerUserId, ownerName, status, currency, companiesUsed, employeesUsed, numbersPaid, numbersRegistered]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, nullable: true }
+        ownerUserId: { type: string }
+        ownerName: { type: string }
+        ownerPhoneMasked: { type: string, nullable: true }
+        planName: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/SubscriptionStatus" }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        totalMonthlyPrice: { type: number, format: double }
+        currency: { $ref: "#/components/schemas/Currency" }
+        companiesUsed: { type: integer }
+        companiesLimit: { type: integer, nullable: true }
+        employeesUsed: { type: integer }
+        employeesLimit: { type: integer, nullable: true }
+        numbersPaid: { type: integer }
+        numbersRegistered: { type: integer }
+        hasPendingRequest: { type: boolean }
+      additionalProperties: false
+
+    PagedAdminBillingAccounts:
+      type: object
+      required: [items, page, pageSize, totalCount]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminBillingAccountListItemDto" }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalCount: { type: integer }
+      additionalProperties: false
+
+    AdminBillingAccountDto:
+      type: object
+      required:
+        [id, ownerUserId, ownerName, currency, status, plan, options, totalMonthlyPrice,
+         companiesUsed, employeesUsed, numbersPaid, numbersRegistered, companies, channels,
+         grandfatheredEmployeeBonus]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, nullable: true }
+        ownerUserId: { type: string }
+        ownerName: { type: string }
+        ownerPhoneMasked: { type: string, nullable: true }
+        currency: { $ref: "#/components/schemas/Currency" }
+        status: { $ref: "#/components/schemas/SubscriptionStatus" }
+        isActive: { type: boolean }
+        planId: { type: string, format: uuid, nullable: true }
+        plan: { $ref: "#/components/schemas/SubscribedPlanDto" }
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/AdminSubscribedOptionDto" }
+        totalMonthlyPrice: { type: number, format: double }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        companiesUsed: { type: integer }
+        companiesLimit: { type: integer, nullable: true }
+        employeesUsed: { type: integer }
+        employeesLimit: { type: integer, nullable: true }
+        numbersPaid: { type: integer }
+        numbersRegistered: { type: integer }
+        grandfatheredEmployeeBonus:
+          type: integer
+          description: |
+            Места, выданные миграцией при переходе «лимит на компанию -> суммарный» (US-73,
+            ARCHITECTURE_CYCLE5.md §54.4). Участвует в лимите, НЕ участвует в деньгах,
+            обнуляется администратором вручную.
+        grandfatheredEmployeeBonusText: { type: string, nullable: true }
+        companies:
+          type: array
+          items: { $ref: "#/components/schemas/AdminAccountCompanyDto" }
+        channels:
+          type: array
+          description: Отсортирован по createdAt ASC — тот же порядок, по которому распределяется оплата номеров.
+          items: { $ref: "#/components/schemas/AdminAccountChannelDto" }
+        pendingRequest:
+          allOf: [{ $ref: "#/components/schemas/SubscriptionRequestDto" }]
+          nullable: true
+      additionalProperties: false
+
+    AdminAccountCompanyDto:
+      type: object
+      required: [companyId, companyName, ownerUserId, employeeCount]
+      properties:
+        companyId: { type: string, format: uuid }
+        companyName: { type: string }
+        ownerUserId:
+          type: string
+          description: |
+            Кто УПРАВЛЯЕТ компанией. После переноса без смены ответственного может отличаться от
+            держателя аккаунта — это нормальное состояние, а не рассинхрон.
+        ownerName: { type: string, nullable: true }
+        employeeCount: { type: integer }
+      additionalProperties: false
+
+    AdminAccountChannelDto:
+      type: object
+      required: [channelId, state, fundingState, createdAt, assignedCompanies]
+      properties:
+        channelId: { type: string, format: uuid }
+        phoneMasked: { type: string, nullable: true }
+        state:
+          type: string
+          description: ChannelState цикла 4; значения не меняются.
+        fundingState: { $ref: "#/components/schemas/ChannelFundingState" }
+        createdAt: { type: string, format: date-time }
+        assignedCompanies: { type: integer }
+      additionalProperties: false
+
+    AdminSubscribedOptionDto:
+      allOf:
+        - $ref: "#/components/schemas/SubscribedOptionDto"
+        - type: object
+          properties:
+            paidUntil: { type: string, format: date-time, nullable: true }
+            requestedQuantity: { type: integer, nullable: true }
+            requestedAt: { type: string, format: date-time, nullable: true }
+
+    AssignSubscriptionInput:
+      type: object
+      required: [isActive, options]
+      properties:
+        planId:
+          type: string
+          format: uuid
+          nullable: true
+          description: null — снять тариф; аккаунт уходит на бесплатный.
+        isActive: { type: boolean }
+        paidUntil:
+          type: string
+          format: date
+          nullable: true
+          description: Дата, до которой оплачено. В прошлом более чем на 1 день — 400.
+        options:
+          type: array
+          description: |
+            ПОЛНЫЙ желаемый состав; отсутствующая опция и уменьшение quantity действуют до конца
+            оплаченного периода (проставляется endsAt).
+          items: { $ref: "#/components/schemas/AssignOptionInput" }
+        amount:
+          type: number
+          format: double
+          nullable: true
+          description: Попадает в журнал; в вычислениях не участвует.
+        comment: { type: string, maxLength: 500, nullable: true }
+        requestId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Если передан — заявка закрывается как Approved в той же транзакции.
+        confirmLimitOverflow:
+          type: boolean
+          default: false
+          description: |
+            Требуется, если новые лимиты МЕНЬШЕ уже занятого (US-67, последний критерий).
+            Без него — 409 с числами. Существующие сотрудники и компании не удаляются никогда.
+      additionalProperties: false
+
+    AssignOptionInput:
+      type: object
+      required: [optionId, quantity]
+      properties:
+        optionId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        paidUntil:
+          type: string
+          format: date
+          nullable: true
+          description: null — срок опции следует за сроком подписки.
+      additionalProperties: false
+
+    SubscriptionChangeLogDto:
+      type: object
+      required: [id, changedAt, changedByName, changeKind]
+      properties:
+        id: { type: string, format: uuid }
+        changedAt: { type: string, format: date-time }
+        changedByName: { type: string }
+        changeKind: { $ref: "#/components/schemas/SubscriptionChangeKind" }
+        companyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Заполнен только у changeKind = CompanyTransferred.
+        oldPlanName: { type: string, nullable: true }
+        newPlanName: { type: string, nullable: true }
+        oldPaidUntil: { type: string, format: date-time, nullable: true }
+        newPaidUntil: { type: string, format: date-time, nullable: true }
+        oldOptionsSummary: { type: string, nullable: true }
+        newOptionsSummary: { type: string, nullable: true }
+        amount: { type: number, format: double, nullable: true }
+        comment: { type: string, nullable: true }
+      additionalProperties: false
+
+    CompanyOwnerChangeDto:
+      type: object
+      required: [id, changedAt, changedByName, newOwnerName, withTransfer]
+      description: Журнал смены ответственного — отдельный от журнала денег (US-64 п. 4).
+      properties:
+        id: { type: string, format: uuid }
+        changedAt: { type: string, format: date-time }
+        changedByName: { type: string }
+        oldOwnerName: { type: string, nullable: true }
+        newOwnerName: { type: string }
+        withTransfer:
+          type: boolean
+          description: |
+            true — смена произошла в составе переноса компании в другой аккаунт (§51), и в журнале
+            подписки обоих аккаунтов есть парная строка CompanyTransferred с тем же companyId и
+            тем же временем. false — самостоятельная смена (PUT .../owner), денег не касалась.
+        comment: { type: string, nullable: true }
+      additionalProperties: false
+
+    # ── Перенос компании (US-77) ────────────────────────────────────────────────
+    CompanyTransferPreviewDto:
+      type: object
+      required:
+        [companyId, companyName, employeeCount, source, target, targetCompaniesUsed,
+         canTransfer, seatOverflow, willDetachFromChannel, willCancelPendingNotifications]
+      properties:
+        companyId: { type: string, format: uuid }
+        companyName: { type: string }
+        employeeCount: { type: integer }
+        source: { $ref: "#/components/schemas/TransferSideDto" }
+        target: { $ref: "#/components/schemas/TransferSideDto" }
+        targetCompaniesUsed: { type: integer }
+        targetCompaniesLimit: { type: integer, nullable: true }
+        targetSeatsUsed: { type: integer }
+        targetSeatsLimit: { type: integer, nullable: true }
+        canTransfer:
+          type: boolean
+          description: false — у приёмника нет свободного места в лимите компаний; POST ответит 402.
+        blockReason: { type: string, nullable: true }
+        seatOverflow:
+          type: boolean
+          description: |
+            true — после переноса занятых мест станет больше лимита приёмника. Это ПРЕДУПРЕЖДЕНИЕ,
+            а не отказ: POST требует confirmSeatOverflow = true (US-77 п. 4). Учитывает
+            newOwner.willOccupySeat, если кандидат в ответственные передан.
+        seatOverflowText: { type: string, nullable: true }
+        willDetachFromChannel:
+          type: boolean
+          description: Компания будет снята с номера аккаунта-источника (SPEC §3.3 п. 5).
+        willCancelPendingNotifications: { type: integer }
+        newOwner:
+          allOf: [{ $ref: "#/components/schemas/TransferNewOwnerDto" }]
+          nullable: true
+          description: null — параметр newOwnerUserId не передавался; ответственный не меняется.
+        ownerUnchangedNotice:
+          type: string
+          nullable: true
+          description: |
+            Заполнен, когда newOwner == null: «Ответственный не меняется: компанией продолжит
+            управлять Иван Петров». Админка ОБЯЗАНА его показать — иначе администратор решит, что
+            перенос не сработал.
+      additionalProperties: false
+
+    TransferNewOwnerDto:
+      type: object
+      required: [userId, name, isValid, relation, willOccupySeat, notice]
+      properties:
+        userId: { type: string }
+        name: { type: string }
+        isValid:
+          type: boolean
+          description: false — POST со сменой ответственного получит 409 (relation = None) или 400.
+        relation: { $ref: "#/components/schemas/TransferOwnerRelation" }
+        willOccupySeat:
+          type: boolean
+          description: |
+            true — этот человек ещё не сотрудник переносимой компании, и перенос добавит ему
+            членство, заняв ЕЩЁ ОДНО место в штате принимающего аккаунта (учтено в seatOverflow).
+        notice:
+          type: string
+          description: |
+            Готовый текст: «Ответственным станет Мария Сидорова. Иван Петров останется сотрудником
+            компании.» — либо объяснение, почему так нельзя (relation = None).
+      additionalProperties: false
+
+    TransferSideDto:
+      type: object
+      required: [billingAccountId]
+      properties:
+        billingAccountId: { type: string, format: uuid }
+        accountName: { type: string, nullable: true }
+        planName: { type: string, nullable: true }
+      additionalProperties: false
+
+    CompanyTransferInput:
+      type: object
+      required: [targetBillingAccountId]
+      properties:
+        targetBillingAccountId: { type: string, format: uuid }
+        newOwnerUserId:
+          type: string
+          nullable: true
+          description: |
+            НЕОБЯЗАТЕЛЬНО. Не задан — меняется только плательщик, ответственный остаётся прежним.
+            Задан — BillingAccountId и OwnerUserId меняются в одной транзакции.
+            Обязан быть держателем принимающего аккаунта ЛИБО сотрудником хотя бы одной его
+            компании (ARCHITECTURE_CYCLE5.md §51.1), иначе 409. Несуществующий или удалённый
+            пользователь — 400.
+        confirmSeatOverflow:
+          type: boolean
+          default: false
+          description: Обязателен, если preview вернул seatOverflow = true; иначе 409.
+        comment: { type: string, maxLength: 500, nullable: true }
+      additionalProperties: false
+
+    # ── Параметры платформы ─────────────────────────────────────────────────────
+    PlatformSettingsDto:
+      type: object
+      required: [channelIdleDays, pricingPublicEnabled]
+      description: |
+        freeCompaniesPerAccount из редакции 1 НЕТ: US-75 упразднена, лимит бесплатных компаний —
+        обычное поле тарифа (Р4).
+      properties:
+        channelPricePerMonth:
+          type: number
+          format: double
+          nullable: true
+          description: DEPRECATED в цикле 5 — цена опции переехала в каталог; поле ни на что не влияет.
+        channelIdleDays: { type: integer, minimum: 0, maximum: 60 }
+        pricingPublicEnabled:
+          type: boolean
+          description: |
+            Рубильник публичного прайса. По умолчанию false: выкат кода НЕ публикует цены наружу,
+            включение — отдельное действие суперадмина после вычитки юристом (SPEC §7, П5).
+      additionalProperties: false
+
+    # ── Изменённые существующие DTO (для сверки формы фронтом и QA) ─────────────
+    CompanyDtoCycle5Additions:
+      type: object
+      description: |
+        Семь полей, которые цикл 5 ДОБАВЛЯЕТ в существующий CompanyDto (7 точек возврата).
+        Три существующих уровня флагов сохраняются без изменений.
+
+        BREAKING (СЕМАНТИЧЕСКОЕ): существующее поле maxEmployees теперь означает СУММАРНЫЙ лимит
+        подписки, а не лимит этой компании. Форма не меняется — сломается логика, а не сборка.
+        Любая арифметика вида members.length >= maxEmployees на фронте обязана быть снята;
+        единственный допустимый источник для гашения кнопки — canAddEmployee.
+
+        billingAccountId в этом DTO ОТСУТСТВУЕТ (Р8).
+      required: [planName, subscriptionStatus, employeeCount]
+      properties:
+        planName: { type: string }
+        subscriptionStatus: { $ref: "#/components/schemas/SubscriptionStatus" }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        employeeCount:
+          type: integer
+          description: Сотрудников В ЭТОЙ компании (локальная цифра, не лимит).
+        accountSeatsUsed:
+          type: integer
+          nullable: true
+          description: |
+            Занято мест ПО ВСЕЙ подписке. null — вызывающий не управляет этой компанией
+            (анонимный каталог GET /companies): значение не считалось. null НЕ означает «безлимит».
+        accountSeatsLimit: { type: integer, nullable: true }
+        canAddEmployee:
+          type: boolean
+          nullable: true
+          description: Посчитан сервером по тому же правилу, что 402 — кнопка гасится заранее.
+
+    ProfilePlanDtoV5Additions:
+      type: object
+      description: |
+        ProfileDto.plan в редакции 2 НЕ ломается — подписка снова принадлежит аккаунту, поэтому все
+        сегодняшние поля (planName, pricePerMonth, isActive, paidUntil, isExpired, allow*,
+        maxEmployees, maxCompanies) остаются и означают то же самое. Ниже — только ДОБАВЛЕННЫЕ поля.
+        maxEmployees — та же смена смысла, что в CompanyDto (суммарно); помечен deprecated.
+      required: [currency, companiesUsed, employeesUsed, isExpiringSoon]
+      properties:
+        totalMonthlyPrice: { type: number, format: double, nullable: true }
+        currency: { $ref: "#/components/schemas/Currency" }
+        companiesUsed: { type: integer }
+        employeesUsed: { type: integer }
+        expiresInDays: { type: integer, nullable: true }
+        isExpiringSoon: { type: boolean }
+        optionCount: { type: integer }
+
+    ChannelDtoCycle5Additions:
+      type: object
+      description: |
+        Форма ChannelDto цикла 4 сохраняется, меняется ИСТОЧНИК значений:
+        paymentState/paidUntil вычисляются из подписки аккаунта (Р6), paidFrom всегда null
+        (deprecated). Ниже — два добавленных поля.
+      required: [fundingState, fundingText]
+      properties:
+        fundingState: { $ref: "#/components/schemas/ChannelFundingState" }
+        fundingText:
+          type: string
+          description: |
+            Собран сервером (BillingTexts), фронт печатает как есть. Требование приёмки: при
+            fundingState = Unfunded текст ОБЯЗАН назвать причину (сколько оплачено против скольких
+            заведено), какой номер работает вместо этого и оба способа это исправить — докупить
+            ещё одну «Рассылку в WhatsApp» или удалить лишний номер. Это единственное место цикла,
+            где платформа сама решает, чей номер замолчит.
