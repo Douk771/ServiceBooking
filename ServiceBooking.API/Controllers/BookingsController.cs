@@ -57,7 +57,8 @@ public class BookingsController(
         [FromQuery] DateOnly date,
         [FromQuery] bool manual = false,
         [FromQuery] bool extendedHours = false,
-        [FromQuery] List<Guid>? serviceIds = null)
+        [FromQuery] List<Guid>? serviceIds = null,
+        [FromQuery] Guid? excludeBookingId = null)
     {
         // `manual` is client-supplied, so only honor it once we've independently verified the caller
         // actually works in THIS company — same trust bar BookingsController.Create uses for
@@ -76,17 +77,42 @@ public class BookingsController(
         if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
             return BadRequest("Master does not work for this company");
 
-        // US-67 (ARCHITECTURE_CYCLE6.md §47.2): serviceIds is the multi-service form of serviceId; when
-        // absent this is exactly the pre-cycle single-service path.
-        var (totalDuration, error) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
-        if (error is not null) return error;
+        int totalDuration;
+        if (excludeBookingId is not null)
+        {
+            // R2/R3 (SPEC.md §0.1 Q7, review of cycle 6): reschedule's own grid must (a) not block the
+            // booking's own current interval against itself, and (b) keep working when the service was
+            // later deactivated, dropped from the master's capability list, or the master left the
+            // company — none of that should make an existing booking un-reschedulable. Duration is
+            // therefore taken from the booking's own stored BookingServices/Service, never re-resolved
+            // and re-validated against the service/master catalog the way a NEW booking's serviceId is.
+            if (userId is null) return Forbid();
+            var booking = await db.Bookings.Include(b => b.BookingServices).Include(b => b.Service)
+                .FirstOrDefaultAsync(b => b.Id == excludeBookingId);
+            if (booking is null) return NotFound("Booking not found");
+            if (booking.CompanyId != companyId || booking.MasterId != masterId)
+                return BadRequest("excludeBookingId does not match companyId/masterId");
+            if (!await CanManageBookingAsync(booking, userId)) return Forbid();
+
+            totalDuration = booking.BookingServices is { Count: > 0 }
+                ? booking.BookingServices.Sum(bs => bs.DurationMinutes)
+                : booking.Service.DurationMinutes;
+        }
+        else
+        {
+            // US-67 (ARCHITECTURE_CYCLE6.md §47.2): serviceIds is the multi-service form of serviceId;
+            // when absent this is exactly the pre-cycle single-service path.
+            var (resolved, error) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
+            if (error is not null) return error;
+            totalDuration = resolved!.Value;
+        }
 
         // ARCHITECTURE_CYCLE6.md §46.3: manual+staff -> DefaultWindow; manual+extendedHours+staff ->
         // WholeDay; anything else (including extendedHours without manual, or a non-staff caller) -> None.
         var fallback = manual && isStaff
             ? (extendedHours ? ScheduleFallback.WholeDay : ScheduleFallback.DefaultWindow)
             : ScheduleFallback.None;
-        var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, totalDuration!.Value, date, fallback);
+        var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, totalDuration, date, fallback, excludeBookingId);
         return Ok(slots);
     }
 

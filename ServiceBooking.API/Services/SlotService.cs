@@ -24,7 +24,8 @@ public class SlotService(AppDbContext db, IConfiguration configuration)
     // None — it stays gated to explicitly configured hours, which is what protects a master from being
     // booked at a time they never agreed to.
     public async Task<List<TimeSlotResult>> GetAvailableSlotsAsync(
-        Guid companyId, string masterId, int totalDurationMinutes, DateOnly date, ScheduleFallback fallback = ScheduleFallback.None)
+        Guid companyId, string masterId, int totalDurationMinutes, DateOnly date,
+        ScheduleFallback fallback = ScheduleFallback.None, Guid? excludeBookingId = null)
     {
         var workingHours = await db.WorkingHours
             .Include(wh => wh.Breaks)
@@ -38,8 +39,14 @@ public class SlotService(AppDbContext db, IConfiguration configuration)
         // still one person, so a booking made in company A must block the same time in company B.
         // Working hours ARE scoped by company (a master can keep different schedules) — the asymmetry
         // is intentional.
+        // excludeBookingId (R2, reschedule): the booking being rescheduled must not block its own
+        // current interval — otherwise the grid can never offer the booking's own current time, or any
+        // other time overlapping it, as a reschedule target. The server-side reschedule check already
+        // excludes it the same way (BookingsController.Reschedule, `b.Id != id`); this keeps the grid
+        // in sync with what the server will actually accept.
         var existingBookings = await db.Bookings
-            .Where(b => b.MasterId == masterId && b.Date == date && b.Status != BookingStatus.Cancelled)
+            .Where(b => b.MasterId == masterId && b.Date == date && b.Status != BookingStatus.Cancelled &&
+                (excludeBookingId == null || b.Id != excludeBookingId))
             .Select(b => new TimeRange(b.StartTime, b.EndTime))
             .ToListAsync();
 
