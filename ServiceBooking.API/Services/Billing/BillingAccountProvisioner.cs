@@ -32,7 +32,25 @@ public class BillingAccountProvisioner(AppDbContext db)
             OwnerUserId = ownerUserId,
         };
         db.BillingAccounts.Add(account);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // NB-5: the read-then-insert above isn't atomic — two concurrent "create the first
+            // company" requests for the same owner can both miss the initial lookup and both try to
+            // insert, tripping the unique index on OwnerUserId. The loser doesn't get a 500 for
+            // something that isn't actually an error from its point of view: the account it wanted now
+            // exists (created by the winner), so just detach the failed insert and hand back that row.
+            db.Entry(account).State = EntityState.Detached;
+            var winnerId = await db.BillingAccounts
+                .Where(a => a.OwnerUserId == ownerUserId)
+                .Select(a => (Guid?)a.Id)
+                .FirstOrDefaultAsync();
+            if (winnerId.HasValue) return winnerId.Value;
+            throw;
+        }
         return account.Id;
     }
 
