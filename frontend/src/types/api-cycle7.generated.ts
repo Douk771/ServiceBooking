@@ -306,6 +306,9 @@ export interface paths {
          *     немедленного отключения в API нет намеренно.
          *     requestId, если передан, закрывает заявку как Approved в той же транзакции.
          *     Операция выполняется под advisory lock billing-account:{accountId}.
+         *     Межцикловой инвариант (ARCHITECTURE_CYCLE6.md §43.3.6): если planId задан, а paidUntil
+         *     отсутствует/null — 400 "Укажите дату окончания подписки", ДО записи в AccountSubscriptions
+         *     и до журнала. planId: null (снятие тарифа) даты не требует.
          */
         put: operations["assignAccountSubscription"];
         post?: never;
@@ -937,7 +940,7 @@ export interface components {
             allowOnlinePayment: boolean;
             photoQuotaMb?: number | null;
             photoRetention: components["schemas"]["PhotoRetention"];
-            /** @description Оживает в цикле 5 — по нему считаются expiresInDays и isExpiringSoon (US-68). */
+            /** @description Оживает в цикле 7 — по нему считаются expiresInDays и isExpiringSoon (US-68). */
             notifyDaysBefore: number;
             isPublic: boolean;
             isActive: boolean;
@@ -996,6 +999,13 @@ export interface components {
             ownerPhoneMasked?: string | null;
             planName?: string | null;
             status: components["schemas"]["SubscriptionStatus"];
+            /**
+             * @description Серверный текст статуса (§41 п. 8 — тексты собирает сервер, не фронт; тот же паттерн,
+             *     что у AdminSubscribedOptionDto.statusText). "Бесплатный тариф"; "Оплачено до {дата}" для
+             *     Active; "Подписка истекла {дата}" или "Подписка неактивна" (без даты известной) для
+             *     Expired.
+             */
+            statusText: string;
             /** Format: date-time */
             paidUntil?: string | null;
             /** Format: double */
@@ -1024,6 +1034,8 @@ export interface components {
             ownerPhoneMasked?: string | null;
             currency: components["schemas"]["Currency"];
             status: components["schemas"]["SubscriptionStatus"];
+            /** @description Тот же серверный текст, что в AdminBillingAccountListItemDto.statusText. */
+            statusText: string;
             isActive?: boolean;
             /** Format: uuid */
             planId?: string | null;
@@ -1090,7 +1102,10 @@ export interface components {
             isActive: boolean;
             /**
              * Format: date
-             * @description Дата, до которой оплачено. В прошлом более чем на 1 день — 400.
+             * @description Дата, до которой оплачено. В прошлом более чем на 1 день — 400. ОБЯЗАТЕЛЬНО, если
+             *     planId задан (не выражается в required — условие зависит от planId): отсутствует/null
+             *     при заданном planId — 400 "Укажите дату окончания подписки" (ARCHITECTURE_CYCLE6.md
+             *     §43.3.6). Не требуется при planId: null (снятие тарифа).
              */
             paidUntil?: string | null;
             /**
@@ -1248,7 +1263,7 @@ export interface components {
         PlatformSettingsDto: {
             /**
              * Format: double
-             * @description DEPRECATED в цикле 5 — цена опции переехала в каталог; поле ни на что не влияет.
+             * @description DEPRECATED в цикле 7 — цена опции переехала в каталог; поле ни на что не влияет.
              */
             channelPricePerMonth?: number | null;
             channelIdleDays: number;
@@ -1269,7 +1284,7 @@ export interface components {
          *
          *     billingAccountId в этом DTO ОТСУТСТВУЕТ (Р8).
          */
-        CompanyDtoCycle5Additions: {
+        CompanyDtoCycle7Additions: {
             planName: string;
             subscriptionStatus: components["schemas"]["SubscriptionStatus"];
             /** Format: date-time */
@@ -1291,7 +1306,7 @@ export interface components {
          *     maxEmployees, maxCompanies) остаются и означают то же самое. Ниже — только ДОБАВЛЕННЫЕ поля.
          *     maxEmployees — та же смена смысла, что в CompanyDto (суммарно); помечен deprecated.
          */
-        ProfilePlanDtoV5Additions: {
+        ProfilePlanDtoCycle7Additions: {
             /** Format: double */
             totalMonthlyPrice?: number | null;
             currency: components["schemas"]["Currency"];
@@ -1306,7 +1321,7 @@ export interface components {
          *     paymentState/paidUntil вычисляются из подписки аккаунта (Р6), paidFrom всегда null
          *     (deprecated). Ниже — два добавленных поля.
          */
-        ChannelDtoCycle5Additions: {
+        ChannelDtoCycle7Additions: {
             fundingState: components["schemas"]["ChannelFundingState"];
             /**
              * @description Собран сервером (BillingTexts), фронт печатает как есть. Требование приёмки: при
@@ -1881,7 +1896,20 @@ export interface operations {
                     "application/json": components["schemas"]["AdminBillingAccountDto"];
                 };
             };
-            400: components["responses"]["BadRequest"];
+            /**
+             * @description Голая строка. Помимо общих случаев (paidUntil в прошлом более чем на 1 день;
+             *     quantity < 1 или > maxQuantity; неизвестный planId/optionId) — planId задан, а
+             *     paidUntil отсутствует/null: "Укажите дату окончания подписки"
+             *     (ARCHITECTURE_CYCLE6.md §43.3.6).
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
