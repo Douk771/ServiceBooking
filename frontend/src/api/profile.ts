@@ -9,7 +9,7 @@ export interface ProfilePlanDto {
   allowOnlineBooking: boolean
   allowMailing: boolean
   allowAnalytics: boolean
-  /** @deprecated Cycle 5: aggregate seat cap across the whole billing account, kept only for display. */
+  /** @deprecated Cycle 7: aggregate seat cap across the whole billing account, kept only for display. */
   maxEmployees: number | null
   maxCompanies: number | null
   /** Cycle 7 additions (ARCHITECTURE_CYCLE7.md §56, ProfilePlanDtoV5Additions). */

@@ -134,7 +134,7 @@ export const adminApi = {
   updateUserRoles: (id: string, roles: string[]) => api.put(`/admin/users/${id}/roles`, roles),
   getCompanies: (search?: string, page = 1, pageSize = 20) =>
     api.get<Paged<AdminCompany>>('/admin/companies', { params: { search, page, pageSize } }).then((r) => r.data),
-  // updateSubscription removed — PUT /admin/owners/{id}/subscription is 410 Gone in cycle 5
+  // updateSubscription removed — PUT /admin/owners/{id}/subscription is 410 Gone in cycle 7
   // (API_CONTRACT_CYCLE7.md §54). Replacement: adminBillingApi.assignSubscription (billing-accounts).
   // GET .../subscription-history and .../subscription (diagnostics) remain in service (§54, §CYCLE6 42.2).
   getSubscriptionHistory: (ownerUserId: string) =>

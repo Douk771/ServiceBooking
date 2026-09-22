@@ -158,7 +158,7 @@ function ChannelCard({
             {channel.state !== 'Blocked' && channel.state !== 'NeedsReconnect' && channel.state !== 'Disconnected' && (
               <p className="text-sm text-ink-soft mt-0.5">{channel.stateText}</p>
             )}
-            {/* Cycle 5: fundingText is server-composed (BillingTexts) — the frontend never builds its
+            {/* Cycle 7: fundingText is server-composed (BillingTexts) — the frontend never builds its
                 own copy about payment/funding state, per project convention. When fundingState is
                 Unfunded the server's text names the reason, which number works instead, and both
                 ways to fix it (buy another number or delete the extra one). */}
