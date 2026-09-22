@@ -20,7 +20,7 @@ public static class EnvStatus
         var envFile = DotEnvFile.Load(workingCopyRoot);
         var envFilePresent = File.Exists(Path.Combine(workingCopyRoot, ".env"));
 
-        var (projectName, _) = ResolveVariable("SB_PROJECT_NAME", envFile, "servicebooking");
+        var (projectName, _) = ResolveComposeProjectName(workingCopyRoot, envFile);
         var (dbName, _) = ResolveVariable("SB_DB_NAME", envFile, "servicebooking");
 
         var dbPort = ResolvePort("SB_DB_PORT", envFile, 5432);
@@ -174,7 +174,7 @@ public static class EnvStatus
 
     private static async Task<DoctorCheck> CheckPortsFreeAsync(string workingCopyRoot, IReadOnlyDictionary<string, string> envFile, bool dockerAvailable)
     {
-        var (projectName, _) = ResolveVariable("SB_PROJECT_NAME", envFile, "servicebooking");
+        var (projectName, _) = ResolveComposeProjectName(workingCopyRoot, envFile);
 
         var ports = await Task.WhenAll(new[]
         {
@@ -183,15 +183,34 @@ public static class EnvStatus
             ResolvePort("SB_WEB_PORT", envFile, 5173),
         }.Select(p => BuildPortInfoAsync(p, projectName, dockerAvailable)));
 
+        return BuildPortsFreeCheck(ports);
+    }
+
+    /// <summary>Finding 2 (T8, doctor false-negative): SB_DB_PORT/SB_API_PORT/SB_WEB_PORT are the ports
+    /// `docker compose up` (the dev stack) publishes — NOT ports the test run itself binds to. In
+    /// container mode Testcontainers picks an ephemeral, dynamically-assigned host port for Postgres;
+    /// in server mode the run talks to whatever SERVICEBOOKING_TEST_CONNECTION points at. Either way,
+    /// a neighbour occupying 5432/5000 on the developer's own machine (e.g. a locally-installed
+    /// Postgres.app, or an already-running API) does not stop a test run — it only affects `docker
+    /// compose up`, a separate readiness question `status` already answers. This check is therefore
+    /// informational only (`ok` is always true, never contributes to doctor's exit code 2, API_CONTRACT_CYCLE8.md
+    /// §86.2/§86.3) — it still reports genuine neighbour conflicts, just as a warning rather than a
+    /// blocking failure. Pure given already-resolved <see cref="PortInfo"/>s, so it is unit-testable
+    /// without binding real sockets.</summary>
+    internal static DoctorCheck BuildPortsFreeCheck(IReadOnlyList<PortInfo> ports)
+    {
         var conflicts = ports.Where(p => p.InUse && !p.OwnedByThisCopy).ToArray();
-        var ok = conflicts.Length == 0;
         return new DoctorCheck(
             "ports-free",
-            ok,
-            ok
+            true,
+            conflicts.Length == 0
                 ? "Порты dev-стека свободны или заняты этой же рабочей копией."
-                : $"Заняты соседом: {string.Join(", ", conflicts.Select(c => $"{c.Name}={c.Value}"))}. " +
-                  "Что сделать: задайте SB_*_PORT для этой рабочей копии, см. TestKit status.");
+                : $"Предупреждение (не блокирует doctor): заняты соседом — " +
+                  $"{string.Join(", ", conflicts.Select(c => $"{c.Name}={c.Value}"))}. Это порты dev-стека " +
+                  "(`docker compose up`), а не порты самого тестового прогона: container-режим поднимает " +
+                  "Postgres на отдельном динамическом порту, server-режим использует SERVICEBOOKING_TEST_CONNECTION " +
+                  "— ни один не занимает SB_DB_PORT/SB_API_PORT/SB_WEB_PORT напрямую. Что сделать, если это мешает " +
+                  "именно `docker compose up`: задайте SB_*_PORT для этой рабочей копии, см. TestKit status.");
     }
 
     private static DoctorCheck CheckRyukEnabled()
@@ -279,7 +298,11 @@ public static class EnvStatus
             : $"Бюджет не сходится: нужно {required} соединений (P={maxParallelThreads}, пул={poolSizePerHost}, " +
               $"хостов на класс={hostsPerClass}), безопасный предел {safeLimit:F0} из max_connections={serverMaxConnections}. " +
               "Что сделать (любое из): " +
-              "1) снизить параллелизм: SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2; " +
+              "1) снизить параллелизм — ДВА места должны совпадать: SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2 " +
+              "(эта переменная влияет только на арифметику ЭТОЙ проверки) И фактический параллелизм раннера, " +
+              "который задаётся отдельно: `-- xUnit.MaxParallelThreads=2` в командной строке dotnet test либо " +
+              "maxParallelThreads в ServiceBooking.Tests/xunit.runner.json — иначе раннер продолжит параллелить " +
+              "на старом значении, и лимит соединений вылезет посреди прогона; " +
               $"2) поднять потолок сервера: max_connections >= {(int)Math.Ceiling(required / 0.9)}; " +
               "3) убрать SERVICEBOOKING_TEST_CONNECTION и дать прогону поднять свой контейнер (там потолок 300).";
 
@@ -371,6 +394,46 @@ public static class EnvStatus
             // simply cannot be evaluated (ServerMaxConnections stays null), not that doctor crashes.
             return null;
         }
+    }
+
+    /// <summary>Finding 3 (T8): commit 8b288a9 removed the top-level `name:` from docker-compose.yml
+    /// (a parameterized name with a SB_PROJECT_NAME-based default gave two working copies with no `.env`
+    /// the SAME project name, so `docker compose down -v` in one could destroy the other's volume — see
+    /// ARCHITECTURE_CYCLE8_PHASE2.md §90's writeup). Since that commit compose derives the project name
+    /// from the checkout directory, overridable only via compose's own `COMPOSE_PROJECT_NAME` — SB_PROJECT_NAME
+    /// is not read by compose at all any more. This used to still read the old SB_PROJECT_NAME variable
+    /// with a hardcoded "servicebooking" fallback, so `status`/`doctor` in a second working copy reported
+    /// the WRONG project name (defaulting to the first copy's) and could misclassify its own dev-stack
+    /// ports as "owned by a neighbour". Brought in line: COMPOSE_PROJECT_NAME is the override, and the
+    /// fallback is derived from the directory the same way compose derives it.</summary>
+    private static (string Value, string Source) ResolveComposeProjectName(string workingCopyRoot, IReadOnlyDictionary<string, string> envFile) =>
+        ResolveVariable("COMPOSE_PROJECT_NAME", envFile, DeriveComposeProjectName(workingCopyRoot));
+
+    /// <summary>Approximates compose-go's own project-name normalization (lower-case the directory
+    /// basename, keep only `[a-z0-9_-]`, and require the result to start with an alphanumeric — compose's
+    /// pattern is the same `^[a-z0-9][a-z0-9_-]*$` API_CONTRACT_CYCLE8.md §85.1 already documents for the
+    /// override variable). Pure/no I/O so it's unit-testable without invoking `docker compose config`.
+    /// This is a display/heuristic value for `status`/`doctor`'s "owned by me" comparison, not the
+    /// authority on the real compose project name — an explicit COMPOSE_PROJECT_NAME in `.env` always
+    /// wins over this, exactly as it does for compose itself.</summary>
+    internal static string DeriveComposeProjectName(string workingCopyRoot)
+    {
+        var trimmedPath = workingCopyRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var dirName = Path.GetFileName(trimmedPath);
+        if (string.IsNullOrEmpty(dirName))
+            return "servicebooking";
+
+        var sanitized = new string(dirName
+            .ToLowerInvariant()
+            .Where(c => (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c is '_' or '-')
+            .ToArray());
+
+        var start = 0;
+        while (start < sanitized.Length && !((sanitized[start] >= 'a' && sanitized[start] <= 'z') || (sanitized[start] >= '0' && sanitized[start] <= '9')))
+            start++;
+
+        var normalized = start < sanitized.Length ? sanitized[start..] : string.Empty;
+        return normalized.Length == 0 ? "servicebooking" : normalized;
     }
 
     private static (string Value, string Source) ResolveVariable(string name, IReadOnlyDictionary<string, string> envFile, string fallback)
