@@ -58,3 +58,7 @@ ServiceBooking.API/logs/
 # rely on (scheduler disabled, upload rate limit raised, ARCHITECTURE.md §8.5) — must be committed so
 # the test suite behaves the same for every developer and in CI.
 !ServiceBooking.API/appsettings.Testing.json
+
+# Кеш schemathesis — контрактная проверка цикла 6 (ARCHITECTURE_CYCLE6.md §53.2).
+# Инструмент запускается по месту через pipx/npx, в репозитории ему делать нечего.
+.schemathesis/
