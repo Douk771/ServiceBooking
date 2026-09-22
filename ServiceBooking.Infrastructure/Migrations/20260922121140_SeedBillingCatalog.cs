@@ -19,8 +19,14 @@ namespace ServiceBooking.Infrastructure.Migrations
     ///
     /// 1. The system free plan (§54.3, П4/§64 п.5) — <c>IsSystemFree</c>, <c>PricePerMonth = 0</c>,
     ///    limits 1/1, <c>AllowPublicListing = true</c>, everything else off — word for word
-    ///    <see cref="ServiceBooking.API.Services.EffectivePlan.Free"/>. Only created if no
-    ///    <c>IsSystemFree</c> row exists yet (an environment may already have hand-created one).
+    ///    <see cref="ServiceBooking.API.Services.EffectivePlan.Free"/> (which has no <c>IsPublic</c>
+    ///    field of its own — that flag only exists on the catalog row). SPEC.md П4 is explicit that the
+    ///    free plan is published on the price list "как обычная строка прайса", so this row is seeded
+    ///    with <c>IsPublic = true</c> too (cycle-07 backend report, NB-final): the pricing rubik being
+    ///    off (<c>pricing.public-enabled</c> off, US-74) makes this currently harmless, but the seed
+    ///    must not be the thing an admin has to remember to fix by hand the moment publication is turned
+    ///    on. Only created if no <c>IsSystemFree</c> row exists yet (an environment may already have
+    ///    hand-created one).
     /// 2. Three catalog options, all with <c>PricePerMonth = NULL</c> — nobody is charged anything the
     ///    moment this migration runs; a superadmin has to deliberately price each one before it's for
     ///    sale (§43.3's own convention, same as <c>notifications.channel.price-per-month</c> in cycle 4).
@@ -72,7 +78,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     false, false, false, true,
                     false, false, 100, 0,
                     'Чтобы попробовать: одна компания, один сотрудник, запись руками.', true, 7, now() AT TIME ZONE 'utc',
-                    'Показ в каталоге салонов' || E'\n' || '1 компания' || E'\n' || '1 сотрудник', false, -1, true
+                    'Показ в каталоге салонов' || E'\n' || '1 компания' || E'\n' || '1 сотрудник', true, -1, true
                 WHERE NOT EXISTS (SELECT 1 FROM "SubscriptionPlanConfigs" WHERE "IsSystemFree" = true);
 
                 -- 2. Three catalog options, all unpriced (§43.3: PricePerMonth = NULL = "not for sale
