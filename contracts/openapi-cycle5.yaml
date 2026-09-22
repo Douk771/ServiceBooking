@@ -566,15 +566,21 @@ paths:
       tags: [billing-admin]
       operationId: rejectSubscriptionRequest
       summary: Отклонить заявку
-      description: Одобрение отдельной кнопки не имеет — оно происходит через PUT подписки с requestId.
+      description: |
+        Одобрение отдельной кнопки не имеет — оно происходит через PUT подписки с requestId.
+
+        Unreleased (cycle 07 backend report, BLK-4): comment обязателен и не может быть пустой
+        строкой/состоять из одних пробелов — это единственный способ, которым владелец узнаёт
+        причину отказа (US-70, LastRejectionReason). Отсутствующий или пустой comment -> 400.
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [comment]
               properties:
-                comment: { type: string, maxLength: 500, nullable: true }
+                comment: { type: string, minLength: 1, maxLength: 500 }
       responses:
         "204":
           description: Отклонена
