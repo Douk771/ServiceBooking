@@ -1,6 +1,6 @@
 openapi: 3.0.3
 
-# ServiceBooking — машиночитаемый контракт ЦИКЛА 5, РЕДАКЦИЯ 2.1
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 7, РЕДАКЦИЯ 2.1
 # (биллинг-аккаунт как единица тарификации, каталог опций, публичный прайс).
 #
 # Редакция 1 (подписка принадлежит компании) отменена заказчиком; см. ARCHITECTURE_CYCLE7.md §63.
@@ -1425,7 +1425,7 @@ components:
           type: integer
           minimum: 0
           maximum: 90
-          description: Оживает в цикле 5 — по нему считаются expiresInDays и isExpiringSoon (US-68).
+          description: Оживает в цикле 7 — по нему считаются expiresInDays и isExpiringSoon (US-68).
         isPublic: { type: boolean }
         isActive: { type: boolean }
         isSystemFree:
@@ -1827,7 +1827,7 @@ components:
           type: number
           format: double
           nullable: true
-          description: DEPRECATED в цикле 5 — цена опции переехала в каталог; поле ни на что не влияет.
+          description: DEPRECATED в цикле 7 — цена опции переехала в каталог; поле ни на что не влияет.
         channelIdleDays: { type: integer, minimum: 0, maximum: 60 }
         pricingPublicEnabled:
           type: boolean
@@ -1837,7 +1837,7 @@ components:
       additionalProperties: false
 
     # ── Изменённые существующие DTO (для сверки формы фронтом и QA) ─────────────
-    CompanyDtoCycle5Additions:
+    CompanyDtoCycle7Additions:
       type: object
       description: |
         Семь полей, которые цикл 7 ДОБАВЛЯЕТ в существующий CompanyDto (7 точек возврата).
@@ -1869,7 +1869,7 @@ components:
           nullable: true
           description: Посчитан сервером по тому же правилу, что 402 — кнопка гасится заранее.
 
-    ProfilePlanDtoV5Additions:
+    ProfilePlanDtoCycle7Additions:
       type: object
       description: |
         ProfileDto.plan в редакции 2 НЕ ломается — подписка снова принадлежит аккаунту, поэтому все
@@ -1886,7 +1886,7 @@ components:
         isExpiringSoon: { type: boolean }
         optionCount: { type: integer }
 
-    ChannelDtoCycle5Additions:
+    ChannelDtoCycle7Additions:
       type: object
       description: |
         Форма ChannelDto цикла 4 сохраняется, меняется ИСТОЧНИК значений:
