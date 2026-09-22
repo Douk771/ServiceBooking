@@ -56,8 +56,11 @@ public sealed class RandomTestCaseOrderer : ITestCaseOrderer
     private static int TestCaseClassNameHash<TTestCase>(IReadOnlyList<TTestCase> testCases) where TTestCase : ITestCase
     {
         var className = testCases.Count > 0 ? testCases[0].TestMethod.TestClass.Class.Name : string.Empty;
-        return string.IsNullOrEmpty(className) ? 0 : className.GetHashCode(StringComparison.Ordinal);
+        return ServiceBooking.TestKit.StableHash.OfString(className);
     }
+
+    // The per-class offset must be identical in a later process, otherwise the replay line printed
+    // above is a lie. See ServiceBooking.TestKit.StableHash for why string.GetHashCode cannot be used.
 
     private static int ResolveSeed()
     {
