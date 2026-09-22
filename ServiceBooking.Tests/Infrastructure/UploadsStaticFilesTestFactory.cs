@@ -33,7 +33,7 @@ public sealed class UploadsStaticFilesTestFactory(
         // content root is overridden to an empty temp directory, appsettings.Testing.json isn't found
         // there at all, so nothing but these explicit settings (plus GetValue(...) code defaults for
         // everything else, e.g. Uploads:MaxFileBytes/PerUserPerMinute) is available.
-        TestHostSettings.Apply(builder, TestSlot.Api, "uploads", connectionString);
+        TestHostSettings.Apply(builder, "uploads", connectionString);
 
         if (contentRootOverride is not null)
         {

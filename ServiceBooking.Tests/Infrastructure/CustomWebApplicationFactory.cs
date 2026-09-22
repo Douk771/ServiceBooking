@@ -17,7 +17,7 @@ public class CustomWebApplicationFactory(string connectionString) : WebApplicati
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Identity = TestHostSettings.Apply(builder, TestSlot.Api, "api", connectionString);
+        Identity = TestHostSettings.Apply(builder, "api", connectionString);
 
         // CYCLE5 (ARCHITECTURE_CYCLE5.md §48.1): HealthNoteProtector deliberately reuses
         // Notifications:EncryptionKey (cycle 4's channel-secret AES-GCM key) rather than a second key —

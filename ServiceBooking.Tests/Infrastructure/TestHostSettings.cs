@@ -26,12 +26,11 @@ public static class TestHostSettings
         };
 
     /// <param name="builder">the host being configured</param>
-    /// <param name="slot">which slot's database this host talks to (<see cref="TestSlot"/>)</param>
     /// <param name="factoryTag">short unique tag for the factory type — see <see cref="SuperAdmins"/> for
     /// the closed set of valid values</param>
-    /// <param name="connectionString">the slot's database connection string, from
-    /// <see cref="TestRunEnvironment"/></param>
-    public static TestHostIdentity Apply(IWebHostBuilder builder, string slot, string factoryTag, string connectionString)
+    /// <param name="connectionString">the class database's connection string, from
+    /// <see cref="TestDatabaseFixture"/></param>
+    public static TestHostIdentity Apply(IWebHostBuilder builder, string factoryTag, string connectionString)
     {
         if (!SuperAdmins.TryGetValue(factoryTag, out var admin))
         {
@@ -40,7 +39,22 @@ public static class TestHostSettings
                 "(ARCHITECTURE_CYCLE8.md §71.1) before using it.");
         }
 
-        var runRoot = Path.Combine(Path.GetTempPath(), "sb-test", TestRunKey.Current, factoryTag);
+        var databaseName = new Npgsql.NpgsqlConnectionStringBuilder(connectionString).Database
+            ?? throw new ArgumentException("connectionString has no Database segment", nameof(connectionString));
+
+        // ARCHITECTURE_CYCLE8_PHASE2.md §91.5/§99 (T8-P4): file roots are scoped to the CLASS slot, not
+        // factoryTag — before this, every one of the 27 "Api"-collection classes shared factoryTag "api"
+        // and therefore one temp directory, so 25+ concurrently-parallelized classes would clash on
+        // File.Copy while copying App_Data/legal into it (T8-P1 recon's IOException). The class slot is
+        // the database name's own last segment (sbtest_<runkey>_<slot>, TestDatabaseNaming's own scheme),
+        // read back out here rather than threaded through six factory constructors as a separate
+        // parameter — every host in one test class already shares one database, so this stays scoped to
+        // the class by construction. Scoping to the class slot instead of factoryTag means concurrent
+        // (different) classes never touch the same directory, while multiple hosts booted WITHIN one
+        // class (e.g. a fresh NotificationDispatchTestFactory per test) still correctly share one root,
+        // matching their shared, sequential-by-construction test class.
+        var classSlot = databaseName.Split('_', 3) is [_, _, var slot] ? slot : databaseName;
+        var runRoot = Path.Combine(Path.GetTempPath(), "sb-test", TestRunKey.Current, classSlot);
         var publicRoot = Path.Combine(runRoot, "public");
         var privateRoot = Path.Combine(runRoot, "private");
         var stateRoot = Path.Combine(runRoot, "state");
@@ -77,7 +91,8 @@ public static class TestHostSettings
 
         return new TestHostIdentity(
             connectionString, admin.Phone, admin.Email, SuperAdminPassword,
-            publicRoot, privateRoot, stateRoot, logDirectory, legalRoot);
+            publicRoot, privateRoot, stateRoot, logDirectory, legalRoot,
+            classSlot, databaseName);
     }
 
     /// <summary>Copies App_Data/legal into <paramref name="destination"/> — every factory gets its own
@@ -120,4 +135,6 @@ public sealed record TestHostIdentity(
     string PrivateRoot,
     string StateRoot,
     string LogDirectory,
-    string LegalRoot);
+    string LegalRoot,
+    string ClassSlot,
+    string DatabaseName);

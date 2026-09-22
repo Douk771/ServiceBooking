@@ -36,7 +36,7 @@ public sealed class NotificationTestFactory(string connectionString) : WebApplic
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Identity = TestHostSettings.Apply(builder, TestSlot.Api, "ntf", connectionString);
+        Identity = TestHostSettings.Apply(builder, "ntf", connectionString);
 
         builder.UseSetting("Notifications:Provider", "logging"); // US-35 — never a real network call
         builder.UseSetting("Notifications:EncryptionKey", TestEncryptionKeyBase64);

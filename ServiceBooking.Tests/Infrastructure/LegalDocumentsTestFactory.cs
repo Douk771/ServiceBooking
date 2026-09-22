@@ -124,7 +124,7 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
         // with a UserConsent version nothing else recognizes. No test in this class ever logs in as
         // SuperAdmin, so a dedicated, never-asserted-on phone (TestHostSettings' "legal" entry) costs
         // nothing here.
-        TestHostSettings.Apply(builder, TestSlot.Legal, "legal", _connectionString);
+        TestHostSettings.Apply(builder, "legal", _connectionString);
 
         // Overrides TestHostSettings' own copy of App_Data/legal — this factory manages its own
         // rewritable manifest (ResetToDefault/WriteManifest) so LEG- tests can bump versions mid-test.

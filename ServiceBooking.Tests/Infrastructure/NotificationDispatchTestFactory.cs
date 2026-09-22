@@ -36,7 +36,7 @@ public sealed class NotificationDispatchTestFactory(
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        Identity = TestHostSettings.Apply(builder, TestSlot.Dispatch, "dispatch", connectionString);
+        Identity = TestHostSettings.Apply(builder, "dispatch", connectionString);
 
         // §27.1: the runner ticks only under THIS host. TickSeconds=1 (not the 60s production default)
         // is what lets a test observe a second pass within real seconds instead of real minutes.
