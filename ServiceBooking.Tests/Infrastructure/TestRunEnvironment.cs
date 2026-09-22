@@ -46,12 +46,25 @@ public sealed class TestClassDatabaseLease(string classSlot, string connectionSt
 /// </summary>
 public static class TestRunEnvironment
 {
-    private static readonly SemaphoreSlim Gate = new(1, 1);
+    // L2 (T9 review): this used to be one semaphore for two unrelated purposes -- standing up the
+    // shared server/template (EnsureEnvironmentAsync, needed once, briefly, at the very start of the
+    // run) and dropping one class' database (ReleaseClassDatabaseAsync, happening constantly throughout
+    // the run as classes finish). A slow DROP DATABASE for one finishing class held the same lock a
+    // brand-new class' InitializeAsync needed just to read `_databases` back out of already-initialized
+    // state, serializing "start next class" behind "tear down previous class" for no reason. Split so
+    // the two can proceed concurrently.
+    private static readonly SemaphoreSlim EnvironmentGate = new(1, 1);
+    private static readonly SemaphoreSlim DropGate = new(1, 1);
 
     private static TestServerLease? _server;
     private static TestDatabaseLease? _databases;
     private static bool _bannerPrinted;
     private static bool _teardownRegistered;
+
+    // L3 (T9 review): EnsureConnectionBudgetAsync used to run once per LEASED CLASS (~29 extra
+    // connections + SHOW max_connections round trips over a run) even though the answer -- parallelism,
+    // pool size and the server's max_connections -- cannot change mid-run. Checked once per process.
+    private static bool _connectionBudgetChecked;
 
     /// <summary>Ensures the server/template exist (creating them on the very first call across the whole
     /// process), then clones and returns this class' own database. Call exactly once per
@@ -63,7 +76,7 @@ public static class TestRunEnvironment
         // §93.4 (T8-P9): fail fast, before this class' database (let alone any test) exists, if the
         // configured parallelism would ask for more connections than the server can safely hand out —
         // "connection limit exceeded" 300 tests into a run is expensive to diagnose; this is not.
-        await EnsureConnectionBudgetAsync(cancellationToken);
+        await EnsureConnectionBudgetCheckedOnceAsync(cancellationToken);
 
         var databaseName = await databases.CreateClassDatabaseAsync(classSlot, cancellationToken);
         var connectionString = databases.ConnectionStringFor(classSlot);
@@ -73,10 +86,12 @@ public static class TestRunEnvironment
 
     /// <summary>Drops one class' own database — the server/template outlive it, torn down once, at
     /// process exit (see this type's own doc comment). Called only through
-    /// <see cref="TestClassDatabaseLease.DropAsync"/>.</summary>
+    /// <see cref="TestClassDatabaseLease.DropAsync"/>. Guarded by <see cref="DropGate"/>, not
+    /// <see cref="EnvironmentGate"/> (L2) — a slow DROP for one finishing class must never block another
+    /// class' <see cref="LeaseClassDatabaseAsync"/> from starting.</summary>
     internal static async Task ReleaseClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
     {
-        await Gate.WaitAsync(cancellationToken);
+        await DropGate.WaitAsync(cancellationToken);
         try
         {
             if (_databases is not null)
@@ -84,13 +99,13 @@ public static class TestRunEnvironment
         }
         finally
         {
-            Gate.Release();
+            DropGate.Release();
         }
     }
 
     private static async Task<TestDatabaseLease> EnsureEnvironmentAsync(CancellationToken cancellationToken)
     {
-        await Gate.WaitAsync(cancellationToken);
+        await EnvironmentGate.WaitAsync(cancellationToken);
         try
         {
             if (_databases is null)
@@ -122,7 +137,7 @@ public static class TestRunEnvironment
         }
         finally
         {
-            Gate.Release();
+            EnvironmentGate.Release();
         }
     }
 
@@ -158,28 +173,49 @@ public static class TestRunEnvironment
     /// <summary>ARCHITECTURE_CYCLE8_PHASE2.md §93.4 (T8-P9) — the same arithmetic the architecture
     /// prescribes for <c>doctor</c>'s <c>parallel-connection-budget</c> check, run here so a budget that
     /// does not add up fails the whole run before the first test, with an actionable message, rather than
-    /// as a random "connection limit exceeded" wherever the pool finally runs dry.</summary>
-    private static async Task EnsureConnectionBudgetAsync(CancellationToken cancellationToken)
+    /// as a random "connection limit exceeded" wherever the pool finally runs dry.
+    ///
+    /// T9 review (L3): the answer to "does the budget fit" cannot change mid-run — parallelism, pool size
+    /// per class and the server's max_connections are all fixed once the process starts — so this used to
+    /// redo the SHOW max_connections round trip and the arithmetic for every one of ~29 classes for no
+    /// reason. Runs at most once per process now; every class after the first just observes the cached
+    /// verdict for free.</summary>
+    private static async Task EnsureConnectionBudgetCheckedOnceAsync(CancellationToken cancellationToken)
     {
-        if (_server is null)
+        if (_connectionBudgetChecked || _server is null)
             return;
 
-        var maxParallelThreads = TestParallelism.MaxParallelThreads;
+        // Not gated by EnvironmentGate/DropGate — a second class racing in here before the flag is set
+        // would just redo the same read-only check and get the same answer (or the same exception) a
+        // second time; harmless, and not worth a third semaphore.
+        _connectionBudgetChecked = true;
 
-        // Two hosts can be live per active class (the class fixture's own host, plus one dedicated
-        // per-test factory for classes like RateLimitingTests/NotificationDispatchTests — §92.4), each
-        // pooling up to TestInfrastructure.PoolMaxSize connections. "+4" covers this process' own
-        // migration/seed/TestKit connections outside any pooled host.
-        var required = maxParallelThreads * 2 * TestInfrastructure.PoolMaxSize + 4;
+        var maxParallelThreads = TestParallelism.MaxParallelThreads;
+        const int hostsPerClass = 2; // §92.4 / EnvStatus.CheckParallelConnectionBudgetAsync's own note (T9 M4).
+
+        // T9 review (M4): was `maxParallelThreads * 2 * TestInfrastructure.PoolMaxSize + 4` typed out here
+        // a second time, next to an identical literal in EnvStatus.RequiredConnections — despite both
+        // copies' comments claiming "no number duplicated". Now the one formula EnvStatus exposes.
+        var required = EnvStatus.RequiredConnections(maxParallelThreads, hostsPerClass, TestInfrastructure.PoolMaxSize);
 
         await using var connection = new Npgsql.NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new Npgsql.NpgsqlCommand("SHOW max_connections", connection);
-        var maxConnectionsRaw = (string)(await command.ExecuteScalarAsync(cancellationToken))!;
-        var maxConnections = int.Parse(maxConnectionsRaw);
+        var maxConnectionsRaw = (string?)await command.ExecuteScalarAsync(cancellationToken);
 
-        var safeLimit = maxConnections * 0.9;
-        if (required <= safeLimit)
+        // T9 review (L3): int.Parse on a value this process doesn't control (whatever the connected
+        // Postgres server reports back) used to throw FormatException — an unhandled crash with no
+        // actionable message — instead of the documented TestSafetyException path if the server ever
+        // answered with something unparsable.
+        if (maxConnectionsRaw is null || !int.TryParse(maxConnectionsRaw, out var maxConnections))
+        {
+            throw new TestSafetyException(
+                $"[sb-test] Отказ: сервер вернул нечисловой max_connections (\"{maxConnectionsRaw}\") — " +
+                "бюджет соединений проверить не удалось. Ничего не создано и не удалено.");
+        }
+
+        var safeLimit = EnvStatus.SafeConnectionLimit(maxConnections);
+        if (EnvStatus.FitsConnectionBudget(required, maxConnections))
             return;
 
         throw new TestSafetyException(

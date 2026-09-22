@@ -36,7 +36,7 @@ public static class TestInfrastructure
         "-c", "max_locks_per_transaction=128",
     ];
 
-    /// <summary>Pool limits applied by <see cref="TestDatabaseLease"/>, via
+    /// <summary>Pool limit applied by <see cref="TestDatabaseLease"/>, via
     /// <see cref="Npgsql.NpgsqlConnectionStringBuilder"/> properties (not string concatenation — a
     /// concatenated tail can silently duplicate keys already present in an operator-supplied
     /// SERVICEBOOKING_TEST_CONNECTION), so a handful of short-lived WebApplicationFactory hosts can't
@@ -44,7 +44,15 @@ public static class TestInfrastructure
     /// ARCHITECTURE_CYCLE8_PHASE2.md §93.2 (T8-P8): with one class owning one host, and tests inside a
     /// class strictly sequential (§92.1), a single host never physically holds more than 2-3 concurrent
     /// connections — 8 is already generous, and the lower number is what makes the P=4 connection budget
-    /// (65 of 300) fit comfortably.</summary>
+    /// (65 of 300) fit comfortably.
+    ///
+    /// T9 review (M4) — this is a ceiling PER CLASS, not per host: Npgsql pools are keyed by connection
+    /// string, and every host inside one test class (the class fixture's own, plus any short-lived
+    /// per-test factory — §92.4) is built with the SAME connection string, so they draw from one shared
+    /// pool of 8, not one each. That is safe for the server (the budget formula in
+    /// <see cref="EnvStatus.RequiredConnections"/> multiplies by hostsPerClass anyway, as a margin — see
+    /// its own note), but "8 per host" would be the wrong mental model if a future change made per-class
+    /// concurrency less strictly sequential than §92.1 currently guarantees.</summary>
     public const int PoolMaxSize = 8;
     public const int PoolConnectionIdleLifetimeSeconds = 10;
     public const int PoolTimeoutSeconds = 15;
