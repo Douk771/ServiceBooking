@@ -187,6 +187,13 @@ npm run dev
 
 Откройте `http://localhost:5173` — Vite проксирует `/api` на контейнер API (порт 5000).
 
+Если порт `5173` (`SB_WEB_PORT`) уже занят соседним запуском Vite (например, вторым dev-стеком
+рядом), `strictPort` в `vite.config.ts` намеренно не выставлен: Vite печатает
+`Port 5173 is in use, trying another one...` и поднимается на следующем свободном порту
+(обычно `5174`), тоже печатая итоговый адрес. Поведение проверено вручную. Если вместо этого
+занят `SB_API_PORT` (`5000`) — `docker compose up` падает с ошибкой публикации порта; это
+ожидаемо и не маскируется, диагностика — `TestKit status`.
+
 Swagger доступен только при `ASPNETCORE_ENVIRONMENT=Development` — `http://localhost:5000/swagger`.
 
 ### Локально, без Docker для API
