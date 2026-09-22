@@ -465,7 +465,10 @@ public class ProfileController(
         decimal OptionMonthly(AccountSubscriptionOption row)
         {
             var rule = planRules.FirstOrDefault(r => r.OptionId == row.OptionId);
-            var availability = rule?.Availability ?? OptionAvailability.Extra;
+            // N14 — a missing rule reads as Unavailable everywhere else (SubscriptionResolver,
+            // OwnerSubscriptionService, AdminBillingController); fail-open to Extra here would price a
+            // gated-off option in the profile total while every other screen shows it as free/absent.
+            var availability = rule?.Availability ?? OptionAvailability.Unavailable;
             var pricePerUnit = row.Option.PricePerMonth ?? 0m;
             return BillingCalculator.MonthlyPriceFor(availability, row.Quantity, pricePerUnit, rule?.IncludedQuantity);
         }
