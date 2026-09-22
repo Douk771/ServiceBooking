@@ -288,7 +288,8 @@ public class AdminBillingController(
         var optionDtos = subscribedOptions.Select(o =>
         {
             var rule = planRules.FirstOrDefault(r => r.OptionId == o.OptionId);
-            var availability = rule?.Availability ?? OptionAvailability.Extra;
+            // N14 — a missing rule means Unavailable (fail-closed, §43.3), never Extra.
+            var availability = rule?.Availability ?? OptionAvailability.Unavailable;
             var monthly = BillingCalculator.MonthlyPriceFor(availability, o.Quantity, o.Option.PricePerMonth ?? 0m, rule?.IncludedQuantity);
             return new
             {

@@ -135,7 +135,10 @@ public class OwnerSubscriptionService(
     private SubscribedOptionDto ToSubscribedOptionDto(AccountSubscriptionOption row, List<PlanOptionRule> planRules, DateTime now)
     {
         var rule = planRules.FirstOrDefault(r => r.OptionId == row.OptionId);
-        var availability = rule?.Availability ?? OptionAvailability.Extra;
+        // N14 — a missing rule means Unavailable (fail-closed on money, §43.3), never Extra. This
+        // display path shouldn't normally hit a missing rule for an already-subscribed option, but the
+        // default must still be the safe one, not the billable one.
+        var availability = rule?.Availability ?? OptionAvailability.Unavailable;
         var pricePerUnit = row.Option.PricePerMonth ?? 0m;
         var monthly = BillingCalculator.MonthlyPriceFor(availability, row.Quantity, pricePerUnit, rule?.IncludedQuantity);
 
