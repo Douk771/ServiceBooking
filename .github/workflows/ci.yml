@@ -32,6 +32,13 @@ jobs:
       # and always rewrites the Database component to "postgres" itself. Simplified here to say so
       # plainly; the old value (Database=servicebooking_test) would have kept working unchanged.
       SERVICEBOOKING_TEST_CONNECTION: "Host=localhost;Database=postgres;Username=postgres;Password=postgres"
+      # ARCHITECTURE_CYCLE8_PHASE2.md §93.1/§93.4 (T8-P8): CI runs at P=2, not xunit.runner.json's local
+      # default of 4 (2 CI cores vs. 4 on a dev machine, §93.1) -- via `-- xUnit.MaxParallelThreads=2`
+      # below. TestParallelism.cs cannot see that command-line value in-process (no in-process API to
+      # read it back), so this env var is the second, independent place that has to say the same "2" --
+      # it is what the connection-budget fail-fast (§93.4) actually uses. If these two ever disagree,
+      # TestParallelism.cs prints the value it used so the drift is visible in the CI log, not silent.
+      SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"
     steps:
       - uses: actions/checkout@v4
 
@@ -78,7 +85,7 @@ jobs:
         run: dotnet test ServiceBooking.UnitTests --no-build -c Release
 
       - name: Functional tests
-        run: dotnet test ServiceBooking.Tests --no-build -c Release
+        run: dotnet test ServiceBooking.Tests --no-build -c Release -- xUnit.MaxParallelThreads=2
 
       # Fast bash check (ARCHITECTURE_CYCLE8.md §74.1/§74.3): fails if the Postgres image's major
       # version drifts between ServiceBooking.TestKit/TestInfrastructure.cs, docker-compose.yml,

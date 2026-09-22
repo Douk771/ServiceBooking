@@ -21,22 +21,31 @@ public static class TestInfrastructure
 
     /// <summary>Command-line flags applied to the ephemeral Testcontainers Postgres instance.
     /// All three "off" settings are safe here because the data is single-run and disposable —
-    /// see ARCHITECTURE_CYCLE8.md §75.</summary>
+    /// see ARCHITECTURE_CYCLE8.md §75. max_connections raised 200→300 and max_locks_per_transaction
+    /// added in ARCHITECTURE_CYCLE8_PHASE2.md §93.3 (T8-P8): class-per-database parallelism (P=4) peaks
+    /// at 65 connections (§93.2) — 300 keeps a ~4.6x margin — and concurrent CREATE DATABASE ... TEMPLATE
+    /// / DROP DATABASE across parallel classes takes noticeably more locks than the old single-threaded
+    /// run.</summary>
     public static readonly string[] PostgresCommand =
     [
-        "-c", "max_connections=200",
+        "-c", "max_connections=300",
         "-c", "fsync=off",
         "-c", "full_page_writes=off",
         "-c", "synchronous_commit=off",
-        "-c", "shared_buffers=128MB",
+        "-c", "shared_buffers=192MB",
+        "-c", "max_locks_per_transaction=128",
     ];
 
     /// <summary>Pool limits applied by <see cref="TestDatabaseLease"/>, via
     /// <see cref="Npgsql.NpgsqlConnectionStringBuilder"/> properties (not string concatenation — a
     /// concatenated tail can silently duplicate keys already present in an operator-supplied
     /// SERVICEBOOKING_TEST_CONNECTION), so a handful of short-lived WebApplicationFactory hosts can't
-    /// exhaust the server's connection budget — see ARCHITECTURE_CYCLE8.md §75.</summary>
-    public const int PoolMaxSize = 15;
+    /// exhaust the server's connection budget — see ARCHITECTURE_CYCLE8.md §75. Lowered 15→8 in
+    /// ARCHITECTURE_CYCLE8_PHASE2.md §93.2 (T8-P8): with one class owning one host, and tests inside a
+    /// class strictly sequential (§92.1), a single host never physically holds more than 2-3 concurrent
+    /// connections — 8 is already generous, and the lower number is what makes the P=4 connection budget
+    /// (65 of 300) fit comfortably.</summary>
+    public const int PoolMaxSize = 8;
     public const int PoolConnectionIdleLifetimeSeconds = 10;
     public const int PoolTimeoutSeconds = 15;
 

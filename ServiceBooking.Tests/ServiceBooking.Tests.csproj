@@ -26,6 +26,12 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- ARCHITECTURE_CYCLE8_PHASE2.md §93.1 (T8-P8): must sit next to the test assembly for xUnit's own
+       runner (dotnet test, Rider, VS) to pick it up, same as runsettings/config next to the built DLL. -->
+  <ItemGroup>
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ServiceBooking.API\ServiceBooking.API.csproj" />
     <ProjectReference Include="..\ServiceBooking.TestKit\ServiceBooking.TestKit.csproj" />
