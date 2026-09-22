@@ -502,7 +502,7 @@ builder.Services.AddRateLimiter(o =>
 // cycle 8 makes to this file. Default is "logs", exactly as it always was: Development/Production
 // behaviour is unchanged byte-for-byte when Logs:Directory isn't set.
 static string LogDirectory(IConfiguration configuration) =>
-    configuration["Logs:Directory"] is { Length: > 0 } configured ? configured : "logs";
+    configuration["Logs:Directory"] is { } configured && configured.Trim().Length > 0 ? configured : "logs";
 
 // Shared by auth-login/auth-register: partition purely by the caller's (ForwardedHeaders-resolved) IP,
 // PermitLimit/WindowMinutes read from RateLimits:{policyName}:* with the given defaults.

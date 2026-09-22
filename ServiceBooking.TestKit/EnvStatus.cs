@@ -75,19 +75,27 @@ public static class EnvStatus
     {
         var asJson = args.Contains("--json");
         var workingCopyRoot = TestInfrastructure.WorkingCopyRoot;
+        var envFile = DotEnvFile.Load(workingCopyRoot);
 
         var dockerAvailable = await IsDockerAvailableAsync();
         var externalConnectionSet = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_CONNECTION"));
 
         var checks = new List<DoctorCheck>
         {
+            // Review finding N13: this check used to be Ok = dockerAvailable, unconditionally, so a
+            // developer with Docker Desktop stopped but a working SERVICEBOOKING_TEST_CONNECTION (a
+            // perfectly valid, working server-mode configuration — the very case the "test-connection-env"
+            // check below considers Ok) still got `doctor` exit code 2. Docker itself is only required
+            // when there's no external server to fall back on.
             new(
                 "docker-available",
-                dockerAvailable,
+                dockerAvailable || externalConnectionSet,
                 dockerAvailable
                     ? "Docker доступен."
-                    : "Docker недоступен. Запустите Docker Desktop, либо задайте SERVICEBOOKING_TEST_CONNECTION " +
-                      "для запуска против внешнего сервера."),
+                    : externalConnectionSet
+                        ? "Docker недоступен, но SERVICEBOOKING_TEST_CONNECTION задан — прогон пойдёт в server-режиме."
+                        : "Docker недоступен. Запустите Docker Desktop, либо задайте SERVICEBOOKING_TEST_CONNECTION " +
+                          "для запуска против внешнего сервера."),
         };
 
         checks.Add(await CheckPostgresImageCachedAsync(dockerAvailable));
@@ -103,7 +111,10 @@ public static class EnvStatus
                     : "Docker недоступен и SERVICEBOOKING_TEST_CONNECTION не задан. " +
                       "Что сделать: запустите Docker Desktop, либо задайте SERVICEBOOKING_TEST_CONNECTION."));
 
-        checks.Add(await CheckPortsFreeAsync());
+        // Review finding N13: IsDockerAvailableAsync/DotEnvFile.Load used to each run a second time inside
+        // CheckPortsFreeAsync — an extra `docker info` round trip and a second file read for values this
+        // method already has.
+        checks.Add(await CheckPortsFreeAsync(workingCopyRoot, envFile, dockerAvailable));
         checks.Add(CheckRyukEnabled());
 
         var ok = checks.All(c => c.Ok);
@@ -157,12 +168,9 @@ public static class EnvStatus
         return new DoctorCheck("dotnet-sdk", true, $".NET SDK доступен (runtime {version}).");
     }
 
-    private static async Task<DoctorCheck> CheckPortsFreeAsync()
+    private static async Task<DoctorCheck> CheckPortsFreeAsync(string workingCopyRoot, IReadOnlyDictionary<string, string> envFile, bool dockerAvailable)
     {
-        var workingCopyRoot = TestInfrastructure.WorkingCopyRoot;
-        var envFile = DotEnvFile.Load(workingCopyRoot);
         var (projectName, _) = ResolveVariable("SB_PROJECT_NAME", envFile, "servicebooking");
-        var dockerAvailable = await IsDockerAvailableAsync();
 
         var ports = await Task.WhenAll(new[]
         {
