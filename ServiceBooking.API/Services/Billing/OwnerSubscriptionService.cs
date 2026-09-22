@@ -142,10 +142,23 @@ public class OwnerSubscriptionService(
         var pricePerUnit = row.Option.PricePerMonth ?? 0m;
         var monthly = BillingCalculator.MonthlyPriceFor(availability, row.Quantity, pricePerUnit, rule?.IncludedQuantity);
 
-        var status = row.EndsAtUtc.HasValue ? "Ending" : "Active";
-        var statusText = row.EndsAtUtc.HasValue
-            ? $"Действует до {row.EndsAtUtc:dd.MM.yyyy}, затем отключится"
-            : "Подключена";
+        // N5, §38.5: four statuses, not two. Unavailable (rule says so, N13/N14) wins over everything
+        // else — the tariff no longer allows it, regardless of what EndsAtUtc/RequestedQuantity say.
+        // Ending (already flagged to switch off) comes next. PendingPayment (there IS a request for
+        // MORE of this option, quantity/date not confirmed yet) is the one status this row's own
+        // columns didn't previously surface at all, even though RequestedQuantity/RequestedAtUtc exist
+        // specifically for it.
+        var status = availability == OptionAvailability.Unavailable ? "Unavailable"
+            : row.EndsAtUtc.HasValue ? "Ending"
+            : row.RequestedAtUtc.HasValue ? "PendingPayment"
+            : "Active";
+        var statusText = status switch
+        {
+            "Unavailable" => "Недоступно на вашем тарифе — отключится при следующем пересчёте",
+            "Ending" => $"Действует до {row.EndsAtUtc:dd.MM.yyyy}, затем отключится",
+            "PendingPayment" => "Заявка на изменение количества отправлена, ожидает подтверждения оплаты",
+            _ => "Подключена",
+        };
 
         return new SubscribedOptionDto(
             row.OptionId, row.Option.Name, row.Option.Description, row.Option.Kind == OptionKind.Toggle ? "Toggle" : "Quantity",

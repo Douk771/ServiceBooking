@@ -322,6 +322,20 @@ public class AdminBillingController(
             // N14 — a missing rule means Unavailable (fail-closed, §43.3), never Extra.
             var availability = rule?.Availability ?? OptionAvailability.Unavailable;
             var monthly = BillingCalculator.MonthlyPriceFor(availability, o.Quantity, o.Option.PricePerMonth ?? 0m, rule?.IncludedQuantity);
+            // N5, §38.5 — same four-way status the owner screen now uses (OwnerSubscriptionService.
+            // ToSubscribedOptionDto), so the admin card doesn't show "Active" for something the owner
+            // sees as "Недоступно"/"Ожидает оплаты".
+            var status = availability == OptionAvailability.Unavailable ? "Unavailable"
+                : o.EndsAtUtc.HasValue ? "Ending"
+                : o.RequestedAtUtc.HasValue ? "PendingPayment"
+                : "Active";
+            var statusText = status switch
+            {
+                "Unavailable" => "Недоступно на текущем тарифе",
+                "Ending" => $"Действует до {o.EndsAtUtc:dd.MM.yyyy}",
+                "PendingPayment" => "Есть заявка на изменение количества",
+                _ => "Подключена",
+            };
             return new
             {
                 optionId = o.OptionId,
@@ -332,8 +346,8 @@ public class AdminBillingController(
                 quantity = o.Quantity,
                 pricePerUnit = o.Option.PricePerMonth ?? 0m,
                 pricePerMonth = monthly,
-                status = o.EndsAtUtc.HasValue ? "Ending" : "Active",
-                statusText = o.EndsAtUtc.HasValue ? $"Действует до {o.EndsAtUtc:dd.MM.yyyy}" : "Подключена",
+                status,
+                statusText,
                 endsAt = o.EndsAtUtc,
                 canDisable = true,
                 paidUntil = o.PaidUntilUtc,
