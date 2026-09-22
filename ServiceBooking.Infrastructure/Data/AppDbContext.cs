@@ -24,6 +24,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<SubscriptionPlanConfig> SubscriptionPlanConfigs => Set<SubscriptionPlanConfig>();
     public DbSet<SubscriptionOption> SubscriptionOptions => Set<SubscriptionOption>();
     public DbSet<SubscriptionChangeLog> SubscriptionChangeLogs => Set<SubscriptionChangeLog>();
+    public DbSet<BillingAccount> BillingAccounts => Set<BillingAccount>();
+    public DbSet<CompanyOwnerChangeLog> CompanyOwnerChangeLogs => Set<CompanyOwnerChangeLog>();
     public DbSet<ClientNotePhoto> ClientNotePhotos => Set<ClientNotePhoto>();
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
@@ -55,6 +57,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // NULL means "not migrated yet" is unambiguous during the backfill.
             e.HasOne(c => c.City).WithMany().HasForeignKey(c => c.CityId).OnDelete(DeleteBehavior.Restrict);
             e.Property(c => c.TimeZoneId).HasMaxLength(64);
+            // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4): "who pays" — Restrict so a billing account
+            // can't be deleted out from under a company that still belongs to it. Nullable/no
+            // composite alt-key yet in this slice (§43.6's co-tenancy keys and NOT NULL land with
+            // the backfill migration, a later slice of this cycle).
+            e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Service>(e =>
@@ -97,11 +104,33 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(s => s.Owner).WithMany().HasForeignKey(s => s.OwnerUserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => s.OwnerUserId).IsUnique();
             e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
+            // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4): one subscription row per account. Cascade
+            // mirrors the Owner FK above — deleting the account takes its (not-yet-populated in this
+            // slice) subscription row with it.
+            e.HasOne(s => s.BillingAccount).WithMany().HasForeignKey(s => s.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => s.BillingAccountId).IsUnique();
         });
 
         builder.Entity<SubscriptionChangeLog>(e =>
         {
             e.HasIndex(l => l.OwnerUserId);
+        });
+
+        // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3): payer/rules-owner of companies and subscriptions —
+        // see Company.BillingAccountId / AccountSubscription.BillingAccountId remarks.
+        builder.Entity<BillingAccount>(e =>
+        {
+            e.HasOne(a => a.Owner).WithMany().HasForeignKey(a => a.OwnerUserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(a => a.OwnerUserId).IsUnique();
+            e.Property(a => a.Name).HasMaxLength(100);
+        });
+
+        // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.3): US-64 p.4 — who manages a company changed, and when.
+        builder.Entity<CompanyOwnerChangeLog>(e =>
+        {
+            e.HasOne(l => l.Company).WithMany().HasForeignKey(l => l.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(l => l.CompanyId);
+            e.Property(l => l.Comment).HasMaxLength(500);
         });
 
         builder.Entity<Booking>(e =>

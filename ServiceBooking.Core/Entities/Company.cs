@@ -37,6 +37,13 @@ public class Company
     public string OwnerUserId { get; set; } = string.Empty;
     public AppUser Owner { get; set; } = null!;
 
+    // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.2, §43.4) — "who pays and by which rules this company
+    // lives", independent of OwnerUserId ("who manages/sees it"). Nullable for this slice: backfill
+    // and NOT NULL enforcement are a later slice of this cycle (§54.4's BackfillBillingAccounts
+    // migration) — do not assume every company has one yet.
+    public Guid? BillingAccountId { get; set; }
+    public BillingAccount? BillingAccount { get; set; }
+
     public ICollection<CompanyMember> Members { get; set; } = [];
     public ICollection<Service> Services { get; set; } = [];
     public ICollection<Booking> Bookings { get; set; } = [];
