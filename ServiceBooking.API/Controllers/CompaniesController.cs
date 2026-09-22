@@ -451,10 +451,15 @@ public class CompaniesController(
         // account yet.
         var billingAccountId = await db.Companies.Where(c => c.Id == id).Select(c => c.BillingAccountId).FirstOrDefaultAsync();
         await using var limitTransaction = await db.Database.BeginTransactionAsync();
-        // Same lock key as company create/transfer/admin-assign (§52) — "billing-account-seats:{id}"
-        // used to be a DIFFERENT key from "billing-account:{id}", so a seat add and, say, a company
-        // transfer into the same account could run concurrently and both pass their own limit check.
-        await AdvisoryLock.AcquireAsync(db, billingAccountId.HasValue ? $"billing-account:{billingAccountId}" : $"company-members:{id}");
+        // §52: "billing-account:{accountId}" → "company-members:{companyId}", strictly in that order
+        // (account before company) — seats are counted per account but the row is written to a
+        // specific company, and taking both locks (not just the account one) closes the same race for
+        // members deleted/added directly against this company concurrently with an account-wide count.
+        // Falls back to just the per-company key for the (pre-cycle-5-backfill) edge case of a company
+        // with no billing account yet.
+        if (billingAccountId.HasValue)
+            await AdvisoryLock.AcquireAsync(db, $"billing-account:{billingAccountId}");
+        await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
         if (plan.AccountMaxEmployees.HasValue)
