@@ -102,7 +102,7 @@ public sealed class NotificationScheduler(
         var master = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == booking.MasterId, ct);
         if (company is null || service is null || master is null) return null;
 
-        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(company.OwnerUserId);
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
 
         var assignment = await db.ChannelCompanyAssignments.AsNoTracking()
             .Include(a => a.Channel)
@@ -165,8 +165,12 @@ public sealed class NotificationScheduler(
             return;
         }
 
+        // TODO(ARCHITECTURE_CYCLE5.md §47): today's channel-level payment state, until the account-level
+        // funding rule (paid N vs configured M) replaces it in a later slice of this cycle.
+        var channelIsFunded = ctx.Channel is not null && ChannelPaymentState.Of(ctx.Channel, nowUtc) == ChannelPaymentStatus.Paid;
         var gate = NotificationGate.Evaluate(
-            ctx.Plan, type, ctx.Channel is not null, ctx.Channel, ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc);
+            ctx.Plan, type, ctx.Channel is not null, ctx.Channel, ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc,
+            channelIsFunded);
 
         if (gate.Outcome == NotificationGateOutcome.Blocked)
         {

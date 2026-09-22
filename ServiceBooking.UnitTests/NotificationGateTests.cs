@@ -20,10 +20,10 @@ public class NotificationGateTests
         EffectivePlan? plan = null, NotificationType type = NotificationType.Reminder,
         bool hasAssignment = true, NotificationChannel? channel = null,
         CompanyNotificationSettings? settings = null, bool optedOut = false,
-        DateTime? visitStart = null) =>
+        DateTime? visitStart = null, bool channelIsFunded = true) =>
         NotificationGate.Evaluate(
             plan ?? AllowingPlan, type, hasAssignment, channel ?? PaidChannel(), settings ?? DefaultSettings(),
-            optedOut, Now, visitStart ?? Now.AddDays(1));
+            optedOut, Now, visitStart ?? Now.AddDays(1), channelIsFunded);
 
     [Fact]
     public void Evaluate_EverythingFine_Allowed()
@@ -58,21 +58,21 @@ public class NotificationGateTests
     {
         var result = NotificationGate.Evaluate(
             AllowingPlan, NotificationType.Reminder, companyHasAssignment: true, channel: null,
-            DefaultSettings(), recipientOptedOut: false, Now, Now.AddDays(1));
+            DefaultSettings(), recipientOptedOut: false, Now, Now.AddDays(1), channelIsFunded: true);
         result.Reason.Should().Be(NotificationReason.NoUsableChannel);
     }
 
     [Fact]
-    public void Evaluate_ChannelNotPaid_Blocked()
+    public void Evaluate_ChannelNotFunded_Blocked()
     {
-        var result = Evaluate(channel: new NotificationChannel { PaidUntilUtc = null });
+        var result = Evaluate(channel: new NotificationChannel { PaidUntilUtc = null }, channelIsFunded: false);
         result.Reason.Should().Be(NotificationReason.NoUsableChannel);
     }
 
     [Fact]
-    public void Evaluate_ChannelPaymentExpired_Blocked()
+    public void Evaluate_ChannelFundingExpired_Blocked()
     {
-        var result = Evaluate(channel: new NotificationChannel { PaidUntilUtc = Now.AddDays(-1) });
+        var result = Evaluate(channel: new NotificationChannel { PaidUntilUtc = Now.AddDays(-1) }, channelIsFunded: false);
         result.Reason.Should().Be(NotificationReason.NoUsableChannel);
     }
 

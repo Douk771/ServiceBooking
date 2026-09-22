@@ -91,11 +91,19 @@ public sealed class NotificationDispatchTask(
             var channels = await db.NotificationChannels.Where(c => channelIds.Contains(c.Id)).ToListAsync(linkedCt);
             var channelById = channels.ToDictionary(c => c.Id);
 
-            // Plan resolved by the CHANNEL's own owner (§33) — the account whose AccountSubscription pays
-            // for the option — not the assigned company's owner (a channel may, in principle, be assigned
-            // to a company under a different membership than the one that bought the channel).
-            var ownerIds = channels.Select(c => c.OwnerUserId).Distinct();
-            var plans = await subscriptionResolver.GetEffectivePlansForOwnersAsync(ownerIds);
+            // Plan resolved by the CHANNEL's own billing account (§45.1) — the account whose
+            // AccountSubscription pays for the option — not the assigned company's own account (a
+            // channel may, in principle, be assigned to a company under a different membership than the
+            // one that bought the channel). NotificationChannel doesn't carry BillingAccountId yet
+            // (TODO ARCHITECTURE_CYCLE5.md §47 — a later slice of this cycle); until then, the account is
+            // looked up from the channel's OwnerUserId the same way BillingAccountProvisioner does.
+            var ownerIds = channels.Select(c => c.OwnerUserId).Distinct().ToList();
+            var accountIdByOwner = await db.BillingAccounts
+                .Where(a => ownerIds.Contains(a.OwnerUserId))
+                .Select(a => new { a.OwnerUserId, a.Id })
+                .ToDictionaryAsync(a => a.OwnerUserId, a => a.Id, linkedCt);
+            var accountIds = accountIdByOwner.Values.Distinct();
+            var plansByAccount = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
 
             var companyIds = candidates.Select(n => n.CompanyId).Distinct().ToList();
             var settingsByCompany = await db.CompanyNotificationSettings
@@ -122,14 +130,19 @@ public sealed class NotificationDispatchTask(
                 }
 
                 var channel = row.ChannelId.HasValue && channelById.TryGetValue(row.ChannelId.Value, out var found) ? found : null;
-                var plan = channel is not null && plans.TryGetValue(channel.OwnerUserId, out var resolvedPlan)
+                var plan = channel is not null && accountIdByOwner.TryGetValue(channel.OwnerUserId, out var accountId)
+                    && plansByAccount.TryGetValue(accountId, out var resolvedPlan)
                     ? resolvedPlan
                     : EffectivePlan.Free;
                 settingsByCompany.TryGetValue(row.CompanyId, out var settings);
                 var optedOut = optedOutPhones.Contains(row.RecipientPhone);
+                // TODO(ARCHITECTURE_CYCLE5.md §47): today's channel-level payment state, until the
+                // account-level funding rule (paid N vs configured M) replaces it in a later slice.
+                var channelIsFunded = channel is not null && ChannelPaymentState.Of(channel, now) == ChannelPaymentStatus.Paid;
 
                 var gate = NotificationGate.Evaluate(
-                    plan, row.Type, companyHasAssignment: channel is not null, channel, settings, optedOut, now, row.VisitStartUtc);
+                    plan, row.Type, companyHasAssignment: channel is not null, channel, settings, optedOut, now, row.VisitStartUtc,
+                    channelIsFunded);
 
                 if (gate.Outcome == NotificationGateOutcome.Blocked)
                 {

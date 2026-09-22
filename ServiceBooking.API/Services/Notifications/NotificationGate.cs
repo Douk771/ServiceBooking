@@ -35,7 +35,14 @@ public static class NotificationGate
         CompanyNotificationSettings? settings,
         bool recipientOptedOut,
         DateTime nowUtc,
-        DateTime visitStartUtc)
+        DateTime visitStartUtc,
+        // Cycle 5 (ARCHITECTURE_CYCLE5.md §45.3 p.3): made an explicit, mandatory parameter instead of
+        // an internal ChannelPaymentState.Of(channel, now) call — every caller must now say out loud
+        // where it got "is this number funded" from, rather than the gate quietly re-deriving it. The
+        // full funding rule (paid-N-vs-configured-M, §47.1) is a later slice of this cycle; for now
+        // callers pass today's channel-level payment state (TODO ARCHITECTURE_CYCLE5.md §47 — replace
+        // with the account-level "funded" rule once it exists).
+        bool channelIsFunded)
     {
         if (recipientOptedOut)
             return NotificationGateResult.Block(NotificationReason.RecipientOptedOut);
@@ -46,7 +53,7 @@ public static class NotificationGate
         if (!companyHasAssignment || channel is null)
             return NotificationGateResult.Block(NotificationReason.NoUsableChannel);
 
-        if (ChannelPaymentState.Of(channel, nowUtc) != ChannelPaymentStatus.Paid)
+        if (!channelIsFunded)
             return NotificationGateResult.Block(NotificationReason.NoUsableChannel);
 
         var enabledTypeMask = settings?.EnabledTypeMask ?? CompanyNotificationSettings.DefaultEnabledTypeMask;
