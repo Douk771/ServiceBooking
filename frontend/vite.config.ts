@@ -13,15 +13,32 @@ export default defineConfig(({ mode }) => {
   // when vite is invoked from the repo root (e.g. `npm run dev --prefix frontend`) instead of
   // from `frontend/`. Reviewed in cycle 8 review: frontend/vite.config.ts finding.
   const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-  // Third arg '' loads every var, not just VITE_-prefixed ones, so SB_* is visible too.
-  const fileEnv = loadEnv(mode, repoRoot, '')
-  const env = (key: string) => process.env[key] ?? fileEnv[key]
+  // Restrict to the VITE_ and SB_ prefixes per API_CONTRACT_CYCLE8.md §85.2 — the root `.env`
+  // also carries unrelated secrets (e.g. GLITCHTIP_POSTGRES_PASSWORD, GLITCHTIP_SECRET_KEY,
+  // consumed by docker-compose.glitchtip.yml), which must never be loaded here.
+  const fileEnv = loadEnv(mode, repoRoot, ['VITE_', 'SB_'])
+  // Empty-string values are a normal shape for this .env (see .env.dev.example's
+  // SB_VOLUME_SUFFIX=) but must be treated as "not set", not as a literal empty override.
+  const env = (key: string) => {
+    const fromProcess = process.env[key]
+    if (fromProcess !== undefined && fromProcess.trim() !== '') return fromProcess.trim()
+    const fromFile = fileEnv[key]
+    if (fromFile !== undefined && fromFile.trim() !== '') return fromFile.trim()
+    return undefined
+  }
+  // Parses a port string into a valid 1-65535 port number, falling back to `fallback` for
+  // anything empty, non-numeric, non-integer, or out of the valid TCP port range.
+  const parsePort = (value: string | undefined, fallback: number): number => {
+    if (value === undefined) return fallback
+    const parsed = Number(value)
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) return fallback
+    return parsed
+  }
 
-  const apiPort = env('SB_API_PORT') ?? '5000'
+  const apiPort = parsePort(env('SB_API_PORT'), 5000)
   // VITE_API_TARGET is the cycle-3 override and always wins outright.
   const apiTarget = env('VITE_API_TARGET') ?? `http://localhost:${apiPort}`
-  const parsedWebPort = Number(env('SB_WEB_PORT') ?? '5173')
-  const webPort = Number.isFinite(parsedWebPort) ? parsedWebPort : 5173
+  const webPort = parsePort(env('SB_WEB_PORT'), 5173)
 
   return {
     plugins: [react()],
