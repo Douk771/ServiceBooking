@@ -10,4 +10,8 @@ public sealed class TestSafetyException : Exception
     public TestSafetyException(string message) : base(message)
     {
     }
+
+    public TestSafetyException(string message, Exception innerException) : base(message, innerException)
+    {
+    }
 }
