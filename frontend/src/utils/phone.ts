@@ -63,38 +63,23 @@ export function toCanonicalPhone(raw: string): string {
 }
 
 /**
- * Login-only counterpart to {@link toCanonicalPhone}. US-61/§48.2 restricts the Russian-only rule to
- * *new* data (registration, phone changes) — it explicitly does not apply to signing in, and
- * `AuthController.cs` deliberately still normalizes with `Normalize`, not `TryNormalizeRussian`
- * (ARCHITECTURE_CYCLE6.md §947: "Вход в аккаунт — работает" for accounts that already have a
- * foreign number on file, e.g. `+380…`). `toCanonicalPhone` returns `''` for those, which made such
- * an account impossible to type into the masked login field at all — this is the fix, used only by
- * the login form.
+ * Whether raw (possibly partial) input typed into a phone field still "looks Russian" — i.e. either
+ * has no explicit country code yet (no leading `+`, so it will fall back to `toCanonicalPhone`'s
+ * bare-local-number/`8`-folding rules), or has a `+` but either no digits after it yet (still
+ * ambiguous — the user just pressed `+`) or a digit sequence starting with `7`/`8` (Russia's own
+ * codes). Anything else — a `+` immediately followed by a different country's digit, e.g. `+380…` —
+ * is a foreign number and is NOT Russian-shaped.
  *
- * Russian-shaped input keeps the same `8`→`7` folding and bare-local-number prefixing as
- * `toCanonicalPhone`, so existing muscle memory (typing `9…`) still works. A `+<countrycode>…` that
- * isn't Russian is passed through as-is (capped at the server's E.164 max of 15 digits) instead of
- * being rejected.
+ * Used by {@link PhoneInput} (§48.4) to decide, per keystroke, whether to keep applying the live
+ * `+7 (900) 000-00-00` mask or to fall back to unmangled raw text — see that component for why a
+ * naive controlled mask can't tell "not yet typed" apart from "a foreign code" without this check.
  */
-export function toCanonicalPhoneLenient(raw: string): string {
+export function looksRussian(raw: string): boolean {
   const trimmed = raw.trim()
-  let digits = trimmed.replace(/\D/g, '')
-  if (!digits) return ''
-
-  if (trimmed.startsWith('+')) {
-    // An explicit country code was typed — only fold Russia's own `8` dialing prefix; anything else
-    // (e.g. "+380…") is a deliberate foreign code and must never have a Russian "7" guessed onto it,
-    // even while the digits are still partial ("+3" while typing "+380…").
-    if (digits[0] === '8') digits = '7' + digits.slice(1)
-    return digits.slice(0, 15)
-  }
-
-  // No leading '+': treat as a bare Russian number, same as toCanonicalPhone — an 8-prefixed or
-  // short local number typed without a country code.
-  if (digits[0] === '8') digits = '7' + digits.slice(1)
-  else if (digits[0] !== '7') digits = '7' + digits
-
-  return digits.slice(0, 15)
+  if (!trimmed.startsWith('+')) return true
+  const digits = trimmed.replace(/\D/g, '')
+  if (!digits) return true // bare "+", country code not typed yet — undecided, don't reject
+  return digits[0] === '7' || digits[0] === '8'
 }
 
 /**

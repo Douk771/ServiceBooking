@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPhone, maskPhoneInput, toCanonicalPhone, isRussianPhone, toCanonicalPhoneLenient } from './phone'
+import { formatPhone, maskPhoneInput, toCanonicalPhone, isRussianPhone, looksRussian } from './phone'
 
 describe('formatPhone', () => {
   it('formats an 11-digit Russian number starting with 7', () => {
@@ -126,26 +126,42 @@ describe('isRussianPhone', () => {
   })
 })
 
-// US-63 fix (ARCHITECTURE_CYCLE6.md §947): the login form must accept a foreign number already on
-// file, unlike toCanonicalPhone which is Russian-only (registration policy, §48.1/§48.2).
-describe('toCanonicalPhoneLenient', () => {
-  it('passes a foreign +<countrycode> number through untouched', () => {
-    expect(toCanonicalPhoneLenient('+380671234567')).toBe('380671234567')
+// US-61/US-60 fix (SPEC.md §0.1 Q8, ARCHITECTURE_CYCLE6.md §48.3/§48.4): the login form's mask must
+// hold while the input still looks Russian and release once a different country code is decided —
+// `looksRussian` is what `PhoneInput` uses to make that call on every keystroke. Deliberately NOT a
+// second normalizer (that was the bug in the removed `toCanonicalPhoneLenient`, §48.3's "one function"
+// rule) — it only classifies, the server (`PhoneNormalizer.Normalize`) does all the actual digit
+// extraction for login.
+describe('looksRussian', () => {
+  it('treats a bare local number (no country code yet) as Russian-shaped', () => {
+    expect(looksRussian('9990000000')).toBe(true)
   })
 
-  it('still folds a leading 8 into 7 for Russian-shaped input', () => {
-    expect(toCanonicalPhoneLenient('89990000000')).toBe('79990000000')
+  it('treats a domestic 8-prefixed number as Russian-shaped', () => {
+    expect(looksRussian('89990000000')).toBe(true)
   })
 
-  it('still prefixes a bare local number with 7', () => {
-    expect(toCanonicalPhoneLenient('9990000000')).toBe('79990000000')
+  it('treats a lone "+" with no digits yet as undecided (still Russian-shaped)', () => {
+    expect(looksRussian('+')).toBe(true)
   })
 
-  it('caps at 15 digits (server E.164 bound)', () => {
-    expect(toCanonicalPhoneLenient('+123456789012345678')).toBe('123456789012345')
+  it('treats "+7…" as Russian-shaped', () => {
+    expect(looksRussian('+79990000000')).toBe(true)
   })
 
-  it('returns an empty string for empty input', () => {
-    expect(toCanonicalPhoneLenient('')).toBe('')
+  it('treats "+8…" as Russian-shaped (same dialing convention as domestic 8)', () => {
+    expect(looksRussian('+89990000000')).toBe(true)
+  })
+
+  it('rejects a decided foreign country code', () => {
+    expect(looksRussian('+380671234567')).toBe(false)
+  })
+
+  it('rejects as soon as the first foreign digit after "+" is typed, not just the full number', () => {
+    expect(looksRussian('+3')).toBe(false)
+  })
+
+  it('treats empty input as Russian-shaped (nothing to reject yet)', () => {
+    expect(looksRussian('')).toBe(true)
   })
 })
