@@ -8,7 +8,6 @@ import { Input } from '../components/ui/Input'
 import { PhoneInput } from '../components/ui/PhoneInput'
 import { Icon } from '../components/ui/Icon'
 import { getAuthErrorMessage } from '../utils/authError'
-import { toCanonicalPhoneLenient } from '../utils/phone'
 import { useState } from 'react'
 
 interface FormData {
@@ -33,9 +32,12 @@ export function LoginPage() {
     setLoading(true)
     setError('')
     try {
-      // §947: sign-in accepts a foreign number already on file (unlike registration); PhoneInput
-      // here is in `restrictToRussia={false}` raw-text mode, so normalize once at submit time.
-      const res = await authApi.login(toCanonicalPhoneLenient(data.phone), data.password)
+      // §48.4: sign-in accepts a foreign number already on file (unlike registration). PhoneInput in
+      // `restrictToRussia={false}` mode already hands back either canonical Russian digits or raw
+      // foreign text (see its prop doc comment) — either way, no client-side normalization is needed:
+      // `AuthController.Login` extracts digits from whatever text it's given (`PhoneNormalizer.Normalize`,
+      // §48.3, the "no second normalizer on the client" rule).
+      const res = await authApi.login(data.phone, data.password)
       // Signing in over a live session (a direct /login link, or registering a second account without
       // logging out) would otherwise leave the previous user's cached queries in place, and the new
       // user gets a first frame of someone else's data. Navbar's logout clears for the same reason.
@@ -89,9 +91,9 @@ export function LoginPage() {
                   error={errors.phone?.message}
                   value={field.value}
                   onChange={field.onChange}
-                  // Sign-in is exempt from the Russian-only policy (ARCHITECTURE_CYCLE6.md §947,
-                  // §48.2): an account may already have a foreign number on file, and the server
-                  // still normalizes logins with `Normalize`, not `TryNormalizeRussian`.
+                  // Sign-in is exempt from the Russian-only policy (§48.2, SPEC.md §0.1 Q8): an
+                  // account may already have a foreign number on file, and the server still
+                  // normalizes logins with `Normalize`, not `TryNormalizeRussian`.
                   restrictToRussia={false}
                 />
               )}
