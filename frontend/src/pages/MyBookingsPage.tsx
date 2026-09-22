@@ -13,7 +13,7 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
 import { Icon } from '../components/ui/Icon'
-import { ManualBookingModal } from '../components/booking/ManualBookingModal'
+import { BookingModal } from '../components/booking/BookingModal'
 import { RescheduleModal } from '../components/booking/RescheduleModal'
 import { NoteCard } from '../components/clientNotes/NoteCard'
 import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
@@ -453,7 +453,7 @@ export function MyBookingsPage() {
         </Button>
       </div>
 
-      {showCreateModal && <ManualBookingModal onClose={() => setShowCreateModal(false)} />}
+      {showCreateModal && <BookingModal onClose={() => setShowCreateModal(false)} />}
       {rescheduleBooking && <RescheduleModal booking={rescheduleBooking} onClose={() => setRescheduleBooking(null)} />}
 
       {isLoading ? (

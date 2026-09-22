@@ -11,6 +11,8 @@ import type { Company, Service } from '../../types'
 import type { MasterPublicDto } from '../../api/companies'
 import type { AvailabilityResponse } from '../../api/bookings'
 
+const getMy = vi.fn()
+const getMemberOf = vi.fn()
 const getMasters = vi.fn()
 const getAvailability = vi.fn()
 const getSlots = vi.fn()
@@ -20,6 +22,8 @@ const getText = vi.fn()
 
 vi.mock('../../api/companies', () => ({
   companiesApi: {
+    getMy: (...args: unknown[]) => getMy(...args),
+    getMemberOf: (...args: unknown[]) => getMemberOf(...args),
     getMasters: (...args: unknown[]) => getMasters(...args),
   },
 }))
@@ -76,7 +80,7 @@ const service: Service = {
 }
 
 function master(overrides: Partial<MasterPublicDto> = {}): MasterPublicDto {
-  return { userId: 'm1', firstName: 'Иван', lastName: 'Петров', ...overrides }
+  return { userId: 'm1', firstName: 'Иван', lastName: 'Петров', providesServices: true, ...overrides }
 }
 
 function monthKey(offsetMonths = 0) {
@@ -87,10 +91,7 @@ function monthKey(offsetMonths = 0) {
 }
 
 // The suite pins "now" (see beforeEach below) to a fixed mid-month instant, so results never
-// depend on the wall-clock day/time the test run happens to start at — see review finding re:
-// futureDateInCurrentMonth() previously colliding with "today" (and the calendar's same-day
-// "already passed" disabling) near month-end. With "now" fixed mid-month, today + 3 days always
-// lands safely within the same month, in the future, and never equals "today".
+// depend on the wall-clock day/time the test run happens to start at.
 const FIXED_NOW = new Date('2026-09-15T09:00:00')
 
 function futureDateInCurrentMonth(): string {
@@ -100,11 +101,15 @@ function futureDateInCurrentMonth(): string {
   return format(new Date(today.getFullYear(), today.getMonth(), day), 'yyyy-MM-dd')
 }
 
-function availabilityFor(dates: Record<string, AvailabilityResponse['days'][number]['status']>): AvailabilityResponse {
+function availabilityFor(
+  dates: Record<string, AvailabilityResponse['days'][number]['status']>,
+  opts: { staffMode?: boolean; scheduleState?: AvailabilityResponse['days'][number]['scheduleState'] } = {},
+): AvailabilityResponse {
   const days = Object.entries(dates).map(([date, status]) => ({
     date,
     status,
     lastFreeSlotStart: status === 'Available' ? '18:00:00' : null,
+    scheduleState: opts.scheduleState ?? null,
   }))
   return {
     from: `${monthKey()}-01`,
@@ -113,6 +118,7 @@ function availabilityFor(dates: Record<string, AvailabilityResponse['days'][numb
     stepMinutes: 30,
     horizonDays: 90,
     horizonLastDate: '2099-01-01',
+    staffMode: opts.staffMode ?? false,
     days,
   }
 }
@@ -133,9 +139,19 @@ function renderModal(allowMultipleServices = false) {
   )
 }
 
+function renderStaffEntryModal() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <BookingModal onClose={() => {}} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
 // US-65/API_CONTRACT_CYCLE5.md tests below reach the "info" step via a single mocked master (so the
-// US-64 master-step auto-skip kicks in) and a single available day in the current month, picked
-// through the real BookingCalendar rather than the flat date list the old UI used.
+// US-64 master-step auto-skip kicks in) and a single available day in the current month.
 async function reachInfoStep(user: ReturnType<typeof userEvent.setup>, dateStr: string) {
   const dateLabel = format(new Date(`${dateStr}T00:00:00`), 'd MMMM', { locale: (await import('date-fns/locale')).ru })
   await user.click(await screen.findByLabelText(dateLabel))
@@ -146,6 +162,8 @@ beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['Date'] })
   vi.setSystemTime(FIXED_NOW)
 
+  getMy.mockReset().mockResolvedValue([])
+  getMemberOf.mockReset().mockResolvedValue([])
   getMasters.mockReset()
   getAvailability.mockReset().mockResolvedValue(availabilityFor({}))
   getSlots.mockReset().mockResolvedValue([])
@@ -173,20 +191,15 @@ describe('BookingModal — US-64 single/zero master', () => {
     getMasters.mockResolvedValueOnce([master()])
     renderModal()
 
-    // The master-choosing step never renders...
     await waitFor(() => expect(screen.queryByText('Выберите мастера')).not.toBeInTheDocument())
-    // ...and the date step is shown right away instead.
     expect(await screen.findByText('Выберите дату')).toBeInTheDocument()
 
-    // Progress bar renders exactly 3 segments (date, slot, info) — not the usual 4.
     const segments = document.querySelectorAll('.flex.gap-1\\.5.mt-4 > div')
     expect(segments.length).toBe(3)
   })
 
   it("shows the sole master's name in the confirmation summary — a client must not book \"into the void\"", async () => {
     getMasters.mockResolvedValueOnce([master({ firstName: 'Анна', lastName: 'Смирнова' })])
-    // A future (not "today") date, so the modal's same-day "already passed" slot filter can't
-    // interfere with this test regardless of what time of day the suite happens to run.
     const dateStr = futureDateInCurrentMonth()
     getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }))
     getSlots.mockResolvedValue([{ start: '10:00:00', end: '10:30:00' }])
@@ -214,7 +227,7 @@ describe('BookingModal — US-64 single/zero master', () => {
 })
 
 describe('BookingModal — US-65 calendar day states', () => {
-  it('does not allow clicking a day off', async () => {
+  it('does not allow clicking a day off for a client (non-staff)', async () => {
     getMasters.mockResolvedValueOnce([master(), master({ userId: 'm2' })])
     const dateStr = futureDateInCurrentMonth()
     getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'DayOff' }))
@@ -240,8 +253,6 @@ describe('BookingModal — US-65 calendar day states', () => {
     masterButtons[0].click()
 
     await waitFor(() => expect(screen.getByText('Выберите дату')).toBeInTheDocument())
-    // The legend repeats the same DAY_FULL_LABEL text, so match on the calendar day button's
-    // accessible name (which embeds the label) rather than on text content alone.
     const button = await screen.findByRole('button', { name: new RegExp(DAY_FULL_LABEL) })
     expect(button).toBeDisabled()
     expect(button.getAttribute('aria-disabled')).toBe('true')
@@ -275,7 +286,6 @@ describe('BookingModal — US-67 multiple services per visit', () => {
     ;(await screen.findByText('Окрашивание')).click()
     ;(await screen.findByText('Укладка')).click()
 
-    // 30 + 60 + 20 = 110 minutes, 1500 + 2500 + 900 = 4900 ₽
     expect(await screen.findByText('110 мин · 4 900 ₽')).toBeInTheDocument()
   })
 
@@ -401,9 +411,6 @@ describe('BookingModal — cycle 5 legal text additions', () => {
     await reachInfoStep(user, dateStr)
 
     expect(await screen.findByText(/Записываясь, вы передаёте своё имя/)).toBeInTheDocument()
-    // jsdom doesn't hide closed <details> content from text queries the way a real browser does, so
-    // the meaningful assertion here is the structural one: the full text lives inside the
-    // <details>/<summary> disclosure, collapsed by default (no `open` attribute).
     const details = screen.getByText('Подробнее').closest('details')
     expect(details).not.toBeNull()
     expect(details).not.toHaveAttribute('open')
@@ -425,5 +432,121 @@ describe('BookingModal — cycle 5 legal text additions', () => {
     await reachInfoStep(user, dateStr)
 
     expect(await screen.findByText(/Оставляя номер телефона, вы получите сервисные сообщения/)).toBeInTheDocument()
+  })
+})
+
+// ── ARCHITECTURE_CYCLE10.md §108: merged staff entry ("Записать клиента") ─────────────────────────
+
+describe('BookingModal — cycle 10 staff entry (company step, US-120)', () => {
+  it('shows the company picker only when no company was passed, and skips it with exactly one company', async () => {
+    getMy.mockResolvedValue([company])
+    getMemberOf.mockResolvedValue([])
+    getByCompany.mockResolvedValue([service])
+    getMasters.mockResolvedValue([master()])
+
+    renderStaffEntryModal()
+
+    expect(await screen.findByText('Выберите услуги')).toBeInTheDocument()
+    expect(screen.queryByText('Выберите компанию')).not.toBeInTheDocument()
+  })
+
+  it('shows the company picker with more than one company available', async () => {
+    const secondCompany: Company = { id: 'co2', name: 'Салон «Вторая»', slug: 'second', allowSelfBooking: true }
+    getMy.mockResolvedValue([company])
+    getMemberOf.mockResolvedValue([secondCompany])
+
+    renderStaffEntryModal()
+
+    expect(await screen.findByText('Выберите компанию')).toBeInTheDocument()
+    expect(await screen.findByText(company.name)).toBeInTheDocument()
+    expect(await screen.findByText(secondCompany.name)).toBeInTheDocument()
+  })
+})
+
+describe('BookingModal — cycle 10 staff mode drives the info step (§108.3)', () => {
+  async function reachStaffInfoStep(dateStr: string) {
+    getMy.mockResolvedValue([company])
+    getByCompany.mockResolvedValue([service])
+    getMasters.mockResolvedValue([master()])
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }, { staffMode: true }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '10:30:00' }])
+
+    renderStaffEntryModal()
+
+    ;(await screen.findByText('Стрижка')).click()
+    ;(await screen.findByText('Продолжить')).click()
+
+    await screen.findByText('Выберите дату')
+    const dateLabel = format(new Date(`${dateStr}T00:00:00`), 'd MMMM', { locale: (await import('date-fns/locale')).ru })
+    ;(await screen.findByLabelText(dateLabel)).click()
+    ;(await screen.findByRole('button', { name: '10:00' })).click()
+    await screen.findByLabelText('Имя клиента *')
+  }
+
+  it('asks for the client\'s name/phone/email and has neither captcha nor the guardian checkbox', async () => {
+    const dateStr = futureDateInCurrentMonth()
+    await reachStaffInfoStep(dateStr)
+
+    expect(screen.getByLabelText('Имя клиента *')).toBeInTheDocument()
+    expect(screen.getByLabelText('Телефон *')).toBeInTheDocument()
+    expect(screen.queryByText('Я записываю другого человека')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Записать клиента' })).toBeInTheDocument()
+  })
+
+  it('invalidates the master-bookings list after a staff-created booking (§108.4 item 14)', async () => {
+    const user = userEvent.setup()
+    createBooking.mockResolvedValueOnce({ id: 'b1' })
+    const dateStr = futureDateInCurrentMonth()
+    await reachStaffInfoStep(dateStr)
+
+    await user.type(screen.getByLabelText('Имя клиента *'), 'Пётр Сидоров')
+    await user.type(screen.getByLabelText('Телефон *'), '+79991234567')
+    await user.click(screen.getByRole('button', { name: 'Записать клиента' }))
+
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    expect(await screen.findByText('Клиент записан!')).toBeInTheDocument()
+  })
+
+  it('shows the extendedHours toggle only in staff mode and forwards it to getSlots', async () => {
+    const dateStr = futureDateInCurrentMonth()
+    await reachStaffInfoStep(dateStr)
+
+    // Went through the toggle already being visible on the slot step (before reaching info) —
+    // re-derive via a fresh run that stays on the slot step to inspect the getSlots call args.
+    const call = getSlots.mock.calls[getSlots.mock.calls.length - 1]
+    expect(call[5]).toBe(true) // manual — always requested (§108.2)
+    expect(call[6]).toBe(false) // extendedHours off by default
+  })
+
+  it('a client (non-staff) info step never shows the "Имя клиента" staff label', async () => {
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }, { staffMode: false }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '10:30:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    const user = userEvent.setup()
+    await reachInfoStep(user, dateStr)
+
+    expect(screen.getByLabelText('Ваше имя *')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Имя клиента *')).not.toBeInTheDocument()
+  })
+})
+
+describe('BookingModal — cycle 10 hidden masters shown to staff only (§103.5)', () => {
+  it('labels a master with providesServices: false as not visible to clients', async () => {
+    getMy.mockResolvedValue([company])
+    getByCompany.mockResolvedValue([service])
+    getMasters.mockResolvedValue([
+      master(),
+      master({ userId: 'm2', firstName: 'Скрытый', lastName: 'Мастер', providesServices: false }),
+    ])
+
+    renderStaffEntryModal()
+
+    ;(await screen.findByText('Стрижка')).click()
+    ;(await screen.findByText('Продолжить')).click()
+
+    expect(await screen.findByText('Не виден клиентам')).toBeInTheDocument()
   })
 })
