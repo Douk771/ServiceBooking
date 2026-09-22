@@ -1,10 +1,13 @@
 # Cycle 8 env contract (API_CONTRACT_CYCLE8.md §85): every SB_* variable below has a working default,
-# so `docker compose up` with no `.env` at the repo root behaves exactly as before this cycle (project
-# name from the directory... no — see SB_PROJECT_NAME below; ports 5432/5000; same DB name). The `.env`
-# file itself stays gitignored (see .env.dev.example, committed, for what to put in it) and is what
-# lets two working copies of this repo run side by side on one machine without colliding on compose
-# project name, published ports, or the named volume.
-name: ${SB_PROJECT_NAME:-servicebooking}
+# so `docker compose up` with no `.env` at the repo root behaves exactly as before this cycle — ports
+# 5432/5000/5173, same DB name, and the project name still derived by compose from the directory the
+# repo is checked out into. That derivation is what already keeps two working copies apart, so this
+# file deliberately does NOT set a top-level `name:`: hardcoding one (even a parameterized one with a
+# default) would give every checkout the SAME project name without an `.env`, and `docker compose
+# down -v` in one copy would then destroy the other copy's volume — the exact collision this cycle
+# exists to prevent. To override the project name explicitly, set COMPOSE_PROJECT_NAME in `.env`;
+# that is compose's own mechanism and it namespaces containers, networks and volumes together.
+# The `.env` file stays gitignored (see .env.dev.example, committed, for what to put in it).
 
 services:
   postgres:
@@ -44,10 +47,7 @@ services:
         condition: service_healthy
 
 volumes:
-  # Compose normally namespaces this as `${SB_PROJECT_NAME}_postgres_data` (the top-level `name:`
-  # above), which already keeps two working copies from sharing data as long as SB_PROJECT_NAME
-  # differs. SB_VOLUME_SUFFIX is a second, independent knob for the rare case that isn't enough
-  # (e.g. two stacks that deliberately share SB_PROJECT_NAME) — it sets the actual volume NAME, not
-  # just a compose-internal key, since compose keys can't take variable substitution.
+  # No explicit `name:` here on purpose. Compose namespaces this as `<project>_postgres_data`, and the
+  # project name comes from the directory (or COMPOSE_PROJECT_NAME), so two working copies get two
+  # separate volumes automatically. Naming it explicitly would defeat that.
   postgres_data:
-    name: ${SB_PROJECT_NAME:-servicebooking}_postgres_data${SB_VOLUME_SUFFIX:-}
