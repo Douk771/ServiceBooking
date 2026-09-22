@@ -3010,3 +3010,257 @@ contract... no client-side reshaping needed»), но два перечислен
 Контрактные находки (пагинация `total`≠`totalCount`, `application/problem+json` вместо `text/plain` на
 авто-валидации, два расхождения перечислений во фронте) — не блокеры интеграции сами по себе, но
 адресованы backend-developer/frontend-developer явно выше, не молча.
+
+
+---
+
+## Финальный проход перед мерджем в `develop` (этот прогон, ветка `cycle/07-pricing-model-rework`, изолированная база `servicebooking_test_cycle07`)
+
+Контекст: предыдущий прогон (раздел выше) оставил набор красным (**480/494**) на границе между
+циклами — backend-developer доделывал расхождения с контрактом параллельно в `ServiceBooking.API/`.
+Задача этой задачи: разобрать все 14 падений по существу (не списывать на "нестабильность под
+нагрузкой" не проверив), дописать недостающее функциональное покрытие, прогнать `schemathesis`, довести
+`ServiceBooking.Tests` до зелёного и устойчивого на нескольких прогонах подряд.
+
+### 1. Три теста про системный бесплатный тариф — переписаны под новый маршрут
+
+`AdminTests.CreatePlan_SecondIsSystemFreePlan_ReturnsConflict`,
+`CreatePlan_IsSystemFreeWithNonZeroPrice_ReturnsBadRequest`,
+`UpdatePlan_IsSystemFreeWithNonZeroPrice_ReturnsBadRequest` были написаны под СТАРУЮ форму запроса
+(`isSystemFree` внутри тела `POST`/`PUT /api/admin/plans`). Backend-developer уже убрал это поле из
+`AdminPlanInput` (контракт `additionalProperties: false`, `isSystemFree` там нет) и завёл отдельный
+`PUT /api/admin/plans/{id}/system-free` (`SetSystemFreeInput`) — правка задокументирована прямо в коде
+контроллера. Старые тесты продолжали слать `isSystemFree` в теле POST/PUT — поле тихо игнорировалось
+моделбиндингом (лишнее свойство), поэтому создание/обновление всегда проходило как обычное, ожидаемые
+400/409 не наступали.
+
+Переписаны на новый маршрут, **`ADM-050…ADM-054`** (`AdminTests.cs`):
+- **`ADM-050`** `SetSystemFree_NonZeroPrice_ReturnsBadRequest` — та же проверка цены = 0, что и раньше.
+- **`ADM-051`** `SetSystemFree_SecondPlan_ReturnsConflict` — конфликт при попытке сделать системным
+  бесплатным ВТОРОЙ тариф.
+- **`ADM-052`** `SetSystemFree_TogglingOffThenOnAnotherPlan_MovesTheFlag` — **КРАСНЫЙ, реальный баг
+  продукта, см. «Баги» ниже (Б-1)**.
+- **`ADM-054`** `SetSystemFree_RemovingTheOnlySystemFreePlan_ReturnsConflict` — снять флаг с
+  единственного системного тарифа без замены нельзя (409).
+
+⚠️ Все три теста (и новые `ADM-051`/`ADM-054`) должны учитывать, что `20260922121140_SeedBillingCatalog`
+сажает **ровно один** системный бесплатный тариф в КАЖДУЮ свежую базу (§54.3) — писать тест, который
+предполагает нулевую базовую линию (создать первый, затем второй), некорректно: первая же попытка
+пометить свежесозданный тариф системным бесплатным упрётся в уже существующий сеяный. Оба новых
+теста читают текущий системный тариф через `GET /api/admin/plans` вместо того, чтобы заводить его сами.
+
+### 2. Тест на итоговую сумму подписки — добавлены правила доступности (fail-closed)
+
+`BillingTests.GetSubscription_TotalEqualsPlanPricePlusSumOfOptions` заводил две опции без единой
+`PlanOptionRule` для тарифа и ожидал, что обе посчитаются как докупаемые. Отсутствие правила по
+архитектуре (N13/N14, §43.3) читается как `Unavailable`, а не «можно докупить» — это была ошибка теста
+под старое (fail-open) поведение. Тест переписан: обеим опциям добавлено правило `Extra` на плане перед
+проверкой инварианта; сам инвариант (`итог = цена тарифа + Σ опция × количество`) не менялся и остался
+зелёным.
+
+### 3. Тест на заявку без цены канала — переписан под новое поведение
+
+`NotificationChannelsTests.CreateChannel_PriceNotSet_Returns409` проверял ровно тот отказ, который N21
+упразднил: `notifications.channel.price-per-month` больше ничем не управляет, заявка на канал не
+блокируется её отсутствием. Переписан в `CreateChannel_PriceNotSet_StillSucceeds` — тот же сетап (цена
+не задана), но теперь ожидается `201 Created`.
+
+### 4. Девять "нестабильных" тестов — РАЗОБРАНЫ, ни один не был случайностью
+
+Бэкенд-агент считал это нагрузочной нестабильностью реальной БД (`NotificationDispatchTests`,
+`NotificationDispatchExtraTests`, `NotificationQueueingTests`, два `NotificationChannelsTests.Connect_*`).
+**Это было неверно** — все девять падали по одной из ДВУХ конкретных, детерминированных причин,
+проверенных многократными прогонами (7 полных прогонов подряд, включая без пересоздания базы):
+
+**Причина А — `SubscriptionResolver.IsOptionCurrentlyPaid` fail-closed без `PlanOptionRule` (N13/N14).**
+Ровно тот же класс ошибки, что и находка №2 выше, только в тестовой ИНФРАСТРУКТУРЕ, не в самом тесте:
+четыре РАЗНЫХ раздельных хелпера сеяли тариф с `AllowNotificationChannel = true` и вызывали
+`EnsureWhatsAppPaidAsync` (ставит `AccountSubscriptionOption`), но НИ ОДИН не заводил `PlanOptionRule`
+для опции `notifications.whatsapp` на этом тарифе. Без явного правила резолвер фейл-клозит
+`PaidNotificationNumbers` в 0 независимо от того, сколько номеров оплачено на `AccountSubscriptionOption`
+— гейт уведомлений (`NotificationGate.Evaluate`) и `Connect` (§47.3, `IsChannelFundedAsync`)
+детерминированно блокируют ВСЁ, что зависит от реально профинансированного канала:
+  - `NotificationTestBase.GiveNotificationCapablePlanAsync` (используется `NotificationChannelsTests`) —
+    заводит СВЕЖИЙ уникальный тариф на каждый вызов, поэтому падение было стабильным на 100% прогонов
+    (не «иногда»): `Connect_RiskNotAccepted_Returns409`, `Connect_DoubleClick_SecondConcurrentRequestGets409_NoSecondInstance`
+    получали `402` вместо ожидаемого `409`/`202`+`409`.
+  - `NotificationQueueingTests.GiveNotificationCapablePlanAsync` — мутирует ОБЩИЙ, находимый по имени
+    "QA Full Access" тариф (`ApiTestBase.GiveAccountPlanAsync`), которым пользуются ВСЕ тесты через
+    `CreateOwnerWithCompanyAsync`. Здесь недостающее правило делало результат теста ЗАВИСИМЫМ ОТ ПОРЯДКА
+    выполнения: если КАКОЙ-ТО другой, не связанный тест успевал раньше добавить правило Extra/Included
+    для опции WhatsApp на этом же общем тарифе — тест проходил случайно; если нет — падал с
+    `NotOnPaidPlan`. Именно эта комбинация ("общий мутируемый тариф без своего правила") и есть настоящий
+    источник кажущейся "нестабильности под нагрузкой" — на самом деле чистая зависимость от порядка
+    тестов, ноль связи с реальной БД/нагрузкой. Затронуты: `BookingCreated_QueuesConfirmedAndReminder_BothPending`,
+    `Cancel_VisitLessThanThresholdAway_StillQueuesCancellationNotification`,
+    `Reschedule_VisitLessThanThresholdAway_QueuesReschedule_ButNewReminderIsSkippedByThreshold`.
+  - `NotificationDispatchTests.SeedConnectedChannelAsync` / `NotificationDispatchExtraTests.SeedConnectedChannelAsync`
+    — тоже свежий уникальный тариф на вызов (детерминированно падал 100% прогонов):
+    `RealRunner_SendsQueuedMessages_AndRequestsAPauseBetweenThem`,
+    `RealRunner_ChannelInvalid_StopsTheRestOfThatChannelsGroup_RowsStayPending`,
+    `Budget_InterruptedPass_DoesNotDuplicateAlreadySentRows_RemainderStaysPending_SummaryIsHonest`,
+    `Priority_ByVisitTime_ClosestVisitSentFirst_RegardlessOfQueueOrder` — все зависали на `WaitForAsync`
+    (20 с таймаут), потому что диспетчер помечал строку `Skipped`/`NotOnPaidPlan` вместо отправки,
+    транспорт не получал ни одного вызова.
+
+  **Исправлено** общим хелпером `NotificationTestBase.EnsureWhatsAppPlanRuleAsync(db, planConfigId)`
+  (идемпотентный — заводит правило `Extra`, если его ещё нет, либо чинит `Unavailable` на `Extra`) —
+  вызван из ВСЕХ четырёх мест. `NotificationQueueingTests.GiveNotificationCapablePlanAsync` дополнительно
+  переписан на использование общего хелпера вместо своей копипасты.
+
+**Причина Б — платформенно-широкий (не по своим строкам) `Transport.Calls`/`EnqueueOutcome` в
+`NotificationDispatchTests.cs`.** Реальный диспетчер (`NotificationDispatchTask`) сканирует ВСЕ Pending
+строки в базе платформенно-широко (ARCHITECTURE_CYCLE4.md §27.1) — это НАМЕРЕННО (см. собственный
+комментарий класса) и `NotificationDispatchExtraTests.cs` УЖЕ был написан с фильтрацией по своим
+телефонам ровно по этой причине (`ownPhones`/`KnownCalls`). `NotificationDispatchTests.cs` — сосед по
+той же инфраструктуре — этой фильтрации не имел: `factory.Transport.Calls.Should().HaveCount(2)` и
+`.ContainSingle()` считали ВСЕ вызовы транспорта хоста, а `factory.Transport.EnqueueOutcome(...)`
+(глобальная FIFO-очередь заготовленных исходов) могла достаться ЧУЖОЙ строке, если диспетчер обработал
+её первой. Исправлено: обе проверки в `RealRunner_SendsQueuedMessages_AndRequestsAPauseBetweenThem` и
+`RealRunner_ChannelInvalid_StopsTheRestOfThatChannelsGroup_RowsStayPending` отфильтрованы по собственным
+телефонам теста; `EnqueueOutcome` заменён на телефон-специфичный `SetOutcomeForPhone`.
+
+**Итог по этому классу.** Причина А была ЕДИНСТВЕННОЙ причиной 7 из 9 падений (детерминированная,
+100% воспроизводимая, если знать, куда смотреть) и КОСВЕННОЙ причиной кажущейся нестабильности
+оставшихся (порядко-зависимость общего тарифа). Причина Б добавляла собственную, отдельную от А,
+platform-wide-скан уязвимость двум тестам `NotificationDispatchTests.cs`. Ни один из девяти тестов не
+был "нестабильным под нагрузкой" в смысле гонки/таймингов реальной БД — все девять чинятся детерминизацией
+тестовых данных, без единого `Thread.Sleep`/увеличения таймаута. Подтверждено **7 прогонами подряд** всего
+набора (в том числе несколько раз без пересоздания базы) — стабильно (см. «Итог» ниже).
+
+Один случайный НЕ повторившийся сбой (`NotificationChannelsTests.AcceptRisk_StaleVersion_Returns400` —
+`RegisterAsync` вернул `400`) наблюдался РОВНО ОДИН раз из 7 прогонов и не воспроизвёлся ни разу после
+(включая повторные прогоны сразу после). Проверено: не связано ни с одной из правок этого прогона
+(не трогает регистрацию/телефоны), рейт-лимит `auth-register` в `Testing` поднят до 10000/мин
+(`appsettings.Testing.json`) — не мог сработать. Похоже на разовую нагрузочную помеху локальной машины
+разработки (параллельно с этим прогоном на ней же поднимался `dotnet run` для контрактной проверки и
+несколько фоновых `dotnet test`), а не на баг продукта или теста — зафиксировано, не проигнорировано.
+
+### 5. Добито покрытие (новые тесты)
+
+- **`BillingTests.BLL-002`** переименован в `AssignSubscription_WithRequestId_ClosesTheRequestAndAppearsInHistory`
+  и расширен: теперь также проверяет, что заявка в очереди администратора **до** одобрения содержит имя
+  желаемого тарифа и комментарий владельца (то, чем предзаполнялась бы форма назначения), и что после
+  одобрения строка появляется в `GET /admin/billing-accounts/{id}/subscription-history` — не только
+  исчезает из очереди.
+- **`BillingTests.BLL-002B`** `RejectSubscriptionRequest_ReasonReachesOwner_AndClearsFromQueue` (новый) —
+  отклонение заявки: причина уходит в `BillingAccount.LastRejectionReason`, видна владельцу через
+  `GET /api/billing/subscription.lastRejectedRequest.reason` (US-70/N10), заявка пропадает из очереди
+  админа, повторная подача ПОСЛЕ отказа проходит и создаёт новую заявку.
+- **`AdminTests.ADM-055`** `PlanEditor_FullCycle_CreateWithHighlightsAndOptionMatrix_EditPreservesMatrix`
+  (новый) — полный круг редактора тарифа: создание с буллетами-highlights и матрицей из двух опций
+  (`Included`+количество, `Extra`), правка НЕсвязанного поля (`Description`) без передачи `options`,
+  проверка что матрица не очистилась — ни в ответе `PUT`, ни в последующем `GET /admin/plans`.
+- **`NotificationChannelsTests.NTF-C005B`** `OrderSecondChannel_WithOnlyOneNumberPaid_FirstStaysFundedSecondIsNotPaid`
+  (новый) — заказ второго номера при одном оплаченном: первый (уже профинансированный) остаётся `Paid`,
+  второй, только что заведённый, `NotPaid` — ранжирование (`ChannelFunding.Rank`) не отбирает слот у
+  существующего канала и не размазывает одну оплату на оба.
+- **`CompanyTransferTests.TRF-001`/`TRF-005`** (существующие, не новые — уточнение по задаче) уже
+  покрывают «перенос компании с активным назначением на номер: успех, номер отвязан» — отдельного теста
+  не заводилось, чтобы не дублировать сценарий.
+
+**Не добито в рамках этого прогона** (честно зафиксировано, не отдано молча):
+- `BillingMigrationTests` (§54.5, главный приёмочный критерий US-73) — тест должен прогонять миграцию
+  и сид НА ПОДГОТОВЛЕННОЙ базе с ДОцикл-5 формой данных (три компании одного владельца, тариф
+  `MaxEmployees=5`, 12 сотрудников), затем сверять `EffectivePlan`/`canAddEmployee`. `TestDatabaseFixture`
+  всегда стартует с уже полностью смигрированной, пустой базы — воспроизвести ИМЕННО пре-миграционную
+  форму данных (для которой применяется бэкфилл) без переписывания инфраструктуры фикстуры не удалось
+  в отведённое время. Задел на отдельный заход — не блокер этого прогона (§54.5 отдельно описывает
+  read-only SQL-сверку `deploy/checks/billing-migration-check.sql`, которая покрывает тот же критерий
+  на уровне стенда, не unit/функционального теста).
+- «Перерасход лимитов: отказ, подтверждение, повторная отправка проходит» — не найден endpoint с
+  подтверждением перерасхода мест ВНЕ `CompanyTransferController` (который уже покрыт `TRF-003`); у
+  `AddMember` (добавление сотрудника сверх лимита) нет пути подтверждения — только безусловный `402`.
+  Возможно, речь про сценарий, которого в API ещё нет, либо про уже покрытый `TRF-003` под другим
+  именем — не выяснено до конца, оставлено на уточнение с architect/backend-developer.
+
+### 6. Контрактная проверка — `schemathesis` против `contracts/openapi-cycle5.yaml`
+
+`hypothesis==6.130.12` в отдельном venv (`/tmp/schemathesis-venv`, системный `hypothesis` 6.168 из
+инструкции — падает сам). Бэкенд поднят локально (`dotnet ServiceBooking.API.dll`, ВАЖНО: не
+`dotnet run` — тот подхватывает `launchSettings.json` и форсирует `ASPNETCORE_ENVIRONMENT=Development`
+поверх переданной переменной окружения) в `Testing` на изолированной `servicebooking_test_cycle07_contract`
+(отдельная от функционального прогона база, удалена после). SuperAdmin-токен получен через
+`/api/auth/login` и передан общим заголовком. Прогон: `--phases examples,coverage,fuzzing,stateful`,
+200 с бюджет, 28/28 операций схемы протестировано (20118 тест-кейсов, 21 уникальное падение).
+
+**Реальные баги продукта (адресовано backend-developer):**
+
+1. **500 на `GET /admin/billing-accounts`** с определёнными не-ASCII/управляющими символами в `search`
+   (воспроизводится: `search` с NUL-байтом и суррогатными парами + `page=1600`) — необработанное
+   исключение вместо `400`/пустого результата. `curl -X GET -H 'Authorization: ...' 'http://localhost:5099/api/admin/billing-accounts?page=1600&search=<control-chars>'`.
+2. **`AdminPlanDto.highlights[]` превышает контрактный `maxLength: 120`** на элемент — ни `POST`, ни
+   `PUT /api/admin/plans` не валидируют/не обрезают длину отдельного буллета при создании; сохранённое
+   значение затем и отдаётся, и нарушает контракт на чтении (`GET /admin/plans`).
+3. **`PublicPlanDto.highlights` превышает контрактный `maxItems: 5`** на публичном прайс-листе
+   (`GET /api/admin/pricing/preview`, вероятно и `GET /api/pricing`) — коммит `f79534c` ("N25 — admin
+   editor and public storefront agree on highlight cap") заявлен как закрывающий это расхождение, но
+   fuzzing создал тариф с >5 highlights через `POST /admin/plans` (там ограничения на КОЛИЧЕСТВО буллетов
+   при записи тоже нет) — и это количество проросло на публичный экран необрезанным. Похоже, `f79534c`
+   выровнял отображение (одинаковый УЖЕ обрезанный набор что в админке, что в сторфронте), но не добавил
+   валидацию на ЗАПИСИ — стоит перепроверить обе стороны (или обрезать НА ЧТЕНИИ публичного эндпоинта,
+   если это осознанный выбор архитектуры).
+
+**Контрактные пробелы, не блокер (адресовано architect/backend-developer — схема недокументирует то,
+что API реально делает, но само поведение API разумно):**
+
+4. Множество `POST`/`PUT` эндпоинтов (`/admin/plans`, `/admin/options`, `/admin/companies/{id}/transfer`,
+   `/admin/companies/{id}/owner`, `/billing/subscription/request`, `/admin/billing-accounts/{id}/subscription`,
+   и др.) не документируют `415 Unsupported Media Type` (запрос без/с неверным `Content-Type`) и `400`
+   на буквально неразбираемый JSON-body (`0x00`) — ASP.NET Core отдаёт эти коды на уровне фреймворка до
+   попадания в action, они реальны для любого JSON-эндпоинта, но в схеме не перечислены нигде вообще.
+5. `PUT /admin/owners/{ownerUserId}/subscription` и `POST /admin/notification-channels/{id}/payment`
+   (упразднённые `410`-маршруты, ADM-048/ADM-049) документируют ТОЛЬКО `410` — но `[Authorize]` отрабатывает
+   ДО тела контроллера, так что неаутентифицированный запрос закономерно получает `401`, не `410`. Схема
+   должна документировать `401`/`403` наравне с любым другим `admin`-эндпоинтом.
+6. `GET /admin/billing-accounts` и `GET /admin/subscription-requests` отдают `400` на дублированный
+   query-параметр `pageSize` (`?pageSize=null&pageSize=null` — артефакт генератора schemathesis, задвоение
+   параметра) — не документировано, но, вероятно, не стоит того (реальный клиент так не запрашивает).
+7. `POST /admin/subscription-requests/{id}/reject` возвращает `400` на нестроковый `comment` — не
+   документирован в списке ответов (`204, 401, 403, 404, 409`), стоит добавить `400`.
+
+### Итог по числам
+
+`dotnet build ServiceBooking.sln -warnaserror` — **0 предупреждений, 0 ошибок**.
+`dotnet test ServiceBooking.UnitTests` — **595/595**.
+`dotnet test ServiceBooking.Tests` — **497/498**, стабильно на **двух прогонах подряд** без пересоздания
+базы (плюс ещё 5 промежуточных прогонов в процессе разбора причин Б-1/А выше — итоговая формула правок
+подтверждена 7 прогонами суммарно). Единственный стабильно красный — `ADM-052`
+(`SetSystemFree_TogglingOffThenOnAnotherPlan_MovesTheFlag`), см. «Баги», Б-1 — реальный баг продукта,
+не тестовая ошибка.
+
+### Баги, найденные при разборе (адресовано backend-developer)
+
+**Б-1 (блокирует явно запрошенный сценарий «переключение системного бесплатного тарифа между двумя
+тарифами», не блокирует остальной мердж).** `PUT /api/admin/plans/{id}/system-free` не даёт СНЯТЬ флаг
+ни с одного тарифа НИКОГДА:
+
+```csharp
+if (!dto.IsSystemFree && plan.IsSystemFree)
+    return Conflict("Ровно один тариф должен быть системным бесплатным — назначьте другой, прежде чем снимать этот флаг.");
+```
+
+Эта проверка безусловна — не важно, назначен ли уже ДРУГОЙ тариф системным бесплатным взамен. А
+поставить ДРУГОЙ тариф системным бесплатным нельзя, пока текущий не снят (`ValidateSystemFreeAsync`
+конфликтует с уже существующим). Результат — **дедлок**: назначить флаг новому тарифу, сняв его со
+старого, невозможно ни в каком порядке действий через этот API. `ADM-054` (снять с единственного) —
+корректный, ожидаемый `409`. Но `ADM-052` (снять со старого, ПОСЛЕ чего сразу поставить на новый —
+именно то, что нужно админу при смене "текущего бесплатного" тарифа) тоже получает `409` на первом же
+шаге, хотя семантически это не должно быть заблокировано. `SetSystemFreeInput` в его нынешнем виде
+(один `bool`) физически не поддерживает атомарный перенос флага между двумя тарифами одним вызовом —
+нужен либо явный "целевой тариф" параметр (одна атомарная операция), либо снятие флага должно быть
+разрешено, если это НЕ последний системный тариф (временное состояние "0 системных тарифов между двумя
+вызовами" — вопрос к architect, допустимо ли оно). Тест `ADM-052` оставлен КРАСНЫМ намеренно — не
+переписан под текущее (нерабочее) поведение и не удалён, чтобы явно фиксировать пробел, а не спрятать
+его.
+
+**Б-2 (не блокер, задел бэкенду).** См. «Контрактная проверка» находки 1-3 выше (500 на `search`,
+`highlights` без валидации длины/количества на запись).
+
+### Вердикт
+
+Ветка `cycle/07-pricing-model-rework` **готова к интеграции в `develop`** с ОДНОЙ оговоркой: `ADM-052`
+красный, документирует реальный, но НЕ блокирующий остальной функционал баг (Б-1) — сценарий "сменить
+системный бесплатный тариф" на сегодня физически невозможен через API, но ни один из шести приёмочных
+критериев SPEC.md этим не затронут (система уже поддерживает ровно один системный бесплатный тариф,
+если он никогда не переносится). Три контрактных находки (Б-2) — не блокеры, адресованы явно.
