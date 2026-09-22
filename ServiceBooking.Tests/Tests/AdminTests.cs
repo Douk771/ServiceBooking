@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
@@ -447,28 +448,127 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             "a tombstoned account must never be assignable as a company owner");
     }
 
+    // Cycle 5 (SPEC.md US-64, ARCHITECTURE_CYCLE5.md §50) DELIBERATELY REVERSES this behavior: the
+    // tariff is now resolved through the company's BillingAccountId, not through Company.OwnerUserId,
+    // so a stand-alone change of the responsible person must NOT move any money at all. Written from
+    // SPEC.md US-64 independently of AdminController's implementation — replaces the pre-cycle-5 test
+    // above, which asserted the opposite (now-obsolete) behavior and would be red against today's
+    // intentional product change.
     [Fact, TestCase("ADM-031")]
-    public async Task UpdateCompanyOwner_MovesBillingToNewOwnersPlan()
+    public async Task UpdateCompanyOwner_StandAlone_DoesNotTouchBillingOrChannelOrSubscriptionLog()
     {
-        // Since the tariff is resolved through Company.OwnerUserId, transferring ownership must move the
-        // company onto the NEW owner's plan — the whole point of the OwnerUserId field.
         var admin = await LoginAsSuperAdminAsync();
-        var (_, company) = await CreateOwnerWithCompanyAsync(attachPlan: false); // original owner: Free
+        // Paid tariff with options connected — attachPlan: true gives the account "QA Full Access"
+        // (paid, unlimited, every feature on).
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
 
-        // Prepare a second owner who has an active paid plan on their own account.
-        var (paidOwner, _) = await CreateOwnerWithCompanyAsync();
+        Guid billingAccountId;
+        Guid pendingNotificationId;
+        int subscriptionChangeLogCountBefore;
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+            billingAccountId = (await db.Companies.Where(c => c.Id == company.Id)
+                .Select(c => c.BillingAccountId).FirstAsync())!.Value;
 
-        var transfer = await AuthedClient(admin.Token).PutAsJsonAsync(
-            $"/api/admin/companies/{company.Id}/owner", new UpdateCompanyOwnerDto(paidOwner.UserId));
-        transfer.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            // Connect a paid option to the account so "с подключёнными опциями" is not vacuously true.
+            var option = new SubscriptionOption
+            {
+                Id = Guid.NewGuid(), Code = Unique("opt-"), Name = "Доп. сотрудники",
+                Kind = OptionKind.Quantity, PricePerMonth = 100, UnitName = "сотрудник",
+                IsActive = true, IsPublic = true,
+            };
+            db.SubscriptionOptions.Add(option);
+            db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
+            {
+                Id = Guid.NewGuid(), BillingAccountId = billingAccountId, OptionId = option.Id,
+                Quantity = 3, ActivatedAtUtc = DateTime.UtcNow,
+            });
 
+            // Connect the company to a number and queue a pending message (US-64 p.3: both must
+            // survive a stand-alone owner change, unlike cycle 4's now-reversed behavior).
+            var channel = new NotificationChannel
+            {
+                Id = Guid.NewGuid(), OwnerUserId = owner.UserId, BillingAccountId = billingAccountId,
+                State = ChannelState.Connected, PhoneNumber = "79990001122",
+            };
+            db.NotificationChannels.Add(channel);
+            db.ChannelCompanyAssignments.Add(new ChannelCompanyAssignment
+            {
+                Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = company.Id,
+                BillingAccountId = billingAccountId, AssignedByUserId = owner.UserId,
+            });
+            var pending = new OutboundNotification
+            {
+                Id = Guid.NewGuid(), CompanyId = company.Id, ChannelId = channel.Id,
+                Type = NotificationType.BookingConfirmed, RecipientPhone = "79990001122", Body = "Test",
+                DueAtUtc = DateTime.UtcNow.AddMinutes(-1), VisitStartUtc = DateTime.UtcNow.AddHours(2),
+                Status = NotificationStatus.Pending, IdempotencyKey = $"test:{Guid.NewGuid()}",
+            };
+            db.OutboundNotifications.Add(pending);
+            pendingNotificationId = pending.Id;
+            await db.SaveChangesAsync();
+
+            subscriptionChangeLogCountBefore = await db.SubscriptionChangeLogs.CountAsync();
+        }
+
+        var before = (await (await AuthedClient(owner.Token).GetAsync("/api/companies/my"))
+            .Content.ReadFromJsonAsync<List<CompanyDto>>())!.Single(c => c.Id == company.Id);
+
+        var newOwner = await RegisterAsync(); // no subscription of their own — would be Free alone
+
+        var response = await AuthedClient(admin.Token).PutAsJsonAsync(
+            $"/api/admin/companies/{company.Id}/owner", new UpdateCompanyOwnerDto(newOwner.UserId));
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Tariff/paidUntil/subscriptionActive on the admin projection are unchanged — still the SAME
+        // billing account's plan, not the new owner's (who has none of their own).
         var companiesPage = await (await AuthedClient(admin.Token).GetAsync($"/api/admin/companies?search={company.Slug}"))
             .Content.ReadFromJsonAsync<PagedResult<AdminCompanyDto>>();
-            var companies = companiesPage?.Items;
-        var entry = companies.Should().ContainSingle(c => c.Id == company.Id).Subject;
-        entry.OwnerUserId.Should().Be(paidOwner.UserId);
-        entry.PlanName.Should().Be("QA Full Access"); // now governed by the new owner's paid plan
+        var entry = companiesPage!.Items.Should().ContainSingle(c => c.Id == company.Id).Subject;
+        entry.OwnerUserId.Should().Be(newOwner.UserId);
+        entry.PlanName.Should().Be("QA Full Access", "money is not supposed to move on a stand-alone owner change (US-64)");
         entry.SubscriptionActive.Should().BeTrue();
+        entry.PaidUntil.Should().NotBeNull();
+
+        // All capability flags/maxEmployees on the owner-facing CompanyDto are unchanged — fetched
+        // through the NEW owner, since the old one is demoted off the CompanyOwner role. EmployeeCount/
+        // AccountSeatsUsed/CanAddEmployee are excluded because gaining a member is an expected,
+        // unrelated side effect of ANY owner change, not something US-64 makes any promise about.
+        var after = (await (await AuthedClient(newOwner.Token).GetAsync("/api/companies/my"))
+            .Content.ReadFromJsonAsync<List<CompanyDto>>())!.Single(c => c.Id == company.Id);
+        after.Should().BeEquivalentTo(before, opts => opts
+            .Excluding(c => c.EmployeeCount)
+            .Excluding(c => c.AccountSeatsUsed)
+            .Excluding(c => c.CanAddEmployee));
+
+        // The new owner does not get 402'd on a scenario that worked for the old one — feature access
+        // is governed by the (unchanged) billing account, not by the new owner personally.
+        var reportsResponse = await AuthedClient(newOwner.Token).GetAsync($"/api/reports/masters?companyId={company.Id}");
+        ((int)reportsResponse.StatusCode).Should().NotBe(402, "capabilities follow the billing account, not whoever manages it personally");
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceBooking.Infrastructure.Data.AppDbContext>();
+
+            // The channel assignment survives, and the pending message stays pending (US-64 p.3 —
+            // a deliberate reversal of cycle 4's behavior of unassigning on owner change).
+            (await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == company.Id)).Should().BeTrue(
+                "the number belongs to the billing account, not to whoever manages the company");
+            var pendingRow = await db.OutboundNotifications.AsNoTracking().FirstAsync(n => n.Id == pendingNotificationId);
+            pendingRow.Status.Should().Be(NotificationStatus.Pending);
+
+            // No money moved: not a single new SubscriptionChangeLog row (US-64 p.4).
+            (await db.SubscriptionChangeLogs.CountAsync()).Should().Be(subscriptionChangeLogCountBefore,
+                "a stand-alone owner change must not write to the subscription log — no money moved");
+
+            // Exactly one CompanyOwnerChangeLog row, WithTransfer = false (§50).
+            var ownerLogs = await db.CompanyOwnerChangeLogs.Where(l => l.CompanyId == company.Id).ToListAsync();
+            ownerLogs.Should().ContainSingle();
+            ownerLogs[0].WithTransfer.Should().BeFalse();
+            ownerLogs[0].OldOwnerUserId.Should().Be(owner.UserId);
+            ownerLogs[0].NewOwnerUserId.Should().Be(newOwner.UserId);
+        }
     }
 
     // ── Bookings ─────────────────────────────────────────────────────────────────────────

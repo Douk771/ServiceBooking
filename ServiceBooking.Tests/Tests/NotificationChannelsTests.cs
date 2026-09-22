@@ -310,8 +310,14 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
 
     // ── Owner change on a company (priority scenario 3) ──────────────────────────────────────────
 
+    // Cycle 5 (SPEC.md US-64 p.3, ARCHITECTURE_CYCLE5.md §47.4) DELIBERATELY REVERSES cycle 4's
+    // behavior: the number belongs to the billing account, not to whoever manages the company, so a
+    // stand-alone owner change must no longer unassign the channel or cancel queued messages. Replaces
+    // the test above (which asserted cycle 4's now-reversed behavior and would be red against today's
+    // intentional product change) with its mirror image, written from SPEC.md independently of
+    // NotificationChannelsController/AdminController's implementation.
     [Fact, TestCase("NTF-C017")]
-    public async Task ChangeCompanyOwner_UnassignsChannel_CancelsPendingRows_OldOwnerStillSeesChannelInList()
+    public async Task ChangeCompanyOwner_KeepsChannelAssigned_PendingRowsStayPending()
     {
         var (owner, company, channel) = await CreateConnectedChannelAsync();
         Guid pendingId;
@@ -333,15 +339,15 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            (await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == company.Id)).Should().BeFalse("assignment must be removed on owner change");
+            (await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == company.Id)).Should().BeTrue(
+                "US-64 p.3: the number belongs to the billing account, not to whoever manages the company — a stand-alone owner change must not detach it");
             var pendingRow = await db.OutboundNotifications.AsNoTracking().FirstAsync(n => n.Id == pendingId);
-            pendingRow.Status.Should().Be(NotificationStatus.Cancelled);
+            pendingRow.Status.Should().Be(NotificationStatus.Pending, "queued messages must not be cancelled by a stand-alone owner change");
         }
 
-        // Regression this cycle fixed: the PREVIOUS owner must still see (and own) the channel they paid
-        // for, even though they may now own zero companies.
+        // The channel's owner (who pays for it) is unaffected by this change — they still see it.
         var listResponse = await AuthedClient(owner.Token).GetAsync("/api/notification-channels");
-        listResponse.StatusCode.Should().Be(HttpStatusCode.OK, "a former owner must not be 403'd out of a channel they still own/pay for");
+        listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var list = (await listResponse.Content.ReadJsonAsync<ChannelListDto>())!;
         list.Channels.Should().ContainSingle(c => c.Id == channel.Id);
     }
