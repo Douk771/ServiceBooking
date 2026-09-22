@@ -153,10 +153,26 @@ public sealed class TestDatabaseLease
 
     /// <summary>Drops one test class' own database (ARCHITECTURE_CYCLE8_PHASE2.md §92.2,
     /// <c>TestDatabaseFixture.DisposeAsync</c>) — guarded by the same
-    /// <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/> check as every other drop in this class.</summary>
+    /// <see cref="TestDatabaseNaming.EnsureOwnedByThisRun"/> check as every other drop in this class.
+    /// §91.5 п.3: the caller (<c>TestDatabaseFixture.DisposeAsync</c>) disposes its own host FIRST, so by
+    /// the time this runs there are no live application connections to this class' database left to clear
+    /// — but this process' own Npgsql pool for THIS class' connection string can still hold idle ones, and
+    /// <c>DROP DATABASE ... WITH (FORCE)</c> alone does not reach into this process' pool to release them
+    /// before dropping (it only terminates the *server-side* backends, which is enough for the DROP to
+    /// succeed, but leaves a stale pooled <see cref="NpgsqlConnection"/> around in this process pointing at
+    /// a database that no longer exists). Cleared with a connection-string-scoped
+    /// <see cref="NpgsqlConnection.ClearPool"/> — deliberately NOT <c>ClearAllPools()</c>, which would also
+    /// tear down the still-live pools of every other class running concurrently in this same process
+    /// (P classes in flight at once, §91.4).</summary>
     public async Task DropClassDatabaseAsync(string classSlot, CancellationToken cancellationToken = default)
     {
         var name = DatabaseNameFor(classSlot);
+
+        await using (var poolProbe = new NpgsqlConnection(ConnectionStringFor(classSlot)))
+        {
+            NpgsqlConnection.ClearPool(poolProbe);
+        }
+
         await using var connection = new NpgsqlConnection(_server.MaintenanceConnectionString);
         await connection.OpenAsync(cancellationToken);
         await DropAsync(connection, name, cancellationToken);
