@@ -35,7 +35,7 @@ public class CompanyNotificationsController(
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
         if (company is null) return NotFound();
 
-        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(company.OwnerUserId);
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var settings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId);
         var assignment = await db.ChannelCompanyAssignments.AsNoTracking()
             .Include(a => a.Channel).FirstOrDefaultAsync(a => a.CompanyId == companyId);
@@ -58,7 +58,7 @@ public class CompanyNotificationsController(
         if (dto.MinLeadMinutes >= dto.ReminderLeadMinutes)
             return BadRequest("Напоминание за 1 час при пороге 2 часа не уйдёт никогда");
 
-        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(company.OwnerUserId);
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var assignment = await db.ChannelCompanyAssignments
             .Include(a => a.Channel).FirstOrDefaultAsync(a => a.CompanyId == companyId);
 
@@ -120,7 +120,7 @@ public class CompanyNotificationsController(
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
         if (company is null) return NotFound();
 
-        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(company.OwnerUserId);
+        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var assignment = await db.ChannelCompanyAssignments
             .Include(a => a.Channel).FirstOrDefaultAsync(a => a.CompanyId == companyId);
         if (!plan.AllowNotificationChannel ||

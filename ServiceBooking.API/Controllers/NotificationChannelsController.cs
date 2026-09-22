@@ -6,6 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -61,7 +62,10 @@ public class NotificationChannelsController(
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await IsAnyCompanyOwnerAsync(userId)) return Forbid();
 
-        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(userId);
+        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
+        var plan = accountId.HasValue
+            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
+            : EffectivePlan.Free;
         var price = await platformSettings.GetChannelPricePerMonthAsync();
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
 
@@ -83,7 +87,10 @@ public class NotificationChannelsController(
         // left over from an earlier draft; this developer flagged the inconsistency rather than silently
         // picking one reading — see the cover note in the cycle report.
 
-        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(userId);
+        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
+        var plan = accountId.HasValue
+            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
+            : EffectivePlan.Free;
         if (!plan.AllowNotificationChannel)
             return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
 
@@ -140,7 +147,10 @@ public class NotificationChannelsController(
         // Reviewer note / SPEC US-31 п. 7: the plan could have downgraded since the channel was
         // purchased (channel and AccountSubscription are billed independently, §33) — Connect must not
         // let a since-downgraded owner keep reconnecting a channel their current plan no longer allows.
-        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(userId);
+        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
+        var plan = accountId.HasValue
+            ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
+            : EffectivePlan.Free;
         if (!plan.AllowNotificationChannel)
             return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
 

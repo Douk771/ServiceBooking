@@ -16,6 +16,7 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/[controller]")]
 public class CompaniesController(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
+    ServiceBooking.API.Services.Billing.BillingAccountProvisioner billingAccountProvisioner,
     ImageUploadService imageUploadService, FileStorage storage) : ControllerBase
 {
     [HttpGet]
@@ -217,11 +218,12 @@ public class CompaniesController(
         await using var limitTransaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"owner-companies:{userId}");
 
-        var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(userId);
-        if (plan.MaxCompanies.HasValue)
+        var accountId = await billingAccountProvisioner.EnsureAccountAsync(userId);
+        var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId);
+        if (plan.AccountMaxCompanies.HasValue)
         {
-            var ownedCount = await db.Companies.CountAsync(c => c.OwnerUserId == userId);
-            if (ownedCount >= plan.MaxCompanies.Value)
+            var ownedCount = await db.Companies.CountAsync(c => c.BillingAccountId == accountId);
+            if (ownedCount >= plan.AccountMaxCompanies.Value)
                 return StatusCode(402, "Company limit reached for the current tariff plan.");
         }
 
@@ -237,6 +239,7 @@ public class CompaniesController(
             AllowSelfBooking = dto.AllowSelfBooking,
             ShowInPublicListing = dto.ShowInPublicListing,
             OwnerUserId = userId,
+            BillingAccountId = accountId,
             CityId = city.Id,
             TimeZoneId = timeZoneId,
             TimeZoneIsManual = timeZoneIsManual
@@ -422,10 +425,10 @@ public class CompaniesController(
         await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
-        if (plan.MaxEmployees.HasValue)
+        if (plan.AccountMaxEmployees.HasValue)
         {
             var currentCount = await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id);
-            if (currentCount >= plan.MaxEmployees.Value)
+            if (currentCount >= plan.AccountMaxEmployees.Value)
                 return StatusCode(402, "Employee limit reached for the current tariff plan.");
         }
 
@@ -656,7 +659,7 @@ public class CompaniesController(
             plan.AllowOnlineBooking,
             plan.AllowOnlinePayment,
             plan.AllowPublicListing,
-            plan.MaxEmployees,
+            plan.AccountMaxEmployees,
             averageRating,
             reviewCount,
             c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes);

@@ -80,14 +80,21 @@ public class AdminController(
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
         var userIds = users.Select(u => u.Id).ToList();
 
-        // Subscriptions are account-level (bound to the owner), so surface each user's plan and how many
-        // companies they own here — this Users tab is where an admin manages the tariff, not per company.
+        // Subscriptions are account-level (§45.1) — resolve each user's billing account first, then
+        // read plan/owned-company counts off THAT, not off OwnerUserId directly. This Users tab is
+        // where an admin manages the tariff, not per company.
+        var accounts = await db.BillingAccounts
+            .Where(a => userIds.Contains(a.OwnerUserId))
+            .Select(a => new { a.OwnerUserId, a.Id })
+            .ToListAsync();
+        var accountIdByUser = accounts.ToDictionary(a => a.OwnerUserId, a => a.Id);
+        var accountIds = accounts.Select(a => a.Id).ToList();
         var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
-            .Where(s => userIds.Contains(s.OwnerUserId)).ToListAsync();
+            .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync();
         var ownedCounts = await db.Companies
-            .Where(c => userIds.Contains(c.OwnerUserId))
-            .GroupBy(c => c.OwnerUserId)
-            .Select(g => new { OwnerUserId = g.Key, Count = g.Count() })
+            .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value))
+            .GroupBy(c => c.BillingAccountId!.Value)
+            .Select(g => new { BillingAccountId = g.Key, Count = g.Count() })
             .ToListAsync();
 
         // US-49 p.3: ONE join for the whole page's roles instead of userManager.GetRolesAsync(u) inside
@@ -103,8 +110,9 @@ public class AdminController(
 
         var result = users.Select(u =>
         {
-            var sub = subs.FirstOrDefault(s => s.OwnerUserId == u.Id);
-            var ownedCount = ownedCounts.FirstOrDefault(x => x.OwnerUserId == u.Id)?.Count ?? 0;
+            var accountId = accountIdByUser.GetValueOrDefault(u.Id);
+            var sub = accountId != Guid.Empty ? subs.FirstOrDefault(s => s.BillingAccountId == accountId) : null;
+            var ownedCount = accountId != Guid.Empty ? ownedCounts.FirstOrDefault(x => x.BillingAccountId == accountId)?.Count ?? 0 : 0;
             return new AdminUserDto(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, u.CreatedAt,
                 rolesByUser.GetValueOrDefault(u.Id, []), ownedCount, sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free",
                 sub?.PaidUntil, sub?.IsActive ?? true);
@@ -160,7 +168,12 @@ public class AdminController(
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
         var ids = companies.Select(c => c.Id).ToList();
         var ownerIds = companies.Select(c => c.OwnerUserId).Distinct().ToList();
-        var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig).Where(s => ownerIds.Contains(s.OwnerUserId)).ToListAsync();
+        // The tariff is account-level (§45.1): it belongs to the company's BillingAccountId, not to
+        // OwnerUserId directly — OwnerUserId here is only used to show the responsible person's email.
+        var accountIds = companies.Where(c => c.BillingAccountId.HasValue)
+            .Select(c => c.BillingAccountId!.Value).Distinct().ToList();
+        var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
+            .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync();
         var ownerEmails = await db.Users.Where(u => ownerIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Email ?? u.PhoneNumber ?? u.Id);
         var bookingCounts = await db.Bookings
             .Where(b => ids.Contains(b.CompanyId))
@@ -170,8 +183,7 @@ public class AdminController(
 
         var result = companies.Select(c =>
         {
-            // The tariff is account-level: it belongs to the owner and covers all their companies.
-            var sub = subs.FirstOrDefault(s => s.OwnerUserId == c.OwnerUserId);
+            var sub = c.BillingAccountId.HasValue ? subs.FirstOrDefault(s => s.BillingAccountId == c.BillingAccountId) : null;
             var count = bookingCounts.FirstOrDefault(x => x.CompanyId == c.Id)?.Count ?? 0;
             return new AdminCompanyDto(c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
                 c.Members.Count, count, c.OwnerUserId, ownerEmails.GetValueOrDefault(c.OwnerUserId, c.OwnerUserId),
