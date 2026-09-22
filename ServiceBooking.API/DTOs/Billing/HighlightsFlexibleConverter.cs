@@ -38,8 +38,15 @@ public sealed class HighlightsFlexibleConverter : JsonConverter<List<string>?>
         {
             var list = new List<string>();
             while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-                if (reader.TokenType == JsonTokenType.String)
-                    list.Add(reader.GetString() ?? "");
+            {
+                // NB-9 (cycle-07 backend report): a non-string element (e.g. highlights: [123]) used to
+                // be silently dropped instead of rejected, which meant a client sending malformed input
+                // got a "successful" 200/201 with fewer highlights than it sent, not the 400 the
+                // contract's own array-of-strings schema calls for.
+                if (reader.TokenType != JsonTokenType.String)
+                    throw new JsonException("highlights array elements must all be strings.");
+                list.Add(reader.GetString() ?? "");
+            }
             return list;
         }
 
