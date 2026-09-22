@@ -12,9 +12,9 @@ public class AccountSubscription
 
     // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4) — the account this subscription belongs to; unique
     // (one subscription row per account, mirroring OwnerUserId's own uniqueness). OwnerUserId stays
-    // as a history column read by reconciliation/incident tooling, but business logic reads
-    // BillingAccountId from here on. Nullable for this slice — populated by a later
-    // migration/provisioner, not backfilled here.
+    // as a history column read by reconciliation/incident tooling (§54.5's before/after check), but
+    // business logic reads BillingAccountId from here on. Stage 6 (§43.6, B5-13): NOT NULL at the
+    // database level; CLR type stays `Guid?` for the same reason as Company.BillingAccountId.
     public Guid? BillingAccountId { get; set; }
     public BillingAccount? BillingAccount { get; set; }
 

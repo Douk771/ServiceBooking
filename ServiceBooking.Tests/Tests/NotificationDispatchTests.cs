@@ -151,7 +151,7 @@ public class NotificationDispatchTests
 
         var assignment = new ChannelCompanyAssignment
         {
-            Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = company.Id, AssignedByUserId = auth.UserId,
+            Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = company.Id, BillingAccountId = billingAccount.Id, AssignedByUserId = auth.UserId,
         };
 
         db.SubscriptionPlanConfigs.Add(plan);

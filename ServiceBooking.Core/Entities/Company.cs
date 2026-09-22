@@ -38,9 +38,14 @@ public class Company
     public AppUser Owner { get; set; } = null!;
 
     // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.2, §43.4) — "who pays and by which rules this company
-    // lives", independent of OwnerUserId ("who manages/sees it"). Nullable for this slice: backfill
-    // and NOT NULL enforcement are a later slice of this cycle (§54.4's BackfillBillingAccounts
-    // migration) — do not assume every company has one yet.
+    // lives", independent of OwnerUserId ("who manages/sees it"). Stage 6 (§43.6, B5-13): the
+    // column is now NOT NULL at the database level (AppDbContext's Fluent config calls
+    // `.IsRequired()`) and every Company row also carries the alternate key (Id, BillingAccountId)
+    // that ChannelCompanyAssignment's composite FK pins to. The CLR type stays `Guid?` deliberately
+    // — call sites across the codebase already null-check it defensively, and the DB-level NOT NULL
+    // is what actually matters (EF happily maps a NOT NULL column into a nullable property; it just
+    // never observes null). Changing this to a non-nullable `Guid` would touch dozens of unrelated
+    // call sites for no behavioural gain — see the migration's own remarks for the full reasoning.
     public Guid? BillingAccountId { get; set; }
     public BillingAccount? BillingAccount { get; set; }
 

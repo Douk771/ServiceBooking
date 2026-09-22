@@ -63,10 +63,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(c => c.City).WithMany().HasForeignKey(c => c.CityId).OnDelete(DeleteBehavior.Restrict);
             e.Property(c => c.TimeZoneId).HasMaxLength(64);
             // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4): "who pays" — Restrict so a billing account
-            // can't be deleted out from under a company that still belongs to it. Nullable/no
-            // composite alt-key yet in this slice (§43.6's co-tenancy keys and NOT NULL land with
-            // the backfill migration, a later slice of this cycle).
-            e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId).OnDelete(DeleteBehavior.Restrict);
+            // can't be deleted out from under a company that still belongs to it. Stage 6 (§43.6,
+            // B5-13): NOT NULL at the database level (`BackfillBillingAccounts`/`AddCoTenancyKeys`
+            // already populated every row) and an alternate key on (Id, BillingAccountId) — the
+            // composite FK from ChannelCompanyAssignment pins to it, which is what makes "assign a
+            // company to a number belonging to a different account" physically impossible.
+            e.Property(c => c.BillingAccountId).IsRequired();
+            e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId)
+                .IsRequired().OnDelete(DeleteBehavior.Restrict);
+            e.HasAlternateKey(c => new { c.Id, c.BillingAccountId });
         });
 
         builder.Entity<Service>(e =>
@@ -110,9 +115,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(s => s.OwnerUserId).IsUnique();
             e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
             // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4): one subscription row per account. Cascade
-            // mirrors the Owner FK above — deleting the account takes its (not-yet-populated in this
-            // slice) subscription row with it.
-            e.HasOne(s => s.BillingAccount).WithMany().HasForeignKey(s => s.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
+            // mirrors the Owner FK above — deleting the account takes its subscription row with it.
+            // Stage 6 (§43.6, B5-13): NOT NULL at the database level.
+            e.Property(s => s.BillingAccountId).IsRequired();
+            e.HasOne(s => s.BillingAccount).WithMany().HasForeignKey(s => s.BillingAccountId)
+                .IsRequired().OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => s.BillingAccountId).IsUnique();
         });
 
@@ -257,12 +264,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(c => c.OwnerUserId);
             // Cycle 5, stage 3 (ARCHITECTURE_CYCLE5.md §43.4, §47): who PAYS for/owns this number —
             // OwnerUserId stays "who set it up and manages it". Restrict (like Company.BillingAccountId)
-            // — an account can't be deleted out from under a number it still owns. Nullable in this
-            // slice: no NOT NULL/composite alt-key yet (§43.6 lands in a later stage), backfilled by
-            // AddChannelBillingAccountId for existing rows, populated going forward by
-            // NotificationChannelsController.Create/Replace via BillingAccountProvisioner.
-            e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId).OnDelete(DeleteBehavior.Restrict);
+            // — an account can't be deleted out from under a number it still owns. Stage 6 (§43.6,
+            // B5-13): NOT NULL at the database level plus an alternate key on (Id, BillingAccountId)
+            // that ChannelCompanyAssignment's composite FK pins to.
+            e.Property(c => c.BillingAccountId).IsRequired();
+            e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId)
+                .IsRequired().OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(c => c.BillingAccountId);
+            e.HasAlternateKey(c => new { c.Id, c.BillingAccountId });
             // Filtered unique index: a channel with no instance yet has ProviderInstanceId == null, and
             // there is exactly one live column value we must never see twice.
             e.HasIndex(c => c.ProviderInstanceId).IsUnique().HasFilter("\"ProviderInstanceId\" IS NOT NULL");
@@ -273,9 +282,21 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<ChannelCompanyAssignment>(e =>
         {
+            // Cycle 5, stage 6 (ARCHITECTURE_CYCLE5.md §43.6) — both FKs are composite, pinned to the
+            // (Id, BillingAccountId) alternate keys on NotificationChannels/Companies. This is the
+            // co-tenancy guarantee: a row can only exist while the channel and the company it's
+            // assigned to agree on BillingAccountId, so "assign a company to a number belonging to a
+            // different account" is impossible at the database level, and CompanyTransferService is
+            // forced to delete the assignment strictly before it can change Company.BillingAccountId
+            // (§51.3 step 6/7) — the DB rejects the update otherwise.
             e.HasOne(a => a.Channel).WithMany(c => c.Assignments)
-                .HasForeignKey(a => a.ChannelId).OnDelete(DeleteBehavior.Cascade);
-            e.HasOne(a => a.Company).WithMany().HasForeignKey(a => a.CompanyId).OnDelete(DeleteBehavior.Cascade);
+                .HasForeignKey(a => new { a.ChannelId, a.BillingAccountId })
+                .HasPrincipalKey(c => new { c.Id, c.BillingAccountId })
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(a => a.Company).WithMany()
+                .HasForeignKey(a => new { a.CompanyId, a.BillingAccountId })
+                .HasPrincipalKey(c => new { c.Id, c.BillingAccountId })
+                .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(a => a.ChannelId);
             // US-61 p.7: a company may be assigned to at most one channel — a hard DB guarantee, not
             // application-level check-then-act.

@@ -15,6 +15,13 @@ public class ChannelCompanyAssignment
     public Guid CompanyId { get; set; }
     public Company Company { get; set; } = null!;
 
+    // Cycle 5, stage 6 (ARCHITECTURE_CYCLE5.md §43.6) — the co-tenancy column: this assignment is
+    // only valid while the company and the channel share this same billing account. Backed by two
+    // composite FKs (see AppDbContext), which is what makes "assign a company to a number belonging
+    // to a different account" physically impossible, and what forces CompanyTransferService to drop
+    // the assignment before it can move the company to a different account.
+    public Guid BillingAccountId { get; set; }
+
     public DateTime AssignedAtUtc { get; set; } = DateTime.UtcNow;
     public string AssignedByUserId { get; set; } = string.Empty;
 }

@@ -461,11 +461,14 @@ public class NotificationChannelsController(
         if (company is null || company.OwnerUserId != userId) return Forbid();
 
         // ARCHITECTURE_CYCLE5.md §43.6/§56 last bullet — "a number doesn't serve a company from a
-        // different account", enforced here in application code (the composite FK that pins this down
-        // at the database level is a later stage of this cycle). OwnerUserId matching above is a rights
-        // check, not a money check — this is the money check.
+        // different account". Checked here for a clean 403 with a message; the composite FK on
+        // ChannelCompanyAssignment (stage 6) also makes this impossible at the database level, so this
+        // check and that constraint can never disagree. OwnerUserId matching above is a rights check,
+        // not a money check — this is the money check.
         if (channel.BillingAccountId.HasValue && company.BillingAccountId.HasValue &&
             channel.BillingAccountId != company.BillingAccountId)
+            return Forbid();
+        if (channel.BillingAccountId is null || company.BillingAccountId is null)
             return Forbid();
 
         await using var transaction = await db.Database.BeginTransactionAsync();
@@ -495,6 +498,7 @@ public class NotificationChannelsController(
             Id = Guid.NewGuid(),
             ChannelId = id,
             CompanyId = dto.CompanyId,
+            BillingAccountId = channel.BillingAccountId!.Value,
             AssignedByUserId = userId,
         });
         await db.SaveChangesAsync();

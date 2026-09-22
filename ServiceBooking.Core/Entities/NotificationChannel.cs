@@ -16,7 +16,9 @@ public class NotificationChannel
 
     // Cycle 5 (ARCHITECTURE_CYCLE5.md §43.4, §47) — who PAYS for and owns this number; OwnerUserId
     // above stays "who set it up and manages it" (same OwnerUserId/BillingAccountId split as
-    // Company). Nullable in this slice — no NOT NULL/composite alt-key yet (§43.6 is a later stage).
+    // Company). Stage 6 (§43.6, B5-13): NOT NULL at the database level plus the alternate key
+    // (Id, BillingAccountId) that ChannelCompanyAssignment's composite FK pins to. CLR type stays
+    // `Guid?` for the same reason as Company.BillingAccountId — see that property's remarks.
     public Guid? BillingAccountId { get; set; }
     public BillingAccount? BillingAccount { get; set; }
 

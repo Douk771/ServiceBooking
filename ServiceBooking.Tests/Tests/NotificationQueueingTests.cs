@@ -193,7 +193,7 @@ public class NotificationQueueingTests(TestDatabaseFixture fixture) : ApiTestBas
         db.NotificationChannels.Add(channel);
         db.ChannelCompanyAssignments.Add(new ChannelCompanyAssignment
         {
-            Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = companyId, AssignedByUserId = ownerUserId,
+            Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = companyId, BillingAccountId = billingAccountId!.Value, AssignedByUserId = ownerUserId,
         });
         await db.SaveChangesAsync();
 

@@ -273,7 +273,7 @@ public abstract class NotificationTestBase(TestDatabaseFixture fixture) : IAsync
 
         db.ChannelCompanyAssignments.Add(new ChannelCompanyAssignment
         {
-            Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = company.Id, AssignedByUserId = owner.UserId,
+            Id = Guid.NewGuid(), ChannelId = channel.Id, CompanyId = company.Id, BillingAccountId = billingAccountId, AssignedByUserId = owner.UserId,
         });
         await db.SaveChangesAsync();
 
