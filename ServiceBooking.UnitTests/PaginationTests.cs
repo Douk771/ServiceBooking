@@ -139,4 +139,22 @@ public class PaginationTests
     public void SanitizeSearch_KeepsNonLatinTextUntouched() =>
         // Only control characters are stripped — a Cyrillic company name search must not be mangled.
         Pagination.SanitizeSearch("Компания «Ромашка»").Should().Be("Компания «Ромашка»");
+
+    // Cycle-09 backend contract re-check: GET /companies/public bound page/pageSize as `int?`, so a
+    // malformed value (e.g. pageSize=false) failed [ApiController] model binding and short-circuited to
+    // an automatic 400 — contradicting contracts/cycle9/openapi.yaml's explicit "клампится к [1,100],
+    // а не отвергается 400-м" for pageSize. Binding as `string?` and routing through ParseNullableInt
+    // first keeps Normalize's existing clamp/default behavior for malformed input too.
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("false", null)]
+    [InlineData("not-a-number", null)]
+    [InlineData("20", 20)]
+    [InlineData("0", 0)]
+    [InlineData("-5", -5)]
+    [InlineData(" 7 ", 7)] // int.TryParse tolerates surrounding whitespace by default (NumberStyles.Integer).
+    public void ParseNullableInt_FallsBackToNullInsteadOfThrowingOnMalformedInput(string? input, int? expected) =>
+        Pagination.ParseNullableInt(input).Should().Be(expected);
 }

@@ -49,12 +49,28 @@ public class CompaniesController(
     // city/search and the page limit are all applied in SQL — no "download everything, filter in the
     // browser" regression. An unknown cityId yields an empty page, not 404 (a public, anonymous catalog
     // never confirms whether a reference row exists).
+    // page/pageSize are bound as raw strings, not int?, on purpose: contracts/cycle9/openapi.yaml §pageSize
+    // explicitly promises "клампится к [1,100], а не отвергается 400-м" (clamped, never rejected with
+    // 400). With [FromQuery] int? and [ApiController]'s automatic model validation, a non-integer value
+    // (e.g. pageSize=false) fails model binding and short-circuits to a 400 before this method body ever
+    // runs — contradicting that documented guarantee. Parsing manually and falling back to "unset" (→
+    // Pagination.Normalize's existing default/clamp path) for anything that doesn't parse keeps the
+    // promised behavior for malformed input, not just out-of-range input.
     [HttpGet("public")]
     public async Task<ActionResult<ServiceBooking.API.DTOs.Common.PagedResult<CompanyDto>>> GetPublic(
-        [FromQuery] int? cityId, [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] int? cityId, [FromQuery] string? search, [FromQuery] string? page, [FromQuery] string? pageSize)
     {
-        var (normalizedPage, normalizedPageSize) = ServiceBooking.API.DTOs.Common.Pagination.Normalize(page, pageSize);
-        var sanitizedSearch = ServiceBooking.API.DTOs.Common.Pagination.SanitizeSearch(search);
+        var (normalizedPage, normalizedPageSize) = ServiceBooking.API.DTOs.Common.Pagination.Normalize(
+            ServiceBooking.API.DTOs.Common.Pagination.ParseNullableInt(page),
+            ServiceBooking.API.DTOs.Common.Pagination.ParseNullableInt(pageSize));
+
+        // contracts/cycle9/openapi.yaml declares search with maxLength: 200 — the server must honor that
+        // as an input constraint, not just document it. Rather than reject an overlong search with 400
+        // (nothing in the schema's description for `search` documents a 400 the way pageSize's does),
+        // truncate to the declared limit, consistent with pageSize's own "clamp, don't reject" contract
+        // for this anonymous, best-effort catalog endpoint.
+        var truncatedSearch = search is { Length: > 200 } ? search[..200] : search;
+        var sanitizedSearch = ServiceBooking.API.DTOs.Common.Pagination.SanitizeSearch(truncatedSearch);
 
         // Visibility rules are unchanged from GET /api/companies: isActive AND ShowInPublicListing AND
         // the tariff's AllowPublicListing. EffectivePlan is resolved per company, so the plan half of

@@ -80,4 +80,16 @@ public static class Pagination
         var cleaned = new string(search.Where(c => !char.IsControl(c)).ToArray());
         return cleaned.Length == 0 ? null : cleaned;
     }
+
+    /// <summary>
+    /// Parses a raw query-string value into an int, or null if it's absent/blank/not a valid integer —
+    /// never throws. Endpoints whose contract promises page/pageSize are "clamped, never rejected with
+    /// 400" (e.g. contracts/cycle9/openapi.yaml's GET /companies/public) must bind these params as
+    /// `string?` rather than `int?`: with [ApiController] + [FromQuery] int?, a non-integer value fails
+    /// model binding and short-circuits to an automatic 400 before the action body — and therefore
+    /// Normalize's own clamp logic below — ever runs. Route through this first to keep that promise for
+    /// malformed input too, not just out-of-range input.
+    /// </summary>
+    public static int? ParseNullableInt(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && int.TryParse(value, out var parsed) ? parsed : null;
 }
