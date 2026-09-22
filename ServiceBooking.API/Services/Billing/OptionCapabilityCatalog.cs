@@ -11,9 +11,9 @@ public static class OptionCapabilityCatalog
     // notifications.whatsapp is Numeric (Р6: the unit of payment is "how many numbers", not a flag).
     public static readonly IReadOnlyList<Capability> Known =
     [
-        new(SubscriptionResolver.WhatsAppOptionCode, "Numeric", "Номера для рассылок WhatsApp"),
-        new("extra-companies", "Numeric", "Дополнительные компании"),
-        new("extra-employees", "Numeric", "Дополнительные сотрудники"),
+        new(CapabilityKeys.NotificationsWhatsApp, "Numeric", "Номера для рассылок WhatsApp"),
+        new(CapabilityKeys.Companies, "Numeric", "Дополнительные компании"),
+        new(CapabilityKeys.Employees, "Numeric", "Дополнительные сотрудники"),
         new("analytics", "Boolean", "Аналитика"),
         new("online-payment", "Boolean", "Онлайн-оплата"),
     ];

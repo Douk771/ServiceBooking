@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -78,8 +79,9 @@ public class SubscriptionResolver(AppDbContext db)
 
     /// <summary>
     /// ARCHITECTURE_CYCLE5.md §44.3 п.6: employees = plan.MaxEmployees + Σ quantity of options whose
-    /// CapabilityKey is "extra-employees" + grandfathered bonus; companies = plan.MaxCompanies + Σ
-    /// quantity of options whose CapabilityKey is "extra-companies". <paramref name="extraEmployees"/>
+    /// CapabilityKey is <see cref="CapabilityKeys.Employees"/> + grandfathered bonus; companies =
+    /// plan.MaxCompanies + Σ quantity of options whose CapabilityKey is
+    /// <see cref="CapabilityKeys.Companies"/>. <paramref name="extraEmployees"/>
     /// and <paramref name="extraCompanies"/> must already be pre-filtered by the caller to options that
     /// are currently paid (own PaidUntilUtc, or riding the subscription's own paid period) — this pure
     /// method only applies the arithmetic, it does not re-derive "is this option still paid".
@@ -200,8 +202,8 @@ public class SubscriptionResolver(AppDbContext db)
                 : (subUsable ? o.Quantity : 0);
 
             var accountOptions = activeOptions.Where(o => o.BillingAccountId == id).ToList();
-            var extraEmployees = accountOptions.Where(o => o.Option.CapabilityKey == "extra-employees").Sum(PaidQuantity);
-            var extraCompanies = accountOptions.Where(o => o.Option.CapabilityKey == "extra-companies").Sum(PaidQuantity);
+            var extraEmployees = accountOptions.Where(o => o.Option.CapabilityKey == CapabilityKeys.Employees).Sum(PaidQuantity);
+            var extraCompanies = accountOptions.Where(o => o.Option.CapabilityKey == CapabilityKeys.Companies).Sum(PaidQuantity);
             var whatsapp = accountOptions.FirstOrDefault(o => o.Option.Code == WhatsAppOptionCode);
             var paidNumbers = whatsapp is null ? 0 : PaidQuantity(whatsapp);
 

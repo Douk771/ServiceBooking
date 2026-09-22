@@ -24,14 +24,13 @@ namespace ServiceBooking.Infrastructure.Migrations
     /// 2. Three catalog options, all with <c>PricePerMonth = NULL</c> — nobody is charged anything the
     ///    moment this migration runs; a superadmin has to deliberately price each one before it's for
     ///    sale (§43.3's own convention, same as <c>notifications.channel.price-per-month</c> in cycle 4).
-    ///    <c>CapabilityKey</c> values are picked to match <see cref="ServiceBooking.API.Services.SubscriptionResolver"/>'s
-    ///    ACTUAL reads ("extra-companies"/"extra-employees" literals, and the WhatsApp option's own
-    ///    <c>Code</c>) rather than §54.3's table, which lists "companies"/"employees" — those are the
-    ///    keys §44.2's <c>PlanCapabilityMap</c> uses for the PLAN's own base limit, not what the
-    ///    resolver's option arithmetic (§44.3 п.6) actually keys its per-option lookup on. Flagged in the
-    ///    cycle 07 backend report as a doc/code mismatch worth the architect's attention; this migration
-    ///    follows the code, per this task's own instruction that the keys must literally match the
-    ///    resolver.
+    ///    <c>Code</c> (the option's own catalog identity) keeps the "extra-" prefix ("extra-companies",
+    ///    "extra-employees"); <c>CapabilityKey</c> (what the option actually grants) is the bare
+    ///    capability name ("companies"/"employees", <see cref="ServiceBooking.API.Services.Billing.CapabilityKeys"/>),
+    ///    matching §44.2/§54.3 and <see cref="ServiceBooking.API.Services.SubscriptionResolver"/>'s reads.
+    ///    A prior pass conflated the option's code with its capability key and seeded "extra-companies"/
+    ///    "extra-employees" as the CapabilityKey too; this migration corrects that (see
+    ///    <see cref="ServiceBooking.API.Services.Billing.CapabilityKeys"/> remarks).
     /// 3. A <c>PlanOptionRule</c> row for every (existing plan × these three options): <c>Extra</c> for
     ///    the two limit-boosting options, and for <c>notifications.whatsapp</c>, <c>Extra</c> if the
     ///    plan already had <c>AllowNotificationChannel = true</c>, else <c>Unavailable</c> — reproducing
@@ -77,10 +76,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                 WHERE NOT EXISTS (SELECT 1 FROM "SubscriptionPlanConfigs" WHERE "IsSystemFree" = true);
 
                 -- 2. Three catalog options, all unpriced (§43.3: PricePerMonth = NULL = "not for sale
-                -- until an admin says otherwise"). CapabilityKey values match what
-                -- SubscriptionResolver.GetEffectivePlansForAccountsAsync actually reads today (literal
-                -- "extra-companies"/"extra-employees" strings) — see the class remarks above for why
-                -- this deliberately does not follow §54.3's table verbatim.
+                -- until an admin says otherwise"). Code keeps the "extra-" prefix (the option's own
+                -- catalog identity); CapabilityKey is the bare capability name per §44.2/§54.3
+                -- ("companies"/"employees"), matching SubscriptionResolver's reads via CapabilityKeys.
                 INSERT INTO "SubscriptionOptions"
                     ("Id", "Code", "Name", "Description", "Kind", "CapabilityKey", "PricePerMonth",
                      "UnitName", "MaxQuantity", "UnitPriceText", "IsPublic", "IsActive", "SortOrder",
@@ -88,8 +86,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                 SELECT gen_random_uuid(), v.code, v.name, v.description, 1, v.capability_key, NULL,
                        v.unit_name, NULL, NULL, false, true, v.sort_order, now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc'
                 FROM (VALUES
-                    ('extra-companies', 'Дополнительная компания', 'Ещё одна точка на той же подписке.', 'extra-companies', 'компания', 0),
-                    ('extra-employees', 'Дополнительные сотрудники', 'Сверх включённых в тариф.', 'extra-employees', 'сотрудник', 1),
+                    ('extra-companies', 'Дополнительная компания', 'Ещё одна точка на той же подписке.', 'companies', 'компания', 0),
+                    ('extra-employees', 'Дополнительные сотрудники', 'Сверх включённых в тариф.', 'employees', 'сотрудник', 1),
                     ('notifications.whatsapp', 'Рассылки в WhatsApp', 'Номер для рассылки уведомлений клиентам в WhatsApp.', 'notifications.whatsapp', 'номер', 2)
                 ) AS v(code, name, description, capability_key, unit_name, sort_order)
                 WHERE NOT EXISTS (SELECT 1 FROM "SubscriptionOptions" so WHERE so."Code" = v.code);
