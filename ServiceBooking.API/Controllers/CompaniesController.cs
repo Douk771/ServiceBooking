@@ -609,6 +609,7 @@ public class CompaniesController(
         var bookings = await db.Bookings
             .Include(b => b.Service)
             .Include(b => b.Master)
+            .Include(b => b.BookingServices)
             .Where(b => b.CompanyId == id && b.Date >= fromDate && b.Date <= toDate)
             .ToListAsync();
 
@@ -642,15 +643,20 @@ public class CompaniesController(
                 };
             }).ToList();
 
+        // US-67 (ARCHITECTURE_CYCLE6.md §44.2 p.4): the "top services" breakdown counts individual
+        // services from BookingServices, not visits — a 3-service visit contributes 3 counts here,
+        // one per line item, while totalRevenue above (computed from Booking.Price) still counts the
+        // visit exactly once. Pre-cycle bookings have exactly one BookingServices row each (backfilled),
+        // so this is unchanged for them.
         var popularServices = bookings
-            .GroupBy(b => b.ServiceId)
+            .SelectMany(b => b.BookingServices)
+            .GroupBy(bs => bs.ServiceId)
             .Select(g =>
             {
-                var svc = g.First().Service;
                 return new
                 {
                     serviceId = g.Key,
-                    serviceName = svc?.Name ?? g.Key.ToString(),
+                    serviceName = g.First().NameSnapshot,
                     count = g.Count()
                 };
             })

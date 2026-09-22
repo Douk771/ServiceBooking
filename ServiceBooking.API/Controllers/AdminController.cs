@@ -424,6 +424,7 @@ public class AdminController(
             .Include(b => b.Master)
             .Include(b => b.Client)
             .Include(b => b.Company)
+            .Include(b => b.BookingServices)
             .AsQueryable();
 
         if (companyId.HasValue) query = query.Where(b => b.CompanyId == companyId);
@@ -434,7 +435,13 @@ public class AdminController(
         var bookings = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime).Take(500).ToListAsync();
 
         return Ok(bookings.Select(b => new AdminBookingDto(
-            b.Id, b.Company.Name, b.Service.Name,
+            b.Id, b.Company.Name,
+            // US-67 (ARCHITECTURE_CYCLE6.md §47.2): the visit shown as one line — comma-joined service
+            // names — rather than one row per service. Falls back to Service.Name only if
+            // BookingServices somehow has no rows (should never happen after the backfill).
+            b.BookingServices.Count > 0
+                ? string.Join(", ", b.BookingServices.OrderBy(bs => bs.Position).Select(bs => bs.NameSnapshot))
+                : b.Service.Name,
             $"{b.Master.FirstName} {b.Master.LastName}",
             b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Гость",
             b.GuestPhone ?? b.Client?.PhoneNumber,

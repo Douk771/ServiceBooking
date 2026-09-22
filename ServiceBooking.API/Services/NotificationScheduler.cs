@@ -28,9 +28,9 @@ public sealed class NotificationScheduler(
     SubscriptionResolver subscriptionResolver,
     IOptions<NotificationOptions> options)
 {
-    public async Task OnBookingCreatedAsync(Booking booking, CancellationToken ct)
+    public async Task OnBookingCreatedAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct)
     {
-        var ctx = await BuildContextAsync(booking, ct);
+        var ctx = await BuildContextAsync(booking, serviceNames, ct);
         if (ctx is null) return;
 
         var nowUtc = DateTime.UtcNow;
@@ -47,7 +47,7 @@ public sealed class NotificationScheduler(
 
     public async Task OnBookingCancelledAsync(Booking booking, CancellationToken ct)
     {
-        var ctx = await BuildContextAsync(booking, ct);
+        var ctx = await BuildContextAsync(booking, null, ct);
         if (ctx is null) return;
 
         await CancelPendingAsync(booking.Id, ct);
@@ -60,7 +60,7 @@ public sealed class NotificationScheduler(
 
     public async Task OnBookingRescheduledAsync(Booking booking, CancellationToken ct)
     {
-        var ctx = await BuildContextAsync(booking, ct);
+        var ctx = await BuildContextAsync(booking, null, ct);
         if (ctx is null) return;
 
         // Only the still-pending REMINDER is superseded — its due time and rendered {Дата}/{Время} are
@@ -93,14 +93,43 @@ public sealed class NotificationScheduler(
 
     private sealed record SchedulingContext(
         Company Company, EffectivePlan Plan, NotificationChannel? Channel, CompanyNotificationSettings? Settings,
-        Service Service, AppUser Master, string? RecipientPhone, string RecipientName, bool RecipientOptedOut);
+        // US-67 (ARCHITECTURE_CYCLE6.md §47.2): the visit's service names, in visit order — one element
+        // for a pre-cycle single-service booking, several for a multi-service one. The template renders
+        // them joined by ", " (NotificationScheduler.RenderBodyAsync).
+        IReadOnlyList<string> ServiceNames, AppUser Master, string? RecipientPhone, string RecipientName, bool RecipientOptedOut);
 
-    private async Task<SchedulingContext?> BuildContextAsync(Booking booking, CancellationToken ct)
+    /// <param name="booking">The booking the notification is about.</param>
+    /// <param name="serviceNames">Known at Create time (the caller already resolved and validated the
+    /// visit's services, before BookingServices rows exist in the DB yet) — pass it there. Null for
+    /// Cancel/Reschedule, whose BookingServices rows already exist, so they're read from the DB;
+    /// falls back to the single legacy Booking.ServiceId lookup if that table somehow has no rows yet
+    /// (defensive only — the migration backfill guarantees at least one row for every booking).</param>
+    /// <param name="ct">Cancellation token.</param>
+    private async Task<SchedulingContext?> BuildContextAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct)
     {
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
-        var service = await db.Services.AsNoTracking().FirstOrDefaultAsync(s => s.Id == booking.ServiceId, ct);
         var master = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == booking.MasterId, ct);
-        if (company is null || service is null || master is null) return null;
+        if (company is null || master is null) return null;
+
+        List<string> names;
+        if (serviceNames is { Count: > 0 })
+        {
+            names = serviceNames.ToList();
+        }
+        else
+        {
+            names = await db.BookingServices.AsNoTracking()
+                .Where(bs => bs.BookingId == booking.Id)
+                .OrderBy(bs => bs.Position)
+                .Select(bs => bs.NameSnapshot)
+                .ToListAsync(ct);
+            if (names.Count == 0)
+            {
+                var service = await db.Services.AsNoTracking().FirstOrDefaultAsync(s => s.Id == booking.ServiceId, ct);
+                if (service is null) return null;
+                names = [service.Name];
+            }
+        }
 
         var plan = await subscriptionResolver.GetEffectivePlanForOwnerAsync(company.OwnerUserId);
 
@@ -133,7 +162,7 @@ public sealed class NotificationScheduler(
         var optedOut = recipientPhone is not null &&
             await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == recipientPhone, ct);
 
-        return new SchedulingContext(company, plan, assignment?.Channel, settings, service, master,
+        return new SchedulingContext(company, plan, assignment?.Channel, settings, names, master,
             recipientPhone, recipientName, optedOut);
     }
 
@@ -208,7 +237,9 @@ public sealed class NotificationScheduler(
 
         var templateContext = new TemplateContext(
             ClientName: ctx.RecipientName,
-            ServiceName: ctx.Service.Name,
+            // US-67 (SPEC.md §2, US-67): comma-joined, no trailing/leading blanks, never "undefined" —
+            // ServiceNames is never empty (see BuildContextAsync).
+            ServiceName: string.Join(", ", ctx.ServiceNames),
             MasterName: $"{ctx.Master.FirstName} {ctx.Master.LastName}",
             Date: booking.Date.ToString("dd.MM.yyyy"),
             Time: booking.StartTime.ToString("HH:mm"),
