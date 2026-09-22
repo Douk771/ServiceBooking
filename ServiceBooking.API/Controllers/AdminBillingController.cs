@@ -1,0 +1,621 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.DTOs.Common;
+using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Billing;
+using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
+using ServiceBooking.Infrastructure.Data;
+
+namespace ServiceBooking.API.Controllers;
+
+/// <summary>contracts/openapi-cycle5.yaml tag billing-admin — options catalog, billing accounts,
+/// subscription assignment and the owner request queue (US-66, US-67, US-70). Kept as a separate
+/// controller from <see cref="AdminController"/> (same "api/admin" route prefix, same SuperAdmin-only
+/// authorization) purely so this cycle's diff doesn't grow an already-780-line file further.</summary>
+[ApiController]
+[Route("api/admin")]
+[Authorize(Roles = "SuperAdmin")]
+public class AdminBillingController(
+    AppDbContext db, PricingCatalogCache pricingCatalogCache,
+    SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
+    OwnerSubscriptionService ownerSubscriptionService) : ControllerBase
+{
+    // ── Options catalog (US-66) ───────────────────────────────────────────────────
+
+    [HttpGet("options")]
+    public async Task<IActionResult> GetOptions()
+    {
+        var options = await db.SubscriptionOptions.OrderBy(o => o.SortOrder).ThenBy(o => o.Name).ToListAsync();
+        var counts = await GetOptionSubscriberCountsAsync(options.Select(o => o.Id));
+        return Ok(new { options = options.Select(o => MapOptionDto(o, counts.GetValueOrDefault(o.Id))).ToList() });
+    }
+
+    [HttpPost("options")]
+    public async Task<IActionResult> CreateOption([FromBody] Billing_AdminOptionInput dto)
+    {
+        var validationError = ValidateOptionInput(dto, existingCode: null);
+        if (validationError is not null) return validationError;
+
+        if (await db.SubscriptionOptions.AnyAsync(o => o.Code == dto.Code))
+            return Conflict($"Опция с кодом «{dto.Code}» уже существует.");
+
+        var option = new SubscriptionOption
+        {
+            Id = Guid.NewGuid(),
+            Code = dto.Code,
+            Name = dto.Name,
+            Description = dto.Description,
+            Kind = ParseKind(dto.Kind),
+            CapabilityKey = dto.CapabilityKey,
+            PricePerMonth = dto.PricePerMonth,
+            UnitName = dto.UnitName,
+            MaxQuantity = dto.MaxQuantity,
+            IsPublic = dto.IsPublic,
+            IsActive = dto.IsActive,
+            SortOrder = dto.SortOrder,
+        };
+        db.SubscriptionOptions.Add(option);
+        await db.SaveChangesAsync();
+        pricingCatalogCache.Invalidate();
+        return StatusCode(StatusCodes.Status201Created, MapOptionDto(option, 0));
+    }
+
+    [HttpPut("options/{id:guid}")]
+    public async Task<IActionResult> UpdateOption(Guid id, [FromBody] Billing_AdminOptionInput dto)
+    {
+        var option = await db.SubscriptionOptions.FindAsync(id);
+        if (option is null) return NotFound();
+
+        if (dto.Code != option.Code)
+            return BadRequest("Код опции менять нельзя.");
+
+        var validationError = ValidateOptionInput(dto, existingCode: option.Code);
+        if (validationError is not null) return validationError;
+
+        option.Name = dto.Name;
+        option.Description = dto.Description;
+        option.Kind = ParseKind(dto.Kind);
+        option.CapabilityKey = dto.CapabilityKey;
+        option.PricePerMonth = dto.PricePerMonth;
+        option.UnitName = dto.UnitName;
+        option.MaxQuantity = dto.MaxQuantity;
+        option.IsPublic = dto.IsPublic;
+        option.IsActive = dto.IsActive;
+        option.SortOrder = dto.SortOrder;
+        option.UpdatedAtUtc = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        pricingCatalogCache.Invalidate();
+        var count = await db.AccountSubscriptionOptions.CountAsync(o => o.OptionId == id);
+        return Ok(MapOptionDto(option, count));
+    }
+
+    [HttpDelete("options/{id:guid}")]
+    public async Task<IActionResult> DeactivateOption(Guid id)
+    {
+        var option = await db.SubscriptionOptions.FindAsync(id);
+        if (option is null) return NotFound();
+
+        option.IsActive = false;
+        option.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        pricingCatalogCache.Invalidate();
+        return NoContent();
+    }
+
+    [HttpGet("option-capabilities")]
+    public IActionResult GetOptionCapabilities() =>
+        Ok(new { capabilities = OptionCapabilityCatalog.Known.Select(c => new { c.Key, c.Kind, c.Name }).ToList() });
+
+    private static IActionResult? ValidateOptionInput(Billing_AdminOptionInput dto, string? existingCode)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Code) || dto.Code.Length is < 2 or > 64)
+            return new BadRequestObjectResult("Код опции обязателен (2-64 символа).");
+        if (string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Length > 100)
+            return new BadRequestObjectResult("Название обязательно (до 100 символов).");
+        if (dto.PricePerMonth is < 0)
+            return new BadRequestObjectResult("Цена не может быть отрицательной.");
+
+        var kind = ParseKind(dto.Kind);
+        if (kind == OptionKind.Quantity && string.IsNullOrWhiteSpace(dto.UnitName))
+            return new BadRequestObjectResult("Для опции-количества обязательна единица измерения.");
+        if (kind == OptionKind.Toggle && !string.IsNullOrWhiteSpace(dto.UnitName))
+            return new BadRequestObjectResult("Для опции-переключателя единица измерения не задаётся.");
+
+        return null;
+    }
+
+    private static OptionKind ParseKind(string kind) => kind switch
+    {
+        "Toggle" => OptionKind.Toggle,
+        "Quantity" => OptionKind.Quantity,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "kind must be Toggle or Quantity"),
+    };
+
+    private async Task<Dictionary<Guid, int>> GetOptionSubscriberCountsAsync(IEnumerable<Guid> optionIds)
+    {
+        var ids = optionIds.ToList();
+        return await db.AccountSubscriptionOptions
+            .Where(o => ids.Contains(o.OptionId) && (o.EndsAtUtc == null || o.EndsAtUtc > DateTime.UtcNow))
+            .GroupBy(o => o.OptionId)
+            .Select(g => new { OptionId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.OptionId, x => x.Count);
+    }
+
+    private static object MapOptionDto(SubscriptionOption o, int subscribedAccounts) => new
+    {
+        id = o.Id,
+        code = o.Code,
+        name = o.Name,
+        description = o.Description,
+        kind = o.Kind.ToString(),
+        capabilityKey = o.CapabilityKey,
+        capabilityKnown = OptionCapabilityCatalog.IsKnown(o.CapabilityKey),
+        pricePerMonth = o.PricePerMonth,
+        currency = "RUB",
+        unitName = o.UnitName,
+        maxQuantity = o.MaxQuantity,
+        isPublic = o.IsPublic,
+        isActive = o.IsActive,
+        sortOrder = o.SortOrder,
+        subscribedAccounts,
+    };
+
+    // ── Billing accounts (US-67) ──────────────────────────────────────────────────
+
+    [HttpGet("billing-accounts")]
+    public async Task<IActionResult> GetBillingAccounts(
+        [FromQuery] string? search, [FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize)
+    {
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        var query = db.BillingAccounts.Include(a => a.Owner).AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(a =>
+                a.Owner.Email!.Contains(search) || a.Owner.PhoneNumber!.Contains(search) ||
+                a.Owner.FirstName.Contains(search) || a.Owner.LastName.Contains(search) ||
+                db.Companies.Any(c => c.BillingAccountId == a.Id && c.Name.Contains(search)));
+        }
+
+        var all = await query.OrderBy(a => a.CreatedAtUtc).ToListAsync();
+        var accountIds = all.Select(a => a.Id).ToList();
+        var plans = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
+        var usages = await usageReader.GetAsync(accountIds);
+        var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
+            .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync();
+
+        var items = all.Select(a =>
+        {
+            var sub = subs.FirstOrDefault(s => s.BillingAccountId == a.Id);
+            var plan = plans.GetValueOrDefault(a.Id, EffectivePlan.Free);
+            var usage = usages.GetValueOrDefault(a.Id) ?? new AccountUsage(a.Id, 0, 0);
+            var subStatus = OwnerSubscriptionService.SubscriptionStatusFor(sub, DateTime.UtcNow);
+            return new
+            {
+                id = a.Id,
+                account = a,
+                sub,
+                plan,
+                usage,
+                status = subStatus,
+            };
+        }).ToList();
+
+        if (!string.IsNullOrWhiteSpace(status))
+            items = items.Where(x => string.Equals(x.status, status, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var total = items.Count;
+        var page1 = items.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
+
+        var result = page1.Select(x => new
+        {
+            id = x.account.Id,
+            name = x.account.Name,
+            ownerUserId = x.account.OwnerUserId,
+            ownerName = $"{x.account.Owner.FirstName} {x.account.Owner.LastName}".Trim(),
+            ownerPhoneMasked = x.account.Owner.PhoneNumber is null ? null : PhoneDisplayMask.Mask(x.account.Owner.PhoneNumber),
+            planName = x.sub?.PlanConfig?.Name,
+            status = x.status,
+            paidUntil = x.sub?.PaidUntil,
+            totalMonthlyPrice = x.sub?.PlanConfig?.PricePerMonth ?? 0m,
+            currency = "RUB",
+            companiesUsed = x.usage.CompaniesUsed,
+            companiesLimit = x.plan.AccountMaxCompanies,
+            employeesUsed = x.usage.SeatsUsed,
+            employeesLimit = x.plan.AccountMaxEmployees,
+            numbersPaid = x.plan.PaidNotificationNumbers,
+            numbersRegistered = 0,
+            hasPendingRequest = x.account.RequestedAtUtc is not null,
+        }).ToList();
+
+        return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
+    }
+
+    [HttpGet("billing-accounts/{accountId:guid}")]
+    public async Task<IActionResult> GetBillingAccount(Guid accountId)
+    {
+        var account = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan)
+            .FirstOrDefaultAsync(a => a.Id == accountId);
+        if (account is null) return NotFound();
+
+        var dto = await BuildAdminAccountDtoAsync(account);
+        return Ok(dto);
+    }
+
+    private async Task<object> BuildAdminAccountDtoAsync(BillingAccount account)
+    {
+        var now = DateTime.UtcNow;
+        var sub = await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
+        var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
+        var usage = (await usageReader.GetAsync([account.Id])).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
+
+        var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
+            .Where(o => o.BillingAccountId == account.Id).Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now).ToListAsync();
+        var planRules = sub?.PlanConfigId is { } planId ? await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync() : [];
+
+        var companies = await db.Companies.Where(c => c.BillingAccountId == account.Id).ToListAsync();
+        var companyIds = companies.Select(c => c.Id).ToList();
+        var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
+        var ownerIds = companies.Select(c => c.OwnerUserId).Distinct().ToList();
+        var ownerNames = await db.Users.Where(u => ownerIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+
+        var channels = await db.NotificationChannels.Include(c => c.Assignments)
+            .Where(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced)
+            .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToListAsync();
+        var funding = ChannelFunding.Rank(channels, plan.PaidNotificationNumbers);
+
+        var optionDtos = subscribedOptions.Select(o =>
+        {
+            var rule = planRules.FirstOrDefault(r => r.OptionId == o.OptionId);
+            var availability = rule?.Availability ?? OptionAvailability.Extra;
+            var monthly = BillingCalculator.MonthlyPriceFor(availability, o.Quantity, o.Option.PricePerMonth ?? 0m, rule?.IncludedQuantity);
+            return new
+            {
+                optionId = o.OptionId,
+                name = o.Option.Name,
+                description = o.Option.Description,
+                kind = o.Option.Kind.ToString(),
+                unitName = o.Option.UnitName,
+                quantity = o.Quantity,
+                pricePerUnit = o.Option.PricePerMonth ?? 0m,
+                pricePerMonth = monthly,
+                status = o.EndsAtUtc.HasValue ? "Ending" : "Active",
+                statusText = o.EndsAtUtc.HasValue ? $"Действует до {o.EndsAtUtc:dd.MM.yyyy}" : "Подключена",
+                endsAt = o.EndsAtUtc,
+                canDisable = true,
+                paidUntil = o.PaidUntilUtc,
+                requestedQuantity = o.RequestedQuantity,
+                requestedAt = o.RequestedAtUtc,
+            };
+        }).ToList();
+
+        var totalMonthlyPrice = (sub?.PlanConfig?.PricePerMonth ?? 0m) + optionDtos.Sum(o => o.pricePerMonth);
+
+        var pendingRequest = ownerSubscriptionService.BuildPendingRequestDto(
+            account, subscribedOptions.Select(o => o.Option).Concat(await db.SubscriptionOptions.ToListAsync()).DistinctBy(o => o.Id).ToList(),
+            sub?.PlanConfig?.PricePerMonth ?? 0m);
+
+        return new
+        {
+            id = account.Id,
+            name = account.Name,
+            ownerUserId = account.OwnerUserId,
+            ownerName = $"{account.Owner.FirstName} {account.Owner.LastName}".Trim(),
+            ownerPhoneMasked = account.Owner.PhoneNumber is null ? null : PhoneDisplayMask.Mask(account.Owner.PhoneNumber),
+            currency = "RUB",
+            status = OwnerSubscriptionService.SubscriptionStatusFor(sub, now),
+            isActive = sub?.IsActive ?? false,
+            planId = sub?.PlanConfigId,
+            plan = new { id = sub?.PlanConfigId, name = sub?.PlanConfig?.Name ?? "Бесплатный", description = sub?.PlanConfig?.Description, pricePerMonth = sub?.PlanConfig?.PricePerMonth ?? 0m, includes = Array.Empty<string>() },
+            options = optionDtos,
+            totalMonthlyPrice,
+            paidUntil = sub?.PaidUntil,
+            companiesUsed = usage.CompaniesUsed,
+            companiesLimit = plan.AccountMaxCompanies,
+            employeesUsed = usage.SeatsUsed,
+            employeesLimit = plan.AccountMaxEmployees,
+            numbersPaid = plan.PaidNotificationNumbers,
+            numbersRegistered = channels.Count,
+            grandfatheredEmployeeBonus = account.GrandfatheredEmployeeBonus,
+            grandfatheredEmployeeBonusText = account.GrandfatheredEmployeeBonus > 0
+                ? $"Дополнительно {account.GrandfatheredEmployeeBonus} мест выдано миграцией тарифов." : null,
+            companies = companies.Select(c => new
+            {
+                companyId = c.Id,
+                companyName = c.Name,
+                ownerUserId = c.OwnerUserId,
+                ownerName = ownerNames.GetValueOrDefault(c.OwnerUserId),
+                employeeCount = seatsByCompany.GetValueOrDefault(c.Id),
+            }).ToList(),
+            channels = channels.Select(c => new
+            {
+                channelId = c.Id,
+                phoneMasked = c.PhoneNumber is null ? null : PhoneDisplayMask.Mask(c.PhoneNumber),
+                state = c.State.ToString(),
+                fundingState = funding.GetValueOrDefault(c.Id, ChannelFundingState.NotPaid).ToString(),
+                createdAt = c.CreatedAt,
+                assignedCompanies = c.Assignments.Count,
+            }).ToList(),
+            pendingRequest,
+        };
+    }
+
+    [HttpPut("billing-accounts/{accountId:guid}/subscription")]
+    public async Task<IActionResult> AssignSubscription(Guid accountId, [FromBody] Billing_AssignSubscriptionInput dto)
+    {
+        var account = await db.BillingAccounts.Include(a => a.Owner).FirstOrDefaultAsync(a => a.Id == accountId);
+        if (account is null) return NotFound();
+
+        if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
+            return BadRequest("Дата окончания оплаты не может быть в прошлом.");
+
+        SubscriptionPlanConfig? plan = null;
+        if (dto.PlanId.HasValue)
+        {
+            plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanId.Value);
+            if (plan is null) return NotFound("Тариф не найден.");
+        }
+
+        var optionIds = dto.Options.Select(o => o.OptionId).ToList();
+        var options = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).ToListAsync();
+        if (options.Count != optionIds.Distinct().Count())
+            return BadRequest("Одна или несколько опций не найдены.");
+
+        var planRules = plan is not null ? await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync() : [];
+        foreach (var line in dto.Options)
+        {
+            var rule = planRules.FirstOrDefault(r => r.OptionId == line.OptionId);
+            if (plan is not null && (rule is null || rule.Availability == OptionAvailability.Unavailable))
+                return Conflict($"Опция недоступна на выбранном тарифе.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
+
+        var changedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var now = DateTime.UtcNow;
+
+        // Limit-overflow guard (US-67's last acceptance criterion): if the newly assigned plan's
+        // summed limits are lower than what's already occupied, refuse without confirmLimitOverflow.
+        var newEffectivePlan = plan is not null ? EffectivePlan.FromConfig(plan) : EffectivePlan.Free;
+        var usage = (await usageReader.GetAsync([accountId])).GetValueOrDefault(accountId) ?? new AccountUsage(accountId, 0, 0);
+        if (!dto.ConfirmLimitOverflow)
+        {
+            if (newEffectivePlan.AccountMaxCompanies is { } maxCompanies && usage.CompaniesUsed > maxCompanies)
+                return Conflict($"На новом тарифе доступно {maxCompanies} компаний, занято {usage.CompaniesUsed}. Подтвердите превышение лимита, чтобы продолжить.");
+            if (newEffectivePlan.AccountMaxEmployees is { } maxEmployees && usage.SeatsUsed > maxEmployees + account.GrandfatheredEmployeeBonus)
+                return Conflict($"На новом тарифе доступно {maxEmployees} мест, занято {usage.SeatsUsed}. Подтвердите превышение лимита, чтобы продолжить.");
+        }
+
+        var sub = await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId);
+        if (sub is null)
+        {
+            sub = new AccountSubscription { Id = Guid.NewGuid(), OwnerUserId = account.OwnerUserId, BillingAccountId = accountId, CreatedAt = now };
+            db.AccountSubscriptions.Add(sub);
+        }
+
+        var oldPlanId = sub.PlanConfigId;
+        var oldPlanName = sub.PlanConfig?.Name;
+        var oldPaidUntil = sub.PaidUntil;
+        var oldIsActive = sub.IsActive;
+        var oldOptionsSummary = await BuildOptionsSummaryAsync(accountId);
+
+        sub.PlanConfigId = dto.PlanId;
+        sub.IsActive = dto.IsActive;
+        sub.PaidUntil = dto.PaidUntil?.ToDateTime(TimeOnly.MaxValue);
+        sub.UpdatedAt = now;
+
+        var existingOptions = await db.AccountSubscriptionOptions.Where(o => o.BillingAccountId == accountId).ToListAsync();
+        foreach (var line in dto.Options)
+        {
+            var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
+            if (row is null)
+            {
+                db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
+                {
+                    Id = Guid.NewGuid(),
+                    BillingAccountId = accountId,
+                    OptionId = line.OptionId,
+                    Quantity = line.Quantity,
+                    PaidUntilUtc = line.PaidUntil?.ToDateTime(TimeOnly.MaxValue),
+                    ActivatedAtUtc = now,
+                    ActivatedByUserId = changedByUserId,
+                });
+            }
+            else
+            {
+                row.EndsAtUtc = null;
+                row.Quantity = line.Quantity;
+                row.PaidUntilUtc = line.PaidUntil?.ToDateTime(TimeOnly.MaxValue);
+                row.ActivatedAtUtc = now;
+                row.ActivatedByUserId = changedByUserId;
+                row.RequestedQuantity = null;
+                row.RequestedAtUtc = null;
+                row.RequestedByUserId = null;
+            }
+        }
+        // Options present before but omitted now (or decreased — decreases are not modeled per-unit,
+        // only full removal below; a partial decrease is out of scope for this endpoint's write shape
+        // and is treated the same as the option staying at its previous quantity until removed outright,
+        // see the cycle-07 backend report) end at the close of the current paid period rather than
+        // disappearing immediately (contract: "действует до конца оплаченного периода").
+        foreach (var row in existingOptions.Where(r => dto.Options.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+            row.EndsAtUtc = sub.PaidUntil ?? now;
+
+        if (dto.RequestId.HasValue && account.Id == dto.RequestId.Value)
+        {
+            account.RequestedPlanId = null;
+            account.RequestedOptionsJson = null;
+            account.RequestedAtUtc = null;
+            account.RequestedByUserId = null;
+            account.RequestedComment = null;
+        }
+
+        var newOptionsSummary = string.Join(", ", dto.Options.Select(o =>
+        {
+            var name = options.First(x => x.Id == o.OptionId).Name;
+            return $"{name} ×{o.Quantity}";
+        }));
+
+        db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
+        {
+            Id = Guid.NewGuid(),
+            OwnerUserId = account.OwnerUserId,
+            BillingAccountId = accountId,
+            ChangedByUserId = changedByUserId,
+            ChangedAt = now,
+            OldPlanConfigId = oldPlanId,
+            NewPlanConfigId = dto.PlanId,
+            OldPaidUntil = oldPaidUntil,
+            NewPaidUntil = sub.PaidUntil,
+            OldIsActive = oldIsActive,
+            NewIsActive = dto.IsActive,
+            ChangeKind = oldPlanId != dto.PlanId ? SubscriptionChangeKind.Plan : SubscriptionChangeKind.Options,
+            OldOptionsSummary = oldOptionsSummary,
+            NewOptionsSummary = newOptionsSummary,
+            Comment = dto.Comment,
+        });
+
+        account.UpdatedAtUtc = now;
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        var freshAccount = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
+        return Ok(await BuildAdminAccountDtoAsync(freshAccount));
+    }
+
+    private async Task<string?> BuildOptionsSummaryAsync(Guid accountId)
+    {
+        var rows = await db.AccountSubscriptionOptions.Include(o => o.Option)
+            .Where(o => o.BillingAccountId == accountId && (o.EndsAtUtc == null || o.EndsAtUtc > DateTime.UtcNow)).ToListAsync();
+        return rows.Count == 0 ? null : string.Join(", ", rows.Select(r => $"{r.Option.Name} ×{r.Quantity}"));
+    }
+
+    [HttpGet("billing-accounts/{accountId:guid}/subscription-history")]
+    public async Task<IActionResult> GetSubscriptionHistory(Guid accountId)
+    {
+        if (!await db.BillingAccounts.AnyAsync(a => a.Id == accountId)) return NotFound();
+
+        var logs = await db.SubscriptionChangeLogs.Where(l => l.BillingAccountId == accountId)
+            .OrderByDescending(l => l.ChangedAt).ToListAsync();
+
+        var planIds = logs.SelectMany(l => new[] { l.OldPlanConfigId, l.NewPlanConfigId }).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
+        var planNames = await db.SubscriptionPlanConfigs.Where(p => planIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name);
+
+        var changedByIds = logs.Select(l => l.ChangedByUserId).Distinct().ToList();
+        var changedByNames = await db.Users.Where(u => changedByIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+
+        var items = logs.Select(l => new
+        {
+            id = l.Id,
+            changedAt = l.ChangedAt,
+            changedByName = changedByNames.GetValueOrDefault(l.ChangedByUserId, l.ChangedByUserId),
+            changeKind = l.ChangeKind.ToString(),
+            companyId = l.CompanyId,
+            oldPlanName = l.OldPlanConfigId.HasValue ? planNames.GetValueOrDefault(l.OldPlanConfigId.Value, "—") : null,
+            newPlanName = l.NewPlanConfigId.HasValue ? planNames.GetValueOrDefault(l.NewPlanConfigId.Value, "—") : null,
+            oldPaidUntil = l.OldPaidUntil,
+            newPaidUntil = l.NewPaidUntil,
+            oldOptionsSummary = l.OldOptionsSummary,
+            newOptionsSummary = l.NewOptionsSummary,
+            amount = (decimal?)null,
+            comment = l.Comment,
+        }).ToList();
+
+        return Ok(new { items });
+    }
+
+    // ── Subscription requests queue (US-67, US-70) ────────────────────────────────
+
+    [HttpGet("subscription-requests")]
+    public async Task<IActionResult> GetSubscriptionRequests([FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize)
+    {
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+
+        // Only "Pending" is ever non-empty — see BillingAccount's own remarks: an approved/rejected/
+        // cancelled request simply clears its columns rather than being kept as a history row.
+        if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "Pending", StringComparison.OrdinalIgnoreCase))
+            return Ok(Pagination.Create(new List<object>(), currentPage, currentPageSize, 0));
+
+        var accounts = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan)
+            .Where(a => a.RequestedAtUtc != null)
+            .OrderBy(a => a.RequestedAtUtc)
+            .ToListAsync();
+
+        var total = accounts.Count;
+        var page1 = accounts.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
+        var allOptions = await db.SubscriptionOptions.ToListAsync();
+
+        var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
+            .Where(s => s.BillingAccountId != null && page1.Select(a => a.Id).Contains(s.BillingAccountId!.Value)).ToListAsync();
+        var companyCounts = await db.Companies.Where(c => c.BillingAccountId != null && page1.Select(a => a.Id).Contains(c.BillingAccountId!.Value))
+            .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { AccountId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.AccountId, x => x.Count);
+
+        var items = page1.Select(a =>
+        {
+            var lines = OwnerSubscriptionService.DeserializeOptionLines(a.RequestedOptionsJson);
+            var itemDtos = lines.Select(l => new { optionId = l.OptionId, name = allOptions.FirstOrDefault(o => o.Id == l.OptionId)?.Name ?? "—", quantity = l.Quantity }).ToList();
+            var sub = subs.FirstOrDefault(s => s.BillingAccountId == a.Id);
+            var estimated = (sub?.PlanConfig?.PricePerMonth ?? 0m) + lines.Sum(l => (allOptions.FirstOrDefault(o => o.Id == l.OptionId)?.PricePerMonth ?? 0m) * l.Quantity);
+            return new
+            {
+                id = a.Id,
+                billingAccountId = a.Id,
+                accountName = a.Name,
+                requestedByName = $"{a.Owner.FirstName} {a.Owner.LastName}".Trim(),
+                requestedByPhoneMasked = a.Owner.PhoneNumber is null ? null : PhoneDisplayMask.Mask(a.Owner.PhoneNumber),
+                createdAt = a.RequestedAtUtc,
+                status = "Pending",
+                currentPlanName = sub?.PlanConfig?.Name,
+                desiredPlanName = a.RequestedPlan?.Name,
+                items = itemDtos,
+                estimatedMonthlyPrice = estimated,
+                comment = a.RequestedComment,
+                companiesCount = companyCounts.GetValueOrDefault(a.Id, 0),
+            };
+        }).ToList();
+
+        return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
+    }
+
+    [HttpPost("subscription-requests/{id:guid}/reject")]
+    public async Task<IActionResult> RejectSubscriptionRequest(Guid id, [FromBody] RejectRequestDto? dto)
+    {
+        // The request is keyed by its billing account id (see BillingAccount's own remarks — there is
+        // no separate SubscriptionRequest row to look up by its own id).
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.Id == id);
+        if (account is null) return NotFound();
+        if (account.RequestedAtUtc is null) return Conflict("Заявка уже обработана.");
+
+        account.RequestedPlanId = null;
+        account.RequestedOptionsJson = null;
+        account.RequestedAtUtc = null;
+        account.RequestedByUserId = null;
+        account.RequestedComment = dto?.Comment;
+        account.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        return NoContent();
+    }
+}
+
+// ── Local input DTOs (kept private-ish to this controller; distinct names avoid clashing with the
+// legacy record types already declared at the bottom of AdminController.cs) ─────────────────────────
+public record Billing_AdminOptionInput(
+    string Code, string Name, string? Description, string Kind, string? CapabilityKey,
+    decimal? PricePerMonth, string? UnitName, int? MaxQuantity, bool IsPublic = false, bool IsActive = true, int SortOrder = 0);
+
+public record Billing_AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
+
+public record Billing_AssignSubscriptionInput(
+    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<Billing_AssignOptionInput> Options,
+    decimal? Amount, string? Comment, Guid? RequestId, bool ConfirmLimitOverflow = false);
+
+public record RejectRequestDto(string? Comment);
