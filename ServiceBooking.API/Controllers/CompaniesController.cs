@@ -480,9 +480,17 @@ public class CompaniesController(
                 var sub = billingAccountId.HasValue
                     ? await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == billingAccountId.Value)
                     : null;
-                var planIncluded = sub?.PlanConfig?.MaxEmployees ?? EffectivePlan.Free.AccountMaxEmployees!.Value;
+                // NB-1: must use the SAME "is this subscription usable right now" gate as the limit
+                // itself (SubscriptionResolver.Resolve) — otherwise an expired subscription's raw plan
+                // name/quantity leaks into the 402 text (e.g. "8 included") while the limit that was
+                // actually enforced came from Free (1).
+                var subUsableNow = sub is not null && sub.IsActive
+                    && (!sub.PaidUntil.HasValue || sub.PaidUntil >= DateTime.UtcNow)
+                    && sub.PlanConfig is { IsActive: true };
+                var planIncluded = subUsableNow ? sub!.PlanConfig!.MaxEmployees ?? EffectivePlan.Free.AccountMaxEmployees!.Value
+                    : EffectivePlan.Free.AccountMaxEmployees!.Value;
                 var purchased = Math.Max(0, plan.AccountMaxEmployees.Value - planIncluded - bonus);
-                var planName = sub?.PlanConfig?.Name ?? "Бесплатный";
+                var planName = subUsableNow ? sub!.PlanConfig!.Name : "Бесплатный";
                 return StatusCode(402, BillingTexts.SeatLimitReached(seatsUsed, planName, planIncluded, purchased, bonus));
             }
         }
