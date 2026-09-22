@@ -343,7 +343,7 @@ public class AdminController(
         var validationError = ValidatePlanInput(dto);
         if (validationError is not null) return validationError;
 
-        var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree ?? false, dto.PricePerMonth, existingPlanId: null);
+        var systemFreeError = await ValidateSystemFreeAsync(false, dto.PricePerMonth, existingPlanId: null);
         if (systemFreeError is not null) return systemFreeError;
 
         var plan = new SubscriptionPlanConfig
@@ -366,11 +366,12 @@ public class AdminController(
             IsPublic = dto.IsPublic ?? false,
             IsActive = dto.IsActive,
             SortOrder = dto.SortOrder ?? 0,
-            IsSystemFree = dto.IsSystemFree ?? false,
+            IsSystemFree = false,
             CreatedAt = DateTime.UtcNow,
         };
+        var optionRulesError = dto.Options is not null ? await ApplyOptionRulesAsync(plan.Id, dto.Options) : null;
+        if (optionRulesError is not null) return optionRulesError;
         db.SubscriptionPlanConfigs.Add(plan);
-        await ApplyOptionRulesAsync(plan.Id, dto.Options);
         try
         {
             await db.SaveChangesAsync();
@@ -397,8 +398,7 @@ public class AdminController(
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
 
-        var effectiveIsSystemFree = dto.IsSystemFree ?? plan.IsSystemFree;
-        var systemFreeError = await ValidateSystemFreeAsync(effectiveIsSystemFree, dto.PricePerMonth, existingPlanId: id);
+        var systemFreeError = await ValidateSystemFreeAsync(plan.IsSystemFree, dto.PricePerMonth, existingPlanId: id);
         if (systemFreeError is not null) return systemFreeError;
 
         plan.Name = dto.Name;
@@ -414,11 +414,18 @@ public class AdminController(
         plan.PhotoRetention = dto.PhotoRetention;
         plan.Description = dto.Description;
         plan.NotifyDaysBefore = dto.NotifyDaysBefore;
-        plan.Highlights = JoinHighlights(dto.Highlights);
+        // B4: same "apply only if present" semantics as IsPublic/SortOrder below — the existing admin
+        // UI never sends `highlights`/`options`, and applying them unconditionally used to wipe every
+        // highlight bullet (JoinHighlights(null) => null) and every PlanOptionRule (ApplyOptionRulesAsync
+        // treating a missing `options` as "remove all rules") on every ordinary field edit.
+        if (dto.Highlights is not null) plan.Highlights = JoinHighlights(dto.Highlights);
         if (dto.IsPublic.HasValue) plan.IsPublic = dto.IsPublic.Value;
         if (dto.SortOrder.HasValue) plan.SortOrder = dto.SortOrder.Value;
-        plan.IsSystemFree = effectiveIsSystemFree;
-        await ApplyOptionRulesAsync(id, dto.Options);
+        if (dto.Options is not null)
+        {
+            var optionRulesError = await ApplyOptionRulesAsync(id, dto.Options);
+            if (optionRulesError is not null) return optionRulesError;
+        }
 
         // Deactivating through this endpoint has exactly the effect DeletePlan refuses below: the
         // resolver treats PlanConfig.IsActive == false as Free, so every subscriber silently loses
@@ -447,6 +454,46 @@ public class AdminController(
             // Two concurrent requests can both pass the AnyAsync check above before either commits —
             // the partial unique index on IsSystemFree (AppDbContext) is the real guard; translate its
             // violation into the same 409 instead of letting a 500 leak out (code review finding).
+            return Conflict("Another plan is already marked as the system free plan.");
+        }
+        pricingCatalogCache.Invalidate();
+        var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
+        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
+        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules));
+    }
+
+    /// <summary>
+    /// Separate from PUT /plans/{id} on purpose (code review finding B "isSystemFree removal") —
+    /// contracts/openapi-cycle5.yaml's AdminPlanInput has no isSystemFree property, and folding "make
+    /// this THE system free plan" into an ordinary field-edit DTO made it too easy for an unrelated PUT
+    /// to accidentally flip the flag guarded by the partial unique index (AppDbContext).
+    /// </summary>
+    [HttpPut("plans/{id:guid}/system-free")]
+    public async Task<IActionResult> SetSystemFree(Guid id, [FromBody] SetSystemFreeInput dto)
+    {
+        var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
+        if (plan is null) return NotFound();
+
+        if (plan.IsSystemFree == dto.IsSystemFree)
+        {
+            var unchangedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
+            var unchangedRules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
+            return Ok(MapAdminPlanDto(plan, unchangedAccounts, unchangedRules));
+        }
+
+        if (!dto.IsSystemFree && plan.IsSystemFree)
+            return Conflict("Ровно один тариф должен быть системным бесплатным — назначьте другой, прежде чем снимать этот флаг.");
+
+        var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree, plan.PricePerMonth, existingPlanId: id);
+        if (systemFreeError is not null) return systemFreeError;
+
+        plan.IsSystemFree = dto.IsSystemFree;
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
             return Conflict("Another plan is already marked as the system free plan.");
         }
         pricingCatalogCache.Invalidate();
@@ -529,10 +576,26 @@ public class AdminController(
     // openapi-cycle5.yaml AdminPlanInput.options: the FULL desired availability matrix for the plan —
     // rows not present are removed (an option that used to be Included/Extra and is now omitted becomes
     // Unavailable), matching the contract's "полная матрица" wording for the read side.
-    private async Task ApplyOptionRulesAsync(Guid planId, List<AdminPlanOptionRuleDtoV2>? desired)
+    // B6: an unknown Availability string or a nonexistent OptionId used to throw (Enum.Parse, no
+    // existence check) and surface as a 500 instead of a 400 — validate everything up front, without
+    // writing anything, before touching the DbContext.
+    private async Task<IActionResult?> ApplyOptionRulesAsync(Guid planId, List<AdminPlanOptionRuleDtoV2>? desired)
     {
-        var existing = await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync();
         var desiredList = desired ?? [];
+
+        foreach (var d in desiredList)
+        {
+            if (!Enum.TryParse<OptionAvailability>(d.Availability, out _))
+                return new BadRequestObjectResult($"Неизвестное значение availability: «{d.Availability}».");
+        }
+
+        var optionIds = desiredList.Select(d => d.OptionId).ToList();
+        var knownOptionIds = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).Select(o => o.Id).ToListAsync();
+        var unknown = optionIds.Except(knownOptionIds).ToList();
+        if (unknown.Count > 0)
+            return new BadRequestObjectResult($"Опция(и) не найдены: {string.Join(", ", unknown)}.");
+
+        var existing = await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync();
 
         foreach (var row in existing.Where(e => desiredList.All(d => d.OptionId != e.OptionId)))
             db.PlanOptionRules.Remove(row);
@@ -555,6 +618,7 @@ public class AdminController(
                 row.IncludedQuantity = d.IncludedQuantity;
             }
         }
+        return null;
     }
 
     /// <summary>ARCHITECTURE_CYCLE5.md §43.4: exactly one row may have <c>IsSystemFree == true</c>, and

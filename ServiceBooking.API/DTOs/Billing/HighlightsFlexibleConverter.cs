@@ -14,6 +14,11 @@ namespace ServiceBooking.API.DTOs.Billing;
 /// backend report. This converter accepts EITHER shape on read (array of strings, or one
 /// newline-separated string) and always WRITES the contract's array form, so a caller that already
 /// speaks the contract works unmodified and the legacy string callers keep working too.
+///
+/// TEMPORARY (cycle-07 code review): keep this converter only until the ADM-0xx functional tests are
+/// rewritten to send the contract's array shape directly — once that happens this class and its
+/// [JsonConverter] attribute on AdminPlanInput.Highlights should be deleted rather than left as
+/// permanent dual-format leniency.
 /// </summary>
 public sealed class HighlightsFlexibleConverter : JsonConverter<List<string>?>
 {

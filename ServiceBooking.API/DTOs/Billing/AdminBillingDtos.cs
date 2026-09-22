@@ -34,12 +34,13 @@ public record AdminPlanInput(
     // CreatePlan/UpdatePlan, so this fix doesn't also have to rewrite that test helper (see the cycle-07
     // backend report).
     bool? IsPublic = null, bool IsActive = true, int? SortOrder = null,
-    List<AdminPlanOptionRuleDtoV2>? Options = null,
-    // NOT part of contracts/openapi-cycle5.yaml's AdminPlanInput (which has no isSystemFree property at
-    // all) — kept here so the existing ADM-0xx functional tests that still exercise "make this plan the
-    // system free plan through PUT /plans/{id}" keep passing (see the cycle-07 backend report for why
-    // this is a deliberate, reported deviation rather than a silent one).
-    bool? IsSystemFree = null);
+    List<AdminPlanOptionRuleDtoV2>? Options = null);
+
+// contracts/openapi-cycle5.yaml's AdminPlanInput has no isSystemFree property (additionalProperties:
+// false) — changing which plan is the system free one is a distinct, rarer administrative action from
+// an ordinary field edit, so it gets its own route/DTO instead of riding along inside AdminPlanInput
+// (cycle-07 code review finding B "isSystemFree removal").
+public record SetSystemFreeInput(bool IsSystemFree);
 
 // ── Billing accounts (US-67) ────────────────────────────────────────────────────
 public record AdminBillingAccountListItemDto(
