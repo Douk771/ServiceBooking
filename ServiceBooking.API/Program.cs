@@ -257,6 +257,7 @@ builder.Services.AddCors(opt =>
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<SlotService>();
 builder.Services.AddScoped<SubscriptionResolver>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Billing.BillingAccountProvisioner>();
 // Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
 // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
 // this developer's file this cycle.

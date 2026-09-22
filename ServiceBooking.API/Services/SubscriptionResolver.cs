@@ -11,8 +11,12 @@ public record EffectivePlan(
     bool AllowAnalytics,
     bool AllowPublicListing,
     bool AllowOnlinePayment,
-    int? MaxEmployees,
-    int? MaxCompanies,
+    // Cycle 5 (ARCHITECTURE_CYCLE5.md §44.1) — renamed on purpose (was MaxEmployees/MaxCompanies,
+    // enforced per company): the limit is now SUMMED across every company the billing account owns.
+    // The rename is a deliberately breaking change — a positional/named-argument mismatch here is a
+    // compile error, not a silent behavior change (§45.3 p.2).
+    int? AccountMaxEmployees,
+    int? AccountMaxCompanies,
     // Client-note photo storage cap in MB; null = unlimited (US-24, ARCHITECTURE.md §7.1).
     int? PhotoQuotaMb,
     PhotoRetention PhotoRetention,
@@ -32,7 +36,7 @@ public record EffectivePlan(
     // which would either block every upload or grant unlimited storage to unpaid accounts.
     public static readonly EffectivePlan Free = new(
         AllowOnlineBooking: false, AllowMailing: false, AllowAnalytics: false,
-        AllowPublicListing: true, AllowOnlinePayment: false, MaxEmployees: 1, MaxCompanies: 1,
+        AllowPublicListing: true, AllowOnlinePayment: false, AccountMaxEmployees: 1, AccountMaxCompanies: 1,
         PhotoQuotaMb: 100, PhotoRetention: PhotoRetention.SixMonths, AllowNotificationChannel: false);
 
     public static EffectivePlan FromConfig(SubscriptionPlanConfig c) => new(
@@ -42,79 +46,104 @@ public record EffectivePlan(
 }
 
 /// <summary>
-/// Resolves the effective plan for an account. A subscription is bound to the account owner (the
-/// company creator, <see cref="Company.OwnerUserId"/>), so every company they own shares one plan.
+/// Resolves the effective plan for a billing account (ARCHITECTURE_CYCLE5.md §43.2, §44, §45). A
+/// subscription is bound to the account, not to a person or a single company — every company the
+/// account owns shares one plan. Money reads go through <see cref="BillingAccount"/>/
+/// <see cref="Company.BillingAccountId"/> from here on; <c>Company.OwnerUserId</c> stays a
+/// rights/visibility question (§45.2) answered elsewhere.
 /// </summary>
 public class SubscriptionResolver(AppDbContext db)
 {
-    /// <summary>Pure plan-resolution rule: no DB access, "now" is passed in so it can be unit-tested.</summary>
-    public static EffectivePlan Resolve(AccountSubscription? sub, DateTime nowUtc)
+    /// <summary>
+    /// Pure plan-resolution rule: no DB access, "now" is passed in so it can be unit-tested.
+    /// <paramref name="grandfatheredEmployeeBonus"/> is <see cref="BillingAccount.GrandfatheredEmployeeBonus"/>
+    /// — added to the seat limit regardless of subscription state (it survives a downgrade to Free by
+    /// design, §54.4/§44.3 p.8) but never surfaced as money.
+    /// </summary>
+    public static EffectivePlan Resolve(AccountSubscription? sub, int grandfatheredEmployeeBonus, DateTime nowUtc)
     {
         var usable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= nowUtc);
         // A plan an admin has deactivated (SubscriptionPlanConfig.IsActive == false, e.g. discontinued)
-        // must fall back to Free even for an owner who is still actively subscribed to it — otherwise a
+        // must fall back to Free even for an account still actively subscribed to it — otherwise a
         // deleted plan keeps granting its features forever to whoever was on it when it was retired.
-        return usable && sub!.PlanConfig is { IsActive: true }
+        var basePlan = usable && sub!.PlanConfig is { IsActive: true }
             ? EffectivePlan.FromConfig(sub.PlanConfig)
             : EffectivePlan.Free;
+
+        if (grandfatheredEmployeeBonus <= 0) return basePlan;
+        return basePlan with
+        {
+            AccountMaxEmployees = basePlan.AccountMaxEmployees is { } max ? max + grandfatheredEmployeeBonus : null,
+        };
     }
 
-    public async Task<EffectivePlan> GetEffectivePlanForOwnerAsync(string ownerUserId)
-    {
-        var plans = await GetEffectivePlansForOwnersAsync([ownerUserId]);
-        return plans[ownerUserId];
-    }
-
-    /// <summary>Resolves the effective plan for a company by looking up its owner's account subscription.</summary>
+    /// <summary>Resolves the effective plan for a company by looking up its billing account.</summary>
     public async Task<EffectivePlan> GetEffectivePlanAsync(Guid companyId)
     {
-        var ownerId = await db.Companies.Where(c => c.Id == companyId).Select(c => c.OwnerUserId).FirstOrDefaultAsync();
-        if (ownerId is null) return EffectivePlan.Free;
-        return await GetEffectivePlanForOwnerAsync(ownerId);
+        var accountId = await db.Companies.Where(c => c.Id == companyId).Select(c => c.BillingAccountId).FirstOrDefaultAsync();
+        if (accountId is null) return EffectivePlan.Free;
+        return await GetEffectivePlanForAccountAsync(accountId.Value);
     }
 
     /// <summary>
     /// Resolves effective plans for several companies in one round trip (avoids N+1 in list endpoints
-    /// like CompaniesController.GetAll/GetMy/GetMemberOf). Each company resolves through its owner.
+    /// like CompaniesController.GetAll/GetMy/GetMemberOf). Sequence and grouping: companies → their
+    /// billing accounts → each account's plan (§44.4) — this signature is the one thing this cycle does
+    /// NOT change, everything else is free to change underneath it.
     /// </summary>
     public async Task<Dictionary<Guid, EffectivePlan>> GetEffectivePlansAsync(IEnumerable<Guid> companyIds)
     {
         var ids = companyIds.Distinct().ToList();
-        var owners = await db.Companies
+        var companies = await db.Companies
             .Where(c => ids.Contains(c.Id))
-            .Select(c => new { c.Id, c.OwnerUserId })
+            .Select(c => new { c.Id, c.BillingAccountId })
             .ToListAsync();
 
-        var ownerPlans = await GetEffectivePlansForOwnersAsync(owners.Select(o => o.OwnerUserId));
+        var accountIds = companies.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct();
+        var accountPlans = await GetEffectivePlansForAccountsAsync(accountIds);
+
         return ids.ToDictionary(
             id => id,
             id =>
             {
-                var ownerId = owners.FirstOrDefault(o => o.Id == id)?.OwnerUserId;
-                return ownerId is not null ? ownerPlans[ownerId] : EffectivePlan.Free;
+                var accountId = companies.FirstOrDefault(c => c.Id == id)?.BillingAccountId;
+                return accountId.HasValue && accountPlans.TryGetValue(accountId.Value, out var plan) ? plan : EffectivePlan.Free;
             });
     }
 
-    // Made public for ARCHITECTURE_CYCLE4.md §33's cycle-4 admin channel summary (T4-B11): both
-    // NotificationChannel and AccountSubscription key off OwnerUserId, so resolving plans for a page of
-    // channels' owners belongs here, not behind a "company -> owner -> plan" detour that would add an
-    // extra query and an extra dictionary for no reason. Public in a one-line change, no behavior change —
-    // GetEffectivePlansAsync(companyIds) still calls it the same way it always did.
-    public async Task<Dictionary<string, EffectivePlan>> GetEffectivePlansForOwnersAsync(IEnumerable<string> ownerUserIds)
+    /// <summary>Resolves the effective plan for a single billing account.</summary>
+    public async Task<EffectivePlan> GetEffectivePlanForAccountAsync(Guid accountId)
     {
-        var ids = ownerUserIds.Distinct().ToList();
+        var plans = await GetEffectivePlansForAccountsAsync([accountId]);
+        return plans[accountId];
+    }
+
+    /// <summary>
+    /// Batch account → plan resolution (§44.4: two grouped queries total, no N+1). Public — also used by
+    /// the cycle-4 admin channel summary (T4-B11), which resolves plans for a page of channels' billing
+    /// accounts.
+    /// </summary>
+    public async Task<Dictionary<Guid, EffectivePlan>> GetEffectivePlansForAccountsAsync(IEnumerable<Guid> accountIds)
+    {
+        var ids = accountIds.Distinct().ToList();
         var now = DateTime.UtcNow;
 
         var subs = await db.AccountSubscriptions
             .Include(s => s.PlanConfig)
-            .Where(s => ids.Contains(s.OwnerUserId))
+            .Where(s => s.BillingAccountId != null && ids.Contains(s.BillingAccountId!.Value))
             .ToListAsync();
 
-        var result = new Dictionary<string, EffectivePlan>();
+        var bonuses = await db.BillingAccounts
+            .Where(a => ids.Contains(a.Id))
+            .Select(a => new { a.Id, a.GrandfatheredEmployeeBonus })
+            .ToListAsync();
+
+        var result = new Dictionary<Guid, EffectivePlan>();
         foreach (var id in ids)
         {
-            var sub = subs.FirstOrDefault(s => s.OwnerUserId == id);
-            result[id] = Resolve(sub, now);
+            var sub = subs.FirstOrDefault(s => s.BillingAccountId == id);
+            var bonus = bonuses.FirstOrDefault(b => b.Id == id)?.GrandfatheredEmployeeBonus ?? 0;
+            result[id] = Resolve(sub, bonus, now);
         }
         return result;
     }
