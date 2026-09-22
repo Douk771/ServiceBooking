@@ -13,7 +13,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class AdminTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── Authorization boilerplate (checked explicitly for stats, roles, plans) ─────────────
 

@@ -7,7 +7,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class ServicesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class ServicesTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── GET /api/services?companyId= ─────────────────────────────────────────
 

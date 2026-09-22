@@ -24,7 +24,7 @@ namespace ServiceBooking.Tests.Tests;
 /// health notes (§55.1 R6), and the отзыв preview/actual parity (US-68, API_CONTRACT_CYCLE5.md §41.3).
 /// Written from SPEC.md/ARCHITECTURE_CYCLE5.md/API_CONTRACT_CYCLE5.md, not from the implementation.
 /// </summary>
-public class LegalPriorityTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class LegalPriorityTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── Priority 2: retention dry run touches nothing; live deletes; pagination terminates ─────────
 

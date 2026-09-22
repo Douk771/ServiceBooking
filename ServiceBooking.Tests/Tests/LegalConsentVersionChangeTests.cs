@@ -19,13 +19,14 @@ namespace ServiceBooking.Tests.Tests;
 /// test's Arrange step gives every test its own fresh version tag so tests don't interfere with each
 /// other's accepted-version state.
 /// </summary>
-public class LegalConsentVersionChangeTests : IAsyncLifetime
+[Collection("Api")]
+public class LegalConsentVersionChangeTests(LegalDatabaseFixture fixture) : IAsyncLifetime
 {
     private LegalDocumentsTestFactory _factory = null!;
 
     public Task InitializeAsync()
     {
-        _factory = new LegalDocumentsTestFactory();
+        _factory = new LegalDocumentsTestFactory(fixture.ConnectionString);
         _ = _factory.Services; // boot the host now, not lazily inside the first test
         return Task.CompletedTask;
     }

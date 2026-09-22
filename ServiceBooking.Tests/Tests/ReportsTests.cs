@@ -9,7 +9,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class ReportsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class ReportsTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("RPT-001")]
     public async Task GetMastersReport_CompletedBookingInRange_ComputesEarningsSplitByCommission()

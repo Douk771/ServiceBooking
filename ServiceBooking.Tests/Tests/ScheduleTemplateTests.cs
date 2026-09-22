@@ -7,7 +7,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class ScheduleTemplateTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class ScheduleTemplateTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── GET /api/schedule-template ────────────────────────────────────────────
 

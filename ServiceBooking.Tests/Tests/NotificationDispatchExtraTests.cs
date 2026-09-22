@@ -21,14 +21,14 @@ namespace ServiceBooking.Tests.Tests;
 /// overlaps another test ticking the same background runner against the shared database.
 /// </summary>
 [Collection("NotificationDispatch")]
-public class NotificationDispatchExtraTests
+public class NotificationDispatchExtraTests(DispatchDatabaseFixture fixture)
 {
     private const string EncryptionKey = NotificationDispatchTestFactory.TestEncryptionKeyBase64;
 
     [Fact, TestCase("NTF-D03")]
     public async Task Priority_ByVisitTime_ClosestVisitSentFirst_RegardlessOfQueueOrder()
     {
-        await using var factory = new NotificationDispatchTestFactory();
+        await using var factory = new NotificationDispatchTestFactory(fixture.ConnectionString);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -68,7 +68,7 @@ public class NotificationDispatchExtraTests
         // BudgetSeconds this test can wait for in real time to ever interrupt a pass. `baseFactory` stays
         // the handle for seeding; `webFactory` (the one WithWebHostBuilder returns) is the ACTUAL running
         // host — Services/CreateClient must come from it, not from baseFactory.
-        await using var baseFactory = new NotificationDispatchTestFactory(budgetSecondsOverride: 1);
+        await using var baseFactory = new NotificationDispatchTestFactory(fixture.ConnectionString, budgetSecondsOverride: 1);
         await using var webFactory = baseFactory.WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.AddSingleton<INotificationTransport>(slowTransport)));
 
@@ -123,7 +123,7 @@ public class NotificationDispatchExtraTests
     [Fact, TestCase("NTF-D05")]
     public async Task Idle_WarnsBeforeDeleting_ThenDeletesInstance_KeepsAssignmentPeriodAndPendingQueue()
     {
-        await using var factory = new NotificationDispatchTestFactory(channelHealthEnabled: true);
+        await using var factory = new NotificationDispatchTestFactory(fixture.ConnectionString, channelHealthEnabled: true);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -273,7 +273,7 @@ public class NotificationDispatchExtraTests
     private static async Task<AuthResponseDto> LoginAsSuperAdminAsync(NotificationDispatchTestFactory factory)
     {
         var response = await factory.CreateClient().PostAsJsonAsync("/api/auth/login",
-            new LoginDto("+70000000001", "SuperAdmin123!"));
+            new LoginDto(factory.Identity.SuperAdminPhone, factory.Identity.SuperAdminPassword));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }

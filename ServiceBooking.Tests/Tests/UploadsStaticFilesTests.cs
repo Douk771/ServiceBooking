@@ -26,7 +26,8 @@ namespace ServiceBooking.Tests.Tests;
 /// dedicated host (<see cref="UploadsStaticFilesTestFactory"/>) at a configuration where the broken and
 /// fixed code paths provably diverge.
 /// </summary>
-public class UploadsStaticFilesTests
+[Collection("Api")]
+public class UploadsStaticFilesTests(ApiDatabaseFixture fixture)
 {
     private static string RandomPhone()
     {
@@ -85,7 +86,7 @@ public class UploadsStaticFilesTests
         // Deliberately not pre-creating tempPublicRoot itself — Program.cs's Directory.CreateDirectory
         // call is what's expected to create it, same as the default wwwroot/uploads case.
 
-        await using var factory = new UploadsStaticFilesTestFactory(publicRootOverride: tempPublicRoot);
+        await using var factory = new UploadsStaticFilesTestFactory(fixture.ConnectionString, publicRootOverride: tempPublicRoot);
         try
         {
             var client = factory.CreateClient();
@@ -134,7 +135,7 @@ public class UploadsStaticFilesTests
         Directory.Exists(Path.Combine(tempContentRoot, "wwwroot"))
             .Should().BeFalse("sanity check — this scenario is only meaningful if wwwroot genuinely did not exist before the host started");
 
-        await using var factory = new UploadsStaticFilesTestFactory(contentRootOverride: tempContentRoot);
+        await using var factory = new UploadsStaticFilesTestFactory(fixture.ConnectionString, contentRootOverride: tempContentRoot);
         try
         {
             var client = factory.CreateClient();

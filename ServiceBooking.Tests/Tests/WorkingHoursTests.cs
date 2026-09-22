@@ -8,7 +8,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class WorkingHoursTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class WorkingHoursTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── GET /api/workinghours ─────────────────────────────────────────────────
 

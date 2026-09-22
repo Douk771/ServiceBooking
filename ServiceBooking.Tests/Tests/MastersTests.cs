@@ -9,7 +9,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class MastersTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class MastersTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── GET /api/masters/clients ──────────────────────────────────────────────
 

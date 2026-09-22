@@ -13,7 +13,7 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>US-38 (SPEC.md §3.4) and US-39 (SPEC.md §3.5) — subject rights: export and self-deletion.</summary>
-public class DataRightsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class DataRightsTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     // ── GET /api/profile/export — US-38 ──────────────────────────────────────
 
@@ -109,7 +109,7 @@ public class DataRightsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         // The default factory raises RateLimits:data-export to 10000/min in Testing (appsettings.Testing.json)
         // so the other 344 pre-existing functional tests aren't limited by it — that means the CONTRACT
         // limit (3/day, API_CONTRACT.md §12) has to be exercised against its own, tightly-configured host.
-        await using var factory = new RateLimitTestFactory(dataExportPermitLimit: 3);
+        await using var factory = new RateLimitTestFactory(ConnectionString, dataExportPermitLimit: 3);
         var client = factory.CreateClient();
         // CYCLE5-BREAKING (API_CONTRACT_CYCLE5.md §40.1): `acceptedLegal: true` replaced by a `legal`
         // object carrying the versions actually being accepted — read from THIS factory's own manifest.

@@ -5,7 +5,7 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>US-43 (SPEC.md §5.3, ARCHITECTURE.md §10, API_CONTRACT.md §10).</summary>
-public class HealthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class HealthTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("OPS-001")]
     public async Task Live_IsPublic_AndHealthy()

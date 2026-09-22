@@ -18,7 +18,7 @@ namespace ServiceBooking.Tests.Tests;
 /// NotificationChannelsController's own implementation, per this cycle's QA brief.
 /// Each test owns its own <see cref="NotificationTestFactory"/> instance (see that class's doc comment).
 /// </summary>
-public class NotificationChannelsTests(TestDatabaseFixture fixture) : NotificationTestBase(fixture)
+public class NotificationChannelsTests(ApiDatabaseFixture apiFixture) : NotificationTestBase(apiFixture)
 {
     // ── GET /api/notification-channels, offer, request ──────────────────────────────────────────
 
@@ -207,7 +207,7 @@ public class NotificationChannelsTests(TestDatabaseFixture fixture) : Notificati
             new AcceptRiskDto(NotificationRiskTextVersion()));
         await MarkPaidAsync(created.Id);
 
-        await using var disabledFactory = new NotificationTestFactory().WithWebHostBuilder(builder =>
+        await using var disabledFactory = new NotificationTestFactory(ConnectionString).WithWebHostBuilder(builder =>
             builder.UseSetting("Notifications:GreenApi:InstanceCreationEnabled", "false"));
         var reLogin = await disabledFactory.CreateClient().PostAsJsonAsync("/api/auth/login",
             new ServiceBooking.API.DTOs.Auth.LoginDto(owner.Phone, "Password123!"));

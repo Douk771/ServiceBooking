@@ -31,14 +31,14 @@ namespace ServiceBooking.Tests.Tests;
 /// must never overlap with itself.
 /// </summary>
 [Collection("NotificationDispatch")]
-public class NotificationDispatchTests
+public class NotificationDispatchTests(DispatchDatabaseFixture fixture)
 {
     private const string EncryptionKey = NotificationDispatchTestFactory.TestEncryptionKeyBase64;
 
     [Fact, TestCase("NTF-D01")]
     public async Task RealRunner_SendsQueuedMessages_AndRequestsAPauseBetweenThem()
     {
-        await using var factory = new NotificationDispatchTestFactory();
+        await using var factory = new NotificationDispatchTestFactory(fixture.ConnectionString);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -68,7 +68,7 @@ public class NotificationDispatchTests
     [Fact, TestCase("NTF-D02")]
     public async Task RealRunner_ChannelInvalid_StopsTheRestOfThatChannelsGroup_RowsStayPending()
     {
-        await using var factory = new NotificationDispatchTestFactory();
+        await using var factory = new NotificationDispatchTestFactory(fixture.ConnectionString);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -223,4 +223,4 @@ public class NotificationDispatchTests
 /// OTHER functional test gives any company a paid, assigned, Connected channel, so this collection's
 /// runner never finds a Pending row belonging to anyone else (ARCHITECTURE_CYCLE4.md §27.1).</summary>
 [CollectionDefinition("NotificationDispatch", DisableParallelization = true)]
-public class NotificationDispatchCollection;
+public class NotificationDispatchCollection : ICollectionFixture<DispatchDatabaseFixture>;

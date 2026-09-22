@@ -8,7 +8,7 @@ using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
 
-public class AuthTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
+public class AuthTests(ApiDatabaseFixture fixture) : ApiTestBase(fixture)
 {
     [Fact, TestCase("AUTH-001")]
     public async Task Register_WithValidData_ReturnsTokenAndClientRole()
