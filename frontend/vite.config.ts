@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -7,14 +8,20 @@ import react from '@vitejs/plugin-react'
 //   2. value from the working copy's `.env`
 //   3. built-in default from the contract table (SB_API_PORT=5000, SB_WEB_PORT=5173)
 export default defineConfig(({ mode }) => {
+  // Resolve the repo root relative to THIS FILE, not process.cwd() — loadEnv's envDir arg is
+  // joined against cwd internally, so a relative '..' would silently pick up the wrong `.env`
+  // when vite is invoked from the repo root (e.g. `npm run dev --prefix frontend`) instead of
+  // from `frontend/`. Reviewed in cycle 8 review: frontend/vite.config.ts finding.
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url))
   // Third arg '' loads every var, not just VITE_-prefixed ones, so SB_* is visible too.
-  const fileEnv = loadEnv(mode, '..', '')
+  const fileEnv = loadEnv(mode, repoRoot, '')
   const env = (key: string) => process.env[key] ?? fileEnv[key]
 
   const apiPort = env('SB_API_PORT') ?? '5000'
   // VITE_API_TARGET is the cycle-3 override and always wins outright.
   const apiTarget = env('VITE_API_TARGET') ?? `http://localhost:${apiPort}`
-  const webPort = Number(env('SB_WEB_PORT') ?? '5173')
+  const parsedWebPort = Number(env('SB_WEB_PORT') ?? '5173')
+  const webPort = Number.isFinite(parsedWebPort) ? parsedWebPort : 5173
 
   return {
     plugins: [react()],
