@@ -38,6 +38,16 @@ public class TestDatabaseNamingTests
     }
 
     [Fact]
+    public void IsDisposable_returns_false_for_name_with_trailing_newline()
+    {
+        // Review finding N1: .NET's "$" anchor matches immediately before a trailing '\n', so
+        // "sbtest_a3f19c7b_api\n" used to satisfy the old ^...$ pattern even though it isn't a valid
+        // Postgres identifier and nothing in this codebase ever produces a name with an embedded
+        // newline. \A...\z anchors to the true start/end of the string instead.
+        TestDatabaseNaming.IsDisposable("sbtest_a3f19c7b_api\n").Should().BeFalse();
+    }
+
+    [Fact]
     public void IsDisposable_returns_false_for_name_longer_than_postgres_limit()
     {
         var tooLong = "sbtest_a3f19c7b_" + new string('a', 60);
@@ -68,10 +78,13 @@ public class TestDatabaseNamingTests
     [Fact]
     public void EnsureOwnedByThisRun_throws_for_database_belonging_to_another_run()
     {
-        var foreignDatabase = "sbtest_deadbeef_api";
+        // Review finding N20: a hardcoded "deadbeef" foreign key made this test's own premise depend on
+        // the environment — it would fail (for the wrong reason) if SERVICEBOOKING_TEST_RUN_KEY=deadbeef
+        // happened to be set. Derive a key that is guaranteed to differ from TestRunKey.Current instead
+        // of hoping a literal never collides with it.
+        var foreignKey = ForeignKeyDifferentFrom(TestRunKey.Current);
+        var foreignDatabase = $"sbtest_{foreignKey}_api";
 
-        // Ключ текущего прогона вычисляется статикой один раз на процесс (TestRunKey.Current)
-        // и почти наверняка не совпадёт со случайно выбранным "deadbeef".
         foreignDatabase.Should().NotContain(TestRunKey.Current);
 
         var act = () => TestDatabaseNaming.EnsureOwnedByThisRun(foreignDatabase);
@@ -98,4 +111,9 @@ public class TestDatabaseNamingTests
         act.Should().Throw<TestSafetyException>()
             .WithMessage("*не являющуюся одноразовой тестовой*");
     }
+
+    /// <summary>Flips every hex digit of <paramref name="key"/> to its complement within 0-f (15-digit),
+    /// guaranteeing the result is 8 hex chars, well-formed, and never equal to <paramref name="key"/>.</summary>
+    private static string ForeignKeyDifferentFrom(string key) =>
+        new(key.Select(c => "0123456789abcdef"[15 - "0123456789abcdef".IndexOf(c)]).ToArray());
 }

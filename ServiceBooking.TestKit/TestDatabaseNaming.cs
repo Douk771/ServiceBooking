@@ -11,8 +11,11 @@ public static class TestDatabaseNaming
 {
     private const int PostgresMaxIdentifierLength = 63;
 
+    // \A...\z (not ^...$): in .NET, "$" matches immediately before a trailing '\n', so a name like
+    // "sbtest_a3f19c7b_api\n" used to pass this check (review finding N1) even though it is not a
+    // valid Postgres identifier and was never something CREATE/DROP DATABASE actually produced.
     private static readonly Regex DisposableNamePattern =
-        new("^sbtest_[0-9a-f]{8}_[a-z][a-z0-9]{0,11}$", RegexOptions.Compiled);
+        new(@"\Asbtest_[0-9a-f]{8}_[a-z][a-z0-9]{0,11}\z", RegexOptions.Compiled);
 
     public static readonly string[] NeverDrop =
         ["postgres", "template0", "template1", "servicebooking", "servicebooking_test"];
