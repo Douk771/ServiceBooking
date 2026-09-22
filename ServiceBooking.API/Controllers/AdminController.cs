@@ -568,14 +568,31 @@ public class AdminController(
             ? null
             : string.Join('\n', highlights.Take(Services.Billing.PricingCatalogBuilder.MaxHighlights));
 
-    private static IActionResult? ValidatePlanInput(AdminPlanInput dto)
+    // SubscriptionPlanConfigs.PricePerMonth is an unbounded `numeric` column (AppDbContext/migrations),
+    // so an extreme value here doesn't overflow the DB the way SubscriptionOption.PricePerMonth's
+    // `numeric(10,2)` does. Bounded anyway (cycle-07 backend report, item 3): the pricing screen treats
+    // plans and options as one catalog, a plan's price and a subscribed option's price are summed in the
+    // same `decimal` arithmetic (BillingCalculator.TotalMonthlyPrice), and a denormalized plan price is
+    // exactly the kind of value that turns a later addition/multiplication into an OverflowException
+    // (an unhandled 500) even though nothing overflowed at write time. Same ceiling as
+    // AdminBillingController.MaxOptionPricePerMonth so the two halves of the catalog agree on what
+    // "too large" means.
+    public const decimal MaxPlanPricePerMonth = 99_999_999.99m;
+
+    internal static IActionResult? ValidatePlanInput(AdminPlanInput dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Length > 100)
             return new BadRequestObjectResult("Название тарифа обязательно (до 100 символов).");
         if (dto.PricePerMonth < 0)
             return new BadRequestObjectResult("Цена не может быть отрицательной.");
+        if (dto.PricePerMonth > MaxPlanPricePerMonth)
+            return new BadRequestObjectResult($"Цена не может превышать {MaxPlanPricePerMonth}.");
         if (dto.PhotoQuotaMb is < 0)
             return new BadRequestObjectResult("Photo quota must not be negative.");
+        if (dto.MaxEmployees is < 0)
+            return new BadRequestObjectResult("MaxEmployees must not be negative.");
+        if (dto.MaxCompanies is < 0)
+            return new BadRequestObjectResult("MaxCompanies must not be negative.");
         return null;
     }
 
