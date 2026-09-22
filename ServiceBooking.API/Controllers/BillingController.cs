@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -48,8 +49,12 @@ public class BillingController(AppDbContext db, OwnerSubscriptionService ownerSu
                 return BadRequest($"Опция «{option.Name}» — переключатель, количество может быть только 1.");
         }
 
-        if (dto.PlanId.HasValue && !await db.SubscriptionPlanConfigs.AnyAsync(p => p.Id == dto.PlanId && p.IsActive))
-            return BadRequest("Указанный тариф не найден или неактивен.");
+        SubscriptionPlanConfig? requestedPlan = null;
+        if (dto.PlanId.HasValue)
+        {
+            requestedPlan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.Id == dto.PlanId && p.IsActive);
+            if (requestedPlan is null) return BadRequest("Указанный тариф не найден или неактивен.");
+        }
 
         // Contract: repeated submission OVERWRITES the existing pending request and answers 200 — there
         // is no "already pending" 409 for the owner's own request, only for a superadmin racing an
@@ -61,6 +66,13 @@ public class BillingController(AppDbContext db, OwnerSubscriptionService ownerSu
         await AdvisoryLock.AcquireAsync(db, $"billing-account:{account.Id}");
 
         account.RequestedPlanId = dto.PlanId;
+        // N15 — keep the RequestedPlan navigation in sync with RequestedPlanId explicitly: `account`
+        // was loaded with the OLD RequestedPlan already fixed up by the change tracker, and EF Core
+        // does not re-resolve a nav property just because its FK scalar changed unless the new target
+        // is also attached/tracked. BuildPendingRequestDto below reads account.RequestedPlan?.Name —
+        // without this, a plan-change request would echo back the PREVIOUS pending plan's name (or
+        // null on a first request) instead of the one just submitted.
+        account.RequestedPlan = requestedPlan;
         account.RequestedOptionsJson = OwnerSubscriptionService.SerializeOptionLines(lines.Select(o => new RequestedOptionLine(o.OptionId, o.Quantity)));
         account.RequestedAtUtc = DateTime.UtcNow;
         account.RequestedByUserId = userId;
