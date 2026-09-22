@@ -124,6 +124,15 @@ builder.Services.AddControllers(options =>
         // LegalDocumentProvider is resolved from DI per-request rather than requiring a service-locator
         // pattern here.
         options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>())
+    .ConfigureApiBehaviorOptions(options =>
+        // Cycle 6 contract finding: automatic model-state validation (missing/invalid query or body
+        // fields, caught by [ApiController] before the action runs) used to answer with
+        // application/problem+json (ValidationProblemDetails). Every OTHER 4xx a controller raises by
+        // hand is a bare text/plain string (see openapi-cycle6.yaml's header comment) — the frontend's
+        // error reader only understands that form, so the machine-shaped body was silently swallowed
+        // into "Проверьте введённые данные", the same failure mode as the US-60 blocker. See
+        // ModelValidationErrorFormatter's doc comment for the full story.
+        options.InvalidModelStateResponseFactory = ServiceBooking.API.Services.ModelValidationErrorFormatter.BuildResponse)
     .AddJsonOptions(o =>
     {
         o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
