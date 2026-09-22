@@ -634,9 +634,13 @@ public class BookingsController(
         // This endpoint is staff-only (CanManageBookingAsync above lets in only the assigned master,
         // the company's owner, or SuperAdmin — a client can never reach here, they only have Cancel).
         // By decision Q7 that means the SAME relaxed rule as a staff manual booking in Create: any free
-        // time, no working-hours/breaks/grid check. Deliberately NOT validated against WorkingHours —
-        // see ARCHITECTURE.md §3.4/§14.1: RescheduleModal's grid doesn't know the master's schedule, so a
-        // full validation would reject slots the UI itself offered, with no way to explain why.
+        // time, no working-hours/breaks/grid check.
+        //
+        // Deliberately NOT validated against WorkingHours, and DO NOT "fix" that. The old reason —
+        // "the reschedule grid is generated client-side and knows nothing of the master's schedule" —
+        // stopped being true when F7 moved that grid onto GET /api/bookings/slots. The reason now is
+        // the requirement itself: staff may book any time that suits them, schedule or no schedule
+        // (SPEC.md §0.1, Q7). Validating here would take that away.
         if (!IsBookableMoment(dto.Date, dto.StartTime, totalDurationMinutes))
             return Conflict("Time slot is no longer available");
 
