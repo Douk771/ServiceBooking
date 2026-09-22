@@ -73,26 +73,30 @@ public class CompaniesController(
         var sanitizedSearch = ServiceBooking.API.DTOs.Common.Pagination.SanitizeSearch(truncatedSearch);
 
         // Visibility rules are unchanged from GET /api/companies: isActive AND ShowInPublicListing AND
-        // the tariff's AllowPublicListing. EffectivePlan is resolved per company, so the plan half of
-        // that predicate can only be applied after loading candidates — same shape as GetAll() above.
-        var query = db.Companies.Where(c => c.IsActive && c.ShowInPublicListing);
+        // the tariff's AllowPublicListing. All three legs — including the tariff check, via
+        // PublicListingQuery.WhereAllowsPublicListing (kept in lockstep with SubscriptionResolver's own
+        // AllowPublicListing rule, see that method's remarks) — are applied in SQL, so filtering and
+        // paging never require materializing the full candidate set (ARCHITECTURE_CYCLE9.md §103.5).
+        var query = db.Companies
+            .Where(c => c.IsActive && c.ShowInPublicListing)
+            .WhereAllowsPublicListing(db, DateTime.UtcNow);
 
         if (cityId.HasValue) query = query.Where(c => c.CityId == cityId.Value);
         if (!string.IsNullOrWhiteSpace(sanitizedSearch))
             query = query.Where(c => EF.Functions.ILike(c.Name, $"%{sanitizedSearch}%")
                                       || (c.Address != null && EF.Functions.ILike(c.Address, $"%{sanitizedSearch}%")));
 
-        // Plan.AllowPublicListing is resolved outside SQL (SubscriptionResolver), so we can't filter by
-        // it in the query itself — fetch the (already city/search/isActive/ShowInPublicListing-narrowed)
-        // candidate set, resolve plans in bulk, apply the last predicate, then page in memory. Candidate
-        // sets here are the public directory, not "all companies ever", so this stays bounded.
-        var candidates = await query.OrderBy(c => c.Name).ThenBy(c => c.Id).ToListAsync();
-        var plans = await subscriptionResolver.GetEffectivePlansAsync(candidates.Select(c => c.Id));
-        var visible = candidates.Where(c => plans[c.Id].AllowPublicListing).ToList();
+        query = query.OrderBy(c => c.Name).ThenBy(c => c.Id);
 
-        var total = visible.Count;
-        var pageItems = visible.Skip((normalizedPage - 1) * normalizedPageSize).Take(normalizedPageSize).ToList();
+        var total = await query.CountAsync();
+        var pageItems = await query
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .ToListAsync();
 
+        // Rating/city lookups and plan resolution (for the DTO's plan-derived fields, not for
+        // filtering) stay batched for the page only, same as GetAll/GetMy/GetMemberOf above.
+        var plans = await subscriptionResolver.GetEffectivePlansAsync(pageItems.Select(c => c.Id));
         var ratings = await GetReviewAggregatesAsync(pageItems.Select(c => c.Id));
         var cities = await GetCitiesAsync(pageItems.Select(c => c.CityId));
 

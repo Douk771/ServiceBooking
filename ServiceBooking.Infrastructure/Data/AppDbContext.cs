@@ -77,6 +77,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId)
                 .IsRequired().OnDelete(DeleteBehavior.Restrict);
             e.HasAlternateKey(c => new { c.Id, c.BillingAccountId });
+            // Cycle 9 (ARCHITECTURE_CYCLE9.md §103.5) — GET /api/companies/public filters/sorts/pages
+            // in SQL on exactly this shape (ShowInPublicListing, then CityId equality, then Name order);
+            // partial on the same "IsActive AND ShowInPublicListing" predicate the query itself applies,
+            // so the index only ever covers rows that can actually appear in the public directory.
+            e.HasIndex(c => new { c.ShowInPublicListing, c.CityId, c.Name })
+                .HasDatabaseName("IX_Companies_PublicListing")
+                .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
         });
 
         builder.Entity<Service>(e =>
