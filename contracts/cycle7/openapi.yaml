@@ -1492,7 +1492,7 @@ components:
     # ── Биллинг-аккаунт глазами администратора ──────────────────────────────────
     AdminBillingAccountListItemDto:
       type: object
-      required: [id, ownerUserId, ownerName, status, currency, companiesUsed, employeesUsed, numbersPaid, numbersRegistered]
+      required: [id, ownerUserId, ownerName, status, statusText, currency, companiesUsed, employeesUsed, numbersPaid, numbersRegistered]
       properties:
         id: { type: string, format: uuid }
         name: { type: string, nullable: true }
@@ -1501,6 +1501,13 @@ components:
         ownerPhoneMasked: { type: string, nullable: true }
         planName: { type: string, nullable: true }
         status: { $ref: "#/components/schemas/SubscriptionStatus" }
+        statusText:
+          type: string
+          description: |
+            Серверный текст статуса (§41 п. 8 — тексты собирает сервер, не фронт; тот же паттерн,
+            что у AdminSubscribedOptionDto.statusText). "Бесплатный тариф"; "Оплачено до {дата}" для
+            Active; "Подписка истекла {дата}" или "Подписка неактивна" (без даты известной) для
+            Expired.
         paidUntil: { type: string, format: date-time, nullable: true }
         totalMonthlyPrice: { type: number, format: double }
         currency: { $ref: "#/components/schemas/Currency" }
@@ -1528,7 +1535,7 @@ components:
     AdminBillingAccountDto:
       type: object
       required:
-        [id, ownerUserId, ownerName, currency, status, plan, options, totalMonthlyPrice,
+        [id, ownerUserId, ownerName, currency, status, statusText, plan, options, totalMonthlyPrice,
          companiesUsed, employeesUsed, numbersPaid, numbersRegistered, companies, channels,
          grandfatheredEmployeeBonus]
       properties:
@@ -1539,6 +1546,9 @@ components:
         ownerPhoneMasked: { type: string, nullable: true }
         currency: { $ref: "#/components/schemas/Currency" }
         status: { $ref: "#/components/schemas/SubscriptionStatus" }
+        statusText:
+          type: string
+          description: Тот же серверный текст, что в AdminBillingAccountListItemDto.statusText.
         isActive: { type: boolean }
         planId: { type: string, format: uuid, nullable: true }
         plan: { $ref: "#/components/schemas/SubscribedPlanDto" }

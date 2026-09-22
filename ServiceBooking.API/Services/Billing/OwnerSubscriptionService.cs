@@ -111,7 +111,12 @@ public class OwnerSubscriptionService(
         return "Active";
     }
 
-    private static string StatusTextFor(string status, DateTime? paidUntil) => status switch
+    /// <summary>Also used by <c>AdminBillingController</c>'s billing-account DTOs (merge-review
+    /// finding: admin surfaces for options/funding already print server-assembled text — see
+    /// <see cref="BillingTexts.FundingText"/> and <c>SubscribedOptionDto.StatusText</c> — while the
+    /// account-level status was left as a bare enum, forcing the frontend to keep its own
+    /// translation dictionary). Same wording either audience sees.</summary>
+    public static string StatusTextFor(string status, DateTime? paidUntil) => status switch
     {
         "Free" => "Бесплатный тариф",
         "Expired" => paidUntil.HasValue ? $"Подписка истекла {paidUntil:dd.MM.yyyy}" : "Подписка неактивна",

@@ -552,7 +552,7 @@ ChannelFundingState        Funded | Unfunded | NotPaid
 {
   "id": "aa11…", "name": "Аккаунт Иванова",
   "ownerUserId": "u-77", "ownerName": "Иван Петров", "ownerPhoneMasked": "+7 999 ***-**-45",
-  "planName": "Базовый", "status": "Active", "paidUntil": "2026-10-31T00:00:00Z",
+  "planName": "Базовый", "status": "Active", "statusText": "Оплачено до 31.10.2026", "paidUntil": "2026-10-31T00:00:00Z",
   "totalMonthlyPrice": 5080, "currency": "RUB",
   "companiesUsed": 3, "companiesLimit": 4,
   "employeesUsed": 12, "employeesLimit": 15,
@@ -561,10 +561,16 @@ ChannelFundingState        Funded | Unfunded | NotPaid
 }
 ```
 
+`statusText` — серверный текст (как у `options[].statusText`, конвенция §41 п. 8: тексты собирает
+сервер, фронт печатает как есть, без собственного словаря переводов перечисления `status`):
+«Бесплатный тариф»; «Оплачено до {дата}» для `Active`; «Подписка истекла {дата}» /
+«Подписка неактивна» (без даты) для `Expired`.
+
 `GET /api/admin/billing-accounts/{accountId}` → `AdminBillingAccountDto` = поля выше плюс:
 
 ```json
 {
+  "statusText": "Оплачено до 31.10.2026",
   "grandfatheredEmployeeBonus": 10,
   "grandfatheredEmployeeBonusText": "10 мест сохранено при переходе на суммарный лимит (миграция цикла 7)",
   "planId": "77aa…",

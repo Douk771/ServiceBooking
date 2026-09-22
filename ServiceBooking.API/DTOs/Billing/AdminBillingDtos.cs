@@ -45,13 +45,13 @@ public record SetSystemFreeInput(bool IsSystemFree);
 // ── Billing accounts (US-67) ────────────────────────────────────────────────────
 public record AdminBillingAccountListItemDto(
     Guid Id, string? Name, string OwnerUserId, string OwnerName, string? OwnerPhoneMasked,
-    string? PlanName, string Status, DateTime? PaidUntil, decimal TotalMonthlyPrice, string Currency,
+    string? PlanName, string Status, string StatusText, DateTime? PaidUntil, decimal TotalMonthlyPrice, string Currency,
     int CompaniesUsed, int? CompaniesLimit, int EmployeesUsed, int? EmployeesLimit,
     int NumbersPaid, int NumbersRegistered, bool HasPendingRequest);
 
 public record AdminBillingAccountDto(
     Guid Id, string? Name, string OwnerUserId, string OwnerName, string? OwnerPhoneMasked,
-    string Currency, string Status, bool IsActive, Guid? PlanId, SubscribedPlanDto Plan,
+    string Currency, string Status, string StatusText, bool IsActive, Guid? PlanId, SubscribedPlanDto Plan,
     IReadOnlyList<SubscribedOptionDto> Options, decimal TotalMonthlyPrice, DateTime? PaidUntil,
     int CompaniesUsed, int? CompaniesLimit, int EmployeesUsed, int? EmployeesLimit,
     int NumbersPaid, int NumbersRegistered, int GrandfatheredEmployeeBonus, string? GrandfatheredEmployeeBonusText,
