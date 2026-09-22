@@ -406,8 +406,21 @@ public static class TestDatabaseNaming
     а не базу; имя базы прогон выбирает сам. Ничего не удалено.
 ```
 
-**Где стоит проверка.** Единственный вызов `DROP DATABASE` во всём репозитории —
-`TestKit.TestDatabaseLease.DropAsync`, и первой строкой там `EnsureDisposable` + `EnsureOwnedByThisRun`.
+**Где стоит проверка.** Единственные два места, вызывающие `DROP DATABASE` во всём репозитории — оба
+в `TestKit.TestDatabaseLease`:
+
+- `DropAsync` — для teardown **своего** прогона (той же строкой первым делом `EnsureOwnedByThisRun`,
+  которая по построению требует совпадения ключа базы с `TestRunKey.Current` **текущего процесса**);
+- `DropLeakedAsync` — для подметальщика (§70.3), который по определению работает из **другого**
+  процесса со своим ключом и убирает за чужими прогонами, поэтому `EnsureOwnedByThisRun` для него
+  в принципе не может пройти. `DropLeakedAsync` проверяет только `EnsureDisposable` (имя формально
+  одноразовое) — безопасность обеспечивается тем, что вызывающая сторона (`Sweeper`) сама применяет
+  классификацию dead/alive/undetermined до вызова, а не тем, что удаляется «своя» база.
+
+(Ранняя редакция этого раздела описывала только `DropAsync` с `EnsureOwnedByThisRun` и для
+подметальщика — это делало `sweep --apply` неработоспособным в принципе: TestSafetyException на
+каждой базе, exit 3, ничего не удаляется. Зафиксировано ревью цикла 8 как блокирующая находка №1.)
+
 `EnsureDeletedAsync` из `TestDatabaseFixture` **удаляется** и в приёмке грепается на отсутствие:
 
 ```bash

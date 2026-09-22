@@ -16,7 +16,7 @@ public static class EnvStatus
     public static async Task<int> RunAsync(string[] args)
     {
         var asJson = args.Contains("--json");
-        var workingCopyRoot = Directory.GetCurrentDirectory();
+        var workingCopyRoot = TestInfrastructure.WorkingCopyRoot;
         var envFile = DotEnvFile.Load(workingCopyRoot);
         var envFilePresent = File.Exists(Path.Combine(workingCopyRoot, ".env"));
 
@@ -31,9 +31,9 @@ public static class EnvStatus
         var dockerAvailable = await IsDockerAvailableAsync();
         var dockerInfo = new DockerInfo(dockerAvailable, dockerAvailable ? null : "docker info завершился с ошибкой или docker недоступен");
 
-        var ports = new[] { dbPort, apiPort, webPort, glitchtipPort }
-            .Select(p => BuildPortInfo(p, projectName, dockerAvailable))
-            .ToArray();
+        var ports = await Task.WhenAll(
+            new[] { dbPort, apiPort, webPort, glitchtipPort }
+                .Select(p => BuildPortInfoAsync(p, projectName, dockerAvailable)));
 
         var testResources = dockerAvailable
             ? await CollectContainerResourcesAsync(workingCopyRoot)
@@ -72,7 +72,7 @@ public static class EnvStatus
     public static async Task<int> RunDoctorAsync(string[] args)
     {
         var asJson = args.Contains("--json");
-        var workingCopyRoot = Directory.GetCurrentDirectory();
+        var workingCopyRoot = TestInfrastructure.WorkingCopyRoot;
 
         var dockerAvailable = await IsDockerAvailableAsync();
         var externalConnectionSet = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("SERVICEBOOKING_TEST_CONNECTION"));
@@ -157,17 +157,17 @@ public static class EnvStatus
 
     private static async Task<DoctorCheck> CheckPortsFreeAsync()
     {
-        var workingCopyRoot = Directory.GetCurrentDirectory();
+        var workingCopyRoot = TestInfrastructure.WorkingCopyRoot;
         var envFile = DotEnvFile.Load(workingCopyRoot);
         var (projectName, _) = ResolveVariable("SB_PROJECT_NAME", envFile, "servicebooking");
         var dockerAvailable = await IsDockerAvailableAsync();
 
-        var ports = new[]
+        var ports = await Task.WhenAll(new[]
         {
             ResolvePort("SB_DB_PORT", envFile, 5432),
             ResolvePort("SB_API_PORT", envFile, 5000),
             ResolvePort("SB_WEB_PORT", envFile, 5173),
-        }.Select(p => BuildPortInfo(p, projectName, dockerAvailable)).ToArray();
+        }.Select(p => BuildPortInfoAsync(p, projectName, dockerAvailable)));
 
         var conflicts = ports.Where(p => p.InUse && !p.OwnedByThisCopy).ToArray();
         var ok = conflicts.Length == 0;
@@ -213,13 +213,33 @@ public static class EnvStatus
         return (name, int.TryParse(raw, out var v) ? v : fallback, source);
     }
 
-    private static PortInfo BuildPortInfo((string Name, int Value, string Source) port, string projectName, bool dockerAvailable)
+    private static async Task<PortInfo> BuildPortInfoAsync((string Name, int Value, string Source) port, string projectName, bool dockerAvailable)
     {
         var inUse = IsPortBound(port.Value);
-        // Мы не заглядываем в docker port compose-контейнеров здесь — best-effort эвристика:
-        // если docker недоступен, «мой» не может быть true.
-        var ownedByThisCopy = false;
+        var ownedByThisCopy = inUse && dockerAvailable && await IsPortOwnedByComposeProjectAsync(port.Value, projectName);
         return new PortInfo(port.Name, port.Value, port.Source, inUse, ownedByThisCopy);
+    }
+
+    /// <summary>Real ownership check (review blocker #6: this used to be a hard-coded `false`, which made
+    /// `status`/`doctor` report every port a developer's own dev-stack was using as "занят чужим", and
+    /// made `doctor` exit 2 for anyone with their own docker-compose stack running). Asks docker which
+    /// compose project, if any, published this host port and compares it to SB_PROJECT_NAME.</summary>
+    private static async Task<bool> IsPortOwnedByComposeProjectAsync(int port, string projectName)
+    {
+        try
+        {
+            var output = await Sweeper.RunDockerAsync(
+                ["ps", "--filter", $"publish={port}", "--format", "{{.Label \"com.docker.compose.project\"}}"]);
+
+            return output
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Any(composeProject => string.Equals(composeProject, projectName, StringComparison.Ordinal));
+        }
+        catch
+        {
+            // Best-effort: an unreadable answer must not be treated as ownership.
+            return false;
+        }
     }
 
     private static async Task<TestResource[]> CollectContainerResourcesAsync(string workingCopyRoot)
@@ -280,16 +300,20 @@ public static class EnvStatus
         return resources.ToArray();
     }
 
-    /// <summary>Та же конъюнкция, что и в Sweeper (§70.3), но без порога max-age — status не удаляет,
-    /// только классифицирует для отображения, поэтому использует дефолтный порог подметальщика.</summary>
+    /// <summary>Same conjunction as Sweeper's container classification (§70.3), using the sweeper's
+    /// default max-age threshold since status doesn't take --max-age. Previously this diverged from
+    /// Sweeper (a container with hostPidAlive == false and low age was reported "alive" here but
+    /// "undetermined" by sweep, and hostPidAlive == null behaved the same wrong way) — kept identical to
+    /// Sweeper's `!processAlive && age > maxAge` / `processAlive` / else-undetermined so `status --json`
+    /// and `sweep --json` never disagree about the same resource.</summary>
     internal static string ClassifyContainerLiveness(bool? hostPidAlive, int ageSeconds)
     {
         var maxAgeSeconds = TestInfrastructure.DefaultSweepMaxAge.TotalSeconds;
-        if (hostPidAlive == true)
-            return "alive";
-        if (hostPidAlive == false && ageSeconds > maxAgeSeconds)
+        var processAlive = hostPidAlive == true;
+
+        if (!processAlive && ageSeconds > maxAgeSeconds)
             return "dead";
-        if (ageSeconds <= maxAgeSeconds)
+        if (processAlive)
             return "alive";
         return "undetermined";
     }

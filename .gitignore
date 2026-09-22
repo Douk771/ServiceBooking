@@ -58,3 +58,7 @@ ServiceBooking.API/logs/
 # rely on (scheduler disabled, upload rate limit raised, ARCHITECTURE.md §8.5) — must be committed so
 # the test suite behaves the same for every developer and in CI.
 !ServiceBooking.API/appsettings.Testing.json
+
+# Schemathesis contract-test artifacts (QA, cycle 8 §86.3) — local scratch output, not a build artifact
+# meant to be committed.
+.schemathesis/

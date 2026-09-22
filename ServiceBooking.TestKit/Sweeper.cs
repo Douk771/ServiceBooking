@@ -17,21 +17,34 @@ public static class Sweeper
         var asJson = args.Contains("--json");
         var apply = args.Contains("--apply");
         var maxAge = TestInfrastructure.DefaultSweepMaxAge;
-        var maxAgeArgIndex = Array.IndexOf(args, "--max-age");
-        if (maxAgeArgIndex >= 0 && maxAgeArgIndex + 1 < args.Length)
-            maxAge = ParseAge(args[maxAgeArgIndex + 1]);
+        string? onlyRunKey;
+        try
+        {
+            var maxAgeArgIndex = Array.IndexOf(args, "--max-age");
+            if (maxAgeArgIndex >= 0 && maxAgeArgIndex + 1 < args.Length)
+                maxAge = ParseAge(args[maxAgeArgIndex + 1]);
 
-        var onlyRunKeyIndex = Array.IndexOf(args, "--run-key");
-        string? onlyRunKey = onlyRunKeyIndex >= 0 && onlyRunKeyIndex + 1 < args.Length ? args[onlyRunKeyIndex + 1] : null;
+            var onlyRunKeyIndex = Array.IndexOf(args, "--run-key");
+            onlyRunKey = onlyRunKeyIndex >= 0 && onlyRunKeyIndex + 1 < args.Length
+                ? TestRunKey.Normalize(args[onlyRunKeyIndex + 1])
+                : null;
+        }
+        catch (TestSafetyException ex)
+        {
+            // §86.2: exit code 1 is "некорректные аргументы" — must not surface as an unhandled
+            // exception/stack trace (review finding: 'sweep --max-age 90s' used to crash the process).
+            Console.Error.WriteLine("[sb-sweep] " + ex.Message);
+            return 1;
+        }
 
         var now = DateTimeOffset.UtcNow;
-        var workingCopyRoot = Directory.GetCurrentDirectory();
+        var workingCopyRoot = TestInfrastructure.WorkingCopyRoot;
 
         var dead = new List<TestResource>();
         var alive = new List<TestResource>();
         var undetermined = new List<TestResource>();
         var removed = new List<TestResource>();
-        var errors = new List<string>();
+        var errors = new List<SweepError>();
 
         var dockerAvailable = await IsDockerAvailableAsync();
         var dockerInfo = new DockerInfo(dockerAvailable, dockerAvailable ? null : "docker недоступен, контейнеры пропущены");
@@ -59,7 +72,8 @@ public static class Sweeper
                 Dead: dead.ToArray(),
                 Alive: alive.ToArray(),
                 Undetermined: undetermined.ToArray(),
-                Removed: removed.ToArray());
+                Removed: removed.ToArray(),
+                Errors: errors.ToArray());
 
             TestKitJson.WriteJson(document);
         }
@@ -87,7 +101,7 @@ public static class Sweeper
                 Console.Error.WriteLine("[sb-sweep] Ничего не найдено.");
 
             foreach (var e in errors)
-                Console.Error.WriteLine("[sb-sweep] ОШИБКА: " + e);
+                Console.Error.WriteLine("[sb-sweep] ОШИБКА: " + e.Message);
         }
 
         return exitCode;
@@ -98,18 +112,20 @@ public static class Sweeper
             ? $"container {r.Id}  age={FormatAge(r.AgeSeconds)}  pid={r.HostPid}({(r.HostPidAlive == true ? "жив" : "нет")})"
             : $"database  {r.Id}  age={FormatAge(r.AgeSeconds)}  conns={r.Connections}";
 
-    private static TimeSpan ParseAge(string value)
+    internal static TimeSpan ParseAge(string value)
     {
-        // "30m", "2h" — the only two units the architecture examples use (§70.3).
+        // "30m", "2h", "1d" — §86.1 documents all three units.
         if (value.EndsWith('m') && int.TryParse(value[..^1], out var minutes))
             return TimeSpan.FromMinutes(minutes);
         if (value.EndsWith('h') && int.TryParse(value[..^1], out var hours))
             return TimeSpan.FromHours(hours);
-        throw new TestSafetyException($"[sb-sweep] Не понимаю --max-age \"{value}\". Ожидался формат вроде 30m или 2h.");
+        if (value.EndsWith('d') && int.TryParse(value[..^1], out var days))
+            return TimeSpan.FromDays(days);
+        throw new TestSafetyException($"[sb-sweep] Не понимаю --max-age \"{value}\". Ожидался формат вроде 30m, 2h или 1d.");
     }
 
     private static async Task SweepContainersAsync(string workingCopyRoot, DateTimeOffset now, TimeSpan maxAge, string? onlyRunKey, bool apply,
-        List<TestResource> dead, List<TestResource> alive, List<TestResource> undetermined, List<TestResource> removed, List<string> errors)
+        List<TestResource> dead, List<TestResource> alive, List<TestResource> undetermined, List<TestResource> removed, List<SweepError> errors)
     {
         string psOutput;
         try
@@ -118,7 +134,7 @@ public static class Sweeper
         }
         catch (Exception ex)
         {
-            errors.Add($"docker недоступен, контейнеры пропущены: {ex.Message}");
+            errors.Add(new SweepError(null, $"docker недоступен, контейнеры пропущены: {ex.Message}"));
             return;
         }
 
@@ -128,7 +144,21 @@ public static class Sweeper
             var id = doc.RootElement.GetProperty("ID").GetString()!;
             var name = doc.RootElement.GetProperty("Names").GetString() ?? id;
 
-            var inspect = await RunDockerAsync($"inspect {id}");
+            string inspect;
+            try
+            {
+                inspect = await RunDockerAsync($"inspect {id}");
+            }
+            catch (Exception)
+            {
+                // Race between `docker ps` and `docker inspect`: the container (often Ryuk) can be gone
+                // by the time we inspect it. That's not a sweep failure — the container is already gone,
+                // which is the outcome sweep would have produced anyway — so skip it rather than aborting
+                // the whole command (previous behaviour) or reporting it via errors[], which §86.2 ties
+                // specifically to "part of the resources could not be deleted".
+                continue;
+            }
+
             using var inspectDoc = JsonDocument.Parse(inspect);
             var labels = inspectDoc.RootElement[0].GetProperty("Config").GetProperty("Labels");
 
@@ -163,7 +193,11 @@ public static class Sweeper
                 Mine: mine,
                 Liveness: "undetermined");
 
-            if (!processAlive && ageSeconds > maxAge.TotalSeconds)
+            // §86.1: --run-key is the only way to remove an "undetermined" resource — the operator is
+            // vouching for a specific run by key, so the normal age/liveness gate is bypassed for it.
+            var forcedByRunKey = onlyRunKey is not null;
+
+            if (!processAlive && (ageSeconds > maxAge.TotalSeconds || forcedByRunKey))
             {
                 dead.Add(resource with { Liveness = "dead" });
                 if (apply)
@@ -175,7 +209,7 @@ public static class Sweeper
                     }
                     catch (Exception ex)
                     {
-                        errors.Add($"не удалось удалить контейнер {name}: {ex.Message}");
+                        errors.Add(new SweepError(name, $"не удалось удалить контейнер {name}: {ex.Message}"));
                     }
                 }
             }
@@ -191,7 +225,7 @@ public static class Sweeper
     }
 
     private static async Task SweepDatabasesAsync(string serverConnectionString, string workingCopyRoot, DateTimeOffset now, TimeSpan maxAge, string? onlyRunKey,
-        bool apply, List<TestResource> dead, List<TestResource> alive, List<TestResource> undetermined, List<TestResource> removed, List<string> errors)
+        bool apply, List<TestResource> dead, List<TestResource> alive, List<TestResource> undetermined, List<TestResource> removed, List<SweepError> errors)
     {
         var builder = new NpgsqlConnectionStringBuilder(serverConnectionString) { Database = "postgres" };
         await using var connection = new NpgsqlConnection(builder.ConnectionString);
@@ -244,19 +278,26 @@ public static class Sweeper
                 Mine: mine,
                 Liveness: "undetermined");
 
-            if (connections == 0 && !processAlive && age is { } a && a > maxAge)
+            // §86.1: --run-key is the only way to remove an "undetermined" database (e.g. one whose
+            // metadata comment could not be read) — bypasses the normal age gate for that run only.
+            var forcedByRunKey = onlyRunKey is not null;
+
+            if (connections == 0 && !processAlive && ((age is { } a && a > maxAge) || forcedByRunKey))
             {
                 dead.Add(resource with { Liveness = "dead" });
                 if (apply)
                 {
                     try
                     {
-                        await TestDatabaseLease.DropAsync(connection, name);
+                        // Sweeper is, by construction, a different process from whichever run created
+                        // this database, so TestDatabaseNaming.EnsureOwnedByThisRun can never pass here —
+                        // DropLeakedAsync is the sweeper-specific, cross-process-safe drop path.
+                        await TestDatabaseLease.DropLeakedAsync(connection, name);
                         removed.Add(resource with { Liveness = "dead" });
                     }
                     catch (Exception ex)
                     {
-                        errors.Add($"не удалось удалить базу {name}: {ex.Message}");
+                        errors.Add(new SweepError(name, $"не удалось удалить базу {name}: {ex.Message}"));
                     }
                 }
             }

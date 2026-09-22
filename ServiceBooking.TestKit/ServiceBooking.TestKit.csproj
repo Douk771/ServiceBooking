@@ -16,4 +16,8 @@
     <PackageReference Include="Testcontainers.PostgreSql" Version="3.10.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ServiceBooking.UnitTests" />
+  </ItemGroup>
+
 </Project>
