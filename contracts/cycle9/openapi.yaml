@@ -87,12 +87,19 @@ paths:
         - name: cityId
           in: query
           required: false
-          description: Не передан или пуст → «Все города».
+          description: |
+            Не передан или пуст → «Все города». Нечисловое значение (например, cityId=abc) — 400
+            (автоматическая проверка модели [ApiController], тело — голая строка по правилам этого
+            файла, НЕ ProblemDetails): это ошибка формата запроса, а не значение фильтра, и отличается
+            от «несуществующий, но числовой cityId», который отдаёт пустую страницу, а не 400.
           schema: { type: integer, format: int32, minimum: 1 }
         - name: search
           in: query
           required: false
-          description: Подстрока по названию ИЛИ адресу, регистронезависимо. Комбинируется с cityId через «и».
+          description: |
+            Подстрока по названию ИЛИ адресу, регистронезависимо. Комбинируется с cityId через «и».
+            Длиннее 200 символов — НЕ отвергается 400-м: обрезается сервером до 200 символов перед
+            поиском, тем же приёмом, каким pageSize клампится, а не отвергается.
           schema: { type: string, maxLength: 200 }
         - name: page
           in: query
@@ -109,6 +116,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PagedCompanyDto" }
+        "400": { $ref: "#/components/responses/BadRequestText" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
 
   # ─────────────────────────────────────────────────────────────────────────────────────────────
