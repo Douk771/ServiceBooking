@@ -744,11 +744,16 @@ bash deploy/rollback.sh
 миграции (`BackfillBillingAccounts`, `BackfillChannelBillingAccounts`) — единственный шаг цикла 7,
 который может остановить выкат ровно посередине, если данные на машине не такие, как ожидалось.
 
+**Сервис базы в манифесте называется `postgres`** (не `db`), а скрипт лежит на хосте и в контейнер
+базы не смонтирован — поэтому он подаётся на стандартный вход через `<`, а не через `psql -f`
+(`-f` искал бы файл внутри контейнера).
+
 ```bash
 cd /opt/ezbook/app
 # 1. Любой момент ДО деплоя, даже до git checkout на новый релиз — скрипт безопасен и на схеме
 #    без единой колонки цикла 7 (сам это определяет и печатает SKIPPED там, где рано):
-docker compose exec -T db psql -U postgres -d servicebooking -f deploy/checks/billing-precheck.sql \
+docker compose -f docker-compose.prod.yml --env-file .env exec -T postgres \
+    psql -U postgres -d servicebooking < deploy/checks/billing-precheck.sql \
     > /tmp/billing-precheck-before.txt
 grep -E "finding_count|SKIPPED" /tmp/billing-precheck-before.txt
 ```
@@ -762,7 +767,8 @@ grep -E "finding_count|SKIPPED" /tmp/billing-precheck-before.txt
 ```bash
 # 2. Сразу после того, как деплой применил миграции (readiness уже зелёный) — сверка, что ни одна
 #    компания/номер не потеряли возможностей при переходе на аккаунт (US-73):
-docker compose exec -T db psql -U postgres -d servicebooking -f deploy/checks/billing-migration-check.sql \
+docker compose -f docker-compose.prod.yml --env-file .env exec -T postgres \
+    psql -U postgres -d servicebooking < deploy/checks/billing-migration-check.sql \
     > /tmp/billing-migration-check-after.txt
 ```
 
