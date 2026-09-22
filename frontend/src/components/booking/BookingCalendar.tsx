@@ -35,6 +35,11 @@ function isoWeekday(d: Date) {
 
 const toDateStr = (d: Date) => format(d, 'yyyy-MM-dd')
 
+function timeToMinutes(t: string): number {
+  const [h, m] = t.slice(0, 5).split(':').map(Number)
+  return h * 60 + m
+}
+
 interface Props {
   companyId: string
   masterId: string
@@ -48,6 +53,7 @@ interface Props {
 
 export function BookingCalendar({ companyId, masterId, serviceId, extraServiceIds, selectedDate, onSelectDate }: Props) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
+  const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes()
 
   // API_CONTRACT_CYCLE6.md §41.2 / openapi-cycle6.yaml: the server rejects `from` earlier than
   // `today - 1` with a bare-string 400 ("from is too far in the past"). Requesting the 1st of the
@@ -62,7 +68,7 @@ export function BookingCalendar({ companyId, masterId, serviceId, extraServiceId
   const to = toDateStr(endOfMonth(month))
   const serviceKey = extraServiceIds ? [serviceId, ...extraServiceIds].join(',') : serviceId
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['availability', companyId, masterId, serviceKey, from, to],
     // A company can set its booking horizon shorter than a month (§41.4, 1..365 days). Requesting
     // the whole displayed month can then legitimately overshoot `horizonLastDate` — which the
@@ -98,6 +104,16 @@ export function BookingCalendar({ companyId, masterId, serviceId, extraServiceId
 
   const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
   const startPad = isoWeekday(startOfMonth(month)) - 1
+
+  // Review finding #4 — a failed request (429 `availability` rate limit, 5xx, "master doesn't
+  // provide this service" 400 the horizon-retry above didn't recognise) previously left the grid
+  // silently grey with no indication anything went wrong.
+  const errorMessage = useMemo(() => {
+    if (!error) return null
+    const ax = error as AxiosError
+    const serverMsg = typeof ax?.response?.data === 'string' ? ax.response.data : ''
+    return serverMsg || 'Не удалось загрузить доступное время. Попробуйте позже.'
+  }, [error])
 
   const horizonLastDate = data?.horizonLastDate ? new Date(`${data.horizonLastDate}T00:00:00`) : undefined
   const nextMonthStart = startOfMonth(addMonths(month, 1))
@@ -154,6 +170,8 @@ export function BookingCalendar({ companyId, masterId, serviceId, extraServiceId
             <div key={i} className="h-[46px] bg-cream-deep rounded-[10px] animate-pulse" />
           ))}
         </div>
+      ) : errorMessage ? (
+        <p className="text-center text-danger text-sm py-8">{errorMessage}</p>
       ) : (
         <div className="grid grid-cols-7 gap-1">
           {Array.from({ length: startPad }).map((_, i) => (
@@ -168,7 +186,13 @@ export function BookingCalendar({ companyId, masterId, serviceId, extraServiceId
             const beyondHorizon = !!horizonLastDate && isAfter(day, horizonLastDate)
 
             const status = entry?.status
-            const clickable = !past && !beyondHorizon && status === 'Available'
+            // Review finding #1 — §41.2: `lastFreeSlotStart` exists so the browser can mark
+            // *today* as "time's up" by its own local clock, since the server (UTC, no timezone
+            // in the schedule, §45.5) can't know that. Only applies to today: for future days the
+            // server's "Available" already means what it says.
+            const todayPastLastSlot =
+              today && !!entry?.lastFreeSlotStart && nowMinutes >= timeToMinutes(entry.lastFreeSlotStart)
+            const clickable = !past && !beyondHorizon && status === 'Available' && !todayPastLastSlot
 
             let cellClass =
               'relative flex flex-col items-center justify-center gap-0.5 rounded-[10px] h-[46px] text-sm transition-all select-none border '
@@ -179,7 +203,7 @@ export function BookingCalendar({ companyId, masterId, serviceId, extraServiceId
             } else if (status === 'DayOff') {
               cellClass += 'bg-[#F5F2EC] border-line text-muted cursor-not-allowed'
               label = 'выходной'
-            } else if (status === 'FullyBooked') {
+            } else if (status === 'FullyBooked' || todayPastLastSlot) {
               cellClass += 'bg-[#F5F2EC] border-line text-muted cursor-not-allowed'
               label = DAY_FULL_LABEL
             } else if (status === 'Available') {
@@ -201,7 +225,7 @@ export function BookingCalendar({ companyId, masterId, serviceId, extraServiceId
                 disabled={!clickable}
                 aria-disabled={!clickable}
                 aria-label={`${format(day, 'd MMMM', { locale: ru })}${label ? `, ${label}` : ''}`}
-                title={status === 'FullyBooked' ? DAY_FULL_HINT : undefined}
+                title={status === 'FullyBooked' || todayPastLastSlot ? DAY_FULL_HINT : undefined}
                 onClick={() => clickable && onSelectDate(key)}
                 className={cellClass}
               >
