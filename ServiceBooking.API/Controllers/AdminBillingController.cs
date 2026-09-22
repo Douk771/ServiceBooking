@@ -111,16 +111,23 @@ public class AdminBillingController(
     public IActionResult GetOptionCapabilities() =>
         Ok(new { capabilities = OptionCapabilityCatalog.Known.Select(c => new { c.Key, c.Kind, c.Name }).ToList() });
 
+    // Contract §48: option codes are machine identifiers, not free text.
+    private static readonly System.Text.RegularExpressions.Regex CodePattern =
+        new("^[a-z0-9.\\-]{2,64}$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private static IActionResult? ValidateOptionInput(Billing_AdminOptionInput dto, string? existingCode)
     {
-        if (string.IsNullOrWhiteSpace(dto.Code) || dto.Code.Length is < 2 or > 64)
-            return new BadRequestObjectResult("Код опции обязателен (2-64 символа).");
+        if (string.IsNullOrWhiteSpace(dto.Code) || !CodePattern.IsMatch(dto.Code))
+            return new BadRequestObjectResult("Код опции обязателен и должен соответствовать формату ^[a-z0-9.-]{2,64}$.");
         if (string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Length > 100)
             return new BadRequestObjectResult("Название обязательно (до 100 символов).");
         if (dto.PricePerMonth is < 0)
             return new BadRequestObjectResult("Цена не может быть отрицательной.");
+        if (dto.MaxQuantity is not null && dto.MaxQuantity < 1)
+            return new BadRequestObjectResult("Максимальное количество должно быть не меньше 1.");
 
-        var kind = ParseKind(dto.Kind);
+        if (TryParseKind(dto.Kind) is not { } kind)
+            return new BadRequestObjectResult("kind должен быть Toggle или Quantity.");
         if (kind == OptionKind.Quantity && string.IsNullOrWhiteSpace(dto.UnitName))
             return new BadRequestObjectResult("Для опции-количества обязательна единица измерения.");
         if (kind == OptionKind.Toggle && !string.IsNullOrWhiteSpace(dto.UnitName))
@@ -129,12 +136,20 @@ public class AdminBillingController(
         return null;
     }
 
-    private static OptionKind ParseKind(string kind) => kind switch
+    private static OptionKind? TryParseKind(string? kind) => kind switch
     {
         "Toggle" => OptionKind.Toggle,
         "Quantity" => OptionKind.Quantity,
-        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "kind must be Toggle or Quantity"),
+        _ => null,
     };
+
+    private static OptionKind ParseKind(string kind) =>
+        TryParseKind(kind) ?? throw new ArgumentOutOfRangeException(nameof(kind), kind, "kind must be Toggle or Quantity");
+
+    // B5: PostgreSQL "timestamp with time zone" columns require Kind == Utc; DateOnly.ToDateTime always
+    // yields Kind == Unspecified, which Npgsql rejects at runtime (500) rather than silently coercing.
+    private static DateTime? ToUtc(DateOnly? date) =>
+        date is null ? null : DateTime.SpecifyKind(date.Value.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
 
     private async Task<Dictionary<Guid, int>> GetOptionSubscriberCountsAsync(IEnumerable<Guid> optionIds)
     {
@@ -355,6 +370,14 @@ public class AdminBillingController(
         if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
             return BadRequest("Дата окончания оплаты не может быть в прошлом.");
 
+        // B6: contract requires an omitted `options` field to behave as "no options", not to 500.
+        var optionLines = dto.Options ?? [];
+
+        if (dto.RequestId.HasValue && account.RequestedAtUtc is null)
+            return Conflict("Заявка уже обработана.");
+        if (dto.RequestId.HasValue && dto.RequestId.Value != accountId)
+            return Conflict("Заявка уже обработана.");
+
         SubscriptionPlanConfig? plan = null;
         if (dto.PlanId.HasValue)
         {
@@ -362,13 +385,22 @@ public class AdminBillingController(
             if (plan is null) return NotFound("Тариф не найден.");
         }
 
-        var optionIds = dto.Options.Select(o => o.OptionId).ToList();
+        var optionIds = optionLines.Select(o => o.OptionId).ToList();
         var options = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).ToListAsync();
         if (options.Count != optionIds.Distinct().Count())
             return BadRequest("Одна или несколько опций не найдены.");
 
+        foreach (var line in optionLines)
+        {
+            if (line.Quantity < 1)
+                return BadRequest($"Количество для опции должно быть не меньше 1.");
+            var option = options.First(o => o.Id == line.OptionId);
+            if (option.MaxQuantity is { } max && line.Quantity > max)
+                return BadRequest($"Количество для опции «{option.Name}» не может превышать {max}.");
+        }
+
         var planRules = plan is not null ? await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync() : [];
-        foreach (var line in dto.Options)
+        foreach (var line in optionLines)
         {
             var rule = planRules.FirstOrDefault(r => r.OptionId == line.OptionId);
             if (plan is not null && (rule is null || rule.Availability == OptionAvailability.Unavailable))
@@ -408,11 +440,11 @@ public class AdminBillingController(
 
         sub.PlanConfigId = dto.PlanId;
         sub.IsActive = dto.IsActive;
-        sub.PaidUntil = dto.PaidUntil?.ToDateTime(TimeOnly.MaxValue);
+        sub.PaidUntil = ToUtc(dto.PaidUntil);
         sub.UpdatedAt = now;
 
         var existingOptions = await db.AccountSubscriptionOptions.Where(o => o.BillingAccountId == accountId).ToListAsync();
-        foreach (var line in dto.Options)
+        foreach (var line in optionLines)
         {
             var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
             if (row is null)
@@ -423,7 +455,7 @@ public class AdminBillingController(
                     BillingAccountId = accountId,
                     OptionId = line.OptionId,
                     Quantity = line.Quantity,
-                    PaidUntilUtc = line.PaidUntil?.ToDateTime(TimeOnly.MaxValue),
+                    PaidUntilUtc = ToUtc(line.PaidUntil),
                     ActivatedAtUtc = now,
                     ActivatedByUserId = changedByUserId,
                 });
@@ -432,7 +464,7 @@ public class AdminBillingController(
             {
                 row.EndsAtUtc = null;
                 row.Quantity = line.Quantity;
-                row.PaidUntilUtc = line.PaidUntil?.ToDateTime(TimeOnly.MaxValue);
+                row.PaidUntilUtc = ToUtc(line.PaidUntil);
                 row.ActivatedAtUtc = now;
                 row.ActivatedByUserId = changedByUserId;
                 row.RequestedQuantity = null;
@@ -445,10 +477,10 @@ public class AdminBillingController(
         // and is treated the same as the option staying at its previous quantity until removed outright,
         // see the cycle-07 backend report) end at the close of the current paid period rather than
         // disappearing immediately (contract: "действует до конца оплаченного периода").
-        foreach (var row in existingOptions.Where(r => dto.Options.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
             row.EndsAtUtc = sub.PaidUntil ?? now;
 
-        if (dto.RequestId.HasValue && account.Id == dto.RequestId.Value)
+        if (dto.RequestId.HasValue)
         {
             account.RequestedPlanId = null;
             account.RequestedOptionsJson = null;
@@ -457,7 +489,7 @@ public class AdminBillingController(
             account.RequestedComment = null;
         }
 
-        var newOptionsSummary = string.Join(", ", dto.Options.Select(o =>
+        var newOptionsSummary = string.Join(", ", optionLines.Select(o =>
         {
             var name = options.First(x => x.Id == o.OptionId).Name;
             return $"{name} ×{o.Quantity}";
