@@ -59,6 +59,11 @@ interface Props {
    *  the merged booking modal's staff entry points. The server's answer (`staffMode` on the
    *  response) is what actually drives rendering, via `onStaffModeChange` below. */
   manual?: boolean
+  /** Review finding §3 — R2/US-121: a REQUEST, same shape as `manual`. Kept in sync with the
+   *  "показать остальные часы" toggle on the slot step so a day fully booked 09:00–21:00 but free
+   *  at, say, 22:00 doesn't render as unavailable once the caller has asked to see the rest of the
+   *  day. */
+  extendedHours?: boolean
   /** Reports the server's `staffMode` back up so the parent step (e.g. the slot grid) can render its
    *  own staff-only controls consistently with what the calendar is doing (§108.2). */
   onStaffModeChange?: (staffMode: boolean) => void
@@ -72,6 +77,7 @@ export function BookingCalendar({
   selectedDate,
   onSelectDate,
   manual = false,
+  extendedHours = false,
   onStaffModeChange,
 }: Props) {
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
@@ -91,7 +97,7 @@ export function BookingCalendar({
   const serviceKey = extraServiceIds ? [serviceId, ...extraServiceIds].join(',') : serviceId
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['availability', companyId, masterId, serviceKey, from, to, manual],
+    queryKey: ['availability', companyId, masterId, serviceKey, from, to, manual, extendedHours],
     // A company can set its booking horizon shorter than a month (§41.4, 1..365 days). Requesting
     // the whole displayed month can then legitimately overshoot `horizonLastDate` — which the
     // calendar can't know in advance, since that value only arrives IN the response. Rather than
@@ -100,7 +106,16 @@ export function BookingCalendar({
     // callers (§121.4 — staff has no horizon), so it can't misfire on a staffMode response.
     queryFn: async () => {
       try {
-        return await bookingsApi.getAvailability(companyId, masterId, serviceId, extraServiceIds, from, to, manual)
+        return await bookingsApi.getAvailability(
+          companyId,
+          masterId,
+          serviceId,
+          extraServiceIds,
+          from,
+          to,
+          manual,
+          extendedHours,
+        )
       } catch (err) {
         const ax = err as AxiosError
         const serverMsg = typeof ax?.response?.data === 'string' ? ax.response.data : ''
@@ -112,7 +127,16 @@ export function BookingCalendar({
         const clampedTo = toDateStr(addDays(today, horizonDays))
         if (clampedTo >= to) throw err // clamped range isn't actually smaller — the 400 was for another reason
 
-        return bookingsApi.getAvailability(companyId, masterId, serviceId, extraServiceIds, from, clampedTo, manual)
+        return bookingsApi.getAvailability(
+          companyId,
+          masterId,
+          serviceId,
+          extraServiceIds,
+          from,
+          clampedTo,
+          manual,
+          extendedHours,
+        )
       }
     },
     enabled: !!masterId && !!serviceId,
@@ -149,7 +173,7 @@ export function BookingCalendar({
   // §121.4/§108.5 — staff has no server-side horizon at all; the forward arrow is gated by the
   // client-only constant instead, so the calendar doesn't scroll forever.
   const horizonLastDate = data?.horizonLastDate ? new Date(`${data.horizonLastDate}T00:00:00`) : undefined
-  const staffHorizonLastDate = staffMode ? startOfMonth(addMonths(new Date(), STAFF_MAX_MONTHS_AHEAD)) : undefined
+  const staffHorizonLastDate = staffMode ? addMonths(new Date(), STAFF_MAX_MONTHS_AHEAD) : undefined
   const effectiveHorizonLastDate = staffMode ? staffHorizonLastDate : horizonLastDate
   const nextMonthStart = startOfMonth(addMonths(month, 1))
   const nextMonthDisabled = !!effectiveHorizonLastDate && isAfter(nextMonthStart, effectiveHorizonLastDate)
@@ -218,7 +242,12 @@ export function BookingCalendar({
             const entry = statusMap.get(key)
             const past = isPast(startOfDay(day)) && !isToday(day)
             const today = isToday(day)
-            const beyondHorizon = !!effectiveHorizonLastDate && isAfter(day, effectiveHorizonLastDate)
+            // Review finding §2 — §108.5: "beyond horizon" is a non-staff concept only; staff has no
+            // server-side horizon at all (§121.4), and `staffHorizonLastDate` only exists to gate
+            // the forward-navigation ARROW (`nextMonthDisabled`, computed separately above), not to
+            // grey out days within an allowed month. Computing it here too used to make every day
+            // after the 1st of the 12th month unclickable, with no label explaining why.
+            const beyondHorizon = !staffMode && !!effectiveHorizonLastDate && isAfter(day, effectiveHorizonLastDate)
 
             const status = entry?.status
             const scheduleState = entry?.scheduleState ?? null
@@ -233,7 +262,11 @@ export function BookingCalendar({
             // Available branch below already makes them clickable. This flag exists only to decide
             // the LABEL, never to override clickability by itself.
             const staffScheduleNote = staffMode && (scheduleState === 'DayOff' || scheduleState === 'NoSchedule')
-            const clickable = !past && !beyondHorizon && status === 'Available' && !todayPastLastSlot
+            const clickable =
+              !past &&
+              !beyondHorizon &&
+              !todayPastLastSlot &&
+              (status === 'Available' || (status === 'DayOff' && staffMode))
 
             let cellClass =
               'relative flex flex-col items-center justify-center gap-0.5 rounded-[10px] h-[46px] text-sm transition-all select-none border '
@@ -243,6 +276,15 @@ export function BookingCalendar({
               cellClass += 'border-transparent text-line-strong cursor-default'
             } else if (status === 'DayOff' && !staffMode) {
               cellClass += 'bg-[#F5F2EC] border-line text-muted cursor-not-allowed'
+              label = DAY_OFF_LABEL
+            } else if (status === 'DayOff' && staffMode) {
+              // Review finding — the server isn't documented to send `DayOff` alongside
+              // `staffMode: true` (it falls back to `Available` with `scheduleState: 'DayOff'`
+              // instead, §121.3), so this branch is unreached today. But if it ever did, the old
+              // code fell through to the catch-all "no data" cell — blank, unlabeled, and
+              // impossible to tell apart from a real gap in the response. Render it the same as the
+              // ordinary staff day-off note instead of failing silently.
+              cellClass += 'bg-[#F5F2EC] border-line-strong hover:bg-line text-ink-soft cursor-pointer'
               label = DAY_OFF_LABEL
             } else if (status === 'FullyBooked' || todayPastLastSlot) {
               cellClass += 'bg-[#F5F2EC] border-line text-muted cursor-not-allowed'
@@ -296,6 +338,12 @@ export function BookingCalendar({
           <div className="w-[11px] h-[11px] rounded-[3px] bg-[#F5F2EC] border border-line" />
           <span className="text-[11px] text-ink-soft">Выходной</span>
         </div>
+        {staffMode && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-[11px] h-[11px] rounded-[3px] bg-[#F5F2EC] border border-line-strong" />
+            <span className="text-[11px] text-ink-soft">{NO_SCHEDULE_LABEL}</span>
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <div className="w-[11px] h-[11px] rounded-[3px] bg-[#F5F2EC] border border-line" />
           <span className="text-[11px] text-ink-soft">{DAY_FULL_LABEL}</span>
