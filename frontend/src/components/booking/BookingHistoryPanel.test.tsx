@@ -68,7 +68,9 @@ describe('BookingHistoryPanel — API_CONTRACT_CYCLE10.md §122', () => {
     expect(titles[0]).toHaveTextContent('Запись перенесена')
     expect(titles[1]).toHaveTextContent('Запись создана')
     expect(screen.getByText('Перенёс Пётр Петров (мастер)')).toBeInTheDocument()
-    expect(screen.getByText(/2026-09-10 10:00 → 2026-09-12 14:00/)).toBeInTheDocument()
+    // Review fix — the "было → стало" line now prints a human date (`d MMM`, ru locale), not the
+    // raw `yyyy-MM-dd` the server sends.
+    expect(screen.getByText(/10 сент\. 10:00 → 12 сент\. 14:00/)).toBeInTheDocument()
   })
 
   it('shows the "journal starts later" note only when precedesJournal is true', async () => {

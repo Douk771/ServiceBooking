@@ -8,6 +8,14 @@ interface Props {
   bookingId: string
 }
 
+// Review finding — `reschedule.fromDate`/`toDate` are plain `yyyy-MM-dd` calendar dates (§122.1),
+// not `occurredAt`'s full ISO timestamp; `parseISO` on a bare date is fine, but printing it raw
+// (as the code used to) gave "2026-09-22" while the line above it already reads "22 сен, 14:30".
+function formatHistoryDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return format(new Date(y, m - 1, d), 'd MMM', { locale: ru })
+}
+
 /**
  * ARCHITECTURE_CYCLE10.md §109.1 / API_CONTRACT_CYCLE10.md §122 — the booking's change journal,
  * embedded only in `MyBookingsPage.tsx` (staff). The caller decides WHETHER to render this at all
@@ -64,8 +72,8 @@ export function BookingHistoryPanel({ bookingId }: Props) {
             <p className="text-xs text-ink-soft mt-0.5">{ev.actor.label}</p>
             {ev.reschedule && (
               <p className="text-xs text-ink-soft mt-0.5">
-                {ev.reschedule.fromDate} {ev.reschedule.fromStartTime.slice(0, 5)} →{' '}
-                {ev.reschedule.toDate} {ev.reschedule.toStartTime.slice(0, 5)}
+                {formatHistoryDate(ev.reschedule.fromDate)} {ev.reschedule.fromStartTime.slice(0, 5)} →{' '}
+                {formatHistoryDate(ev.reschedule.toDate)} {ev.reschedule.toStartTime.slice(0, 5)}
               </p>
             )}
             {ev.cancellationReason && (
