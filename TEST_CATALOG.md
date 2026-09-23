@@ -28,7 +28,7 @@ grep -rn "BK-003" ServiceBooking.Tests/
 |---|---|---|
 | `AUTH-` | `AuthTests.cs` | 15 |
 | `BK-` | `BookingsFlowSmokeTests.cs` + `MultiServiceBookingTests.cs` | 70 (62 + 8) |
-| `CO-` | `CompaniesTests.cs` | 80 |
+| `CO-` | `CompaniesTests.cs` | 81 |
 | `SVC-` | `ServicesTests.cs` | 19 |
 | `WH-` | `WorkingHoursTests.cs` | 17 |
 | `ST-` | `ScheduleTemplateTests.cs` | 15 |
@@ -776,6 +776,12 @@ US-61/Q4 (ARCHITECTURE_CYCLE6.md §48.2/§48.4): `PhoneNormalizer.TryNormalizeRu
 #### CO-056 — «Мои компании» продолжают показывать скрытую из списка компанию
 
 Владелец скрывает компанию из общего списка, но `GET /api/companies/my` по-прежнему её содержит, при этом `ShowInPublicListing = false` и вычисляемый `PublicListingEnabled = false` — кабинет владельца не каталог, скрытые компании из него не пропадают.
+
+### GET /api/companies/public
+
+#### CO-083 — Выдача без фильтров совпадает с GET /api/companies (US-115, A13)
+
+Защита от расхождения двух независимых определений «публично размещена»: `GET /api/companies` вычисляет его в памяти через `SubscriptionResolver.GetEffectivePlansAsync`, `GET /api/companies/public` — в SQL через `Services/Billing/PublicListingQuery.cs` (ARCHITECTURE_CYCLE9.md §103.5). Заводится смешанный набор компаний: должны попасть в выдачу — никогда не подписывавшаяся (бесплатный базлайн), компания на полнофункциональном платном тарифе, компания с истёкшей подпиской (откатывается на бесплатный базлайн); не должны попасть — компания, которую владелец скрыл сам (`showInPublicListing = false`), компания на тарифе с `AllowPublicListing = false`, деактивированная компания. `GET /api/companies/public` обходится постранично (`pageSize=100`) до последней страницы, набор `Id` со всех страниц сравнивается с набором `Id` из `GET /api/companies` — они обязаны совпасть целиком, а не просто пересечься. Дополнительно проверяется, что каждая компания из фикстуры оказалась на своей стороне сравнения.
 
 ### Онлайн-оплата (опция владельца × гейт тарифа)
 
