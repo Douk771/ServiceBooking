@@ -128,6 +128,10 @@ DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentN
 DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(builder.Configuration);
 DeploymentSafetyChecks.ValidateGreenApiServerCountry(builder.Configuration);
 DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
+// ARCHITECTURE_CYCLE9.md §105.3 (проход C, Web Push мастеру) — own secret (VAPID), own provider switch,
+// checked the same "fail loud outside a developer environment" way as ValidateNotificationSecrets above,
+// but gated on ITS OWN Provider value, independent of Notifications:Provider.
+DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.Environment.EnvironmentName);
 
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
@@ -453,6 +457,37 @@ builder.Services.AddSingleton<ServiceBooking.API.Services.IProviderWebhookParser
     return new ServiceBooking.API.Services.ProviderWebhookParserRegistry(byTransport);
 });
 
+// ── Web Push мастеру (ARCHITECTURE_CYCLE9.md §105, проход C, US-116/117/118/123/124) ─────────────────
+// Deliberately its own section, independent of the WhatsApp/MAX switch above: own config section, own
+// provider value, own secret (VAPID, not the channel master key), own named HttpClient (§105.1 — "Один
+// клиент на два очень разных назначения — источник взаимного влияния таймаутов").
+builder.Services.Configure<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions.SectionName));
+builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PushSubscriptionWriter>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.StaffPushScheduler>();
+
+// The "web-push" named client (§105.1) — request/URL logging silenced the same way as "green-api"
+// (rung 1 of defence against a key/token reaching a log); PushServiceClient handles its own
+// content-type/headers, so no ConfigurePrimaryHttpMessageHandler is needed here (no custom
+// IPv4-first ConnectCallback like GreenApiHandlerFactory — push services don't share GREEN-API's
+// documented IPv6-flakiness history).
+builder.Logging.AddFilter("System.Net.Http.HttpClient.web-push.LogicalHandler", LogLevel.None);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.web-push.ClientHandler", LogLevel.None);
+builder.Services.AddHttpClient("web-push", client =>
+{
+    var webPushOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions.SectionName)
+        .Get<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions>() ?? new();
+    client.Timeout = TimeSpan.FromSeconds(webPushOptions.RequestTimeoutSeconds);
+});
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>();
+var staffPushProvider = builder.Configuration["Notifications:StaffPush:Provider"];
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.IWebPushSender>(sp =>
+    string.Equals(staffPushProvider, "web-push", StringComparison.OrdinalIgnoreCase)
+        ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>());
+
 // ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
 // gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default
 // KnownNetworks/KnownProxies ship with loopback pre-trusted, which happens to be exactly the address
@@ -557,6 +592,22 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // push-subscribe: ARCHITECTURE_CYCLE9.md §105.5 (US-123) — "20/час на пользователя". Keyed by user
+    // id only, same shape as data-export above: the endpoint requires [Authorize], there is no
+    // anonymous case, and the caller subscribing THEIR OWN devices is exactly what this bounds (not an
+    // IP, which a shared salon computer would make the wrong partition key for).
+    o.AddPolicy("push-subscribe", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:push-subscribe:PermitLimit", 20),
+            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:push-subscribe:WindowMinutes", 60)),
+            QueueLimit = 0
+        });
+    });
+
     // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
     // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
     // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -574,6 +625,7 @@ builder.Services.AddRateLimiter(o =>
             "data-export" => "Выгрузка доступна не чаще трёх раз в сутки.",
             "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
             "notifications-webhook" => "Too many requests.",
+            "push-subscribe" => "Слишком много подписок устройств. Повторите позже.",
             _ => "Too many uploads. Try again in a minute."
         };
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
@@ -634,6 +686,10 @@ builder.Services.AddScoped<IScheduledTask, PhotoRetentionCleanupTask>();
 // and channel health (15-minute period — polling, idle detection, orphaned-instance cleanup).
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.NotificationDispatchTask>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelHealthTask>();
+// ARCHITECTURE_CYCLE9.md §105.8 — the fifth task, "staff-push-dispatch" (1-minute period, its own
+// internal budget, same shape as notification-dispatch above but bounded PARALLEL across devices instead
+// of per-channel sequential antiban pacing — see the task's own doc comment for why).
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaffPushDispatchTask>();
 
 // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
 // is registered individually (not discovered by reflection) so the list here IS the list of what runs —
@@ -666,6 +722,13 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.MailLogRule>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.AppLogAgeRule>();
+// ARCHITECTURE_CYCLE9.md §105.11 — two new rules for the Web Push subsystem. Note (§105.11's own
+// warning, kept here too): NO rule for NotificationOptOut exists anywhere in this list either, on
+// purpose — a cycle-5 decision this cycle does not revisit.
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.PushSubscriptionRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.StaffPushNotificationRule>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
 builder.Services.AddHostedService<ScheduledTaskRunner>();

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.GreenApi;
+using ServiceBooking.API.Services.Notifications.WebPush;
 
 namespace ServiceBooking.API.Services;
 
@@ -438,6 +439,44 @@ public static class DeploymentSafetyChecks
                 $"Booking:DefaultWorkWindow:Start ({start}) must be before End ({end}).");
 
         return (start, end);
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE9.md §105.3 (US-124, Q15, R12): mirrors <see cref="ValidateNotificationSecrets"/>'s
+    /// shape for the Web Push subsystem's OWN, separate secret (VAPID, not the channel master key).
+    /// <c>Notifications:StaffPush:Provider = "logging"</c> (the default) needs nothing — that's the
+    /// documented "невыпущенность" state (SPEC П13), not a misconfiguration. <c>"web-push"</c> outside a
+    /// developer environment REQUIRES a public/private key pair that actually parses as P-256
+    /// (<see cref="VapidKeyValidator.IsValidP256Pair"/>) and a non-empty Subject — "старт падает", not
+    /// "работает наполовину". Any other value fails loud, same append-only-provider convention as
+    /// <see cref="NotificationOptions.Provider"/>.
+    /// </summary>
+    public static void ValidateStaffPushSecrets(IConfiguration configuration, string environmentName)
+    {
+        var provider = configuration[$"{WebPushOptions.SectionName}:Provider"] ?? "logging";
+        if (string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase)) return;
+
+        if (!string.Equals(provider, "web-push", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Notifications:StaffPush:Provider is '{provider}', which is neither 'logging' nor 'web-push'. " +
+                "Fix the configured value — see ARCHITECTURE_CYCLE9.md §105.3.");
+
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        var publicKey = configuration[$"{WebPushOptions.SectionName}:VapidPublicKey"];
+        var privateKey = configuration[$"{WebPushOptions.SectionName}:VapidPrivateKey"];
+        if (!VapidKeyValidator.IsValidP256Pair(publicKey, privateKey))
+            throw new InvalidOperationException(
+                "Notifications:StaffPush:Provider is 'web-push' but VapidPublicKey/VapidPrivateKey are " +
+                "missing or do not parse as a P-256 key pair. Generate a pair (e.g. `npx web-push " +
+                "generate-vapid-keys`) and set WEBPUSH_VAPID_PUBLIC_KEY/WEBPUSH_VAPID_PRIVATE_KEY in .env " +
+                "— see ARCHITECTURE_CYCLE9.md §105.2/§105.3.");
+
+        if (string.IsNullOrWhiteSpace(configuration[$"{WebPushOptions.SectionName}:VapidSubject"]))
+            throw new InvalidOperationException(
+                "Notifications:StaffPush:Provider is 'web-push' but VapidSubject is empty. Set " +
+                "WEBPUSH_VAPID_SUBJECT in .env to a mailto: or https: URL identifying the platform " +
+                "(RFC 8292) — see ARCHITECTURE_CYCLE9.md §105.2.");
     }
 
     /// <summary>
