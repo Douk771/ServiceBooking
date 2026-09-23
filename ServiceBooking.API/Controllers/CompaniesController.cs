@@ -83,8 +83,17 @@ public class CompaniesController(
 
         if (cityId.HasValue) query = query.Where(c => c.CityId == cityId.Value);
         if (!string.IsNullOrWhiteSpace(sanitizedSearch))
-            query = query.Where(c => EF.Functions.ILike(c.Name, $"%{sanitizedSearch}%")
-                                      || (c.Address != null && EF.Functions.ILike(c.Address, $"%{sanitizedSearch}%")));
+        {
+            // EF.Functions.ILike does not auto-escape LIKE wildcards the way EF Core's own
+            // Contains/StartsWith translation does — unlike AdminController/AdminBillingController's
+            // string.Contains(search) call sites, a raw ILIKE pattern built by interpolating user input
+            // treats '%' and '_' from the caller as wildcards too (search=% would match every company,
+            // search=_ would match any single character). Escape both, plus the escape character itself,
+            // before wrapping in the leading/trailing '%'.
+            var likePattern = $"%{EscapeLikeWildcards(sanitizedSearch)}%";
+            query = query.Where(c => EF.Functions.ILike(c.Name, likePattern)
+                                      || (c.Address != null && EF.Functions.ILike(c.Address, likePattern)));
+        }
 
         query = query.OrderBy(c => c.Name).ThenBy(c => c.Id);
 
@@ -971,4 +980,17 @@ public class CompaniesController(
             result.TryAdd(id, (null, 0));
         return result;
     }
+
+    /// <summary>
+    /// Escapes Postgres' default ILIKE wildcards ('%' any-run, '_' any-single-char) and the escape
+    /// character itself ('\') out of GetPublic's user-supplied search term before it is wrapped in
+    /// leading/trailing '%' and handed to EF.Functions.ILike. Without this, a caller-supplied '%'/'_'
+    /// is interpreted as a wildcard rather than a literal character — e.g. search=% matches every
+    /// company in the public, anonymous catalog, search=_ matches any single-character name/address —
+    /// not a SQL-injection risk (the pattern is still bound as a parameter), just a filtering-bypass one.
+    /// Backslash must be escaped first, or escaping '%'/'_' afterward would double-escape their own
+    /// backslashes.
+    /// </summary>
+    private static string EscapeLikeWildcards(string value) =>
+        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 }
