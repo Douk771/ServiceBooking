@@ -16,11 +16,20 @@ export function Navbar() {
   // Clears every cached query on logout — otherwise, on a shared computer, the next person to log
   // in sees the previous user's ['my-companies'], ['company-clients', …], reports etc. for the first
   // render, before their own queries refetch (US-19, C5).
-  const handleLogout = () => {
+  const handleLogout = async () => {
     closeMenu()
-    // §105.5 rubezh 2 — best-effort, fires before the token is gone so the DELETE still carries auth;
-    // it must never block or delay the logout itself (comment on unsubscribeCurrentDeviceOnLogout).
-    void unsubscribeCurrentDeviceOnLogout()
+    // §105.5 rubezh 2 — MUST be awaited, and MUST run before logout() clears the token: the request
+    // interceptor (api/client.ts) reads the token at call time, so firing this after (or racing it
+    // with) logout() sends the DELETE without Authorization and the subscription never gets removed —
+    // a shared-computer logout would silently keep delivering push notifications with client names to
+    // whoever is still signed in on that browser. unsubscribeCurrentDeviceOnLogout is itself
+    // best-effort/never-throwing (see its own docstring); the try/catch below is a second, defensive
+    // layer so that even an unexpected rejection can never strand the "Log out" button.
+    try {
+      await unsubscribeCurrentDeviceOnLogout()
+    } catch {
+      // Logout must proceed regardless — see comment above.
+    }
     logout()
     qc.clear()
     navigate('/')
@@ -69,7 +78,7 @@ export function Navbar() {
                 </Link>
               )}
               <button
-                onClick={handleLogout}
+                onClick={() => void handleLogout()}
                 className="flex items-center gap-1.5 text-sm font-medium text-ink-soft hover:text-gold-dark transition-colors"
               >
                 <Icon name="log-out" size={15} strokeWidth={1.7} />
@@ -144,7 +153,10 @@ export function Navbar() {
                   Админ
                 </Link>
               )}
-              <button onClick={handleLogout} className={`${mobileLinkClass} flex items-center gap-2 text-left w-full`}>
+              <button
+                onClick={() => void handleLogout()}
+                className={`${mobileLinkClass} flex items-center gap-2 text-left w-full`}
+              >
                 <Icon name="log-out" size={16} strokeWidth={1.7} />
                 Выйти
               </button>
