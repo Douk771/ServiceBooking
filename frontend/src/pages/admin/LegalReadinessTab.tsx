@@ -85,7 +85,9 @@ function LegalReadinessReport({
 }) {
   const placeholderSummary = data.placeholders
   const totalPlaceholderOccurrences = placeholderSummary.reduce((sum, p) => sum + p.count, 0)
-  const reAcceptanceRequired = data.impact.reAcceptanceRequired
+  // `impact` is optional per the schema (only the endpoint sends it, the CLI's `--json` output never
+  // does) — treat an absent block as "nothing to show" rather than crashing on `.reAcceptanceRequired`.
+  const reAcceptanceRequired = data.impact?.reAcceptanceRequired ?? []
   const totalReAcceptance = reAcceptanceRequired.reduce((sum, r) => sum + r.users, 0)
 
   return (
@@ -179,7 +181,7 @@ function LegalReadinessReport({
       {reAcceptanceRequired.length > 0 && (
         <Card className="p-6 mb-5">
           <h3 className="text-sm font-semibold text-ink mb-1">Кому потребуется повторный акцепт</h3>
-          <p className="text-xs text-muted mb-3">{data.impact.note}</p>
+          {data.impact?.note && <p className="text-xs text-muted mb-3">{data.impact.note}</p>}
           <div className="grid gap-2">
             {reAcceptanceRequired.map((r) => (
               <div key={r.documentType} className="flex items-center justify-between text-sm">

@@ -267,11 +267,13 @@ export interface PlatformSettings {
 }
 
 // Body of PUT /api/admin/platform-settings → 409 (API_CONTRACT_CYCLE11.md §114.2).
+// `documentType`/`version` are nullable per contracts/cycle11/openapi.yaml (PricingSwitchRefusal):
+// with reason=LegalUnavailable there is no loaded snapshot to point at, so there is no version to name.
 export interface PricingPublicBlockedError {
   reason: PricingPublicBlockedReason
   message: string
-  documentType: string
-  version: string
+  documentType: string | null
+  version: string | null
 }
 
 export interface Service {
@@ -679,7 +681,10 @@ export interface LegalReadiness {
   placeholders: LegalReadinessPlaceholderSummary[]
   links: LegalReadinessLinks
   anchors: LegalReadinessAnchors
-  impact: LegalReadinessImpact
+  /** Not in the schema's `required` list — the CLI (`legal status --json`) shares this same schema
+   *  but has no user base to compute it against, so it omits the block entirely. Only the endpoint
+   *  sends it, and even there treat it as optional rather than assuming presence. */
+  impact?: LegalReadinessImpact
   /** Mandatory and non-empty even when `ready: true` — must always be shown, never hidden behind an icon. */
   disclaimer: string
 }

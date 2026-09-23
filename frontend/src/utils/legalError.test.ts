@@ -70,4 +70,16 @@ describe('getPricingPublicBlockedMessage', () => {
   it('non-axios error → null', () => {
     expect(getPricingPublicBlockedMessage(new Error('network down'))).toBeNull()
   })
+
+  it('409 with reason=LegalUnavailable and no version/documentType → still returns the message verbatim', () => {
+    // API_CONTRACT_CYCLE11.md §114.2 / openapi.yaml PricingSwitchRefusal: version/documentType are
+    // nullable — there's no loaded legal snapshot to name a version of. Must not leak "undefined".
+    const body = {
+      reason: 'LegalUnavailable',
+      message: 'Публичные цены нельзя включить: снимок правовых документов не загружен.',
+      documentType: null,
+      version: null,
+    }
+    expect(getPricingPublicBlockedMessage(axiosErrorWith(409, body))).toBe(body.message)
+  })
 })
