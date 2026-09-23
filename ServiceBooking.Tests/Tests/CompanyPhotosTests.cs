@@ -407,11 +407,9 @@ public class CompanyPhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fixtu
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var message = await response.Content.ReadAsStringAsync();
         // US-125 (SPEC_CYCLE10_MASTER_BOOKING_HISTORY_PHOTO.md §3): "сообщение по-русски объясняет
-        // причину" — a documented acceptance criterion for THIS feature. Intentionally asserting the
-        // SPEC'd behavior rather than the actual one: ImageUploadService.ReadAndProcessAsync (shared by
-        // every upload conveyor, including this cycle's) currently returns English text
-        // ("Unsupported image type — use JPEG, PNG or WEBP"), so this is expected to be RED until fixed
-        // — see the QA report's bug list, not a flaky/wrong test.
+        // причину" — a documented acceptance criterion for THIS feature. ImageUploadService.
+        // ReadAndProcessAsync (shared by every upload conveyor, including this cycle's) now returns
+        // Russian text for every rejection reason ("Можно загрузить JPEG, PNG или WEBP." for this one).
         message.Should().MatchRegex("[а-яА-Я]"); // a Russian-language explanation, not a bare code
     }
 
