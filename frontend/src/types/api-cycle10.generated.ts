@@ -839,6 +839,16 @@ export interface operations {
             401: components["responses"]["UnauthorizedEmpty"];
             403: components["responses"]["ForbiddenEmpty"];
             404: components["responses"]["NotFoundEmpty"];
+            /**
+             * @description Запрос без заголовка `Content-Type: application/json` (или с неподдерживаемым
+             *     значением) — стандартное поведение ASP.NET для тела запроса, тело ответа пустое.
+             */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     getCompanyBySlug: {
