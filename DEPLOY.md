@@ -1715,6 +1715,16 @@ npx web-push generate-vapid-keys
 парсился как P-256, `DeploymentSafetyChecks` проверяет это при старте и не даёт подняться с
 парой, которая не является валидным ключом этой кривой).
 
+> **Скрытая зависимость от `NOTIFICATIONS_ENCRYPTION_KEY`.** Включение `web-push` требует не
+> только VAPID-пару — `PushSubscriptionWriter` шифрует `p256dh`/`auth` каждой подписки браузера
+> ТЕМ ЖЕ `NOTIFICATIONS_ENCRYPTION_KEY`, что и токены WhatsApp/MAX-каналов (см. таблицу выше).
+> Комбинация «`Notifications:Provider=logging` (ключ шифрования пуст или плейсхолдер),
+> `Notifications:StaffPush:Provider=web-push`» стартует чисто, но `POST /api/push/subscriptions`
+> упал бы 500-й на первой же реальной подписке. `DeploymentSafetyChecks.ValidateStaffPushSecrets`
+> поэтому проверяет `NOTIFICATIONS_ENCRYPTION_KEY` тем же способом, что и
+> `ValidateNotificationSecrets` — **до** включения `web-push` он должен быть уже сгенерирован и
+> лежать в `.env`, даже если `Notifications:Provider` при этом остаётся `logging`.
+
 > **Свойство VAPID-пары, которого нет у `NOTIFICATIONS_ENCRYPTION_KEY`: она не шифрует никаких
 > ДАННЫХ на этой машине.** Смена или потеря пары не отвязывает ничего похожего на WhatsApp-канал
 > и не делает нечитаемыми уже сохранённые записи — она обнуляет доверие браузеров к платформе:

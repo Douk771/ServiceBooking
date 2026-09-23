@@ -477,6 +477,17 @@ public static class DeploymentSafetyChecks
                 "Notifications:StaffPush:Provider is 'web-push' but VapidSubject is empty. Set " +
                 "WEBPUSH_VAPID_SUBJECT in .env to a mailto: or https: URL identifying the platform " +
                 "(RFC 8292) — see ARCHITECTURE_CYCLE9.md §105.2.");
+
+        // B5/§105.3: PushSubscriptionWriter.UpsertAsync encrypts p256dh/auth with the SAME
+        // Notifications:EncryptionKey ValidateNotificationSecrets already guards — but only when
+        // Notifications:Provider itself is a real provider. A deployment can run
+        // Notifications:Provider=logging (no WhatsApp/MAX configured) with
+        // Notifications:StaffPush:Provider=web-push at the same time; that combination started up clean
+        // and then 500'd on the very first POST /api/push/subscriptions (SecretProtector.DecodeKey throws
+        // on an empty/placeholder key). "web-push" needs this key exactly as much as a real
+        // Notifications:Provider does — checked here too, last (after the keys this method already owns),
+        // so the failure is at startup, not first request.
+        ValidateEncryptionKeyFormat(configuration["Notifications:EncryptionKey"]);
     }
 
     /// <summary>

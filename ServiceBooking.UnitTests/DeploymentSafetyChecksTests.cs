@@ -1025,9 +1025,29 @@ public class DeploymentSafetyChecksTests
             ["Notifications:StaffPush:VapidPublicKey"] = publicKey,
             ["Notifications:StaffPush:VapidPrivateKey"] = privateKey,
             ["Notifications:StaffPush:VapidSubject"] = "mailto:ops@ezbook.ru",
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
         });
         var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_ValidVapidButNoEncryptionKey_Throws()
+    {
+        // B5/§105.3: Notifications:Provider=logging (no real WhatsApp/MAX provider configured) never
+        // reaches ValidateNotificationSecrets' own EncryptionKey check, so a deployment that only turns
+        // ON web-push must be caught here instead — otherwise it starts clean and only 500s on the
+        // first POST /api/push/subscriptions once a master actually subscribes.
+        var (publicKey, privateKey) = GenerateValidVapidPair();
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:StaffPush:Provider"] = "web-push",
+            ["Notifications:StaffPush:VapidPublicKey"] = publicKey,
+            ["Notifications:StaffPush:VapidPrivateKey"] = privateKey,
+            ["Notifications:StaffPush:VapidSubject"] = "mailto:ops@ezbook.ru",
+        });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*EncryptionKey*");
     }
 
     [Theory]
