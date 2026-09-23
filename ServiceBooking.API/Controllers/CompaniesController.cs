@@ -107,14 +107,17 @@ public class CompaniesController(
             .Take(normalizedPageSize)
             .ToListAsync();
 
-        // Rating/city lookups and plan resolution (for the DTO's plan-derived fields, not for
-        // filtering) stay batched for the page only, same as GetAll/GetMy/GetMemberOf above.
+        // Rating/city/cover lookups and plan resolution (for the DTO's plan-derived fields, not for
+        // filtering) stay batched for the page only, same as GetAll/GetMy/GetMemberOf above — covers are
+        // fetched for pageItems (the current page), never the full candidate set, per §109.3.
         var plans = await subscriptionResolver.GetEffectivePlansAsync(pageItems.Select(c => c.Id));
         var ratings = await GetReviewAggregatesAsync(pageItems.Select(c => c.Id));
         var cities = await GetCitiesAsync(pageItems.Select(c => c.CityId));
+        var covers = await GetCoversAsync(pageItems.Select(c => c.Id));
 
         var items = pageItems.Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
-            c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null)).ToList();
+            c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
+            covers.GetValueOrDefault(c.Id))).ToList();
 
         return Ok(ServiceBooking.API.DTOs.Common.Pagination.Create(items, normalizedPage, normalizedPageSize, total));
     }
