@@ -377,7 +377,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId)
                 .IsRequired().OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(c => c.BillingAccountId);
-            e.HasAlternateKey(c => new { c.Id, c.BillingAccountId });
+            // ARCHITECTURE_CYCLE9.md §104.3: widened from (Id, BillingAccountId) to include Transport —
+            // ChannelCompanyAssignment's composite FK now pins to THIS key, which is what makes "a
+            // company assigned to a channel whose Transport doesn't match the assignment's own
+            // (denormalized) Transport" physically impossible, the same trick cycle 7 used for
+            // BillingAccountId itself.
+            e.HasAlternateKey(c => new { c.Id, c.BillingAccountId, c.Transport });
             e.Property(c => c.Inn).HasMaxLength(12); // T5-B4: 10 (Company) or 12 (Ip/SelfEmployed) digits
             // Filtered unique index: a channel with no instance yet has ProviderInstanceId == null, and
             // there is exactly one live column value we must never see twice.
@@ -389,25 +394,30 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<ChannelCompanyAssignment>(e =>
         {
-            // Cycle 7, stage 6 (ARCHITECTURE_CYCLE7.md §43.6) — both FKs are composite, pinned to the
-            // (Id, BillingAccountId) alternate keys on NotificationChannels/Companies. This is the
+            // Cycle 7, stage 6 (ARCHITECTURE_CYCLE7.md §43.6) — the Company-side FK is still composite,
+            // pinned to the (Id, BillingAccountId) alternate key on Companies. This is (half of) the
             // co-tenancy guarantee: a row can only exist while the channel and the company it's
             // assigned to agree on BillingAccountId, so "assign a company to a number belonging to a
             // different account" is impossible at the database level, and CompanyTransferService is
             // forced to delete the assignment strictly before it can change Company.BillingAccountId
             // (§51.3 step 6/7) — the DB rejects the update otherwise.
-            e.HasOne(a => a.Channel).WithMany(c => c.Assignments)
-                .HasForeignKey(a => new { a.ChannelId, a.BillingAccountId })
-                .HasPrincipalKey(c => new { c.Id, c.BillingAccountId })
-                .OnDelete(DeleteBehavior.Cascade);
             e.HasOne(a => a.Company).WithMany()
                 .HasForeignKey(a => new { a.CompanyId, a.BillingAccountId })
                 .HasPrincipalKey(c => new { c.Id, c.BillingAccountId })
                 .OnDelete(DeleteBehavior.Cascade);
+            // ARCHITECTURE_CYCLE9.md §104.3 — the Channel-side FK grows a THIRD column, Transport,
+            // pinned to NotificationChannels' widened (Id, BillingAccountId, Transport) alternate key.
+            // Combined with NotificationChannel.Transport never changing after creation, this makes the
+            // assignment's own (denormalized) Transport column physically incapable of disagreeing with
+            // the channel it points at — the co-tenancy trick, applied to a second column.
+            e.HasOne(a => a.Channel).WithMany(c => c.Assignments)
+                .HasForeignKey(a => new { a.ChannelId, a.BillingAccountId, a.Transport })
+                .HasPrincipalKey(c => new { c.Id, c.BillingAccountId, c.Transport })
+                .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(a => a.ChannelId);
-            // US-61 p.7: a company may be assigned to at most one channel — a hard DB guarantee, not
-            // application-level check-then-act.
-            e.HasIndex(a => a.CompanyId).IsUnique();
+            // ARCHITECTURE_CYCLE9.md §104.3 (US-119, US-61 p.7 widened): a company may be assigned to at
+            // most one channel PER TRANSPORT — a hard DB guarantee, not application-level check-then-act.
+            e.HasIndex(a => new { a.CompanyId, a.Transport }).IsUnique();
         });
 
         builder.Entity<ChannelStateEvent>(e =>

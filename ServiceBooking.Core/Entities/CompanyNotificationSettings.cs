@@ -1,3 +1,5 @@
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.Core.Entities;
 
 /// <summary>
@@ -21,6 +23,12 @@ public class CompanyNotificationSettings
 
     public int ReminderLeadMinutes { get; set; } = 1440; // 60..4320
     public int MinLeadMinutes { get; set; } = 120; // 0..720
+
+    // ARCHITECTURE_CYCLE9.md §104.5 (US-125). Both default to 0 — PriorityChannel/WhatsApp — so every
+    // existing company (and every company with no row here at all, per this entity's own "no row = every
+    // default" convention) keeps today's exact single-transport behavior with no backfill (П12).
+    public NotificationDeliveryMode DeliveryMode { get; set; } = NotificationDeliveryMode.PriorityChannel;
+    public NotificationTransport PriorityTransport { get; set; } = NotificationTransport.WhatsApp;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public string? UpdatedByUserId { get; set; }

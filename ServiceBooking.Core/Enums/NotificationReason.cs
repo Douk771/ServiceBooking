@@ -46,4 +46,20 @@ public enum NotificationReason
     /// not read from SQL/bitmasks here, but the convention is kept for the same reason ChannelStateReason
     /// keeps it: a reordering would silently relabel every already-persisted row).</summary>
     NoProviderDeliveryConsent,
+
+    /// <summary>MAX equivalent of <see cref="RecipientHasNoWhatsApp"/> — the provider's
+    /// <c>outgoingMessageStatus</c> webhook reported <c>noAccount</c> for a MAX send
+    /// (ARCHITECTURE_CYCLE9.md §104.9/§104.9's researched table). Kept as its OWN member rather than
+    /// reusing <see cref="RecipientHasNoWhatsApp"/> — the delivery log must say which messenger the
+    /// client doesn't have, and <see cref="RecipientHasNoWhatsApp"/>'s own name would simply be wrong for
+    /// a MAX channel. Append-only (§6): appended here, not inserted near its WhatsApp counterpart.</summary>
+    RecipientNotInMax,
+
+    /// <summary>ARCHITECTURE_CYCLE9.md §104.5 (US-125) — <c>NotificationDeliveryMode.PriorityChannel</c>
+    /// selected a <c>priorityTransport</c> that is either not assigned to the company at all, or assigned
+    /// but not currently usable (unfunded, disconnected/banned). Deliberately distinct from
+    /// <see cref="NoUsableChannel"/>: that one means "no channel of any kind is usable"; this one means
+    /// "a specific channel was named as priority and it, specifically, is not usable right now" — no
+    /// silent fallback to a different transport (§3 SPEC, Q7в).</summary>
+    PriorityChannelUnavailable,
 }
