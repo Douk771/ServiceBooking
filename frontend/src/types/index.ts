@@ -255,9 +255,23 @@ export interface AdminChannelSummary {
   pendingRequests: number
 }
 
+// pricingPublicEnabled/pricingPublicBlockedReason added cycle 11 (API_CONTRACT_CYCLE11.md §114.1) —
+// nullable blockedReason is informational only, the PUT response (409) is the actual gate.
+export type PricingPublicBlockedReason = 'OfferIsDraft' | 'LegalUnavailable'
+
 export interface PlatformSettings {
   channelPricePerMonth: number | null
   channelIdleDays: number
+  pricingPublicEnabled: boolean
+  pricingPublicBlockedReason: PricingPublicBlockedReason | null
+}
+
+// Body of PUT /api/admin/platform-settings → 409 (API_CONTRACT_CYCLE11.md §114.2).
+export interface PricingPublicBlockedError {
+  reason: PricingPublicBlockedReason
+  message: string
+  documentType: string
+  version: string
 }
 
 export interface Service {
@@ -561,4 +575,88 @@ export interface SubjectRequestDto {
   answeredAt: string | null
   handlerName: string | null
   resolution: string | null
+}
+
+// ── Cycle 11: legal publication readiness — API_CONTRACT_CYCLE11.md §116, contracts/cycle11/legal-status.schema.json ──
+// Read-only, SuperAdmin, GET /api/admin/legal/readiness. Same shape as `legal status --json`, plus
+// `impact` (DB-derived, absent from the CLI).
+
+export type LegalBlockerKind =
+  | 'UnresolvedPlaceholders'
+  | 'MissingValues'
+  | 'DraftDocuments'
+  | 'BrokenLinks'
+  | 'MissingAnchors'
+  | 'ArtifactDrift'
+  | 'LegalUnavailable'
+
+export interface LegalReadinessBlocker {
+  kind: LegalBlockerKind
+  detail: string
+}
+
+export interface LegalReadinessPlaceholderRef {
+  name: string
+  count: number
+}
+
+export interface LegalReadinessDocument {
+  type: LegalDocumentType
+  title: string
+  version: string
+  effectiveFrom: string
+  isDraft: boolean
+  changeKind: LegalChangeKind
+  gate: LegalGate
+  file: string
+  url: string
+  contentHash: string
+  placeholders: LegalReadinessPlaceholderRef[]
+}
+
+export interface LegalReadinessUiText {
+  key: LegalTextKey
+  version: string
+  isDraft: boolean
+  file: string
+  contentHash: string
+  placeholders: LegalReadinessPlaceholderRef[]
+}
+
+/** `source` — one of these four exact strings, verbatim from `LEGAL_REVIEW.md` §13-бис
+ *  (API_CONTRACT_CYCLE11.md §116) — not to be reworded on the frontend. */
+export type LegalPlaceholderSource = 'ЕГРЮЛ' | 'после уведомления РКН' | 'решение заказчика' | 'из манифеста'
+
+export interface LegalReadinessPlaceholderSummary {
+  name: string
+  count: number
+  source: LegalPlaceholderSource
+  files: string[]
+  valuePresent: boolean
+}
+
+export interface LegalReadinessImpactEntry {
+  documentType: LegalDocumentType
+  gate: LegalGate
+  users: number
+}
+
+export interface LegalReadiness {
+  generatedAtUtc: string
+  root: string
+  ready: boolean
+  blockers: LegalReadinessBlocker[]
+  documents: LegalReadinessDocument[]
+  uiTexts: LegalReadinessUiText[]
+  placeholders: LegalReadinessPlaceholderSummary[]
+  links: { checked: number; broken: string[] }
+  anchors: { missing: string[] }
+  drift?: { comparedWith: string; differentFiles: string[] }
+  /** Only present on the HTTP endpoint, absent from `legal status --json` (no DB access there). */
+  impact?: {
+    reAcceptanceRequired: LegalReadinessImpactEntry[]
+    note: string
+  }
+  /** Mandatory and non-empty even when `ready: true` — must always be shown, never hidden behind an icon. */
+  disclaimer: string
 }
