@@ -54,6 +54,12 @@ public static class NotificationTexts
         return reason switch
         {
             NotificationReason.RecipientHasNoWhatsApp => "не доставлено: у клиента нет WhatsApp",
+            // ARCHITECTURE_CYCLE9.md §104.9 (US-120) — MAX's own equivalent of "у клиента нет WhatsApp".
+            NotificationReason.RecipientNotInMax => "не доставлено: у клиента нет MAX",
+            // ARCHITECTURE_CYCLE9.md §104.5 (US-125) — the priority transport wasn't usable when this
+            // event was queued (unassigned/unfunded/disconnected). No автоподмена — the owner has to fix
+            // it or switch modes, so the text says exactly that instead of a generic "пропущено".
+            NotificationReason.PriorityChannelUnavailable => "приоритетный канал не был доступен",
             NotificationReason.RecipientOptedOut => "клиент отказался от уведомлений",
             NotificationReason.VisitAlreadyStarted => "визит уже начался — не отправлено",
             NotificationReason.NoUsableChannel => channelId is null ? "канал недоступен" : "срок действия канала истёк",

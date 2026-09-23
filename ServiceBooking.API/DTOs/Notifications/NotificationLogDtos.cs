@@ -23,6 +23,10 @@ public record NotificationLogItemDto(
     DateTime VisitStart,
     DateTime? SentAt,
     Guid? ChannelId,
+    // ARCHITECTURE_CYCLE9.md §104.5/§114.3 (US-120/US-125) — additive. In AllChannels mode one event
+    // produces several rows with the same BookingId/Type and different Transport; the frontend groups
+    // them so the owner doesn't read two rows as "sent twice by mistake".
+    NotificationTransport Transport,
     bool ContentRedacted = false);
 
 /// <summary>API_CONTRACT_CYCLE4.md §30.2 — GET /api/companies/{id}/notifications/summary.</summary>

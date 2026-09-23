@@ -280,6 +280,7 @@ public class CompanyNotificationsController(
     public async Task<ActionResult<PagedResult<NotificationLogItemDto>>> GetLog(
         Guid companyId, [FromQuery] int? page, [FromQuery] int? pageSize,
         [FromQuery] NotificationStatus? status, [FromQuery] NotificationType? type,
+        [FromQuery] NotificationTransport? transport,
         [FromQuery] DateTime? from, [FromQuery] DateTime? to)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
@@ -288,6 +289,8 @@ public class CompanyNotificationsController(
         var query = db.OutboundNotifications.AsNoTracking().Where(n => n.CompanyId == companyId);
         if (status.HasValue) query = query.Where(n => n.Status == status);
         if (type.HasValue) query = query.Where(n => n.Type == type);
+        // ARCHITECTURE_CYCLE9.md §114.3 (US-120) — additive ?transport= filter.
+        if (transport.HasValue) query = query.Where(n => n.Transport == transport);
         if (from.HasValue) query = query.Where(n => n.CreatedAt >= from);
         if (to.HasValue) query = query.Where(n => n.CreatedAt <= to);
 
@@ -304,7 +307,7 @@ public class CompanyNotificationsController(
             n.Id, n.CreatedAt, n.Type, NotificationTexts.TypeText(n.Type),
             n.RecipientName, string.IsNullOrEmpty(n.RecipientPhone) ? "получатель удалён" : PhoneDisplayMask.Mask(n.RecipientPhone),
             n.Status, NotificationTexts.StatusText(n.Status, n.Reason, n.ChannelId, n.ReadAtUtc, n.AttemptCount),
-            n.BookingId, n.VisitStartUtc, n.SentAtUtc, n.ChannelId, n.ContentRedactedAtUtc != null)).ToList();
+            n.BookingId, n.VisitStartUtc, n.SentAtUtc, n.ChannelId, n.Transport, n.ContentRedactedAtUtc != null)).ToList();
 
         return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
     }

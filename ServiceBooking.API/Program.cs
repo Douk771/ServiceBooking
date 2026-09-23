@@ -368,10 +368,15 @@ builder.Services.AddHttpClient("green-api", client =>
 // logging stub, which would otherwise be the one way a Production deployment could believe notifications
 // are really going out when nothing is.
 //
-// Every concrete adapter is registered as itself (not against the interface) — the registries below are
-// what decide, per NotificationTransport member, which one actually answers INotificationTransport.For/
-// IChannelProvisioningRegistry.For. This is what makes "add a third transport" a new registry map entry,
-// not a second parallel switch statement.
+// Every concrete adapter is registered as itself, AND WhatsApp's is additionally registered against the
+// bare interface (INotificationTransport/IChannelProvisioning) — the registries below resolve WhatsApp
+// through that interface specifically (not the concrete type) so that a TEST HOST overriding it the
+// pre-cycle-9 way (`services.AddSingleton<INotificationTransport>(fake)`, added to the collection AFTER
+// this block — see NotificationDispatchTestFactory/NotificationDispatchExtraTests) keeps working
+// unchanged: "last registration for a service type wins" only helps here if something still asks for
+// that exact service type at resolution time. MAX has no such backward-compatibility concern (no test
+// overrides it yet — it's new this cycle) and resolves its own concrete type directly. This is what makes
+// "add a third transport" a new registry map entry, not a second parallel switch statement.
 builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
 builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
 builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
@@ -400,42 +405,40 @@ switch (notificationsProvider)
         throw new InvalidOperationException($"Unknown Notifications:Provider '{notificationsProvider}'.");
 }
 
+// The bare-interface registration WhatsApp's registry entry resolves through — same override seam every
+// consumer used before this cycle (NotificationChannelsController/ChannelHealthTask/NotificationDispatchTask
+// all used to take this constructor-injected). Placed AFTER the switch so it forwards to whichever
+// concrete adapter the switch above decided on.
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport>(sp =>
+    string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase)
+        ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>());
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning>(sp =>
+    string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase) && builder.Environment.IsProduction()
+        ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>());
+
 builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransportRegistry>(sp =>
-{
-    var byTransport = new Dictionary<NotificationTransport, ServiceBooking.API.Services.Notifications.INotificationTransport>();
-    if (string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase))
-    {
-        // INotificationTransport uses a CHANNEL's own token (a salon's), safe to wire up in any
-        // environment — sandbox mode (Notifications:AllowedRecipients) is the guard against it reaching
-        // a real customer. Shared identically by both transports.
-        byTransport[NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
-        byTransport[NotificationTransport.Max] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxTransport>();
-    }
-    else
-    {
-        var logging = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
-        byTransport[NotificationTransport.WhatsApp] = logging;
-        byTransport[NotificationTransport.Max] = logging;
-    }
-    return new ServiceBooking.API.Services.Notifications.NotificationTransportRegistry(byTransport);
-});
+    new ServiceBooking.API.Services.Notifications.NotificationTransportRegistry(
+        new Dictionary<NotificationTransport, ServiceBooking.API.Services.Notifications.INotificationTransport>
+        {
+            // Resolved through the INTERFACE, not the concrete type — see this block's own comment above
+            // for why (test-host override compatibility).
+            [NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.INotificationTransport>(),
+            [NotificationTransport.Max] = string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase)
+                ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxTransport>()
+                : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>(),
+        }));
 
 builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry>(sp =>
-{
-    var byTransport = new Dictionary<NotificationTransport, ServiceBooking.API.Services.Notifications.IChannelProvisioning>();
-    if (string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase) && builder.Environment.IsProduction())
-    {
-        byTransport[NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>();
-        byTransport[NotificationTransport.Max] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxProvisioning>();
-    }
-    else
-    {
-        var noop = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
-        byTransport[NotificationTransport.WhatsApp] = noop;
-        byTransport[NotificationTransport.Max] = noop;
-    }
-    return new ServiceBooking.API.Services.Notifications.ChannelProvisioningRegistry(byTransport);
-});
+    new ServiceBooking.API.Services.Notifications.ChannelProvisioningRegistry(
+        new Dictionary<NotificationTransport, ServiceBooking.API.Services.Notifications.IChannelProvisioning>
+        {
+            [NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.IChannelProvisioning>(),
+            [NotificationTransport.Max] = string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase) && builder.Environment.IsProduction()
+                ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxProvisioning>()
+                : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>(),
+        }));
 
 // Webhook parsers, keyed by transport for the new provider-webhook/{transport}/{token} route (§104.7,
 // B10) — registered unconditionally, same "logging-provider deployment still parses a stray webhook"
