@@ -144,6 +144,41 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
         rows.Should().BeEmpty("a master recording their own booking must never notify themselves");
     }
 
+    [Fact, TestCase("PUSH-010")]
+    public async Task OwnerRecordsWalkInForAnotherMaster_QueuesRows()
+    {
+        // Stitch of cycle 10 (Block A: staff manual booking, "запись на другого") and cycle 9's
+        // §105.6 "сам себе не шлёт" — the inverse of PUSH-004. §105.6 p.2 judges "запись создал сам
+        // мастер" against the AUTHENTICATED caller, not against who the booking is nominally for; an
+        // owner (a company staff member, never the master) recording a walk-in for a DIFFERENT master
+        // is exactly the "кто-то другой завёл запись" case and must reach that master's devices, the
+        // same as an online self-booking does (PUSH-001) — no gap for the manual-booking path cycle 10
+        // introduced.
+        var (owner, company) = await CreateOwnerWithCompanyAsync(onlineBooking: false);
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        await using var push = new PushEnabledFactory(ConnectionString);
+        await PushAuthedClient(push, master.Token).PostAsJsonAsync("/api/push/subscriptions",
+            new CreatePushSubscriptionInput("https://push.example.test/other-master-device", new CreatePushSubscriptionKeysInput("p256dh", "auth"), null));
+
+        // Owner is staff, but is NOT the master this walk-in is recorded against.
+        var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/bookings", new CreateBookingDto(
+            company.Id, service.Id, master.UserId, date, new TimeOnly(11, 0), null, "Walk-in Client", "+79990001133", null, null));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var booking = (await response.Content.ReadJsonAsync<BookingDto>())!;
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var rows = await db.StaffPushNotifications.Where(n => n.BookingId == booking.Id).ToListAsync();
+        rows.Should().ContainSingle(
+            "an admin/owner recording a walk-in for a DIFFERENT master must notify that master — only the master's OWN self-recorded booking is silent");
+        rows.Single().UserId.Should().Be(master.UserId);
+        rows.Single().Status.Should().Be(NotificationStatus.Pending);
+    }
+
     [Fact, TestCase("PUSH-005")]
     public async Task StaffPushEnabled_False_QueuesZeroRows_ButSubscriptionRowSurvives()
     {

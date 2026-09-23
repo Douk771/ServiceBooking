@@ -51,7 +51,7 @@ grep -rn "BK-003" ServiceBooking.Tests/
 | `BLL-` | `BillingTests.cs` | 5 |
 | `TRF-` | `CompanyTransferTests.cs` | 5 |
 | `MAX-` | `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` | 5 (4 + 1) |
-| `PUSH-` | `StaffPushTests.cs` (`StaffPushSubscriptionAndQueueingTests` + `StaffPushDispatchTests`) | 9 |
+| `PUSH-` | `StaffPushTests.cs` (`StaffPushSubscriptionAndQueueingTests` + `StaffPushDispatchTests`) | 10 |
 | **Итого** | | **529** запусков |
 
 🆕 **Цикл 6, `excludeBookingId` в `GET /api/bookings/slots` — приёмка QA.** +6 запусков к прогону
@@ -94,6 +94,18 @@ code-review (`6d762f8` — валидация `IsSystemFree` и сохранен
 `PushSubscriptionReassigned`, а не уходит ни A, ни B). Написаны по `SPEC.md`/`ARCHITECTURE_CYCLE9.md`,
 не по реализации; проверялись против ТЕКУЩЕГО кода (после того как code-reviewer нашёл и закрыл 6
 блокеров, `7a15c45`…`0dfe31d`).
+
+🆕 **Регрессия после `develop → cycle/09` (цикл 10 «свобода ручной записи» влит поверх цикла 9) —
+QA-прогон на коммите слияния.** +1 запуск (529 → 530 в этом домене, не считая BK-/BKH-/CPH- цикла
+10 уже отражённых в таблице префиксов выше): `PUSH-010` в `StaffPushTests.cs` —
+`OwnerRecordsWalkInForAnotherMaster_QueuesRows`, стык, которого не существовало ни в одном из циклов
+по отдельности: владелец (staff, не мастер) записывает клиента вручную (Block A цикла 10 — свобода
+записи на любого мастера) на ДРУГОГО мастера. `PUSH-004` уже проверял «мастер не шлёт себе сам», но
+не проверял обратный случай — что запись, заведённую кем-то ДРУГИМ на этого мастера, push всё-таки
+должен получить. Тест прошёл на реальном смердженном коде без правок — `StaffPushScheduler` сравнивает
+АУТЕНТИФИЦИРОВАННОГО вызывающего (не `booking.ClientId`, не факт «это ручная запись») с
+`booking.MasterId`, что уже правильно обрабатывает этот случай; тест закрывает найденный пробел в
+покрытии, не найденный дефект.
 
 ⚠️ **Регрессия найдена и исправлена тем же прогоном (не блокер, тестовый долг, не продуктовый):**
 `NTF-C005B` `OrderSecondChannel_WithOnlyOneNumberPaid…` в `NotificationChannelsTests.cs` был написан
