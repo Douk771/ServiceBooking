@@ -55,8 +55,16 @@ export function LegalReadinessTab() {
     )
   }
 
-  const totalPlaceholders = data.placeholders.reduce((sum, p) => sum + p.count, 0)
-  const totalReAcceptance = data.impact?.reAcceptanceRequired.reduce((sum, r) => sum + r.users, 0) ?? 0
+  // The endpoint nests placeholders under each document/uiText rather than sending a deduplicated
+  // top-level summary (see the deviation note on the LegalReadiness type) — aggregated here for
+  // display, by name, across the whole set.
+  const placeholdersByName = new Map<string, number>()
+  for (const p of [...data.documents.flatMap((d) => d.placeholders), ...data.uiTexts.flatMap((t) => t.placeholders)]) {
+    placeholdersByName.set(p.name, (placeholdersByName.get(p.name) ?? 0) + p.count)
+  }
+  const placeholderSummary = [...placeholdersByName.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  const totalPlaceholderOccurrences = placeholderSummary.reduce((sum, [, count]) => sum + count, 0)
+  const totalReAcceptance = data.impact.reduce((sum, r) => sum + r.users, 0)
 
   return (
     <div>
@@ -67,9 +75,7 @@ export function LegalReadinessTab() {
             {data.ready ? 'Комплект готов к публикации' : 'Комплект не готов к публикации'}
           </h2>
         </div>
-        <p className="text-xs text-muted">
-          Снято {new Date(data.generatedAtUtc).toLocaleString('ru-RU')} · читает {data.root}
-        </p>
+        <p className="text-xs text-muted">Снято {new Date(data.generatedAtUtc).toLocaleString('ru-RU')}</p>
       </Card>
 
       {/* Disclaimer is mandatory and shown as a visible line even when ready=true — it is NOT a
@@ -92,14 +98,10 @@ export function LegalReadinessTab() {
         </Card>
       )}
 
-      <div className="grid sm:grid-cols-3 gap-3 mb-5">
+      <div className="grid sm:grid-cols-2 gap-3 mb-5">
         <Card className="p-4 text-center">
-          <p className="text-xl font-bold text-ink">{totalPlaceholders}</p>
+          <p className="text-xl font-bold text-ink">{totalPlaceholderOccurrences}</p>
           <p className="text-[11px] text-muted mt-0.5">незакрытых плейсхолдеров</p>
-        </Card>
-        <Card className="p-4 text-center">
-          <p className="text-xl font-bold text-ink">{data.links.broken.length}</p>
-          <p className="text-[11px] text-muted mt-0.5">битых ссылок</p>
         </Card>
         <Card className="p-4 text-center">
           <p className="text-xl font-bold text-ink">{totalReAcceptance}</p>
@@ -107,29 +109,28 @@ export function LegalReadinessTab() {
         </Card>
       </div>
 
-      {data.placeholders.length > 0 && (
+      {placeholderSummary.length > 0 && (
         <Card className="p-6 mb-5">
           <h3 className="text-sm font-semibold text-ink mb-3">Плейсхолдеры</h3>
           <div className="grid gap-2">
-            {data.placeholders.map((p) => (
-              <div key={p.name} className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-ink-soft">
-                  <code className="text-xs bg-cream-deep px-1.5 py-0.5 rounded">{p.name}</code>{' '}
-                  <span className="text-muted">× {p.count}</span>
-                </span>
-                <span className="text-xs text-muted shrink-0">{p.source}</span>
+            {placeholderSummary.map(([name, count]) => (
+              <div key={name} className="flex items-center justify-between gap-3 text-sm">
+                <code className="text-xs bg-cream-deep px-1.5 py-0.5 rounded">{name}</code>
+                <span className="text-muted">× {count}</span>
               </div>
             ))}
           </div>
         </Card>
       )}
 
-      {data.impact && data.impact.reAcceptanceRequired.length > 0 && (
+      {data.impact.length > 0 && (
         <Card className="p-6 mb-5">
           <h3 className="text-sm font-semibold text-ink mb-1">Кому потребуется повторный акцепт</h3>
-          <p className="text-xs text-muted mb-3">{data.impact.note}</p>
+          <p className="text-xs text-muted mb-3">
+            Документы с gate=None никого не блокируют и в этот список не входят.
+          </p>
           <div className="grid gap-2">
-            {data.impact.reAcceptanceRequired.map((r) => (
+            {data.impact.map((r) => (
               <div key={r.documentType} className="flex items-center justify-between text-sm">
                 <span className="text-ink-soft">
                   {r.documentType} <span className="text-xs text-muted">({r.gate})</span>

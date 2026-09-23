@@ -577,9 +577,15 @@ export interface SubjectRequestDto {
   resolution: string | null
 }
 
-// ── Cycle 11: legal publication readiness — API_CONTRACT_CYCLE11.md §116, contracts/cycle11/legal-status.schema.json ──
-// Read-only, SuperAdmin, GET /api/admin/legal/readiness. Same shape as `legal status --json`, plus
-// `impact` (DB-derived, absent from the CLI).
+// ── Cycle 11: legal publication readiness — GET /api/admin/legal/readiness ─────────────────────────
+// NOTE this matches the ACTUAL backend response (ServiceBooking.API/Controllers/AdminLegalController.cs),
+// which is a deliberately reduced version of the full contracts/cycle11/legal-status.schema.json: no
+// `root`, `links`, `anchors`, `drift`, or per-item `file`; `placeholders` lives only nested under each
+// document/uiText (no top-level summary with `source`/`valuePresent`); `impact` is a flat array, not
+// `{ reAcceptanceRequired, note }`. See the commit message on AdminLegalController.cs for why
+// (ServiceBooking.LegalKit, the CLI that would produce the full shape, doesn't exist in this tree yet).
+// Flagged for architect/backend — schema and endpoint currently disagree; do not "fix" one from the
+// other without checking which side cycle 11 actually shipped.
 
 export type LegalBlockerKind =
   | 'UnresolvedPlaceholders'
@@ -608,7 +614,6 @@ export interface LegalReadinessDocument {
   isDraft: boolean
   changeKind: LegalChangeKind
   gate: LegalGate
-  file: string
   url: string
   contentHash: string
   placeholders: LegalReadinessPlaceholderRef[]
@@ -618,21 +623,8 @@ export interface LegalReadinessUiText {
   key: LegalTextKey
   version: string
   isDraft: boolean
-  file: string
   contentHash: string
   placeholders: LegalReadinessPlaceholderRef[]
-}
-
-/** `source` — one of these four exact strings, verbatim from `LEGAL_REVIEW.md` §13-бис
- *  (API_CONTRACT_CYCLE11.md §116) — not to be reworded on the frontend. */
-export type LegalPlaceholderSource = 'ЕГРЮЛ' | 'после уведомления РКН' | 'решение заказчика' | 'из манифеста'
-
-export interface LegalReadinessPlaceholderSummary {
-  name: string
-  count: number
-  source: LegalPlaceholderSource
-  files: string[]
-  valuePresent: boolean
 }
 
 export interface LegalReadinessImpactEntry {
@@ -643,20 +635,13 @@ export interface LegalReadinessImpactEntry {
 
 export interface LegalReadiness {
   generatedAtUtc: string
-  root: string
   ready: boolean
   blockers: LegalReadinessBlocker[]
   documents: LegalReadinessDocument[]
   uiTexts: LegalReadinessUiText[]
-  placeholders: LegalReadinessPlaceholderSummary[]
-  links: { checked: number; broken: string[] }
-  anchors: { missing: string[] }
-  drift?: { comparedWith: string; differentFiles: string[] }
-  /** Only present on the HTTP endpoint, absent from `legal status --json` (no DB access there). */
-  impact?: {
-    reAcceptanceRequired: LegalReadinessImpactEntry[]
-    note: string
-  }
+  /** Flat list — non-empty only for gated documents (gate !== 'None') where at least one subject's
+   *  latest accepted version differs from the manifest's current version. */
+  impact: LegalReadinessImpactEntry[]
   /** Mandatory and non-empty even when `ready: true` — must always be shown, never hidden behind an icon. */
   disclaimer: string
 }
