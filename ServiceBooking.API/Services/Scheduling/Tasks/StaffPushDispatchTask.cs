@@ -175,6 +175,13 @@ public sealed class StaffPushDispatchTask(
         if (subscription is null)
             return await SkipAsync(scopedDb, row, NotificationReason.PushSubscriptionGone, runnerCt);
 
+        // R4/§105.5: the subscription row's Id is stable across re-registration on a shared device, but
+        // PushSubscriptionWriter.UpsertAsync reassigns UserId when a different account re-registers the
+        // same endpoint. Never trust the FK alone — a stale row queued for user A must not fire against a
+        // subscription that now belongs to user B (client's name would leak to a different master).
+        if (subscription.UserId != row.UserId)
+            return await SkipAsync(scopedDb, row, NotificationReason.PushSubscriptionReassigned, runnerCt);
+
         // In-flight marker BEFORE the network call, same convention as NotificationDispatchTask (§26.3).
         row.AttemptCount++;
         row.LastAttemptAtUtc = scopedClock.UtcNow;

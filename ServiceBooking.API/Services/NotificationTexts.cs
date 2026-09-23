@@ -80,6 +80,7 @@ public static class NotificationTexts
             NotificationReason.PushTtlExhausted => "не отправлено: истёк срок ожидания",
             NotificationReason.StaffPushDisabledByCompany => "push-уведомления сотрудникам отключены салоном",
             NotificationReason.MasterNoLongerInCompany => "сотрудник больше не работает в этой компании",
+            NotificationReason.PushSubscriptionReassigned => "устройство теперь привязано к другому сотруднику",
             null => status == NotificationStatus.Failed ? "не удалось отправить" : "пропущено",
             _ => "пропущено",
         };

@@ -89,4 +89,13 @@ public enum NotificationReason
     /// time the dispatch pass runs (<c>CompanyMembership.IsStaffAsync</c> re-checked at send time, never
     /// cached from queue time) — closes the "left the salon, still gets client names pushed" gap.</summary>
     MasterNoLongerInCompany,
+
+    /// <summary>§105.5/R4 — the queued row's <c>SubscriptionId</c> now belongs to a DIFFERENT user than the
+    /// one the row was queued for (shared device re-registered under another staff member's login between
+    /// queue time and send time; <c>PushSubscriptionWriter.UpsertAsync</c> reassigns <c>UserId</c> on an
+    /// existing endpoint but keeps its <c>Id</c>). Deliberately distinct from
+    /// <see cref="PushSubscriptionGone"/>: the subscription itself is alive and must NOT be deleted — it is
+    /// simply no longer this row's recipient's. No retry; the row that queued for the original recipient is
+    /// simply held, and a future queueing pass (once that recipient registers a device again) sends fresh.</summary>
+    PushSubscriptionReassigned,
 }
