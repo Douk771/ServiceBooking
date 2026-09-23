@@ -605,6 +605,8 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.ClientNotePhotoRule>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.BookingEventRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.ClientHealthNoteRule>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.ChannelStateEventRule>();

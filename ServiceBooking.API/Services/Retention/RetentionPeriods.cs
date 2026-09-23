@@ -58,6 +58,15 @@ public sealed class RetentionPeriods
     /// on its own). Default 1095.</summary>
     public int ConsentRecordDays { get; set; } = 1095;
 
+    /// <summary>ARCHITECTURE_CYCLE10.md §107 (Q2). Age of a <see cref="Core.Entities.BookingEvent"/>
+    /// since <c>OccurredAtUtc</c>. Default 0, read by <see cref="Rules.BookingEventRule"/> as "срок не
+    /// задан" — legal-counsel hasn't given a number yet, so at 0 the rule deletes nothing and says so in
+    /// its summary line rather than guessing a cutoff. NOT fail-fast-checked at startup, unlike
+    /// <see cref="ConsentRecordDays"/>/<see cref="TemplateHistoryDays"/> above: those guard a KNOWN legal
+    /// minimum, this one's minimum is the open question — refusing to start the app over it would block
+    /// the whole cycle's release on legal's timeline, which the spec doesn't ask for.</summary>
+    public int BookingEventDays { get; set; } = 0;
+
     /// <summary>Age of a <see cref="Core.Entities.ChannelStateEvent"/> since it occurred. Default 365.</summary>
     public int ChannelStateEventDays { get; set; } = 365;
 
