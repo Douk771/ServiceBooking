@@ -44,16 +44,29 @@ export function CompanyPhotoGallery({ photos, companyName }: Props) {
             className="w-full h-full object-cover hover:opacity-90 transition-opacity"
           />
         </button>
-        {rest.slice(0, 4).map((p) => (
-          <button key={p.id} type="button" className="relative" onClick={() => setOpenIndex(photos.indexOf(p))}>
-            <img
-              src={p.thumbnailUrl}
-              alt={companyName}
-              loading="lazy"
-              className="w-full h-full object-cover hover:opacity-90 transition-opacity"
-            />
-          </button>
-        ))}
+        {/* Review finding — the 4-tile grid only ever showed photos 2–5; photos 6–10 (up to
+            `MAX_PHOTOS`, §109.2) had no way to reach them from the public page at all. The last
+            visible tile now doubles as a "+N" entry into the lightbox, which itself can page
+            through the whole set via its arrows. */}
+        {rest.slice(0, 4).map((p, i) => {
+          const isLastVisible = i === 3 && rest.length > 4
+          const remaining = rest.length - 3
+          return (
+            <button key={p.id} type="button" className="relative" onClick={() => setOpenIndex(photos.indexOf(p))}>
+              <img
+                src={p.thumbnailUrl}
+                alt={companyName}
+                loading="lazy"
+                className="w-full h-full object-cover hover:opacity-90 transition-opacity"
+              />
+              {isLastVisible && (
+                <span className="absolute inset-0 bg-ink/55 flex items-center justify-center text-cream text-sm font-semibold">
+                  +{remaining}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {openIndex !== null && (
@@ -111,7 +124,12 @@ function Lightbox({
           </button>
         </>
       )}
-      <img src={photo.url} alt={companyName} className="max-w-full max-h-full rounded-xl object-contain" />
+      <img
+        src={photo.url}
+        alt={companyName}
+        loading="lazy"
+        className="max-w-full max-h-full rounded-xl object-contain"
+      />
     </div>
   )
 }
