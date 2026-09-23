@@ -21,6 +21,14 @@ vi.mock('../api/cities', () => ({
   },
 }))
 
+// PricingTeaser (rendered by HomePage) calls this live; without a mock these tests would hit a real
+// network request for /api/pricing (see code-reviewer Н1).
+vi.mock('../api/pricing', () => ({
+  pricingApi: {
+    getPublicPricing: vi.fn().mockResolvedValue(null),
+  },
+}))
+
 const MOSCOW: City = {
   id: 1,
   name: 'Москва',
@@ -70,7 +78,7 @@ describe('HomePage — US-115 city selection', () => {
   })
 
   it('restores a previously selected city from localStorage and requests it by cityId', async () => {
-    localStorage.setItem('ezbook_home_city', JSON.stringify(MOSCOW))
+    localStorage.setItem('home-city', JSON.stringify(MOSCOW))
     renderPage()
     await waitFor(() => expect(getPublic).toHaveBeenCalled())
     const params = getPublic.mock.calls[getPublic.mock.calls.length - 1][0]
@@ -87,7 +95,7 @@ describe('HomePage — US-115 city selection', () => {
     await waitFor(() => expect(citiesSearch).toHaveBeenCalled())
     await user.click(await screen.findByRole('option', { name: /Москва/ }))
 
-    await waitFor(() => expect(localStorage.getItem('ezbook_home_city')).toContain('Москва'))
+    await waitFor(() => expect(localStorage.getItem('home-city')).toContain('Москва'))
     await waitFor(() => {
       const last = getPublic.mock.calls[getPublic.mock.calls.length - 1][0]
       expect(last.cityId).toBe(MOSCOW.id)
@@ -96,7 +104,7 @@ describe('HomePage — US-115 city selection', () => {
     const clearButton = await screen.findByRole('button', { name: 'Все города' })
     await user.click(clearButton)
 
-    await waitFor(() => expect(localStorage.getItem('ezbook_home_city')).toBeNull())
+    await waitFor(() => expect(localStorage.getItem('home-city')).toBeNull())
     await waitFor(() => {
       const last = getPublic.mock.calls[getPublic.mock.calls.length - 1][0]
       expect(last.cityId).toBeUndefined()
@@ -104,11 +112,94 @@ describe('HomePage — US-115 city selection', () => {
   })
 
   it('shows a city-specific empty state with a way back to "Все города" when the chosen city has no companies', async () => {
-    localStorage.setItem('ezbook_home_city', JSON.stringify(MOSCOW))
+    localStorage.setItem('home-city', JSON.stringify(MOSCOW))
     getPublic.mockResolvedValue({ items: [], page: 1, pageSize: 100, total: 0, hasNext: false })
     renderPage()
 
     expect(await screen.findByText(/пока нет компаний/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Показать все города' })).toBeInTheDocument()
+  })
+
+  it('ignores a malformed stored city (e.g. "{}") and falls back to "Все города"', async () => {
+    localStorage.setItem('home-city', JSON.stringify({}))
+    renderPage()
+    await waitFor(() => expect(getPublic).toHaveBeenCalled())
+    const params = getPublic.mock.calls[0][0]
+    expect(params.cityId).toBeUndefined()
+    expect(localStorage.getItem('home-city')).toBeNull()
+  })
+})
+
+describe('HomePage — pagination (Б2)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    citiesSearch.mockReset().mockResolvedValue([MOSCOW])
+  })
+
+  it('requests page 1 with the shared page size and passes page/hasNext to Pagination', async () => {
+    getPublic.mockReset().mockResolvedValue({
+      items: [company()],
+      page: 1,
+      pageSize: 20,
+      total: 45,
+      hasNext: true,
+    })
+    renderPage()
+
+    await waitFor(() => expect(getPublic).toHaveBeenCalled())
+    const params = getPublic.mock.calls[0][0]
+    expect(params.page).toBe(1)
+    expect(params.pageSize).toBe(20)
+
+    expect(await screen.findByRole('button', { name: 'Следующая страница' })).toBeEnabled()
+  })
+
+  it('advancing to the next page requests page 2', async () => {
+    const user = userEvent.setup()
+    getPublic.mockReset().mockResolvedValue({
+      items: [company()],
+      page: 1,
+      pageSize: 20,
+      total: 45,
+      hasNext: true,
+    })
+    renderPage()
+
+    const nextButton = await screen.findByRole('button', { name: 'Следующая страница' })
+    await user.click(nextButton)
+
+    await waitFor(() => {
+      const last = getPublic.mock.calls[getPublic.mock.calls.length - 1][0]
+      expect(last.page).toBe(2)
+    })
+  })
+
+  it('resets to page 1 when the city filter changes', async () => {
+    const user = userEvent.setup()
+    getPublic.mockReset().mockResolvedValue({
+      items: [company()],
+      page: 1,
+      pageSize: 20,
+      total: 45,
+      hasNext: true,
+    })
+    renderPage()
+
+    const nextButton = await screen.findByRole('button', { name: 'Следующая страница' })
+    await user.click(nextButton)
+    await waitFor(() => {
+      const last = getPublic.mock.calls[getPublic.mock.calls.length - 1][0]
+      expect(last.page).toBe(2)
+    })
+
+    await user.click(screen.getByPlaceholderText('Выберите город'))
+    await waitFor(() => expect(citiesSearch).toHaveBeenCalled())
+    await user.click(await screen.findByRole('option', { name: /Москва/ }))
+
+    await waitFor(() => {
+      const last = getPublic.mock.calls[getPublic.mock.calls.length - 1][0]
+      expect(last.cityId).toBe(MOSCOW.id)
+      expect(last.page).toBe(1)
+    })
   })
 })

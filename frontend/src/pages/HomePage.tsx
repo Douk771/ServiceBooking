@@ -4,17 +4,31 @@ import { Link } from 'react-router-dom'
 import { companiesApi } from '../api/companies'
 import { CityCombobox } from '../components/ui/CityCombobox'
 import { Icon } from '../components/ui/Icon'
+import { Pagination } from '../components/ui/Pagination'
 import { PricingTeaser } from '../components/pricing/PricingTeaser'
 import type { City, Company } from '../types'
 import salonHero from '../assets/salon-hero.jpg'
 
-// US-115: the visitor's city choice persists across visits (SPEC §115 п. 4).
-const HOME_CITY_KEY = 'ezbook_home_city'
+// US-115: the visitor's city choice persists across visits (SPEC §115 п. 4, ARCHITECTURE_CYCLE9.md
+// §103.5 / §118 п. 6 name this key `home-city`).
+const HOME_CITY_KEY = 'home-city'
+const PAGE_SIZE = 20
+
+function isValidStoredCity(value: unknown): value is City {
+  if (!value || typeof value !== 'object') return false
+  const c = value as Record<string, unknown>
+  return typeof c.id === 'number' && typeof c.name === 'string'
+}
 
 function loadStoredCity(): City | null {
   try {
     const raw = localStorage.getItem(HOME_CITY_KEY)
-    return raw ? (JSON.parse(raw) as City) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (isValidStoredCity(parsed)) return parsed
+    // Malformed entry (e.g. `{}`) — treat as "all cities" and clean up so we don't keep re-reading it.
+    localStorage.removeItem(HOME_CITY_KEY)
+    return null
   } catch {
     return null
   }
@@ -85,6 +99,7 @@ export function HomePage() {
   // Debounce so the search-by-name/address query (server-side, per SPEC §115) isn't re-fired per
   // keystroke.
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
@@ -99,20 +114,27 @@ export function HomePage() {
     }
   }, [city])
 
+  // Reset to page 1 whenever the filters change — a stale page number from a previous, longer
+  // result set would otherwise request an out-of-range page.
+  useEffect(() => {
+    setPage(1)
+  }, [city?.id, debouncedSearch])
+
   const {
-    data: page,
+    data: companiesPage,
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ['companies', 'public', city?.id ?? null, debouncedSearch],
+    queryKey: ['companies-public', city?.id ?? null, debouncedSearch, page],
     queryFn: () =>
       companiesApi.getPublic({
         cityId: city?.id,
         search: debouncedSearch || undefined,
-        pageSize: 100,
+        page,
+        pageSize: PAGE_SIZE,
       }),
   })
-  const companies = page?.items
+  const companies = companiesPage?.items
 
   return (
     <div>
@@ -221,11 +243,22 @@ export function HomePage() {
             <p className="text-lg">Не удалось загрузить список компаний. Попробуйте обновить страницу.</p>
           </div>
         ) : companies && companies.length > 0 ? (
-          <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
-            {companies.map((c) => (
-              <CompanyCard key={c.id} company={c} />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+              {companies.map((c) => (
+                <CompanyCard key={c.id} company={c} />
+              ))}
+            </div>
+            {companiesPage && (
+              <Pagination
+                page={companiesPage.page}
+                pageSize={companiesPage.pageSize}
+                total={companiesPage.total}
+                hasNext={companiesPage.hasNext}
+                onPageChange={setPage}
+              />
+            )}
+          </>
         ) : city ? (
           <div className="text-center py-16 text-muted">
             <Icon name="store" size={36} strokeWidth={1.4} className="mx-auto mb-3" />
