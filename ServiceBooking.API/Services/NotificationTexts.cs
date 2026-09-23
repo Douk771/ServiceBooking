@@ -70,6 +70,16 @@ public static class NotificationTexts
             NotificationReason.RetriesExhausted => "не удалось отправить после нескольких попыток",
             NotificationReason.BookingOrAssignmentCancelled => "отменено",
             NotificationReason.Delivered => "доставлено",
+            // ARCHITECTURE_CYCLE9.md §105.8 (US-124) — push-specific reasons. Not surfaced through any
+            // HTTP DTO this cycle (StaffPushNotification has no delivery-log endpoint), added here anyway
+            // so a future log surface, and StaffPushDispatchTask's own diagnostic logging, reuse the same
+            // single place Russian reason text is assembled (§6 convention) instead of inventing a second one.
+            NotificationReason.PushSubscriptionGone => "устройство отписалось от уведомлений",
+            NotificationReason.PushAuthRejected => "отклонено сервисом push-уведомлений",
+            NotificationReason.PushPayloadTooLarge => "сообщение не поместилось в push-уведомление",
+            NotificationReason.PushTtlExhausted => "не отправлено: истёк срок ожидания",
+            NotificationReason.StaffPushDisabledByCompany => "push-уведомления сотрудникам отключены салоном",
+            NotificationReason.MasterNoLongerInCompany => "сотрудник больше не работает в этой компании",
             null => status == NotificationStatus.Failed ? "не удалось отправить" : "пропущено",
             _ => "пропущено",
         };
