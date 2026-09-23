@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using ServiceBooking.TestKit;
 
@@ -104,7 +106,59 @@ public static class TestHostSettings
         var repoLegalRoot = FindRepoLegalRoot();
         foreach (var file in Directory.GetFiles(repoLegalRoot))
             File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
+
+        PublishTermsOwner(Path.Combine(destination, "legal.json"));
     }
+
+    /// <summary>Cycle 11 (ARCHITECTURE_CYCLE11.md §102.7/§102.10, T8): the real
+    /// App_Data/legal/legal.json now ships with every document — including TermsOwner, the channel-offer
+    /// carrier — marked <c>isDraft: true</c>, since a live lawyer hasn't proofread the new set yet, and
+    /// TermsOwner's own HTML still carries unresolved <c>{{PLACEHOLDER}}</c> tokens (operator's legal
+    /// name/INN/OGRN/address — filled in once real company details exist). That's correct for the
+    /// product, but PricingCatalogCache.IsCatalogPubliclyVisibleAsync gates the whole public pricing
+    /// catalog on TermsOwner being published, so every pre-existing pricing/billing test that never cared
+    /// about the legal gate would otherwise start seeing 404 on <c>GET /api/pricing</c> for a reason that
+    /// has nothing to do with what those tests exercise. LegalDocumentProvider.LoadDocument itself refuses
+    /// to publish a document with unresolved placeholders (ARCHITECTURE_CYCLE5.md §43.3) — correctly so —
+    /// which means simply flipping isDraft without also resolving the placeholders makes the manifest fail
+    /// to load at all (every test hitting a NullReferenceException on a missing snapshot).
+    ///
+    /// So both are patched here, in the per-factory COPY (never the committed App_Data/legal artifact —
+    /// that file is built by ServiceBooking.LegalKit and hand-editing it would just make the next
+    /// `legalkit check` / CI run flag drift): unresolved placeholders get stand-in fixture values, then
+    /// isDraft flips to false and the "-draft" version suffix is dropped. Every factory built through
+    /// TestHostSettings.Apply gets a stable, published TermsOwner by default. LegalDocumentsTestFactory is
+    /// unaffected: it overwrites Legal:Root with its own generated manifest (no placeholders in it) right
+    /// after calling Apply (see its ConfigureWebHost), and LegalPricingGateTests' own WriteManifest already
+    /// controls TermsOwner's draft state directly for the tests whose whole point is exercising this
+    /// gate.</summary>
+    private static void PublishTermsOwner(string legalJsonPath)
+    {
+        var json = JsonNode.Parse(File.ReadAllText(legalJsonPath))!.AsObject();
+        var documents = json["documents"]!.AsArray();
+        var termsOwner = documents.Single(d => (string?)d!["type"] == "TermsOwner")!.AsObject();
+
+        var fileName = (string)termsOwner["file"]!;
+        var filePath = Path.Combine(Path.GetDirectoryName(legalJsonPath)!, fileName);
+        var html = File.ReadAllText(filePath);
+        html = PlaceholderRegex().Replace(html, "тестовое значение");
+        File.WriteAllText(filePath, html);
+
+        termsOwner["isDraft"] = false;
+        var version = (string)termsOwner["version"]!;
+        if (version.EndsWith("-draft", StringComparison.Ordinal))
+            termsOwner["version"] = version[..^"-draft".Length];
+
+        File.WriteAllText(legalJsonPath, json.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    // Mirrors LegalDocumentProvider's own [GeneratedRegex(@"\{\{[А-ЯЁ_]+\}\}")] (ARCHITECTURE_CYCLE5.md
+    // §43.3) — kept as a plain Regex (not source-generated) since this is test-only code run a handful of
+    // times per process, not a hot path.
+    private static readonly System.Text.RegularExpressions.Regex PlaceholderRegexInstance =
+        new(@"\{\{[А-ЯЁ_]+\}\}");
+
+    private static System.Text.RegularExpressions.Regex PlaceholderRegex() => PlaceholderRegexInstance;
 
     private static string FindRepoLegalRoot()
     {
