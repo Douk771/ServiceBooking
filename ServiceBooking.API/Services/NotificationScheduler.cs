@@ -142,10 +142,13 @@ public sealed class NotificationScheduler(
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
 
         // ARCHITECTURE_CYCLE9.md §104.3: every live assignment, one per transport at most — not an
-        // arbitrary FirstOrDefault.
+        // arbitrary FirstOrDefault. N9: ordered by Transport so ctx.Channels[0] (the "representative"
+        // channel used for the journal's ChannelId on Expired/Skipped rows, see QueueAsync) is stable
+        // across passes instead of depending on whatever order the database happens to return.
         var channels = await db.ChannelCompanyAssignments.AsNoTracking()
             .Include(a => a.Channel)
             .Where(a => a.CompanyId == booking.CompanyId)
+            .OrderBy(a => a.Transport)
             .Select(a => a.Channel)
             .ToListAsync(ct);
 
@@ -202,6 +205,38 @@ public sealed class NotificationScheduler(
             .ToListAsync(ct);
         var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
         return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
+    }
+
+    /// <summary>N10: <see cref="IsChannelFundedAsync"/> called once per channel of <paramref name="channels"/>
+    /// re-fetches every sibling channel on that channel's billing account EACH time — for a company with
+    /// two assigned transports (WhatsApp + MAX) that is 2 full-account queries to rank funding for one
+    /// event, every time an event is queued. Ranking only depends on the DISTINCT billing accounts behind
+    /// <paramref name="channels"/> (almost always exactly one), so this groups by account and ranks each
+    /// account's siblings exactly once.</summary>
+    private async Task<Dictionary<Guid, bool>> BuildFundingLookupAsync(
+        IReadOnlyList<NotificationChannel> channels, EffectivePlan plan, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, bool>();
+        var accountIds = channels
+            .Where(c => c.BillingAccountId is not null)
+            .Select(c => c.BillingAccountId!.Value)
+            .Distinct()
+            .ToList();
+        if (accountIds.Count == 0) return result;
+
+        var siblings = await db.NotificationChannels.AsNoTracking()
+            .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value))
+            .ToListAsync(ct);
+
+        foreach (var accountId in accountIds)
+        {
+            var accountSiblings = siblings.Where(c => c.BillingAccountId == accountId).ToList();
+            var ranking = ChannelFunding.Rank(accountSiblings, plan.PaidNotificationNumbers);
+            foreach (var (channelId, state) in ranking)
+                result[channelId] = state == ChannelFundingState.Funded;
+        }
+
+        return result;
     }
 
     private static DateTime ComputeVisitStartUtc(SchedulingContext ctx, Booking booking) =>
@@ -292,12 +327,15 @@ public sealed class NotificationScheduler(
         // connectedTransports/priorityChannelHealthy fields (CompanyNotificationsController) still check
         // Connected — that is a live STATUS signal for the owner, deliberately more conservative than
         // what actually gates a send.
-        var candidates = new List<NotificationRouting.Candidate>();
-        foreach (var channel in ctx.Channels)
-        {
-            var funded = await IsChannelFundedAsync(channel, ctx.Plan, ct);
-            candidates.Add(new NotificationRouting.Candidate(channel.Id, channel.Transport, funded));
-        }
+        // N10: one batched funding lookup for the whole event instead of one full
+        // "load every sibling channel on this billing account" query PER channel — ranking only depends
+        // on which billing account(s) ctx.Channels sit on, computed once here rather than once per
+        // candidate (this scales with distinct accounts, almost always 1, not with channel count).
+        var fundedByChannelId = await BuildFundingLookupAsync(ctx.Channels, ctx.Plan, ct);
+        var candidates = ctx.Channels
+            .Select(channel => new NotificationRouting.Candidate(
+                channel.Id, channel.Transport, fundedByChannelId.GetValueOrDefault(channel.Id)))
+            .ToList();
 
         var mode = ctx.Settings?.DeliveryMode ?? new CompanyNotificationSettings().DeliveryMode;
         var routing = NotificationRouting.SelectTargets(mode, priorityTransport, candidates);
