@@ -521,6 +521,28 @@ SelectTargets(mode, priorityTransport, candidates) -> (targets, skipReason?)
 
 Функция покрывается юнит-тестами (`NotificationRoutingTests`), её копий в контроллерах нет.
 
+⚠️ **Отклонение от буквального текста этого раздела, зафиксированное backend-разработчиком по итогам B7
+(прогон полного функционального набора)**: `candidate.IsUsable` в РЕАЛЬНОМ вызове из
+`NotificationScheduler` считается **только по оплаченности** (`ChannelFunding.Rank` → `Funded`), БЕЗ
+проверки `channel.State == Connected` — вопреки списку «негоден» выше, который называет «не Connected»
+в одном ряду с «не оплачен». Причина: `NotificationGate` (§104.5 не отменяет её собственный контракт из
+цикла 4) явно обещает, что очередь никогда не регрессирует канал, который на момент постановки просто ещё
+не переподключился — «не Connected» держит строку `Pending` и ждёт, отправка/ожидание — работа
+диспетчера, не очереди; это же явно кодифицировано существующим тестовым хелпером
+`NotificationQueueingTests.SeedConnectedAssignedChannelAsync`, который **намеренно** сеет
+`State = Disconnected` с комментарием «`NotificationGate.Evaluate` намеренно не смотрит на `ChannelState`
+вообще». Буквальное прочтение (usable = funded && Connected) при прогоне уронило 8 существующих
+функциональных тестов (`NotificationQueueingTests`/`NotificationDispatchTests`) — единственную не оплаченную
+или временно отключённую от провайдера companию с одним WhatsApp-каналом строка переставала висеть
+`Pending` и вместо этого сразу становилась `Skipped`/`PriorityChannelUnavailable`, то есть сообщение
+терялось, а не ждало переподключения — прямое нарушение П12 («поведение существующих компаний не
+меняется»). Экранные read-only поля `connectedTransports`/`priorityChannelHealthy`
+(`CompanyNotificationsController`) **по-прежнему проверяют `Connected`** — это живой статус-сигнал для
+владельца, сознательно более строгий, чем то, что реально блокирует отправку. Если это расхождение
+архитектору не подходит, решение нужно принять явно (например: завести отдельный флаг «висит из-за
+дисконнекта, но не потерян» вместо переиспользования `PriorityChannelUnavailable`), а не молча вернуть
+проверку `Connected` в `NotificationRouting` — это снова уронит те же 8 тестов.
+
 **Момент применения режима назван явно: постановка в очередь**, не отправка. Причина: `OutboundNotification`
 — «и очередь, и вечный журнал», и строка уже несёт `ChannelId`; выбирать адресата на отправке значило бы,
 что владелец, переключивший режим, задним числом меняет адресата **уже поставленным** сообщениям — ровно
@@ -620,18 +642,33 @@ Information. Это поведение уже есть у WhatsApp, и MAX ег�
 о рисках**. Боевых каналов нет, dev/test-базы пересоздаются, цена сегодня нулевая и растёт с каждым
 циклом. Правовая формулировка текста — не наша компетенция; `legal-counsel` вызывается по §0.4 SPEC.
 
-### 104.9 Таблица отличий MAX от WhatsApp (заполняет backend-developer по итогам разведки)
+### 104.9 Таблица отличий MAX от WhatsApp (заполнено backend-developer по итогам разведки, B1)
 
-| Предмет | WhatsApp (как сейчас) | MAX (заполнить) | Где это в коде |
+Источники: официальная документация GREEN-API, `green-api.com/v3/docs/*` (это и есть документация
+именно продукта **«GREEN-API: MAX»** — не путать с отдельным продуктом **«GREEN-API: MAX BOT API»**,
+который требует верификации организации через Госуслуги/СберБизнес ID и не подходит для этого цикла:
+нужен QR-вход с обычного номера телефона, ровно как у WhatsApp).
+
+| Предмет | WhatsApp (как сейчас) | MAX (по итогам разведки) | Где это в коде |
 |---|---|---|---|
-| Базовый адрес | `https://api.green-api.com` | | `GreenApiUrls` |
-| Отправка сообщения | | | `GreenApiMaxUrls`, `GreenApiMaxTransport` |
-| Идентификатор сообщения в ответе | | | `GreenApiMaxTransport` |
-| «Получателя нет в мессенджере» | `RecipientHasNoWhatsApp` | **новый член `RecipientNotInMax`** | `NotificationReason`, `NotificationTexts` |
-| Постоянная vs временная ошибка | | | `GreenApiMaxResultClassifier` |
-| Формат вебхука статусов | | | `GreenApiMaxWebhookParser` |
-| Создание экземпляра, QR | | **требует отключить пароль входа в мессенджере** | `GreenApiMaxProvisioning`, экран привязки |
-| Лимиты частоты | 5–15 с между сообщениями | | `Dispatch:PauseMin/MaxMs` |
+| Базовый адрес | `https://api.green-api.com` | **Та же схема URL** — `{{apiUrl}}/waInstance{{id}}/{method}/{{token}}`, тот же формат домена (может быть тем же `api.green-api.com` — GREEN-API документирует один общий `apiUrl` для WhatsApp/Telegram/MAX, маршрутизация идёт по `idInstance`). Опциональный префикс `/v3/` не нужен | `GreenApiUrls`, `GreenApiMaxUrls` |
+| Отправка сообщения | `POST .../sendMessage`, тело `{chatId, message}` | **Тот же метод, то же тело.** `chatId` — тот же формат `"{phone}@c.us"` (официально сохранён для обратной совместимости; «правильный» путь — сперва `CheckAccount`, но это лишний round-trip на каждое сообщение и не нужен) | `GreenApiMaxUrls.SendMessage`, `GreenApiMaxTransport` |
+| Идентификатор сообщения в ответе | `200 { "idMessage": "..." }` | **Тот же формат ответа** | `GreenApiMaxTransport`, `GreenApiMaxResultClassifier` |
+| «Получателя нет в мессенджере» | webhook `outgoingMessageStatus` со `status: "noAccount"` → `RecipientHasNoWhatsApp` | **Та же строка `"noAccount"`** в том же вебхуке → **новый член `RecipientNotInMax`**. Дополнительно у MAX есть отдельный синхронный метод `CheckAccount` (`POST .../checkAccount`, тело `{phoneNumber: <int>}`, ответ `{exist, chatId, fromCache}`) — не используется в цикле, чтобы не удваивать сетевые вызовы на отправку | `NotificationReason`, `NotificationTexts`, `GreenApiMaxWebhookParser`, `GreenApiMaxResultClassifier` |
+| Постоянная vs временная ошибка | 429/5xx → временная; 401/403 → канал; noAccount/прочее 4xx → постоянная | **То же деление**, плюс MAX-специфика: 403 `"Your account is suspended"` (временное частичное ограничение отправки — не полный бан) классифицируется как `ChannelInvalid`, той же веткой, что 401/403 вообще; `pendingPassword` (см. ниже) в теле ошибки — тоже `ChannelInvalid` | `GreenApiMaxResultClassifier` |
+| Формат вебхука статусов | `typeWebhook`, `chatId`, `instanceData{idInstance,wid,typeInstance}`, `timestamp`, `idMessage`, `status` (`sent`/`delivered`/`read`/`noAccount`/`failed`) | **Идентичная схема**, включая `wid` в формате `"{phone}@c.us"` (подтверждено примером ответа в документации — MAX-чат для внутренних методов адресуется непрозрачным `chatId`, но `wid` в вебхуке и `getSettings` остаётся телефонным). `instanceData.typeInstance` = `"v3"` для MAX (`"whatsapp"` для WhatsApp) — в этом цикле не используется для маршрутизации (маршрутизация — по `{transport}` в пути нового вебхука), но подтверждает, что оба продукта размечены на уровне ответа. Статус `"failed"` — обязателен к обработке (нельзя отключить в `SetSettings`), не то же самое, что `"noAccount"` → маппится в **`RejectedByProvider`**, не в `RecipientNotInMax` | `GreenApiMaxWebhookParser` |
+| Создание экземпляра, QR | Партнёрский `POST /partner/createInstance/{partnerToken}`, QR через `GetQr`, `stateInstance` ∈ {`authorized`,`notAuthorized`,`blocked`,`starting`} | **Тот же метод и тот же ответ** (`apiTokenInstance`, `apiUrl`, `idInstance`, `mediaUrl`, `typeInstance`), но у **ОТДЕЛЬНОГО партнёрского аккаунта MAX** — `typeInstance` в ответе определяется тем, каким партнёрским токеном вызван метод, а не параметром запроса, поэтому у MAX **свой `Notifications:GreenApiMax:PartnerToken`**, отдельный от WhatsApp. `stateInstance` расширен двумя значениями: `suspended` (временное частичное ограничение, не полный бан — трактуется как `Unknown`, канал не регрессирует) и **`pendingPassword`** (у аккаунта MAX включён пароль входа/2FA, для завершения авторизации нужен отдельный метод `SendAuthorizationPassword` — **не реализован в этом цикле**; трактуется как `NotAuthorized`, «ещё не готово», подхватывается существующим таймаутом `ChannelHealthTask`). Отсюда — требование **отключить пароль входа в MAX перед подключением**, показанное на экране ДО заявки (`connectionNotice`) | `GreenApiMaxProvisioning`, `GreenApiMaxStateInstanceParser`, экран привязки (`ChannelPresentation.TransportConnectionNotice`) |
+| Удаление инстанса | `POST /partner/deleteInstanceAccount/{partnerToken}`, `idInstance` числом в теле | **Тот же метод**, тем же партнёрским MAX-токеном | `GreenApiMaxUrls.DeleteInstance`, `GreenApiMaxProvisioning` |
+| Лимиты частоты | 5–15 с между сообщениями (`Dispatch:PauseMin/MaxMs`) | Официальная документация не называет ДРУГОЙ рекомендуемый интервал для MAX — тот же диапазон применён без изменений; `CheckAccount` (не используется на горячем пути) отдельно предупреждает о лимите частых проверок несуществующих номеров (код `469`), не относится к `sendMessage` | `Dispatch:PauseMin/MaxMs` (общий для обоих транспортов, §104.6) |
+
+**Вывод по R2**: абстракция `INotificationTransport`/`IChannelProvisioning` **не потребовала изменений** —
+MAX оказался тем же продуктом GREEN-API с идентичной формой URL/ответов, что и WhatsApp, отличия свелись к
+(а) отдельному партнёрскому токену/аккаунту, (б) двум дополнительным значениям `stateInstance`
+(`suspended`, `pendingPassword`), учтённым в `GreenApiMaxStateInstanceParser` без изменения
+`ProviderChannelState`, и (в) различению `noAccount`/`failed` в вебхуке через новое поле
+`ProviderCallback.TerminalReason` (аддитивное, не меняющее поведение WhatsApp-парсера). Единственный
+намеренно нереализованный кусок — `SendAuthorizationPassword` (2FA), закрытый требованием к владельцу
+отключить пароль входа ДО подключения.
 
 Ограничение «для авторизации по QR в MAX нужно отключить пароль входа» — **часть экрана привязки, до
 привязки, а не после**. Текст собирает **сервер** (`ChannelPresentation`), фронт его печатает: конвенция
