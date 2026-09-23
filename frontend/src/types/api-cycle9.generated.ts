@@ -950,13 +950,19 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Список каналов. */
+            /**
+             * @description Список каналов, ЗАВЁРНУТЫЙ в объект — не голый массив.
+             *     Реализация отдаёт ChannelListDto ({ channels: [...] }), и фронт читает именно её;
+             *     схема раньше объявляла массив, что расходилось с обеими сторонами.
+             */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChannelDto"][];
+                    "application/json": {
+                        channels: components["schemas"]["ChannelDto"][];
+                    };
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1167,6 +1173,13 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ForbiddenEmpty"];
+            /** @description Компании с таким companyId нет. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             451: components["responses"]["LegalGate"];
         };
     };

@@ -158,12 +158,19 @@ paths:
       summary: Каналы владельца (в элементе появилось transport)
       responses:
         "200":
-          description: Список каналов.
+          description: |
+            Список каналов, ЗАВЁРНУТЫЙ в объект — не голый массив.
+            Реализация отдаёт ChannelListDto ({ channels: [...] }), и фронт читает именно её;
+            схема раньше объявляла массив, что расходилось с обеими сторонами.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/ChannelDto" }
+                type: object
+                required: [channels]
+                properties:
+                  channels:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChannelDto" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "451": { $ref: "#/components/responses/LegalGate" }
     post:
@@ -339,6 +346,8 @@ paths:
               schema: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/ForbiddenEmpty" }
+        "404":
+          description: Компании с таким companyId нет.
         "451": { $ref: "#/components/responses/LegalGate" }
 
   /admin/notification-channels:
