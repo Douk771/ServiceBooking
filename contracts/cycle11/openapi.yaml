@@ -567,7 +567,7 @@ components:
       properties:
         token:
           type: string
-          description: Новый JWT. Обязателен, а не оптимизация: claim'ы версий зашиты при выпуске, и без нового токена следующий же запрос снова получит 451.
+          description: "Новый JWT. Обязателен, а не оптимизация: claim'ы версий зашиты при выпуске, и без нового токена следующий же запрос снова получит 451."
         acceptedAt: { type: string, format: date-time }
 
     PricingPublicBlockedReason:
