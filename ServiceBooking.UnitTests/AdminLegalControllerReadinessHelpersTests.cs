@@ -33,7 +33,7 @@ public class AdminLegalControllerReadinessHelpersTests
         var snapshot = Snapshot(Document(
             LegalDocumentType.TermsOwner, "terms-owner.html", "<a href=\"/privacy\">privacy</a>"));
 
-        var result = AdminLegalController.CheckLinks(snapshot);
+        var result = LegalReadinessReportBuilder.CheckLinks(snapshot);
 
         result.Checked.Should().Be(1);
         result.Broken.Should().BeEmpty();
@@ -45,7 +45,7 @@ public class AdminLegalControllerReadinessHelpersTests
         var snapshot = Snapshot(Document(
             LegalDocumentType.TermsOwner, "terms-owner.html", "<a href=\"/no-such-route\">nope</a>"));
 
-        var result = AdminLegalController.CheckLinks(snapshot);
+        var result = LegalReadinessReportBuilder.CheckLinks(snapshot);
 
         result.Checked.Should().Be(1);
         result.Broken.Should().ContainSingle(b => b.File == "terms-owner.html" && b.Href == "/no-such-route");
@@ -57,7 +57,7 @@ public class AdminLegalControllerReadinessHelpersTests
         var snapshot = Snapshot(Document(
             LegalDocumentType.TermsClient, "terms.html", "<a href=\"/offer-channel\">offer</a>"));
 
-        var result = AdminLegalController.CheckLinks(snapshot);
+        var result = LegalReadinessReportBuilder.CheckLinks(snapshot);
 
         result.Broken.Should().BeEmpty();
     }
@@ -68,7 +68,7 @@ public class AdminLegalControllerReadinessHelpersTests
         var snapshot = Snapshot(Document(
             LegalDocumentType.TermsOwner, "terms-owner.html", "<h2 id=\"offer-channel\">Offer</h2>"));
 
-        var result = AdminLegalController.CheckAnchors(snapshot);
+        var result = LegalReadinessReportBuilder.CheckAnchors(snapshot);
 
         result.Missing.Should().BeEmpty();
     }
@@ -78,7 +78,7 @@ public class AdminLegalControllerReadinessHelpersTests
     {
         var snapshot = Snapshot(Document(LegalDocumentType.TermsOwner, "terms-owner.html", "<p>no anchor here</p>"));
 
-        var result = AdminLegalController.CheckAnchors(snapshot);
+        var result = LegalReadinessReportBuilder.CheckAnchors(snapshot);
 
         result.Missing.Should().ContainSingle(m => m.Route == "/terms-owner" && m.Anchor == "offer-channel");
     }
@@ -96,7 +96,7 @@ public class AdminLegalControllerReadinessHelpersTests
             new("BookingNotice", "v1", false, "booking-notice.html", "hash", [new LegalReadinessPlaceholderDto("ИНН", 1)]),
         };
 
-        var result = AdminLegalController.BuildPlaceholderSummary(documents, uiTexts);
+        var result = LegalReadinessReportBuilder.BuildPlaceholderSummary(documents, uiTexts);
 
         result.Should().ContainSingle();
         var summary = result[0];
@@ -131,7 +131,7 @@ public class AdminLegalControllerReadinessHelpersTests
                 "/privacy", "hash", [new LegalReadinessPlaceholderDto(placeholderName, 1)]),
         };
 
-        var result = AdminLegalController.BuildPlaceholderSummary(documents, []);
+        var result = LegalReadinessReportBuilder.BuildPlaceholderSummary(documents, []);
 
         result.Should().ContainSingle().Which.Source.Should().Be(expectedSource);
     }
@@ -145,7 +145,7 @@ public class AdminLegalControllerReadinessHelpersTests
                 "/privacy", "hash", []),
         };
 
-        var result = AdminLegalController.BuildPlaceholderSummary(documents, []);
+        var result = LegalReadinessReportBuilder.BuildPlaceholderSummary(documents, []);
 
         result.Should().BeEmpty();
     }

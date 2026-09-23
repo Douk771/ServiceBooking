@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceBooking.UnitTests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceBooking.TestKit", "ServiceBooking.TestKit\ServiceBooking.TestKit.csproj", "{BD80C870-5060-442F-B05A-CC50827939DB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceBooking.LegalKit", "ServiceBooking.LegalKit\ServiceBooking.LegalKit.csproj", "{4F3D46BD-B697-44B7-9F2C-80579101B1CA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -48,5 +50,9 @@ Global
 		{BD80C870-5060-442F-B05A-CC50827939DB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BD80C870-5060-442F-B05A-CC50827939DB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BD80C870-5060-442F-B05A-CC50827939DB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4F3D46BD-B697-44B7-9F2C-80579101B1CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F3D46BD-B697-44B7-9F2C-80579101B1CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F3D46BD-B697-44B7-9F2C-80579101B1CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F3D46BD-B697-44B7-9F2C-80579101B1CA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

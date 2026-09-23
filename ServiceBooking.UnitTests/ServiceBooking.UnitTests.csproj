@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ServiceBooking.API\ServiceBooking.API.csproj" />
     <ProjectReference Include="..\ServiceBooking.TestKit\ServiceBooking.TestKit.csproj" />
+    <ProjectReference Include="..\ServiceBooking.LegalKit\ServiceBooking.LegalKit.csproj" />
   </ItemGroup>
 
 </Project>
