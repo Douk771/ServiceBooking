@@ -1,10 +1,11 @@
 // ARCHITECTURE_CYCLE9.md §105.9 — staff Web Push service worker.
 //
-// Exactly two event listeners, and NEVER a `fetch` listener or any use of `caches`/`CacheStorage`.
-// That is not a style preference: a service worker without a `fetch` listener is PHYSICALLY unable to
-// intercept a navigation or an asset request, which is what makes `skipWaiting()` + `clients.claim()`
-// safe below (R11 — "SW breaks the next frontend deploy"). CI greps this exact file for those three
-// tokens and fails the build if any of them shows up again (.github/workflows/ci.yml, job `frontend`).
+// Exactly two event listeners, and NEVER a listener that intercepts network requests or any use of
+// the browser's response-caching storage API. That is not a style preference: a service worker without
+// such a listener is PHYSICALLY unable to intercept a navigation or an asset request, which is what
+// makes `skipWaiting()` + `clients.claim()` safe below (R11 — "SW breaks the next frontend deploy"). CI
+// greps this exact file for the disallowed tokens and fails the build if any of them shows up again
+// (.github/workflows/ci.yml, job `frontend`).
 //
 // Scope is `/` (Vite copies `public/` into `dist` verbatim, so this is served from `/sw.js`), no
 // build-time hashing, no extra headers beyond `Cache-Control: no-cache` on the nginx side (deploy/nginx).
