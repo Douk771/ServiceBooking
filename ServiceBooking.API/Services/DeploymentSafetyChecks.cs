@@ -184,6 +184,19 @@ public static class DeploymentSafetyChecks
                     throw new InvalidOperationException(
                         $"Notifications:Provider is '{GreenApiProviderName.Value}' but Notifications:PartnerToken is missing " +
                         "or still a placeholder. Set NOTIFICATIONS_PARTNER_TOKEN in .env.");
+
+                // ARCHITECTURE_CYCLE9.md §104.1/§104.9: GREEN-API's MAX product is a SEPARATE partner
+                // account from WhatsApp (confirmed by the provider's own docs during B1 — createInstance's
+                // response typeInstance is tied to which partner token called it, not a request
+                // parameter), so it needs its OWN partner token, checked the same way and for the same
+                // reason as WhatsApp's above — a real provider configured with no way to provision MAX
+                // instances must fail loud at startup, not 503 the first owner who requests a MAX channel.
+                var maxPartnerToken = configuration["Notifications:GreenApiMax:PartnerToken"];
+                if (string.IsNullOrWhiteSpace(maxPartnerToken) || maxPartnerToken == "CHANGE_ME")
+                    throw new InvalidOperationException(
+                        $"Notifications:Provider is '{GreenApiProviderName.Value}' but Notifications:GreenApiMax:PartnerToken " +
+                        "is missing or still a placeholder — MAX is a separate GREEN-API product/account and needs its own " +
+                        "partner token, distinct from Notifications:PartnerToken. Set NOTIFICATIONS_GREENAPI_MAX_PARTNER_TOKEN in .env.");
             }
 
             // I4: an empty UnsubscribeKey doesn't fail loudly anywhere downstream — NotificationScheduler
@@ -214,6 +227,13 @@ public static class DeploymentSafetyChecks
                     "Notifications:PartnerToken is set outside Production. A real provider partner token " +
                     "here could create or delete a live salon's WhatsApp instance from a dev/test run. " +
                     "Clear NOTIFICATIONS_PARTNER_TOKEN outside Production.");
+
+            var maxPartnerToken = configuration["Notifications:GreenApiMax:PartnerToken"];
+            if (!string.IsNullOrWhiteSpace(maxPartnerToken))
+                throw new InvalidOperationException(
+                    "Notifications:GreenApiMax:PartnerToken is set outside Production — the same mirror-image " +
+                    "rule as Notifications:PartnerToken (ARCHITECTURE_CYCLE9.md §104.1). Clear " +
+                    "NOTIFICATIONS_GREENAPI_MAX_PARTNER_TOKEN outside Production.");
         }
     }
 
@@ -418,5 +438,32 @@ public static class DeploymentSafetyChecks
                 $"Booking:DefaultWorkWindow:Start ({start}) must be before End ({end}).");
 
         return (start, end);
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE9.md §104.2 (US-122): "нераспознанное значение по-прежнему роняет старт; вдобавок
+    /// роняет старт ситуация «в реестре нет реализации для члена NotificationTransport»." Unlike this
+    /// class's other checks, the registry itself is built from DI in <c>Program.cs</c> (it depends on
+    /// which concrete adapters got wired up), so this method takes the registry's OWN answer to "what did
+    /// you actually end up with" — <paramref name="registeredTransports"/> — as plain data instead of
+    /// re-deriving it, keeping the check itself pure/DI-free like the rest of this class and callable
+    /// directly from a unit test with a hand-built list.
+    /// </summary>
+    /// <param name="registeredTransports">What the registry actually ended up with — every member of
+    /// <see cref="Core.Enums.NotificationTransport"/> missing from this collection fails the check.</param>
+    /// <param name="registryName">Which registry this is, for the exception message —
+    /// <see cref="Notifications.INotificationTransportRegistry"/> and
+    /// <see cref="Notifications.IChannelProvisioningRegistry"/> are checked separately, since one could in
+    /// principle be complete while the other isn't (e.g. Production intentionally omits provisioning for
+    /// a transport it can still SEND through).</param>
+    public static void ValidateTransportRegistryCompleteness(string registryName, IReadOnlyCollection<Core.Enums.NotificationTransport> registeredTransports)
+    {
+        var missing = Enum.GetValues<Core.Enums.NotificationTransport>().Except(registeredTransports).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"{registryName} has no implementation registered for: {string.Join(", ", missing)}. " +
+                "Every NotificationTransport member must have an adapter wired up in Program.cs before the " +
+                "app finishes starting — a transport with no adapter must fail loud at startup, not silently " +
+                "\"just not send\" the first time a message for it comes due (ARCHITECTURE_CYCLE9.md §104.2).");
     }
 }

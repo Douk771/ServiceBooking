@@ -67,6 +67,9 @@ services:
       - Notifications__KeyRotationAck=${NOTIFICATIONS_KEY_ROTATION_ACK:-}
       - Notifications__Provider=${NOTIFICATIONS_PROVIDER:-logging}
       - Notifications__PartnerToken=${NOTIFICATIONS_PARTNER_TOKEN:-}
+      # ARCHITECTURE_CYCLE9.md §104.1/§104.9 — MAX is a separate GREEN-API product/account from
+      # WhatsApp, so it needs its own partner token, checked by the same fail-fast rules.
+      - Notifications__GreenApiMax__PartnerToken=${NOTIFICATIONS_GREENAPI_MAX_PARTNER_TOKEN:-}
       - Notifications__WebhookToken=${NOTIFICATIONS_WEBHOOK_TOKEN:-}
       - Notifications__UnsubscribeKey=${NOTIFICATIONS_UNSUBSCRIBE_KEY:-}
       # Retention (ARCHITECTURE_CYCLE5.md §49, DEPLOY.md §11.4): appsettings.json bakes DryRun=true —
