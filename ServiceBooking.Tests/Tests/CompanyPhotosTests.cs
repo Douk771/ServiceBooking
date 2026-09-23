@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.ClientNotes;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
@@ -255,6 +256,42 @@ public class CompanyPhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fixtu
         response!.Photos.Should().NotBeNull().And.BeEmpty();
         response.CoverPhotoUrl.Should().BeNull();
         response.CoverThumbnailUrl.Should().BeNull();
+    }
+
+    [Fact, TestCase("CPH-021")]
+    public async Task GetPublic_ReturnsCover_AndAgreesWithGetAll_OnTheSameCompany()
+    {
+        // Regression coverage for the defect found at the cycle 9/10 boundary: GET /api/companies/public
+        // (added in cycle 9) was never updated when cycle 10 wired cover photos into every listing
+        // endpoint — its MapToDto call passed no `cover` argument at all, silently defaulting to null
+        // (the parameter's default), so `coverPhotoUrl`/`coverThumbnailUrl` were always null there even
+        // though CPH-012 already covered the exact same shape on GET /api/companies. Nothing caught it
+        // because CPH-011..013 never touch GetPublic. This test both asserts the cover is populated on
+        // GetPublic directly, and — mirroring CO-083's cross-endpoint agreement check — compares the same
+        // company's CompanyDto between GET /api/companies and GET /api/companies/public, so a future
+        // regression of the same shape (a field filled on one listing endpoint but not the other) fails
+        // here regardless of which field it is.
+        var (owner, company) = await CreateOwnerWithCompanyAsync();
+        var upload = await AuthedClient(owner.Token).PostAsync($"/api/companies/{company.Id}/photos", JpegUpload());
+        var photo = await upload.Content.ReadJsonAsync<CompanyPhotoDto>();
+
+        var publicResponse = await AnonymousClient().GetAsync("/api/companies/public?pageSize=100");
+        publicResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var publicPage = await publicResponse.Content.ReadFromJsonAsync<PagedResult<CompanyDto>>();
+        var publicEntry = publicPage!.Items.Should().ContainSingle(c => c.Id == company.Id).Subject;
+
+        publicEntry.CoverPhotoUrl.Should().Be(photo!.Url,
+            "GET /api/companies/public must fill the cover the same way GET /api/companies does (CPH-012)");
+        publicEntry.CoverThumbnailUrl.Should().Be(photo.ThumbnailUrl);
+        publicEntry.Photos.Should().BeNull("the public catalog exposes only the cover, never the full gallery — same as GET /api/companies");
+
+        var allList = await AnonymousClient().GetFromJsonAsync<List<CompanyDto>>("/api/companies");
+        var allEntry = allList!.Single(c => c.Id == company.Id);
+
+        // Same defensive intent as CO-083, but for the DTO's *shape*, not just the set of visible ids:
+        // catch any future field that one listing endpoint fills and the other silently leaves at its
+        // default.
+        publicEntry.Should().BeEquivalentTo(allEntry);
     }
 
     // ── Regression findings from code review: duplicate Position==0 survives GetAll; a deactivated

@@ -26,33 +26,74 @@ grep -rn "BK-003" ServiceBooking.Tests/
 
 | Префикс | Файл | Тестов |
 |---|---|---|
-| `AUTH-` | `AuthTests.cs` | 15 |
-| `BK-` | `BookingsFlowSmokeTests.cs` + `MultiServiceBookingTests.cs` + `ManualBookingFreedomTests.cs` | 88 (62 + 8 + 18) |
+| `AUTH-` | `AuthTests.cs` | 16 (15 `[Fact]` + `[Theory]` AUTH-003 × доп. `InlineData`) |
+| `BK-` | `BookingsFlowSmokeTests.cs` + `MultiServiceBookingTests.cs` + `ManualBookingFreedomTests.cs` | 89 (63 + 8 + 18) |
 | `BKH-` | `BookingHistoryTests.cs` | 16 |
-| `CPH-` | `CompanyPhotosTests.cs` | 20 |
-| `CO-` | `CompaniesTests.cs` | 81 |
+| `CPH-` | `CompanyPhotosTests.cs` | 21 |
+| `CO-` | `CompaniesTests.cs` | 85 (83 `[Fact]`/`[Theory]` id + доп. `InlineData` на CO-026) |
 | `SVC-` | `ServicesTests.cs` | 19 |
 | `WH-` | `WorkingHoursTests.cs` | 17 |
 | `ST-` | `ScheduleTemplateTests.cs` | 15 |
-| `MC-` | `MastersTests.cs` + `ClientNotePhotosTests.cs` | 37 (17 + 20) |
+| `MC-` | `MastersTests.cs` + `ClientNotePhotosTests.cs` | 39 (19 + 20) |
 | `UPL-` | `UploadsStaticFilesTests.cs` | 2 |
-| `RV-` | `ReviewsTests.cs` | 13 |
+| `RV-` | `ReviewsTests.cs` | 17 (13 `[Fact]`/`[Theory]` id + доп. `InlineData` на RV-006/RV-007) |
 | `MAIL-` | `MailingTests.cs` | 9 |
-| `RPT-` | `ReportsTests.cs` | 12 |
+| `RPT-` | `ReportsTests.cs` | 13 |
 | `PROF-` | `ProfileTests.cs` | 18 |
 | `ADM-` | `AdminTests.cs` | 51 |
 | `SCH-` | `SchedulerTests.cs` | 9 |
-| `LEG-` | `LegalConsentTests.cs` + `LegalConsentVersionChangeTests.cs` + `DataRightsTests.cs` | 32 (14 + 8 + 10) |
+| `LEG-` | `LegalConsentTests.cs` + `LegalConsentVersionChangeTests.cs` + `DataRightsTests.cs` | 35 (17 + 8 + 10) |
+| `LGL-` 🆕 | `LegalPriorityTests.cs` + `ClientNotePhotosTests.cs` + `NotificationQueueingTests.cs` + `NotificationChannelsTests.cs` | 13 (9 + 1 + 1 + 2) |
 | `SEC-` | `RateLimitingTests.cs` + `IdentityRoleSyncTests.cs` | 10 (6 + 4) |
 | `OPS-` | `HealthTests.cs` | 4 |
 | `PAG-` | `PaginationTests.cs` | 14 (9 `[Fact]` + `[Theory]` PAG-007 × 5 `InlineData`) |
 | `NTF-` | `NotificationDispatchTests.cs` + `NotificationChannelsTests.cs` + `NotificationQueueingTests.cs` + `NotificationWebhookUnsubscribeTests.cs` + `NotificationDispatchExtraTests.cs` + `NotificationCitiesTimeZoneTests.cs` | 45 (2 + 20 + 5 + 9 + 3 + 6) |
 | `PRC-` | `PricingTests.cs` | 33 |
-| `BLL-` | `BillingTests.cs` | 5 |
-| `TRF-` | `CompanyTransferTests.cs` | 5 |
+| `BLL-` | `BillingTests.cs` | 7 |
+| `TRF-` | `CompanyTransferTests.cs` | 6 |
 | `MAX-` | `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` | 5 (4 + 1) |
 | `PUSH-` | `StaffPushTests.cs` (`StaffPushSubscriptionAndQueueingTests` + `StaffPushDispatchTests`) | 10 |
-| **Итого** | | **529** запусков |
+| `ABA-` 🆕 | `AdminBillingAccountsTests.cs` | 3 |
+| **Итого** | | **621** запусков |
+
+⚠️ **Пересчёт цикла 9 (закрытие хвоста, стык с циклом 10).** Таблица выше пересчитана заново по
+исходникам (`grep -c 'TestCase("<префикс>-'` + `dotnet test ServiceBooking.Tests --list-tests` для
+`[Theory]`-разворота), а не поправлена точечно: сумма по таблице (584) разошлась с фактическим
+`dotnet test ServiceBooking.Tests` (620 на момент начала этого прогона, 621 после добавления `CPH-021`
+ниже) на 36 тестов. Дрейф копился по нескольким независимым причинам:
+- **`[Theory]`-развороты никогда не считались.** `AUTH-003` (`AuthTests.cs`), `CO-026`
+  (`CompaniesTests.cs`), `RV-006`/`RV-007` (`ReviewsTests.cs`) — каждый `[Theory]` даёт больше одного
+  реального запуска на один `TestCase`-атрибут (как `PAG-007`, который таблица и раньше считала
+  правильно: 9 `[Fact]` + 5 `InlineData` = 14). Отсюда AUTH 15→16, CO 83→85 (плюс отдельно устаревшее
+  81→83 — см. ниже), RV 13→17.
+- **Два префикса отсутствовали в таблице целиком.** `ABA-` (`AdminBillingAccountsTests.cs`, 3 теста —
+  `GET /api/admin/billing-accounts` из цикла 7) и `LGL-` (13 тестов, разбросанных по четырём файлам —
+  `LegalPriorityTests.cs` + по одному-два теста в `ClientNotePhotosTests.cs`/
+  `NotificationQueueingTests.cs`/`NotificationChannelsTests.cs`) — оба существовали до цикла 9, ни разу
+  не попав в эту таблицу.
+- **Обычный дрейф «код поменялся, таблицу не поправили» копился и до цикла 9** (как уже отмечено ниже
+  в разделе про цикл 3): `CO-` 81→83, `BK-` 88→89, `RPT-` 12→13, `BLL-` 5→7, `TRF-` 5→6, `MC-` 37→39,
+  `LEG-` 32→35 — фактические числа в файлах разошлись с таблицей независимо от `[Theory]`-вопроса.
+- **Цикл 10, слитый в эту ветку,** не менял ни один из этих доменов численно (`CPH-` на момент слияния
+  всё ещё 20) — сам по себе слиянием дрейф не усугубил, просто был слит поверх уже разошедшегося
+  документа.
+
+Ни один из этих 36 тестов не новый и не регрессия — это исключительно ошибка учёта в документе, не в
+коде.
+
+🆕 **`CPH-021` — закрытие пробела в покрытии, найденного на стыке циклов 9/10.** +1 запуск (620 → 621).
+Ревью стыка нашло дефект: `GET /api/companies/public` (эндпоинт цикла 9) не отдавал обложку компании,
+потому что цикл 10 завёл обложки во все списковые эндпоинты компаний, кроме этого — `GetPublic` не
+попал в поле зрения правки, а параметр `cover` у `MapToDto` тихо подставлял `null` по умолчанию.
+Дефект уже починен бэкендом (`GetCoversAsync` по компаниям текущей страницы, как у соседних
+эндпоинтов), но прошёл все зелёные прогоны, потому что `CPH-011`…`CPH-013` проверяют обложку только на
+`GET /api/companies/{slug}` и `GET /api/companies` — ни один тест не смотрел на `GET
+/api/companies/public`. `CPH-021` (`CompanyPhotosTests.cs`) проверяет и саму обложку на
+`/api/companies/public`, и — по образцу `CO-083` — полное совпадение формы `CompanyDto` между
+`GET /api/companies` и `GET /api/companies/public` для одной и той же компании, чтобы поймать не
+только этот конкретный дефект, но и любой будущий той же формы (поле заполнено на одном списковом
+эндпоинте и не заполнено на другом). Проверено локально откатом фикса — без него тест падает с
+`Expected publicEntry.CoverPhotoUrl … but found <null>`; с фиксом — зелёный.
 
 🆕 **Цикл 6, `excludeBookingId` в `GET /api/bookings/slots` — приёмка QA.** +6 запусков к прогону
 цикла 6 (466 → 472): `BK-068`…`BK-073` в `BookingsFlowSmokeTests.cs`. Новый необязательный параметр
