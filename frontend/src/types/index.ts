@@ -578,14 +578,12 @@ export interface SubjectRequestDto {
 }
 
 // ── Cycle 11: legal publication readiness — GET /api/admin/legal/readiness ─────────────────────────
-// NOTE this matches the ACTUAL backend response (ServiceBooking.API/Controllers/AdminLegalController.cs),
-// which is a deliberately reduced version of the full contracts/cycle11/legal-status.schema.json: no
-// `root`, `links`, `anchors`, `drift`, or per-item `file`; `placeholders` lives only nested under each
-// document/uiText (no top-level summary with `source`/`valuePresent`); `impact` is a flat array, not
-// `{ reAcceptanceRequired, note }`. See the commit message on AdminLegalController.cs for why
-// (ServiceBooking.LegalKit, the CLI that would produce the full shape, doesn't exist in this tree yet).
-// Flagged for architect/backend — schema and endpoint currently disagree; do not "fix" one from the
-// other without checking which side cycle 11 actually shipped.
+// Matches contracts/cycle11/legal-status.schema.json and the actual backend response
+// (ServiceBooking.API/Controllers/AdminLegalController.cs, commit a96712d): full shape, including
+// `root`, `file` on every document/uiText, `links`, `anchors`, a deduplicated top-level `placeholders`
+// summary (source/files/valuePresent), and `impact` as `{ reAcceptanceRequired, note }` rather than a
+// flat array. `drift` is intentionally omitted by the endpoint (not `required` by the schema — the
+// filesystem-vs-legal-drafts comparison needs the not-yet-built ServiceBooking.LegalKit CLI).
 
 export type LegalBlockerKind =
   | 'UnresolvedPlaceholders'
@@ -614,6 +612,7 @@ export interface LegalReadinessDocument {
   isDraft: boolean
   changeKind: LegalChangeKind
   gate: LegalGate
+  file: string
   url: string
   contentHash: string
   placeholders: LegalReadinessPlaceholderRef[]
@@ -623,8 +622,38 @@ export interface LegalReadinessUiText {
   key: LegalTextKey
   version: string
   isDraft: boolean
+  file: string
   contentHash: string
   placeholders: LegalReadinessPlaceholderRef[]
+}
+
+export type LegalPlaceholderSource = 'ЕГРЮЛ' | 'после уведомления РКН' | 'решение заказчика' | 'из манифеста'
+
+export interface LegalReadinessPlaceholderSummary {
+  name: string
+  count: number
+  source: LegalPlaceholderSource
+  files: string[]
+  valuePresent: boolean
+}
+
+export interface LegalReadinessBrokenLink {
+  file: string
+  href: string
+}
+
+export interface LegalReadinessLinks {
+  checked: number
+  broken: LegalReadinessBrokenLink[]
+}
+
+export interface LegalReadinessMissingAnchor {
+  route: string
+  anchor: string
+}
+
+export interface LegalReadinessAnchors {
+  missing: LegalReadinessMissingAnchor[]
 }
 
 export interface LegalReadinessImpactEntry {
@@ -633,15 +662,24 @@ export interface LegalReadinessImpactEntry {
   users: number
 }
 
+export interface LegalReadinessImpact {
+  reAcceptanceRequired: LegalReadinessImpactEntry[]
+  note: string
+}
+
 export interface LegalReadiness {
   generatedAtUtc: string
+  root: string
   ready: boolean
   blockers: LegalReadinessBlocker[]
   documents: LegalReadinessDocument[]
   uiTexts: LegalReadinessUiText[]
-  /** Flat list — non-empty only for gated documents (gate !== 'None') where at least one subject's
-   *  latest accepted version differs from the manifest's current version. */
-  impact: LegalReadinessImpactEntry[]
+  /** Deduplicated by name across the whole set — no need to aggregate `documents`/`uiTexts` placeholders
+   *  on the client. */
+  placeholders: LegalReadinessPlaceholderSummary[]
+  links: LegalReadinessLinks
+  anchors: LegalReadinessAnchors
+  impact: LegalReadinessImpact
   /** Mandatory and non-empty even when `ready: true` — must always be shown, never hidden behind an icon. */
   disclaimer: string
 }

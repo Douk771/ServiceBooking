@@ -3,7 +3,7 @@ import { adminLegalApi } from '../../api/platformSettings'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Icon } from '../../components/ui/Icon'
-import type { LegalBlockerKind } from '../../types'
+import type { LegalBlockerKind, LegalReadiness } from '../../types'
 
 // API_CONTRACT_CYCLE11.md §116, §119 п. 2 — read-only, SuperAdmin. Diagnostic, not content:
 // no client-side caching beyond react-query's default, and the disclaimer is always shown as a
@@ -36,15 +36,20 @@ export function LegalReadinessTab() {
   }
 
   if (isError || !data) {
-    // §116 — 503 arrives with a body (ready:false + LegalUnavailable), but the request itself can
-    // also fail outright (network, 401/403 session expiry) — treated the same way here: nothing to
-    // read, offer a retry.
-    const status = (error as { response?: { status?: number } })?.response?.status
+    // API_CONTRACT_CYCLE11.md §116 — 503 arrives with a real body (ready:false + a LegalUnavailable
+    // blocker, same shape as 200), so it's rendered as a normal report rather than a generic error
+    // screen. A request that fails outright (network, 401/403 session expiry) has no such body and
+    // falls back to a plain retry screen.
+    const response = (error as { response?: { status?: number; data?: unknown } })?.response
+    const body = response?.status === 503 ? (response.data as LegalReadiness | undefined) : undefined
+    if (body) {
+      return <LegalReadinessReport data={body} onRefetch={refetch} isRefetching={isRefetching} />
+    }
     return (
       <Card className="p-12 text-center text-muted">
         <Icon name="alert-circle" size={32} strokeWidth={1.4} className="mx-auto mb-3" />
         <p className="text-lg font-medium text-ink-soft mb-4">
-          {status === 403
+          {response?.status === 403
             ? 'Недостаточно прав для просмотра готовности правовых документов.'
             : 'Не удалось загрузить отчёт готовности.'}
         </p>
@@ -55,16 +60,22 @@ export function LegalReadinessTab() {
     )
   }
 
-  // The endpoint nests placeholders under each document/uiText rather than sending a deduplicated
-  // top-level summary (see the deviation note on the LegalReadiness type) — aggregated here for
-  // display, by name, across the whole set.
-  const placeholdersByName = new Map<string, number>()
-  for (const p of [...data.documents.flatMap((d) => d.placeholders), ...data.uiTexts.flatMap((t) => t.placeholders)]) {
-    placeholdersByName.set(p.name, (placeholdersByName.get(p.name) ?? 0) + p.count)
-  }
-  const placeholderSummary = [...placeholdersByName.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-  const totalPlaceholderOccurrences = placeholderSummary.reduce((sum, [, count]) => sum + count, 0)
-  const totalReAcceptance = data.impact.reduce((sum, r) => sum + r.users, 0)
+  return <LegalReadinessReport data={data} onRefetch={refetch} isRefetching={isRefetching} />
+}
+
+function LegalReadinessReport({
+  data,
+  onRefetch,
+  isRefetching,
+}: {
+  data: LegalReadiness
+  onRefetch: () => void
+  isRefetching: boolean
+}) {
+  const placeholderSummary = data.placeholders
+  const totalPlaceholderOccurrences = placeholderSummary.reduce((sum, p) => sum + p.count, 0)
+  const reAcceptanceRequired = data.impact.reAcceptanceRequired
+  const totalReAcceptance = reAcceptanceRequired.reduce((sum, r) => sum + r.users, 0)
 
   return (
     <div>
@@ -113,24 +124,25 @@ export function LegalReadinessTab() {
         <Card className="p-6 mb-5">
           <h3 className="text-sm font-semibold text-ink mb-3">Плейсхолдеры</h3>
           <div className="grid gap-2">
-            {placeholderSummary.map(([name, count]) => (
-              <div key={name} className="flex items-center justify-between gap-3 text-sm">
-                <code className="text-xs bg-cream-deep px-1.5 py-0.5 rounded">{name}</code>
-                <span className="text-muted">× {count}</span>
+            {placeholderSummary.map((p) => (
+              <div key={p.name} className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0">
+                  <code className="text-xs bg-cream-deep px-1.5 py-0.5 rounded">{p.name}</code>
+                  <span className="text-[11px] text-muted ml-2">{p.source}</span>
+                </span>
+                <span className="text-muted shrink-0">× {p.count}</span>
               </div>
             ))}
           </div>
         </Card>
       )}
 
-      {data.impact.length > 0 && (
+      {reAcceptanceRequired.length > 0 && (
         <Card className="p-6 mb-5">
           <h3 className="text-sm font-semibold text-ink mb-1">Кому потребуется повторный акцепт</h3>
-          <p className="text-xs text-muted mb-3">
-            Документы с gate=None никого не блокируют и в этот список не входят.
-          </p>
+          <p className="text-xs text-muted mb-3">{data.impact.note}</p>
           <div className="grid gap-2">
-            {data.impact.map((r) => (
+            {reAcceptanceRequired.map((r) => (
               <div key={r.documentType} className="flex items-center justify-between text-sm">
                 <span className="text-ink-soft">
                   {r.documentType} <span className="text-xs text-muted">({r.gate})</span>
@@ -143,7 +155,7 @@ export function LegalReadinessTab() {
       )}
 
       <div className="flex justify-end">
-        <Button variant="secondary" size="sm" loading={isRefetching} onClick={() => refetch()}>
+        <Button variant="secondary" size="sm" loading={isRefetching} onClick={() => onRefetch()}>
           Обновить
         </Button>
       </div>
