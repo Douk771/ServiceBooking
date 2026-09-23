@@ -88,6 +88,18 @@ function LegalGuard({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * Б3 (code review): `<ErrorBoundary>` alone doesn't reset once it has caught — its `state.error`
+ * survives a `<Link>` navigation, so a user who crashes one page and clicks "Главная" keeps seeing
+ * the same cached error card until a full reload. Keying by pathname forces React to unmount and
+ * remount the boundary (and its children) on every route change, mirroring the `key={tab}` pattern
+ * already used in AdminPage/CabinetPage.
+ */
+function RouteErrorBoundary({ children }: { children: ReactNode }) {
+  const location = useLocation()
+  return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -112,8 +124,11 @@ export default function App() {
                 <LegalGuard>
                   {/* Wraps only the page routes, not Navbar — a page-level render crash (e.g. an
                       unprotected field on a stale API response, §100.2) must not take the shell
-                      down with it (§103.1). */}
-                  <ErrorBoundary>
+                      down with it (§103.1). Keyed by pathname (RouteErrorBoundary below) so it
+                      remounts on navigation — clicking back to "Главная" after a crash actually
+                      recovers instead of showing the same cached error until a full reload,
+                      matching the AdminPage/CabinetPage `key={tab}` pattern. */}
+                  <RouteErrorBoundary>
                     <Routes>
                       <Route path="/" element={<HomePage />} />
                       <Route path="/login" element={<LoginPage />} />
@@ -206,7 +221,7 @@ export default function App() {
                       <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
                       <Route path="/owner" element={<Navigate to="/cabinet" replace />} />
                     </Routes>
-                  </ErrorBoundary>
+                  </RouteErrorBoundary>
                   <Footer />
                 </LegalGuard>
                 <OwnerTermsGateModal />
