@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { AxiosError } from 'axios'
-import { getLegalErrorMessage } from './legalError'
+import { getLegalErrorMessage, getPricingPublicBlockedMessage } from './legalError'
 
 function axiosErrorWith(status: number, data: unknown): AxiosError {
   return {
@@ -42,5 +42,44 @@ describe('getLegalErrorMessage', () => {
     expect(getLegalErrorMessage(axiosErrorWith(500, undefined))).toBe(
       'Не удалось загрузить документ. Попробуйте снова.',
     )
+  })
+})
+
+describe('getPricingPublicBlockedMessage', () => {
+  it('409 with a body → returns the server message verbatim (legal wording, not rewritten)', () => {
+    const body = {
+      reason: 'OfferIsDraft',
+      message: 'Публичные цены нельзя включить: оферта — черновая редакция.',
+      documentType: 'TermsOwner',
+      version: '2026-09-22-draft',
+    }
+    expect(getPricingPublicBlockedMessage(axiosErrorWith(409, body))).toBe(body.message)
+  })
+
+  it('409 with no body → generic fallback', () => {
+    expect(getPricingPublicBlockedMessage(axiosErrorWith(409, undefined))).toBe(
+      'Публичные цены нельзя включить прямо сейчас.',
+    )
+  })
+
+  it('non-409 error → null (not this endpoint\'s 409 gate)', () => {
+    expect(getPricingPublicBlockedMessage(axiosErrorWith(400, 'что-то другое'))).toBeNull()
+    expect(getPricingPublicBlockedMessage(axiosErrorWith(500, undefined))).toBeNull()
+  })
+
+  it('non-axios error → null', () => {
+    expect(getPricingPublicBlockedMessage(new Error('network down'))).toBeNull()
+  })
+
+  it('409 with reason=LegalUnavailable and no version/documentType → still returns the message verbatim', () => {
+    // API_CONTRACT_CYCLE11.md §114.2 / openapi.yaml PricingSwitchRefusal: version/documentType are
+    // nullable — there's no loaded legal snapshot to name a version of. Must not leak "undefined".
+    const body = {
+      reason: 'LegalUnavailable',
+      message: 'Публичные цены нельзя включить: снимок правовых документов не загружен.',
+      documentType: null,
+      version: null,
+    }
+    expect(getPricingPublicBlockedMessage(axiosErrorWith(409, body))).toBe(body.message)
   })
 })

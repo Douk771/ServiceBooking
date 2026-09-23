@@ -1,5 +1,6 @@
 using FluentAssertions;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 
@@ -239,5 +240,47 @@ public class PricingCatalogBuilderTests
         var highlights = new List<string> { new string('x', PricingCatalogBuilder.MaxHighlightLength + 1) };
 
         PricingCatalogBuilder.ValidateHighlights(highlights).Should().NotBeNull();
+    }
+
+    // ARCHITECTURE_CYCLE11.md §102.10 (Q11): notifications.whatsapp is dropped from the public catalog
+    // while its legal precondition (a published TermsOwner) isn't met — silently, not as an error.
+    [Fact]
+    public void Build_DropsLegallyGuardedOption_WhenRequiredDocumentIsDraft()
+    {
+        var whatsapp = Option(name: "WhatsApp рассылка", unitName: null);
+        whatsapp.Code = "notifications.whatsapp";
+
+        var draftSnapshot = new LegalSnapshot(
+            new Dictionary<LegalDocumentType, LegalDocument>
+            {
+                [LegalDocumentType.TermsOwner] = new(
+                    LegalDocumentType.TermsOwner, "T", "v-draft", new DateOnly(2026, 1, 1), true,
+                    LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p/>", "hash", "file.html"),
+            },
+            new Dictionary<string, LegalUiText>());
+
+        var result = PricingCatalogBuilder.Build("v1", [], [whatsapp], legalNotice: null, legalSnapshot: draftSnapshot);
+
+        result.Options.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Build_KeepsLegallyGuardedOption_WhenRequiredDocumentIsPublished()
+    {
+        var whatsapp = Option(name: "WhatsApp рассылка", unitName: null);
+        whatsapp.Code = "notifications.whatsapp";
+
+        var publishedSnapshot = new LegalSnapshot(
+            new Dictionary<LegalDocumentType, LegalDocument>
+            {
+                [LegalDocumentType.TermsOwner] = new(
+                    LegalDocumentType.TermsOwner, "T", "v1", new DateOnly(2026, 1, 1), false,
+                    LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p/>", "hash", "file.html"),
+            },
+            new Dictionary<string, LegalUiText>());
+
+        var result = PricingCatalogBuilder.Build("v1", [], [whatsapp], legalNotice: null, legalSnapshot: publishedSnapshot);
+
+        result.Options.Should().ContainSingle();
     }
 }

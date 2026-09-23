@@ -113,6 +113,24 @@ services:
       postgres:
         condition: service_healthy
 
+  # ARCHITECTURE_CYCLE11.md §107.3: `./legal` is bind-mounted `:ro` into `api` above, so publishing from
+  # the running container is impossible, and there's no .NET on the host to run ServiceBooking.LegalKit
+  # directly. This service exists ONLY to be invoked one-shot, never via `docker compose up`:
+  #   docker compose -f docker-compose.prod.yml run --rm legal-tools status --root /app/App_Data/legal
+  #   docker compose -f docker-compose.prod.yml run --rm legal-tools publish \
+  #     --source /app/App_Data/legal --out /work/legal --values /work/legal.values.json \
+  #     --version <YYYY-MM-DD> --effective-from <YYYY-MM-DD>
+  # Source is the artifact baked into THIS image (/app/App_Data/legal, unaffected by the ./legal
+  # bind-mount below), not the operator directory — publish reads the reviewed text that shipped with
+  # the running code, then writes the substituted result into ./legal.
+  legal-tools:
+    image: servicebooking-api:latest
+    profiles: ["tools"]            # never starts via `docker compose up`
+    entrypoint: ["dotnet", "/app/tools/ServiceBooking.LegalKit.dll"]
+    volumes:
+      - ./legal:/work/legal                             # RW — publish/rollback write here
+      - ./legal.values.json:/work/legal.values.json:ro  # values, read-only
+
 # Health-check reference (T-D7, US-43, ARCHITECTURE.md §10.3) — see DEPLOY.md for the full writeup:
 #   curl -s https://<домен>/api/health/ready
 #     {"status":"Healthy"}                          — можно деплоить/поднимать нагрузку

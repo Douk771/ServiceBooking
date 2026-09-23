@@ -58,7 +58,12 @@ function emptySummary(): AdminChannelSummary {
 }
 
 function platformSettings(): PlatformSettings {
-  return { channelPricePerMonth: 990, channelIdleDays: 3 }
+  return {
+    channelPricePerMonth: 990,
+    channelIdleDays: 3,
+    pricingPublicEnabled: false,
+    pricingPublicBlockedReason: null,
+  }
 }
 
 function renderTab() {

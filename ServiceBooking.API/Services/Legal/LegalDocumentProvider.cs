@@ -48,6 +48,11 @@ public partial class LegalDocumentProvider
         _logger = logger;
     }
 
+    /// <summary>Directory this provider actually reads from right now (ARCHITECTURE_CYCLE11.md §105.4's
+    /// `root` field: "what the product reads THIS INSTANT", not what's checked into the repository).
+    /// Read-only diagnostics only — never used to derive a path to read from a second time.</summary>
+    public string Root => _root;
+
     /// <summary>Last successfully loaded snapshot, or null if none has ever loaded successfully.</summary>
     public LegalSnapshot? Current
     {
@@ -56,6 +61,33 @@ public partial class LegalDocumentProvider
             EnsureFresh();
             return _snapshot;
         }
+    }
+
+    /// <summary>The one Cyrillic-uppercase placeholder pattern for the whole repository
+    /// (ARCHITECTURE_CYCLE11.md §106.3) — <c>ServiceBooking.LegalKit</c>'s placeholder scanner is
+    /// required to use this exact pattern rather than declaring its own, so the product's notion of "an
+    /// unresolved placeholder" and the CLI's can never quietly diverge.</summary>
+    public static string PlaceholderPattern => PlaceholderRegex().ToString();
+
+    /// <summary>
+    /// One load attempt that throws on any failure instead of silently keeping the previous snapshot
+    /// (ARCHITECTURE_CYCLE11.md §104.2). <see cref="TryReload"/>/<see cref="EnsureFresh"/> are the
+    /// product's read path and are NOT changed by this — they must keep serving the last good text no
+    /// matter what's on disk right now. This method exists for callers that need the opposite: a tool
+    /// (ServiceBooking.LegalKit) or a startup fail-fast check that wants the real exception, not a
+    /// swallowed log line.
+    /// </summary>
+    public LegalSnapshot LoadStrict()
+    {
+        var manifestPath = Path.Combine(_root, "legal.json");
+        if (!File.Exists(manifestPath))
+            throw new InvalidOperationException($"Legal documents manifest not found at {manifestPath}.");
+
+        var json = File.ReadAllText(manifestPath);
+        var manifest = JsonSerializer.Deserialize<ManifestFile>(json, JsonOptions)
+            ?? throw new InvalidOperationException("legal.json parsed to null.");
+
+        return LoadSnapshot(manifest.Documents ?? [], manifest.UiTexts ?? []);
     }
 
     /// <summary>
@@ -234,7 +266,7 @@ public partial class LegalDocumentProvider
             throw new InvalidOperationException("PdnConsent: 'purposes' must be non-empty (ARCHITECTURE_CYCLE5.md §43.3).");
         }
 
-        return new LegalDocument(type, entry.Title ?? "", entry.Version, effectiveFrom, entry.IsDraft, changeKind, gate, purposes, contentHtml, contentHash);
+        return new LegalDocument(type, entry.Title ?? "", entry.Version, effectiveFrom, entry.IsDraft, changeKind, gate, purposes, contentHtml, contentHash, entry.File);
     }
 
     private LegalUiText LoadUiText(ManifestUiTextEntry entry)
@@ -258,7 +290,7 @@ public partial class LegalDocumentProvider
             throw new InvalidOperationException(
                 $"uiTexts.{entry.Key}: content contains an unresolved {{{{PLACEHOLDER}}}} and isDraft is false.");
 
-        return new LegalUiText(entry.Key, entry.Version, entry.IsDraft, contentHtml, contentHash);
+        return new LegalUiText(entry.Key, entry.Version, entry.IsDraft, contentHtml, contentHash, entry.File);
     }
 
     private (string ContentHtml, string ContentHash) LoadContent(string label, string file)

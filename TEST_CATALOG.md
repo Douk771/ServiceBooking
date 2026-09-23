@@ -4133,6 +4133,172 @@ Controllers/AdminBillingController.cs`), отдельный откат-прог�
 US-74 цел: `Notifications:Provider=logging`, ни одного вызова к GREEN-API за весь проход. Единственный
 открытый пункт — техдолг по изоляции пяти `SetSystemFree`/`ADM-052`/`ADM-059`-тестов от общего
 непотранзакционного состояния базы (см. предыдущий раздел, §5) — сознательно не устранён, не блокер.
+---
+
+## Цикл 11 (`cycle/11-legal-texts`) — QA "Вызов 2": новые тесты + регрессия
+
+Дата: 2026-09-23. Написано по `SPEC.md` (US-11-04, US-11-07, US-11-11; §102.7/§102.10 `ARCHITECTURE_CYCLE11.md`
+Q7/Q11), независимо от реализации `AdminController`/`PricingCatalogCache`/`AdminLegalController`.
+
+### Новые тесты — `LegalPricingGateTests.cs` (`ServiceBooking.Tests/Tests/`)
+
+Собственный `LegalDocumentsTestFactory` (своя БД, свой `Legal:Root`), чтобы управлять черновым/
+опубликованным статусом `TermsOwner` не трогая манифест общей коллекции "Api".
+
+| ID | Сценарий | Критерий приёмки | Результат |
+|---|---|---|---|
+| `LEG-038` | `PUT /api/admin/platform-settings` с `pricingPublicEnabled: true` при черновой `TermsOwner` | US-11-04 AC2: 409, `reason: OfferIsDraft`, рубильник не двигается | ✅ зелёный |
+| `LEG-039` | То же самое, но `TermsOwner` опубликована | US-11-04 AC3: 200, `GET /api/pricing` затем 200 | ✅ зелёный |
+| `LEG-040` | Рубильник включён напрямую в БД (в обход админ-эндпоинта), `TermsOwner` черновая | §102.7 Q7 (вторая половина — инвариант на чтении): `GET /api/pricing` всё равно 404 | ✅ зелёный |
+| `LEG-041` | `notifications.whatsapp` (сидируется миграцией `20260922121140_SeedBillingCatalog` без цены/`IsPublic=false`; тест включает его) в `GET /api/admin/pricing/preview` при черновой/опубликованной `TermsOwner` | US-11-11/Q11: опция скрыта, пока `TermsOwner` черновая, появляется без доп. действий после публикации | ✅ зелёный |
+| `LEG-042` | `GET /api/admin/legal/readiness` до/после публикации `TermsOwner` | US-11-07 (частично, только сторона эндпоинта): отчёт отражает живой снимок, а не кэш | ✅ зелёный |
+
+Технические заметки для тех, кто будет писать следующие `LEG-0xx` на этом же факторе: `WriteManifest`
+получил необязательные параметры `termsOwnerIsDraft`/`termsOwnerVersion` (по умолчанию — прежнее
+поведение, `false`/`"fixed-owner-1"`, ни один существующий `LEG-0xx`-тест не задет); `isDraft: true`
+всё ещё требует суффикса `-draft` в версии — нарушение не роняет прогон, а тихо оставляет предыдущий
+снимок (`LegalDocumentProvider.TryReload`), из-за чего первая версия этого файла содержала три
+самодельных ложных срабатывания (версия `"fixed-owner-1"` с `isDraft: true`); SuperAdmin у этого
+фактора (`+70000099999`) должен переакцептовывать Privacy/TermsClient после каждого `WriteManifest` —
+у него нет отдельного способа менять только `TermsOwner` без наступления на общий Material-гейт
+(`AcceptCurrentLegalAsync`, по образцу `LegalConsentVersionChangeTests`).
+
+### Регрессия, найденная этим прогоном (блокер)
+
+**23 из 26 тестов `PricingTests.cs` (цикл 7, `PRC-0xx`), ранее зелёных, красные на этой ветке.**
+Причина — не тестовый код, а связка §102.7 (`ARCHITECTURE_CYCLE11.md`, коммит `3ab1363`
+"gate public catalog and options on published legal docs") с фактическим содержимым
+`ServiceBooking.API/App_Data/legal/legal.json`, которое цикл должен был свести с `legal-drafts/`
+(US-11-01), но не свёл (см. отчёт QA, раздел «Открытые баги», пункт 1): в этом файле `TermsOwner.isDraft`
+до сих пор `true` (редакция `2026-09-21-draft`, ещё цикла 5). Общая тестовая коллекция "Api" копирует
+именно этот файл (`TestHostSettings.CopyLegalManifest`), поэтому `PricingCatalogCache.IsCatalogPubliclyVisibleAsync`
+— новая проверка этого цикла — теперь **всегда** возвращает `false` для всей коллекции, и
+`GET /api/pricing` отдаёт 404 везде, где раньше отдавал 200:
+
+```
+GetPublicPricing_FreePlan_IsFreeTrue_WithBaseLimits, GetPublicPricing_PaidPlan_IsFreeFalse,
+GetPublicPricing_ExcludesNonPublicPlan, GetPublicPricing_ExcludesInactivePlan,
+GetPublicPricing_ExcludesNonPublicOption, GetPublicPricing_ExcludesInactiveOption,
+GetPublicPricing_ExcludesOptionWithoutPrice, GetPublicPricing_NoIncludedLimit_IsNullMeaningUnlimited,
+GetPublicPricing_PlanHighlights_SplitFromNewlineSeparatedField, GetPublicPricing_ResponseHasCurrencyRub,
+GetPublicPricing_ResponseHasNoticeAboutAdminOnlyActivation, GetPublicPricing_LegalNoticeAbsent_UntilExplicitlySet,
+GetPublicPricing_QuantityOption_UnitPriceTextIsNotBare_ContainsUnit,
+GetPublicPricing_QuantityOption_UsesAdminAuthoredUnitPriceTextVerbatim,
+GetPublicPricing_SameSortOrder_TieBreaksByPrice_AscendingNotByName,
+GetPublicPricing_SameSortOrder_OptionsTieBreakByPrice_AscendingNotByName,
+GetPublicPricing_Enabled_ButNoPublicRows_Returns200WithEmptyArrays, GetPublicPricing_Version_MatchesETag,
+GetPublicPricing_SetsETagAndCacheControlHeaders, GetPublicPricing_IfNoneMatchWithCurrentETag_Returns304WithEmptyBody,
+GetPublicPricing_IfNoneMatchWithStaleETag_Returns200WithFreshBody,
+GetPublicPricing_WithinCacheWindow_DoesNotReflectDbChangeUntilInvalidated,
+AdminPreview_ReflectsAJustMadeChange_WithoutWaitingForPublicCacheToExpire
+```
+
+(Двум оставшимся, `GetPublicPricing_SettingAbsent_Returns404NotFound` и
+`GetPublicPricing_SettingExplicitlyFalse_Returns404NotFound`, разницы нет — они и раньше ждали 404.)
+
+Это **регрессия от кода этого цикла**, а не техдолг: до `3ab1363` весь набор `PricingTests.cs` был
+зелёным (549 функциональных на цикле 9/10, `CURRENT_STATE.md`). Адресовано backend — либо довести
+US-11-01 (свести `App_Data/legal/` с `legal-drafts/`, включая публикацию `TermsOwner`), либо, если
+`App_Data/legal/` осознанно остаётся черновиком до реальной публикации, обновить фикстуры общей
+коллекции ("Api") так, чтобы `TermsOwner` в ней была опубликована — иначе каждый новый тест на публичный
+прайсинг в этой коллекции обречён либо на 404, либо на переписывание под новый инвариант, которого
+раньше не было.
+
+### Итог прогона всего набора (цикл 11, до фикса регрессии выше)
+
+- `dotnet test ServiceBooking.UnitTests` — **941/941** зелёные.
+- `dotnet test ServiceBooking.Tests` — **531/554** (23 регрессии выше; 5 новых `LEG-038…042` зелёные).
+- `npm run test:run` (frontend) — **349/349**, 54 файла; `npx tsc --noEmit` — чисто.
+- Отдельного прогона `origin/develop` до слияния `cycle/11-legal-texts` в рамках этого прохода не
+  делалось (задание — только «Вызов 2», без «Вызова 1»), но причинно-следственная связь однозначна и
+  не требует его для классификации: `PricingTests.cs` (26 кейсов `PRC-0xx`) — код цикла 7, задокументирован
+  в `CURRENT_STATE.md` как полностью зелёный на циклах 7–10 (549/549 функциональных), и падает именно
+  на тех кейсах, что ждут 200 от `GET /api/pricing`/`admin/pricing/preview`, ровно там, где новая
+  проверка §102.7 этого цикла проверяет `TermsOwner.IsDraft` против манифеста, который сам этот цикл не
+  довёл до публикуемого вида (US-11-01 не закрыт — см. отчёт QA). Значит все 23 падения — регрессия
+  этого цикла, а не унаследованный техдолг.
+
+### Повторная проверка после `95763c1`/`02649c5` (перепрогон по запросу "перепроверь критерии приёмки и регрессии")
+
+Дата: 2026-09-23, после двух точечных фиксов backend (`95763c1` — перевод readiness-запроса на
+транслируемый LINQ и классификация `placeholders[].source`; `02649c5` — `PUT /api/admin/platform-settings`
+больше не эхо́ит тело запроса). Ни один из них не трогает `App_Data/legal/legal.json` — прогон подтверждает,
+что регрессия из раздела выше **не устранена и не изменилась**: те же 23 теста `PricingTests.cs`, тот же
+`TermsOwner.isDraft: true` в живом манифесте. Всё ещё блокер, адресован backend (US-11-01).
+
+Отдельно этот перепрогон вскрыл и исправил **баг в собственном тестовом коде QA** (не в продукте):
+`LegalPricingGateTests` (5 тестов, LEG-038…042) делят одну БД на класс (`IClassFixture<TestDatabaseFixture>`),
+и `RandomTestCaseOrderer` иногда ставил LEG-039/LEG-040 (оба включают `pricing.public-enabled` в БД)
+раньше LEG-038, из-за чего `UpdatePlatformSettings`'ов "оff→on" гейт (`!oldPricingPublicEnabled`)
+молча пропускался — LEG-038 в ~30-40% прогонов ловил 200 вместо ожидаемого 409. Отдельно оба
+PUT-теста класса иногда ловили 451 (Global-гейт согласий) при `Task.Delay(1200)` — тот же интервал,
+что и в `LegalConsentVersionChangeTests`, но там хосты переиспользуются между тестами реже, а здесь
+каждый тест поднимает свежий хост, и под нагрузкой (Docker/Testcontainers) 200 мс запаса не хватало.
+Исправлено: `LEG-038` теперь явно фиксирует `pricing.public-enabled = false` перед проверкой (не полагается
+на порядок), задержка после `WriteManifest` увеличена с 1200 до 2500 мс во всём файле. После фикса —
+**14/14 отдельных прогонов класса зелёные** (было флаки в 5 из 11 прогонов до фикса). См.
+`ServiceBooking.Tests/Tests/LegalPricingGateTests.cs`.
+
+Итог перепрогона всего набора (после обоих фиксов выше):
+- `dotnet test ServiceBooking.UnitTests` — **957/957** зелёные (было 941 — приросло тестами из `95763c1`).
+- `dotnet test ServiceBooking.Tests` — **531/554** (23 — та же регрессия `PricingTests.cs`, блокер;
+  `LEG-038…042` теперь стабильно зелёные после фикса флакиности выше).
+- `npm run test:run` (frontend) — **349/349**, 54 файла; `npx tsc --noEmit` — чисто.
+
+Вердикт: критерии приёмки US-11-04/US-11-07/US-11-11 (в части, покрытой `LEG-038…042`) выполняются
+стабильно. Ветка **не готова к мерджу** — регрессия `PricingTests.cs` (23 теста) остаётся блокером,
+адресована backend (свести `App_Data/legal/` с `legal-drafts/` по US-11-01, либо явно опубликовать
+`TermsOwner` в манифесте общей тестовой коллекции "Api").
+
+### Повторная проверка после `f9158e6`/`f4856a4`/`e24f346` (перепроверка критериев приёмки и регрессий)
+
+Дата: 2026-09-23. Прогнан весь набор дважды подряд (детерминированность), окружение — colima
+(`DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`,
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`, см. `docs/testing-isolation.md`
+«Известные ограничения среды»), своя одноразовая база на класс, никакой чужой цикл параллельно не
+работал на этой машине.
+
+- `dotnet test ServiceBooking.UnitTests` — **957/957** зелёные (без изменений от прошлой проверки).
+- `dotnet test ServiceBooking.Tests` — **531/554**, одинаково на обоих прогонах (без флакиности).
+  Красные — ровно те же 23 теста `PricingTests.cs`, что и в разделе выше; `GET /api/pricing`
+  по-прежнему отвечает 404 вместо 200. `LEG-038…042` (`LegalPricingGateTests`) — все 5 зелёные,
+  стабильно на обоих прогонах.
+- `npm run test:run` (frontend) — **357/357**, 55 файлов (прирост с 349/54 — новые тесты `f4856a4`:
+  `LegalReadinessTab.test.ts` — links.broken/anchors.missing, `notificationError.test.ts` — fallback на
+  `error.message`); `npx tsc --noEmit` — чисто.
+
+Проверены сами три коммита: `95763c1`/`02649c5` (предыдущая проверка) и теперь `f9158e6` (N+1 →
+`NOT EXISTS` в `GetImpactAsync`), `f4856a4` (фронтенд: 503-guard, validation-сообщения, рендер
+broken links/anchors), `e24f346` (порядок инвалидации кэша `platform-settings` + re-read вместо эха
+тела запроса) — ни один не трогает `ServiceBooking.API/App_Data/legal/legal.json` (проверено:
+`TermsOwner.isDraft` в этом файле по-прежнему `true`, редакция `2026-09-21-draft`). Это ожидаемо:
+все пять — точечные фиксы конкретных находок ревью (N+1, кэш, 503-гвард), ни один не заявлен как
+устраняющий блокер US-11-01 (сведение `App_Data/legal/` с `legal-drafts/`). Регрессия
+`PricingTests.cs` (23 теста) **не устранена и не изменилась ни на один тест**.
+
+Отдельно проверены критерии приёмки, которые *должны* быть закрыты этими тремя фиксами:
+- `f9158e6` (устранение N+1 в `GetImpactAsync`) — функционального теста именно на производительность
+  в наборе нет (и не требовался по SPEC.md — US-11-07 просит корректность отчёта, не время ответа);
+  корректность самого отчёта по-прежнему покрыта `LEG-042` (зелёный) и юнит-тестами
+  `AdminLegalControllerReadinessHelpersTests.cs`/`LegalControllerGetDocumentTests.cs` (в 957 зелёных).
+- `f4856a4` (фронтенд) — новые `LegalReadinessTab.test.ts`/`notificationError.test.ts` зелёные,
+  подтверждают рендер `links.broken`/`anchors.missing` и что 503 с телом не в форме `LegalReadiness`
+  не роняет вкладку. Это не переписывание существующих тестов задним числом — это новые кейсы,
+  добавленные разработчиком вместе с фиксом; QA-код (`LegalPricingGateTests`) их не пересекает.
+- `e24f346` (кэш `platform-settings`) — покрывается существующими `ADM-0xx` в `AdminTests.cs`
+  (в 531 зелёных функциональных); отдельного QA-теста на гонку «инвалидация до коммита транзакции»
+  не писалось, так как это внутренняя гонка, которую сложно детерминированно воспроизвести
+  функциональным HTTP-тестом без искусственной задержки в проде — зафиксировано как техдолг
+  наблюдения, не блокер (сам фикс логически корректен: инвалидация перенесена после
+  `SaveChangesAsync`, PUT больше не эхо́ит тело запроса).
+
+Итог: критерии приёмки US-11-04/US-11-07/US-11-11 (в части, покрытой автотестами) выполняются
+стабильно и не регрессировали. Единственный открытый блокер — прежний: регрессия `PricingTests.cs`
+(23 теста, `GET /api/pricing`/`admin/pricing/preview` получают 404 из-за черновой `TermsOwner` в
+`App_Data/legal/legal.json`), адресована backend, US-11-01 не закрыт. Ветка **всё ещё не готова к
+мерджу**.
+
+---
 
 ## Cycle 10 (US-120…US-126, master booking freedom / история изменений записи / фото салона) — приёмка QA
 

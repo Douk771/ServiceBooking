@@ -53,7 +53,7 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
     }
 
     [Fact, TestCase("LEG-002")]
-    public async Task GetDocument_ByType_IsPublic_AndContainsHtmlWithDraftMarker()
+    public async Task GetDocument_ByType_IsPublic_AndExposesDraftStatusViaIsDraftField()
     {
         var response = await AnonymousClient().GetAsync("/api/legal/documents/privacy");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -61,10 +61,11 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
         var body = await response.Content.ReadJsonAsync<LegalDocumentDto>();
         body!.Type.Should().Be("Privacy");
         body.ContentHtml.Should().NotBeNullOrWhiteSpace();
-        // US-79 п.2: the draft marker survives inside the text itself, not only in the isDraft flag —
-        // the seeded fixture document (ServiceBooking.API/App_Data/legal/legal.json) is currently a draft.
-        if (body.IsDraft)
-            body.ContentHtml.Should().Contain("Черновая редакция", "the draft banner must survive copy/print of the page, not only live in the isDraft flag");
+        // Cycle 11 (API_CONTRACT_CYCLE11.md §119 п.4): the draft banner is now rendered by the frontend
+        // (LegalDocumentPage.tsx) off the isDraft field, not baked into the document's own HTML — the API
+        // contract is the isDraft flag itself, so that's what this test pins. The seeded fixture document
+        // (ServiceBooking.API/App_Data/legal/legal.json) is currently a draft.
+        body.IsDraft.Should().BeTrue("the seeded fixture Privacy document is currently a draft");
     }
 
     [Fact, TestCase("LEG-003")]

@@ -16,6 +16,10 @@ TestResults/
 .env.production
 .deploy.env
 
+# Legal publish values (ARCHITECTURE_CYCLE11.md §103.3): deployment-grade configuration, not code —
+# has no version, no owner, no history — the committed sibling is legal.values.example.json.
+/legal.values.json
+
 # Node / Frontend
 frontend/node_modules/
 frontend/dist/

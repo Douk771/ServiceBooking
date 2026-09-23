@@ -1,5 +1,6 @@
 using System.Globalization;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 
@@ -60,7 +61,8 @@ public static class PricingCatalogBuilder
         IEnumerable<SubscriptionPlanConfig> plans,
         IEnumerable<SubscriptionOption> options,
         string? legalNotice,
-        string notice = DefaultNotice)
+        string notice = DefaultNotice,
+        LegalSnapshot? legalSnapshot = null)
     {
         ArgumentNullException.ThrowIfNull(plans);
         ArgumentNullException.ThrowIfNull(options);
@@ -75,7 +77,11 @@ public static class PricingCatalogBuilder
         var publicOptions = options
             // §48: IsActive && IsPublic && PricePerMonth != null — options without a price or not
             // published never appear, regardless of what a plan's availability rule would say.
-            .Where(o => o.IsActive && o.IsPublic && o.PricePerMonth is not null)
+            // ARCHITECTURE_CYCLE11.md §102.10 (Q11): an option whose legal precondition isn't met
+            // (its required document missing or still a draft) is silently excluded too — from the
+            // buyer's side it just looks like the option doesn't exist, not like an error.
+            .Where(o => o.IsActive && o.IsPublic && o.PricePerMonth is not null
+                        && LegalOptionGuards.IsPubliclySellable(o.Code, legalSnapshot))
             .OrderBy(o => o.SortOrder)
             .ThenBy(o => o.PricePerMonth)
             .Select(ToOptionDto)

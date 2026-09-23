@@ -93,6 +93,16 @@ jobs:
       - name: Check image pins
         run: bash deploy/ci/check-image-pins.sh
 
+      # ARCHITECTURE_CYCLE11.md §105.2/§117.3: `legal check` builds legal-drafts/ into a temp dir and
+      # compares it byte-for-byte against the committed ServiceBooking.API/App_Data/legal artifact, then
+      # checks internal links/anchors, then scans the drafts for a placeholder written in a form the
+      # product's own regex wouldn't recognize (risk A4). Exit 3 = artifact drift, 6 = broken link/anchor
+      # or an unrecognized placeholder form — either way this is the step that's expected to go red until
+      # T0 (marker in legal-drafts/09-channel-offer.html) and T8 (App_Data/legal replaced from the new
+      # drafts) both land; see the cycle 11 backend report for T1/T3/T7.
+      - name: Legal documents check
+        run: dotnet ServiceBooking.LegalKit/bin/Release/net8.0/ServiceBooking.LegalKit.dll check
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15

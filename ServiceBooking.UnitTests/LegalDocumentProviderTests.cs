@@ -359,6 +359,48 @@ public class LegalDocumentProviderTests : IDisposable
         provider.Current.Should().BeNull();
     }
 
+    // ARCHITECTURE_CYCLE11.md §104.2: LoadStrict is the one-attempt-that-throws sibling of TryReload —
+    // a tool (or a startup fail-fast check) needs the real exception, not a swallowed Error log line.
+    [Fact]
+    public void LoadStrict_ValidManifest_ReturnsSnapshot()
+    {
+        WriteManifest(ValidManifest());
+        WriteDoc("privacy.html", "<p>privacy</p>");
+        WriteDoc("terms.html", "<p>terms</p>");
+        WriteRemainingDefaultDocs();
+
+        var snapshot = CreateProvider().LoadStrict();
+
+        snapshot.Documents.Should().HaveCount(5);
+    }
+
+    [Fact]
+    public void LoadStrict_MissingManifest_Throws()
+    {
+        var act = () => CreateProvider().LoadStrict();
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void LoadStrict_InvalidManifest_ThrowsWithoutTouchingPreviousSnapshot()
+    {
+        WriteManifest(ValidManifest());
+        WriteDoc("privacy.html", "<p>privacy</p>");
+        WriteDoc("terms.html", "<p>terms</p>");
+        WriteRemainingDefaultDocs();
+        var provider = CreateProvider();
+        provider.LoadAtStartup();
+        provider.Current.Should().NotBeNull();
+
+        WriteManifest("{ not valid json");
+
+        var act = () => provider.LoadStrict();
+
+        act.Should().Throw<Exception>();
+        provider.Current.Should().NotBeNull(); // TryReload's read path is unaffected by a failed LoadStrict call
+    }
+
     // Code review finding: ResolveContentPath (the freshness-check path resolver) used to reject only
     // ".." and nothing else, so a rooted/absolute "file" value (e.g. "/etc/passwd" on Unix, or
     // "C:\secrets.txt" on Windows) would make Path.Combine(_root, fileName) return a path OUTSIDE

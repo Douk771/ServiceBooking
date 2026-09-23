@@ -319,9 +319,25 @@ export interface AdminChannelSummary {
   pendingRequests: number
 }
 
+// pricingPublicEnabled/pricingPublicBlockedReason added cycle 11 (API_CONTRACT_CYCLE11.md §114.1) —
+// nullable blockedReason is informational only, the PUT response (409) is the actual gate.
+export type PricingPublicBlockedReason = 'OfferIsDraft' | 'LegalUnavailable'
+
 export interface PlatformSettings {
   channelPricePerMonth: number | null
   channelIdleDays: number
+  pricingPublicEnabled: boolean
+  pricingPublicBlockedReason: PricingPublicBlockedReason | null
+}
+
+// Body of PUT /api/admin/platform-settings → 409 (API_CONTRACT_CYCLE11.md §114.2).
+// `documentType`/`version` are nullable per contracts/cycle11/openapi.yaml (PricingSwitchRefusal):
+// with reason=LegalUnavailable there is no loaded snapshot to point at, so there is no version to name.
+export interface PricingPublicBlockedError {
+  reason: PricingPublicBlockedReason
+  message: string
+  documentType: string | null
+  version: string | null
 }
 
 export interface Service {
@@ -634,4 +650,114 @@ export interface SubjectRequestDto {
   answeredAt: string | null
   handlerName: string | null
   resolution: string | null
+}
+
+// ── Cycle 11: legal publication readiness — GET /api/admin/legal/readiness ─────────────────────────
+// Matches contracts/cycle11/legal-status.schema.json and the actual backend response
+// (ServiceBooking.API/Controllers/AdminLegalController.cs, commit a96712d): full shape, including
+// `root`, `file` on every document/uiText, `links`, `anchors`, a deduplicated top-level `placeholders`
+// summary (source/files/valuePresent), and `impact` as `{ reAcceptanceRequired, note }` rather than a
+// flat array. `drift` is intentionally omitted by the endpoint (not `required` by the schema — the
+// filesystem-vs-legal-drafts comparison needs the not-yet-built ServiceBooking.LegalKit CLI).
+
+export type LegalBlockerKind =
+  | 'UnresolvedPlaceholders'
+  | 'MissingValues'
+  | 'DraftDocuments'
+  | 'BrokenLinks'
+  | 'MissingAnchors'
+  | 'ArtifactDrift'
+  | 'LegalUnavailable'
+
+export interface LegalReadinessBlocker {
+  kind: LegalBlockerKind
+  detail: string
+}
+
+export interface LegalReadinessPlaceholderRef {
+  name: string
+  count: number
+}
+
+export interface LegalReadinessDocument {
+  type: LegalDocumentType
+  title: string
+  version: string
+  effectiveFrom: string
+  isDraft: boolean
+  changeKind: LegalChangeKind
+  gate: LegalGate
+  file: string
+  url: string
+  contentHash: string
+  placeholders: LegalReadinessPlaceholderRef[]
+}
+
+export interface LegalReadinessUiText {
+  key: LegalTextKey
+  version: string
+  isDraft: boolean
+  file: string
+  contentHash: string
+  placeholders: LegalReadinessPlaceholderRef[]
+}
+
+export type LegalPlaceholderSource = 'ЕГРЮЛ' | 'после уведомления РКН' | 'решение заказчика' | 'из манифеста'
+
+export interface LegalReadinessPlaceholderSummary {
+  name: string
+  count: number
+  source: LegalPlaceholderSource
+  files: string[]
+  valuePresent: boolean
+}
+
+export interface LegalReadinessBrokenLink {
+  file: string
+  href: string
+}
+
+export interface LegalReadinessLinks {
+  checked: number
+  broken: LegalReadinessBrokenLink[]
+}
+
+export interface LegalReadinessMissingAnchor {
+  route: string
+  anchor: string
+}
+
+export interface LegalReadinessAnchors {
+  missing: LegalReadinessMissingAnchor[]
+}
+
+export interface LegalReadinessImpactEntry {
+  documentType: LegalDocumentType
+  gate: LegalGate
+  users: number
+}
+
+export interface LegalReadinessImpact {
+  reAcceptanceRequired: LegalReadinessImpactEntry[]
+  note: string
+}
+
+export interface LegalReadiness {
+  generatedAtUtc: string
+  root: string
+  ready: boolean
+  blockers: LegalReadinessBlocker[]
+  documents: LegalReadinessDocument[]
+  uiTexts: LegalReadinessUiText[]
+  /** Deduplicated by name across the whole set — no need to aggregate `documents`/`uiTexts` placeholders
+   *  on the client. */
+  placeholders: LegalReadinessPlaceholderSummary[]
+  links: LegalReadinessLinks
+  anchors: LegalReadinessAnchors
+  /** Not in the schema's `required` list — the CLI (`legal status --json`) shares this same schema
+   *  but has no user base to compute it against, so it omits the block entirely. Only the endpoint
+   *  sends it, and even there treat it as optional rather than assuming presence. */
+  impact?: LegalReadinessImpact
+  /** Mandatory and non-empty even when `ready: true` — must always be shown, never hidden behind an icon. */
+  disclaimer: string
 }

@@ -986,17 +986,20 @@ public class AdminController(
 
     [HttpGet("platform-settings")]
     public async Task<ActionResult<AdminPlatformSettingsDto>> GetPlatformSettings(
-        [FromServices] Services.Notifications.PlatformSettings platformSettings)
+        [FromServices] Services.Notifications.PlatformSettings platformSettings,
+        [FromServices] Services.Legal.LegalDocumentProvider legalDocuments)
     {
         var price = await platformSettings.GetChannelPricePerMonthAsync();
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         var pricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync();
-        return Ok(new AdminPlatformSettingsDto(price, idleDays, pricingPublicEnabled));
+        var blockedReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
+        return Ok(new AdminPlatformSettingsDto(price, idleDays, pricingPublicEnabled, blockedReason));
     }
 
     [HttpPut("platform-settings")]
     public async Task<ActionResult<AdminPlatformSettingsDto>> UpdatePlatformSettings(
-        [FromBody] AdminPlatformSettingsDto dto, [FromServices] Services.Notifications.PlatformSettings platformSettings)
+        [FromBody] AdminPlatformSettingsDto dto, [FromServices] Services.Notifications.PlatformSettings platformSettings,
+        [FromServices] Services.Legal.LegalDocumentProvider legalDocuments)
     {
         if (dto.ChannelIdleDays is < 0 or > 60) return BadRequest("channelIdleDays must be between 0 and 60");
         if (dto.ChannelPricePerMonth is < 0) return BadRequest("channelPricePerMonth must not be negative");
@@ -1006,35 +1009,57 @@ public class AdminController(
         var oldPricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
+        // ARCHITECTURE_CYCLE11.md §102.7/§114.2: turning the switch ON while the channel offer is a
+        // draft (or unreadable) is rejected wholesale — the switch doesn't move, nothing else in this
+        // request is applied either, and no change-log row is written. Turning it OFF is always allowed.
+        if (dto.PricingPublicEnabled && !oldPricingPublicEnabled)
+        {
+            var blockReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
+            if (blockReason is not null)
+            {
+                var offer = legalDocuments.Current?.Get(Core.Enums.LegalDocumentType.TermsOwner);
+                return Conflict(new PricingPublicationBlockedDto(
+                    blockReason,
+                    blockReason == "OfferIsDraft"
+                        ? "Публичные цены нельзя включить: оферта на подключение канала (Приложение № 1 к Соглашению с компанией) — черновая редакция."
+                        : "Публичные цены нельзя включить: снимок правовых документов недоступен.",
+                    "TermsOwner",
+                    offer?.Version));
+            }
+        }
+
         // Reviewer note: previously wrote (and journaled) both keys unconditionally, even when the
         // request left one of them unchanged — a no-op "save" produced a change-log row that recorded no
         // actual change, and every PUT (again, even a no-op one) went stale-for-60s on the read side.
-        // Guarded per key now; cache invalidated only for the key(s) that actually moved.
-        if (oldPrice != dto.ChannelPricePerMonth)
+        // Guarded per key now; cache invalidated only for the key(s) that actually moved. Invalidation
+        // itself is deferred until after SaveChangesAsync below — invalidating first opens a window where
+        // a concurrent reader repopulates the cache from the not-yet-committed old row and pins the stale
+        // value for the cache's full TTL even though the write already succeeded.
+        var priceChanged = oldPrice != dto.ChannelPricePerMonth;
+        if (priceChanged)
         {
             await PlatformSettingsWriter.WriteAsync(
                 db, PlatformSettingsWriter.PriceKey, oldPrice?.ToString(CultureInfo.InvariantCulture),
                 dto.ChannelPricePerMonth?.ToString(CultureInfo.InvariantCulture) ?? "", userId);
-            platformSettings.InvalidateCache(PlatformSettingsWriter.PriceKey);
         }
 
-        if (oldIdleDays != dto.ChannelIdleDays)
+        var idleDaysChanged = oldIdleDays != dto.ChannelIdleDays;
+        if (idleDaysChanged)
         {
             await PlatformSettingsWriter.WriteAsync(
                 db, PlatformSettingsWriter.IdleDaysKey, oldIdleDays.ToString(CultureInfo.InvariantCulture),
                 dto.ChannelIdleDays.ToString(CultureInfo.InvariantCulture), userId);
-            platformSettings.InvalidateCache(PlatformSettingsWriter.IdleDaysKey);
         }
 
         // ARCHITECTURE_CYCLE7.md §48: the "рубильник" for the public price list (GET /api/pricing). Was
         // previously settable only by hand-editing the PlatformSettings row directly in the database —
         // see the standing comment on PricingCatalogCache.Invalidate — this is the admin lever for it.
-        if (oldPricingPublicEnabled != dto.PricingPublicEnabled)
+        var pricingPublicEnabledChanged = oldPricingPublicEnabled != dto.PricingPublicEnabled;
+        if (pricingPublicEnabledChanged)
         {
             await PlatformSettingsWriter.WriteAsync(
                 db, PricingCatalogCache.PublicEnabledSettingKey,
                 oldPricingPublicEnabled ? "true" : "false", dto.PricingPublicEnabled ? "true" : "false", userId);
-            pricingCatalogCache.Invalidate();
 
             // §59: Information-level log for the price-list publication toggle, by whom.
             logger.LogInformation(
@@ -1043,7 +1068,21 @@ public class AdminController(
         }
 
         await db.SaveChangesAsync();
-        return Ok(dto);
+
+        if (priceChanged) platformSettings.InvalidateCache(PlatformSettingsWriter.PriceKey);
+        if (idleDaysChanged) platformSettings.InvalidateCache(PlatformSettingsWriter.IdleDaysKey);
+        if (pricingPublicEnabledChanged) pricingCatalogCache.Invalidate();
+
+        // Reviewer note: echoing `dto` back here would leak client-supplied fields the server never
+        // validated or stored as-is (e.g. `pricingPublicBlockedReason`, which GET always recomputes from
+        // the live legal snapshot). Recompute and return the same shape GET produces: re-read price/idle
+        // days back from the writer (post-invalidation, so this reflects exactly what was persisted rather
+        // than trusting the client-supplied `dto` values verbatim) and recompute the blocked reason.
+        var freshPrice = await platformSettings.GetChannelPricePerMonthAsync();
+        var freshIdleDays = await platformSettings.GetChannelIdleDaysAsync();
+        var freshBlockedReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
+        return Ok(new AdminPlatformSettingsDto(
+            freshPrice, freshIdleDays, dto.PricingPublicEnabled, freshBlockedReason));
     }
 
     // Plain-text 410 body per contracts/cycle7/openapi.yaml's `text/plain: {schema: {type: string}}` response —
@@ -1180,4 +1219,12 @@ public record AdminChannelPaymentDto(DateOnly PaidFrom, DateOnly PaidUntil, deci
 
 public record AdminChannelSuspendDto(string? Comment);
 
-public record AdminPlatformSettingsDto(decimal? ChannelPricePerMonth, int ChannelIdleDays, bool PricingPublicEnabled);
+// pricingPublicBlockedReason: ARCHITECTURE_CYCLE11.md §114.1 — nullable, added by cycle 11. Absent/null
+// means no obstacle to turning the switch on; a non-null value is one of "OfferIsDraft"/"LegalUnavailable"
+// and the request body never needs to set it (round-tripped by GetPlatformSettings/UpdatePlatformSettings
+// sharing this one DTO, its value on write is ignored).
+public record AdminPlatformSettingsDto(decimal? ChannelPricePerMonth, int ChannelIdleDays, bool PricingPublicEnabled, string? PricingPublicBlockedReason = null);
+
+// ARCHITECTURE_CYCLE11.md §114.2 — 409 body for PUT /api/admin/platform-settings when
+// pricingPublicEnabled: true is rejected because the channel offer isn't published.
+public record PricingPublicationBlockedDto(string Reason, string Message, string DocumentType, string? Version);

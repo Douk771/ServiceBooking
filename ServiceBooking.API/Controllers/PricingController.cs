@@ -18,7 +18,9 @@ public class PricingController(PricingCatalogCache cache) : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> GetPublicPricing(CancellationToken ct)
     {
-        if (!await cache.IsPublicEnabledAsync(ct)) return NotFound();
+        // ARCHITECTURE_CYCLE11.md §102.7/§115: 404 now covers three cases the caller must never be able
+        // to tell apart — switch off, offer still a draft, or the legal snapshot unavailable.
+        if (!await cache.IsCatalogPubliclyVisibleAsync(ct)) return NotFound();
 
         var (dto, etag) = await cache.GetAsync(ct);
 
