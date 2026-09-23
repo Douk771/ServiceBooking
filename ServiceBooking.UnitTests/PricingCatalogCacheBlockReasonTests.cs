@@ -14,7 +14,7 @@ public class PricingCatalogCacheBlockReasonTests
 {
     private static LegalDocument TermsOwner(bool isDraft) => new(
         LegalDocumentType.TermsOwner, "Title", isDraft ? "v-draft" : "v", new DateOnly(2026, 1, 1), isDraft,
-        LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p>text</p>", "hash");
+        LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p>text</p>", "hash", "file.html");
 
     [Fact]
     public void NoReason_WhenOfferIsPublished()

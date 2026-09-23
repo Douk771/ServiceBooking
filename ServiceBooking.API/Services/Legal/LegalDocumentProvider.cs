@@ -48,6 +48,11 @@ public partial class LegalDocumentProvider
         _logger = logger;
     }
 
+    /// <summary>Directory this provider actually reads from right now (ARCHITECTURE_CYCLE11.md §105.4's
+    /// `root` field: "what the product reads THIS INSTANT", not what's checked into the repository).
+    /// Read-only diagnostics only — never used to derive a path to read from a second time.</summary>
+    public string Root => _root;
+
     /// <summary>Last successfully loaded snapshot, or null if none has ever loaded successfully.</summary>
     public LegalSnapshot? Current
     {
@@ -261,7 +266,7 @@ public partial class LegalDocumentProvider
             throw new InvalidOperationException("PdnConsent: 'purposes' must be non-empty (ARCHITECTURE_CYCLE5.md §43.3).");
         }
 
-        return new LegalDocument(type, entry.Title ?? "", entry.Version, effectiveFrom, entry.IsDraft, changeKind, gate, purposes, contentHtml, contentHash);
+        return new LegalDocument(type, entry.Title ?? "", entry.Version, effectiveFrom, entry.IsDraft, changeKind, gate, purposes, contentHtml, contentHash, entry.File);
     }
 
     private LegalUiText LoadUiText(ManifestUiTextEntry entry)
@@ -285,7 +290,7 @@ public partial class LegalDocumentProvider
             throw new InvalidOperationException(
                 $"uiTexts.{entry.Key}: content contains an unresolved {{{{PLACEHOLDER}}}} and isDraft is false.");
 
-        return new LegalUiText(entry.Key, entry.Version, entry.IsDraft, contentHtml, contentHash);
+        return new LegalUiText(entry.Key, entry.Version, entry.IsDraft, contentHtml, contentHash, entry.File);
     }
 
     private (string ContentHtml, string ContentHash) LoadContent(string label, string file)

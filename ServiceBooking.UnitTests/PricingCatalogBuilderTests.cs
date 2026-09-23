@@ -255,7 +255,7 @@ public class PricingCatalogBuilderTests
             {
                 [LegalDocumentType.TermsOwner] = new(
                     LegalDocumentType.TermsOwner, "T", "v-draft", new DateOnly(2026, 1, 1), true,
-                    LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p/>", "hash"),
+                    LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p/>", "hash", "file.html"),
             },
             new Dictionary<string, LegalUiText>());
 
@@ -275,7 +275,7 @@ public class PricingCatalogBuilderTests
             {
                 [LegalDocumentType.TermsOwner] = new(
                     LegalDocumentType.TermsOwner, "T", "v1", new DateOnly(2026, 1, 1), false,
-                    LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p/>", "hash"),
+                    LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p/>", "hash", "file.html"),
             },
             new Dictionary<string, LegalUiText>());
 

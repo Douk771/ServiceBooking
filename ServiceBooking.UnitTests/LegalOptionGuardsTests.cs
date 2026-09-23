@@ -14,7 +14,7 @@ public class LegalOptionGuardsTests
 {
     private static LegalDocument Document(LegalDocumentType type, bool isDraft) => new(
         type, "Title", isDraft ? "2026-01-01-draft" : "2026-01-01", new DateOnly(2026, 1, 1), isDraft,
-        LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p>text</p>", "hash");
+        LegalChangeKind.Material, LegalGate.OwnerScope, [], "<p>text</p>", "hash", "file.html");
 
     private static LegalSnapshot SnapshotWith(params LegalDocument[] documents) =>
         new(documents.ToDictionary(d => d.Type), new Dictionary<string, LegalUiText>());
