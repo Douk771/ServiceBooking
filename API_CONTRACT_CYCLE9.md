@@ -155,6 +155,11 @@ GET /api/companies/public?cityId=42&search=локон&page=1&pageSize=20
 | `GET /api/admin/notification-channels/summary` | разбивка по транспортам |
 | `GET /api/companies/{companyId}/notifications` (журнал доставки) | `transport` в элементе + **query-фильтр `?transport=`** |
 
+**Нераспознанное значение `?transport=` на обоих маршрутах с фильтром → 400**, голая строка по-русски
+(автоматическая проверка модели `[ApiController]`, тот же приём, что у `cityId` в §113.2) — не было
+названо в редакции 1, дописано здесь и в `contracts/cycle9/openapi.yaml` задним числом; поведение сервера
+не менялось.
+
 **Инвариант, который изменился** (`ARCHITECTURE_CYCLE9.md` §104.3): компания может быть назначена
 максимум на **один канал каждого транспорта**, а не на один канал вообще.
 `POST /api/notification-channels/{id}/companies` при попытке назначить компанию на второй канал **того
@@ -211,7 +216,15 @@ GET /api/companies/public?cityId=42&search=локон&page=1&pageSize=20
 
 - `{transport}` — `whatsapp` | `max` (регистронезависимо). **Нераспознанный → 404**, а не 400: маршрут не
   рассказывает, какие транспорты существуют.
-- `{token}` — тот же платформенный `Notifications:WebhookToken`.
+- `{token}` — тот же платформенный `Notifications:WebhookToken`. **Неверный/отсутствующий → 401**, тело
+  пустое (`EmptyResult`, не `ProblemDetails`) — обработчик токена общий с существующим
+  `POST /api/notifications/provider-webhook/{token}`, тот же код и то же обоснование, что у него
+  (API_CONTRACT_CYCLE4.md §19.2/33).
+  ⚠️ **Расхождение редакции 1, закрытое в этом документе задним числом**: `contracts/cycle9/openapi.yaml`
+  до правки объединял «нераспознанный транспорт либо неверный токен» под одним 404 — реализация
+  (`NotificationsController.HandleWebhookAsync`) всегда отвечала 401 на неверный токен, унаследовав это от
+  цикла 4; расхождение было только в тексте схемы, не в поведении сервера. Исправлено вместе с
+  `contracts/cycle9/openapi.yaml` (добавлен ответ `401`, `404` сужен до «нераспознанный транспорт»).
 - **Существующий `POST /api/notifications/provider-webhook/{token}` остаётся и означает WhatsApp** — он
   мог быть уже прописан в настройках экземпляра у провайдера.
 - Нераспознанный формат тела **не роняет обработчик**: 200 + одна строка лога Information.
