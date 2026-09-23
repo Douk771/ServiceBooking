@@ -6,7 +6,8 @@ import { notificationsApi } from '../../api/notifications'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
-import type { NotificationStatus } from '../../types'
+import { TRANSPORT_FILTER_OPTIONS, TRANSPORT_LABELS } from '../../utils/notificationTransport'
+import type { NotificationStatus, NotificationTransport } from '../../types'
 
 const STATUS_LABEL: Record<NotificationStatus, string> = {
   Pending: 'в очереди',
@@ -34,6 +35,7 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
 export function NotificationLogTab({ companyId }: { companyId: string }) {
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('')
+  const [transport, setTransport] = useState<NotificationTransport | ''>('')
 
   const { data: summary } = useQuery({
     queryKey: ['notification-log-summary', companyId],
@@ -41,8 +43,14 @@ export function NotificationLogTab({ companyId }: { companyId: string }) {
   })
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['notification-log', companyId, page, status],
-    queryFn: () => notificationsApi.getLog(companyId, { page, pageSize: 20, status: status || undefined }),
+    queryKey: ['notification-log', companyId, page, status, transport],
+    queryFn: () =>
+      notificationsApi.getLog(companyId, {
+        page,
+        pageSize: 20,
+        status: status || undefined,
+        transport: transport || undefined,
+      }),
   })
 
   return (
@@ -86,8 +94,9 @@ export function NotificationLogTab({ companyId }: { companyId: string }) {
         </Card>
       )}
 
-      <div className="mb-4">
+      <div className="mb-4 flex gap-2.5 flex-wrap">
         <select
+          aria-label="Статус"
           value={status}
           onChange={(e) => {
             setStatus(e.target.value)
@@ -96,6 +105,22 @@ export function NotificationLogTab({ companyId }: { companyId: string }) {
           className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
         >
           {STATUS_FILTERS.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+        {/* API_CONTRACT_CYCLE9.md §114.3 — new ?transport= filter on the delivery log. */}
+        <select
+          aria-label="Канал"
+          value={transport}
+          onChange={(e) => {
+            setTransport(e.target.value as NotificationTransport | '')
+            setPage(1)
+          }}
+          className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
+        >
+          {TRANSPORT_FILTER_OPTIONS.map((f) => (
             <option key={f.value} value={f.value}>
               {f.label}
             </option>
@@ -137,6 +162,9 @@ export function NotificationLogTab({ companyId }: { companyId: string }) {
                     </>
                   )}
                   <span className="text-xs text-muted">{n.typeText}</span>
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">
+                    {TRANSPORT_LABELS[n.transport]}
+                  </span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">{format(parseISO(n.createdAt), 'd MMM yyyy, HH:mm', { locale: ru })}</p>
               </div>
