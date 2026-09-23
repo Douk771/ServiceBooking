@@ -59,4 +59,8 @@ public class Company
     public ICollection<CompanyMember> Members { get; set; } = [];
     public ICollection<Service> Services { get; set; } = [];
     public ICollection<Booking> Bookings { get; set; } = [];
+
+    // ARCHITECTURE_CYCLE10.md §102.2/§109.2 — showcase photos of the salon. Public storage class,
+    // deliberately NOT a substitute for LogoUrl (a logo and a gallery photo are different things, §109.2).
+    public ICollection<CompanyPhoto> Photos { get; set; } = [];
 }

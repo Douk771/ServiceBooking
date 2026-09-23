@@ -15,7 +15,12 @@ public class AvailabilityService(AppDbContext db)
 {
     public async Task<List<DayAvailabilityDto>> GetAvailabilityAsync(
         Guid companyId, string masterId, int totalDurationMinutes, DateOnly from, DateOnly to,
-        ScheduleFallback fallback, TimeOnly defaultWindowStart, TimeOnly defaultWindowEnd)
+        ScheduleFallback fallback, TimeOnly defaultWindowStart, TimeOnly defaultWindowEnd,
+        // ARCHITECTURE_CYCLE10.md §103.2: scheduleState is filled if and only if the caller was
+        // recognized as staff — passed in explicitly rather than derived from `fallback`, because
+        // `fallback` alone can't tell "staff caller, WorkingHours row happens to say IsWorking=true"
+        // apart from "non-staff caller, same row" — both compute the same slots.
+        bool staffMode = false)
     {
         var workingHoursByDate = await db.WorkingHours
             .Include(wh => wh.Breaks)
@@ -38,9 +43,15 @@ public class AvailabilityService(AppDbContext db)
             var breaks = isWorking ? workingHours!.Breaks.Select(b => new TimeRange(b.StartTime, b.EndTime)).ToList() : [];
             var bookings = bookingsMap.GetValueOrDefault(date, []);
 
+            // §103.2: DayScheduleState is informational only for staff — never affects `status` above.
+            DayScheduleState? scheduleState = !staffMode ? null
+                : workingHours is null ? DayScheduleState.NoSchedule
+                : workingHours.IsWorking ? DayScheduleState.Working
+                : DayScheduleState.DayOff;
+
             if (!isWorking && fallback == ScheduleFallback.None)
             {
-                days.Add(new DayAvailabilityDto(date, DayAvailabilityStatus.DayOff, null));
+                days.Add(new DayAvailabilityDto(date, DayAvailabilityStatus.DayOff, null, scheduleState));
                 continue;
             }
 
@@ -51,11 +62,11 @@ public class AvailabilityService(AppDbContext db)
 
             if (slots.Count == 0)
             {
-                days.Add(new DayAvailabilityDto(date, DayAvailabilityStatus.FullyBooked, null));
+                days.Add(new DayAvailabilityDto(date, DayAvailabilityStatus.FullyBooked, null, scheduleState));
                 continue;
             }
 
-            days.Add(new DayAvailabilityDto(date, DayAvailabilityStatus.Available, slots[^1].Start));
+            days.Add(new DayAvailabilityDto(date, DayAvailabilityStatus.Available, slots[^1].Start, scheduleState));
         }
 
         return days;

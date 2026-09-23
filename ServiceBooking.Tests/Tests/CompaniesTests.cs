@@ -405,7 +405,7 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var response = await AuthedClient(owner.Token).PostAsync($"/api/companies/{company.Id}/logo", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("Unsupported image type");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("JPEG, PNG");
     }
 
     [Fact, TestCase("CO-075")]

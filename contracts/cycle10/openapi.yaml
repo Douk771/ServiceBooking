@@ -1,0 +1,807 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 10
+# (один экран записи и свобода персонала, журнал изменений записи, фото салона).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл и правила — API_CONTRACT_CYCLE10.md (§120–§133),
+# решения — ARCHITECTURE_CYCLE10.md (§100–§117). При расхождении прав ЭТОТ файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle10/openapi.yaml --port 4010
+#             npm run types:api:cycle10       (openapi-typescript -> src/types/api-cycle10.generated.ts)
+#   QA        schemathesis run contracts/cycle10/openapi.yaml --base-url http://localhost:5000 --checks all
+#
+# Здесь описаны ТОЛЬКО эндпоинты, которые цикл 10 добавляет или меняет. Остальной API —
+# в API_DOCUMENTATION.md и контрактах циклов 3, 4, 6, 7, 8.
+#
+# У ИЗМЕНЁННЫХ ответов, где цикл добавляет поля к большому существующему DTO (BookingDto, CompanyDto),
+# схема описывает ТОЛЬКО новые поля и стоит с additionalProperties: true — это честно отражает
+# «форма прежняя плюс вот это» и не заводит вторую, расходящуюся копию всего DTO.
+
+info:
+  title: ServiceBooking API — цикл 10 (запись персонала, история записи, фото салона)
+  version: "6.0.0"
+  description: |
+    Конвенции проекта, действующие без изменений:
+      * camelCase в JSON, enum — строками, DateTime — ISO-8601 UTC, DateOnly — YYYY-MM-DD,
+        TimeOnly — HH:mm:ss;
+      * тела ошибок 400/402/409/410/429 — ГОЛАЯ СТРОКА (text/plain), 401/403 — ПУСТОЕ тело;
+      * ProblemDetails не используется (кроме автовалидации [ApiController]);
+      * все новые поля ДОБАВОЧНЫЕ — цикл не удаляет и не переименовывает ничего.
+
+    ГЛАВНОЕ ПРАВИЛО ЦИКЛА: `manual` и `extendedHours` — это ПРОСЬБА, а не разрешение. Сервер сам
+    проверяет членство вызывающего в компании и сообщает результат полем `staffMode` в ответе.
+    Интерфейс обязан включать режим персонала ТОЛЬКО по `staffMode`, а не по роли в токене,
+    не по составу стора и не по тому, какой флаг он сам отправил.
+
+servers:
+  - url: /api
+    description: Тот же base URL, что у axios-инстанса фронта (frontend/src/api/client.ts).
+
+tags:
+  - name: booking-availability
+    description: Доступность дней для календаря записи (US-120, US-121)
+  - name: booking-history
+    description: Журнал изменений записи — только персоналу (US-123, US-124)
+  - name: company-masters
+    description: Список мастеров, включая скрытых из публичного выбора (US-122)
+  - name: company-photos
+    description: Фотографии салона (US-125, US-126)
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ─────────────────────── Блок A: доступность дней ───────────────────────
+
+  /bookings/availability:
+    get:
+      tags: [booking-availability]
+      operationId: getAvailability
+      summary: Статус каждого дня диапазона одним запросом
+      description: |
+        ИЗМЕНЁН в цикле 10: добавлен параметр `extendedHours`, в ответе — `staffMode` и
+        `days[].scheduleState`.
+
+        Анонимный (лимит `availability`, 60/мин на IP). Таблица доверия — ровно та же, что у
+        `GET /bookings/slots`, чтобы календарь и сетка времени не могли разойтись:
+
+          manual=true & extendedHours=true & персонал этой компании -> сутки целиком;
+          manual=true & extendedHours=false & персонал этой компании -> окно 09:00–21:00;
+          всё остальное (в т.ч. extendedHours без manual, и любой не-персонал) -> как сегодня.
+
+        Горизонт записи применяется только при `staffMode: false`.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/CompanyIdQuery' }
+        - { $ref: '#/components/parameters/MasterIdQuery' }
+        - { $ref: '#/components/parameters/ServiceIdQuery' }
+        - { $ref: '#/components/parameters/ServiceIdsQuery' }
+        - name: from
+          in: query
+          required: true
+          description: Начало диапазона. Не раньше «сегодня−1».
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          description: Конец диапазона. Не раньше `from`; диапазон не более 31 дня.
+          schema: { type: string, format: date }
+        - name: manual
+          in: query
+          required: false
+          description: Просьба включить режим персонала. Учитывается только для персонала этой компании и SuperAdmin.
+          schema: { type: boolean, default: false }
+        - name: extendedHours
+          in: query
+          required: false
+          description: |
+            НОВЫЙ в цикле 10. Просьба показать сутки целиком (игнорируя график и перерывы).
+            Действует ТОЛЬКО вместе с `manual=true` и ТОЛЬКО для персонала этой компании.
+            `extendedHours=true` без `manual=true` не даёт ничего никому.
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Состояние дней диапазона
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AvailabilityDto' }
+        "400":
+          $ref: '#/components/responses/BadRequestText'
+        "404":
+          $ref: '#/components/responses/NotFoundText'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ─────────────────────── Блок B: журнал изменений ───────────────────────
+
+  /bookings/{id}/history:
+    get:
+      tags: [booking-history]
+      operationId: getBookingHistory
+      summary: История изменений записи (только персоналу компании и суперадмину)
+      description: |
+        НОВЫЙ в цикле 10.
+
+        Доступ: персонал компании этой записи (Master/CompanyOwner в ней) или SuperAdmin.
+        Всем остальным — 404 с пустым телом, ВКЛЮЧАЯ клиента, которому запись принадлежит:
+        журнал клиенту не отдаётся ни в каком виде (решение П8), и код ответа не должен
+        работать оракулом «существует ли запись с таким id».
+
+        В ответе НЕТ телефонов и почты — только идентичность автора, снимок имени и роль.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Хронология событий (по возрастанию occurredAt)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingHistoryDto' }
+        "401":
+          $ref: '#/components/responses/UnauthorizedEmpty'
+        "404":
+          $ref: '#/components/responses/NotFoundEmpty'
+
+  /bookings/{id}:
+    get:
+      tags: [booking-history]
+      operationId: getBookingById
+      summary: Карточка записи (добавлено поле historyEventCount)
+      description: |
+        ИЗМЕНЁН в цикле 10 — ДОБАВОЧНОЕ поле `historyEventCount`. Остальная форма BookingDto
+        не меняется и здесь не переописывается (см. API_DOCUMENTATION.md).
+
+        `historyEventCount` заполняется, только если вызывающий — персонал компании этой записи
+        или SuperAdmin. В остальных случаях `null` (не «0» и не отсутствие поля).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Запись
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BookingDtoHistoryDelta' }
+        "401":
+          $ref: '#/components/responses/UnauthorizedEmpty'
+        "403":
+          $ref: '#/components/responses/ForbiddenEmpty'
+        "404":
+          $ref: '#/components/responses/NotFoundEmpty'
+
+  /bookings/master:
+    get:
+      tags: [booking-history]
+      operationId: getMasterBookings
+      summary: Записи персонала (добавлено поле historyEventCount)
+      description: |
+        ИЗМЕНЁН в цикле 10 — ДОБАВОЧНОЕ поле `historyEventCount` у каждого элемента, считается
+        ОДНИМ группирующим запросом на всю страницу (не N+1). Сама история здесь НЕ отдаётся:
+        она грузится отдельным вызовом только по разворачиванию карточки.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Список записей
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BookingDtoHistoryDelta' }
+        "401":
+          $ref: '#/components/responses/UnauthorizedEmpty'
+        "403":
+          $ref: '#/components/responses/ForbiddenEmpty'
+
+  # ─────────────────────── Блок A: скрытые мастера ───────────────────────
+
+  /companies/{id}/masters:
+    get:
+      tags: [company-masters]
+      operationId: getCompanyMasters
+      summary: Мастера компании (добавлены includeHidden и providesServices)
+      description: |
+        ИЗМЕНЁН в цикле 10.
+
+        `includeHidden=true` учитывается ТОЛЬКО для персонала этой компании и SuperAdmin; для всех
+        остальных молча игнорируется — публичная выдача не меняется ни на строку.
+
+        `providesServices` в ответе позволяет персоналу подписать, почему мастера не видно клиентам.
+        При анонимном/клиентском вызове это поле всегда true.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: serviceId
+          in: query
+          required: false
+          description: Пустая строка = «без фильтра»; не-uuid = 400.
+          schema: { type: string }
+        - name: includeHidden
+          in: query
+          required: false
+          description: НОВЫЙ. Включить сотрудников с providesServices = false. Только для персонала этой компании.
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Мастера
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MasterPublicDto' }
+        "400":
+          $ref: '#/components/responses/BadRequestText'
+        "404":
+          $ref: '#/components/responses/NotFoundEmpty'
+
+  # ─────────────────────── Блок C: фото салона ───────────────────────
+
+  /companies/{id}/photos:
+    get:
+      tags: [company-photos]
+      operationId: getCompanyPhotos
+      summary: Фотографии салона (анонимно)
+      description: |
+        НОВЫЙ. Публичный класс хранения, авторизации нет (решение П6).
+        Порядок — по `position`, при равенстве — по времени создания. Пустой массив, если фото нет.
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Список фотографий в порядке показа
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 10
+                items: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        "404":
+          $ref: '#/components/responses/NotFoundEmpty'
+
+    post:
+      tags: [company-photos]
+      operationId: uploadCompanyPhoto
+      summary: Загрузить фотографию салона
+      description: |
+        НОВЫЙ. Только владелец компании и SuperAdmin (мастер фото салона не меняет).
+        Лимит запросов — политика `uploads`, размер тела — 5 МБ.
+
+        Тип файла определяется по СИГНАТУРЕ БАЙТ, не по имени и не по Content-Type.
+        Метаданные (включая геолокацию) не сохраняются — изображение ре-энкодится.
+        Квоту PhotoQuotaMb НЕ расходует и под photo-retention-cleanup НЕ подпадает (решение П5).
+        Согласие на публикацию изображений при загрузке НЕ собирается (решение П7).
+
+        Новая фотография добавляется В КОНЕЦ (position = n) и обложкой не становится.
+        Повторная загрузка того же файла возвращает 200 и уже существующую фотографию
+        (дедупликация по хешу обработанных байт) — дубликат не создаётся, лимит не расходуется.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: JPEG / PNG / WEBP, не больше 5 МБ.
+      responses:
+        "201":
+          description: Фотография загружена
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        "200":
+          description: Такая фотография уже была загружена — возвращается существующая
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        "400":
+          description: |
+            Голая строка, по-русски (US-125). Возможные тексты:
+              «В галерее салона может быть не больше 10 фотографий» (новый, специфичный для этой точки);
+              «Нужно выбрать файл для загрузки.»; «Слишком большой файл — максимум 5 МБ.»;
+              «Можно загрузить JPEG, PNG или WEBP.»;
+              «Слишком большое изображение — попробуйте файл меньшего размера.»;
+              «Файл повреждён или это не изображение.»; «На сервере закончилось место. Попробуйте позже.»
+            Общие тексты (не начинающийся с «В галерее...») приходят из shared-конвейера загрузки
+            (ImageUploadService), одинаковы для всех точек загрузки продукта, и распознаются на фронте
+            по подстроке (utils/uploadError.ts) — второго словаря ошибок загрузки не заводим.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401":
+          $ref: '#/components/responses/UnauthorizedEmpty'
+        "403":
+          $ref: '#/components/responses/ForbiddenEmpty'
+        "404":
+          $ref: '#/components/responses/NotFoundEmpty'
+        "413":
+          description: Тело больше RequestSizeLimit (5 МБ)
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /companies/{id}/photos/{photoId}:
+    delete:
+      tags: [company-photos]
+      operationId: deleteCompanyPhoto
+      summary: Удалить фотографию салона
+      description: |
+        НОВЫЙ. Только владелец компании и SuperAdmin.
+        После удаления позиции оставшихся компактизируются в 0..n−1 в той же транзакции:
+        если удалили обложку, обложкой становится следующая. Файл с диска удаляется после коммита.
+
+        404 — компании нет, фотографии нет, либо фотография принадлежит другой компании
+        (существование чужой фотографии не подтверждается).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: photoId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Удалено
+        "401":
+          $ref: '#/components/responses/UnauthorizedEmpty'
+        "403":
+          $ref: '#/components/responses/ForbiddenEmpty'
+        "404":
+          $ref: '#/components/responses/NotFoundEmpty'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /companies/{id}/photos/order:
+    put:
+      tags: [company-photos]
+      operationId: reorderCompanyPhotos
+      summary: Задать порядок фотографий (первая — обложка)
+      description: |
+        НОВЫЙ. Только владелец компании и SuperAdmin.
+
+        `photoIds` — ПОЛНАЯ перестановка текущих фотографий компании: столько же элементов, те же
+        идентификаторы, без повторов. Частичная перестановка отвергается намеренно: полный список
+        делает операцию идемпотентной и снимает вопрос «что стало с теми, кого не упомянули».
+        Первый в списке становится обложкой.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderCompanyPhotosDto' }
+      responses:
+        "200":
+          description: Новый порядок
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 10
+                items: { $ref: '#/components/schemas/CompanyPhotoDto' }
+        "400":
+          description: 'Голая строка: «Список должен содержать все фотографии салона ровно по одному разу»'
+          content:
+            text/plain:
+              schema: { type: string }
+        "401":
+          $ref: '#/components/responses/UnauthorizedEmpty'
+        "403":
+          $ref: '#/components/responses/ForbiddenEmpty'
+        "404":
+          $ref: '#/components/responses/NotFoundEmpty'
+        "415":
+          description: |
+            Запрос без заголовка `Content-Type: application/json` (или с неподдерживаемым
+            значением) — стандартное поведение ASP.NET для тела запроса, тело ответа пустое.
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ─────────────────────── Блок C: фото в CompanyDto ───────────────────────
+
+  /companies/{slug}:
+    get:
+      tags: [company-photos]
+      operationId: getCompanyBySlug
+      summary: Публичная карточка компании (добавлены photos и обложка)
+      description: |
+        ИЗМЕНЁН в цикле 10 — ДОБАВОЧНЫЕ поля `photos`, `coverPhotoUrl`, `coverThumbnailUrl`.
+        Остальная форма CompanyDto не меняется и здесь не переописывается.
+
+        Фотографии приезжают ВМЕСТЕ с компанией: публичная страница не делает отдельного запроса
+        за галереей (требование производительности). `photos` заполняется именно здесь.
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Компания
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyDtoPhotoDelta' }
+        "404":
+          $ref: '#/components/responses/NotFoundEmpty'
+
+  /companies:
+    get:
+      tags: [company-photos]
+      operationId: getCompanies
+      summary: Публичный каталог (добавлена только обложка)
+      description: |
+        ИЗМЕНЁН в цикле 10 — ДОБАВОЧНЫЕ `coverPhotoUrl` и `coverThumbnailUrl`.
+        `photos` здесь ВСЕГДА null: сотня салонов × 10 фото — это тысяча строк ради картинок,
+        которых в каталоге не видно. Обложки считаются одним батчевым запросом на страницу.
+      security: []
+      responses:
+        "200":
+          description: Список компаний
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CompanyDtoPhotoDelta' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyIdQuery:
+      name: companyId
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+    MasterIdQuery:
+      name: masterId
+      in: query
+      required: true
+      schema: { type: string, minLength: 1 }
+    ServiceIdQuery:
+      name: serviceId
+      in: query
+      required: false
+      description: Одна услуга. Нужен либо он, либо serviceIds; при обоих serviceIds[0] обязан совпадать с ним.
+      schema: { type: string, format: uuid }
+    ServiceIdsQuery:
+      name: serviceIds
+      in: query
+      required: false
+      description: |
+        Состав визита, 1..5 без повторов. Повторяется на каждый идентификатор
+        (serviceIds=a&serviceIds=b), НЕ в форме serviceIds[]=a.
+      style: form
+      explode: true
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 5
+        items: { type: string, format: uuid }
+
+  responses:
+    BadRequestText:
+      description: Голая строка с причиной (text/plain), не JSON-объект
+      content:
+        text/plain:
+          schema: { type: string }
+    NotFoundText:
+      description: Голая строка с причиной (text/plain)
+      content:
+        text/plain:
+          schema: { type: string }
+    NotFoundEmpty:
+      description: Пустое тело. Используется и когда объекта нет, и когда вызывающему не положено знать о его существовании.
+    UnauthorizedEmpty:
+      description: Пустое тело
+    ForbiddenEmpty:
+      description: Пустое тело
+    TooManyRequests:
+      description: Превышен лимит запросов (именованная политика)
+
+  schemas:
+
+    # ── Блок A ─────────────────────────────────────────────────────────────
+
+    DayAvailabilityStatus:
+      type: string
+      description: |
+        Можно ли записать в этот день при том фоллбеке, который сервер применил.
+        Состояния «прошедший день» сервер не присылает намеренно — браузер знает свою
+        локальную дату лучше.
+      enum: [Available, FullyBooked, DayOff]
+
+    DayScheduleState:
+      type: string
+      description: |
+        НОВОЕ в цикле 10. Состояние ГРАФИКА мастера на дату — независимо от того, можно ли
+        туда записать. Приходит ТОЛЬКО при staffMode = true; иначе всегда null.
+          Working    — есть строка расписания, мастер работает;
+          DayOff     — строка есть, день помечен нерабочим  -> подпись «выходной»;
+          NoSchedule — строки расписания нет вовсе          -> подпись «нет графика».
+        Для персонала это ИНФОРМАЦИЯ, а не запрет: день с DayOff/NoSchedule остаётся нажимаемым,
+        а подпись обязана попасть в доступное имя кнопки дня (aria-label), а не только в вёрстку.
+      enum: [Working, DayOff, NoSchedule]
+
+    DayAvailabilityDto:
+      type: object
+      required: [date, status, lastFreeSlotStart, scheduleState]
+      properties:
+        date:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/DayAvailabilityStatus'
+        lastFreeSlotStart:
+          type: string
+          nullable: true
+          pattern: '^\d{2}:\d{2}:\d{2}$'
+          description: Начало последнего свободного слота дня; null, если свободных нет.
+          example: "20:30:00"
+        scheduleState:
+          allOf:
+            - $ref: '#/components/schemas/DayScheduleState'
+          nullable: true
+
+    AvailabilityDto:
+      type: object
+      required:
+        [from, to, totalDurationMinutes, stepMinutes, horizonDays, horizonLastDate, staffMode, days]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        totalDurationMinutes: { type: integer, minimum: 1 }
+        stepMinutes: { type: integer, example: 30 }
+        horizonDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: Настройка компании. Персонала не касается.
+        horizonLastDate:
+          type: string
+          format: date
+          description: Последняя дата, на которую может записаться КЛИЕНТ.
+        staffMode:
+          type: boolean
+          description: |
+            НОВОЕ в цикле 10. Сервер проверил членство вызывающего в этой компании и применил
+            режим персонала. ЕДИНСТВЕННЫЙ признак, по которому интерфейсу разрешено рисовать
+            режим персонала. Роль в токене, состав стора и отправленный флаг manual таким
+            признаком НЕ являются.
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/DayAvailabilityDto' }
+
+    MasterPublicDto:
+      type: object
+      required: [userId, firstName, lastName, avatarUrl, bio, providesServices]
+      properties:
+        userId: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        avatarUrl: { type: string, nullable: true }
+        bio: { type: string, nullable: true }
+        providesServices:
+          type: boolean
+          description: |
+            НОВОЕ в цикле 10. Виден ли сотрудник в публичном выборе мастера.
+            При анонимном/клиентском вызове всегда true (иначе он не попал бы в выдачу).
+
+    # ── Блок B ─────────────────────────────────────────────────────────────
+
+    BookingEventKind:
+      type: string
+      description: Что произошло с записью. Список закрыт, значения append-only.
+      enum: [Created, Rescheduled, Cancelled, Completed, NoShow, PaymentMarked]
+
+    BookingActorKind:
+      type: string
+      description: |
+        Кто совершил действие. `System` в этом цикле никем не ставится — член существует, потому что
+        сущность обязана допускать системное событие, и потому что добавить его потом дороже.
+      enum: [Client, Guest, Staff, SuperAdmin, System]
+
+    BookingEventActorDto:
+      type: object
+      required: [kind, name, role, label]
+      properties:
+        kind:
+          $ref: '#/components/schemas/BookingActorKind'
+        name:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: |
+            СНИМОК имени на момент события — переживает удаление сотрудника из компании и удаление
+            аккаунта (тот же принцип, что у Booking.Price и BookingService.NameSnapshot).
+            null только у System.
+        role:
+          type: string
+          nullable: true
+          enum: [Master, CompanyOwner]
+          description: Роль автора В ЭТОЙ КОМПАНИИ на момент события; null у остальных видов автора.
+        label:
+          type: string
+          description: |
+            Готовая русская строка «кто это сделал» — собирает СЕРВЕР
+            («Записал Иван Петров (мастер)», «Записался клиент Анна Иванова», «Записался гость Пётр»,
+            «Администратор платформы», «Система»). Вторую версию формулировок на фронте не собирать:
+            они разойдутся (конвенция NotificationTexts / ChannelPresentation).
+      description: В объекте автора НЕТ и не будет телефонов и почты.
+
+    BookingRescheduleDto:
+      type: object
+      required: [fromDate, fromStartTime, toDate, toStartTime]
+      properties:
+        fromDate: { type: string, format: date }
+        fromStartTime: { type: string, pattern: '^\d{2}:\d{2}:\d{2}$' }
+        toDate: { type: string, format: date }
+        toStartTime: { type: string, pattern: '^\d{2}:\d{2}:\d{2}$' }
+
+    BookingEventDto:
+      type: object
+      required: [id, kind, occurredAt, title, actor, reschedule, cancellationReason]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/BookingEventKind' }
+        occurredAt: { type: string, format: date-time }
+        title:
+          type: string
+          description: Готовый русский заголовок события, собирает сервер («Запись перенесена»).
+        actor: { $ref: '#/components/schemas/BookingEventActorDto' }
+        reschedule:
+          allOf:
+            - $ref: '#/components/schemas/BookingRescheduleDto'
+          nullable: true
+          description: Заполнен ТОЛЬКО у kind = Rescheduled, иначе null.
+        cancellationReason:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: Заполнена ТОЛЬКО у kind = Cancelled и только если причина была указана.
+
+    BookingHistoryDto:
+      type: object
+      required: [bookingId, precedesJournal, events]
+      properties:
+        bookingId: { type: string, format: uuid }
+        precedesJournal:
+          type: boolean
+          description: |
+            Запись создана ДО внедрения журнала (у неё нет события Created). Backfill'а нет
+            по решению П3.
+              events пуст  + precedesJournal=true  -> блок истории НЕ показывать вовсе;
+              events непуст + precedesJournal=true -> показать блок и ОДНУ строку пояснения,
+                что журнал ведётся с определённого момента;
+              precedesJournal=false                -> обычный блок.
+        events:
+          type: array
+          description: Хронология по возрастанию occurredAt. Как показывать (новое сверху или снизу) — решает интерфейс, но единообразно.
+          items: { $ref: '#/components/schemas/BookingEventDto' }
+
+    BookingDtoHistoryDelta:
+      type: object
+      additionalProperties: true
+      required: [id, historyEventCount]
+      description: |
+        ДЕЛЬТА к существующему BookingDto: цикл 10 добавляет ровно одно поле. Остальные поля
+        приходят как раньше и здесь намеренно не переописываются (additionalProperties: true) —
+        вторая копия большого DTO разошлась бы с оригиналом.
+      properties:
+        id: { type: string, format: uuid }
+        historyEventCount:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: |
+            Сколько событий в журнале этой записи. Заполняется ТОЛЬКО на персональских эндпоинтах
+            (GET /bookings/master, GET /bookings/{id} для персонала). На клиентских
+            (GET /bookings/client, ответ POST /bookings) — ВСЕГДА null: это не фильтрация на фронте,
+            а незаполненное сервером поле (решение П8).
+            null означает «сервер не считал», а не «событий нет».
+            Интерфейс рисует блок истории только при historyEventCount > 0.
+
+    # ── Блок C ─────────────────────────────────────────────────────────────
+
+    CompanyPhotoDto:
+      type: object
+      required: [id, url, thumbnailUrl, width, height, position, isCover]
+      properties:
+        id: { type: string, format: uuid }
+        url:
+          type: string
+          description: Полноразмерная (до 1600 px), публичный класс хранения, отдаётся анонимно.
+          example: /uploads/companies/9f1c2b7e-0000-4000-8000-000000000001.jpg
+        thumbnailUrl:
+          type: string
+          description: Миниатюра (до 480 px). Списки и плитка показывают ЕЁ, полноразмерная — по клику.
+          example: /uploads/companies/3a7b1d40-0000-4000-8000-000000000002.jpg
+        width: { type: integer }
+        height: { type: integer }
+        position:
+          type: integer
+          minimum: 0
+          maximum: 9
+          description: 0-based порядок показа. 0 — обложка.
+        isCover:
+          type: boolean
+          description: Производное от position == 0, отдаётся для удобства интерфейса.
+
+    ReorderCompanyPhotosDto:
+      type: object
+      required: [photoIds]
+      properties:
+        photoIds:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: |
+            ПОЛНАЯ перестановка текущих фотографий компании: столько же элементов, те же
+            идентификаторы, без повторов. Первый становится обложкой.
+          items: { type: string, format: uuid }
+
+    CompanyDtoPhotoDelta:
+      type: object
+      additionalProperties: true
+      required: [id, slug, coverPhotoUrl, coverThumbnailUrl, photos]
+      description: |
+        ДЕЛЬТА к существующему CompanyDto: цикл 10 добавляет три поля. Остальные приходят как
+        раньше и здесь не переописываются.
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        coverPhotoUrl:
+          type: string
+          nullable: true
+          description: Полноразмерная обложка (фотография с position = 0); null, если фотографий нет.
+        coverThumbnailUrl:
+          type: string
+          nullable: true
+          description: Миниатюра обложки. Каталог показывает именно её.
+        photos:
+          type: array
+          nullable: true
+          maxItems: 10
+          description: |
+            Весь список в порядке показа. Заполняется ТОЛЬКО на GET /companies/{slug}
+            (публичная страница получает галерею без второго запроса).
+            На остальных эндпоинтах — null. Важно: null = «на этом эндпоинте список не отдаётся»,
+            [] = «фотографий нет».
+          items: { $ref: '#/components/schemas/CompanyPhotoDto' }

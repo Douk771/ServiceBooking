@@ -58,6 +58,7 @@ describe('BookingCalendar — short booking horizon (defect fix)', () => {
       stepMinutes: 30,
       horizonDays,
       horizonLastDate: horizonLastDateStr,
+      staffMode: false,
       days: [],
     }
     getAvailability.mockResolvedValueOnce(okResponse)
@@ -129,7 +130,8 @@ describe('BookingCalendar — review finding #1: `lastFreeSlotStart` marks today
       stepMinutes: 30,
       horizonDays: 90,
       horizonLastDate: format(endOfMonth(today), 'yyyy-MM-dd'),
-      days: [{ date: todayStr, status: 'Available', lastFreeSlotStart }],
+      staffMode: false,
+      days: [{ date: todayStr, status: 'Available', lastFreeSlotStart, scheduleState: null }],
     })
 
     renderCalendar()
@@ -138,5 +140,95 @@ describe('BookingCalendar — review finding #1: `lastFreeSlotStart` marks today
     const todayLabel = format(today, 'd MMMM', { locale: ru })
     const todayCell = await screen.findByRole('button', { name: new RegExp(`^${todayLabel}`, 'i') })
     expect(todayCell).toBeDisabled()
+  })
+})
+
+describe('BookingCalendar — cycle 10: staffMode/scheduleState (ARCHITECTURE_CYCLE10.md §108.5)', () => {
+  function renderManualCalendar() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <BookingCalendar
+          companyId="co1"
+          masterId="m1"
+          serviceId="svc1"
+          selectedDate=""
+          onSelectDate={() => {}}
+          manual
+        />
+      </QueryClientProvider>,
+    )
+  }
+
+  it('makes a day-off day clickable, labelled "выходной", only when staffMode is true', async () => {
+    const today = new Date()
+    const tomorrow = format(new Date(today.getTime() + 86400000), 'yyyy-MM-dd')
+    getAvailability.mockResolvedValue({
+      from: format(startOfMonth(today), 'yyyy-MM-dd'),
+      to: format(endOfMonth(today), 'yyyy-MM-dd'),
+      totalDurationMinutes: 30,
+      stepMinutes: 30,
+      horizonDays: 90,
+      horizonLastDate: format(endOfMonth(today), 'yyyy-MM-dd'),
+      staffMode: true,
+      days: [{ date: tomorrow, status: 'Available', lastFreeSlotStart: null, scheduleState: 'DayOff' }],
+    })
+
+    renderManualCalendar()
+
+    const cell = await screen.findByRole('button', { name: /выходной/i })
+    expect(cell).not.toBeDisabled()
+  })
+
+  it('a non-staff caller never sees a clickable "выходной" day (staffMode: false stays the old behaviour)', async () => {
+    const today = new Date()
+    const tomorrow = format(new Date(today.getTime() + 86400000), 'yyyy-MM-dd')
+    getAvailability.mockResolvedValue({
+      from: format(startOfMonth(today), 'yyyy-MM-dd'),
+      to: format(endOfMonth(today), 'yyyy-MM-dd'),
+      totalDurationMinutes: 30,
+      stepMinutes: 30,
+      horizonDays: 90,
+      horizonLastDate: format(endOfMonth(today), 'yyyy-MM-dd'),
+      staffMode: false,
+      days: [{ date: tomorrow, status: 'DayOff', lastFreeSlotStart: null, scheduleState: null }],
+    })
+
+    renderCalendar()
+
+    const cell = await screen.findByRole('button', { name: /выходной/i })
+    expect(cell).toBeDisabled()
+  })
+
+  it('reports staffMode back to the parent via onStaffModeChange', async () => {
+    const today = new Date()
+    getAvailability.mockResolvedValue({
+      from: format(startOfMonth(today), 'yyyy-MM-dd'),
+      to: format(endOfMonth(today), 'yyyy-MM-dd'),
+      totalDurationMinutes: 30,
+      stepMinutes: 30,
+      horizonDays: 90,
+      horizonLastDate: format(endOfMonth(today), 'yyyy-MM-dd'),
+      staffMode: true,
+      days: [],
+    })
+
+    const onStaffModeChange = vi.fn()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <BookingCalendar
+          companyId="co1"
+          masterId="m1"
+          serviceId="svc1"
+          selectedDate=""
+          onSelectDate={() => {}}
+          manual
+          onStaffModeChange={onStaffModeChange}
+        />
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => expect(onStaffModeChange).toHaveBeenCalledWith(true))
   })
 })
