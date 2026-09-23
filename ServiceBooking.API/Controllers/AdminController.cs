@@ -983,17 +983,20 @@ public class AdminController(
 
     [HttpGet("platform-settings")]
     public async Task<ActionResult<AdminPlatformSettingsDto>> GetPlatformSettings(
-        [FromServices] Services.Notifications.PlatformSettings platformSettings)
+        [FromServices] Services.Notifications.PlatformSettings platformSettings,
+        [FromServices] Services.Legal.LegalDocumentProvider legalDocuments)
     {
         var price = await platformSettings.GetChannelPricePerMonthAsync();
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         var pricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync();
-        return Ok(new AdminPlatformSettingsDto(price, idleDays, pricingPublicEnabled));
+        var blockedReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
+        return Ok(new AdminPlatformSettingsDto(price, idleDays, pricingPublicEnabled, blockedReason));
     }
 
     [HttpPut("platform-settings")]
     public async Task<ActionResult<AdminPlatformSettingsDto>> UpdatePlatformSettings(
-        [FromBody] AdminPlatformSettingsDto dto, [FromServices] Services.Notifications.PlatformSettings platformSettings)
+        [FromBody] AdminPlatformSettingsDto dto, [FromServices] Services.Notifications.PlatformSettings platformSettings,
+        [FromServices] Services.Legal.LegalDocumentProvider legalDocuments)
     {
         if (dto.ChannelIdleDays is < 0 or > 60) return BadRequest("channelIdleDays must be between 0 and 60");
         if (dto.ChannelPricePerMonth is < 0) return BadRequest("channelPricePerMonth must not be negative");
@@ -1002,6 +1005,25 @@ public class AdminController(
         var oldIdleDays = await platformSettings.GetChannelIdleDaysAsync();
         var oldPricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync();
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+        // ARCHITECTURE_CYCLE11.md §102.7/§114.2: turning the switch ON while the channel offer is a
+        // draft (or unreadable) is rejected wholesale — the switch doesn't move, nothing else in this
+        // request is applied either, and no change-log row is written. Turning it OFF is always allowed.
+        if (dto.PricingPublicEnabled && !oldPricingPublicEnabled)
+        {
+            var blockReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
+            if (blockReason is not null)
+            {
+                var offer = legalDocuments.Current?.Get(Core.Enums.LegalDocumentType.TermsOwner);
+                return Conflict(new PricingPublicationBlockedDto(
+                    blockReason,
+                    blockReason == "OfferIsDraft"
+                        ? "Публичные цены нельзя включить: оферта на подключение канала (Приложение № 1 к Соглашению с компанией) — черновая редакция."
+                        : "Публичные цены нельзя включить: снимок правовых документов недоступен.",
+                    "TermsOwner",
+                    offer?.Version));
+            }
+        }
 
         // Reviewer note: previously wrote (and journaled) both keys unconditionally, even when the
         // request left one of them unchanged — a no-op "save" produced a change-log row that recorded no
@@ -1175,4 +1197,12 @@ public record AdminChannelPaymentDto(DateOnly PaidFrom, DateOnly PaidUntil, deci
 
 public record AdminChannelSuspendDto(string? Comment);
 
-public record AdminPlatformSettingsDto(decimal? ChannelPricePerMonth, int ChannelIdleDays, bool PricingPublicEnabled);
+// pricingPublicBlockedReason: ARCHITECTURE_CYCLE11.md §114.1 — nullable, added by cycle 11. Absent/null
+// means no obstacle to turning the switch on; a non-null value is one of "OfferIsDraft"/"LegalUnavailable"
+// and the request body never needs to set it (round-tripped by GetPlatformSettings/UpdatePlatformSettings
+// sharing this one DTO, its value on write is ignored).
+public record AdminPlatformSettingsDto(decimal? ChannelPricePerMonth, int ChannelIdleDays, bool PricingPublicEnabled, string? PricingPublicBlockedReason = null);
+
+// ARCHITECTURE_CYCLE11.md §114.2 — 409 body for PUT /api/admin/platform-settings when
+// pricingPublicEnabled: true is rejected because the channel offer isn't published.
+public record PricingPublicationBlockedDto(string Reason, string Message, string DocumentType, string? Version);

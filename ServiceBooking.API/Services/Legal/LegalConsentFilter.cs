@@ -121,6 +121,10 @@ public class LegalConsentFilter(LegalDocumentProvider provider) : IAsyncAuthoriz
         if (HttpMethods.IsPost(method) && string.Equals(path, "/api/profile/consents", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsPost(method) && string.Equals(path, "/api/profile/consents/revoke", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsGet(method) && string.Equals(path, "/api/profile/consents/revoke-preview", StringComparison.OrdinalIgnoreCase)) return true;
+        // ARCHITECTURE_CYCLE11.md §116: a SuperAdmin who is themselves blocked by a fresh Material
+        // change (OwnerScope 451) must still be able to see the readiness diagnostics for that very
+        // change — this is a read-only diagnostic endpoint, not a way around accepting anything.
+        if (HttpMethods.IsGet(method) && string.Equals(path, "/api/admin/legal/readiness", StringComparison.OrdinalIgnoreCase)) return true;
 
         return false;
     }
