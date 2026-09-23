@@ -46,6 +46,12 @@ api.interceptors.response.use(
       return Promise.reject(err)
     }
     if (err.response?.status === 401 && !isAuthEndpoint) {
+      // NB: rubezh 2 (§105.5, DELETE /push/subscriptions/current) is deliberately NOT fired here. The
+      // token is already invalid at this point, so that DELETE would itself 401 and re-enter this
+      // exact branch — an unsubscribe call that can never succeed but can loop. The explicit "Log out"
+      // button (Navbar.tsx) is the one place that runs it, while the token is still valid; a token that
+      // merely expired is still closed off by rubezh 1 (endpoint reassignment on next subscribe) and
+      // rubezh 3 (server-side membership check at send time).
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }

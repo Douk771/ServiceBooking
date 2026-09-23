@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../store/authStore'
+import { unsubscribeCurrentDeviceOnLogout } from '../../hooks/useWebPush'
 import { Icon } from '../ui/Icon'
 import { PricingNavLink } from '../pricing/PricingNavLink'
 
@@ -17,6 +18,9 @@ export function Navbar() {
   // render, before their own queries refetch (US-19, C5).
   const handleLogout = () => {
     closeMenu()
+    // §105.5 rubezh 2 — best-effort, fires before the token is gone so the DELETE still carries auth;
+    // it must never block or delay the logout itself (comment on unsubscribeCurrentDeviceOnLogout).
+    void unsubscribeCurrentDeviceOnLogout()
     logout()
     qc.clear()
     navigate('/')

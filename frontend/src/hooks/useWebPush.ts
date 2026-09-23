@@ -19,6 +19,29 @@ function readPermission(): NotificationPermission | 'unsupported' {
   return Notification.permission
 }
 
+/**
+ * §105.5 rubezh 2 (Q16) — "the browser on a shared computer keeps sending notifications with client
+ * names to whoever logged in first" is closed by this call at logout, together with rubezh 1 (the
+ * server reassigns an endpoint to whoever re-subscribes with it) and rubezh 3 (server-side membership
+ * check at send time). Best-effort and silent on purpose: it runs from a plain function, not a React
+ * hook, so it can be called both from the explicit "Log out" button (Navbar.tsx) and from the 401
+ * interceptor (api/client.ts); a missing SW registration or a network failure must never block logout
+ * itself — rubezh 1 will pick up the slack the next time someone subscribes on this browser.
+ */
+export async function unsubscribeCurrentDeviceOnLogout(): Promise<void> {
+  if (!SERVICE_WORKER_SUPPORTED) return
+  try {
+    const registration = await navigator.serviceWorker.getRegistration('/')
+    const subscription = await registration?.pushManager.getSubscription()
+    if (!subscription) return
+    await pushApi.deleteCurrent(subscription.endpoint)
+    await subscription.unsubscribe()
+  } catch {
+    // Best-effort (§105.5) — no network, no registration, or the server call failed: logout proceeds
+    // regardless.
+  }
+}
+
 export interface UseWebPushResult {
   /** Single reason to show in PushUnavailableNotice, or null when the toggle should be offered. */
   reason: PushUnavailableReason | null
