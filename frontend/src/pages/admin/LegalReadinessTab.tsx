@@ -19,6 +19,16 @@ const BLOCKER_LABEL: Record<LegalBlockerKind, string> = {
   LegalUnavailable: 'Снимок правовых документов не загружен',
 }
 
+// A 503 that reaches here from something other than the controller itself (reverse proxy/gateway
+// health-check page, HTML error body, etc.) must not be cast blindly — an untyped truthy string
+// would otherwise crash `LegalReadinessReport` on `data.placeholders.reduce`. Only trust the body
+// when it actually has the report's shape.
+export function isLegalReadinessShape(value: unknown): value is LegalReadiness {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Partial<LegalReadiness>
+  return Array.isArray(v.blockers) && Array.isArray(v.placeholders) && typeof v.ready === 'boolean'
+}
+
 export function LegalReadinessTab() {
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ['admin-legal-readiness'],
@@ -41,7 +51,8 @@ export function LegalReadinessTab() {
     // screen. A request that fails outright (network, 401/403 session expiry) has no such body and
     // falls back to a plain retry screen.
     const response = (error as { response?: { status?: number; data?: unknown } })?.response
-    const body = response?.status === 503 ? (response.data as LegalReadiness | undefined) : undefined
+    const rawBody = response?.status === 503 ? response.data : undefined
+    const body = isLegalReadinessShape(rawBody) ? rawBody : undefined
     if (body) {
       return <LegalReadinessReport data={body} onRefetch={refetch} isRefetching={isRefetching} />
     }
@@ -119,6 +130,34 @@ function LegalReadinessReport({
           <p className="text-[11px] text-muted mt-0.5">получат требование повторного акцепта</p>
         </Card>
       </div>
+
+      {data.links.broken.length > 0 && (
+        <Card className="p-6 mb-5">
+          <h3 className="text-sm font-semibold text-ink mb-3">Битые ссылки</h3>
+          <div className="grid gap-2">
+            {data.links.broken.map((l, i) => (
+              <div key={i} className="text-sm flex items-center justify-between gap-3">
+                <code className="text-xs bg-cream-deep px-1.5 py-0.5 rounded min-w-0 truncate">{l.file}</code>
+                <span className="text-ink-soft shrink-0">→ {l.href}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {data.anchors.missing.length > 0 && (
+        <Card className="p-6 mb-5">
+          <h3 className="text-sm font-semibold text-ink mb-3">Потерянные якоря</h3>
+          <div className="grid gap-2">
+            {data.anchors.missing.map((a, i) => (
+              <div key={i} className="text-sm flex items-center justify-between gap-3">
+                <code className="text-xs bg-cream-deep px-1.5 py-0.5 rounded min-w-0 truncate">{a.route}</code>
+                <span className="text-ink-soft shrink-0">#{a.anchor}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {placeholderSummary.length > 0 && (
         <Card className="p-6 mb-5">
