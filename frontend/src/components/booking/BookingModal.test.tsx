@@ -550,3 +550,81 @@ describe('BookingModal — cycle 10 hidden masters shown to staff only (§103.5)
     expect(await screen.findByText('Не виден клиентам')).toBeInTheDocument()
   })
 })
+
+// ── review fix (finding §1): recording a client is an EXPLICIT intent, not derived from staffMode ─
+
+describe('BookingModal — regression fix: staff self-booking from the public company page', () => {
+  it('an authenticated staff member on the public company page books for THEMSELVES by default — no guestName in the payload', async () => {
+    const user = userEvent.setup()
+    useAuthStore.setState({ user: { id: 'u1', firstName: 'Иван', lastName: 'Мастеров' } as never, token: 't' })
+    createBooking.mockResolvedValueOnce({ id: 'b1' })
+    const dateStr = futureDateInCurrentMonth()
+    // §108.5 — staffMode: true here means the server recognised this caller as staff of THIS
+    // company (they opened its public page), same as the blocker report describes.
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }, { staffMode: true }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '10:30:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+
+    // No "Имя клиента"/"Ваше имя" field at all — an authenticated self-booking never asks for it.
+    expect(screen.queryByLabelText('Имя клиента *')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Ваше имя *')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Подтвердить запись' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Подтвердить запись' }))
+
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    const payload = createBooking.mock.calls[0][0]
+    expect(payload.guestName).toBeUndefined()
+    expect(payload.guestPhone).toBeUndefined()
+    expect(payload.guestEmail).toBeUndefined()
+  })
+
+  it('lets that same staff member explicitly switch to "Записать клиента", which then requires and sends guestName', async () => {
+    const user = userEvent.setup()
+    useAuthStore.setState({ user: { id: 'u1', firstName: 'Иван', lastName: 'Мастеров' } as never, token: 't' })
+    createBooking.mockResolvedValueOnce({ id: 'b1' })
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }, { staffMode: true }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '10:30:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+
+    expect(screen.queryByLabelText('Имя клиента *')).not.toBeInTheDocument()
+    // Before toggling, only the intent switch reads "Записать клиента" (submit still says
+    // "Подтвердить запись"), so this is unambiguous.
+    await user.click(screen.getByRole('button', { name: 'Записать клиента' }))
+
+    expect(await screen.findByLabelText('Имя клиента *')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Имя клиента *'), 'Пётр Сидоров')
+    await user.type(screen.getByLabelText('Телефон *'), '+79991234567')
+    // Now BOTH the (pressed) intent switch and the submit button read "Записать клиента" — the
+    // submit button is the last one in document order.
+    const submitButtons = screen.getAllByRole('button', { name: 'Записать клиента' })
+    await user.click(submitButtons[submitButtons.length - 1])
+
+    await waitFor(() => expect(createBooking).toHaveBeenCalled())
+    const payload = createBooking.mock.calls[0][0]
+    expect(payload.guestName).toBe('Пётр Сидоров')
+  })
+})
+
+describe('BookingModal — regression fix: guest legal consent footer (ст.18 + пользовательское соглашение)', () => {
+  it('shows the terms-of-service/privacy-policy links for an unauthenticated guest submitting the form', async () => {
+    const user = userEvent.setup()
+    const dateStr = futureDateInCurrentMonth()
+    getAvailability.mockResolvedValue(availabilityFor({ [dateStr]: 'Available' }))
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '11:00:00' }])
+    renderModal()
+
+    await screen.findByText('Выберите дату')
+    await reachInfoStep(user, dateStr)
+
+    expect(await screen.findByText('пользовательским соглашением')).toBeInTheDocument()
+    expect(screen.getByText('политикой обработки персональных данных')).toBeInTheDocument()
+  })
+})

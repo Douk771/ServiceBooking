@@ -92,6 +92,16 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
   // Q7 (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1) — "show the whole day", staff-only, §108.3/FE-4.
   const [showExtendedHours, setShowExtendedHours] = useState(false)
 
+  // Review finding §1 — "recording a client" vs "booking for myself" is an EXPLICIT intent, never
+  // derived from `staffMode` (which only reports whether the server granted this caller schedule
+  // freedom, §131). The default is set by the entry point: no `company` prop means the caller came
+  // from "Мои записи → Записать клиента" (MyBookingsPage), so the intent defaults to recording a
+  // client; a `company` prop means the public company page or the embed widget, so the intent
+  // defaults to booking for oneself, exactly like the pre-cycle-10 flow. Staff who opened the
+  // public page of a company they work at can still flip this explicitly (see the toggle on the
+  // info step below) — but the default never assumes it for them.
+  const [bookForClient, setBookForClient] = useState(!company)
+
   const [guestName, setGuestName] = useState('')
   const [guestPhone, setGuestPhone] = useState('')
   const [guestEmail, setGuestEmail] = useState('')
@@ -246,16 +256,17 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
         date: selectedDate,
         startTime: selectedSlot,
         notes,
-        // §108.3 — staff always supplies the client's own name/phone/email; a self-booking
-        // guest/authenticated client follows the old rules unchanged.
-        guestName: staffMode || !isAuthenticated() ? guestName : undefined,
-        guestPhone: staffMode || !isAuthenticated() ? guestPhone : undefined,
-        guestEmail: staffMode || !isAuthenticated() ? guestEmail || undefined : undefined,
-        captchaToken: !staffMode && !isAuthenticated() ? captchaToken || undefined : undefined,
-        // §108.3 — GuardianConfirmation is a self-booking concept only; never sent on the staff path.
-        bookedForOther: !staffMode && bookedForOther ? true : undefined,
+        // Review finding §1 — `bookForClient` (explicit intent), NOT `staffMode`, decides whether
+        // this request carries guest fields. A self-booking authenticated caller — staff or not —
+        // must send a body byte-for-byte identical to the pre-cycle-10 client flow.
+        guestName: bookForClient || !isAuthenticated() ? guestName : undefined,
+        guestPhone: bookForClient || !isAuthenticated() ? guestPhone : undefined,
+        guestEmail: bookForClient || !isAuthenticated() ? guestEmail || undefined : undefined,
+        captchaToken: !bookForClient && !isAuthenticated() ? captchaToken || undefined : undefined,
+        // GuardianConfirmation is a self-booking concept only; never sent when recording a client.
+        bookedForOther: !bookForClient && bookedForOther ? true : undefined,
         guardianConfirmation:
-          !staffMode && bookedForOther && guardianText
+          !bookForClient && bookedForOther && guardianText
             ? { textVersion: guardianText.version, confirmed: true }
             : undefined,
       }),
@@ -270,7 +281,13 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
   // ── Steps / progress ─────────────────────────────────────────────────────────────────────────
   const baseSteps: Step[] = showMasterStep ? ['master', 'date', 'slot', 'info'] : ['date', 'slot', 'info']
   const withServices: Step[] = allowMultipleServices ? ['services', ...baseSteps] : baseSteps
-  const progressSteps: Step[] = company ? withServices : ['company', ...withServices]
+  // Review finding — when there's exactly one company to pick from, the 'company' step is
+  // auto-skipped (see the effect above) and `selectedCompany` is set without ever visiting it; the
+  // progress bar must not count a step nobody sees. Only prepend 'company' when it will actually be
+  // rendered: no `company` prop AND more than one company to choose from (or still loading, since
+  // we don't yet know if it'll be skipped).
+  const companyStepRendered = !company && (companiesLoading || (companies?.length ?? 0) !== 1)
+  const progressSteps: Step[] = companyStepRendered ? ['company', ...withServices] : withServices
   const currentIdx = progressSteps.indexOf(step)
 
   const formattedSelectedDate = selectedDate && formatDateLabel(selectedDate)
@@ -287,7 +304,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">
-                {staffMode ? 'Записать клиента' : 'Запись на услугу'}
+                {bookForClient ? 'Записать клиента' : 'Запись на услугу'}
               </h2>
               {allServices.length > 0 && (
                 <p className="text-[13px] text-ink-soft">
@@ -568,6 +585,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                   setStep('slot')
                 }}
                 manual
+                extendedHours={showExtendedHours}
                 onStaffModeChange={setStaffMode}
               />
             </div>
@@ -635,6 +653,36 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
             <div className="flex flex-col gap-3.5">
               <BackLink onClick={() => setStep('slot')}>Изменить время</BackLink>
 
+              {/* Review finding §1 — staff who opened the PUBLIC page/widget of a company they work
+                  at may still want to record a walk-in client instead of booking for themselves;
+                  give them an explicit switch, defaulting to "себя" (§108/staff-self regression). A
+                  caller with no `company` prop came from "Записать клиента" specifically — there is
+                  no "себя" alternative to offer there. */}
+              {company && staffMode && (
+                <div className="flex rounded-xl bg-cream-deep p-1 -mt-1" role="group" aria-label="Кого записываем">
+                  <button
+                    type="button"
+                    aria-pressed={!bookForClient}
+                    onClick={() => setBookForClient(false)}
+                    className={`flex-1 rounded-lg py-2 text-[12.5px] font-medium transition-colors ${
+                      !bookForClient ? 'bg-white text-ink shadow-sm' : 'text-ink-soft'
+                    }`}
+                  >
+                    Записываюсь сам
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={bookForClient}
+                    onClick={() => setBookForClient(true)}
+                    className={`flex-1 rounded-lg py-2 text-[12.5px] font-medium transition-colors ${
+                      bookForClient ? 'bg-white text-ink shadow-sm' : 'text-ink-soft'
+                    }`}
+                  >
+                    Записать клиента
+                  </button>
+                </div>
+              )}
+
               <div className="bg-cream-deep rounded-2xl p-4 text-[13.5px] text-ink">
                 <div className="font-semibold">{allServices.map((s) => s.name).join(', ')}</div>
                 <div className="text-ink-soft mt-0.5">
@@ -652,10 +700,10 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
 
               {/* §108.3 — staff always fills the client's contact fields; otherwise only a guest
                   (not-yet-authenticated visitor) does. */}
-              {(staffMode || !isAuthenticated()) && (
+              {(bookForClient || !isAuthenticated()) && (
                 <>
                   <Input
-                    label={staffMode ? 'Имя клиента *' : 'Ваше имя *'}
+                    label={bookForClient ? 'Имя клиента *' : 'Ваше имя *'}
                     placeholder="Иван Иванов"
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
@@ -671,9 +719,9 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                     }
                   />
                   <Input
-                    label={staffMode ? 'Email (необязательно)' : 'Email'}
+                    label={bookForClient ? 'Email (необязательно)' : 'Email'}
                     type="email"
-                    placeholder={staffMode ? 'client@email.com' : 'your@email.com'}
+                    placeholder={bookForClient ? 'client@email.com' : 'your@email.com'}
                     value={guestEmail}
                     onChange={(e) => setGuestEmail(e.target.value)}
                   />
@@ -682,7 +730,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-[13px] font-medium text-[#4A4038]">
-                  {staffMode ? 'Комментарий' : 'Комментарий (необязательно)'}
+                  {bookForClient ? 'Комментарий' : 'Комментарий (необязательно)'}
                 </label>
                 <textarea
                   className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep resize-none bg-white text-ink"
@@ -693,15 +741,15 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                 />
               </div>
 
-              {!staffMode && !isAuthenticated() && smartCaptchaEnabled && (
+              {!bookForClient && !isAuthenticated() && smartCaptchaEnabled && (
                 <div className="flex flex-col gap-1">
                   <SmartCaptcha onToken={setCaptchaToken} />
                   <p className="text-xs text-muted">Подтвердите, что вы не робот (Yandex SmartCaptcha)</p>
                 </div>
               )}
 
-              {/* §108.3 — GuardianConfirmation is a self-booking concept; staff never sees it. */}
-              {!staffMode && (
+              {/* GuardianConfirmation is a self-booking concept; not shown when recording a client. */}
+              {!bookForClient && (
                 <>
                   <label className="flex items-start gap-2.5 cursor-pointer">
                     <input
@@ -726,16 +774,16 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                 loading={mutation.isPending}
                 onClick={() => mutation.mutate()}
                 disabled={
-                  ((staffMode || !isAuthenticated()) && (!guestName || !isRussianPhone(guestPhone))) ||
-                  (!staffMode && !isAuthenticated() && smartCaptchaEnabled && !captchaToken) ||
-                  (!staffMode && bookedForOther && !guardianText)
+                  ((bookForClient || !isAuthenticated()) && (!guestName || !isRussianPhone(guestPhone))) ||
+                  (!bookForClient && !isAuthenticated() && smartCaptchaEnabled && !captchaToken) ||
+                  (!bookForClient && bookedForOther && !guardianText)
                 }
                 className="w-full"
               >
-                {staffMode ? 'Записать клиента' : 'Подтвердить запись'}
+                {bookForClient ? 'Записать клиента' : 'Подтвердить запись'}
               </Button>
 
-              {!staffMode && !isAuthenticated() && (
+              {!bookForClient && !isAuthenticated() && (
                 <p className="text-center text-xs text-muted -mt-1.5">
                   Нажимая «Подтвердить запись», вы соглашаетесь с{' '}
                   <Link to="/terms" target="_blank" className="text-gold hover:text-gold-dark">
@@ -748,8 +796,8 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                 </p>
               )}
 
-              {/* API_CONTRACT_CYCLE5.md §46.3 — ст. 18 notice; §108.3 doesn't apply to staff. */}
-              {!staffMode && (
+              {/* API_CONTRACT_CYCLE5.md §46.3 — ст. 18 notice; doesn't apply when recording a client. */}
+              {!bookForClient && (
                 <div className="text-center text-xs text-muted -mt-1.5">
                   {bookingNoticeShort || bookingNoticeFull ? (
                     <>
@@ -793,10 +841,10 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                 <Icon name="check" size={26} strokeWidth={1.8} className="text-success" />
               </div>
               <h3 className="font-serif text-xl font-medium text-ink mb-2">
-                {staffMode ? 'Клиент записан!' : 'Запись подтверждена!'}
+                {bookForClient ? 'Клиент записан!' : 'Запись подтверждена!'}
               </h3>
               <p className="text-sm text-ink-soft mb-6">
-                {staffMode && guestName
+                {bookForClient && guestName
                   ? `${guestName} · ${formattedSelectedDate} в ${selectedSlot.slice(0, 5)}`
                   : `Ждём вас ${formattedSelectedDate} в ${selectedSlot.slice(0, 5)}`}
               </p>
