@@ -68,16 +68,25 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
     /// "PdnConsent needs purposes" checks. `version` must already end with "-draft" if isDraft is true —
     /// the provider rejects an isDraft document whose version doesn't carry the suffix
     /// (LegalDocumentProvider.LoadDocument), which is itself covered by LEG-018 below.
+    ///
+    /// QA cycle 11 addition: <paramref name="termsOwnerIsDraft"/>/<paramref name="termsOwnerVersion"/>
+    /// let LegalPricingGateTests flip TermsOwner (the channel offer's carrier document, §102.2) between
+    /// draft and published without touching the Privacy/TermsClient behaviour every other LEG- test in
+    /// this file relies on. Default (false / "fixed-owner-1") is byte-for-byte what every pre-existing
+    /// caller already got.
     /// </summary>
-    public void WriteManifest(string version, bool isDraft, string changeKind, string? bodyMarker = null)
+    public void WriteManifest(string version, bool isDraft, string changeKind, string? bodyMarker = null,
+        bool termsOwnerIsDraft = false, string termsOwnerVersion = "fixed-owner-1")
     {
         File.WriteAllText(Path.Combine(LegalRoot, "privacy.html"),
             $"<p>{(isDraft ? "<strong>Черновая редакция.</strong> " : "")}Политика {version}. {bodyMarker}</p>");
         File.WriteAllText(Path.Combine(LegalRoot, "terms.html"),
             $"<p>{(isDraft ? "<strong>Черновая редакция.</strong> " : "")}Соглашение {version}. {bodyMarker}</p>");
+        File.WriteAllText(Path.Combine(LegalRoot, "terms-owner.html"),
+            $"<p>{(termsOwnerIsDraft ? "<strong>Черновая редакция.</strong> " : "")}Соглашение с владельцем {termsOwnerVersion}.</p>");
         foreach (var (file, title) in new[]
                  {
-                     ("terms-owner.html", "Соглашение с владельцем"), ("pdn-consent.html", "Согласие на обработку ПДн"),
+                     ("pdn-consent.html", "Согласие на обработку ПДн"),
                      ("channel-risk-notice.html", "Уведомление о рисках канала"),
                      ("booking-notice.html", "Уведомление при записи"), ("template-ad-warning.html", "Предупреждение о рекламе"),
                      ("unsubscribe-page.html", "Страница отписки"), ("photo-consent.html", "Согласие на фото"),
@@ -91,7 +100,7 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
           "documents": [
             { "type": "Privacy", "version": "{{version}}", "effectiveFrom": "2026-01-01", "isDraft": {{isDraft.ToString().ToLowerInvariant()}}, "changeKind": "{{changeKind}}", "gate": "Global", "title": "Политика обработки персональных данных", "file": "privacy.html" },
             { "type": "TermsClient", "version": "{{version}}", "effectiveFrom": "2026-01-01", "isDraft": {{isDraft.ToString().ToLowerInvariant()}}, "changeKind": "{{changeKind}}", "gate": "Global", "title": "Пользовательское соглашение", "file": "terms.html" },
-            { "type": "TermsOwner", "version": "fixed-owner-1", "effectiveFrom": "2026-01-01", "isDraft": false, "changeKind": "Material", "gate": "OwnerScope", "title": "Соглашение владельца", "file": "terms-owner.html" },
+            { "type": "TermsOwner", "version": "{{termsOwnerVersion}}", "effectiveFrom": "2026-01-01", "isDraft": {{termsOwnerIsDraft.ToString().ToLowerInvariant()}}, "changeKind": "Material", "gate": "OwnerScope", "title": "Соглашение владельца", "file": "terms-owner.html" },
             { "type": "PdnConsent", "version": "fixed-pdn-1", "effectiveFrom": "2026-01-01", "isDraft": false, "changeKind": "Material", "gate": "None", "title": "Согласие на обработку ПДн", "file": "pdn-consent.html",
               "purposes": [
                 { "key": "ProviderDelivery", "title": "Передача привлекаемым лицам для доставки уведомлений" },

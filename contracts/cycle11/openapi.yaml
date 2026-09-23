@@ -1,0 +1,644 @@
+openapi: 3.0.3
+
+info:
+  title: ServiceBooking — контракт цикла 11 (правовые тексты и готовность к публикации)
+  version: "11.0"
+  description: |
+    Машиночитаемый контракт цикла 11. Читается вместе с `API_CONTRACT_CYCLE11.md` (смысл) и
+    `ARCHITECTURE_CYCLE11.md` (почему так).
+
+    **В схеме два рода путей, и их нельзя путать.**
+
+    1. **Изменившиеся** — их ровно три с половиной:
+       `GET|PUT /api/admin/platform-settings` (новое поле `pricingPublicBlockedReason`, новый ответ 409),
+       `GET /api/admin/legal/readiness` (новый эндпоинт),
+       `GET /api/pricing` (форма та же, расширено условие 404).
+    2. **Инвариантные** — правовые эндпоинты и заявка на канал. Они внесены сюда НЕ для украшения:
+       цикл подменяет весь комплект правовых текстов, и утверждение «форма ответа не изменилась»
+       обязано быть проверяемым автоматически. Прецедент — `contracts/cycle8/servicebooking-invariant.openapi.yaml`
+       и урок `CURRENT_STATE.md` §9 L6 (у каждого внешнего потребителя контракта есть своя копия,
+       и ломающее изменение обязано пройти по всем).
+
+    **Как этим пользоваться (ARCHITECTURE_CYCLE11.md §111):**
+      schemathesis run contracts/cycle11/openapi.yaml --base-url http://localhost:5000 --checks all
+      npx openapi-typescript contracts/cycle11/openapi.yaml -o frontend/src/types/api-cycle11.generated.ts
+
+    Ломающих изменений в цикле 11 нет ни одного.
+
+servers:
+  - url: http://localhost:5000
+    description: локальный запуск (dev)
+  - url: https://ezbook.ru
+    description: прод
+
+tags:
+  - name: legal
+    description: Правовые документы и тексты интерфейса. Публичная часть — без авторизации.
+  - name: admin-legal
+    description: Готовность правового комплекта к публикации. Только SuperAdmin, только чтение.
+  - name: admin-settings
+    description: Платформенные настройки, включая рубильник публичных цен.
+  - name: pricing
+    description: Публичная витрина тарифов (цикл 7).
+  - name: channels
+    description: Заявка на платную опцию «канал уведомлений». В цикле 11 не меняется.
+
+security: []
+
+paths:
+
+  ###########################################################################
+  # ИНВАРИАНТ: правовые эндпоинты. Форма не меняется, содержимое меняется.
+  ###########################################################################
+
+  /api/legal/documents:
+    get:
+      tags: [legal]
+      summary: Метаданные всего комплекта — пять документов и шесть текстов интерфейса
+      description: |
+        Публично. HTML не отдаётся — только метаданные, достаточные для футера, формы регистрации и
+        сравнения версий. Для `PdnConsent` здесь же едет `purposes`: форма согласия строится из
+        ответа, а не из захардкоженного массива на фронте.
+
+        Цикл 11 меняет в этом ответе ТОЛЬКО значения (`version`, `effectiveFrom`, два `title`).
+        Количество элементов, набор `type` и набор `key` остаются прежними.
+      operationId: getLegalManifest
+      responses:
+        "200":
+          description: Комплект
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalManifest" }
+        "503":
+          $ref: "#/components/responses/LegalUnavailable"
+
+  /api/legal/documents/{type}:
+    get:
+      tags: [legal]
+      summary: Метаданные и HTML одного документа
+      description: |
+        Публично, `Cache-Control: public, max-age=300`. Неизвестный тип → 404, а не 500.
+
+        Страница документа доступна **без входа** — человек обязан иметь возможность прочитать то,
+        что ему предлагают принять, до регистрации.
+      operationId: getLegalDocument
+      parameters:
+        - name: type
+          in: path
+          required: true
+          description: Регистронезависимо. Набор закрыт пятью значениями; шестого типа в цикле 11 не появляется — оферта D9 является приложением к `TermsOwner`.
+          schema: { $ref: "#/components/schemas/LegalDocumentType" }
+      responses:
+        "200":
+          description: Документ
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: "public, max-age=300"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalDocument" }
+        "404":
+          description: Неизвестный тип документа
+        "503":
+          $ref: "#/components/responses/LegalUnavailable"
+
+  /api/legal/texts/{key}:
+    get:
+      tags: [legal]
+      summary: Один текст интерфейса
+      description: |
+        Публично. Версионируется и хешируется как документ, но **гейт 451 не задействует**: claim'а
+        под него нет, в `consent-status` он не появляется. Цикл 11 этого разделения не отменяет.
+      operationId: getLegalText
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/LegalTextKey" }
+      responses:
+        "200":
+          description: Текст
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalUiText" }
+        "404":
+          description: Неизвестный ключ
+        "503":
+          $ref: "#/components/responses/LegalUnavailable"
+
+  /api/legal/consent-status:
+    get:
+      tags: [legal]
+      summary: Что именно требуется от текущего пользователя
+      description: |
+        Требует авторизации, но входит в allow-list гейта 451 — иначе заблокированный вызывающий
+        никогда не узнал бы, чем он заблокирован. Считается из claim'ов токена и снимка в памяти,
+        **без запроса в БД**. Документы с `gate: None` в ответ не попадают.
+      operationId: getConsentStatus
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Статус
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsentStatus" }
+        "401":
+          description: Нет токена
+
+  /api/legal/accept:
+    post:
+      tags: [legal]
+      summary: Принять одну или несколько редакций
+      description: |
+        Принимается любое подмножество `{Privacy, TermsClient, TermsOwner}`. Версии сверяются с
+        текущим снимком: 409, если оператор успел заменить текст ещё раз, пока человек читал.
+        В ответ приходит **новый токен** — claim'ы версий зашиты в него при выпуске.
+
+        Цикл 11 здесь не меняет ничего, но именно этот путь получает всю нагрузку в момент
+        публикации: замена комплекта — материальное изменение, и все существующие пользователи
+        пройдут через него (`SPEC.md` цикла 11, риск R1, принят заказчиком).
+      operationId: acceptLegal
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AcceptLegalRequest" }
+      responses:
+        "200":
+          description: Принято, выдан новый токен
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AcceptLegalResponse" }
+        "400":
+          $ref: "#/components/responses/PlainTextError"
+        "401":
+          description: Нет токена
+        "409":
+          $ref: "#/components/responses/PlainTextError"
+        "503":
+          $ref: "#/components/responses/LegalUnavailable"
+
+  ###########################################################################
+  # НОВОЕ: готовность правового комплекта
+  ###########################################################################
+
+  /api/admin/legal/readiness:
+    get:
+      tags: [admin-legal]
+      summary: Что мешает публикации правового комплекта
+      description: |
+        **Новый эндпоинт цикла 11 (US-11-07).** Только чтение, ничего не меняет, безопасен на боевой
+        машине. Отдаёт тот же JSON, что печатает `legal status --json`, плюс блок `impact`
+        (сколько людей получат требование повторного акцепта) — у CLI его нет, потому что у CLI нет
+        базы.
+
+        Внесён в allow-list гейта 451: суперадмин, которому самому прилетел 451 из-за смены
+        редакции, обязан иметь возможность посмотреть, что происходит.
+
+        Поле `disclaimer` обязательно и непусто **всегда**, включая `ready: true`: «проверено
+        механически» не равно «проверено юристом».
+      operationId: getLegalReadiness
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Отчёт готовности
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              description: "no-store — это диагностика, а не контент"
+          content:
+            application/json:
+              schema: { $ref: "./legal-status.schema.json" }
+        "401":
+          description: Нет токена
+        "403":
+          description: Не SuperAdmin
+        "503":
+          description: |
+            Снимок правовых документов не загружен. Тело — тот же отчёт с `ready: false` и блокером
+            `LegalUnavailable`, а не пустота: «не могу ответить» здесь бесполезнее, чем «вот что
+            сломано».
+          content:
+            application/json:
+              schema: { $ref: "./legal-status.schema.json" }
+
+  ###########################################################################
+  # ИЗМЕНИЛОСЬ: платформенные настройки
+  ###########################################################################
+
+  /api/admin/platform-settings:
+    get:
+      tags: [admin-settings]
+      summary: Платформенные настройки
+      description: |
+        Цикл 11 добавляет одно поле — `pricingPublicBlockedReason`. Добавление nullable-поля не
+        является ломающим изменением: фронт, собранный до цикла, его просто не увидит.
+      operationId: getPlatformSettings
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Настройки
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlatformSettings" }
+        "401":
+          description: Нет токена
+        "403":
+          description: Не SuperAdmin
+
+    put:
+      tags: [admin-settings]
+      summary: Изменить платформенные настройки
+      description: |
+        **Новое поведение цикла 11 (US-11-04).** Попытка ВКЛЮЧИТЬ публичные цены — переход
+        `pricingPublicEnabled` из `false` в `true` — пока оферта черновая, отклоняется с **409** и
+        внятным объяснением, а не проходит молча. До цикла 11 запрет держался записью в спеке цикла 7
+        и памятью суперадмина (`CURRENT_STATE.md` §9 B8) — именно это цикл и лечит.
+
+        409 проверяется только на этом переходе, не на любом запросе с `pricingPublicEnabled: true`.
+        Если рубильник уже включён и `PUT` присылает `true` повторно (обычная ситуация: фронтенд шлёт
+        текущее состояние тумблера вместе с остальными полями формы) — значение не меняется, и запрос
+        **не отклоняется**, даже если оферта к этому моменту стала черновой. Строгая трактовка «любой
+        `true` при черновой оферте — 409» заблокировала бы суперадмину сохранение
+        `channelIdleDays`/`channelPricePerMonth` в той же форме, где тумблер уже включён и его никто не
+        трогает.
+
+        Отказ целостный: рубильник не меняется, строка в журнале изменений настроек не пишется,
+        **остальные поля запроса тоже не применяются**. Частично применённого PUT не бывает.
+
+        Выключение (`false`) разрешено всегда — запрет односторонний.
+      operationId: updatePlatformSettings
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlatformSettings" }
+      responses:
+        "200":
+          description: Применено
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlatformSettings" }
+        "400":
+          description: |
+            Валидация цикла 7: `channelIdleDays` вне 0…60 или отрицательная цена. Проверяется **до**
+            правовой проверки.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401":
+          description: Нет токена
+        "403":
+          description: Не SuperAdmin
+        "409":
+          description: Включение публичных цен отклонено по правовому условию
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PricingSwitchRefusal" }
+
+  ###########################################################################
+  # ИЗМЕНИЛОСЬ УСЛОВИЕ: публичная витрина
+  ###########################################################################
+
+  /api/pricing:
+    get:
+      tags: [pricing]
+      summary: Публичный каталог тарифов
+      description: |
+        Анонимно. Форма ответа 200 и заголовки — как в цикле 7 (`API_CONTRACT_CYCLE7.md` §38),
+        схема тела здесь намеренно не переписана: источник истины по её форме —
+        `contracts/cycle7/openapi.yaml`.
+
+        **Цикл 11 расширяет условие 404.** Теперь пустой 404 означает любое из трёх: рубильник
+        выключен; оферта в статусе черновика; снимок правовых документов недоступен. Различать их
+        анонимному вызывающему нельзя — наружу не должно быть видно, существует ли каталог вообще.
+        Фронт трактует 404 как «витрина выключена» и ошибки не показывает.
+
+        Не видно в форме ответа, но важно: из каталога исключаются опции, чьё правовое условие не
+        выполнено (`ARCHITECTURE_CYCLE11.md` §102.10). Сегодня это ровно одна опция —
+        `notifications.whatsapp`.
+      operationId: getPublicPricing
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Каталог
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+              description: "public, max-age=60"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                description: Форма определена в contracts/cycle7/openapi.yaml (PublicPricingDto). Цикл 11 её не трогает.
+        "304":
+          description: Не изменилось
+        "404":
+          description: Витрина недоступна — выключена рубильником, либо оферта черновая, либо правовой снимок не загружен. Тело пустое всегда.
+
+  ###########################################################################
+  # ИНВАРИАНТ: заявка на канал (акцепт оферты D9)
+  ###########################################################################
+
+  /api/notification-channels:
+    post:
+      tags: [channels]
+      summary: Заявка на подключение платного канала — она же акцепт оферты
+      description: |
+        **В цикле 11 не меняется ни на байт, и это принципиально.** `offerAccepted.version` равна
+        версии `TermsOwner`, потому что оферта D9 — Приложение № 1 к нему, а не шестой тип документа
+        (решение принято циклом 5 и реализовано; `ARCHITECTURE_CYCLE11.md` §102.2).
+
+        Факт принятия оферты уже пишется в журнал согласий: `DocumentKey = "TermsOwner"`,
+        `Purpose = ChannelOffer`, с версией и хешем документа. Критерий US-11-04 «факт принятия
+        фиксируется в журнале» выполнен до начала цикла — цикл закрывает то, чего нет: текста оферты
+        в том файле, который читает приложение.
+      operationId: createChannelRequest
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateChannelRequest" }
+      responses:
+        "201":
+          description: Заявка создана
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                description: ChannelDto — форма определена в contracts/cycle7/openapi.yaml и API_CONTRACT_CYCLE4.md §21.
+        "400":
+          $ref: "#/components/responses/PlainTextError"
+        "401":
+          description: Нет токена
+        "402":
+          description: Тариф не позволяет подключение канала
+          content:
+            text/plain:
+              schema: { type: string }
+        "403":
+          description: Вызывающий не владеет ни одной компанией
+        "409":
+          description: Соглашение владельца обновилось ещё раз — принятая версия устарела
+          content:
+            text/plain:
+              schema: { type: string }
+        "451":
+          description: Владельческий гейт — соглашение с компанией не принято
+        "503":
+          $ref: "#/components/responses/LegalUnavailable"
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    LegalUnavailable:
+      description: |
+        Снимок правовых документов не загружен. Тело — строка на русском. Это НЕ «нет документа»:
+        загрузчик никогда не очищает прошлый удачный снимок, поэтому 503 здесь означает, что
+        удачного снимка не было ни разу с момента старта.
+      content:
+        text/plain:
+          schema: { type: string }
+
+    PlainTextError:
+      description: Ошибка; тело — строка на русском (не объект)
+      content:
+        text/plain:
+          schema: { type: string }
+
+  schemas:
+
+    LegalDocumentType:
+      type: string
+      description: Закрытый набор из пяти значений. Расширение требует правки перечисления в коде и ломает порядок деплоя (манифест обязан обновиться раньше кода) — цикл 11 его не расширяет.
+      enum: [Privacy, TermsClient, TermsOwner, PdnConsent, ChannelRiskNotice]
+
+    LegalTextKey:
+      type: string
+      description: Закрытый набор из шести строк. Добавление седьмого — правка манифеста, а не миграция.
+      enum: [BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation]
+
+    LegalGate:
+      type: string
+      description: Кого и где блокирует материальное изменение. Отсутствующее/нераспознанное значение в манифесте трактуется как Global — опечатка оператора обязана закрывать, а не открывать.
+      enum: [Global, OwnerScope, None]
+
+    LegalChangeKind:
+      type: string
+      enum: [Material, Editorial]
+
+    LegalPurpose:
+      type: object
+      required: [key, title]
+      properties:
+        key:
+          type: string
+          enum: [ProviderDelivery, WorkPhotos, HealthData]
+        title: { type: string }
+
+    LegalDocumentMeta:
+      type: object
+      required: [type, title, version, effectiveFrom, isDraft, changeKind, gate, url]
+      properties:
+        type: { $ref: "#/components/schemas/LegalDocumentType" }
+        title: { type: string }
+        version:
+          type: string
+          description: "Суффикс `-draft` обязателен, пока isDraft=true, и запрещён, когда false. По итогам цикла 11 у всего комплекта ожидается `-draft` — это ожидаемый результат, а не недоделка."
+        effectiveFrom: { type: string, format: date }
+        isDraft: { type: boolean }
+        changeKind: { $ref: "#/components/schemas/LegalChangeKind" }
+        gate: { $ref: "#/components/schemas/LegalGate" }
+        url:
+          type: string
+          description: Маршрут SPA. Источник истины — contracts/cycle11/legal-routes.json.
+        purposes:
+          type: array
+          nullable: true
+          description: Только у PdnConsent. Форма согласия строится из этого списка.
+          items: { $ref: "#/components/schemas/LegalPurpose" }
+
+    LegalUiTextMeta:
+      type: object
+      required: [key, version, isDraft]
+      properties:
+        key: { $ref: "#/components/schemas/LegalTextKey" }
+        version: { type: string }
+        isDraft: { type: boolean }
+
+    LegalManifest:
+      type: object
+      required: [documents, uiTexts]
+      properties:
+        documents:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items: { $ref: "#/components/schemas/LegalDocumentMeta" }
+        uiTexts:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items: { $ref: "#/components/schemas/LegalUiTextMeta" }
+
+    LegalDocument:
+      allOf:
+        - $ref: "#/components/schemas/LegalDocumentMeta"
+        - type: object
+          required: [contentHtml]
+          properties:
+            contentHtml:
+              type: string
+              description: |
+                HTML-фрагмент без <html>/<body>, без таблиц (читается с телефона). Для TermsOwner
+                обязан содержать якорь id="offer-channel" — на него ведёт редирект /offer-channel,
+                и без якоря человек попадает на страницу без оферты, которую ему предлагают принять.
+
+    LegalUiText:
+      type: object
+      required: [key, version, isDraft, contentHtml]
+      properties:
+        key: { $ref: "#/components/schemas/LegalTextKey" }
+        version: { type: string }
+        isDraft: { type: boolean }
+        contentHtml: { type: string }
+
+    ConsentStatusDocument:
+      type: object
+      required: [type, currentVersion, changeKind, gate]
+      properties:
+        type: { $ref: "#/components/schemas/LegalDocumentType" }
+        currentVersion: { type: string }
+        acceptedVersion:
+          type: string
+          nullable: true
+          description: null означает «никогда не принимал». Для OwnerScope это нормальный случай (обычный клиент), а не расхождение.
+        changeKind: { $ref: "#/components/schemas/LegalChangeKind" }
+        gate: { $ref: "#/components/schemas/LegalGate" }
+
+    ConsentStatus:
+      type: object
+      required: [requiresAcceptance, ownerActionBlocked, showBanner, documents]
+      properties:
+        requiresAcceptance:
+          type: boolean
+          description: Глобальная блокировка — полноэкранный гейт.
+        ownerActionBlocked:
+          type: boolean
+          description: Владельческий гейт — модальное окно на перечисленных действиях, а не блокировка входа.
+        showBanner:
+          type: boolean
+          description: Только редакционное изменение. Material всегда побеждает Editorial.
+        documents:
+          type: array
+          description: Только документы с gate != None.
+          items: { $ref: "#/components/schemas/ConsentStatusDocument" }
+
+    AcceptLegalItem:
+      type: object
+      required: [type, version]
+      properties:
+        type: { $ref: "#/components/schemas/LegalDocumentType" }
+        version: { type: string }
+
+    AcceptLegalRequest:
+      type: object
+      required: [accept]
+      properties:
+        accept:
+          type: array
+          minItems: 1
+          description: Любое подмножество {Privacy, TermsClient, TermsOwner}. Документ с gate=None здесь не принимается — 400.
+          items: { $ref: "#/components/schemas/AcceptLegalItem" }
+
+    AcceptLegalResponse:
+      type: object
+      required: [token, acceptedAt]
+      properties:
+        token:
+          type: string
+          description: "Новый JWT. Обязателен, а не оптимизация: claim'ы версий зашиты при выпуске, и без нового токена следующий же запрос снова получит 451."
+        acceptedAt: { type: string, format: date-time }
+
+    PricingPublicBlockedReason:
+      type: string
+      description: |
+        Почему рубильник публичных цен нельзя включить прямо сейчас. Поле информационное: оно не
+        запрещает отправить PUT, оно объясняет заранее, чем PUT закончится. Единственный источник
+        запрета — ответ 409.
+      enum: [OfferIsDraft, LegalUnavailable]
+
+    AdminPlatformSettings:
+      type: object
+      required: [channelIdleDays, pricingPublicEnabled]
+      properties:
+        channelPricePerMonth:
+          type: number
+          nullable: true
+          description: Наследие цикла 4; каналом теперь управляет опция подписки цикла 7.
+        channelIdleDays:
+          type: integer
+          minimum: 0
+          maximum: 60
+        pricingPublicEnabled:
+          type: boolean
+          description: По умолчанию false. Включение возможно только при опубликованной оферте.
+        pricingPublicBlockedReason:
+          allOf: [{ $ref: "#/components/schemas/PricingPublicBlockedReason" }]
+          nullable: true
+          description: НОВОЕ в цикле 11. null — препятствий нет. В запросе PUT игнорируется (поле только для чтения по смыслу).
+
+    PricingSwitchRefusal:
+      type: object
+      required: [reason, message]
+      description: Тело 409 при попытке включить публичные цены с черновой офертой.
+      properties:
+        reason: { $ref: "#/components/schemas/PricingPublicBlockedReason" }
+        message:
+          type: string
+          description: Готовая формулировка для показа оператору. Фронт показывает её как есть и не переписывает — формулировка правовая, а не UX-ная.
+        documentType:
+          allOf: [{ $ref: "#/components/schemas/LegalDocumentType" }]
+          nullable: true
+          description: Документ, из-за которого отказ. При reason=OfferIsDraft всегда TermsOwner.
+        version:
+          type: string
+          nullable: true
+          description: Текущая редакция этого документа — чтобы в логе админки было видно, о какой именно версии шла речь.
+
+    CreateChannelRequest:
+      type: object
+      required: [legalEntityForm, inn, offerAccepted]
+      properties:
+        legalEntityForm:
+          type: string
+          enum: [Ip, Company, SelfEmployed]
+        inn:
+          type: string
+          description: 10 или 12 цифр. Нужен для счёта; виден владельцу и суперадмину.
+        offerAccepted:
+          type: object
+          required: [version]
+          description: |
+            Акцепт оферты D9. `version` — версия **TermsOwner**, а не отдельного документа: оферта
+            является Приложением № 1 к нему. Несовпадение с текущей редакцией → 409.
+          properties:
+            version: { type: string }

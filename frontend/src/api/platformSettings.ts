@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { AdminChannelDto, AdminChannelSummary, PlatformSettings, Paged } from '../types'
+import type { AdminChannelDto, AdminChannelSummary, PlatformSettings, Paged, LegalReadiness } from '../types'
 
 // API_CONTRACT_CYCLE4.md §34 — SuperAdmin-only.
 export const adminNotificationsApi = {
@@ -13,4 +13,10 @@ export const adminNotificationsApi = {
   getSettings: () => api.get<PlatformSettings>('/admin/platform-settings').then((r) => r.data),
   updateSettings: (data: PlatformSettings) =>
     api.put<PlatformSettings>('/admin/platform-settings', data).then((r) => r.data),
+}
+
+// API_CONTRACT_CYCLE11.md §116 — SuperAdmin, read-only, no-store. Diagnostic screen, not content:
+// never cached by react-query beyond the default, and refetched on demand.
+export const adminLegalApi = {
+  getReadiness: () => api.get<LegalReadiness>('/admin/legal/readiness').then((r) => r.data),
 }

@@ -53,4 +53,18 @@ describe('getNotificationErrorMessage', () => {
       'Не удалось выполнить действие. Попробуйте снова.',
     )
   })
+
+  it('plain Error with no response (client-side validation) → error.message surfaced', () => {
+    expect(getNotificationErrorMessage(new Error('Некорректная цена опции «канал» — исправьте поле перед сохранением.'))).toBe(
+      'Некорректная цена опции «канал» — исправьте поле перед сохранением.',
+    )
+  })
+
+  it('plain Error with empty message and no response → generic fallback', () => {
+    expect(getNotificationErrorMessage(new Error(''))).toBe('Не удалось выполнить действие. Попробуйте снова.')
+  })
+
+  it('non-Error, non-Axios value with no response → generic fallback', () => {
+    expect(getNotificationErrorMessage('just a string')).toBe('Не удалось выполнить действие. Попробуйте снова.')
+  })
 })

@@ -24,6 +24,12 @@ export function getNotificationErrorMessage(error: unknown, fallback = 'Не у�
     case 404:
       return 'Не найдено — возможно, канал уже удалён или недоступен.'
     default:
+      // Client-side validation errors (e.g. thrown before the request is even sent) have no
+      // `response` — surface `error.message` instead of the generic fallback so the operator
+      // knows which field to fix.
+      if (status === undefined && error instanceof Error && error.message.trim().length > 0) {
+        return error.message
+      }
       return fallback
   }
 }

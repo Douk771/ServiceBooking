@@ -7,6 +7,7 @@ import { PlansTab } from './admin/PlansTab'
 import { NotificationsAdminTab } from './admin/NotificationsAdminTab'
 import { BillingAccountsAdminTab } from './admin/BillingAccountsAdminTab'
 import { SubjectRequestsTab } from './admin/SubjectRequestsTab'
+import { LegalReadinessTab } from './admin/LegalReadinessTab'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -519,6 +520,7 @@ type Tab =
   | 'billing'
   | 'notifications'
   | 'subject-requests'
+  | 'legal'
 
 export function AdminPage() {
   const [tab, setTab] = useState<Tab>('stats')
@@ -532,6 +534,7 @@ export function AdminPage() {
     { key: 'billing', label: 'Биллинг-аккаунты' },
     { key: 'notifications', label: 'Каналы уведомлений' },
     { key: 'subject-requests', label: 'Обращения субъектов' },
+    { key: 'legal', label: 'Правовые документы' },
   ]
 
   return (
@@ -556,6 +559,7 @@ export function AdminPage() {
       {tab === 'billing' && <BillingAccountsAdminTab />}
       {tab === 'notifications' && <NotificationsAdminTab />}
       {tab === 'subject-requests' && <SubjectRequestsTab />}
+      {tab === 'legal' && <LegalReadinessTab />}
     </div>
   )
 }

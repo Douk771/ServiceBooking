@@ -1,0 +1,225 @@
+{
+  "$id": "https://ezbook.ru/schemas/legal-status.schema.json",
+  "title": "Отчёт готовности правового комплекта к публикации",
+  "description": "ОДИН формат на двоих (API_CONTRACT_CYCLE11.md §116, §117): его печатает `legal status --json` и его же отдаёт GET /api/admin/legal/readiness. Разница ровно одна — блок `impact` есть только у эндпоинта (у CLI нет базы). Файл намеренно написан в подмножестве, валидном И как JSON Schema draft-07 (ajv), И как Schema Object OpenAPI 3.0: нет `$defs`, `const`, `type: [..., null]`. Ни одно поле не может быть null — отсутствие выражается отсутствием ключа.",
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generatedAtUtc", "root", "ready", "blockers", "documents", "uiTexts", "placeholders", "links", "anchors", "disclaimer"],
+
+  "properties": {
+    "generatedAtUtc": {
+      "type": "string", "format": "date-time",
+      "description": "Момент снятия отчёта. Отчёт — снимок, а не состояние: через минуту оператор может подложить другой файл."
+    },
+    "root": {
+      "type": "string",
+      "description": "Каталог, по которому отчёт снят. У эндпоинта это фактический Legal:Root приложения — то есть ответ на вопрос «а что читает продукт ПРЯМО СЕЙЧАС», а не «что лежит в репозитории»."
+    },
+    "ready": {
+      "type": "boolean",
+      "description": "Можно ли публиковать. true не означает «можно публиковать без юриста» — см. disclaimer, он обязателен и при ready=true."
+    },
+    "blockers": {
+      "type": "array",
+      "description": "Почему нельзя публиковать. Пусто тогда и только тогда, когда ready=true.",
+      "items": { "$ref": "#/definitions/blocker" }
+    },
+    "documents": {
+      "type": "array",
+      "description": "Пять версионируемых документов (LegalDocumentType). Набор закрыт, шестого типа нет — оферта D9 является приложением к TermsOwner.",
+      "items": { "$ref": "#/definitions/document" }
+    },
+    "uiTexts": {
+      "type": "array",
+      "description": "Шесть текстов интерфейса (LegalTextKey). Версионируются и хешируются наравне с документами, но не участвуют в гейте 451 — поэтому отдельным списком, а не вперемешку.",
+      "items": { "$ref": "#/definitions/uiText" }
+    },
+    "placeholders": {
+      "type": "array",
+      "description": "Сводка по всему комплекту: какие плейсхолдеры не закрыты, сколько их и откуда брать значение.",
+      "items": { "$ref": "#/definitions/placeholderSummary" }
+    },
+    "links": { "$ref": "#/definitions/links" },
+    "anchors": { "$ref": "#/definitions/anchors" },
+    "drift": { "$ref": "#/definitions/drift" },
+    "impact": { "$ref": "#/definitions/impact" },
+    "disclaimer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ОБЯЗАТЕЛЕН и непуст всегда, включая ready=true. Дословно фиксирует границу проверки: механическая проверка ловит незаполненные плейсхолдеры, битые ссылки и неполный комплект, но НЕ ловит неверный по сути текст. Публикация требует и механического, и юридического подтверждения (SPEC цикла 11, риск R3)."
+    }
+  },
+
+  "definitions": {
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "detail"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "UnresolvedPlaceholders",
+            "MissingValues",
+            "DraftDocuments",
+            "BrokenLinks",
+            "MissingAnchors",
+            "ArtifactDrift",
+            "LegalUnavailable"
+          ],
+          "description": "UnresolvedPlaceholders — в тексте остались {{…}}; MissingValues — файла значений нет или в нём не все 13 ключей; DraftDocuments — isDraft=true (ожидаемое состояние по итогам цикла 11, а не дефект); BrokenLinks/MissingAnchors — внутренняя ссылка или якорь ведут в никуда; ArtifactDrift — App_Data/legal разошёлся с legal-drafts; LegalUnavailable — снимок вообще не загрузился."
+        },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "title", "version", "effectiveFrom", "isDraft", "changeKind", "gate", "file", "url", "contentHash", "placeholders"],
+      "properties": {
+        "type": { "type": "string", "enum": ["Privacy", "TermsClient", "TermsOwner", "PdnConsent", "ChannelRiskNotice"] },
+        "title": { "type": "string" },
+        "version": { "type": "string" },
+        "effectiveFrom": { "type": "string", "format": "date" },
+        "isDraft": { "type": "boolean" },
+        "changeKind": { "type": "string", "enum": ["Material", "Editorial"] },
+        "gate": {
+          "type": "string", "enum": ["Global", "OwnerScope", "None"],
+          "description": "Global — 451 на всех защищённых вызовах; OwnerScope — только на перечисленных действиях владельца; None — не блокирует нигде."
+        },
+        "file": { "type": "string" },
+        "url": { "type": "string", "description": "Маршрут SPA из contracts/cycle11/legal-routes.json." },
+        "contentHash": {
+          "type": "string", "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 отданного HTML в нижнем регистре — ровно то значение, которое попадёт в ConsentRecord.DocumentHash при акцепте."
+        },
+        "placeholders": { "type": "array", "items": { "$ref": "#/definitions/placeholderHit" } }
+      }
+    },
+
+    "uiText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "version", "isDraft", "file", "contentHash", "placeholders"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "enum": ["BookingNotice", "TemplateAdWarning", "UnsubscribePage", "PhotoConsent", "HealthDataConsent", "GuardianConfirmation"]
+        },
+        "version": { "type": "string" },
+        "isDraft": { "type": "boolean" },
+        "file": { "type": "string" },
+        "contentHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "placeholders": { "type": "array", "items": { "$ref": "#/definitions/placeholderHit" } }
+      }
+    },
+
+    "placeholderHit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "count"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[А-ЯЁ_]+$" },
+        "count": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "placeholderSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "count", "source", "files", "valuePresent"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[А-ЯЁ_]+$" },
+        "count": { "type": "integer", "minimum": 1, "description": "Число вхождений во всём комплекте." },
+        "source": {
+          "type": "string",
+          "enum": ["ЕГРЮЛ", "после уведомления РКН", "решение заказчика", "из манифеста"],
+          "description": "Группировка дословно из LEGAL_REVIEW.md §13-бис — по ней заказчик собирает значения. Переформулировать нельзя: это тот же текст, который уходит заказчику письмом."
+        },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "valuePresent": {
+          "type": "boolean",
+          "description": "Есть ли непустое значение в legal.values.json. Без --values всегда false: отсутствие файла значений — это отсутствие значений, а не неизвестность."
+        }
+      }
+    },
+
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checked", "broken"],
+      "properties": {
+        "checked": { "type": "integer", "minimum": 0 },
+        "broken": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "href"],
+            "properties": {
+              "file": { "type": "string" },
+              "href": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "anchors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missing"],
+      "properties": {
+        "missing": {
+          "type": "array",
+          "description": "Обязательные якоря (legal-routes.json → anchors), которых нет в отданном HTML. Сегодня здесь ожидаемо лежит offer-channel в terms-owner.html.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["route", "anchor"],
+            "properties": {
+              "route": { "type": "string" },
+              "anchor": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "drift": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparedWith", "differentFiles"],
+      "description": "Расхождение между тем, что читает приложение, и эталоном. Закрывает риск R7 SPEC: оператор правит текст на машине, репозиторий этого не видит.",
+      "properties": {
+        "comparedWith": { "type": "string" },
+        "differentFiles": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reAcceptanceRequired", "note"],
+      "description": "Только у GET /api/admin/legal/readiness — у CLI нет базы. Что произойдёт с людьми, если опубликовать прямо сейчас.",
+      "properties": {
+        "reAcceptanceRequired": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["documentType", "gate", "users"],
+            "properties": {
+              "documentType": { "type": "string", "enum": ["Privacy", "TermsClient", "TermsOwner"] },
+              "gate": { "type": "string", "enum": ["Global", "OwnerScope"] },
+              "users": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

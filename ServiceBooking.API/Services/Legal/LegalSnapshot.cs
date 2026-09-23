@@ -15,7 +15,8 @@ public sealed record LegalDocument(
     LegalGate Gate,
     IReadOnlyList<LegalPurpose> Purposes,
     string ContentHtml,
-    string ContentHash);
+    string ContentHash,
+    string File);
 
 /// <summary>One granular purpose under PdnConsent, in manifest order (order is meaningful — it's the
 /// order the consent form presents them in, ARCHITECTURE_CYCLE5.md §43.3).</summary>
@@ -24,7 +25,7 @@ public sealed record LegalPurpose(ConsentPurpose Key, string Title);
 /// <summary>One published interface text (ARCHITECTURE_CYCLE5.md §43.1) — versioned and its acceptance
 /// recorded where it functions as a consent/confirmation (photo, health, guardian, ad warning), but NEVER
 /// gating: no LegalGate, no ChangeKind, no claim, no 451 (§43.1's "никогда" column).</summary>
-public sealed record LegalUiText(string Key, string Version, bool IsDraft, string ContentHtml, string ContentHash);
+public sealed record LegalUiText(string Key, string Version, bool IsDraft, string ContentHtml, string ContentHash, string File);
 
 /// <summary>
 /// Immutable snapshot of the whole legal manifest — five documents and six interface texts, swapped

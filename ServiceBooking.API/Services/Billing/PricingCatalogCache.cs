@@ -4,6 +4,8 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services.Legal;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Billing;
@@ -12,8 +14,14 @@ namespace ServiceBooking.API.Services.Billing;
 /// 60-second in-memory cache in front of <see cref="PricingCatalogBuilder"/>
 /// (ARCHITECTURE_CYCLE7.md §48) — the public price list is read on every homepage/pricing-page hit and
 /// must never cost a query per anonymous visitor.
+///
+/// Depends on <see cref="LegalDocumentProvider"/> (a singleton, in-memory snapshot, no DB) as of
+/// ARCHITECTURE_CYCLE11.md §102.7/§102.10 (Q7/Q11): the public catalog can't be shown at all while the
+/// channel offer (TermsOwner) is a draft, and one option is dropped from it while its own legal
+/// precondition isn't met. The hot path doesn't get more expensive — it's a read of an already-loaded
+/// in-memory field, not a new query.
 /// </summary>
-public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache)
+public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, LegalDocumentProvider legalDocuments)
 {
     public const string PublicEnabledSettingKey = "pricing.public-enabled";
 
@@ -47,7 +55,7 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache)
         var options = await db.SubscriptionOptions.AsNoTracking().ToListAsync(ct);
         var legalNotice = await GetRawSettingAsync("pricing.legal-notice", ct);
 
-        var dto = PricingCatalogBuilder.Build(version: "pending", plans, options, legalNotice);
+        var dto = PricingCatalogBuilder.Build(version: "pending", plans, options, legalNotice, legalSnapshot: legalDocuments.Current);
         var etag = ComputeETag(dto);
         // version mirrors the ETag per contract ("Совпадает со значением внутри ETag") — rebuild once
         // with the real value rather than trying to compute the hash and embed it in the same payload.
@@ -68,6 +76,26 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache)
         var enabled = string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
         cache.Set(PublicEnabledCacheKey, enabled, CacheDuration);
         return enabled;
+    }
+
+    /// <summary>The switch (<see cref="IsPublicEnabledAsync"/>) AND the legal precondition
+    /// (ARCHITECTURE_CYCLE11.md §102.7, Q7): the storefront is visible only when the operator turned it
+    /// on AND the channel offer (TermsOwner) is published. This is what <c>GET /api/pricing</c> must
+    /// check — an operator flipping the switch on while the offer is still a draft must not make the
+    /// catalog appear.</summary>
+    public async Task<bool> IsCatalogPubliclyVisibleAsync(CancellationToken ct = default) =>
+        await IsPublicEnabledAsync(ct) && GetPublicationBlockReason(legalDocuments.Current) is null;
+
+    /// <summary>Why the switch can't (yet) be turned on, or null if there's no legal obstacle right now
+    /// (ARCHITECTURE_CYCLE11.md §114.1/§114.2). Shared by the informational field on
+    /// <c>GET /api/admin/platform-settings</c> and by the 409 check on its <c>PUT</c> — one rule, read
+    /// twice, never re-derived.</summary>
+    public static string? GetPublicationBlockReason(LegalSnapshot? snapshot)
+    {
+        if (snapshot is null) return "LegalUnavailable";
+        var offer = snapshot.Get(LegalDocumentType.TermsOwner);
+        if (offer is null) return "LegalUnavailable";
+        return offer.IsDraft ? "OfferIsDraft" : null;
     }
 
     /// <summary>Wired into <c>AdminController</c>'s plan create/update/delete endpoints, so a plan
