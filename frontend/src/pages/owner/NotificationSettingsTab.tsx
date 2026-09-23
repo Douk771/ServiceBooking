@@ -32,8 +32,8 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
   const [enabledTypes, setEnabledTypes] = useState<Set<NotificationType>>(new Set(CLIENT_TYPES))
   const [reminderLeadMinutes, setReminderLeadMinutes] = useState(1440)
   const [minLeadMinutes, setMinLeadMinutes] = useState(120)
-  const [deliveryMode, setDeliveryMode] = useState<NotificationDeliveryMode>('PriorityChannel')
-  const [priorityTransport, setPriorityTransport] = useState<NotificationTransport>('WhatsApp')
+  const [deliveryMode, setDeliveryMode] = useState<NotificationDeliveryMode | null>(null)
+  const [priorityTransport, setPriorityTransport] = useState<NotificationTransport | null>(null)
   const [validationError, setValidationError] = useState('')
 
   useEffect(() => {
@@ -41,9 +41,17 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
     setEnabledTypes(new Set(data.enabledTypes))
     setReminderLeadMinutes(data.reminderLeadMinutes)
     setMinLeadMinutes(data.minLeadMinutes)
-    setDeliveryMode(data.deliveryMode)
-    setPriorityTransport(data.priorityTransport)
+    // §114.4 — deliveryMode/priorityTransport stay `null` (i.e. untouched) until the owner actually
+    // interacts with the picker below; the PUT then omits them entirely rather than re-sending the
+    // server's own last value back at it. That matters when the priority transport has since
+    // disconnected: re-sending it unchanged would still trip the server's "priorityTransport must be
+    // among connectedTransports" 400 for an owner who only meant to change, say, reminderLeadMinutes.
+    setDeliveryMode(null)
+    setPriorityTransport(null)
   }, [data])
+
+  const effectiveDeliveryMode = deliveryMode ?? data?.deliveryMode ?? 'PriorityChannel'
+  const effectivePriorityTransport = priorityTransport ?? data?.priorityTransport ?? 'WhatsApp'
 
   const saveMut = useMutation({
     mutationFn: () =>
@@ -51,8 +59,9 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
         enabledTypes: [...enabledTypes],
         reminderLeadMinutes,
         minLeadMinutes,
-        deliveryMode,
-        priorityTransport,
+        // Omit entirely when the owner hasn't touched the picker (§114.4: "не прислали — не меняем").
+        ...(deliveryMode !== null ? { deliveryMode } : {}),
+        ...(priorityTransport !== null ? { priorityTransport } : {}),
       }),
     onSuccess: (res) => {
       setValidationError('')
@@ -164,7 +173,7 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
             </p>
           ) : (
             <>
-              {deliveryMode === 'PriorityChannel' && !data.priorityChannelHealthy && (
+              {effectiveDeliveryMode === 'PriorityChannel' && !data.priorityChannelHealthy && (
                 <div className="rounded-xl bg-warning-bg text-warning text-sm px-4 py-3 flex items-start gap-2 mt-3 mb-1">
                   <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
                   {/* §104.5 — no silent fallback to another transport; the owner must choose. */}
@@ -178,21 +187,32 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
                     type="radio"
                     name="delivery-mode"
                     className="w-4 h-4 mt-0.5 accent-gold"
-                    checked={deliveryMode === 'PriorityChannel'}
+                    checked={effectiveDeliveryMode === 'PriorityChannel'}
                     onChange={() => setDeliveryMode('PriorityChannel')}
                   />
                   <span className="text-sm text-ink-soft">
                     Только в приоритетный канал
-                    {deliveryMode === 'PriorityChannel' && (
+                    {effectiveDeliveryMode === 'PriorityChannel' && (
                       <select
                         aria-label="Приоритетный канал"
-                        value={priorityTransport}
+                        value={effectivePriorityTransport}
                         onChange={(e) => setPriorityTransport(e.target.value as NotificationTransport)}
                         className="ml-2.5 rounded-lg border border-line px-2.5 py-1 text-sm outline-none focus:border-gold bg-white text-ink"
                       >
-                        {data.connectedTransports.map((t) => (
+                        {/* The saved priority transport must stay selectable/visible even when it's since
+                            disconnected — otherwise the <select> falls back to showing whatever option
+                            happens to be first, the owner never notices, and saving re-sends a transport
+                            the server will 400 on (§114.4). The warning banner above already explains
+                            *why* it's unhealthy; this option just makes sure it isn't invisible. */}
+                        {[
+                          ...data.connectedTransports,
+                          ...(data.connectedTransports.includes(effectivePriorityTransport)
+                            ? []
+                            : [effectivePriorityTransport]),
+                        ].map((t) => (
                           <option key={t} value={t}>
-                            {TRANSPORT_LABELS[t]}
+                            {TRANSPORT_LABELS[t] ?? t}
+                            {!data.connectedTransports.includes(t) ? ' (не подключён)' : ''}
                           </option>
                         ))}
                       </select>
@@ -205,14 +225,14 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
                     type="radio"
                     name="delivery-mode"
                     className="w-4 h-4 mt-0.5 accent-gold"
-                    checked={deliveryMode === 'AllChannels'}
+                    checked={effectiveDeliveryMode === 'AllChannels'}
                     onChange={() => setDeliveryMode('AllChannels')}
                   />
                   <span className="text-sm text-ink-soft">Во все подключённые каналы</span>
                 </label>
               </div>
 
-              {deliveryMode === 'AllChannels' && (
+              {effectiveDeliveryMode === 'AllChannels' && (
                 <p className="text-xs text-muted mt-2.5">
                   Клиент получит два одинаковых сообщения на один номер — по одному в каждый мессенджер.
                 </p>

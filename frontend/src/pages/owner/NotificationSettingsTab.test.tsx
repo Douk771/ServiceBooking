@@ -70,12 +70,47 @@ describe('NotificationSettingsTab — delivery mode (US-125)', () => {
     await user.selectOptions(prioritySelect, 'Max')
     await user.click(screen.getByRole('button', { name: 'Сохранить' }))
 
+    // §114.4 — only priorityTransport was actually touched; deliveryMode is omitted rather than
+    // re-sent with its unchanged value ("не прислали — не меняем").
     await waitFor(() =>
-      expect(updateSettings).toHaveBeenCalledWith(
-        'c1',
-        expect.objectContaining({ deliveryMode: 'PriorityChannel', priorityTransport: 'Max' }),
-      ),
+      expect(updateSettings).toHaveBeenCalledWith('c1', expect.objectContaining({ priorityTransport: 'Max' })),
     )
+    expect(updateSettings.mock.calls[0][1]).not.toHaveProperty('deliveryMode')
+  })
+
+  it('keeps a since-disconnected priority transport visible and selected in the picker instead of silently falling back', async () => {
+    // NotificationTransport only has two members today (WhatsApp, Max — API_CONTRACT_CYCLE9.md §112,
+    // "append-only"), so with the picker only rendering once ≥2 transports are connected, the priority
+    // transport is necessarily always one of them right now. This still guards the <select> against a
+    // stale/disconnected priority transport once a third transport is added, or if the client and
+    // server ever disagree — hence the `as never` to exercise it ahead of that.
+    getSettings.mockResolvedValue(
+      settings({
+        connectedTransports: ['Max', 'WhatsApp'],
+        priorityTransport: 'Telegram' as never,
+        priorityChannelHealthy: false,
+      }),
+    )
+    renderTab()
+
+    const prioritySelect = await screen.findByLabelText('Приоритетный канал')
+    expect(prioritySelect).toHaveValue('Telegram')
+    const options = Array.from(prioritySelect.querySelectorAll('option')).map((o) => o.textContent)
+    expect(options).toEqual(['MAX', 'WhatsApp', 'Telegram (не подключён)'])
+  })
+
+  it('omits deliveryMode and priorityTransport entirely when the owner only changes an unrelated field (§114.4)', async () => {
+    const user = userEvent.setup()
+    getSettings.mockResolvedValue(settings({ connectedTransports: ['WhatsApp', 'Max'] }))
+    renderTab()
+
+    await screen.findByLabelText('Приоритетный канал')
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1))
+    const payload = updateSettings.mock.calls[0][1]
+    expect(payload).not.toHaveProperty('deliveryMode')
+    expect(payload).not.toHaveProperty('priorityTransport')
   })
 
   it('shows the "priority channel unavailable" banner without silently switching transport', async () => {
