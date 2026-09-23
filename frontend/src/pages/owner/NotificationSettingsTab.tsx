@@ -7,7 +7,8 @@ import { Button } from '../../components/ui/Button'
 import { Icon } from '../../components/ui/Icon'
 import { ChannelBreachBanner } from '../../components/notifications/ChannelBreachBanner'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
-import type { NotificationType } from '../../types'
+import { TRANSPORT_LABELS } from '../../utils/notificationTransport'
+import type { NotificationType, NotificationDeliveryMode, NotificationTransport } from '../../types'
 
 const TYPE_LABELS: Record<NotificationType, string> = {
   BookingConfirmed: 'Подтверждение записи',
@@ -30,6 +31,8 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
   const [enabledTypes, setEnabledTypes] = useState<Set<NotificationType>>(new Set(CLIENT_TYPES))
   const [reminderLeadMinutes, setReminderLeadMinutes] = useState(1440)
   const [minLeadMinutes, setMinLeadMinutes] = useState(120)
+  const [deliveryMode, setDeliveryMode] = useState<NotificationDeliveryMode>('PriorityChannel')
+  const [priorityTransport, setPriorityTransport] = useState<NotificationTransport>('WhatsApp')
   const [validationError, setValidationError] = useState('')
 
   useEffect(() => {
@@ -37,6 +40,8 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
     setEnabledTypes(new Set(data.enabledTypes))
     setReminderLeadMinutes(data.reminderLeadMinutes)
     setMinLeadMinutes(data.minLeadMinutes)
+    setDeliveryMode(data.deliveryMode)
+    setPriorityTransport(data.priorityTransport)
   }, [data])
 
   const saveMut = useMutation({
@@ -45,6 +50,8 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
         enabledTypes: [...enabledTypes],
         reminderLeadMinutes,
         minLeadMinutes,
+        deliveryMode,
+        priorityTransport,
       }),
     onSuccess: (res) => {
       setValidationError('')
@@ -120,6 +127,82 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
           <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
           <span>{data.blockedReason}</span>
         </div>
+      )}
+
+      {/* US-125 (§104.5) — delivery mode. Rendered only once at least one transport is connected: with
+          zero, the picker has nothing to pick between and the existing gate above already covers that
+          case with its own explanation. */}
+      {data.connectedTransports.length > 0 && (
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold text-ink mb-1">Как доставлять клиенту</h2>
+
+          {data.connectedTransports.length === 1 ? (
+            <p className="text-sm text-ink-soft mt-2">
+              Подключён только один мессенджер ({TRANSPORT_LABELS[data.connectedTransports[0]]}) — выбор режима пока
+              ни на что не влияет. Подключите второй канал, чтобы отправлять в оба или выбрать приоритетный.
+            </p>
+          ) : (
+            <>
+              {deliveryMode === 'PriorityChannel' && !data.priorityChannelHealthy && (
+                <div className="rounded-xl bg-warning-bg text-warning text-sm px-4 py-3 flex items-start gap-2 mt-3 mb-1">
+                  <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
+                  {/* §104.5 — no silent fallback to another transport; the owner must choose. */}
+                  <span>Приоритетный канал не работает: выберите другой или включите отправку во все каналы.</span>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2.5 mt-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="delivery-mode"
+                    className="w-4 h-4 mt-0.5 accent-gold"
+                    checked={deliveryMode === 'PriorityChannel'}
+                    onChange={() => setDeliveryMode('PriorityChannel')}
+                  />
+                  <span className="text-sm text-ink-soft">
+                    Только в приоритетный канал
+                    {deliveryMode === 'PriorityChannel' && (
+                      <select
+                        aria-label="Приоритетный канал"
+                        value={priorityTransport}
+                        onChange={(e) => setPriorityTransport(e.target.value as NotificationTransport)}
+                        className="ml-2.5 rounded-lg border border-line px-2.5 py-1 text-sm outline-none focus:border-gold bg-white text-ink"
+                      >
+                        {data.connectedTransports.map((t) => (
+                          <option key={t} value={t}>
+                            {TRANSPORT_LABELS[t]}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="delivery-mode"
+                    className="w-4 h-4 mt-0.5 accent-gold"
+                    checked={deliveryMode === 'AllChannels'}
+                    onChange={() => setDeliveryMode('AllChannels')}
+                  />
+                  <span className="text-sm text-ink-soft">Во все подключённые каналы</span>
+                </label>
+              </div>
+
+              {deliveryMode === 'AllChannels' && (
+                <p className="text-xs text-muted mt-2.5">
+                  Клиент получит два одинаковых сообщения на один номер — по одному в каждый мессенджер.
+                </p>
+              )}
+
+              {/* §104.5 — the mode only applies to events queued AFTER saving; already-queued messages
+                  keep the recipient they were assigned at that moment. */}
+              <p className="text-xs text-muted mt-2.5">Изменение действует на события, произошедшие после сохранения.</p>
+            </>
+          )}
+        </Card>
       )}
 
       <Card className="p-6">
