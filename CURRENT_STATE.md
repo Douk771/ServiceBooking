@@ -1,8 +1,58 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `0929b48`, дата: 2026-09-23.**
+**Актуально по состоянию на коммит: `242c7d9`, дата: 2026-09-23.**
 
 Документ описывает **что есть в репозитории сейчас**, без предложений по развитию.
+
+📸 **Точка отсчёта этой редакции. Ветка — `develop`, HEAD — `242c7d9`** (мёрж-коммит
+`Merge cycle/10-master-booking-history-photo into develop`, CI зелёный), рабочее дерево чистое.
+Редакция записывает **цикл 10 «свобода ручной записи, история изменений записи, фото салона»**
+поверх редакции цикла 7.
+
+📸 **Диапазон изменений этой редакции (цикл 10): `bd3be3f..242c7d9`, 25 коммитов, +14 352 / −1 144
+строк, 73 файла.** Полный список — `git log --oneline bd3be3f..242c7d9`. Документ обновлялся
+**точечно по диапазону**: разделы, которых цикл 10 не касался, остались в редакции цикла 7 (и глубже
+— циклов 6, 8 и 5). **Отсчитывайте следующий diff от `242c7d9`.**
+⚠️ Между `0929b48` (шапка прошлой редакции) и `bd3be3f` (базовая точка цикла 10) лежат ещё три
+коммита: две правки скриптов и текстов деплоя (`96b68df`, `bd3be3f`) и запись цикла 7 в
+`CHANGELOG.md` (`5e9c723`). Продуктового кода они не трогают, поэтому в этой редакции не описаны.
+
+📸 **Главное в цикле 10 — три блока:**
+- **Блок A: один экран записи вместо двух.** `ManualBookingModal` **удалён**, его способности
+  поглощены `BookingModal`; выбор даты везде — помесячный `BookingCalendar`. Персонал получил
+  свободу записи на любую будущую дату и любое свободное время: `GET /api/bookings/availability`
+  научился `extendedHours`, дни без графика и выходные для персонала **нажимаются**, сохраняя подпись.
+- **Блок B: журнал изменений записи.** Новая append-only таблица `BookingEvent`, новый эндпоинт
+  `GET /api/bookings/{id}/history`, панель истории в списке записей персонала. Клиенту журнал не
+  показывается ни в каком виде — это внутренняя информация персонала (решение заказчика П8).
+- **Блок C: фотогалерея салона.** Новая таблица `CompanyPhoto`, четыре эндпоинта фотографий,
+  управление в настройках компании и показ на публичной карточке вместо серой заглушки.
+
+**Две новые миграции, обе чисто добавочные** — ни одной миграции данных, ни одного `NOT NULL` на
+существующей таблице (§3).
+
+📸 **Правило цикла 10, которое легче всего нарушить в следующем цикле — запишите его себе.**
+Намерение «записываю клиента» против «записываюсь сам» задаётся **точкой входа** (и переключателем
+в форме), а **не** `staffMode`. `staffMode` управляет **только** свободой выбора даты и времени.
+Вывод намерения из `staffMode` уже один раз привёл к блокеру внутри цикла: запись сотрудника
+**самому себе** становилась ничьей — `ClientId = null`, без предоплаты и без согласий. В коде это
+закреплено явным состоянием `bookForClient` (`frontend/src/components/booking/BookingModal.tsx:103`,
+починка — коммит `4f8ed63`), см. §6.
+
+📸 **Числа прогонов на `242c7d9`** (автор этого документа работает только на чтение и тесты не
+запускает; числа получены от того, кто выполнял прогон, и сходятся со статическим подсчётом
+атрибутов):
+
+| Команда | Результат | Было в редакции цикла 7 |
+|---|---|---|
+| `dotnet test ServiceBooking.Tests` | 📸 **603** (нужен Docker, §7.2) | 549 |
+| `dotnet test ServiceBooking.UnitTests` | 📸 **942** | 908 |
+| `npm run test:run` (в `frontend/`) | 📸 **369**, 57 файлов | 341 / 53 |
+
+Статический пересчёт на `242c7d9` сходится: 626 `[Fact` + 316 `[InlineData]` = **942** (юнит),
+586 + 16 = 602 (функциональные — расхождение на единицу с приёмочными **603** всё то же, `[Fact`
+внутри комментария в `LegalConsentVersionChangeTests.cs`), **369** вызовов `it(...)` в **57** файлах
+(фронт).
 
 💳 Точка отсчёта этой редакции. Ветка — **`develop`**, HEAD — `0929b48`, рабочее дерево чистое.
 Редакция записывает **цикл 7 «биллинг-аккаунты и модель тарифов»** поверх редакции цикла 6.
@@ -153,6 +203,15 @@ US-60…US-67, ветка `cycle/06-booking-fixes`), остальные девя
 ---
 
 ## 1. Стек и версии
+
+📸 **Цикл 10 стек не менял.** Диф по всем `*.csproj`, `ServiceBooking.sln` и
+`frontend/package-lock.json` в диапазоне `bd3be3f..242c7d9` — **пустой**. В `frontend/package.json`
+изменение ровно одно: новый скрипт `types:api:cycle10`
+(`openapi-typescript ../contracts/cycle10/openapi.yaml -o src/types/api-cycle10.generated.ts`) рядом
+с прежним `types:api` цикла 7. Ни одной новой зависимости, ни одного нового проекта.
+⚠️ **`npm audit` на фронтенде показывает четыре уязвимости**: `axios` (high), `form-data` (high),
+`react-router` (moderate, два разных совета). Они существовали **до** цикла 10, чинятся патч-версиями,
+цикл их не трогал — см. §9 D5.
 
 🗓 **Цикл 6 стек не менял вообще.** Диф по всем `*.csproj`, `ServiceBooking.sln`,
 `frontend/package.json` и `frontend/package-lock.json` в диапазоне `14a7fb6..aac6231` — **пустой**:
@@ -401,7 +460,7 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 │   │   │                           ⚖️ +ConsentLedger, ConsentSubject, HealthNoteProtector,
 │   │   │                           RequiresOwnerTermsAttribute
 │   │   ├── Retention/              ⚖️ IRetentionRule, RetentionPeriods, RetentionPlan, RetentionRuleRunner,
-│   │   │                           Rules/ — ТРИНАДЦАТЬ правил уничтожения (см. §4.18)
+│   │   │                           Rules/ — 📸 ЧЕТЫРНАДЦАТЬ правил уничтожения (см. §4.18)
 │   │   ├── Health/                 ⭐ DatabaseReadyHealthCheck
 │   │   ├── Notifications/          🆕 SecretProtector, ChannelKeyFingerprint, NotificationOptions, NotificationGate,
 │   │   │   │                       NotificationTiming, NotificationTemplateRenderer/Validator, DefaultTemplates,
@@ -555,6 +614,27 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
 позже «восьмёрки», хотя номер меньше).
 Значки прежних циклов намеренно оставлены как были: так видно, что именно в каком цикле возникло.
 
+📸 **Что цикл 10 добавил и удалил в структуре** (`ARCHITECTURE_CYCLE10.md` §110):
+
+- `ServiceBooking.API/Controllers/CompanyPhotosController.cs` — **новый** контроллер (205 строк),
+  все четыре маршрута `/api/companies/{id}/photos*`. Фотографии салона намеренно не стали ещё одним
+  куском и так самого большого `CompaniesController`.
+- `ServiceBooking.API/Services/Bookings/` — **новая папка**: `BookingEventLog.cs` (единственный
+  писатель журнала — никакой контроллер не добавляет строку в `BookingEvents` напрямую),
+  `BookingActorResolver.cs` (кто совершил действие: клиент, гость, сотрудник, суперадмин),
+  `BookingEventTexts.cs` (человеческие формулировки событий).
+- `ServiceBooking.API/Services/CompanyPhotoOrdering.cs` — чистая (без БД) логика порядка и
+  уплотнения позиций фото; `Services/Retention/Rules/BookingEventRule.cs` — новое правило
+  уничтожения (§4.18, §9 D1).
+- `ServiceBooking.Core/Entities/BookingEvent.cs`, `CompanyPhoto.cs`; перечисления
+  `Core/Enums/BookingEventKind.cs`, `BookingActorKind.cs`.
+- Фронтенд: `api/companyPhotos.ts`, `components/booking/BookingHistoryPanel.tsx`,
+  `components/company/CompanyPhotoGallery.tsx`, `pages/owner/CompanyPhotosSection.tsx`,
+  `types/api-cycle10.generated.ts` (сгенерирован из `contracts/cycle10/openapi.yaml`).
+- ⚠️ **Удалён** `frontend/src/components/booking/ManualBookingModal.tsx` (623 строки) вместе со
+  своим тестом (`ManualBookingModal.test.tsx`, 179 строк). Его функции поглощены `BookingModal.tsx`
+  — см. §4.5, §5.0-ter и §6.
+
 ### Точка входа и слои
 
 - Единственная точка входа приложения — `ServiceBooking.API/Program.cs` (🆕 вырос до **784 строк**).
@@ -616,6 +696,8 @@ ServiceBooking.sln                  🔬 6 проектов (+ папка Soluti
   Контроллеры при этом остались «толстыми» по-прежнему: `AdminBillingController` — 12 маршрутов и
   ~800 строк, часть логики (в том числе вычисление статуса подписки в SQL) живёт прямо в нём,
   а не в `BillingCalculator` — см. §9 B4.
+- 📸 **Новое вне кода в цикле 10:** `contracts/cycle10/openapi.yaml` (четвёртый машиночитаемый
+  контракт, §10.3) — каталог `contracts/` теперь содержит `cycle8/`, `cycle7/` и `cycle10/`.
 - 💳 **Новые каталоги вне кода:** `contracts/cycle7/openapi.yaml` (третий машиночитаемый контракт,
   §10.3) и **`deploy/checks/`** — два SQL-скрипта сверки для миграции биллинга
   (`billing-precheck.sql` — перед выкатом, `billing-migration-check.sql` — после), см. §8.
@@ -814,7 +896,49 @@ ChannelRiskNotice = 4 }`** — пять членов вместо двух; `Ter
 ⚠️ `CompanyManagePage` раньше показывал `maxEmployees` аккаунта как лимит компании — исправлено
 (`ac5c6c2`).
 
-### Миграции (💳 51, все в `ServiceBooking.Infrastructure/Migrations/`)
+### 📸 Журнал изменений записи и фотогалерея салона — две новые сущности (цикл 10)
+
+| Сущность | Файл | Ключевые поля |
+|---|---|---|
+| **`BookingEvent`** | `Core/Entities/BookingEvent.cs` | `Id`, `BookingId`, **`CompanyId`** (денормализованная копия `Booking.CompanyId` — проверка доступа к истории и правило уничтожения читают её **без join'а** к `Bookings`, тот же приём, что у `ClientNotePhoto.CompanyId`), `Kind: BookingEventKind`, `OccurredAtUtc`, `ActorKind: BookingActorKind`, `ActorUserId?`, **`ActorNameSnapshot?`** и `ActorRoleSnapshot?` (снимок имени и роли автора — переживает удаление аккаунта и увольнение, как `Booking.Price`), `PreviousDate?`/`PreviousStartTime?`/`NewDate?`/`NewStartTime?` (только для `Rescheduled`), `CancellationReason?` (только для `Cancelled` и только если причину указали) |
+| **`CompanyPhoto`** | `Core/Entities/CompanyPhoto.cs` | `Id`, `CompanyId`, `Url`, `ThumbnailUrl`, `ContentType`, `SizeBytes`, `Width`, `Height`, **`ContentHash`** (SHA-256 **обработанных** байт, уникальность в пределах компании), **`Position`** (0-based, `0` = обложка), `UploadedByUserId?`, `CreatedAtUtc` |
+
+Новые перечисления: `Core/Enums/BookingEventKind.cs` (`Created`, `Rescheduled`, `Cancelled`,
+`Completed`, `NoShow`, `PaymentMarked` — значения **никогда не перенумеровываются**, журнал
+append-only) и `Core/Enums/BookingActorKind.cs` (`Client`, `Guest`, `Staff`, `SuperAdmin`, `System`;
+⚠️ `System` в цикле 10 **не пишет никто** — значение заведено «на вырост»).
+
+Навигации у существующих сущностей: `Booking.Events` и `Company.Photos`. Новых колонок у старых
+таблиц цикл **не добавил**.
+
+⚠️ **Три правила этой части модели, которые легко нарушить:**
+1. **`BookingEvents` — append-only, и писатель ровно один:**
+   `ServiceBooking.API/Services/Bookings/BookingEventLog.cs`. Ни один контроллер не добавляет строку
+   напрямую; точек вызова шесть (создание, перенос, отмена, «выполнено», «не пришёл», отметка
+   оплаты), и запись события идёт **в той же транзакции**, что и само изменение записи
+   (`ARCHITECTURE_CYCLE10.md` §105).
+2. **Backfill'а истории у старых записей нет** (решение заказчика П3): у записи, созданной до
+   внедрения журнала, история просто пуста, и это отличается от «истории не было» — см.
+   `precedesJournal` в `API_CONTRACT_CYCLE10.md` §122.2.
+3. **Уникальность `(CompanyId, Position)` у фотографий держит НЕ база, а сервер.** Уникального
+   индекса намеренно нет: недеферрируемый уникальный индекс Postgres не пережил бы построчные
+   `UPDATE` от EF при перестановке. Порядок применяется `CompanyPhotoOrdering` под advisory-lock'ом
+   `company-photos:{companyId}`. Чтение всюду детерминировано: `Position` → `CreatedAtUtc` → `Id`;
+   есть защита от дублей `Position == 0` при поиске обложки (`b09ad38`).
+
+📸 **Фото салона сознательно живут вне квоты и вне ретенции клиентских фото** (решения П5/П6): они
+**не** расходуют `PhotoQuotaMb`, **не** попадают под `ClientNotePhotoDays` и
+`photo-retention-cleanup`, лежат в **публичном** классе хранения (`/uploads/...`, как логотип) и
+отдаются анонимно. Ограничение — **10 фото на компанию** (`CompanyPhotoOrdering.MaxPhotosPerCompany`)
+и размер файла, а не мегабайты тарифа.
+
+⚠️ **Файлы удалённых фотографий.** Каскад от `Company` удаляет **строки**, но не файлы на диске.
+Сегодня это недостижимо (жёсткого удаления компании в продукте нет — `DeleteAccount` отказывается
+удалять аккаунт, владеющий компанией, деактивация лишь ставит `IsActive = false`), но тот, кто
+заведёт эндпоинт «удалить компанию», обязан удалить и файлы — предупреждение записано комментарием
+прямо в `CompanyPhoto.cs`.
+
+### Миграции (📸 53, все в `ServiceBooking.Infrastructure/Migrations/`)
 
 Первые 13 — как раньше: `InitialCreate` → `DateBasedSchedule` → `AddSubscriptionAndCommission` →
 `AddReviewsTemplatesNotes` → `AddPromoGiftMailPlans` → `AddPrepaymentSupport` →
@@ -930,6 +1054,18 @@ ChannelRiskNotice = 4 }`** — пять членов вместо двух; `Ter
 любой базе, куда 9-я миграция успела приехать до 11-й, состояние каталога между ними было
 некорректным; накатывать надо весь блок целиком.
 
+📸 **Цикл 10 добавил две — и обе чисто добавочные, без миграции данных:**
+
+1. **`20260923055550_AddBookingEventJournal`** — таблица `BookingEvents` (FK на `Bookings` каскадом,
+   на `AspNetUsers` — `SetNull`; индексы `(BookingId, OccurredAtUtc)`, `(CompanyId, OccurredAtUtc)`
+   и `ActorUserId`).
+2. **`20260923060446_AddCompanyPhotos`** — таблица `CompanyPhotos` (FK на `Companies` каскадом,
+   уникальный индекс `(CompanyId, ContentHash)`, индекс `(CompanyId, Position)` — **не** уникальный,
+   см. выше).
+
+Ни одна из двух не переписывает существующие данные, не делает колонку `NOT NULL` и не трогает
+старые таблицы, поэтому обе обратимы `Down`'ом. Список разрушительных ниже цикл 10 **не пополнил**.
+
 Итого **разрушительных по данным миграций в проекте теперь восемь**: `NormalizePhoneNumbers`
 (цикл 2), `ConsentJournal` и `RemovePhotoRetentionForever` (обе — цикл 5), 🗓
 `BackfillSubscriptionPaidUntil` (цикл 6 — переписывает `NULL` на дату без возможности отката) и 💳
@@ -951,6 +1087,12 @@ ChannelRiskNotice = 4 }`** — пять членов вместо двух; `Ter
 рабочее окно, несколько услуг за визит, перенос записи — US-64…US-67), §4.6 и §4.10 (подписки и
 диагностика тарифа — US-63), §4.9 (как визит из нескольких услуг попадает в отчёты), §4.11 (почему
 виджет остался на одной услуге).
+
+📸 **Где искать цикл 10:** §4.20 — три блока цикла одним разделом (свобода ручной записи, журнал
+изменений записи, фотогалерея салона). Затронуты также §4.2 (`includeHidden` у списка мастеров,
+фотографии в `CompanyDto`), §4.5 (`extendedHours`/`staffMode`/`scheduleState` у `/availability`,
+новый `GET /api/bookings/{id}/history`, **удаление `ManualBookingModal`**), §4.12 и §4.18
+(тексты ошибок загрузки стали русскими; новое правило уничтожения `booking-event`).
 
 💳 **Где искать цикл 7:** §4.19 — весь биллинг одним блоком (модель, эндпоинты владельца и
 администратора, перенос компаний, витрина цен, экраны). Затронуты также §4.6 (старый контур
@@ -1018,7 +1160,8 @@ JWT: HS256, срок **7 дней**, claims `sub/phone/given_name/family_name/jt
 | GET | `/api/companies/my` | владелец — свои компании |
 | GET | `/api/companies/member` | все компании, где я участник любой роли |
 | GET | `/api/companies/{slug}` | публично |
-| GET | `/api/companies/{id}/masters?serviceId=` | публично; **фильтр по ролям `Master`/`CompanyOwner`** (цикл 1); 🗓 **+ фильтр по `ProvidesServices == true`**; 🗓 кривой `serviceId` теперь даёт 400, а не игнорируется |
+| GET | `/api/companies/{id}/masters?serviceId=` 📸 `&includeHidden` | публично; **фильтр по ролям `Master`/`CompanyOwner`** (цикл 1); 🗓 **+ фильтр по `ProvidesServices == true`**; 🗓 кривой `serviceId` теперь даёт 400, а не игнорируется. 📸 **`includeHidden=true` — просьба, а не право**: сервер выполняет её, только если вызывающий сам персонал этой компании (или SuperAdmin), и тогда в список попадают участники с `ProvidesServices == false` (в DTO приезжает `providesServices`). Всем остальным флаг не даёт ничего |
+| 📸 GET | `/api/companies/{id}/photos` · POST `/photos` · DELETE `/photos/{photoId}` · PUT `/photos/order` | `CompanyPhotosController` — см. §4.20 |
 | GET | `/api/companies/{id}/members` | владелец/SuperAdmin |
 | POST | `/api/companies` | авторизованные; **лимит `MaxCompanies`** под advisory lock, 402 при превышении. 🆕 **ЛОМАЮЩЕЕ: `cityId` обязателен** — без него 400. Опционально `timeZoneId` (перебивает зону города и ставит `TimeZoneIsManual`) |
 | PUT | `/api/companies/{id}` | владелец; 🆕 принимает `cityId` и `timeZoneId`, разрешает их через `CompanyTimeZoneResolver.ForUpdate` (ручная зона переживает смену города); 🗓 принимает `bookingHorizonDays`: поле не прислали или `null` → не трогаем, `0` → явный сброс в дефолт 90, вне `[1, 365]` → **400** (`BookingHorizon.TryNormalize`) |
@@ -1077,7 +1220,8 @@ rate limit `uploads`).
 |---|---|---|
 | GET | `/api/bookings/occupied?masterId&date` | **`[Authorize]`** (цикл 1): SuperAdmin, сам мастер или персонал компании, где этот мастер тоже состоит. Занятость намеренно **не** скоупится по компании — один человек занят у всех работодателей |
 | GET | `/api/bookings/slots?companyId&masterId&serviceId&date&manual` 🗓 `&extendedHours&serviceIds&excludeBookingId` | публично; **`companyId` обязателен** (цикл 1), проверяется тройка «услуга принадлежит компании» + «мастер работает в компании»; `manual=true` учитывается **только для персонала этой компании**. 🗓 Три новых параметра — см. разбор ниже |
-| 🗓 GET | `/api/bookings/availability?companyId&masterId&serviceId\|serviceIds&from&to&manual` | публично (лимит `availability` 60/мин на IP); статус **каждого дня диапазона одним запросом** — для месячного календаря |
+| 🗓 GET | `/api/bookings/availability?companyId&masterId&serviceId\|serviceIds&from&to&manual` 📸 `&extendedHours` | публично (лимит `availability` 60/мин на IP); статус **каждого дня диапазона одним запросом** — для месячного календаря. 📸 Цикл 10 добавил `extendedHours` и два поля в ответе — `staffMode` и `days[].scheduleState`, см. ниже |
+| 📸 GET | `/api/bookings/{id}/history` | **новый.** `[Authorize]`; **персонал компании этой записи** (`Master`/`CompanyOwner` в ней) **или SuperAdmin**. ⚠️ Право **шире**, чем право менять запись: историю видит любой сотрудник компании, не только назначенный мастер и владелец. Клиенту — 403, независимо от того, его это запись или нет |
 | POST | `/api/bookings` | публично (гость) и авторизованно |
 | GET | `/api/bookings/{id}` | владелец записи или персонал |
 | GET | `/api/bookings/client?status=` | мои записи как клиента, с фильтром статуса |
@@ -1158,8 +1302,10 @@ rate limit `uploads`).
 цикла 6, там ровно одна строка — backfill миграции). Текст уведомления перечисляет услуги визита
 через запятую (`NotificationScheduler`).
 
-Фронт: `components/booking/BookingModal.tsx` (гость/клиент, выбор услуги → мастера → даты → слота, капча),
-`ManualBookingModal.tsx` (персонал записывает клиента), `RescheduleModal.tsx`,
+Фронт: 📸 **`components/booking/BookingModal.tsx` — единственная модалка записи в продукте**
+(гость/клиент **и** персонал; выбор компании → услуг → мастера → даты → слота, капча). Отдельного
+`ManualBookingModal.tsx` больше нет, он удалён в цикле 10 — подробности в §4.20 и §6.
+`RescheduleModal.tsx`,
 `pages/MyBookingsPage.tsx` (персонал; под записью раскрывается панель с историей клиента и заметками),
 `pages/ClientBookingsPage.tsx` (клиент; маршрут `/my-visits` теперь доступен **всем**
 аутентифицированным ролям, включая мастера и владельца).
@@ -1171,7 +1317,8 @@ rate limit `uploads`).
   «Занято» выбрал заказчик, она вынесена в одну константу `DAY_FULL_LABEL`.
 - **US-64: шаг выбора мастера пропускается**, если в компании ровно один активный специалист,
   оказывающий услуги.
-- `ManualBookingModal.tsx` — мультивыбор услуг и тумблер «показать другие часы» (`extendedHours`);
+- `ManualBookingModal.tsx` (📸 **удалён в цикле 10**, описано как история) — мультивыбор услуг и
+  тумблер «показать другие часы» (`extendedHours`); обе способности переехали в `BookingModal`;
   `RescheduleModal.tsx` — читает слоты с сервера и передаёт `excludeBookingId`, а пустую сетку
   объясняет причиной, а не «попробуйте снова»; визит из нескольких услуг рисуется **одной строкой**
   в списках записей.
@@ -1626,7 +1773,12 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 `NotificationBodyRedactionRule`, `NotificationMetadataDeletionRule`, `TemplateHistoryRule`,
 `ConsentRecordRule`, `InactiveAccountRule`, `BookingPersonalizationRule`, `ClientNoteRule`,
 `ClientNotePhotoRule`, `ClientHealthNoteRule`, `ChannelStateEventRule`, `PaymentLogRule`,
-`MailLogRule`, `AppLogAgeRule`. Их исполняет четвёртая фоновая задача
+`MailLogRule`, `AppLogAgeRule`, 📸 **`BookingEventRule`** (четырнадцатое, цикл 10 — журнал изменений
+записи). ⚠️ **У четырнадцатого срок не задан:** `Retention:BookingEventDays: 0`, и правило читает
+ноль как «срок не настроен» — оно **ничего не удаляет** и честно пишет это в сводку, вместо того
+чтобы молча ничего не делать или удалять по выдуманному рубежу. Ждёт ответа юриста (в журнале ФИО
+сотрудников), см. §9 D1. Старт приложения оно при этом **не роняет** — в отличие от fail-fast'ов на
+`TemplateHistoryDays`/`ConsentRecordDays`, которые охраняют **известные** юридические минимумы. Их исполняет четвёртая фоновая задача
 `Services/Scheduling/Tasks/DataRetentionTask.cs` (период — сутки).
 
 Как это устроено:
@@ -1793,6 +1945,81 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 ---
 
+### 4.20 📸 Свобода ручной записи, журнал изменений записи и фото салона — функция цикла 10
+
+Три блока одного цикла. Документы: `SPEC_CYCLE10_MASTER_BOOKING_HISTORY_PHOTO.md` (ред. 3),
+`ARCHITECTURE_CYCLE10.md` §100–§117, `API_CONTRACT_CYCLE10.md` §120–§133,
+`contracts/cycle10/openapi.yaml`.
+
+**Блок A. Один экран записи вместо двух — работает.**
+
+- `ManualBookingModal` **удалён**; `BookingModal` — единственный компонент записи, открывается из
+  **трёх** точек: публичная карточка компании (`CompanyPage.tsx:252`), виджет `/embed/:slug`
+  (`EmbedPage.tsx:125`, по-прежнему одна услуга за визит), «Мои записи → Записать клиента»
+  (`MyBookingsPage.tsx:480`). Выбор даты везде — помесячный `BookingCalendar`; плоского списка
+  «сегодня + 14 дней» в продукте больше нет.
+- **Режим персонала включает сервер, а не фронт.** `GET /api/bookings/availability` возвращает
+  `staffMode: true/false` — это **единственный** признак, по которому интерфейс рисует режим
+  персонала. Ни роль в токене, ни переданный `manual`, ни точка открытия модалки таким признаком не
+  являются; `BookingCalendar` сообщает флаг наверх через `onStaffModeChange`, до ответа сервера
+  модалка ведёт себя как обычный клиентский путь.
+- **`extendedHours` у `/availability`** (был только у `/slots`) — закрывает дефект, из-за которого
+  месячный календарь персонала показывал ложное «занято», если день свободен только вне окна
+  09:00–21:00. Таблица «просьба → что применит сервер» у обоих эндпоинтов теперь **одна и та же**
+  (`ScheduleFallback.None` / `DefaultWindow` / `WholeDay`, §4.5), поэтому календарь и сетка времени
+  разойтись не могут.
+- **`days[].scheduleState`** — `Working` / `DayOff` / `NoSchedule`, и **только при `staffMode: true`**
+  (анонимному посетителю различать «выходной» и «график не заполнен» незачем — решение по
+  приватности расписания). Для персонала статус графика — **информация, а не запрет**: день сохраняет
+  подпись «выходной»/«нет графика», но **нажимается**; подпись попадает и в `aria-label` кнопки дня.
+- **Горизонт записи** (`BookingHorizonDays`) персоналу по-прежнему не применяется — теперь и в
+  календаре: он листается вперёд помесячно, верхняя граница интерфейса — 365 дней.
+- **Регрессия, которую слияние не допустило** (это и есть критерий приёмки блока): для гостя,
+  клиента и сотрудника **чужой** компании объединённая модалка ведёт себя ровно как прежний
+  `BookingModal` — `DayOff` не нажимается, горизонт применяется, капча и согласия гостя на месте.
+
+**Блок B. Журнал изменений записи — работает, только для персонала.**
+
+- `GET /api/bookings/{id}/history` → `{ bookingId, precedesJournal, events[] }`; у события —
+  `kind` (`Created`/`Rescheduled`/`Cancelled`/`Completed`/`NoShow`/`PaymentMarked`), `occurredAt`,
+  готовый человеческий `title`, `actor` (`kind` + снимок имени + роль в компании + `label`),
+  `reschedule` (откуда/куда) и `cancellationReason`.
+- **`precedesJournal`** отличает «у записи ещё ничего не происходило» от «запись создана до
+  внедрения журнала, истории и не будет» — backfill'а истории сознательно нет.
+- `BookingDto.historyEventCount` — число событий, заполняется **только персоналу этой компании и
+  SuperAdmin**, у клиента поле `null`. В списке записей персонала считается одним группирующим
+  запросом на страницу, без N+1.
+- Фронт: `components/booking/BookingHistoryPanel.tsx`, раскрывается под записью в
+  `pages/MyBookingsPage.tsx`. Даты переноса форматируются по-человечески, а не сырым ISO (`66bb65d`).
+- ⚠️ **Клиенту история не показывается ни в каком виде** — это решение заказчика (П8), а не
+  недоделка. Состав карточки записи в «Моих визитах» не менялся.
+
+**Блок C. Фотогалерея салона — работает.**
+
+| Метод | Путь | Доступ |
+|---|---|---|
+| GET | `/api/companies/{id}/photos` | **анонимно**; `CompanyPhotoDto[]` в порядке показа, 404 если компании нет |
+| POST | `/api/companies/{id}/photos` | владелец компании или SuperAdmin; `multipart/form-data`, поле **`file`**, ≤5 МБ, политика `uploads`. **201** + фото в конец списка; повторная загрузка того же файла даёт **200** и уже существующее фото (дедуп по хешу), лимит не расходуется |
+| DELETE | `/api/companies/{id}/photos/{photoId}` | владелец или SuperAdmin; после удаления позиции уплотняются, обложкой становится следующее фото. Файл с диска удаляется **после** коммита |
+| PUT | `/api/companies/{id}/photos/order` | владелец или SuperAdmin; тело — **полная перестановка** id'шников (все ровно по разу), первый = обложка. Частичный список, чужой или повторённый id → 400 |
+
+- **До 10 фото на компанию**, первое (`position = 0`) — обложка. Конвейер тот же, что у логотипа и
+  фото заметок: тип по сигнатуре байт, ре-энкод (профили `CompanyPhoto` 1600 px и `CompanyPhotoThumb`
+  480 px), метаданные и геолокация не сохраняются. Класс хранения — **публичный**.
+- `CompanyDto` получил `coverPhotoUrl`/`coverThumbnailUrl` (на списке компаний и на публичной
+  карточке) и `photos[]` — **только** у `GET /api/companies/{slug}`, чтобы публичной странице не
+  требовался дополнительный запрос. `photos: null` означает «этот эндпоинт список не отдаёт», `[]` —
+  «фотографий нет».
+- Фронт: `pages/owner/CompanyPhotosSection.tsx` (управление в настройках компании — drop-zone,
+  удаление, стрелки порядка), `components/company/CompanyPhotoGallery.tsx` (публичный показ с
+  лайтбоксом и ленивой загрузкой полноразмерного изображения) на `pages/CompanyPage.tsx` вместо
+  прежней серой заглушки «Фото: компания».
+- ⚠️ **Согласия на публикацию изображений людей продукт не собирает** — решение заказчика (П7):
+  экрана и чекбокса в потоке загрузки нет, `ConsentRecord` на фото салона не пишется. Открытый
+  вопрос к юристу — §9 D2.
+
+---
+
 ## 5. Что реализовано частично, заглушки и несогласованности
 
 Явных маркеров `TODO`/`FIXME`/`HACK` в коде **нет ни одного** (⚖️ перепроверено grep'ом заново на
@@ -1829,6 +2056,27 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 4. **Контракт тарифа в админке изменил форму** (`AdminPlanDto`/`AdminPlanInput`): появились массив
    `highlights` и матрица опций, флаг `isSystemFree` отделён (`c7ae43a`, `9429f0c`).
    `POST /api/admin/plans` теперь отвечает **`201 Created`**, а не `200` (`93e48c1`).
+
+### 5.0-ter 📸 Что цикл 10 сломал бы тому, кто звал API или читал экраны по-старому
+
+Цикл сознательно добавочный (`API_CONTRACT_CYCLE10.md` §120.1): все новые параметры запроса
+необязательны, все новые поля ответов — с безопасными значениями по умолчанию. Ломающих изменений
+формы ответов **нет**. Но два изменения заметны снаружи:
+
+1. **Тексты ошибок загрузки изображений стали русскими — во всём общем конвейере.** Затронуты **все
+   четыре** эндпоинта загрузки (аватар, логотип компании, картинка услуги, фото заметок) плюс новые
+   фото салона: `File is required` → `Нужно выбрать файл для загрузки.`, `Image is too large — the
+   limit is 5 MB` → `Слишком большой файл — максимум 5 МБ.`, `Unsupported image type — use JPEG, PNG
+   or WEBP` → `Можно загрузить JPEG, PNG или WEBP.`, `File is not a valid image` → `Файл повреждён
+   или это не изображение.`, `Image dimensions are too large…` → `Слишком большое изображение —
+   попробуйте файл меньшего размера.`, `Server storage is full…` → `На сервере закончилось место.
+   Попробуйте позже.` Любой внешний потребитель, разбиравший **английские** подстроки, сломается.
+   Фронтовые мапперы (`utils/uploadError.ts`, `utils/companyManageError.ts`) переведены на новые
+   подстроки в том же цикле (`279654f`, `18e21d1`), `API_DOCUMENTATION.md` обновлён.
+   ⚠️ Сохранено намеренно: сообщение про размеры изображения делит с байтовым общий префикс
+   «Слишком больш…», чтобы фронтовый разбор по подстроке продолжал попадать в нужную ветку.
+2. **`ManualBookingModal` удалён из фронтенда.** Любая ссылка на этот файл в чужой ветке или в
+   документе устарела; см. §4.20 и §6. Внутреннее изменение, HTTP-контракта не касается.
 
 ### 5.1 Настоящие заглушки
 
@@ -2324,6 +2572,41 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 - **Отзыв маршрута оформляется как `410 Gone` с указанием замены**
   (`AdminController.LegacyEndpointGone`), а не удалением маршрута и не `404`.
 
+### 📸 Конвенции цикла 10 — чему следовать, если трогаете запись, журнал или фото
+
+1. **Модалка записи в продукте одна.** Не заводите вторую рядом: `ManualBookingModal` удалён именно
+   потому, что два экрана записи разошлись по механике выбора даты. Новая точка входа = ещё один
+   вызов `BookingModal` с нужными пропсами (`company`/`service`/`allowMultipleServices`), а не копия
+   компонента.
+2. **`staffMode` берётся только из ответа сервера** (`availability.staffMode`), никогда — из
+   `authStore`, роли в токене, пропсов или того, откуда модалку открыли. То же правило у
+   `manual`/`extendedHours`/`includeHidden` на сервере: это **просьба, а не разрешение**, членство
+   проверяет сервер сам.
+3. ⚠️ **Намерение «записываю клиента» ≠ `staffMode`.** Намерение задаётся точкой входа и явным
+   состоянием `bookForClient` (переключатель в форме), `staffMode` управляет **только** свободой
+   выбора даты и времени. Вывод намерения из `staffMode` уже стоил цикла блокера: запись сотрудника
+   самому себе уходила как гостевая — `ClientId = null`, без предоплаты и без согласий. Починка —
+   `4f8ed63`; комментарий, объясняющий правило, живёт прямо в `BookingModal.tsx` рядом с
+   `useState(!company)`.
+4. **Журнал пишется ровно одним классом** — `Services/Bookings/BookingEventLog`. Появилось новое
+   действие над записью — добавьте вызов туда же и в той же транзакции; `db.BookingEvents.Add(...)`
+   из контроллера в ревью не проходит. Значения `BookingEventKind`/`BookingActorKind` **не
+   перенумеровываются** — таблица append-only.
+5. **Чистая логика — отдельным классом без БД**, как `CompanyPhotoOrdering` (порядок и уплотнение
+   позиций) и `BookingEventTexts` (формулировки). Это же то, что покрывается юнит-тестами;
+   контроллер остаётся на транзакции, advisory-lock'е и правах.
+6. **Типы фронта для нового контракта генерируются, а не пишутся руками**:
+   `npm run types:api:cycle10` из `contracts/cycle10/openapi.yaml` →
+   `src/types/api-cycle10.generated.ts`. Прикладные типы в `types/index.ts` остаются ручными, как и
+   раньше; сгенерированный файл — сверка формы, а не замена им.
+7. **Новый API-модуль фронта** — тонкая обёртка над общим `api` из `api/client.ts`, возвращающая
+   `r.data` (см. `api/companyPhotos.ts`); заголовки `multipart/form-data` — только там, где реально
+   грузится файл. Инвалидация кеша — через `queryClient` ключами существующих запросов.
+8. **Тексты ошибок, которые увидит пользователь, теперь пишутся по-русски** — включая общий конвейер
+   загрузки изображений (§5.0-ter). Если добавляете новое сообщение об ошибке загрузки, проверьте
+   мапперы `frontend/src/utils/uploadError.ts` и `companyManageError.ts`: они разбирают **подстроки**
+   и молча деградируют до общего текста, если подстрока не совпала.
+
 ### 🔬 Тесты (конвенции цикла 8 — им нужно следовать, а не заводить своё рядом)
 
 - **Единица изоляции — тест-класс.** Новый функциональный тест-класс объявляет
@@ -2404,9 +2687,26 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 
 | Набор | Проект/каталог | Что нужно на машине | Команда | Объём |
 |---|---|---|---|---|
-| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | ничего | `dotnet test ServiceBooking.UnitTests` | 💳 **908** запусков (было 777) |
-| **Функциональные (API) тесты** | `ServiceBooking.Tests` | 🔬 **запущенный Docker** (не PostgreSQL!) | `dotnet test ServiceBooking.Tests` | 💳 **549** запусков (было 488) |
-| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | Node 20 | `npm run test:run` (в `frontend/`) | 💳 **341** тест, 53 файла (было 283 / 43) |
+| Юнит-тесты бэкенда | `ServiceBooking.UnitTests` | ничего | `dotnet test ServiceBooking.UnitTests` | 📸 **942** запуска (было 908) |
+| **Функциональные (API) тесты** | `ServiceBooking.Tests` | 🔬 **запущенный Docker** (не PostgreSQL!) | `dotnet test ServiceBooking.Tests` | 📸 **603** запуска (было 549) |
+| Тесты фронтенда | `frontend/src/**/*.test.ts(x)` | Node 20 | `npm run test:run` (в `frontend/`) | 📸 **369** тестов, 57 файлов (было 341 / 53) |
+
+📸 **Для QA: базовый функциональный прогон — `dotnet test ServiceBooking.Tests`** (xUnit +
+`WebApplicationFactory` + реальный Postgres в контейнере, поднимается самим прогоном; нужен
+запущенный Docker). Цикл 10 механику прогона **не менял** — ни команды, ни предусловий, ни правил
+изоляции; изменились только числа выше.
+
+📸 **Что добавил цикл 10 (+34 юнит, +54 функциональных, +28 фронтовых):**
+- функциональные — три новых файла: `Tests/ManualBookingFreedomTests.cs` (18 кейсов, префикс
+  `BK-`), `Tests/BookingHistoryTests.cs` (16, префикс `BKH-`), `Tests/CompanyPhotosTests.cs`
+  (20, префикс `CPH-`); плюс правки `ClientNotePhotosTests`/`CompaniesTests` под русские тексты
+  ошибок загрузки;
+- юнит — `BookingEventTextsTests.cs` (5) и `CompanyPhotoOrderingTests.cs` (14, включая перестановки,
+  уплотнение после удаления и отказы на неполной перестановке);
+- фронтенд — `BookingHistoryPanel.test.tsx`, `CompanyPhotoGallery.test.tsx`,
+  `CompanyPhotosSection.test.tsx`, `BookingModal.captcha.test.tsx`, `utils/companyManageError.test.ts`,
+  существенно переписанные `BookingModal.test.tsx` и `BookingCalendar.test.tsx`;
+  **удалён** `ManualBookingModal.test.tsx` вместе с компонентом.
 
 💳 **Набор, команда и предусловия цикл 7 тоже не менял** — механика прогона осталась такой, какой
 её сделал цикл 8. Цикл 7 добавил **+131 юнит, +61 функциональный, +58 фронтовых** теста.
@@ -2714,7 +3014,7 @@ lockout), `BookingsFlowSmokeTests`/`CompaniesTests`/`AdminTests` (`BK-068…BK-0
 🔬 **Фреймворк и команда базового прогона — xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing`
 (`WebApplicationFactory`) + реальный Postgres в Docker; команда — `dotnet test ServiceBooking.Tests`.**
 🗓 Цикл 6 здесь ничего не изменил: та же команда, то же предусловие (Docker), те же правила изоляции.
-💳 Цикл 7 — тоже.
+💳 Цикл 7 — тоже. 📸 Цикл 10 — тоже.
 
 💳 **Нюанс окружения, который стоил времени и который надо знать заранее (macOS + colima).** Если
 Docker на машине поднят через **colima**, прогону нужны две переменные окружения:
@@ -2805,6 +3105,12 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 - **Раннер:** Vitest 3.2, окружение `jsdom` 25, `@testing-library/react` 16 + `jest-dom` + `user-event`.
 - **Конфиг:** `frontend/vitest.config.ts` (намеренно отдельный от `vite.config.ts`),
   `globals: false` (явные импорты `describe`/`it`/`expect`), setup — `src/test/setup.ts`.
+- 📸 **Что добавил цикл 10 (+28, стало 369 тестов в 57 файлах):** `BookingHistoryPanel.test.tsx`,
+  `components/company/CompanyPhotoGallery.test.tsx`, `pages/owner/CompanyPhotosSection.test.tsx`,
+  `utils/companyManageError.test.ts` — новые; `BookingModal.test.tsx` переписан под объединённую
+  модалку (сценарии персонала переехали туда из удалённого `ManualBookingModal.test.tsx`), капча
+  вынесена в отдельный `BookingModal.captcha.test.tsx`, `BookingCalendar.test.tsx` дополнен режимом
+  персонала (`staffMode`/`scheduleState`), `utils/uploadError.test.ts` — под русские тексты.
 - 🗓 **Что добавил цикл 6 (+102, стало 283 теста в 43 файлах):** впервые покрыты **экраны самой
   записи**, которые до этого были в списке непокрытых годами. Новые файлы:
   `components/booking/BookingCalendar.test.tsx`, `ManualBookingModal.test.tsx`,
@@ -2833,6 +3139,10 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 
 ### Чего в тестах НЕТ
 
+- 📸 **Контракт цикла 10 (`contracts/cycle10/openapi.yaml`) в CI не проверяется** — ровно как
+  контракты циклов 6, 7 и инвариант цикла 8. В `package.json` есть только скрипт генерации типов
+  (`npm run types:api:cycle10`), шага в `ci.yml` нет: сверка формы ответов с контрактом остаётся
+  ручной операцией (`.github/workflows/ci.yml` цикл 10 не трогал вообще).
 - **Нет e2e-тестов через браузер.** Ни Playwright, ни Cypress. «Функциональные» здесь = API-уровень.
   Ближайшее к e2e — `deploy/ci/smoke.sh`: bash + curl против **живого контейнера** (health, регистрация,
   загрузка аватара), запускается CI-джобом `docker-build`, а не тест-раннером. 🔬 Цикл 8 этого не
@@ -2843,6 +3153,8 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
   против живого API, `openapi-diff` против Swagger приложения, `openapi-typescript` + `tsc`), но
   **шага в `ci.yml` нет**, пакеты в `package.json` не добавлены. То есть положение ровно такое же,
   как с инвариантом цикла 8 ниже, — второй машиночитаемый контракт и вторая ручная проверка.
+- 📸 **Контракт цикла 10 (`contracts/cycle10/openapi.yaml`) — четвёртый в этом же положении**
+  (см. врезку выше): типы из него генерируются, но ни генерация, ни lint в `ci.yml` не вызываются.
 - 💳 **Контракт цикла 7 (`contracts/cycle7/openapi.yaml`) в CI не проверяется тоже** — третий
   машиночитаемый контракт и третья ручная сверка. Отличие от двух предыдущих: из него **реально
   генерируются типы фронтенда** (`npm run types:api`), но сам этот скрипт в CI не вызывается, так
@@ -2892,6 +3204,20 @@ dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~LegalConsentTests"
 ---
 
 ## 8. CI и деплой
+
+📸 **Цикл 10 не изменил здесь ничего.** В диапазоне `bd3be3f..242c7d9` нет ни одного изменения в
+`.github/workflows/**`, `deploy/**`, `docker-compose*.yml` и `Dockerfile`; новых проверок fail-fast
+прод-конфига цикл тоже не добавил (`Retention:BookingEventDays: 0` старт намеренно **не** роняет,
+§4.18).
+
+⚠️ 📸 **Что важно знать при следующем выкате (риск R6 из `ARCHITECTURE_CYCLE10.md` §116).** В
+`develop` накопилось **13 невыкаченных миграций**: одиннадцать из цикла 7 (включая необратимую
+`AddCoTenancyConstraints` и четыре разрушительных по данным) и две добавочные из цикла 10. Миграции
+применяются **автоматически на старте приложения**, поэтому на релизе они поедут **все разом**;
+накатывать их надо **целиком и в порядке**, по процедуре цикла 7 (предпроверка
+`deploy/checks/billing-precheck.sql` → миграции → `billing-migration-check.sql`, шаг **10.2a**
+`DEPLOY.md`). Две миграции цикла 10 сами по себе безопасны и обратимы — опасен по-прежнему блок
+цикла 7, на котором деплой уже падал (ниже и §9 B1).
 
 🗓 **Цикл 6 не изменил здесь ничего.** В диапазоне `14a7fb6..aac6231` нет ни одного изменения в
 `.github/workflows/**`, `deploy/**`, `docker-compose*.yml` и `Dockerfile`. Единственное, что стоит
@@ -3229,6 +3555,50 @@ P0-A…P0-E и L1…L6 не тронута; ⚠️ обратите вниман
 тронута. ⚠️ Осторожно: буквой `B` в этом же документе помечены **находки ревью цикла 7** (B1…B13,
 они же в текстах коммитов вида `fix(billing): … (B5, B6)`) — это **другое** пространство имён.
 Пункты долга ниже — `§9 B1`…`§9 B11`; находки ревью — просто `B5` без `§9`.
+
+---
+
+📸 **Цикл 10 — тоже**: его блок идёт **первым**, с номерами **D1…D6**, остальная нумерация не
+тронута.
+
+---
+
+**📸 D — долг, ограничения и сознательные решения цикла 10 (ручная запись, журнал, фото салона)**
+
+**D1. Срок хранения журнала изменений не задан — правило зарегистрировано и ничего не удаляет.**
+`Retention:BookingEventDays: 0` в `appsettings.json`; `BookingEventRule` читает ноль как «срок не
+настроен» и честно пишет это в сводку прогона. Ждёт решения юриста: в журнале лежат **ФИО
+сотрудников** (снимок имени и роли автора действия) — это ПДн работника, и «пусть лежит вечно» здесь
+не ответ. Когда срок появится, вся починка — **одно число в конфигурации**: ни миграции, ни правки
+кода. Пока число не задано, `BookingEvents` растёт без ограничения срока.
+
+**D2. Согласие на публикацию фото с изображениями людей не собирается — решение заказчика, а не
+недоделка.** Экрана и чекбокса в потоке загрузки нет, `ConsentRecord` на фото салона не пишется
+(П7). Обязанность соблюдать ст. 152.1 ГК при этом остаётся на владельце компании, который загружает
+фото. **Открытый вопрос к юристу:** покрыт ли этот случай действующим пользовательским соглашением
+(«владелец подтверждает правомерность загружаемого контента»), и если нет — нужна ли туда отдельная
+строка. Это правка документа, а не кода.
+
+**D3. Три операции с фотографиями делят один бюджет политики `uploads`.** Загрузка, удаление и
+перестановка порядка все помечены `[EnableRateLimiting("uploads")]` — бюджет **общий, 10 запросов в
+минуту**. Практическое следствие: владелец, только что загрузивший десять фото, выбирает бюджет
+целиком и **на первом же клике по стрелке порядка получает 429 с текстом про загрузки**, который
+про перестановку ничего не говорит. Поведение соответствует контракту (429 у удаления и
+перестановки описан, `89d30ab`), поэтому записано как долг, а не как баг.
+
+**D4. Косметика в недостижимой сегодня ветке `DayOff && staffMode` в `BookingCalendar`.** В одном
+сочетании условий ячейка дня может выглядеть кликабельной, не будучи ею. Сегодня эта комбинация
+недостижима (сервер для персонала возвращает такие дни как `Available` + `scheduleState: DayOff`),
+но ветка в коде есть — и станет видимой, если сервер когда-нибудь начнёт отдавать персоналу
+`status: DayOff`.
+
+**D5. Четыре уязвимости в npm-зависимостях фронтенда** — `axios` (high), `form-data` (high),
+`react-router` (moderate ×2). **Существовали до цикла 10**, цикл их не трогал и не усугубил;
+чинятся патч-версиями, ломающих обновлений не требуют.
+
+**D6. Невыкаченных миграций в `develop` стало 13** (11 из цикла 7 + 2 из цикла 10) — риск R6 из
+`ARCHITECTURE_CYCLE10.md` §116. Применять на релизе целиком и по порядку; подробности и процедура —
+§8 и §9 B1. Сами миграции цикла 10 добавочные и обратимые.
 
 ---
 
@@ -3693,7 +4063,9 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     32 после цикла 5 и 100 после цикла 4). 🗓 **Прирост цикла 6 (+102) закрыл главный пробел,
     который этот пункт называл годами: экраны записи.** `BookingModal`, `ManualBookingModal`,
     `RescheduleModal`, новый `BookingCalendar`, `PhoneInput`, `LoginPage`, `AdminPage`,
-    `CompanyManagePage` теперь покрыты. **Остаются непокрытыми**: весь раздел уведомлений цикла 4,
+    `CompanyManagePage` теперь покрыты. 📸 **На `242c7d9` это 369 тестов в 57 файлах**, а
+    `ManualBookingModal` вместе со своим тестом **удалён** — его сценарии переехали в
+    `BookingModal.test.tsx`/`BookingModal.captcha.test.tsx` (§7.3). **Остаются непокрытыми**: весь раздел уведомлений цикла 4,
     админский журнал обращений субъектов, календарь `ScheduleTab`, `DeleteAccountPage`,
     `useExportData`, `useAuthedImage`.
     ⚠️ Ниже — список непокрытого в редакции цикла 5, **устаревший в части экранов записи**;
@@ -3897,6 +4269,26 @@ Blazor-проект и мёртвые страницы фронта; расхо�
 Раздел нужен, чтобы следующие агенты **дополняли существующее, а не заводили параллельные версии**.
 Всё перечисленное лежит в репозитории.
 
+📸 **Состояние на `242c7d9`.** Цикл 10 добавил в документацию **четыре документа цикла** —
+`SPEC_CYCLE10_MASTER_BOOKING_HISTORY_PHOTO.md` (~55 КБ, редакция 3), `ARCHITECTURE_CYCLE10.md`
+(~87 КБ, §100–§117), `API_CONTRACT_CYCLE10.md` (~34 КБ, §120–§133), **`contracts/cycle10/openapi.yaml`**
+(807 строк, **четвёртый** машиночитаемый контракт, §10.3) — плюс раздел цикла в `TEST_CATALOG.md`
+(+117 строк, §10.4) и точечную правку `API_DOCUMENTATION.md` (русские тексты ошибок загрузки,
+§5.0-ter).
+
+⚠️ **Чего цикл 10 в документации НЕ сделал — это пробелы, а не оформление:**
+- **`API_DOCUMENTATION.md` про новые эндпоинты цикла 10 не знает.** Проверено: единственная правка
+  этого файла в диапазоне — тексты ошибок загрузки. `GET /api/bookings/{id}/history` и четыре
+  маршрута фотографий компании описаны **только** в `API_CONTRACT_CYCLE10.md` и
+  `contracts/cycle10/openapi.yaml`; в справочнике эндпоинтов для внешних потребителей их нет.
+- **`README.md`, `CHANGELOG.md` и `docs/**` цикл 10 не трогал вообще**
+  (`git log bd3be3f..242c7d9 -- README.md CHANGELOG.md docs/` — пусто; `grep -ci "цикл 10"` по обоим
+  файлам → 0). Про один экран записи, историю изменений и фотогалерею там не сказано ничего.
+  ⚠️ Продуктовое описание цикла 10 вносится product-analyst'ом **параллельно с этой редакцией** —
+  актуальное состояние `CHANGELOG.md` и `README.md` смотреть прямо в них, а не здесь.
+- **Отдельного документа с описаниями тест-кейсов цикл 10 не завёл** — его сценарии легли в общий
+  `TEST_CATALOG.md`, см. §10.4.
+
 💳 **Состояние на `0929b48`.** Цикл 7 добавил в документацию **четыре документа цикла** —
 `SPEC_CYCLE7_PRICING.md` (~70 КБ), `ARCHITECTURE_CYCLE7.md` (~149 КБ), `API_CONTRACT_CYCLE7.md`
 (~73 КБ), **`contracts/cycle7/openapi.yaml`** (~1 900 строк, третий машиночитаемый контракт, §10.3)
@@ -4067,6 +4459,8 @@ CSP устроена так, какую ветку катим и почему Al
 
 | Что | Путь | Формат | Структура |
 |---|---|---|---|
+| 📸 Контракт цикла 10 (смысловой) | `API_CONTRACT_CYCLE10.md` (~34 КБ) | Markdown, русский | **§120–§133**, нумерация продолжает общую схему. §120.1 — правило «всё новое добавочное», §121 `availability` (включая таблицу «`manual`/`extendedHours` — просьба, а не разрешение» и таблицу «как это читать интерфейсу»), §122 история и правило неразглашения, §123 `historyEventCount`, §124 `masters`/`includeHidden`, §125–§128 фото салона, §129 `CompanyDto`, §130 **чего цикл НЕ меняет**, §131 разбор ответов для фронта, §132 автосверка для QA, §133 сводная таблица |
+| 📸 Контракт цикла 10 (машиночитаемый) | `contracts/cycle10/openapi.yaml` (807 строк) | **OpenAPI (YAML)**, **четвёртый** машиночитаемый контракт | Десять путей: `/bookings/availability`, `/bookings/{id}/history`, `/bookings/{id}`, `/bookings/master`, `/companies/{id}/masters`, `/companies/{id}/photos`, `/companies/{id}/photos/{photoId}`, `/companies/{id}/photos/order`, `/companies/{slug}`, `/companies`. **Это НЕ полное описание API.** Из него генерируются типы — `npm run types:api:cycle10` → `src/types/api-cycle10.generated.ts`. ⚠️ **Шага в CI нет**, сверка ручная |
 | 💳 Контракт цикла 7 (смысловой) | `API_CONTRACT_CYCLE7.md` (~73 КБ) | Markdown, русский, редакция 2.1 | Продолжение той же схемы нумерации. Описывает биллинг-аккаунты, каталог опций, матрицу «тариф × опция», заявки владельца, перенос компаний, витрину цен и **отзыв `PUT /api/admin/owners/{id}/subscription` в `410 Gone`**. Смысловые правила, не выражаемые схемой, живут здесь — файлы читаются вместе с YAML |
 | 💳 Контракт цикла 7 (машиночитаемый) | `contracts/cycle7/openapi.yaml` (~1 905 строк) | **OpenAPI (YAML)** | Пути биллинга: `/api/billing/subscription(/request)`, `/api/admin/options(/{id})`, `/api/admin/option-capabilities`, `/api/admin/billing-accounts(/{id}/subscription\|/subscription-history)`, `/api/admin/subscription-requests(/{id}/reject)`, `/api/admin/companies/{id}/transfer(/preview)`, `/api/admin/companies/{id}/owner-history`, `/api/pricing`, `/api/admin/pricing/preview`, плюс отозванный маршрут с ответом `410` и телом `text/plain`. **Это НЕ полное описание API.** ⚠️ **Шага в CI нет** |
 
@@ -4086,6 +4480,11 @@ Postman-коллекции по-прежнему нет. 💳 **Утвержде
 раздела в этом документе для него пока нет»). Источник истины по биллингу —
 `contracts/cycle7/openapi.yaml` + `API_CONTRACT_CYCLE7.md`.
 
+⚠️ 📸 **`API_DOCUMENTATION.md` циклом 10 обновлён только в текстах ошибок загрузки** (§5.0-ter).
+Справочник **не знает** ни про `GET /api/bookings/{id}/history`, ни про четыре маршрута фотографий
+компании, ни про `extendedHours`/`staffMode`/`scheduleState`, ни про `includeHidden`. Источник истины
+по эндпоинтам цикла 10 — `contracts/cycle10/openapi.yaml` + `API_CONTRACT_CYCLE10.md`.
+
 ⚠️ 🗓 **`API_DOCUMENTATION.md` циклом 6 не обновлён.** Справочник (~259 КБ) не знает ни про
 `GET /api/bookings/availability`, ни про `serviceIds`, ни про `provides-services`, ни про
 диагностику тарифа, ни про новые коды ответа входа. На время, пока это так, **источник истины по
@@ -4097,6 +4496,14 @@ Postman-коллекции по-прежнему нет. 💳 **Утвержде
 **каждого** автоматизированного кейса, отдельно от самого кода тестов. **Это единственное место в
 проекте, где тест-кейсы описаны текстом**; отдельного `TESTPLAN.md` или каталога `docs/testing/`
 с кейсами нет (`docs/testing-isolation.md` — про механику прогона, а не про сценарии).
+
+📸 **Цикл 10 добавил в каталог +117 строк одним разделом-«прогоном»** —
+`## Cycle 10 (US-120…US-126, master booking freedom / история изменений записи / фото салона) —
+приёмка QA`, со своими подразделами «Числа», «Баг, найденный этим прогоном (адресовано
+backend-developer, не блокер) — ИСПРАВЛЕНО» и «Вердикт по критериям приёмки». То есть это опять
+частично **журнал прогона**, а не только каталог кейсов (та же оговорка, что у цикла 7 ниже).
+Новые префиксы кейсов: **`BK-`** (свобода ручной записи, `ManualBookingFreedomTests.cs`),
+**`BKH-`** (история, `BookingHistoryTests.cs`), **`CPH-`** (фото салона, `CompanyPhotosTests.cs`).
 
 💳 **Цикл 7 добавил в каталог +1 402 строки** — больше, чем любой предыдущий цикл, и структурно
 иначе: **не только по месту и не одним разделом, а несколькими разделами-«прогонами»**, идущими
@@ -4191,6 +4598,9 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 
 | Документ | Размер | Что это |
 |---|---|---|
+| 📸 **`SPEC_CYCLE10_MASTER_BOOKING_HISTORY_PHOTO.md`** | ~55 КБ | **ЦИКЛ 10** «свобода ручной записи, история изменений записи, фото салона», **редакция 3**, истории **US-120…US-126** (нумерация начата со 120 специально — US-60…US-78 и US-101 заняты циклами 5–8). **§0 — решения заказчика П1…П8**, на них ссылается код и этот документ; §0.1 — открытый вопрос к юристу (§9 D1, D2); §0.2 — разбор причины дефекта и решение «один экран записи на два входа» |
+| 📸 **`ARCHITECTURE_CYCLE10.md`** | ~87 КБ | **ЦИКЛ 10, разделы §100–§117.** Ключевые ссылки из кода: **§102 модель данных** (§102.1 журнал и его единственный писатель, §102.2 фото и почему уникальность позиции держит сервер, а не индекс), §103 серверная часть блока A (§103.2 `scheduleState`, §103.3 `staffMode`, §103.5 `includeHidden`), §104–§107 журнал/фото/ретенция (**§105** шесть точек вызова журнала, **§106** конвейер фото и осиротевшие файлы, **§107** правило уничтожения без срока), **§108 слияние двух модалок** (самая рискованная часть цикла), §109 фронт блоков B и C, §110 что добавляется и удаляется, §113 как проверяется, что ничего не сломано, §115 совместимость, **§116 риски (R6 — 13 невыкаченных миграций)** |
+| 📸 **`API_CONTRACT_CYCLE10.md` / `contracts/cycle10/openapi.yaml`** | ~34 КБ / 807 строк | **ЦИКЛ 10, §120–§133** + машиночитаемая схема, см. §10.3. Читаются вместе. §121 `availability`, §122 история, §123 `historyEventCount`, §124 `masters`, §125–§128 фото, §129 `CompanyDto`, **§130 чего цикл НЕ меняет**, §131 что обязан проверять фронт, §132 автосверка для QA, §133 сводная таблица изменений API. Типы фронта — `npm run types:api:cycle10` |
 | 💳 **`SPEC_CYCLE7_PRICING.md`** | ~70 КБ | **ЦИКЛ 7** «биллинг-аккаунты и понятная модель тарифов», истории **US-64…US-67, US-70, US-71, US-72, US-73, US-74, US-77**. ⚠️ **Номера историй пересекаются с циклом 5** — следствие коллизии имён (§9 B10); «US-65» без указания цикла неоднозначно. **§7 — требование не публиковать цены до вычитки юристом**, на нём держится выключенный по умолчанию рубильник `pricing.public-enabled` (§9 B8) |
 | 💳 **`ARCHITECTURE_CYCLE7.md`** | ~149 КБ | **ЦИКЛ 7, разделы 41–56.** ⚠️ **Нумерация разделов пересекается с `ARCHITECTURE_CYCLE5.md` и `ARCHITECTURE_CYCLE6.md`** — ссылаться только с именем файла (§9 B10). Ключевые ссылки из кода: **§43 модель данных** (§43.3 опции и матрица, §43.4 подписка аккаунта, §43.5/§43.6 журналы и co-tenancy-ограничения), **§44 расчёт цены и возможностей** (§44.1–44.3), §45.1 чтение денег через `BillingAccountId`, **§46 лимит сотрудников по аккаунту** (§46.4 разбор отказа), §47 финансирование каналов за номер (§47.1/§47.2; §47.4 — отменённое поведение цикла 4), §49 заявки владельца, §50 смена ответственного, **§51 перенос компании** (§51.1/§51.2 правила отказа), §52 порядок advisory-lock'ов, §53.4 разбор `SeatLimitReached`, §54 миграция и сверка (**§54.1 предпроверка, §54.2 backfill, §54.3 сид каталога, §54.5 приёмочный тест миграции — НЕ написан, §9 B3**) |
 | 💳 **`API_CONTRACT_CYCLE7.md` / `contracts/cycle7/openapi.yaml`** | ~73 КБ / ~1 905 строк | **ЦИКЛ 7**, редакция 2.1 + машиночитаемая схема, см. §10.3. Читаются вместе. Из YAML генерируются типы фронтенда (`npm run types:api`) |
@@ -4227,7 +4637,12 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 Номера историй тоже пересекаются: US-64…US-67 и US-70 есть и в цикле 5, и в цикле 7.
 
 **Соглашения об архиве (`docs/history/`) в репозитории по-прежнему нет**, каталога такого нет, в
-README оно не описано. 💳 **Цикл 7 его тоже не завёл** и следует общей конвенции суффикса, поэтому
+README оно не описано. 📸 **Цикл 10 его тоже не завёл** и следует общей конвенции суффикса, поэтому
+`SPEC_CYCLE10_MASTER_BOOKING_HISTORY_PHOTO.md`, `ARCHITECTURE_CYCLE10.md` и
+`API_CONTRACT_CYCLE10.md` **остаются в корне** — переносить их было некуда, а `SPEC.md`/
+`ARCHITECTURE.md`/`API_CONTRACT.md` без суффикса цикл 10 не занимал и не перезаписывал (они
+по-прежнему означают циклы 8 и 3). В корне теперь одновременно лежат документы **шести** циклов
+(3, 4, 5, 6, 8, 10 — плюс 7). 💳 **Цикл 7 его тоже не завёл** и следует общей конвенции суффикса, поэтому
 `SPEC_CYCLE7_PRICING.md`, `ARCHITECTURE_CYCLE7.md` и `API_CONTRACT_CYCLE7.md` **остаются в корне** —
 переносить их было некуда. ⚖️ **Циклы 4, 5, 6 и 8 решают задачу суффиксом в имени файла**
 (`*_CYCLE4.md`, `*_CYCLE5.md`, `*_CYCLE8.md`, `SPEC_CYCLE3_PRODUCTION.md`,
