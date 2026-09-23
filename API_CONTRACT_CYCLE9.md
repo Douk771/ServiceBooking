@@ -339,13 +339,18 @@ GET /api/companies/public?cityId=42&search=локон&page=1&pageSize=20
 { "title": "Новая запись",
   "body": "Стрижка · 24.09 в 14:00 · Анна Петрова",
   "tag": "b-<bookingId>",
-  "url": "/cabinet?tab=bookings&booking=<bookingId>" }
+  "url": "/my-bookings?booking=<bookingId>" }
 ```
 
 ⚠️ **Телефона клиента здесь нет** (SPEC П8) и быть не должно: уведомление рисует операционная система, в
 том числе на личном телефоне мастера и на заблокированном экране.
 `tag` схлопывает повторы по одному визиту. `url` — **относительный путь**, service worker сам добавляет
 origin; абсолютный URL в теле открыл бы дорогу к открытию произвольного адреса.
+
+⚠️ **Исправление (post-cycle9 review):** изначально здесь был записан `/cabinet?tab=bookings&booking=…`
+— несуществующая вкладка кабинета (набор вкладок — `dashboard | companies | schedule | clients | reports
+| mailing | notifications`, и `CabinetPage` query-строку вообще не читает). Реальный экран записей
+мастера — маршрут `/my-bookings` (`frontend/src/App.tsx`, роли `Master`/`CompanyOwner`/`SuperAdmin`).
 
 **Заголовки запроса к push-сервису:** `TTL = min(3600, секунд до начала визита)`, `Urgency: high`,
 `Topic: b-<bookingId>`.

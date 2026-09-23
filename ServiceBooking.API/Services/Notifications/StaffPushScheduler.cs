@@ -95,7 +95,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
             title = "Новая запись",
             body,
             tag = $"b-{bookingId}",
-            url = $"/cabinet?tab=bookings&booking={bookingId}",
+            url = $"/my-bookings?booking={bookingId}",
         });
     }
 

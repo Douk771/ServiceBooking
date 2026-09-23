@@ -27,7 +27,7 @@ public class StaffPushSchedulerTests
         json.GetProperty("title").GetString().Should().Be("Новая запись");
         json.GetProperty("body").GetString().Should().Be("Стрижка · 25.09.2026 в 14:30 · Анна");
         json.GetProperty("tag").GetString().Should().Be($"b-{bookingId}");
-        json.GetProperty("url").GetString().Should().Be($"/cabinet?tab=bookings&booking={bookingId}");
+        json.GetProperty("url").GetString().Should().Be($"/my-bookings?booking={bookingId}");
     }
 
     [Fact]
