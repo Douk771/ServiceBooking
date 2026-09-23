@@ -286,6 +286,8 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Billing.OwnerSubscription
 // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
 // this developer's file this cycle.
 builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorResolver>();
 builder.Services.AddHttpClient<CaptchaService>();
 // T5-B10 (ARCHITECTURE_CYCLE5.md §50.1, US-74) — reuses the existing CaptchaService/rate-limiting
 // machinery, no new infrastructure.
