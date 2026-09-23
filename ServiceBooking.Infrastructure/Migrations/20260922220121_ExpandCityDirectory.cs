@@ -46,15 +46,22 @@ namespace ServiceBooking.Infrastructure.Migrations
     ///      PhoneNormalizer/NormalizePhoneNumbers — the rule is duplicated by hand here and cross-checked
     ///      by CityDirectoryDataTests, not re-invented).
     ///   3. The INSERT is idempotent per (Name, Region): a correlated NOT EXISTS subquery, not
-    ///      migrationBuilder.InsertData (which has no "skip if already there" mode). Existing rows —
-    ///      their Id, SearchName, TimeZoneId — are never touched: Company.CityId references Id, and nothing
-    ///      here can renumber or overwrite an existing row.
+    ///      migrationBuilder.InsertData (which has no "skip if already there" mode). No pre-existing
+    ///      row's Id, SearchName or TimeZoneId is ever OVERWRITTEN by this step. A pre-existing DUPLICATE
+    ///      row (same Name+Region, higher Id) can still be REMOVED by step 4 below, though — see that
+    ///      step for why this is not the same guarantee as "never touched".
     ///   4. Deduplication is unconditional and re-runnable, not "only if we know there's a duplicate right
-    ///      now": DELETE keeps the row with the SMALLEST Id per (Name, Region) — existing companies may
-    ///      already reference that lower Id — then the unique index on (Name, Region) makes "no
-    ///      duplicates" a schema property going forward (same two-step shape as cycle 1's
-    ///      DeduplicateWorkingHours -&gt; AddWorkingHoursUniqueIndex, done here as one migration instead of
-    ///      two files since both steps touch the same table in the same direction).
+    ///      now": DELETE keeps the row with the SMALLEST Id per (Name, Region) and removes every other
+    ///      row for that pair — including a pre-existing row with a HIGHER Id than its surviving sibling,
+    ///      which step 3's INSERT can produce (a new row from <see cref="Rows"/> colliding with one of the
+    ///      pre-existing 91) as much as a pre-cycle-9 data-entry duplicate can. Before the DELETE, an
+    ///      UPDATE repoints every Company.CityId FROM a row about to be deleted TO the Id it is being
+    ///      deduplicated into, so no company is left referencing a row this migration is about to remove
+    ///      (Cities is the only table any FK references per AppDbContext.cs — Company.CityId is the only
+    ///      column to repoint). Then the unique index on (Name, Region) makes "no duplicates" a schema
+    ///      property going forward (same two-step shape as cycle 1's DeduplicateWorkingHours -&gt;
+    ///      AddWorkingHoursUniqueIndex, done here as one migration instead of two files since both steps
+    ///      touch the same table in the same direction).
     ///   5. Down removes only what this migration could have added: the exact (Name, Region) pairs from
     ///      <see cref="Rows"/>, then the unique index. It does not attempt to undo step 4's dedup DELETE
     ///      (not reconstructable — same accepted trade-off DeduplicateWorkingHours' own Down documents).
@@ -329,8 +336,31 @@ namespace ServiceBooking.Infrastructure.Migrations
                 ");");
 
             // Step 4 (§103.3): unconditional dedup by (Name, Region), keeping the row with the SMALLEST
-            // Id — the one that could already be referenced by Company.CityId — THEN the unique index.
-            // Must run in this order: Postgres refuses to create a unique index over rows that violate it.
+            // Id, THEN the unique index. Must run in this order: Postgres refuses to create a unique
+            // index over rows that violate it.
+            //
+            // The UPDATE below runs BEFORE the DELETE and repoints any Company.CityId that references a
+            // row about to be removed (the higher-Id duplicate) onto the row that survives (the
+            // lower-Id one) for the same (Name, Region) pair. Without it, a company referencing the
+            // higher-Id duplicate — plausible on a database whose Cities rows were ever edited by hand,
+            // even though neither the 91-row nor the 210-row seed produces one on a fresh database — would
+            // make the DELETE fail outright on FK_Companies_Cities_CityId (Restrict), aborting the whole
+            // migration. Repointing to the surviving row is correct here specifically because dedup
+            // collapses two rows that are equal on (Name, Region) — the columns Company.CityId's own
+            // consumers (search, display, time zone) actually key off — not two rows that merely happen
+            // to collide; there is nothing about the surviving row that changes what the company's CityId
+            // means.
+            migrationBuilder.Sql(
+                "UPDATE \"Companies\" comp " +
+                "SET \"CityId\" = keep.\"Id\" " +
+                "FROM \"Cities\" dup " +
+                "JOIN \"Cities\" keep ON keep.\"Name\" = dup.\"Name\" AND keep.\"Region\" = dup.\"Region\" " +
+                "    AND keep.\"Id\" < dup.\"Id\" " +
+                "WHERE comp.\"CityId\" = dup.\"Id\" " +
+                "    AND keep.\"Id\" = (" +
+                "        SELECT MIN(c2.\"Id\") FROM \"Cities\" c2 " +
+                "        WHERE c2.\"Name\" = dup.\"Name\" AND c2.\"Region\" = dup.\"Region\");");
+
             migrationBuilder.Sql(
                 "DELETE FROM \"Cities\" c USING \"Cities\" dup " +
                 "WHERE c.\"Name\" = dup.\"Name\" AND c.\"Region\" = dup.\"Region\" AND c.\"Id\" > dup.\"Id\";");
