@@ -23,12 +23,11 @@ namespace ServiceBooking.API.Controllers;
 /// scope here and is intentionally omitted, which the schema allows since `drift` isn't `required`).
 /// `impact` is the one field the schema documents as endpoint-only (the CLI has no database).
 ///
-/// Known reduction, flagged rather than silently shipped: `placeholders[].source`/`valuePresent` require
-/// classifying each placeholder name against LEGAL_REVIEW.md §13-бис and cross-checking a
-/// `legal.values.json` this codebase doesn't read. Absent that file, every placeholder is reported with
-/// `source: "из манифеста"` (the schema's own fallback bucket for "we don't know the real source") and
-/// `valuePresent: false` (schema: "без --values всегда false"), which is honest but coarser than the full
-/// CLI report would be once T1/T3 exist.
+/// Known reduction, flagged rather than silently shipped: `placeholders[].valuePresent` requires
+/// cross-checking a `legal.values.json` this codebase doesn't read, so it is always reported as `false`
+/// (schema: "без --values всегда false"). `source` itself IS classified per LEGAL_REVIEW.md §13-бис
+/// (see <see cref="BuildPlaceholderSummary"/>); only `valuePresent` remains the coarser stand-in for
+/// what the full CLI report would give once T1/T3 exist.
 /// </summary>
 [ApiController]
 [Route("api/admin/legal")]
@@ -108,18 +107,22 @@ public class AdminLegalController(LegalDocumentProvider legalDocuments, AppDbCon
     }
 
     /// <summary>ARCHITECTURE_CYCLE11.md §116 `impact`: how many distinct subjects hold a stale accepted
-    /// version of each gated document. Computed cold (one query per gated document, plus one correlated
-    /// lookup per subject who currently holds a record for it), never on the hot path — this endpoint is
-    /// the only reader. Schema restricts `reAcceptanceRequired[].gate` to Global/OwnerScope, matching the
-    /// only two gate values a document requiring re-acceptance can have (Gate.None is filtered out below,
-    /// same as before).
+    /// version of each gated document. Computed cold — exactly one query per gated document, never on the
+    /// hot path — this endpoint is the only reader. Schema restricts `reAcceptanceRequired[].gate` to
+    /// Global/OwnerScope, matching the only two gate values a document requiring re-acceptance can have
+    /// (Gate.None is filtered out below, same as before).
     ///
     /// Deliberately not `GroupBy(r => r.UserId).Select(g => g.OrderByDescending(...).First()...)`: EF
     /// Core 8's grouping-operator translation only supports the group key and aggregates
     /// (Count/Sum/Min/Max/Average) in the projection, not an ordered `First()` over the group — that
-    /// shape throws `InvalidOperationException` at query time against Npgsql. Two round-trips per
-    /// document (distinct current subjects, then one ordered lookup per subject) is the translatable
-    /// equivalent; subject counts here are bounded by real consent-record volume, not request volume.
+    /// shape throws `InvalidOperationException` at query time against Npgsql. A prior revision replaced
+    /// this with a per-subject loop (1 + N round-trips, N = live consent-record holders — effectively
+    /// every registered user for Privacy/TermsClient) which timed out on any non-trivial database. The
+    /// translatable, single-round-trip equivalent is a correlated NOT EXISTS: a record is "stale" iff its
+    /// version differs from the manifest's current version AND no *newer* current record exists for the
+    /// same subject/document (i.e. it IS that subject's latest). This lands on the existing
+    /// `IX_ConsentRecords_CurrentByUser (UserId, DocumentKey, Purpose, GrantedAtUtc DESC)
+    /// WHERE RevokedAtUtc IS NULL AND UserId IS NOT NULL` index.
     ///
     /// Only *current* (non-revoked) records count towards "holds an accepted version" — this mirrors
     /// <see cref="ConsentLedger"/>'s own `CurrentRecordsQuery` filter, so a subject who revoked consent
@@ -134,25 +137,15 @@ public class AdminLegalController(LegalDocumentProvider legalDocuments, AppDbCon
             var currentRecordsQuery = db.ConsentRecords
                 .Where(r => r.DocumentKey == documentKey && r.UserId != null && r.RevokedAtUtc == null);
 
-            var userIds = await currentRecordsQuery
+            // A subject's latest current record is stale when its version isn't the manifest's current
+            // version. "Latest" is expressed as "no newer current record exists for the same subject",
+            // which EF Core 8 translates as a single correlated NOT EXISTS subquery.
+            var staleCount = await currentRecordsQuery
+                .Where(r => r.DocumentVersion != doc.Version
+                    && !currentRecordsQuery.Any(o => o.UserId == r.UserId && o.GrantedAtUtc > r.GrantedAtUtc))
                 .Select(r => r.UserId!)
                 .Distinct()
-                .ToListAsync(ct);
-
-            var staleCount = 0;
-            foreach (var userId in userIds)
-            {
-                // Latest current ConsentRecord for this subject/document; a subject whose latest
-                // recorded version isn't the manifest's current version would be asked to re-accept.
-                var latestVersion = await currentRecordsQuery
-                    .Where(r => r.UserId == userId)
-                    .OrderByDescending(r => r.GrantedAtUtc)
-                    .Select(r => r.DocumentVersion)
-                    .FirstAsync(ct);
-
-                if (latestVersion != doc.Version)
-                    staleCount++;
-            }
+                .CountAsync(ct);
 
             if (staleCount > 0)
                 results.Add(new LegalReadinessImpactEntryDto(documentKey, doc.Gate.ToString(), staleCount));
