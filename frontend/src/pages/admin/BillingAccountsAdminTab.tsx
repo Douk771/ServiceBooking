@@ -71,7 +71,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
   // merged with the full catalog so options not yet subscribed can still be added here.
   useEffect(() => {
     if (!catalogOptions) return
-    const currentByOption = new Map(account.options.map((o: AdminSubscribedOption) => [o.optionId, o]))
+    const currentByOption = new Map((account.options ?? []).map((o: AdminSubscribedOption) => [o.optionId, o]))
     const requestedByOption = new Map((request?.items ?? []).map((i) => [i.optionId, i.quantity]))
     setRows(
       catalogOptions
@@ -348,7 +348,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
                 <span className="text-ink-soft">{account.plan.name}</span>
                 <span className="text-ink">{formatRub(account.plan.pricePerMonth)}</span>
               </div>
-              {account.options.map((o) => (
+              {(account.options ?? []).map((o) => (
                 <div key={o.optionId} className="flex items-center justify-between px-3 py-2 text-sm flex-wrap gap-1">
                   <span className="text-ink-soft">
                     {o.name}

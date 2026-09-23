@@ -102,7 +102,12 @@ export function BillingPage() {
     )
   }
 
-  const startEditing = () => desiredOptions ?? Object.fromEntries(data.options.map((o) => [o.optionId, o.quantity]))
+  // Н5 (code review, A5): the same "old API response missing an array field" risk that broke
+  // PlansTab applies here — default to [] so a stale/partial subscription payload degrades to "no
+  // options" instead of throwing on .map/.find/.length.
+  const options = data.options ?? []
+
+  const startEditing = () => desiredOptions ?? Object.fromEntries(options.map((o) => [o.optionId, o.quantity]))
 
   const toggleOption = (option: AvailableOptionDto) => {
     setDesiredOptions((prev) => {
@@ -113,7 +118,7 @@ export function BillingPage() {
         // B10: keep the currently-subscribed quantity when re-adding an option that's already
         // connected (e.g. it was in the base set but got removed then re-added during editing),
         // otherwise default to 1 for a brand-new option.
-        const subscribed = data.options.find((o) => o.optionId === option.optionId)
+        const subscribed = options.find((o) => o.optionId === option.optionId)
         next[option.optionId] = subscribed?.quantity ?? 1
       }
       return next
@@ -161,7 +166,7 @@ export function BillingPage() {
         <p className="text-2xl font-bold text-ink mb-1">{formatMonthlyPrice(data.totalMonthlyPrice)}</p>
         <p className="text-xs text-muted mb-4">
           {formatMonthlyPrice(data.plan.pricePerMonth)} тариф
-          {data.options.length > 0 && ` + ${data.options.length} опц.`}
+          {options.length > 0 && ` + ${options.length} опц.`}
         </p>
 
         <dl className="grid gap-2 text-sm text-ink-soft mb-2">
@@ -177,11 +182,11 @@ export function BillingPage() {
         </dl>
       </Card>
 
-      {data.options.length > 0 && (
+      {options.length > 0 && (
         <Card className="p-[26px] mb-6">
           <h2 className="text-[15.5px] font-semibold text-ink mb-4">Подключённые опции</h2>
           <ul className="grid gap-3">
-            {data.options.map((o) => (
+            {options.map((o) => (
               <li key={o.optionId} className="flex items-center justify-between text-sm">
                 <span>
                   {o.name}
@@ -218,7 +223,7 @@ export function BillingPage() {
           <h2 className="text-[15.5px] font-semibold text-ink mb-4">Доступные опции</h2>
           <ul className="grid gap-3 mb-4">
             {data.availableOptions.map((option) => {
-              const subscribed = data.options.find((o) => o.optionId === option.optionId)
+              const subscribed = options.find((o) => o.optionId === option.optionId)
               const selected = isEditing ? !!desiredOptions?.[option.optionId] : !!subscribed
               const quantity = isEditing ? desiredOptions?.[option.optionId] ?? 0 : subscribed?.quantity ?? 0
               const showQuantityInput = option.kind === 'Quantity' && isEditing && selected
