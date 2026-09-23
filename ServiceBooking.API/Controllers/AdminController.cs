@@ -1062,7 +1062,14 @@ public class AdminController(
         }
 
         await db.SaveChangesAsync();
-        return Ok(dto);
+
+        // Reviewer note: echoing `dto` back here would leak client-supplied fields the server never
+        // validated or stored as-is (e.g. `pricingPublicBlockedReason`, which GET always recomputes from
+        // the live legal snapshot). Recompute and return the same shape GET produces, so a client that
+        // caches the PUT response (as the admin frontend does) never diverges from server state.
+        var freshBlockedReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
+        return Ok(new AdminPlatformSettingsDto(
+            dto.ChannelPricePerMonth, dto.ChannelIdleDays, dto.PricingPublicEnabled, freshBlockedReason));
     }
 
     // Plain-text 410 body per contracts/cycle7/openapi.yaml's `text/plain: {schema: {type: string}}` response —
