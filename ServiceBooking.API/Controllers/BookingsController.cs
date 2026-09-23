@@ -174,6 +174,7 @@ public class BookingsController(
         [FromQuery] DateOnly from,
         [FromQuery] DateOnly to,
         [FromQuery] bool manual = false,
+        [FromQuery] bool extendedHours = false,
         [FromQuery] List<Guid>? serviceIds = null)
     {
         if (to < from) return BadRequest("to must not be before from");
@@ -203,13 +204,17 @@ public class BookingsController(
         var (totalDuration, durationError) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
         if (durationError is not null) return durationError;
 
-        var fallback = honorManual ? ScheduleFallback.DefaultWindow : ScheduleFallback.None;
+        // ARCHITECTURE_CYCLE10.md §103.1: exactly the same trust table as GetSlots (BookingsController
+        // ~lines 121-125) — extendedHours without honorManual is None, same as everyone else.
+        var fallback = honorManual
+            ? (extendedHours ? ScheduleFallback.WholeDay : ScheduleFallback.DefaultWindow)
+            : ScheduleFallback.None;
         var (defaultStart, defaultEnd) = slotService.GetDefaultWindow();
         var days = await availabilityService.GetAvailabilityAsync(
-            companyId, masterId, totalDuration!.Value, from, to, fallback, defaultStart, defaultEnd);
+            companyId, masterId, totalDuration!.Value, from, to, fallback, defaultStart, defaultEnd, honorManual);
 
         return Ok(new AvailabilityDto(from, to, totalDuration.Value, SlotCalculator.StepMinutes,
-            horizonDays, horizonLastDate, days));
+            horizonDays, horizonLastDate, days, honorManual));
     }
 
     [HttpPost]

@@ -106,7 +106,8 @@ public class CompaniesController(
 
     // Public: list masters for a company, optionally filtered by serviceId
     [HttpGet("{id:guid}/masters")]
-    public async Task<ActionResult<List<MasterPublicDto>>> GetMasters(Guid id, [FromQuery] string? serviceId)
+    public async Task<ActionResult<List<MasterPublicDto>>> GetMasters(
+        Guid id, [FromQuery] string? serviceId, [FromQuery] bool includeHidden = false)
     {
         // serviceId is bound as string (not Guid?) on purpose: ASP.NET Core's default model binder
         // treats an empty string for a nullable Guid query param as "absent" and silently maps it to
@@ -122,6 +123,14 @@ public class CompaniesController(
             parsedServiceId = parsed;
         }
 
+        // ARCHITECTURE_CYCLE10.md §103.5: includeHidden is a request, not a permission — only honored
+        // once we've independently verified the caller actually works in THIS company (or is
+        // SuperAdmin), same trust bar as manual/extendedHours on availability/slots. Everyone else gets
+        // the filter silently kept, same as if they hadn't asked.
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var honorIncludeHidden = includeHidden && userId is not null &&
+            (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, id, userId));
+
         var memberQuery = db.CompanyMembers
             .Include(cm => cm.User)
             // A Client-role membership row exists for a company's own customers (e.g. anyone who books
@@ -129,7 +138,7 @@ public class CompaniesController(
             // master" picker (audit Q6/US-12).
             .Where(cm => cm.CompanyId == id && cm.Company.IsActive &&
                 (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner) &&
-                cm.ProvidesServices);
+                (honorIncludeHidden || cm.ProvidesServices));
 
         if (parsedServiceId.HasValue)
         {
@@ -146,7 +155,7 @@ public class CompaniesController(
         var members = await memberQuery.ToListAsync();
 
         return Ok(members.Select(cm => new MasterPublicDto(
-            cm.UserId, cm.User.FirstName, cm.User.LastName, cm.User.AvatarUrl, cm.Bio
+            cm.UserId, cm.User.FirstName, cm.User.LastName, cm.User.AvatarUrl, cm.Bio, cm.ProvidesServices
         )).ToList());
     }
 

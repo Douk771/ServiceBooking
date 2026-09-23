@@ -114,12 +114,15 @@ public record CreateCompanyDto(
 public record CreateCompanyResponseDto(CompanyDto Company, string Token);
 
 // Public-facing master info for the booking flow
+// ARCHITECTURE_CYCLE10.md §103.5: ProvidesServices is additive. Always true for an anonymous/client
+// caller (otherwise the element wouldn't have made it into the response at all) — no leak there.
 public record MasterPublicDto(
     string UserId,
     string FirstName,
     string LastName,
     string? AvatarUrl,
-    string? Bio
+    string? Bio,
+    bool ProvidesServices = true
 );
 
 public record UpdateCompanyDto(
