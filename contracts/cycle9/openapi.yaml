@@ -163,7 +163,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: "#/components/schemas/ChannelListItemDto" }
+                items: { $ref: "#/components/schemas/ChannelDto" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "451": { $ref: "#/components/responses/LegalGate" }
     post:
@@ -186,7 +186,7 @@ paths:
           description: Заявка принята.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ChannelListItemDto" }
+              schema: { $ref: "#/components/schemas/ChannelDto" }
         "400": { $ref: "#/components/responses/BadRequestText" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "402": { $ref: "#/components/responses/PaymentRequired" }
@@ -205,7 +205,7 @@ paths:
           description: Канал.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ChannelListItemDto" }
+              schema: { $ref: "#/components/schemas/ChannelDto" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFoundEmpty" }
         "451": { $ref: "#/components/responses/LegalGate" }
@@ -236,7 +236,7 @@ paths:
           description: Назначено.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ChannelListItemDto" }
+              schema: { $ref: "#/components/schemas/ChannelDto" }
         "400": { $ref: "#/components/responses/BadRequestText" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/ForbiddenEmpty" }
@@ -856,10 +856,20 @@ components:
             Текст собирает СЕРВЕР; фронт его печатает и не сочиняет.
           example: "Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере."
 
+    # ⚠️ Расхождение с редакцией 1, закрытое backend-разработчиком задним числом (тем же приёмом, каким
+    # §113.2 уже закрыл расхождение для CompanyDto): ChannelRequestInput/ChannelListItemDto (переименован
+    # в ChannelDto — так называется реальный C# record)/AdminChannelDto/NotificationLogItemDto/
+    # NotificationSettingsDto ниже были в редакции 1 заново придуманы по мотивам API_CONTRACT_CYCLE4.md,
+    # а не сверены с актуальными полями существующих DTO — расхождение было только в схеме, поведение
+    # сервера (и то, против чего уже собран фронт, см. коммиты c97c680/d46e3a7/d890aee) всегда было таким,
+    # как описано ниже. Правки — только аддитивное поле transport/deliveryMode-и-соседи + переименования,
+    # которые редакция 1 УЖЕ ошибочно предполагала (allowedByPlan/riskText/riskVersion/transports[] в
+    # ChannelOfferDto) — то есть эта правка приводит схему в соответствие узкому месту, а не расширяет его.
+
     ChannelRequestInput:
       type: object
       additionalProperties: false
-      required: [legalEntityForm, inn, acceptedRiskVersion, acceptedOwnerTermsVersion]
+      required: [legalEntityForm, inn]
       properties:
         transport:
           allOf:
@@ -872,13 +882,22 @@ components:
           minLength: 10
           maxLength: 12
           description: Проверяется только формальной контрольной суммой; против ЕГРЮЛ/ЕГРИП не сверяется.
-        acceptedRiskVersion: { type: string }
-        acceptedOwnerTermsVersion: { type: string }
+        offerAccepted:
+          type: object
+          additionalProperties: false
+          properties:
+            version: { type: string, nullable: true }
+          description: |
+            D9 — приложение к TermsOwner (ARCHITECTURE_CYCLE5.md §43.2), поэтому версия сверяется против
+            ЭТОГО документа, а не отдельного акцепта риска. Приём риска остаётся отдельным шагом —
+            POST /notification-channels/{id}/accept-risk, ПОСЛЕ создания заявки, не в этом теле.
 
-    ChannelListItemDto:
+    ChannelDto:
       type: object
       additionalProperties: false
-      required: [id, transport, state, stateText, isSuspendedByAdmin, assignedCompanies]
+      required:
+        [id, transport, state, stateText, paymentState, canConnect, canReplace,
+         fundingState, fundingText, companies]
       properties:
         id: { type: string, format: uuid }
         transport:
@@ -889,28 +908,48 @@ components:
         stateText:
           type: string
           description: Русская формулировка, собранная СЕРВЕРОМ (ChannelPresentation). Фронт её печатает.
-        stateReasonText: { type: string, nullable: true }
-        phoneNumber: { type: string, nullable: true, description: Отображается замаскированным. }
-        paidFromUtc: { type: string, format: date-time, nullable: true }
-        paidUntilUtc: { type: string, format: date-time, nullable: true }
-        isSuspendedByAdmin: { type: boolean }
-        isFunded: { type: boolean, nullable: true }
-        connectedAtUtc: { type: string, format: date-time, nullable: true }
-        lastTestMessageAtUtc: { type: string, format: date-time, nullable: true }
-        assignedCompanies:
+        phoneMasked: { type: string, nullable: true }
+        paymentState: { $ref: "#/components/schemas/ChannelPaymentStatus" }
+        paidFrom:
+          type: string
+          format: date-time
+          nullable: true
+          description: "Устарело (ARCHITECTURE_CYCLE7.md §47.3): всегда null."
+        paidUntil: { type: string, format: date-time, nullable: true }
+        requestedAt: { type: string, format: date-time, nullable: true }
+        connectedAt: { type: string, format: date-time, nullable: true }
+        riskAcceptedAt: { type: string, format: date-time, nullable: true }
+        idleSince: { type: string, format: date-time, nullable: true }
+        idleDeadline: { type: string, format: date-time, nullable: true }
+        replacedByChannelId: { type: string, format: uuid, nullable: true }
+        companies:
           type: array
           items:
             type: object
             additionalProperties: false
-            required: [companyId, companyName]
+            required: [companyId, companyName, isActive]
             properties:
               companyId: { type: string, format: uuid }
               companyName: { type: string }
+              isActive: { type: boolean }
+        canConnect: { type: boolean }
+        canReplace: { type: boolean }
+        fundingState: { type: string, enum: [Funded, Unfunded, NotPaid] }
+        fundingText: { type: string }
+        inn: { type: string, nullable: true }
+        legalEntityForm:
+          type: string
+          allOf: [{ $ref: "#/components/schemas/LegalEntityForm" }]
+          nullable: true
+
+    ChannelPaymentStatus:
+      type: string
+      enum: [Paid, NotPaid, Suspended]
 
     AdminChannelDto:
       type: object
       additionalProperties: false
-      required: [id, transport, state, ownerUserId, isSuspendedByAdmin]
+      required: [id, transport, state, paymentState, ownerName, companyCount, isSuspendedByAdmin]
       properties:
         id: { type: string, format: uuid }
         transport:
@@ -918,14 +957,20 @@ components:
             - $ref: "#/components/schemas/NotificationTransport"
           description: 🆕 добавлено циклом 9; по нему же работает query-фильтр ?transport=.
         state: { $ref: "#/components/schemas/ChannelState" }
-        stateText: { type: string }
-        ownerUserId: { type: string }
-        ownerDisplayName: { type: string, nullable: true }
-        billingAccountId: { type: string, format: uuid, nullable: true }
-        phoneNumber: { type: string, nullable: true }
-        paidUntilUtc: { type: string, format: date-time, nullable: true }
+        paymentState: { $ref: "#/components/schemas/ChannelPaymentStatus" }
+        ownerName: { type: string }
+        ownerPhoneMasked: { type: string, nullable: true }
+        paidFrom: { type: string, format: date-time, nullable: true }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        companyCount: { type: integer, format: int32 }
+        idleSince: { type: string, format: date-time, nullable: true }
+        requestedAt: { type: string, format: date-time, nullable: true }
         isSuspendedByAdmin: { type: boolean }
-        assignedCompanyCount: { type: integer, format: int32 }
+        inn: { type: string, nullable: true }
+        legalEntityForm:
+          type: string
+          allOf: [{ $ref: "#/components/schemas/LegalEntityForm" }]
+          nullable: true
 
     # ── Настройки уведомлений компании ────────────────────────────────────────────────────────
 
@@ -933,14 +978,24 @@ components:
       type: object
       additionalProperties: false
       required:
-        [enabledTypes, reminderLeadMinutes, minLeadMinutes, deliveryMode, priorityTransport,
-         connectedTransports, priorityChannelHealthy]
+        [enabledTypes, reminderLeadMinutes, minLeadMinutes, planAllowsChannel, channel,
+         effectiveEnabled, deliveryMode, priorityTransport, connectedTransports, priorityChannelHealthy]
       properties:
         enabledTypes:
           type: array
           items: { $ref: "#/components/schemas/NotificationType" }
         reminderLeadMinutes: { type: integer, format: int32, minimum: 60, maximum: 4320 }
         minLeadMinutes: { type: integer, format: int32, minimum: 0, maximum: 720 }
+        planAllowsChannel: { type: boolean }
+        channel:
+          allOf:
+            - $ref: "#/components/schemas/SettingsChannelDto"
+          description: |
+            Канал ПРИОРИТЕТНОГО транспорта (priorityTransport), если он у компании подключён — этому
+            полю (и effectiveEnabled/blockedReason рядом) больше 1 транспорта не нужно, оно осталось из
+            цикла 4 для экранов, которые ещё не научились работать со списком транспортов.
+        effectiveEnabled: { type: boolean }
+        blockedReason: { type: string, nullable: true }
         deliveryMode:
           allOf:
             - $ref: "#/components/schemas/NotificationDeliveryMode"
@@ -958,6 +1013,24 @@ components:
           description: |
             🆕 ТОЛЬКО ДЛЯ ЧТЕНИЯ. false → в кабинете владельца показывается плашка «приоритетный канал
             не работает: выберите другой или включите отправку во все». Автоподмены транспорта НЕТ.
+
+    SettingsChannelDto:
+      type: object
+      additionalProperties: false
+      required: [assigned]
+      properties:
+        assigned: { type: boolean }
+        channelId: { type: string, format: uuid, nullable: true }
+        state:
+          type: string
+          allOf: [{ $ref: "#/components/schemas/ChannelState" }]
+          nullable: true
+        stateText: { type: string, nullable: true }
+        paymentState:
+          type: string
+          allOf: [{ $ref: "#/components/schemas/ChannelPaymentStatus" }]
+          nullable: true
+        paidUntil: { type: string, format: date-time, nullable: true }
 
     UpdateNotificationSettingsInput:
       type: object
@@ -981,9 +1054,22 @@ components:
     NotificationLogItemDto:
       type: object
       additionalProperties: false
-      required: [id, type, transport, status, recipientPhoneMasked, createdAt]
+      required:
+        [id, createdAt, type, typeText, recipientPhoneMasked, status, statusText, visitStart,
+         transport, contentRedacted]
       properties:
         id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        type: { $ref: "#/components/schemas/NotificationType" }
+        typeText: { type: string, description: "Русский текст, собранный СЕРВЕРОМ (NotificationTexts)." }
+        recipientName: { type: string, nullable: true }
+        recipientPhoneMasked: { type: string }
+        status: { $ref: "#/components/schemas/NotificationStatus" }
+        statusText:
+          type: string
+          description: |
+            Русский текст статуса/причины, собранный СЕРВЕРОМ (NotificationTexts.StatusText) — фронт его
+            печатает, не собирает из отдельных полей status/reason.
         bookingId:
           type: string
           format: uuid
@@ -992,27 +1078,16 @@ components:
             В режиме AllChannels одно событие даёт несколько строк с ОДИНАКОВЫМ bookingId и type,
             различающихся transport. Экран группирует их по событию, чтобы владелец не решил,
             что клиента уведомили дважды по ошибке.
-        type: { $ref: "#/components/schemas/NotificationType" }
+        visitStart: { type: string, format: date-time }
+        sentAt: { type: string, format: date-time, nullable: true }
+        channelId: { type: string, format: uuid, nullable: true }
         transport:
           allOf:
             - $ref: "#/components/schemas/NotificationTransport"
           description: 🆕 добавлено циклом 9; по нему же работает query-фильтр ?transport=.
-        status: { $ref: "#/components/schemas/NotificationStatus" }
-        reason:
-          type: string
-          allOf:
-            - $ref: "#/components/schemas/NotificationReason"
-          nullable: true
-        reasonText:
-          type: string
-          nullable: true
-          description: Русский текст, собранный СЕРВЕРОМ (NotificationTexts).
-        recipientPhoneMasked: { type: string }
-        recipientName: { type: string, nullable: true }
-        createdAt: { type: string, format: date-time }
-        sentAtUtc: { type: string, format: date-time, nullable: true }
-        deliveredAtUtc: { type: string, format: date-time, nullable: true }
-        readAtUtc: { type: string, format: date-time, nullable: true }
+        contentRedacted:
+          type: boolean
+          description: "ARCHITECTURE_CYCLE5.md §49.3 — текст затёрт правилом хранения."
 
     # ── Web Push ──────────────────────────────────────────────────────────────────────────────
 
