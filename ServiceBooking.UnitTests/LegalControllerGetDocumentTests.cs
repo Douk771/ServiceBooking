@@ -14,11 +14,17 @@ namespace ServiceBooking.UnitTests;
 /// LegalDocumentProvider pointed at a temp on-disk manifest — everything else the controller needs
 /// (ConsentLedger, UserManager, TokenService) is unused by this action, so it's never constructed.
 ///
-/// Contract check, cycle 11 (before code-reviewer): Enum.TryParse&lt;LegalDocumentType&gt; parses ANY
-/// numeric string ("5", "99", "-1") as "valid" even when the value is outside the five defined members —
-/// it only rejects non-numeric garbage. That let /api/legal/documents/5 and /documents/99 fall through
-/// to the 503 "temporarily unavailable" branch instead of the contract's documented 404 for an
+/// Contract check, cycle 11, round 1 (before code-reviewer): Enum.TryParse&lt;LegalDocumentType&gt; parses
+/// ANY numeric string ("5", "99", "-1") as "valid" even when the value is outside the five defined
+/// members — it only rejects non-numeric garbage. That let /api/legal/documents/5 and /documents/99 fall
+/// through to the 503 "temporarily unavailable" branch instead of the contract's documented 404 for an
 /// unrecognized type. Fixed by adding an Enum.IsDefined check alongside TryParse.
+///
+/// Contract check, cycle 11, round 2 (schemathesis re-run after that fix): Enum.IsDefined alone still let
+/// an IN-RANGE numeric string ("0") through as if it were a name — "0" parsed to LegalDocumentType.Privacy
+/// and returned 200, even though the contract's {type} is a closed enum of NAMED string values and "0" is
+/// not one of them. Fixed by rejecting any input that parses as a plain integer before ever trying
+/// Enum.TryParse.
 /// </summary>
 public class LegalControllerGetDocumentTests : IDisposable
 {
@@ -97,6 +103,8 @@ public class LegalControllerGetDocumentTests : IDisposable
     [InlineData("5")] // one past the last defined member (ChannelRiskNotice = 4)
     [InlineData("99")]
     [InlineData("-1")]
+    [InlineData("0")] // in-range numeric alias for Privacy — must still be rejected, {type} is a closed string enum
+    [InlineData("1")] // in-range numeric alias for TermsClient
     [InlineData("NotARealType")]
     public void GetDocument_UnknownType_Returns404NotServiceUnavailable(string type)
     {

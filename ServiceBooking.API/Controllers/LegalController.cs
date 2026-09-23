@@ -40,13 +40,16 @@ public class LegalController(
     [HttpGet("documents/{type}")]
     public ActionResult<LegalDocumentDto> GetDocument(string type)
     {
-        // Code review (contract check, cycle 11): Enum.TryParse happily parses ANY integer string
-        // ("5", "99", "-1") as a "valid" enum value even when it's outside the defined member set —
-        // it only rejects non-numeric garbage. Left unchecked, /documents/5 and /documents/99 fell
-        // through to the 503 branch below (misleadingly claiming a service outage) instead of the
-        // documented 404 for an unrecognized type. Enum.IsDefined closes that gap for both the
-        // named-value and numeric-string cases.
-        if (!Enum.TryParse<LegalDocumentType>(type, ignoreCase: true, out var documentType)
+        // Code review (contract check, cycle 11, round 2): the contract's {type} is a closed enum of
+        // NAMED string values ("Privacy", "TermsClient", ...) — a bare integer is never one of them, in
+        // or out of range. Enum.TryParse<T> happily parses ANY integer string ("0", "2", "99", "-1") by
+        // binding it to the enum's underlying numeric value regardless of whether the caller wrote a
+        // name; Enum.IsDefined alone only catches the OUT-OF-RANGE case (e.g. "99"), not an in-range
+        // numeric alias like "0" resolving to Privacy. Rejecting any input that parses as a plain
+        // integer closes both holes: only a case-insensitive match on one of the declared member names
+        // is accepted, exactly as documented in the parameter's description.
+        if (int.TryParse(type, out _)
+            || !Enum.TryParse<LegalDocumentType>(type, ignoreCase: true, out var documentType)
             || !Enum.IsDefined(documentType))
             return NotFound();
 
