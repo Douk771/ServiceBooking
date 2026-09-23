@@ -9,9 +9,10 @@
     "ChannelRiskNotice": "/channel-risk"
   },
 
-  "_aliasesComment": "Маршруты, которые существуют во фронтенде, но не являются отдельным типом документа. `/offer-channel` — оферта D9, приложение № 1 к TermsOwner (ARCHITECTURE_CYCLE11.md §102.2): шестого типа документа нет и не будет, поэтому это редирект на якорь.",
+  "_aliasesComment": "Маршруты, которые существуют во фронтенде, но не являются отдельным типом документа. `/offer-channel` — оферта D9, приложение № 1 к TermsOwner (ARCHITECTURE_CYCLE11.md §102.2): шестого типа документа нет и не будет, поэтому это редирект на якорь. `/payment-terms` — приложение № 2 к TermsOwner (Оплата, автопродление и возврат, legal-drafts/13-payment-terms.html), устроено так же — редирект на якорь. ВНИМАНИЕ: приложение № 2 намеренно не подключено к legal-drafts/legal.json и не приклеено к App_Data/legal/03-terms-owner.html до запуска оплаты картой, поэтому якорь `payment-terms` сознательно НЕ добавлен в `anchors` ниже — требовать его наличия в текущем артефакте было бы ложной тревогой. Как только Приложение № 2 будет подключено к манифесту, в `anchors` нужно добавить `\"/terms-owner\": [\"offer-channel\", \"payment-terms\"]`.",
   "aliases": {
-    "/offer-channel": "/terms-owner#offer-channel"
+    "/offer-channel": "/terms-owner#offer-channel",
+    "/payment-terms": "/terms-owner#payment-terms"
   },
 
   "_anchorsComment": "Якоря, которые ОБЯЗАНЫ существовать в отданном HTML. Отсутствие — код возврата 6 у `legal links` и красный CI: без якоря редирект /offer-channel приводит человека на страницу без оферты, которую ему предлагают принять. Именно это состояние и есть сегодня в App_Data/legal/terms-owner.html (ARCHITECTURE_CYCLE11.md §108.1).",
@@ -26,6 +27,7 @@
     "/terms-owner",
     "/pdn-consent",
     "/channel-risk",
-    "/offer-channel"
+    "/offer-channel",
+    "/payment-terms"
   ]
 }

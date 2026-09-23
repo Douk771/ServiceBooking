@@ -27,15 +27,25 @@ public static class LegalRoutes
 
     /// <summary>Route alias → the real route (with an in-page anchor) it resolves to. The channel-offer
     /// text (D9) is spliced into D3 at build time (ARCHITECTURE_CYCLE11.md §103.2), so it has no route of
-    /// its own — links to it point at this alias instead.</summary>
+    /// its own — links to it point at this alias instead. `/payment-terms` follows the same pattern for
+    /// Appendix 2 (payment/auto-renewal/refund terms, legal-drafts/13-payment-terms.html) — see the
+    /// remark on <see cref="Anchors"/> below about why that appendix's anchor isn't listed there yet.</summary>
     public static readonly IReadOnlyDictionary<string, string> Aliases = new Dictionary<string, string>
     {
         ["/offer-channel"] = "/terms-owner#offer-channel",
+        ["/payment-terms"] = "/terms-owner#payment-terms",
     };
 
     /// <summary>Route → the in-page anchor(s) its content is required to contain. Used by `legal links`
     /// and by <c>LegalRoutesTests</c> to catch the case fixed by this cycle: an alias pointing at an
-    /// anchor the target document doesn't actually have (ARCHITECTURE_CYCLE11.md §108.1).</summary>
+    /// anchor the target document doesn't actually have (ARCHITECTURE_CYCLE11.md §108.1).
+    ///
+    /// `/payment-terms` (Appendix 2) is deliberately NOT listed here even though the alias above exists:
+    /// its source file (legal-drafts/13-payment-terms.html) is intentionally excluded from
+    /// legal-drafts/legal.json and never spliced into the built terms-owner document until card payments
+    /// ship, so the `payment-terms` anchor genuinely isn't present in today's artifact — that's the
+    /// designed state, not a defect. Add `"offer-channel", "payment-terms"` here once Appendix 2 is wired
+    /// into the manifest.</summary>
     public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> Anchors = new Dictionary<string, IReadOnlyList<string>>
     {
         ["/terms-owner"] = ["offer-channel"],
