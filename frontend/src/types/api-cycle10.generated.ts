@@ -802,6 +802,7 @@ export interface operations {
             401: components["responses"]["UnauthorizedEmpty"];
             403: components["responses"]["ForbiddenEmpty"];
             404: components["responses"]["NotFoundEmpty"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     reorderCompanyPhotos: {
@@ -850,6 +851,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            429: components["responses"]["TooManyRequests"];
         };
     };
     getCompanyBySlug: {
