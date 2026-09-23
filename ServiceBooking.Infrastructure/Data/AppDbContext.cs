@@ -30,6 +30,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PlanOptionRule> PlanOptionRules => Set<PlanOptionRule>();
     public DbSet<ClientNotePhoto> ClientNotePhotos => Set<ClientNotePhoto>();
     public DbSet<BookingEvent> BookingEvents => Set<BookingEvent>();
+    public DbSet<CompanyPhoto> CompanyPhotos => Set<CompanyPhoto>();
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
 
     // Cycle 5 — consent journal (ARCHITECTURE_CYCLE5.md §44.2), replaces cycle 3's UserConsent.
@@ -257,6 +258,34 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(be => be.ActorUser).WithMany().HasForeignKey(be => be.ActorUserId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(be => new { be.BookingId, be.OccurredAtUtc }); // the one read query, §105
             e.HasIndex(be => new { be.CompanyId, be.OccurredAtUtc }); // retention scan, §107
+        });
+
+        builder.Entity<CompanyPhoto>(e =>
+        {
+            e.Property(p => p.Url).HasMaxLength(300);
+            e.Property(p => p.ThumbnailUrl).HasMaxLength(300);
+            e.Property(p => p.ContentType).HasMaxLength(100);
+            e.Property(p => p.ContentHash).HasMaxLength(64);
+
+            e.HasOne(p => p.Company).WithMany(c => c.Photos)
+                .HasForeignKey(p => p.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            // Deleting the uploader must not delete the showcase photo — same convention as
+            // ClientNotePhoto.UploadedByUserId above: the photo belongs to the company, not the employee.
+            e.HasOne(p => p.UploadedBy).WithMany()
+                .HasForeignKey(p => p.UploadedByUserId).OnDelete(DeleteBehavior.SetNull);
+
+            // ARCHITECTURE_CYCLE10.md §102.2: deliberately NOT unique. Reordering updates Position on
+            // several rows one UPDATE at a time (EF Core), and a non-DEFERRABLE Postgres unique index
+            // would fail on the transient state where two rows briefly share a position. Integrity is
+            // instead guaranteed by the server always renumbering ALL of a company's photos to 0..n-1
+            // inside one transaction under the advisory lock "company-photos:{companyId}"
+            // (CompanyPhotoOrdering) — this index exists only to make "list this company's photos in
+            // order" and "count this company's photos" cheap, not to enforce uniqueness.
+            e.HasIndex(p => new { p.CompanyId, p.Position });
+            // Dedup-by-hash, same convention as ClientNotePhoto's (CompanyId, ContentHash) analogue
+            // above — a double-click/retry re-upload of the same file returns the existing row instead
+            // of creating an 11th one and silently burning a slot in the 10-photo limit.
+            e.HasIndex(p => new { p.CompanyId, p.ContentHash }).IsUnique();
         });
 
         builder.Entity<ScheduledTaskState>(e =>
