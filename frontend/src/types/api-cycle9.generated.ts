@@ -514,10 +514,16 @@ export interface components {
             legalEntityForm: components["schemas"]["LegalEntityForm"];
             /** @description Проверяется только формальной контрольной суммой; против ЕГРЮЛ/ЕГРИП не сверяется. */
             inn: string;
-            acceptedRiskVersion: string;
-            acceptedOwnerTermsVersion: string;
+            /**
+             * @description D9 — приложение к TermsOwner (ARCHITECTURE_CYCLE5.md §43.2), поэтому версия сверяется против
+             *     ЭТОГО документа, а не отдельного акцепта риска. Приём риска остаётся отдельным шагом —
+             *     POST /notification-channels/{id}/accept-risk, ПОСЛЕ создания заявки, не в этом теле.
+             */
+            offerAccepted?: {
+                version?: string | null;
+            };
         };
-        ChannelListItemDto: {
+        ChannelDto: {
             /** Format: uuid */
             id: string;
             /** @description 🆕 добавлено циклом 9, аддитивно. */
@@ -525,42 +531,65 @@ export interface components {
             state: components["schemas"]["ChannelState"];
             /** @description Русская формулировка, собранная СЕРВЕРОМ (ChannelPresentation). Фронт её печатает. */
             stateText: string;
-            stateReasonText?: string | null;
-            /** @description Отображается замаскированным. */
-            phoneNumber?: string | null;
+            phoneMasked?: string | null;
+            paymentState: components["schemas"]["ChannelPaymentStatus"];
+            /**
+             * Format: date-time
+             * @description Устарело (ARCHITECTURE_CYCLE7.md §47.3): всегда null.
+             */
+            paidFrom?: string | null;
             /** Format: date-time */
-            paidFromUtc?: string | null;
+            paidUntil?: string | null;
             /** Format: date-time */
-            paidUntilUtc?: string | null;
-            isSuspendedByAdmin: boolean;
-            isFunded?: boolean | null;
+            requestedAt?: string | null;
             /** Format: date-time */
-            connectedAtUtc?: string | null;
+            connectedAt?: string | null;
             /** Format: date-time */
-            lastTestMessageAtUtc?: string | null;
-            assignedCompanies: {
+            riskAcceptedAt?: string | null;
+            /** Format: date-time */
+            idleSince?: string | null;
+            /** Format: date-time */
+            idleDeadline?: string | null;
+            /** Format: uuid */
+            replacedByChannelId?: string | null;
+            companies: {
                 /** Format: uuid */
                 companyId: string;
                 companyName: string;
+                isActive: boolean;
             }[];
+            canConnect: boolean;
+            canReplace: boolean;
+            /** @enum {string} */
+            fundingState: "Funded" | "Unfunded" | "NotPaid";
+            fundingText: string;
+            inn?: string | null;
+            legalEntityForm?: (string & components["schemas"]["LegalEntityForm"]) | null;
         };
+        /** @enum {string} */
+        ChannelPaymentStatus: "Paid" | "NotPaid" | "Suspended";
         AdminChannelDto: {
             /** Format: uuid */
             id: string;
             /** @description 🆕 добавлено циклом 9; по нему же работает query-фильтр ?transport=. */
             transport: components["schemas"]["NotificationTransport"];
             state: components["schemas"]["ChannelState"];
-            stateText?: string;
-            ownerUserId: string;
-            ownerDisplayName?: string | null;
-            /** Format: uuid */
-            billingAccountId?: string | null;
-            phoneNumber?: string | null;
+            paymentState: components["schemas"]["ChannelPaymentStatus"];
+            ownerName: string;
+            ownerPhoneMasked?: string | null;
             /** Format: date-time */
-            paidUntilUtc?: string | null;
-            isSuspendedByAdmin: boolean;
+            paidFrom?: string | null;
+            /** Format: date-time */
+            paidUntil?: string | null;
             /** Format: int32 */
-            assignedCompanyCount?: number;
+            companyCount: number;
+            /** Format: date-time */
+            idleSince?: string | null;
+            /** Format: date-time */
+            requestedAt?: string | null;
+            isSuspendedByAdmin: boolean;
+            inn?: string | null;
+            legalEntityForm?: (string & components["schemas"]["LegalEntityForm"]) | null;
         };
         NotificationSettingsDto: {
             enabledTypes: components["schemas"]["NotificationType"][];
@@ -568,6 +597,15 @@ export interface components {
             reminderLeadMinutes: number;
             /** Format: int32 */
             minLeadMinutes: number;
+            planAllowsChannel: boolean;
+            /**
+             * @description Канал ПРИОРИТЕТНОГО транспорта (priorityTransport), если он у компании подключён — этому
+             *     полю (и effectiveEnabled/blockedReason рядом) больше 1 транспорта не нужно, оно осталось из
+             *     цикла 4 для экранов, которые ещё не научились работать со списком транспортов.
+             */
+            channel: components["schemas"]["SettingsChannelDto"];
+            effectiveEnabled: boolean;
+            blockedReason?: string | null;
             /** @description 🆕 */
             deliveryMode: components["schemas"]["NotificationDeliveryMode"];
             /** @description 🆕 Имеет смысл только при deliveryMode=PriorityChannel. */
@@ -579,6 +617,16 @@ export interface components {
              *     не работает: выберите другой или включите отправку во все». Автоподмены транспорта НЕТ.
              */
             priorityChannelHealthy: boolean;
+        };
+        SettingsChannelDto: {
+            assigned: boolean;
+            /** Format: uuid */
+            channelId?: string | null;
+            state?: (string & components["schemas"]["ChannelState"]) | null;
+            stateText?: string | null;
+            paymentState?: (string & components["schemas"]["ChannelPaymentStatus"]) | null;
+            /** Format: date-time */
+            paidUntil?: string | null;
         };
         UpdateNotificationSettingsInput: {
             enabledTypes: components["schemas"]["NotificationType"][];
@@ -594,6 +642,19 @@ export interface components {
         NotificationLogItemDto: {
             /** Format: uuid */
             id: string;
+            /** Format: date-time */
+            createdAt: string;
+            type: components["schemas"]["NotificationType"];
+            /** @description Русский текст, собранный СЕРВЕРОМ (NotificationTexts). */
+            typeText: string;
+            recipientName?: string | null;
+            recipientPhoneMasked: string;
+            status: components["schemas"]["NotificationStatus"];
+            /**
+             * @description Русский текст статуса/причины, собранный СЕРВЕРОМ (NotificationTexts.StatusText) — фронт его
+             *     печатает, не собирает из отдельных полей status/reason.
+             */
+            statusText: string;
             /**
              * Format: uuid
              * @description В режиме AllChannels одно событие даёт несколько строк с ОДИНАКОВЫМ bookingId и type,
@@ -601,23 +662,16 @@ export interface components {
              *     что клиента уведомили дважды по ошибке.
              */
             bookingId?: string | null;
-            type: components["schemas"]["NotificationType"];
+            /** Format: date-time */
+            visitStart: string;
+            /** Format: date-time */
+            sentAt?: string | null;
+            /** Format: uuid */
+            channelId?: string | null;
             /** @description 🆕 добавлено циклом 9; по нему же работает query-фильтр ?transport=. */
             transport: components["schemas"]["NotificationTransport"];
-            status: components["schemas"]["NotificationStatus"];
-            reason?: (string & components["schemas"]["NotificationReason"]) | null;
-            /** @description Русский текст, собранный СЕРВЕРОМ (NotificationTexts). */
-            reasonText?: string | null;
-            recipientPhoneMasked: string;
-            recipientName?: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            sentAtUtc?: string | null;
-            /** Format: date-time */
-            deliveredAtUtc?: string | null;
-            /** Format: date-time */
-            readAtUtc?: string | null;
+            /** @description ARCHITECTURE_CYCLE5.md §49.3 — текст затёрт правилом хранения. */
+            contentRedacted: boolean;
         };
         PushConfigDto: {
             /**
@@ -895,7 +949,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChannelListItemDto"][];
+                    "application/json": components["schemas"]["ChannelDto"][];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -921,7 +975,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChannelListItemDto"];
+                    "application/json": components["schemas"]["ChannelDto"];
                 };
             };
             400: components["responses"]["BadRequestText"];
@@ -948,7 +1002,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChannelListItemDto"];
+                    "application/json": components["schemas"]["ChannelDto"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -980,7 +1034,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChannelListItemDto"];
+                    "application/json": components["schemas"]["ChannelDto"];
                 };
             };
             400: components["responses"]["BadRequestText"];
