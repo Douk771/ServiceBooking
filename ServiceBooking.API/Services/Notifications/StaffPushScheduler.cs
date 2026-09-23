@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -48,7 +49,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
 
         var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, company.TimeZoneId);
         var clientName = await ResolveClientNameAsync(booking, ct);
-        var payload = BuildPayload(serviceNames, booking.Date, booking.StartTime, clientName);
+        var payload = BuildPayload(serviceNames, booking.Date, booking.StartTime, clientName, booking.Id);
         var nowUtc = DateTime.UtcNow;
         // §105.8 (Q17): min(CreatedAt + 1h, visit start) — a row surviving past this is never sent at all.
         var expiresAtUtc = nowUtc.AddHours(1) < visitStartUtc ? nowUtc.AddHours(1) : visitStartUtc;
@@ -78,12 +79,24 @@ public sealed class StaffPushScheduler(AppDbContext db)
     public static string BuildIdempotencyKey(Guid bookingId, string userId, Guid subscriptionId) =>
         $"{NotificationType.StaffBookingCreated}:{bookingId}:{userId}:{subscriptionId}";
 
-    /// <summary>§105.6 (П8, minimum): service(s), date/time, client name. No phone — the payload
-    /// reaches the OS notification tray, including a locked screen.</summary>
-    internal static string BuildPayload(IReadOnlyList<string> serviceNames, DateOnly date, TimeOnly startTime, string clientName)
+    /// <summary>§115.6: <c>{ title, body, tag, url }</c> JSON — the service worker's <c>event.data.json()</c>
+    /// contract, NOT a free-form string (a plain string here makes JSON parsing throw client-side and the
+    /// browser falls back to a blank-body default notification). §105.6 (П8, minimum): body carries
+    /// service(s), date/time, client name — no phone, the payload reaches the OS tray, including a locked
+    /// screen. <c>tag</c> collapses repeats for the same visit; <c>url</c> is the relative path the service
+    /// worker opens on click (origin is added client-side, §115.6 — never emit an absolute URL here).</summary>
+    internal static string BuildPayload(
+        IReadOnlyList<string> serviceNames, DateOnly date, TimeOnly startTime, string clientName, Guid bookingId)
     {
         var services = serviceNames.Count > 0 ? string.Join(", ", serviceNames) : "услуга";
-        return $"Новая запись: {services} · {date:dd.MM.yyyy} {startTime:HH:mm} · {clientName}";
+        var body = $"{services} · {date:dd.MM.yyyy} в {startTime:HH:mm} · {clientName}";
+        return JsonSerializer.Serialize(new
+        {
+            title = "Новая запись",
+            body,
+            tag = $"b-{bookingId}",
+            url = $"/cabinet?tab=bookings&booking={bookingId}",
+        });
     }
 
     private async Task<string> ResolveClientNameAsync(Booking booking, CancellationToken ct)
