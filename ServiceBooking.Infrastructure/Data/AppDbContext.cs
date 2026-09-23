@@ -29,6 +29,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<CompanyOwnerChangeLog> CompanyOwnerChangeLogs => Set<CompanyOwnerChangeLog>();
     public DbSet<PlanOptionRule> PlanOptionRules => Set<PlanOptionRule>();
     public DbSet<ClientNotePhoto> ClientNotePhotos => Set<ClientNotePhoto>();
+    public DbSet<BookingEvent> BookingEvents => Set<BookingEvent>();
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
 
     // Cycle 5 — consent journal (ARCHITECTURE_CYCLE5.md §44.2), replaces cycle 3's UserConsent.
@@ -244,6 +245,18 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(p => p.ClientNoteId);
             e.HasIndex(p => new { p.CompanyId, p.CreatedAt }); // quota sum AND retention scan (§6.1, §7.2)
             e.HasIndex(p => new { p.ClientNoteId, p.ContentHash }).IsUnique(); // idempotent re-upload, §6.3
+        });
+
+        builder.Entity<BookingEvent>(e =>
+        {
+            e.Property(be => be.ActorNameSnapshot).HasMaxLength(200);
+            e.Property(be => be.CancellationReason).HasMaxLength(300);
+            e.HasOne(be => be.Booking).WithMany(b => b.Events).HasForeignKey(be => be.BookingId).OnDelete(DeleteBehavior.Cascade);
+            // Deleting the actor's account must not delete the journal row — the event still happened;
+            // only the identifier link is cleared, exactly like ClientNotePhoto.UploadedByUserId.
+            e.HasOne(be => be.ActorUser).WithMany().HasForeignKey(be => be.ActorUserId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(be => new { be.BookingId, be.OccurredAtUtc }); // the one read query, §105
+            e.HasIndex(be => new { be.CompanyId, be.OccurredAtUtc }); // retention scan, §107
         });
 
         builder.Entity<ScheduledTaskState>(e =>
