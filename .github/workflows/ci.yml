@@ -117,6 +117,17 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      # ARCHITECTURE_CYCLE9.md §105.9 (R11) — the staff push service worker must never gain a `fetch`
+      # listener or touch the Cache API: that is the mechanical guarantee that it cannot intercept a
+      # navigation and strand a browser on a stale build. Three tokens, cheap insurance against a week
+      # of "why is the site not updating" debugging.
+      - name: Service worker must not intercept fetch/cache (R11)
+        run: |
+          if grep -nE "addEventListener\('fetch'|caches\.|CacheStorage" public/sw.js; then
+            echo "public/sw.js must never register a fetch handler or use the Cache API (ARCHITECTURE_CYCLE9.md §105.9, R11)" >&2
+            exit 1
+          fi
+
       - name: Unit tests
         run: npm run test:run
 
