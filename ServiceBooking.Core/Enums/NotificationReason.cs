@@ -62,4 +62,31 @@ public enum NotificationReason
     /// "a specific channel was named as priority and it, specifically, is not usable right now" — no
     /// silent fallback to a different transport (§3 SPEC, Q7в).</summary>
     PriorityChannelUnavailable,
+
+    /// <summary>ARCHITECTURE_CYCLE9.md §105.8 (US-124) — the push service answered 404/410 Gone: the
+    /// subscription itself is dead (browser revoked it, app uninstalled). The subscription row is
+    /// deleted in the same pass this reason is recorded; no retry.</summary>
+    PushSubscriptionGone,
+
+    /// <summary>§105.8 — 401/403 from the push service, almost always a VAPID key-pair mismatch (R12).
+    /// No retry; logged at Warning so an operator notices instead of the row silently sitting Failed.</summary>
+    PushAuthRejected,
+
+    /// <summary>§105.8 — 413 from the push service: the encrypted payload didn't fit. No retry, this is
+    /// a code-side bug (the payload is built server-side), not a transient condition.</summary>
+    PushPayloadTooLarge,
+
+    /// <summary>§105.8 (Q17) — the queued row's own <c>ExpiresAtUtc</c> (min(CreatedAt + 1h, visit start))
+    /// was reached before it could be sent; never sent to the push service at all.</summary>
+    PushTtlExhausted,
+
+    /// <summary>§105.6 — the company's <c>StaffPushEnabled</c> was turned off after this row was queued
+    /// (or the setting was already off when the dispatch pass re-checked it); checked again at send time,
+    /// not only at queue time.</summary>
+    StaffPushDisabledByCompany,
+
+    /// <summary>§105.6 (R4) — the intended recipient is no longer staff of the booking's company by the
+    /// time the dispatch pass runs (<c>CompanyMembership.IsStaffAsync</c> re-checked at send time, never
+    /// cached from queue time) — closes the "left the salon, still gets client names pushed" gap.</summary>
+    MasterNoLongerInCompany,
 }

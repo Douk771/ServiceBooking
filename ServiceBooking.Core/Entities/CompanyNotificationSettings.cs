@@ -32,4 +32,14 @@ public class CompanyNotificationSettings
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public string? UpdatedByUserId { get; set; }
+
+    // ARCHITECTURE_CYCLE9.md §105.4/§105.7 (US-117, Q4). Deliberately its OWN column, not a bit in
+    // EnabledTypeMask: PUT /api/companies/{id}/notification-settings answers 402 to every owner today
+    // (AllowNotificationChannel = false on every tariff), so a free, tariff-free feature (SPEC П6) would
+    // be unreachable if it lived in that same gated request/response shape. Default true — including
+    // companies created before this cycle and companies with no CompanyNotificationSettings row at all
+    // (this entity's own "no row = every default" convention, §104.4) — so no backfill is needed.
+    // Turning this off HOLDS delivery (checked again at send time by StaffPushDispatchTask, §105.6) but
+    // never deletes a master's subscription rows.
+    public bool StaffPushEnabled { get; set; } = true;
 }

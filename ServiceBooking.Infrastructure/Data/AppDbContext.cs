@@ -50,6 +50,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
     public DbSet<PlatformSettingChangeLog> PlatformSettingChangeLogs => Set<PlatformSettingChangeLog>();
 
+    // ARCHITECTURE_CYCLE9.md §105.4 (US-116/US-123, proход C: Web Push мастеру).
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
+    public DbSet<StaffPushNotification> StaffPushNotifications => Set<StaffPushNotification>();
+
     // Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §43.3): what's paid for on an account's subscription —
     // today, only read for the "notifications.whatsapp" option's Quantity (§47.1's N).
     public DbSet<AccountSubscriptionOption> AccountSubscriptionOptions => Set<AccountSubscriptionOption>();
@@ -473,6 +477,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasKey(s => s.CompanyId);
             e.HasOne(s => s.Company).WithMany().HasForeignKey(s => s.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            // ARCHITECTURE_CYCLE9.md §105.4/§105.7: DB-level default TRUE — without this, EF's generated
+            // migration would default the new column to the CLR type's own default (false), which would
+            // silently flip push OFF for every row that already exists (every company that saved
+            // notification settings before this cycle) the instant the migration runs. "По умолчанию
+            // true, включая компании, созданные до цикла" is a schema property, not something a
+            // backfill script fixes after the fact.
+            e.Property(s => s.StaffPushEnabled).HasDefaultValue(true);
         });
 
         builder.Entity<NotificationTemplate>(e =>
@@ -480,6 +491,42 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(t => t.Company).WithMany().HasForeignKey(t => t.CompanyId).OnDelete(DeleteBehavior.Cascade);
             e.Property(t => t.Body).HasMaxLength(1000);
             e.HasIndex(t => new { t.CompanyId, t.Type }).IsUnique();
+        });
+
+        // ARCHITECTURE_CYCLE9.md §105.4 (US-123). Cascade on the owner: an account tombstone
+        // (ProfileController.DeleteAccount) removes the AppUser row's own FK-reachable rows, but §105.5
+        // notes the cascade does NOT fire on account deletion in THIS product (deletion leaves a
+        // tombstone, AppUser.Id is never actually removed) — ProfileController therefore also deletes
+        // these rows explicitly; Cascade here is only the safety net for any OTHER path that really does
+        // remove an AppUser row (e.g. a future hard-delete admin tool).
+        builder.Entity<PushSubscription>(e =>
+        {
+            e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => s.UserId);
+            e.Property(s => s.Endpoint).HasMaxLength(500);
+            e.HasIndex(s => s.Endpoint).IsUnique();
+            e.Property(s => s.DeviceLabel).HasMaxLength(100);
+            e.Property(s => s.KeyId).HasMaxLength(16);
+        });
+
+        builder.Entity<StaffPushNotification>(e =>
+        {
+            e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(n => n.Booking).WithMany().HasForeignKey(n => n.BookingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(n => n.Subscription).WithMany().HasForeignKey(n => n.SubscriptionId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(n => n.Payload).HasMaxLength(1000);
+            e.Property(n => n.ReasonDetail).HasMaxLength(300);
+            e.Property(n => n.IdempotencyKey).HasMaxLength(200);
+            e.HasIndex(n => n.IdempotencyKey).IsUnique();
+
+            // §105.4's exact-copy-of-cycle-4 dispatch index: partial on Status = Pending (the enum's int
+            // value — see NotificationStatus's doc comment for why this MUST be a raw literal, not a
+            // translated enum comparison), ordered by (ExpiresAtUtc, CreatedAt) for early-expiry-first
+            // scanning, covering the columns StaffPushDispatchTask reads for every candidate row.
+            e.HasIndex(n => new { n.ExpiresAtUtc, n.CreatedAt })
+                .HasDatabaseName("IX_StaffPushNotifications_Dispatch")
+                .HasFilter("\"Status\" = 0")
+                .IncludeProperties(n => new { n.UserId, n.CompanyId, n.SubscriptionId });
         });
 
         builder.Entity<NotificationTemplateHistory>(e =>
