@@ -123,7 +123,7 @@ jobs:
       # of "why is the site not updating" debugging.
       - name: Service worker must not intercept fetch/cache (R11)
         run: |
-          if grep -nE "addEventListener\('fetch'|caches\.|CacheStorage" public/sw.js; then
+          if grep -nE "addEventListener\s*\(\s*['\"\`]fetch|\bcaches\b|CacheStorage" public/sw.js; then
             echo "public/sw.js must never register a fetch handler or use the Cache API (ARCHITECTURE_CYCLE9.md §105.9, R11)" >&2
             exit 1
           fi
