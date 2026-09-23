@@ -1,4 +1,5 @@
 import { AxiosError } from 'axios'
+import type { PricingPublicBlockedError } from '../types'
 
 /**
  * Maps failures of the legal-document/consent endpoints (GET /api/legal/documents/{type},
@@ -23,4 +24,16 @@ export function getLegalErrorMessage(error: unknown): string {
     default:
       return body || 'Не удалось загрузить документ. Попробуйте снова.'
   }
+}
+
+/**
+ * PUT /api/admin/platform-settings → 409 when turning pricingPublicEnabled on while the offer is a
+ * draft or the legal snapshot is unavailable (API_CONTRACT_CYCLE11.md §114.2, §119 п. 1). The
+ * message in the body is legal wording, not UX copy — shown verbatim, never rewritten here.
+ */
+export function getPricingPublicBlockedMessage(error: unknown): string | null {
+  const ax = error as AxiosError
+  if (ax?.response?.status !== 409) return null
+  const body = ax.response.data as PricingPublicBlockedError | undefined
+  return body?.message || 'Публичные цены нельзя включить прямо сейчас.'
 }

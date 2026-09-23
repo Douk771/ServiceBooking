@@ -9,6 +9,8 @@ import { Input } from '../../components/ui/Input'
 import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
+import { getPricingPublicBlockedMessage } from '../../utils/legalError'
+import type { PricingPublicBlockedReason } from '../../types'
 
 function fmt(d: string | null) {
   return d ? format(parseISO(d), 'd MMM yyyy', { locale: ru }) : '—'
@@ -154,31 +156,54 @@ function ChannelsList() {
 
 // ── Platform settings (price, idle days) ──────────────────────────────────────
 
+// Copy for pricingPublicBlockedReason (API_CONTRACT_CYCLE11.md §114.1) — informational only, shown
+// next to the toggle before the operator even tries to switch it on.
+const PRICING_BLOCKED_LABEL: Record<PricingPublicBlockedReason, string> = {
+  OfferIsDraft:
+    'Публичные цены нельзя включить, пока оферта — черновая редакция. Опубликуйте правовые документы.',
+  LegalUnavailable: 'Правовые документы временно недоступны — проверьте манифест.',
+}
+
 function PlatformSettingsCard() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['admin-platform-settings'], queryFn: adminNotificationsApi.getSettings })
   const [price, setPrice] = useState('')
   const [idleDays, setIdleDays] = useState('3')
+  // Local toggle state so a rejected PUT (409) can be visibly reverted rather than left stuck
+  // "on" while the server never applied it (API_CONTRACT_CYCLE11.md §119 п. 1).
+  const [pricingPublicEnabled, setPricingPublicEnabled] = useState(false)
 
   useEffect(() => {
     if (!data) return
     setPrice(data.channelPricePerMonth != null ? String(data.channelPricePerMonth) : '')
     setIdleDays(String(data.channelIdleDays))
+    setPricingPublicEnabled(data.pricingPublicEnabled)
   }, [data])
 
   const mut = useMutation({
-    mutationFn: () =>
+    mutationFn: (nextPricingPublicEnabled: boolean) =>
       adminNotificationsApi.updateSettings({
         channelPricePerMonth: price.trim() === '' ? null : Number(price),
         channelIdleDays: Number(idleDays),
+        pricingPublicEnabled: nextPricingPublicEnabled,
+        pricingPublicBlockedReason: data?.pricingPublicBlockedReason ?? null,
       }),
     onSuccess: (res) => {
       qc.setQueryData(['admin-platform-settings'], res)
       qc.invalidateQueries({ queryKey: ['notification-channel-offer'] })
+      setPricingPublicEnabled(res.pricingPublicEnabled)
+    },
+    onError: () => {
+      // 409 rejects the whole request, including the toggle — snap it back to the last known
+      // server state rather than leave it showing a change that never happened.
+      setPricingPublicEnabled(data?.pricingPublicEnabled ?? false)
     },
   })
 
   if (isLoading) return <div className="h-32 bg-cream-deep rounded-2xl animate-pulse mb-5" />
+
+  const blockedReason = data?.pricingPublicBlockedReason ?? null
+  const blockedMessage = mut.isError ? getPricingPublicBlockedMessage(mut.error) : null
 
   return (
     <Card className="p-6 mb-5">
@@ -204,9 +229,44 @@ function PlatformSettingsCard() {
           onChange={(e) => setIdleDays(e.target.value)}
         />
       </div>
-      {mut.isError && <p className="text-sm text-danger mt-3">{getNotificationErrorMessage(mut.error)}</p>}
+
+      <div className="mt-5 pt-5 border-t border-line flex items-start justify-between gap-4">
+        <div>
+          <label htmlFor="pricing-public-toggle" className="text-sm font-medium text-ink block mb-1">
+            Публичные цены
+          </label>
+          <p className="text-xs text-muted max-w-md">
+            Показывать каталог цен на публичной странице /pricing.
+            {blockedReason && <span className="block mt-1 text-warning">{PRICING_BLOCKED_LABEL[blockedReason]}</span>}
+          </p>
+        </div>
+        <button
+          id="pricing-public-toggle"
+          type="button"
+          role="switch"
+          aria-checked={pricingPublicEnabled}
+          disabled={mut.isPending || (blockedReason !== null && !pricingPublicEnabled)}
+          onClick={() => {
+            const next = !pricingPublicEnabled
+            setPricingPublicEnabled(next)
+            mut.mutate(next)
+          }}
+          className={`relative shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${pricingPublicEnabled ? 'bg-gold-dark' : 'bg-cream-deep border border-line-strong'}`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${pricingPublicEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+          />
+        </button>
+      </div>
+      {blockedMessage && <p className="text-sm text-danger mt-3">{blockedMessage}</p>}
+
+      {mut.isError && !blockedMessage && <p className="text-sm text-danger mt-3">{getNotificationErrorMessage(mut.error)}</p>}
       {mut.isSuccess && <p className="text-sm text-success mt-3">Сохранено</p>}
-      <Button className="mt-4" loading={mut.isPending} onClick={() => mut.mutate()}>
+      <Button
+        className="mt-4"
+        loading={mut.isPending}
+        onClick={() => mut.mutate(pricingPublicEnabled)}
+      >
         Сохранить
       </Button>
     </Card>
