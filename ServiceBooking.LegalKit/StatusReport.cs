@@ -107,6 +107,9 @@ internal static class StatusReport
                 if (builtExists != committedExists || (builtExists && File.ReadAllText(builtPath) != File.ReadAllText(committedPath)))
                     different.Add(file);
             }
+            // A file `root` still has but the build no longer produces (§103.2: the artifact is an
+            // exact set, not a floor) is drift too — same reasoning as `CheckCommand`.
+            different.AddRange(LegalSourceSet.FindStrayHtmlFiles(root, sourceDir));
             return different;
         }
         finally

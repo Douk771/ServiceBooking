@@ -65,6 +65,27 @@ internal static class LegalSourceSet
         return new[] { ManifestFileName }.Concat(entries.Select(e => e.File)).Distinct(StringComparer.Ordinal).ToList();
     }
 
+    /// <summary>Every top-level <c>*.html</c> file sitting in <paramref name="dir"/> that the manifest at
+    /// <paramref name="sourceDir"/> does NOT produce — e.g. cycle 5's <c>privacy.html</c>/<c>terms.html</c>
+    /// stubs orphaned by cycle 11 renaming the artifact's files to <c>01-privacy-policy.html</c> etc.
+    /// (ARCHITECTURE_CYCLE11.md §103.2: the artifact is "11 files under the same names" — an exact set,
+    /// not a minimum). Scoped to <c>*.html</c> only, and to the top level only: anything else that
+    /// happens to live in the artifact directory (a `.gitkeep`, a README, a subdirectory) is left alone
+    /// on purpose — a build/check tool that also reasons about arbitrary non-artifact files is exactly
+    /// the kind of "just delete everything and start over" behavior that's unsafe for a directory that's
+    /// tracked in git.</summary>
+    public static IReadOnlyList<string> FindStrayHtmlFiles(string dir, string sourceDir)
+    {
+        if (!Directory.Exists(dir)) return [];
+        var expected = EnumerateManifestFiles(sourceDir).ToHashSet(StringComparer.Ordinal);
+        return Directory.EnumerateFiles(dir, "*.html", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .Where(name => name is not null && !expected.Contains(name))
+            .Select(name => name!)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToList();
+    }
+
     private static string SpliceChannelOffer(string sourceDir, string termsOwnerContent)
     {
         var offerPath = Path.Combine(sourceDir, ChannelOfferFileName);

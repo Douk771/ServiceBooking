@@ -4,8 +4,13 @@ namespace ServiceBooking.LegalKit.Commands;
 
 /// <summary>
 /// `legal check` — ARCHITECTURE_CYCLE11.md §105.2. Writes nothing. Three gates, in order:
-///  1. Artifact drift: build `--source` into a temp dir and compare byte-for-byte against `--root`
-///     (exit 3 on any difference — "этим краснеет CI").
+///  1. Artifact drift: build `--source` into a temp dir and compare byte-for-byte against `--root`,
+///     PLUS every `--root` file the build doesn't produce at all (§103.2: the artifact is "11 files
+///     under the same names" — an exact set. A file `build` stopped producing — e.g. cycle 5's
+///     `privacy.html` orphaned by cycle 11's `01-privacy-policy.html` rename — is exactly as much
+///     drift as a file whose content changed; missing it here is the same class of hole this cycle
+///     exists to close: the stub would ship in the image and CI would stay green). Exit 3 on any
+///     difference — "этим краснеет CI".
 ///  2. Links/anchors on the freshly-built (i.e. source-of-truth) snapshot (exit 6).
 ///  3. Risk A4 (API_CONTRACT_CYCLE11.md §112): every source file is scanned for `{{…}}` tokens that
 ///     aren't one of the 15 recognized placeholder names — a Latin or lowercase-Cyrillic placeholder
@@ -41,10 +46,13 @@ internal static class CheckCommand
                 .Where(file => !FilesEqual(Path.Combine(staging, file), Path.Combine(root, file)))
                 .ToList();
 
-            if (differentFiles.Count > 0)
+            var strayFiles = LegalSourceSet.FindStrayHtmlFiles(root, source);
+
+            if (differentFiles.Count > 0 || strayFiles.Count > 0)
             {
                 Console.Error.WriteLine($"Артефакт '{root}' разошёлся с исходником '{source}':");
                 foreach (var file in differentFiles) Console.Error.WriteLine($"  - {file}");
+                foreach (var file in strayFiles) Console.Error.WriteLine($"  - {file} (осиротевший файл — сборка его больше не производит)");
                 return 3;
             }
 
