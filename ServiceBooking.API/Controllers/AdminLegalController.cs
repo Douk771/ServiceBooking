@@ -108,10 +108,22 @@ public class AdminLegalController(LegalDocumentProvider legalDocuments, AppDbCon
     }
 
     /// <summary>ARCHITECTURE_CYCLE11.md §116 `impact`: how many distinct subjects hold a stale accepted
-    /// version of each gated document. Computed cold (one grouped query per gated document), never on
-    /// the hot path — this endpoint is the only reader. Schema restricts `reAcceptanceRequired[].gate` to
-    /// Global/OwnerScope, matching the only two gate values a document requiring re-acceptance can have
-    /// (Gate.None is filtered out below, same as before).</summary>
+    /// version of each gated document. Computed cold (one query per gated document, plus one correlated
+    /// lookup per subject who currently holds a record for it), never on the hot path — this endpoint is
+    /// the only reader. Schema restricts `reAcceptanceRequired[].gate` to Global/OwnerScope, matching the
+    /// only two gate values a document requiring re-acceptance can have (Gate.None is filtered out below,
+    /// same as before).
+    ///
+    /// Deliberately not `GroupBy(r => r.UserId).Select(g => g.OrderByDescending(...).First()...)`: EF
+    /// Core 8's grouping-operator translation only supports the group key and aggregates
+    /// (Count/Sum/Min/Max/Average) in the projection, not an ordered `First()` over the group — that
+    /// shape throws `InvalidOperationException` at query time against Npgsql. Two round-trips per
+    /// document (distinct current subjects, then one ordered lookup per subject) is the translatable
+    /// equivalent; subject counts here are bounded by real consent-record volume, not request volume.
+    ///
+    /// Only *current* (non-revoked) records count towards "holds an accepted version" — this mirrors
+    /// <see cref="ConsentLedger"/>'s own `CurrentRecordsQuery` filter, so a subject who revoked consent
+    /// isn't miscounted as already covered.</summary>
     private async Task<LegalReadinessImpactSummaryDto> GetImpactAsync(LegalSnapshot snapshot, CancellationToken ct)
     {
         var results = new List<LegalReadinessImpactEntryDto>();
@@ -119,13 +131,28 @@ public class AdminLegalController(LegalDocumentProvider legalDocuments, AppDbCon
         {
             var documentKey = doc.Type.ToString();
 
-            // Latest ConsentRecord per subject for this document key; a subject whose latest recorded
-            // version isn't the manifest's current version would be asked to re-accept.
-            var staleCount = await db.ConsentRecords
-                .Where(r => r.DocumentKey == documentKey && r.UserId != null)
-                .GroupBy(r => r.UserId)
-                .Select(g => g.OrderByDescending(r => r.GrantedAtUtc).First().DocumentVersion)
-                .CountAsync(v => v != doc.Version, ct);
+            var currentRecordsQuery = db.ConsentRecords
+                .Where(r => r.DocumentKey == documentKey && r.UserId != null && r.RevokedAtUtc == null);
+
+            var userIds = await currentRecordsQuery
+                .Select(r => r.UserId!)
+                .Distinct()
+                .ToListAsync(ct);
+
+            var staleCount = 0;
+            foreach (var userId in userIds)
+            {
+                // Latest current ConsentRecord for this subject/document; a subject whose latest
+                // recorded version isn't the manifest's current version would be asked to re-accept.
+                var latestVersion = await currentRecordsQuery
+                    .Where(r => r.UserId == userId)
+                    .OrderByDescending(r => r.GrantedAtUtc)
+                    .Select(r => r.DocumentVersion)
+                    .FirstAsync(ct);
+
+                if (latestVersion != doc.Version)
+                    staleCount++;
+            }
 
             if (staleCount > 0)
                 results.Add(new LegalReadinessImpactEntryDto(documentKey, doc.Gate.ToString(), staleCount));
@@ -143,9 +170,34 @@ public class AdminLegalController(LegalDocumentProvider legalDocuments, AppDbCon
             .ToList();
     }
 
-    /// <summary>Sums per-document/uiText placeholder hits into the schema's summary shape. See the class
-    /// doc-comment: `source`/`valuePresent` are a known, flagged reduction without a `legal.values.json`
-    /// reader in this codebase.</summary>
+    /// <summary>LEGAL_REVIEW.md §13-бис's own grouping of the 13 `legal-values.schema.json` placeholder
+    /// names plus the 2 manifest-derived ones — the schema's `source` enum is that grouping verbatim, and
+    /// it's a static fact about the document set (which fact never changes without a legal review), not
+    /// something derived at runtime. Any placeholder name not in this map is new/unclassified and falls
+    /// back to "из манифеста", the schema's own bucket for "we don't know the real source".</summary>
+    private static readonly IReadOnlyDictionary<string, string> PlaceholderSources = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["НАИМЕНОВАНИЕ_ОПЕРАТОРА"] = "ЕГРЮЛ",
+        ["ИНН_ОПЕРАТОРА"] = "ЕГРЮЛ",
+        ["ОГРН_ОПЕРАТОРА"] = "ЕГРЮЛ",
+        ["ЮРИДИЧЕСКИЙ_АДРЕС"] = "ЕГРЮЛ",
+        ["НОМЕР_УВЕДОМЛЕНИЯ_РКН"] = "после уведомления РКН",
+        ["ДАТА_УВЕДОМЛЕНИЯ_РКН"] = "после уведомления РКН",
+        ["ПОЧТОВЫЙ_АДРЕС"] = "решение заказчика",
+        ["ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ"] = "решение заказчика",
+        ["ТЕЛЕФОН_ОПЕРАТОРА"] = "решение заказчика",
+        ["ОТВЕТСТВЕННЫЙ_ЗА_ОБРАБОТКУ"] = "решение заказчика",
+        ["ПОЧТА_ОТВЕТСТВЕННОГО"] = "решение заказчика",
+        ["СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ"] = "решение заказчика",
+        ["НДС_ОГОВОРКА"] = "решение заказчика",
+        ["ВЕРСИЯ_ДОКУМЕНТА"] = "из манифеста",
+        ["ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ"] = "из манифеста",
+    };
+
+    /// <summary>Sums per-document/uiText placeholder hits into the schema's summary shape. `source` is
+    /// looked up from <see cref="PlaceholderSources"/> (LEGAL_REVIEW.md §13-бис); `valuePresent` remains a
+    /// known, flagged reduction — see the class doc-comment — without a `legal.values.json` reader in this
+    /// codebase.</summary>
     internal static List<LegalReadinessPlaceholderSummaryDto> BuildPlaceholderSummary(
         List<LegalReadinessDocumentDto> documents, List<LegalReadinessUiTextDto> uiTexts)
     {
@@ -154,7 +206,8 @@ public class AdminLegalController(LegalDocumentProvider legalDocuments, AppDbCon
 
         return hits.GroupBy(h => h.Name, StringComparer.Ordinal)
             .Select(g => new LegalReadinessPlaceholderSummaryDto(
-                g.Key, g.Sum(h => h.Count), "из манифеста",
+                g.Key, g.Sum(h => h.Count),
+                PlaceholderSources.GetValueOrDefault(g.Key, "из манифеста"),
                 g.Select(h => h.File).Distinct(StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList(),
                 ValuePresent: false))
             .OrderBy(p => p.Name, StringComparer.Ordinal)

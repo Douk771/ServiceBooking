@@ -106,6 +106,36 @@ public class AdminLegalControllerReadinessHelpersTests
         summary.ValuePresent.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("НАИМЕНОВАНИЕ_ОПЕРАТОРА", "ЕГРЮЛ")]
+    [InlineData("ИНН_ОПЕРАТОРА", "ЕГРЮЛ")]
+    [InlineData("ОГРН_ОПЕРАТОРА", "ЕГРЮЛ")]
+    [InlineData("ЮРИДИЧЕСКИЙ_АДРЕС", "ЕГРЮЛ")]
+    [InlineData("НОМЕР_УВЕДОМЛЕНИЯ_РКН", "после уведомления РКН")]
+    [InlineData("ДАТА_УВЕДОМЛЕНИЯ_РКН", "после уведомления РКН")]
+    [InlineData("ПОЧТОВЫЙ_АДРЕС", "решение заказчика")]
+    [InlineData("ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ", "решение заказчика")]
+    [InlineData("ТЕЛЕФОН_ОПЕРАТОРА", "решение заказчика")]
+    [InlineData("ОТВЕТСТВЕННЫЙ_ЗА_ОБРАБОТКУ", "решение заказчика")]
+    [InlineData("ПОЧТА_ОТВЕТСТВЕННОГО", "решение заказчика")]
+    [InlineData("СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ", "решение заказчика")]
+    [InlineData("НДС_ОГОВОРКА", "решение заказчика")]
+    [InlineData("ВЕРСИЯ_ДОКУМЕНТА", "из манифеста")]
+    [InlineData("ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ", "из манифеста")]
+    [InlineData("НЕИЗВЕСТНЫЙ_ПЛЕЙСХОЛДЕР", "из манифеста")]
+    public void BuildPlaceholderSummary_ClassifiesSourcePerLegalReview13Bis(string placeholderName, string expectedSource)
+    {
+        var documents = new List<LegalReadinessDocumentDto>
+        {
+            new("Privacy", "T", "v1", new DateOnly(2026, 1, 1), false, "Material", "Global", "privacy.html",
+                "/privacy", "hash", [new LegalReadinessPlaceholderDto(placeholderName, 1)]),
+        };
+
+        var result = AdminLegalController.BuildPlaceholderSummary(documents, []);
+
+        result.Should().ContainSingle().Which.Source.Should().Be(expectedSource);
+    }
+
     [Fact]
     public void BuildPlaceholderSummary_NoPlaceholders_ReturnsEmpty()
     {
