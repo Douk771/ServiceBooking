@@ -98,13 +98,16 @@ public class CompanyNotificationsController(
         if (dto.DeliveryMode.HasValue) settings.DeliveryMode = dto.DeliveryMode.Value;
         if (dto.PriorityTransport.HasValue)
         {
-            // §114.4: priorityTransport not among the company's own connected/usable transports → 400.
-            // Checked against the SAME "usable" definition NotificationRouting uses at queue time
-            // (funded AND Connected) — a value that would immediately make priorityChannelHealthy false
-            // is exactly the "нераспознанное значение" class of input this endpoint already 400s for.
-            var usableTransports = await UsableTransportsAsync(assignments, plan);
-            if (!usableTransports.Contains(dto.PriorityTransport.Value))
-                return BadRequest("Приоритетный канал должен быть среди подключённых транспортов");
+            // §114.4/B4: priorityTransport must be ASSIGNED AND FUNDED to be accepted — deliberately the
+            // SAME "funded, ChannelState not checked" definition NotificationScheduler.SelectTargets uses
+            // at queue time (§104.5's own explicit rejection of gating on Connected), NOT the stricter
+            // "funded AND Connected" UsableTransportsAsync computes for the read-only screen fields below.
+            // Gating this WRITE on Connected would regress a paid-but-momentarily-disconnected/reconnecting
+            // company's ability to save ANY setting on this endpoint (e.g. just reminderLeadMinutes) back
+            // to a 400 — the same class of over-eager coupling §104.5 already rejected once (см. Н3).
+            var fundedTransports = await FundedTransportsAsync(assignments, plan);
+            if (!fundedTransports.Contains(dto.PriorityTransport.Value))
+                return BadRequest("Приоритетный канал должен быть среди оплаченных транспортов компании");
             settings.PriorityTransport = dto.PriorityTransport.Value;
         }
 
@@ -430,11 +433,13 @@ public class CompanyNotificationsController(
             deliveryMode, priorityTransport, usableTransports, priorityChannelHealthy);
     }
 
-    /// <summary>ARCHITECTURE_CYCLE9.md §104.5/§114.4 — the transports this company can actually be
-    /// reached on right now: assigned, funded, and <see cref="ChannelState.Connected"/>. The SAME
-    /// definition <c>NotificationScheduler</c>/<c>NotificationRouting</c> use to decide whether a channel
-    /// is a usable routing target — kept identical on purpose so a transport the settings screen offers
-    /// as pickable is never one routing would then refuse.</summary>
+    /// <summary>ARCHITECTURE_CYCLE9.md §104.5/§114.4 — the transports the READ-ONLY settings screen shows
+    /// as currently pickable/healthy: assigned, funded, AND <see cref="ChannelState.Connected"/>. This is
+    /// deliberately STRICTER than what queueing itself requires (<see cref="FundedTransportsAsync"/>) —
+    /// it exists to give the owner a live status signal ("this channel needs reconnecting"), not to gate
+    /// what values the PUT endpoint accepts (см. Н3/B4: those are two different questions, and conflating
+    /// them once already caused a spurious 400 on saving unrelated settings while a channel briefly
+    /// disconnected).</summary>
     private async Task<IReadOnlyList<NotificationTransport>> UsableTransportsAsync(
         IReadOnlyList<ChannelCompanyAssignment> assignments, EffectivePlan plan)
     {
@@ -445,6 +450,23 @@ public class CompanyNotificationsController(
                 usable.Add(a.Transport);
         }
         return usable;
+    }
+
+    /// <summary>The transports actually accepted as <c>priorityTransport</c> on the PUT endpoint (B4):
+    /// assigned and funded, <see cref="ChannelState"/> deliberately NOT checked — the same "funding only"
+    /// definition <c>NotificationScheduler.SelectTargets</c> uses at queue time (§104.5 explicitly rejected
+    /// gating routing on Connected; see that method's own comment). Keeping this identical to routing's own
+    /// definition means the PUT never rejects a value routing would itself have accepted.</summary>
+    private async Task<IReadOnlyList<NotificationTransport>> FundedTransportsAsync(
+        IReadOnlyList<ChannelCompanyAssignment> assignments, EffectivePlan plan)
+    {
+        var funded = new List<NotificationTransport>();
+        foreach (var a in assignments)
+        {
+            if (await IsChannelFundedAsync(a.Channel, plan))
+                funded.Add(a.Transport);
+        }
+        return funded;
     }
 
     // ARCHITECTURE_CYCLE7.md §47.1/§47.2: funded/unfunded, ranked across every live channel on the
