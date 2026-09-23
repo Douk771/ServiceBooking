@@ -9,6 +9,8 @@ import { Input } from '../../components/ui/Input'
 import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
+import { TRANSPORT_FILTER_OPTIONS, TRANSPORT_LABELS } from '../../utils/notificationTransport'
+import type { NotificationTransport } from '../../types'
 
 function fmt(d: string | null) {
   return d ? format(parseISO(d), 'd MMM yyyy', { locale: ru }) : '—'
@@ -62,12 +64,13 @@ const STATE_LABEL_RU: Record<string, string> = {
 
 function ChannelsList() {
   const [page, setPage] = useState(1)
+  const [transport, setTransport] = useState<NotificationTransport | ''>('')
   const [actionError, setActionError] = useState('')
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-channels', page],
-    queryFn: () => adminNotificationsApi.listChannels({ page, pageSize: 20 }),
+    queryKey: ['admin-channels', page, transport],
+    queryFn: () => adminNotificationsApi.listChannels({ page, pageSize: 20, transport: transport || undefined }),
   })
 
   const suspendMut = useMutation({
@@ -99,6 +102,26 @@ function ChannelsList() {
   return (
     <div>
       {actionError && <p className="text-sm text-danger mb-3">{actionError}</p>}
+
+      {/* API_CONTRACT_CYCLE9.md §114.3 — new ?transport= filter on the admin channel list. */}
+      <div className="mb-3">
+        <select
+          aria-label="Канал"
+          value={transport}
+          onChange={(e) => {
+            setTransport(e.target.value as NotificationTransport | '')
+            setPage(1)
+          }}
+          className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
+        >
+          {TRANSPORT_FILTER_OPTIONS.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="grid gap-3">
         {(data?.items ?? []).map((c) => (
           <Card key={c.id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
@@ -106,6 +129,9 @@ function ChannelsList() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium text-ink">{c.ownerName}</span>
                 <span className="text-xs text-muted">{c.ownerPhoneMasked}</span>
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">
+                  {TRANSPORT_LABELS[c.transport]}
+                </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">
                   {STATE_LABEL_RU[c.state] ?? c.state}
                 </span>
