@@ -21,19 +21,24 @@ self.addEventListener('activate', (event) => {
 // API_CONTRACT_CYCLE9.md §115.6 — payload shape: { title, body, tag, url }. `url` is a relative path;
 // this worker adds the origin itself, so the server can never smuggle an absolute cross-origin URL in.
 self.addEventListener('push', (event) => {
-  let data = { title: 'Новая запись', body: '', tag: undefined, url: '/my-bookings' }
+  // §115.6 default: no bookingId is known yet, so we can only land the master on the bookings list,
+  // not a specific booking — matches the shape the server sends (`/cabinet?tab=bookings&booking=<id>`)
+  // rather than the unrelated client-facing `/my-bookings` route.
+  let data = { title: 'Новая запись', body: '', tag: undefined, url: '/cabinet?tab=bookings' }
   try {
     if (event.data) data = { ...data, ...event.data.json() }
   } catch {
-    // Malformed payload: still show a bare notification rather than silently dropping the push —
-    // the browser punishes a service worker that receives a push and shows nothing for it.
+    // Malformed payload (not valid JSON): still show a bare notification rather than silently
+    // dropping the push — the browser punishes a service worker that receives a push and shows
+    // nothing for it. The fields above are the fallback shown in that case.
   }
 
   event.waitUntil(
     self.registration.showNotification(data.title || 'Новая запись', {
       body: data.body || '',
+      // §115.6 — `tag` collapses repeat notifications for the same booking (`b-<bookingId>`) into one.
       tag: data.tag,
-      data: { url: data.url || '/my-bookings' },
+      data: { url: data.url || '/cabinet?tab=bookings' },
     }),
   )
 })
@@ -42,7 +47,7 @@ self.addEventListener('push', (event) => {
 // opening a new one.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = event.notification.data?.url || '/my-bookings'
+  const url = event.notification.data?.url || '/cabinet?tab=bookings'
 
   event.waitUntil(
     (async () => {
@@ -65,39 +70,11 @@ self.addEventListener('notificationclick', (event) => {
   )
 })
 
-// §105.9 — best-effort re-subscription safety net. Browser support for this event is uneven, so the
-// primary path stays useWebPush's own reconciliation on cabinet open; this just covers the gap when
-// that reconciliation hasn't run yet.
-self.addEventListener('pushsubscriptionchange', (event) => {
-  event.waitUntil(
-    (async () => {
-      try {
-        const options = event.oldSubscription
-          ? { applicationServerKey: event.oldSubscription.options.applicationServerKey, userVisibleOnly: true }
-          : null
-        if (!options) return
-        const subscription = await self.registration.pushManager.subscribe(options)
-        await fetch('/api/push/subscriptions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            endpoint: subscription.endpoint,
-            keys: {
-              p256dh: arrayBufferToBase64Url(subscription.getKey('p256dh')),
-              auth: arrayBufferToBase64Url(subscription.getKey('auth')),
-            },
-          }),
-        })
-      } catch {
-        // Best-effort only — the app itself reconciles on next open (§105.9).
-      }
-    })(),
-  )
-})
-
-function arrayBufferToBase64Url(buffer) {
-  const bytes = new Uint8Array(buffer)
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
+// §105.9 — deliberately NO `pushsubscriptionchange` listener here. A previous version tried to
+// re-subscribe and POST the new subscription straight from the service worker, but that can never
+// succeed: the JWT lives in `authStore`/localStorage, which a service worker has no access to, and
+// `POST /api/push/subscriptions` sits behind `[Authorize]` — every such call 401s and was silently
+// swallowed by its own `catch`, i.e. dead code with a misleading "safety net" comment. The real
+// reconciliation path is useWebPush's own effect, which runs with the app's normal authenticated
+// `api` client on every cabinet open (rubezh 1, §105.9) — that is sufficient on its own. Revisit this
+// only if/when the platform gains cookie-based auth that a service worker could actually use.
