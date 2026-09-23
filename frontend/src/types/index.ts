@@ -10,6 +10,11 @@ export type NotificationDeliveryMode = Cycle9Components['schemas']['Notification
  *  and must be shown BEFORE the owner requests that transport, not after (§104.9). */
 export type TransportOffer = Cycle9Components['schemas']['TransportOfferDto']
 
+// API_CONTRACT_CYCLE9.md §115 — staff Web Push. Read straight off the generated schema (§118 п. 1).
+export type PushConfig = Cycle9Components['schemas']['PushConfigDto']
+export type PushSubscriptionDevice = Cycle9Components['schemas']['PushSubscriptionDto']
+export type StaffPushSettings = Cycle9Components['schemas']['StaffPushSettingsDto']
+
 export interface Company {
   id: string
   name: string
