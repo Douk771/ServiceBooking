@@ -260,8 +260,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         await GiveNotificationCapablePlanAsync(owner.UserId);
         await SetChannelPriceAsync(990);
         var created = await CreateChannelAsync(owner.Token);
-        await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
+        var acceptRisk = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
             new AcceptRiskDto(NotificationRiskTextVersion()));
+        acceptRisk.EnsureSuccessStatusCode();
         // Mark paid directly (the owner-facing flow has no self-serve payment, SPEC §9.1 — an admin does it).
         await MarkPaidAsync(created.Id);
 
@@ -295,8 +296,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         await GiveNotificationCapablePlanAsync(owner.UserId);
         await SetChannelPriceAsync(990);
         var created = await CreateChannelAsync(owner.Token);
-        await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
+        var acceptRisk = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
             new AcceptRiskDto(NotificationRiskTextVersion()));
+        acceptRisk.EnsureSuccessStatusCode();
         await MarkPaidAsync(created.Id);
 
         await using var disabledFactory = new NotificationTestFactory(ConnectionString).WithWebHostBuilder(builder =>
@@ -314,6 +316,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         var body = await response.Content.ReadAsStringAsync();
         body.Should().NotBeNullOrWhiteSpace();
         body.Should().NotContain("stack", "the text must be human, not a stack trace");
+        body.Should().Contain("платформ",
+            "the 409 must be specifically the InstanceCreationEnabled=false gate, not e.g. the unrelated " +
+            "\"risk not accepted\" gate — a wrong-reason 409 would make this test pass without proving anything");
     }
 
     // ── Company assignment ───────────────────────────────────────────────────────────────────────
@@ -358,8 +363,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
     {
         var (owner, company1, channel) = await CreateConnectedChannelAsync();
         var company2 = await CreateCompanyAsync(owner.Token);
-        await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channel.Id}/companies",
+        var assignCompany2 = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channel.Id}/companies",
             new AssignCompanyDto(company2.Id, WarningAcknowledged: true));
+        assignCompany2.EnsureSuccessStatusCode();
 
         using (var scope = Factory.Services.CreateScope())
         {
@@ -583,14 +589,17 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         await db.SaveChangesAsync();
     }
 
-    private static string NotificationRiskTextVersion() =>
+    private string NotificationRiskTextVersion()
+    {
         // ARCHITECTURE_CYCLE9.md §104.8 (B12): riskText/riskVersion now come from the ChannelRiskNotice
-        // legal document (App_Data/legal/legal.json), not the deleted NotificationRiskText constant —
-        // mirrors that document's current "version" field. Read from the live offer response instead of
-        // hardcoding it would be more robust, but every other call site in this file already has a
-        // channel, not an offer; kept as a named constant so a version bump surfaces here as a single,
-        // obvious compile-time-adjacent failure rather than scattered string literals.
-        "2026-09-21-draft";
+        // legal document (App_Data/legal/legal.json), not the deleted NotificationRiskText constant.
+        // Read live from LegalDocumentProvider (same pattern as NotificationTestBase.CreateCompanyAsync)
+        // instead of hardcoding a version string, so a legal.json bump can't silently desync this file
+        // from the running manifest.
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        return provider.Current!.Get(LegalDocumentType.ChannelRiskNotice)!.Version;
+    }
 
     private static OutboundNotification NewPendingNotification(Guid companyId, Guid channelId)
     {
