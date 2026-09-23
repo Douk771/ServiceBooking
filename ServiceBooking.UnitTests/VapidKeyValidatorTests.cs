@@ -71,15 +71,22 @@ public class VapidKeyValidatorTests
     }
 
     [Fact]
-    public void IsValidP256Pair_MismatchedRandomKeys_StillParsesAsAPair()
+    public void IsValidP256Pair_MismatchedKeysFromTwoUnrelatedPairs_StillReturnsTrue()
     {
-        // Deliberate documentation of a limitation: this validator checks SHAPE (length, curve, prefix),
-        // not that the public key is mathematically THIS private key's own public half — ECParameters
-        // import does not reject a public/private pair from two unrelated keys sharing only a curve.
+        // Deliberate documentation of the validator's contract: it checks that EACH key is individually
+        // well-formed for the P-256 curve (right length, right curve, right prefix, scalar in range) —
+        // it does NOT check that the public key is mathematically derived from the private scalar.
         // §105.3's own requirement is "не парсятся как пара P-256", not "cryptographically matched", so
-        // this is within scope, not a bug — recorded here so it isn't rediscovered as one later.
-        var (publicKeyA, _) = GenerateValidPair();
-        var (_, privateKeyB) = GenerateValidPair();
+        // accepting an unrelated public/private combination is within scope, not a bug.
+        //
+        // Fixed vectors, not freshly generated ones: combined ECParameters import (Q + D together) used
+        // to be platform-dependent — OpenSSL on Linux cross-validates Q == D*G and rejects a mismatched
+        // pair, while macOS's provider didn't, so this exact test flipped from green to red depending on
+        // CI's OS even though nothing about the validator's *contract* changed. The validator now checks
+        // each key on its own, so this no longer depends on which random bytes came out of key
+        // generation, but pinning the vectors keeps that property locked in going forward.
+        const string publicKeyA = "BDcskJOXa8Oq5rFyIBZhBj6LuaQJJXuV4b9HN_y59ftejEIXFkOQGmGhj5RrXdVAYxblpXrJurAVvR5IcCpbnYE";
+        const string privateKeyB = "SEa2FMlEi2xy65Phzg8si13FLk0t0u8BptcU8_xJUQA";
         VapidKeyValidator.IsValidP256Pair(publicKeyA, privateKeyB).Should().BeTrue();
     }
 }
