@@ -84,7 +84,10 @@ describe('NotePhotoUploader — photo-consent gate (T5-F6)', () => {
 
   it('an ordinary upload error (not a consent issue) shows the plain message, no modal', async () => {
     const user = userEvent.setup()
-    uploadPhoto.mockRejectedValueOnce({ isAxiosError: true, response: { status: 400, data: 'Image too large' } })
+    uploadPhoto.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 400, data: 'Слишком большой файл — максимум 5 МБ.' },
+    })
     renderUploader()
 
     const input = document.querySelector('input[type="file"]:not([capture])') as HTMLInputElement

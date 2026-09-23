@@ -62,10 +62,10 @@ public class ImageUploadService(FileStorage storage, IConfiguration config, ILog
     public async Task<UploadValidationResult> ReadAndProcessAsync(IFormFile? file, IReadOnlyList<ImageProfile> profiles)
     {
         if (file is null || file.Length == 0)
-            return UploadValidationResult.Fail("File is required");
+            return UploadValidationResult.Fail("Нужно выбрать файл для загрузки.");
 
         if (file.Length > _maxFileBytes)
-            return UploadValidationResult.Fail("Image is too large — the limit is 5 MB");
+            return UploadValidationResult.Fail("Слишком большой файл — максимум 5 МБ.");
 
         byte[] bytes;
         using (var buffer = new MemoryStream())
@@ -78,7 +78,7 @@ public class ImageUploadService(FileStorage storage, IConfiguration config, ILog
         // only the bytes decide (US-19 p.1). This is also what fixes the previous logo upload, which
         // trusted Content-Type alone (CompaniesController.cs:271-281 before this cycle).
         if (!ImageSignature.TryDetect(bytes, out var kind))
-            return UploadValidationResult.Fail("Unsupported image type — use JPEG, PNG or WEBP");
+            return UploadValidationResult.Fail("Можно загрузить JPEG, PNG или WEBP.");
 
         // Checked against the raw upload size (an upper bound on what any profile will end up writing —
         // every profile only shrinks the image) rather than the eventual processed size, which isn't
@@ -86,7 +86,7 @@ public class ImageUploadService(FileStorage storage, IConfiguration config, ILog
         if (!storage.HasFreeSpace(bytes.LongLength))
         {
             logger.LogWarning("Upload rejected: server storage is below the configured free-space threshold");
-            return UploadValidationResult.Fail("Server storage is full — try again later.");
+            return UploadValidationResult.Fail("На сервере закончилось место. Попробуйте позже.");
         }
 
         try
@@ -96,16 +96,16 @@ public class ImageUploadService(FileStorage storage, IConfiguration config, ILog
         }
         catch (ImageTooLargeException)
         {
-            // Deliberately mentions "too large" (matches the existing byte-size message's wording) so
-            // the frontend's existing uploadError.ts bucket for that phrase — "Файл больше 5 МБ.
-            // Уменьшите изображение и попробуйте снова." — applies here too, rather than falling through
-            // to the generic catch-all. This check never even reaches SKBitmap.Decode (code review
-            // finding, decompression-bomb risk) — see ImageProcessor.MaxPixels.
-            return UploadValidationResult.Fail("Image dimensions are too large — try a smaller image.");
+            // Deliberately shares the "Слишком больш…" prefix with the byte-size message above so the
+            // frontend's uploadError.ts bucket for that phrase — "Файл больше 5 МБ. Уменьшите
+            // изображение и попробуйте снова." — applies here too, rather than falling through to the
+            // generic catch-all. This check never even reaches SKBitmap.Decode (code review finding,
+            // decompression-bomb risk) — see ImageProcessor.MaxPixels.
+            return UploadValidationResult.Fail("Слишком большое изображение — попробуйте файл меньшего размера.");
         }
         catch (InvalidImageException)
         {
-            return UploadValidationResult.Fail("File is not a valid image");
+            return UploadValidationResult.Fail("Файл повреждён или это не изображение.");
         }
     }
 }

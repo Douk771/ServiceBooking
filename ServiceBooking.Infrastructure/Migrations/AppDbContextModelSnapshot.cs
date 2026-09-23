@@ -480,6 +480,64 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("Bookings");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.BookingEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ActorKind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ActorNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("ActorRoleSnapshot")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ActorUserId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("BookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("NewDate")
+                        .HasColumnType("date");
+
+                    b.Property<TimeOnly?>("NewStartTime")
+                        .HasColumnType("time without time zone");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("PreviousDate")
+                        .HasColumnType("date");
+
+                    b.Property<TimeOnly?>("PreviousStartTime")
+                        .HasColumnType("time without time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("BookingId", "OccurredAtUtc");
+
+                    b.HasIndex("CompanyId", "OccurredAtUtc");
+
+                    b.ToTable("BookingEvents");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.BookingService", b =>
                 {
                     b.Property<Guid>("Id")
@@ -987,6 +1045,65 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("CompanyId");
 
                     b.ToTable("CompanyOwnerChangeLogs");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyPhoto", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Height")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ThumbnailUrl")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("UploadedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UploadedByUserId");
+
+                    b.HasIndex("CompanyId", "ContentHash")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Position");
+
+                    b.ToTable("CompanyPhotos");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ConsentRecord", b =>
@@ -2179,6 +2296,24 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Service");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.BookingEvent", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "ActorUser")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.Booking", "Booking")
+                        .WithMany("Events")
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ActorUser");
+
+                    b.Navigation("Booking");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.BookingService", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.Booking", "Booking")
@@ -2382,6 +2517,24 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyPhoto", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany("Photos")
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "UploadedBy")
+                        .WithMany()
+                        .HasForeignKey("UploadedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Company");
+
+                    b.Navigation("UploadedBy");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ConsentRecord", b =>
@@ -2654,6 +2807,8 @@ namespace ServiceBooking.Infrastructure.Migrations
             modelBuilder.Entity("ServiceBooking.Core.Entities.Booking", b =>
                 {
                     b.Navigation("BookingServices");
+
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ClientNote", b =>
@@ -2666,6 +2821,8 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Bookings");
 
                     b.Navigation("Members");
+
+                    b.Navigation("Photos");
 
                     b.Navigation("Services");
                 });

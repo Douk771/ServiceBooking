@@ -73,4 +73,8 @@ public class Booking
     // BookingService.Position. Never empty after the AddBookingServices migration's backfill — even a
     // pre-cycle single-service booking gets exactly one row here.
     public ICollection<BookingService> BookingServices { get; set; } = new List<BookingService>();
+
+    // Cycle 10 (ARCHITECTURE_CYCLE10.md §102.1): append-only journal of what happened to this booking.
+    // Written only through ServiceBooking.API.Services.Bookings.BookingEventLog.
+    public ICollection<BookingEvent> Events { get; set; } = new List<BookingEvent>();
 }

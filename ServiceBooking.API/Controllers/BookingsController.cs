@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -18,7 +19,8 @@ namespace ServiceBooking.API.Controllers;
 public class BookingsController(
     AppDbContext db, SlotService slotService, AvailabilityService availabilityService, CaptchaService captchaService,
     SubscriptionResolver subscriptionResolver, LegalDocumentProvider legalProvider,
-    NotificationScheduler notificationScheduler, ILogger<BookingsController> logger) : ControllerBase
+    NotificationScheduler notificationScheduler, BookingEventLog eventLog, BookingActorResolver actorResolver,
+    ILogger<BookingsController> logger) : ControllerBase
 {
     [HttpGet("occupied")]
     [Authorize]
@@ -174,6 +176,7 @@ public class BookingsController(
         [FromQuery] DateOnly from,
         [FromQuery] DateOnly to,
         [FromQuery] bool manual = false,
+        [FromQuery] bool extendedHours = false,
         [FromQuery] List<Guid>? serviceIds = null)
     {
         if (to < from) return BadRequest("to must not be before from");
@@ -203,13 +206,17 @@ public class BookingsController(
         var (totalDuration, durationError) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
         if (durationError is not null) return durationError;
 
-        var fallback = honorManual ? ScheduleFallback.DefaultWindow : ScheduleFallback.None;
+        // ARCHITECTURE_CYCLE10.md §103.1: exactly the same trust table as GetSlots (BookingsController
+        // ~lines 121-125) — extendedHours without honorManual is None, same as everyone else.
+        var fallback = honorManual
+            ? (extendedHours ? ScheduleFallback.WholeDay : ScheduleFallback.DefaultWindow)
+            : ScheduleFallback.None;
         var (defaultStart, defaultEnd) = slotService.GetDefaultWindow();
         var days = await availabilityService.GetAvailabilityAsync(
-            companyId, masterId, totalDuration!.Value, from, to, fallback, defaultStart, defaultEnd);
+            companyId, masterId, totalDuration!.Value, from, to, fallback, defaultStart, defaultEnd, honorManual);
 
         return Ok(new AvailabilityDto(from, to, totalDuration.Value, SlotCalculator.StepMinutes,
-            horizonDays, horizonLastDate, days));
+            horizonDays, horizonLastDate, days, honorManual));
     }
 
     [HttpPost]
@@ -498,6 +505,13 @@ public class BookingsController(
         db.Bookings.Add(booking);
         db.BookingServices.AddRange(bookingServices);
 
+        // ARCHITECTURE_CYCLE10.md §105: one of six BookingEventLog.Append call sites, inside this same
+        // transaction and BEFORE SaveChangesAsync — deliberately not wrapped in try/catch (unlike the
+        // notification scheduler below): a failure to record the journal row must fail the booking too.
+        var createActor = await actorResolver.ResolveAsync(User, booking);
+        eventLog.Append(booking, BookingEventKind.Created,
+            createActor.Kind, createActor.UserId, createActor.NameSnapshot, createActor.RoleSnapshot);
+
         // ARCHITECTURE_CYCLE4.md §25.3: queued in the SAME transaction as the booking itself, after all
         // eight existing gates above (none of which are touched) and before SaveChangesAsync — the
         // scheduler only tracks changes on this same AppDbContext, it never calls SaveChangesAsync
@@ -524,7 +538,7 @@ public class BookingsController(
             : dto.GuestName ?? "Guest";
 
         return CreatedAtAction(nameof(GetById), new { id = booking.Id },
-            MapToDto(booking, service, master!, clientName));
+            MapToDto(booking, service, master!, clientName, reminderStatus: null, historyEventCount: null));
     }
 
     [HttpGet("{id:guid}")]
@@ -550,7 +564,17 @@ public class BookingsController(
             : booking.GuestName ?? "Guest";
 
         var reminderStatus = await ReminderStatusForAsync(booking.Id);
-        return Ok(MapToDto(booking, booking.Service, booking.Master, clientName, reminderStatus));
+
+        // API_CONTRACT_CYCLE10.md §123: historyEventCount is filled here only for staff of this booking's
+        // company (or SuperAdmin) — the same "personnel of the company" bar §122's history endpoint uses,
+        // not the narrower CanManageBookingAsync (assigned master + owner) that gated `canView` above.
+        var isStaffOfCompany = User.IsInRole("SuperAdmin") ||
+            (userId is not null && await CompanyMembership.IsStaffAsync(db, booking.CompanyId, userId));
+        int? historyEventCount = null;
+        if (isStaffOfCompany)
+            historyEventCount = await db.BookingEvents.CountAsync(e => e.BookingId == booking.Id);
+
+        return Ok(MapToDto(booking, booking.Service, booking.Master, clientName, reminderStatus, historyEventCount));
     }
 
     // GET /api/bookings/my removed (US-22, BREAKING № 2, API_CONTRACT.md §3.3): fully superseded by
@@ -590,7 +614,9 @@ public class BookingsController(
         return Ok(bookings.Select(b =>
         {
             var name = b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Guest";
-            return MapToDto(b, b.Service, b.Master, name);
+            // П8/API_CONTRACT_CYCLE10.md §123: always null on the client's own endpoint — not filtered
+            // on the frontend, simply never computed here.
+            return MapToDto(b, b.Service, b.Master, name, reminderStatus: null, historyEventCount: null);
         }));
     }
 
@@ -620,11 +646,15 @@ public class BookingsController(
         // API_CONTRACT_CYCLE4.md §30.3: one batched query for the whole page's reminder status, not one
         // per booking — same "batch, don't loop" convention as everything else added this cycle.
         var reminderStatusByBooking = await ReminderStatusesForAsync(bookings.Select(b => b.Id));
+        // API_CONTRACT_CYCLE10.md §123: same batching convention for historyEventCount — one grouping
+        // query for the whole page, not N+1.
+        var historyCountByBooking = await HistoryEventCountsForAsync(bookings.Select(b => b.Id));
 
         return Ok(bookings.Select(b =>
         {
             var name = b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Guest";
-            return MapToDto(b, b.Service, b.Master, name, reminderStatusByBooking.GetValueOrDefault(b.Id));
+            return MapToDto(b, b.Service, b.Master, name, reminderStatusByBooking.GetValueOrDefault(b.Id),
+                historyCountByBooking.GetValueOrDefault(b.Id));
         }));
     }
 
@@ -640,6 +670,13 @@ public class BookingsController(
         if (booking.Status == BookingStatus.Cancelled) return BadRequest("Booking is cancelled");
         booking.Status = BookingStatus.Completed;
         booking.UpdatedAt = DateTime.UtcNow;
+
+        // ARCHITECTURE_CYCLE10.md §105: no transaction needed here — a single SaveChangesAsync is
+        // already atomic, and no try/catch (deliberately, unlike NotificationScheduler elsewhere).
+        var completeActor = await actorResolver.ResolveAsync(User, booking);
+        eventLog.Append(booking, BookingEventKind.Completed,
+            completeActor.Kind, completeActor.UserId, completeActor.NameSnapshot, completeActor.RoleSnapshot);
+
         await db.SaveChangesAsync();
         return NoContent();
     }
@@ -655,6 +692,11 @@ public class BookingsController(
 
         booking.PaymentStatus = PaymentStatus.Paid;
         booking.UpdatedAt = DateTime.UtcNow;
+
+        var markPaidActor = await actorResolver.ResolveAsync(User, booking);
+        eventLog.Append(booking, BookingEventKind.PaymentMarked,
+            markPaidActor.Kind, markPaidActor.UserId, markPaidActor.NameSnapshot, markPaidActor.RoleSnapshot);
+
         await db.SaveChangesAsync();
         return NoContent();
     }
@@ -671,6 +713,11 @@ public class BookingsController(
         if (booking.Status == BookingStatus.Cancelled) return BadRequest("Booking is cancelled");
         booking.Status = BookingStatus.NoShow;
         booking.UpdatedAt = DateTime.UtcNow;
+
+        var noShowActor = await actorResolver.ResolveAsync(User, booking);
+        eventLog.Append(booking, BookingEventKind.NoShow,
+            noShowActor.Kind, noShowActor.UserId, noShowActor.NameSnapshot, noShowActor.RoleSnapshot);
+
         await db.SaveChangesAsync();
         return NoContent();
     }
@@ -727,10 +774,21 @@ public class BookingsController(
 
         if (conflict) return Conflict("Time slot is no longer available");
 
+        var previousDate = booking.Date;
+        var previousStartTime = booking.StartTime;
+
         booking.Date = dto.Date;
         booking.StartTime = dto.StartTime;
         booking.EndTime = slotEnd;
         booking.UpdatedAt = DateTime.UtcNow;
+
+        // ARCHITECTURE_CYCLE10.md §105: inside the same transaction as the update above, before
+        // SaveChangesAsync — deliberately no try/catch.
+        var rescheduleActor = await actorResolver.ResolveAsync(User, booking);
+        eventLog.Append(booking, BookingEventKind.Rescheduled,
+            rescheduleActor.Kind, rescheduleActor.UserId, rescheduleActor.NameSnapshot, rescheduleActor.RoleSnapshot,
+            previousDate: previousDate, previousStartTime: previousStartTime,
+            newDate: dto.Date, newStartTime: dto.StartTime);
 
         // ARCHITECTURE_CYCLE4.md §25.3: reschedules the queued Reminder and queues a BookingRescheduled
         // notification, in the same transaction as the booking's own update — see the comment in Create
@@ -769,6 +827,11 @@ public class BookingsController(
         booking.Status = BookingStatus.Cancelled;
         booking.CancellationReason = reason;
         booking.UpdatedAt = DateTime.UtcNow;
+
+        var cancelActor = await actorResolver.ResolveAsync(User, booking);
+        eventLog.Append(booking, BookingEventKind.Cancelled,
+            cancelActor.Kind, cancelActor.UserId, cancelActor.NameSnapshot, cancelActor.RoleSnapshot,
+            cancellationReason: reason);
 
         // ARCHITECTURE_CYCLE4.md §25.3: cancels the queued rows for this booking and queues a
         // BookingCancelled notification, in the same (implicit) transaction as the booking's own
@@ -816,7 +879,8 @@ public class BookingsController(
             cm.CompanyId == booking.CompanyId && cm.UserId == userId && cm.Role == UserRole.CompanyOwner);
     }
 
-    private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName, ReminderStatusDto? reminderStatus = null)
+    private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName,
+        ReminderStatusDto? reminderStatus = null, int? historyEventCount = null)
     {
         // US-67 (API_CONTRACT_CYCLE6.md §43.2): `services` is built from BookingServices when loaded
         // (every path except the in-memory object returned by Create, which sets it explicitly before
@@ -836,7 +900,7 @@ public class BookingsController(
             b.Notes, b.CreatedAt,
             b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus,
             totalDurationMinutes, items,
-            b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc);
+            b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount);
     }
 
     // API_CONTRACT_CYCLE4.md §30.3. Picks the highest-Generation Reminder row for a booking (§23.5: a
@@ -866,5 +930,70 @@ public class BookingsController(
                     var text = NotificationTexts.StatusText(latest.Status, latest.Reason, latest.ChannelId, latest.ReadAtUtc, latest.AttemptCount);
                     return new ReminderStatusDto(latest.Status, $"напоминание {text}");
                 });
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE10.md §105/§123: one grouping query for the whole page's historyEventCount, the
+    /// same "batch, don't loop" pattern as ReminderStatusesForAsync above.
+    /// </summary>
+    private async Task<Dictionary<Guid, int>> HistoryEventCountsForAsync(IEnumerable<Guid> bookingIds)
+    {
+        var ids = bookingIds.Distinct().ToList();
+        if (ids.Count == 0) return [];
+
+        return await db.BookingEvents.AsNoTracking()
+            .Where(e => ids.Contains(e.BookingId))
+            .GroupBy(e => e.BookingId)
+            .Select(g => new { BookingId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.BookingId, x => x.Count);
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE10.md §122: the full change journal for one booking. Access: staff of the
+    /// booking's company (Master/CompanyOwner) or SuperAdmin — deliberately WIDER than
+    /// CanManageBookingAsync (assigned master + owner), because US-123 says "персонал компании" sees it,
+    /// not only whoever can act on the booking.
+    ///
+    /// ⚠️ 404, not 403, for everyone else — INCLUDING the client who owns this very booking. The journal
+    /// is internal staff information (П8); the response code must not double as an oracle for "does a
+    /// booking with this id exist", the same principle GetSlots already follows. Do not "fix" this to a
+    /// 403 for an authenticated caller — that would leak existence to exactly the audience §122.3 says
+    /// must not learn it.
+    /// </summary>
+    [HttpGet("{id:guid}/history")]
+    [Authorize]
+    public async Task<ActionResult<BookingHistoryDto>> GetHistory(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var booking = await db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id);
+        if (booking is null) return NotFound();
+
+        var isStaffOfCompany = User.IsInRole("SuperAdmin") ||
+            await CompanyMembership.IsStaffAsync(db, booking.CompanyId, userId);
+        if (!isStaffOfCompany) return NotFound();
+
+        var events = await db.BookingEvents.AsNoTracking()
+            .Where(e => e.BookingId == id)
+            .OrderBy(e => e.OccurredAtUtc)
+            .ToListAsync();
+
+        // §122.2: a booking predates the journal exactly when it has no Created event — no backfill
+        // (decision П3), so this is computed, not stored.
+        var precedesJournal = events.All(e => e.Kind != BookingEventKind.Created);
+
+        var eventDtos = events.Select(e => new BookingEventDto(
+            e.Id, e.Kind, e.OccurredAtUtc,
+            BookingEventTexts.Title(e.Kind),
+            new BookingEventActorDto(
+                e.ActorKind, e.ActorNameSnapshot, e.ActorRoleSnapshot,
+                BookingEventTexts.ActorLabel(e.Kind, e.ActorKind, e.ActorNameSnapshot, e.ActorRoleSnapshot)),
+            e.Kind == BookingEventKind.Rescheduled && e.PreviousDate is not null && e.PreviousStartTime is not null
+                && e.NewDate is not null && e.NewStartTime is not null
+                ? new BookingRescheduleDto(e.PreviousDate.Value, e.PreviousStartTime.Value, e.NewDate.Value, e.NewStartTime.Value)
+                : null,
+            e.Kind == BookingEventKind.Cancelled ? e.CancellationReason : null
+        )).ToList();
+
+        return Ok(new BookingHistoryDto(id, precedesJournal, eventDtos));
     }
 }

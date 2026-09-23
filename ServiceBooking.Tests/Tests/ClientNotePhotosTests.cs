@@ -179,7 +179,7 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         var response = await AuthedClient(master.Token).PostAsync($"/api/client-notes/{noteId}/photos", JpegUpload(oversized));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("too large");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("больш");
     }
 
     [Fact, TestCase("MC-107")]
@@ -191,7 +191,7 @@ public class ClientNotePhotosTests(TestDatabaseFixture fixture) : ApiTestBase(fi
             $"/api/client-notes/{noteId}/photos", JpegUpload("just plain text, not a jpeg"u8.ToArray()));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("Unsupported image type");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("JPEG, PNG");
     }
 
     [Fact, TestCase("MC-108")]

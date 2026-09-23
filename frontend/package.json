@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "types:api": "openapi-typescript ../contracts/cycle7/openapi.yaml -o src/types/api-cycle7.generated.ts",
+    "types:api:cycle10": "openapi-typescript ../contracts/cycle10/openapi.yaml -o src/types/api-cycle10.generated.ts",
     "types:api:cycle11": "openapi-typescript ../contracts/cycle11/openapi.yaml -o src/types/api-cycle11.generated.ts"
   },
   "dependencies": {

@@ -64,6 +64,27 @@ export interface Company {
   timeZoneId?: string | null
   timeZoneIsManual?: boolean
   utcOffsetMinutes?: number | null
+  /** API_CONTRACT_CYCLE10.md §129 — full-size cover photo (`photos[0]`, i.e. `position === 0`). */
+  coverPhotoUrl?: string | null
+  /** Thumbnail of the cover, for list/catalog cards. */
+  coverThumbnailUrl?: string | null
+  /**
+   * Full gallery in display order. `null` means "this endpoint doesn't send the list" (catalog,
+   * `/my`, `/member`, plain `/companies/{id}`) — NOT "no photos"; `[]` means "no photos". Only
+   * `GET /api/companies/{slug}` (the public page) fills this in, on purpose (§109.3 performance).
+   */
+  photos?: CompanyPhoto[] | null
+}
+
+/** API_CONTRACT_CYCLE10.md §125 */
+export interface CompanyPhoto {
+  id: string
+  url: string
+  thumbnailUrl: string
+  width: number
+  height: number
+  position: number
+  isCover: boolean
 }
 
 // ── Cycle 4: notifications (WhatsApp channel) — API_CONTRACT_CYCLE4.md §19–§34 ────────────────────
@@ -359,6 +380,15 @@ export interface Booking {
   bookedForOther?: boolean
   /** When `bookedForOther` is true, when the guardian/representative confirmation (D12) was recorded. */
   guardianConfirmedAt?: string | null
+  /**
+   * API_CONTRACT_CYCLE10.md §123 — number of journal events, so a card can decide whether to show
+   * the "История" block WITHOUT loading it. `null`/absent means "server didn't fill this in", not
+   * "no events": only `GET /bookings/master` and `GET /bookings/{id}` (staff/SuperAdmin caller) ever
+   * fill it. `/bookings/client` and the `POST /bookings` response always send `null` (П8) — never
+   * treat a missing value here as "no history" on those paths, and never show the button unless the
+   * value is a positive number.
+   */
+  historyEventCount?: number | null
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'

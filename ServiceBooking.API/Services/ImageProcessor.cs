@@ -33,6 +33,11 @@ public sealed record ImageProfile(int MaxDimension, bool SquareCrop, OutputForma
     public static readonly ImageProfile Avatar = new(512, SquareCrop: true, OutputFormatPolicy.PngIfSourceWasPngElseJpeg, JpegQuality: 85);
     public static readonly ImageProfile ServiceImage = new(1200, SquareCrop: false, OutputFormatPolicy.PngIfSourceWasPngElseJpeg, JpegQuality: 85);
     public static readonly ImageProfile CompanyLogo = new(512, SquareCrop: false, OutputFormatPolicy.PngIfSourceWasPngElseJpeg, JpegQuality: 85);
+
+    // ARCHITECTURE_CYCLE10.md §106: showcase photos of the salon — two renditions from the same decoded
+    // source, same "one validation, two profiles" pipeline as ClientNotePhoto/ClientNotePhotoThumb.
+    public static readonly ImageProfile CompanyPhoto = new(1600, SquareCrop: false, OutputFormatPolicy.PngIfSourceWasPngElseJpeg, JpegQuality: 85);
+    public static readonly ImageProfile CompanyPhotoThumb = new(480, SquareCrop: false, OutputFormatPolicy.AlwaysJpeg, JpegQuality: 78);
 }
 
 public sealed record ProcessedImage(byte[] Bytes, int Width, int Height, string ContentType, string Extension);
