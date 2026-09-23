@@ -40,7 +40,14 @@ public class LegalController(
     [HttpGet("documents/{type}")]
     public ActionResult<LegalDocumentDto> GetDocument(string type)
     {
-        if (!Enum.TryParse<LegalDocumentType>(type, ignoreCase: true, out var documentType))
+        // Code review (contract check, cycle 11): Enum.TryParse happily parses ANY integer string
+        // ("5", "99", "-1") as a "valid" enum value even when it's outside the defined member set —
+        // it only rejects non-numeric garbage. Left unchecked, /documents/5 and /documents/99 fell
+        // through to the 503 branch below (misleadingly claiming a service outage) instead of the
+        // documented 404 for an unrecognized type. Enum.IsDefined closes that gap for both the
+        // named-value and numeric-string cases.
+        if (!Enum.TryParse<LegalDocumentType>(type, ignoreCase: true, out var documentType)
+            || !Enum.IsDefined(documentType))
             return NotFound();
 
         var snapshot = provider.Current;
