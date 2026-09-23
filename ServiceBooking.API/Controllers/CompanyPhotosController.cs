@@ -31,7 +31,9 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
     [HttpGet("{id:guid}/photos")]
     public async Task<ActionResult<List<CompanyPhotoDto>>> GetPhotos(Guid id)
     {
-        var exists = await db.Companies.AnyAsync(c => c.Id == id);
+        // Matches GetBySlug (CompaniesController): a deactivated company is NotFound to an anonymous
+        // caller, not a visible gallery — this endpoint and GetBySlug must not disagree.
+        var exists = await db.Companies.AnyAsync(c => c.Id == id && c.IsActive);
         if (!exists) return NotFound();
 
         var photos = await db.CompanyPhotos
@@ -110,20 +112,27 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
         try
         {
             await db.SaveChangesAsync();
+            await tx.CommitAsync();
         }
         catch
         {
+            // Covers BOTH SaveChangesAsync and CommitAsync failing: if the commit itself fails after a
+            // successful SaveChangesAsync, the transaction rolls back and the row never exists, so the
+            // two files already written to disk must be cleaned up here too, or they orphan forever and
+            // a retry of the same upload would create two more (dedup-by-hash only sees committed rows).
             storage.DeletePublic(url);
             storage.DeletePublic(thumbnailUrl);
             throw;
         }
 
-        await tx.CommitAsync();
-        return Created($"/api/companies/{id}/photos/{photo.Id}", CompanyPhotoDto.From(photo));
+        // API_CONTRACT_CYCLE10.md §125-128 exposes no GET /api/companies/{id}/photos/{photoId} route —
+        // point Location at the collection endpoint that actually resolves.
+        return Created($"/api/companies/{id}/photos", CompanyPhotoDto.From(photo));
     }
 
     [HttpDelete("{id:guid}/photos/{photoId:guid}")]
     [Authorize]
+    [EnableRateLimiting("uploads")]
     public async Task<IActionResult> Delete(Guid id, Guid photoId)
     {
         var company = await db.Companies.FindAsync(id);
@@ -159,6 +168,7 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
 
     [HttpPut("{id:guid}/photos/order")]
     [Authorize]
+    [EnableRateLimiting("uploads")]
     public async Task<ActionResult<List<CompanyPhotoDto>>> Reorder(Guid id, ReorderCompanyPhotosDto dto)
     {
         var company = await db.Companies.FindAsync(id);
