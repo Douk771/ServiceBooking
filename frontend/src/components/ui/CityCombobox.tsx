@@ -48,7 +48,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
   const searchTerm = dirty ? query : (value?.name ?? '')
   const { data: options } = useQuery({
     queryKey: ['cities', searchTerm],
-    queryFn: () => citiesApi.search(open ? searchTerm : ''),
+    queryFn: () => citiesApi.search(searchTerm),
     enabled: open,
     staleTime: 60_000,
   })
@@ -93,6 +93,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
         <input
           id={`${listboxId}-input`}
           role="combobox"
+          aria-label={label || placeholder}
           aria-expanded={open}
           aria-controls={listboxId}
           aria-autocomplete="list"
