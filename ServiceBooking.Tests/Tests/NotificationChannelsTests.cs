@@ -41,7 +41,8 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         var response = await AuthedClient(owner.Token).GetAsync("/api/notification-channels/offer");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var offer = (await response.Content.ReadJsonAsync<ChannelOfferDto>())!;
-        offer.Available.Should().BeFalse();
+        // API_CONTRACT_CYCLE9.md §114.1: `available` was dropped from ChannelOfferDto — it was always
+        // exactly `pricePerMonth is not null`, so the assertion below already covers it.
         offer.PricePerMonth.Should().BeNull("§21: unavailable must read as null, not a misleading 0");
     }
 
@@ -55,7 +56,8 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
 
         var response = await AuthedClient(owner.Token).GetAsync("/api/notification-channels/offer");
         var offer = (await response.Content.ReadJsonAsync<ChannelOfferDto>())!;
-        offer.PlanAllows.Should().BeFalse();
+        // API_CONTRACT_CYCLE9.md §114.1: PlanAllows renamed to AllowedByPlan.
+        offer.AllowedByPlan.Should().BeFalse();
     }
 
     [Fact, TestCase("NTF-C004")]
@@ -533,11 +535,13 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
     }
 
     private static string NotificationRiskTextVersion() =>
-        // Mirrors NotificationRiskText.CurrentVersion (API_CONTRACT_CYCLE4.md §23) — read from the live
-        // offer response instead of hardcoding it would be more robust, but every other call site in this
-        // file already has a channel, not an offer; kept as a named constant so a version bump surfaces
-        // here as a single, obvious compile-time-adjacent failure rather than scattered string literals.
-        "2026-09-18-draft";
+        // ARCHITECTURE_CYCLE9.md §104.8 (B12): riskText/riskVersion now come from the ChannelRiskNotice
+        // legal document (App_Data/legal/legal.json), not the deleted NotificationRiskText constant —
+        // mirrors that document's current "version" field. Read from the live offer response instead of
+        // hardcoding it would be more robust, but every other call site in this file already has a
+        // channel, not an offer; kept as a named constant so a version bump surfaces here as a single,
+        // obvious compile-time-adjacent failure rather than scattered string literals.
+        "2026-09-21-draft";
 
     private static OutboundNotification NewPendingNotification(Guid companyId, Guid channelId)
     {

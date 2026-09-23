@@ -15,7 +15,7 @@ namespace ServiceBooking.API.Services.Scheduling.Tasks;
 /// </summary>
 public sealed class ChannelHealthTask(
     AppDbContext db,
-    IChannelProvisioning provisioning,
+    IChannelProvisioningRegistry provisioningRegistry,
     IOptions<NotificationOptions> options,
     PlatformSettings platformSettings,
     INotificationClock clock,
@@ -95,7 +95,7 @@ public sealed class ChannelHealthTask(
                 try
                 {
                     var token = SecretProtector.Decrypt(ciphertext, encryptionKey, channel.Id);
-                    var state = await provisioning.GetStateAsync(new ChannelCredentials(instanceId, token), innerCt);
+                    var state = await provisioningRegistry.For(channel.Transport).GetStateAsync(new ChannelCredentials(instanceId, token), innerCt);
                     polledStates[channel.Id] = state;
                 }
                 catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
@@ -178,7 +178,7 @@ public sealed class ChannelHealthTask(
         try
         {
             var token = SecretProtector.Decrypt(ciphertext, encryptionKey, channel.Id);
-            var phoneNumber = await provisioning.GetPhoneNumberAsync(new ChannelCredentials(instanceId, token), ct);
+            var phoneNumber = await provisioningRegistry.For(channel.Transport).GetPhoneNumberAsync(new ChannelCredentials(instanceId, token), ct);
             if (!string.IsNullOrEmpty(phoneNumber)) channel.PhoneNumber = phoneNumber;
         }
         catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
@@ -201,8 +201,8 @@ public sealed class ChannelHealthTask(
             if (channel.DisruptionNotifiedAtUtc is null || now - channel.DisruptionNotifiedAtUtc > DisruptionNotificationCooldown)
             {
                 logger.LogWarning(
-                    "WhatsApp channel disrupted: channelId={ChannelId} ownerUserId={OwnerUserId} state={State}",
-                    channel.Id, channel.OwnerUserId, currentState);
+                    "{Transport} channel disrupted: channelId={ChannelId} ownerUserId={OwnerUserId} state={State}",
+                    channel.Transport, channel.Id, channel.OwnerUserId, currentState);
                 channel.DisruptionNotifiedAtUtc = now;
             }
         }
@@ -354,7 +354,7 @@ public sealed class ChannelHealthTask(
         {
             try
             {
-                await provisioning.LogoutAsync(credentials, ct);
+                await provisioningRegistry.For(channel.Transport).LogoutAsync(credentials, ct);
             }
             catch (Exception ex)
             {
@@ -376,12 +376,12 @@ public sealed class ChannelHealthTask(
 
         try
         {
-            var deletion = await provisioning.DeleteInstanceAsync(orphanedId, ct);
+            var deletion = await provisioningRegistry.For(channel.Transport).DeleteInstanceAsync(orphanedId, ct);
             if (!deletion.Success)
             {
                 logger.LogWarning(
-                    "WhatsApp instance deletion did not confirm success, will retry next pass: channelId={ChannelId} instanceId={InstanceId}",
-                    channel.Id, orphanedId);
+                    "{Transport} instance deletion did not confirm success, will retry next pass: channelId={ChannelId} instanceId={InstanceId}",
+                    channel.Transport, channel.Id, orphanedId);
                 return false;
             }
 
@@ -390,15 +390,15 @@ public sealed class ChannelHealthTask(
             // §37: deleting an instance is always a distinctly noticeable event — it is both money and an
             // owner's binding, never folded silently into the pass's aggregate summary alone.
             logger.LogWarning(
-                "WhatsApp instance deleted: channelId={ChannelId} ownerUserId={OwnerUserId} instanceId={InstanceId}",
-                channel.Id, channel.OwnerUserId, orphanedId);
+                "{Transport} instance deleted: channelId={ChannelId} ownerUserId={OwnerUserId} instanceId={InstanceId}",
+                channel.Transport, channel.Id, channel.OwnerUserId, orphanedId);
             return true;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex,
-                "WhatsApp instance deletion failed, will retry next pass: channelId={ChannelId} instanceId={InstanceId}",
-                channel.Id, orphanedId);
+                "{Transport} instance deletion failed, will retry next pass: channelId={ChannelId} instanceId={InstanceId}",
+                channel.Transport, channel.Id, orphanedId);
             return false;
         }
     }

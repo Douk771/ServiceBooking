@@ -313,8 +313,8 @@ public sealed class NotificationDispatchTask(
     {
         using var scope = scopeFactory.CreateScope();
         var scopedDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var transport = scope.ServiceProvider.GetRequiredService<INotificationTransport>();
-        var provisioning = scope.ServiceProvider.GetRequiredService<IChannelProvisioning>();
+        var transportRegistry = scope.ServiceProvider.GetRequiredService<INotificationTransportRegistry>();
+        var provisioningRegistry = scope.ServiceProvider.GetRequiredService<IChannelProvisioningRegistry>();
         var pause = scope.ServiceProvider.GetRequiredService<IPauseGenerator>();
         var delay = scope.ServiceProvider.GetRequiredService<IDispatchDelay>();
         var scopedClock = scope.ServiceProvider.GetRequiredService<INotificationClock>();
@@ -326,6 +326,13 @@ public sealed class NotificationDispatchTask(
         // decided on, nothing about sending it or recording its outcome is allowed to be budget-cancelled.
         var channel = await scopedDb.NotificationChannels.FirstOrDefaultAsync(c => c.Id == channelId, runnerCt);
         if (channel is null) return (0, 0); // deleted/reassigned between phase 1 and now — nothing to do here
+
+        // ARCHITECTURE_CYCLE9.md §104.6: "единственная правка внутри группы" — registry.For(channel.Transport)
+        // instead of a single injected INotificationTransport/IChannelProvisioning (US-122). A group is
+        // always one channel's rows (grouped by ChannelId in the caller), so ONE resolution per group is
+        // enough — every row in this group shares the same channel, hence the same transport.
+        var transport = transportRegistry.For(channel.Transport);
+        var provisioning = provisioningRegistry.For(channel.Transport);
 
         var sentCount = 0;
         var failedCount = 0;

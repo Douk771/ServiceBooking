@@ -40,10 +40,13 @@ public class CompanyNotificationsController(
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var settings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId);
-        var assignment = await db.ChannelCompanyAssignments.AsNoTracking()
-            .Include(a => a.Channel).FirstOrDefaultAsync(a => a.CompanyId == companyId);
+        // ARCHITECTURE_CYCLE9.md §104.3/§104.5: a company may now hold one assignment PER TRANSPORT, not
+        // one ever — every live assignment is loaded so connectedTransports/priorityChannelHealthy can be
+        // computed across all of them, not just an arbitrary FirstOrDefault.
+        var assignments = await db.ChannelCompanyAssignments.AsNoTracking()
+            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync();
 
-        return Ok(await BuildSettingsDtoAsync(plan, settings, assignment?.Channel));
+        return Ok(await BuildSettingsDtoAsync(plan, settings, assignments));
     }
 
     [HttpPut("notification-settings")]
@@ -63,12 +66,21 @@ public class CompanyNotificationsController(
             return BadRequest("Напоминание за 1 час при пороге 2 часа не уйдёт никогда");
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
-        var assignment = await db.ChannelCompanyAssignments
-            .Include(a => a.Channel).FirstOrDefaultAsync(a => a.CompanyId == companyId);
+        var assignments = await db.ChannelCompanyAssignments
+            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync();
 
         if (!plan.AllowNotificationChannel)
             return StatusCode(402, "Недоступно на вашем тарифе");
-        if (assignment is null || !await IsChannelFundedAsync(assignment.Channel, plan))
+        // ARCHITECTURE_CYCLE9.md §104.3: "канал не оплачен" now asks "does this company have AT LEAST
+        // ONE funded channel", not "is THE (arbitrary) assignment funded" — a company can have a funded
+        // MAX channel and an unfunded WhatsApp one (or vice versa); settings must stay saveable through
+        // whichever channel is actually usable, not gated on which one FirstOrDefault happened to pick.
+        var hasFundedAssignment = false;
+        foreach (var a in assignments)
+        {
+            if (await IsChannelFundedAsync(a.Channel, plan)) { hasFundedAssignment = true; break; }
+        }
+        if (!hasFundedAssignment)
             return StatusCode(402, "Канал не оплачен");
 
         var settings = await db.CompanyNotificationSettings.FirstOrDefaultAsync(s => s.CompanyId == companyId);
@@ -81,6 +93,21 @@ public class CompanyNotificationsController(
         settings.EnabledTypeMask = BuildMask(dto.EnabledTypes);
         settings.ReminderLeadMinutes = dto.ReminderLeadMinutes;
         settings.MinLeadMinutes = dto.MinLeadMinutes;
+
+        // ARCHITECTURE_CYCLE9.md §104.5/§114.4 (US-125): both optional — "не прислали — не меняем".
+        if (dto.DeliveryMode.HasValue) settings.DeliveryMode = dto.DeliveryMode.Value;
+        if (dto.PriorityTransport.HasValue)
+        {
+            // §114.4: priorityTransport not among the company's own connected/usable transports → 400.
+            // Checked against the SAME "usable" definition NotificationRouting uses at queue time
+            // (funded AND Connected) — a value that would immediately make priorityChannelHealthy false
+            // is exactly the "нераспознанное значение" class of input this endpoint already 400s for.
+            var usableTransports = await UsableTransportsAsync(assignments, plan);
+            if (!usableTransports.Contains(dto.PriorityTransport.Value))
+                return BadRequest("Приоритетный канал должен быть среди подключённых транспортов");
+            settings.PriorityTransport = dto.PriorityTransport.Value;
+        }
+
         settings.UpdatedAt = DateTime.UtcNow;
         settings.UpdatedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
@@ -88,9 +115,11 @@ public class CompanyNotificationsController(
         // rows — the next dispatcher pass re-evaluates them against the new MinLeadMinutes anyway
         // (NotificationGate.Evaluate is re-run per pass, not cached on the row), so nothing further is
         // needed here beyond persisting the new threshold; no queued row is touched by this request.
+        // ARCHITECTURE_CYCLE9.md §104.5/§114.4: same rule for deliveryMode/priorityTransport — they apply
+        // to events queued AFTER this save, never retroactively to rows already in the queue.
         await db.SaveChangesAsync();
 
-        return Ok(await BuildSettingsDtoAsync(plan, settings, assignment.Channel));
+        return Ok(await BuildSettingsDtoAsync(plan, settings, assignments));
     }
 
     // ── Templates ────────────────────────────────────────────────────────────────────────────────
@@ -135,10 +164,17 @@ public class CompanyNotificationsController(
         if (company is null) return NotFound();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
-        var assignment = await db.ChannelCompanyAssignments
-            .Include(a => a.Channel).FirstOrDefaultAsync(a => a.CompanyId == companyId);
-        if (!plan.AllowNotificationChannel ||
-            assignment is null || !await IsChannelFundedAsync(assignment.Channel, plan))
+        // ARCHITECTURE_CYCLE9.md §104.3: same "at least one funded assignment" generalization as
+        // UpdateSettings above — a company's templates stay editable through whichever channel is
+        // actually funded, not gated on an arbitrary single assignment.
+        var templateAssignments = await db.ChannelCompanyAssignments
+            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync();
+        var hasFundedAssignmentForTemplate = false;
+        foreach (var a in templateAssignments)
+        {
+            if (await IsChannelFundedAsync(a.Channel, plan)) { hasFundedAssignmentForTemplate = true; break; }
+        }
+        if (!plan.AllowNotificationChannel || !hasFundedAssignmentForTemplate)
             return StatusCode(402, "Канал не оплачен");
 
         // Empty body ("вернуть текст платформы", API_CONTRACT_CYCLE4.md §29.1) bypasses length/placeholder
@@ -345,10 +381,19 @@ public class CompanyNotificationsController(
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private async Task<NotificationSettingsDto> BuildSettingsDtoAsync(
-        EffectivePlan plan, CompanyNotificationSettings? settings, NotificationChannel? channel)
+        EffectivePlan plan, CompanyNotificationSettings? settings, IReadOnlyList<ChannelCompanyAssignment> assignments)
     {
         var enabledMask = settings?.EnabledTypeMask ?? CompanyNotificationSettings.DefaultEnabledTypeMask;
         var enabledTypes = Enum.GetValues<NotificationType>().Where(t => (enabledMask & (1 << (int)t)) != 0).ToList();
+
+        var deliveryMode = settings?.DeliveryMode ?? new CompanyNotificationSettings().DeliveryMode;
+        var priorityTransport = settings?.PriorityTransport ?? new CompanyNotificationSettings().PriorityTransport;
+
+        // ARCHITECTURE_CYCLE9.md §104.5/§114.4: `channel` legacy field describes the PRIORITY transport's
+        // own assignment specifically — with more than one transport possibly connected, that is the one
+        // channel the rest of this screen's (pre-cycle-9) fields still meaningfully describe.
+        var priorityAssignment = assignments.FirstOrDefault(a => a.Transport == priorityTransport);
+        var channel = priorityAssignment?.Channel;
 
         // §47.3: ChannelDto/SettingsChannelDto's paymentState keeps its FORM but its SOURCE is now the
         // account's funding ranking, not the channel's own (historical, unread-by-business-logic)
@@ -368,10 +413,35 @@ public class CompanyNotificationsController(
         var blockedReason = ChannelPresentation.SettingsBlockedReason(
             plan.AllowNotificationChannel, channel is not null, paymentState, channel?.State);
 
+        // ARCHITECTURE_CYCLE9.md §114.4: connectedTransports/priorityChannelHealthy read-only fields —
+        // "usable" means the SAME thing NotificationRouting.SelectTargets means by it (funded AND
+        // Connected), so the settings screen never shows a transport as pickable that routing would then
+        // immediately treat as unavailable.
+        var usableTransports = await UsableTransportsAsync(assignments, plan);
+        var priorityChannelHealthy = usableTransports.Contains(priorityTransport);
+
         return new NotificationSettingsDto(
             enabledTypes, settings?.ReminderLeadMinutes ?? new CompanyNotificationSettings().ReminderLeadMinutes,
             settings?.MinLeadMinutes ?? new CompanyNotificationSettings().MinLeadMinutes,
-            plan.AllowNotificationChannel, channelDto, blockedReason is null, blockedReason);
+            plan.AllowNotificationChannel, channelDto, blockedReason is null, blockedReason,
+            deliveryMode, priorityTransport, usableTransports, priorityChannelHealthy);
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE9.md §104.5/§114.4 — the transports this company can actually be
+    /// reached on right now: assigned, funded, and <see cref="ChannelState.Connected"/>. The SAME
+    /// definition <c>NotificationScheduler</c>/<c>NotificationRouting</c> use to decide whether a channel
+    /// is a usable routing target — kept identical on purpose so a transport the settings screen offers
+    /// as pickable is never one routing would then refuse.</summary>
+    private async Task<IReadOnlyList<NotificationTransport>> UsableTransportsAsync(
+        IReadOnlyList<ChannelCompanyAssignment> assignments, EffectivePlan plan)
+    {
+        var usable = new List<NotificationTransport>();
+        foreach (var a in assignments)
+        {
+            if (a.Channel.State == ChannelState.Connected && await IsChannelFundedAsync(a.Channel, plan))
+                usable.Add(a.Transport);
+        }
+        return usable;
     }
 
     // ARCHITECTURE_CYCLE7.md §47.1/§47.2: funded/unfunded, ranked across every live channel on the

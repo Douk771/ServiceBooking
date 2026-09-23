@@ -360,44 +360,95 @@ builder.Services.AddHttpClient("green-api", client =>
         return ServiceBooking.API.Services.Notifications.GreenApi.GreenApiHandlerFactory.Create(greenApiOptions);
     });
 
-// Transport/provisioning selection by Notifications:Provider (§28). "logging" — the default, safe in
-// every environment — never makes a network call at all (US-27 p.9). "green-api" is the real adapter
-// (T4-B5); an unrecognised value fails LOUD at startup rather than silently falling back to the logging
-// stub, which would otherwise be the one way a Production deployment could believe notifications are
-// really going out over WhatsApp when nothing is.
+// Transport/provisioning selection by Notifications:Provider (§28, extended ARCHITECTURE_CYCLE9.md
+// §104.2/US-122 to a REGISTRY per transport instead of a single DI-resolved instance). "logging" — the
+// default, safe in every environment — never makes a network call at all, for EITHER transport (US-27
+// p.9). "green-api" is the real adapter, now with TWO concrete implementations behind it (WhatsApp,
+// MAX); an unrecognised Provider value fails LOUD at startup rather than silently falling back to the
+// logging stub, which would otherwise be the one way a Production deployment could believe notifications
+// are really going out when nothing is.
+//
+// Every concrete adapter is registered as itself (not against the interface) — the registries below are
+// what decide, per NotificationTransport member, which one actually answers INotificationTransport.For/
+// IChannelProvisioningRegistry.For. This is what makes "add a third transport" a new registry map entry,
+// not a second parallel switch statement.
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxTransport>();
+
 var notificationsProvider = builder.Configuration["Notifications:Provider"];
 switch (notificationsProvider)
 {
     case null or "" or "logging":
-        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport,
-            ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
-        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
-            ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
-        break;
+        break; // nothing further to register — both registries below route every transport to the stubs
     case "green-api":
-        // INotificationTransport uses a CHANNEL's own token (a salon's), safe to wire up in any
-        // environment — sandbox mode (Notifications:AllowedRecipients) is the guard against it reaching
-        // a real customer.
-        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport,
-            ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
-
         // IChannelProvisioning uses the PLATFORM's own partner token, which can create/delete a live
         // salon's instance — IChannelProvisioning's own doc comment is explicit that DI must make this
         // implementation structurally NOT EXIST outside Production (§28, US-35 p.4), not merely fail at
-        // call time because ValidateNotificationSecrets' rule 3 already forces PartnerToken empty there.
-        // A developer who sets Provider=green-api locally (PartnerToken necessarily empty, or startup
-        // would already have refused) still gets the harmless no-op rather than a real adapter with
-        // nothing to call.
+        // call time because ValidateNotificationSecrets' rules already force both partner tokens empty
+        // there. A developer who sets Provider=green-api locally (partner tokens necessarily empty, or
+        // startup would already have refused) still gets the harmless no-op for BOTH transports rather
+        // than a real adapter with nothing to call.
         if (builder.Environment.IsProduction())
-            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
-                ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>();
-        else
-            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
-                ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+        {
+            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>();
+            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxProvisioning>();
+        }
         break;
     default:
         throw new InvalidOperationException($"Unknown Notifications:Provider '{notificationsProvider}'.");
 }
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransportRegistry>(sp =>
+{
+    var byTransport = new Dictionary<NotificationTransport, ServiceBooking.API.Services.Notifications.INotificationTransport>();
+    if (string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase))
+    {
+        // INotificationTransport uses a CHANNEL's own token (a salon's), safe to wire up in any
+        // environment — sandbox mode (Notifications:AllowedRecipients) is the guard against it reaching
+        // a real customer. Shared identically by both transports.
+        byTransport[NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
+        byTransport[NotificationTransport.Max] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxTransport>();
+    }
+    else
+    {
+        var logging = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
+        byTransport[NotificationTransport.WhatsApp] = logging;
+        byTransport[NotificationTransport.Max] = logging;
+    }
+    return new ServiceBooking.API.Services.Notifications.NotificationTransportRegistry(byTransport);
+});
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry>(sp =>
+{
+    var byTransport = new Dictionary<NotificationTransport, ServiceBooking.API.Services.Notifications.IChannelProvisioning>();
+    if (string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase) && builder.Environment.IsProduction())
+    {
+        byTransport[NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>();
+        byTransport[NotificationTransport.Max] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxProvisioning>();
+    }
+    else
+    {
+        var noop = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+        byTransport[NotificationTransport.WhatsApp] = noop;
+        byTransport[NotificationTransport.Max] = noop;
+    }
+    return new ServiceBooking.API.Services.Notifications.ChannelProvisioningRegistry(byTransport);
+});
+
+// Webhook parsers, keyed by transport for the new provider-webhook/{transport}/{token} route (§104.7,
+// B10) — registered unconditionally, same "logging-provider deployment still parses a stray webhook"
+// reasoning the original GreenApiWebhookParser registration below documents.
+builder.Services.AddSingleton<ServiceBooking.API.Services.IProviderWebhookParserRegistry>(sp =>
+{
+    var byTransport = new Dictionary<NotificationTransport, ServiceBooking.API.Services.IProviderWebhookParser>
+    {
+        [NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.IProviderWebhookParser>(),
+        [NotificationTransport.Max] = new ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxWebhookParser(),
+    };
+    return new ServiceBooking.API.Services.ProviderWebhookParserRegistry(byTransport);
+});
 
 // ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
 // gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default
@@ -617,6 +668,24 @@ builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Schedulin
 builder.Services.AddHostedService<ScheduledTaskRunner>();
 
 var app = builder.Build();
+
+// ARCHITECTURE_CYCLE9.md §104.2 (US-122) — "нераспознанное значение по-прежнему роняет старт; вдобавок
+// роняет старт ситуация «в реестре нет реализации для члена NotificationTransport»." Runs unconditionally
+// (every environment, including Development/Testing) — this is a CODE-correctness check (is every
+// NotificationTransport member actually wired up above), not a secrets/deployment-safety one, so it is
+// not gated by isDeveloperEnvironment the way ValidateNotificationSecrets is.
+using (var transportCheckScope = app.Services.CreateScope())
+{
+    var transportRegistry = transportCheckScope.ServiceProvider
+        .GetRequiredService<ServiceBooking.API.Services.Notifications.INotificationTransportRegistry>();
+    DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+        nameof(ServiceBooking.API.Services.Notifications.INotificationTransportRegistry), transportRegistry.RegisteredTransports);
+
+    var provisioningRegistry = transportCheckScope.ServiceProvider
+        .GetRequiredService<ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry>();
+    DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+        nameof(ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry), provisioningRegistry.RegisteredTransports);
+}
 
 // FIRST in the pipeline, before anything reads Connection.RemoteIpAddress — the rate limiter's IP
 // partitions (auth-login, auth-register, booking-create) and Serilog's request logging both need the

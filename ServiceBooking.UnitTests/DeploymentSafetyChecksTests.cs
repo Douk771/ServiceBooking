@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using ServiceBooking.API.Services;
+using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.UnitTests;
 
@@ -358,6 +359,9 @@ public class DeploymentSafetyChecksTests
     {
         ["Notifications:UnsubscribeKey"] = "a-real-unsubscribe-hmac-key",
         ["Notifications:WebhookToken"] = "a-real-webhook-token",
+        // ARCHITECTURE_CYCLE9.md §104.1: MAX is a separate GREEN-API partner account, checked the same
+        // way as Notifications:PartnerToken.
+        ["Notifications:GreenApiMax:PartnerToken"] = "a-real-max-partner-token",
     };
 
     [Fact]
@@ -442,6 +446,68 @@ public class DeploymentSafetyChecksTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*PartnerToken*");
     }
 
+    // ARCHITECTURE_CYCLE9.md §104.1: MAX is a separate GREEN-API partner account and needs its own
+    // token, checked by the same rule (and failure mode) as WhatsApp's Notifications:PartnerToken above.
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_ValidWhatsAppToken_WithoutMaxPartnerToken_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>(ValidRealProviderExtras())
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:GreenApiMax:PartnerToken"] = null,
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*GreenApiMax:PartnerToken*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_MaxPartnerTokenIsPlaceholder_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>(ValidRealProviderExtras())
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:GreenApiMax:PartnerToken"] = "CHANGE_ME",
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*GreenApiMax:PartnerToken*");
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    [InlineData("Staging")]
+    public void ValidateNotificationSecrets_MaxPartnerTokenSetOutsideProduction_Throws(string environmentName)
+    {
+        // Same mirror-image rule as Notifications:PartnerToken — a real MAX partner token on a
+        // dev/staging machine could create/delete a live salon's MAX instance.
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApiMax:PartnerToken"] = "a-real-max-partner-token",
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, environmentName);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*GreenApiMax:PartnerToken*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EmptyMaxPartnerTokenOutsideProduction_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:GreenApiMax:PartnerToken"] = "" });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Development");
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public void ValidateNotificationSecrets_GreenApiInProduction_ValidConfig_DoesNotThrow()
     {
@@ -468,6 +534,7 @@ public class DeploymentSafetyChecksTests
             ["Notifications:EncryptionKey"] = ValidBase64Key(),
             ["Notifications:Provider"] = "green-api",
             ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:GreenApiMax:PartnerToken"] = "a-real-max-partner-token",
             ["Notifications:WebhookToken"] = "a-real-webhook-token",
         });
 
@@ -484,6 +551,7 @@ public class DeploymentSafetyChecksTests
             ["Notifications:EncryptionKey"] = ValidBase64Key(),
             ["Notifications:Provider"] = "green-api",
             ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:GreenApiMax:PartnerToken"] = "a-real-max-partner-token",
             ["Notifications:UnsubscribeKey"] = "a-real-unsubscribe-hmac-key",
         });
 
@@ -684,6 +752,42 @@ public class DeploymentSafetyChecksTests
         });
         var act = () => DeploymentSafetyChecks.ParseDefaultWorkWindow(config);
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    // ── ValidateTransportRegistryCompleteness (cycle 9, US-122, ARCHITECTURE_CYCLE9.md §104.2) ──────
+
+    [Fact]
+    public void ValidateTransportRegistryCompleteness_EveryMemberRegistered_DoesNotThrow()
+    {
+        var act = () => DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+            "TestRegistry", Enum.GetValues<NotificationTransport>());
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateTransportRegistryCompleteness_MissingMember_ThrowsNamingTheRegistryAndTheGap()
+    {
+        // Simulates a third transport being added to the enum without a matching adapter registration —
+        // the exact scenario this check exists to catch loud at startup (§104.2: "в реестре нет
+        // реализации для члена NotificationTransport").
+        var act = () => DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+            "INotificationTransportRegistry", [NotificationTransport.WhatsApp]);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*INotificationTransportRegistry*")
+            .WithMessage("*Max*");
+    }
+
+    [Fact]
+    public void ValidateTransportRegistryCompleteness_EmptyRegistry_ThrowsNamingEveryMember()
+    {
+        var act = () => DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+            "IChannelProvisioningRegistry", []);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*WhatsApp*")
+            .WithMessage("*Max*");
     }
 
     // ── ValidateProviderDeliveryConsentMode (cycle 5, T-24, ARCHITECTURE_CYCLE5.md §52.3) ──────────

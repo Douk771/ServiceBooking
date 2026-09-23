@@ -18,6 +18,16 @@ public class OutboundNotification
     public Guid? ChannelId { get; set; }
     public NotificationChannel? Channel { get; set; }
 
+    // ARCHITECTURE_CYCLE9.md §104.5/§114.3 (US-125): the transport this row targeted/was ABOUT, set once
+    // at queue time by NotificationScheduler — deliberately its OWN column rather than something read off
+    // Channel.Transport via a join. A row's ChannelId is null for several Skipped cases (no assignment at
+    // all, a whole-account plan/opt-out block, PriorityChannelUnavailable when the priority transport
+    // isn't assigned to the company at all) — this column still answers "which transport was this event
+    // for" in every one of those cases, which the delivery log's `transport` field and `?transport=`
+    // filter both need unconditionally (never null, per the contract). Defaults to WhatsApp — every row
+    // written before this cycle was, by construction, a WhatsApp attempt.
+    public NotificationTransport Transport { get; set; } = NotificationTransport.WhatsApp;
+
     public Guid? BookingId { get; set; }
     public Booking? Booking { get; set; }
 
