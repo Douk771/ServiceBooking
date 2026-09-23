@@ -58,4 +58,19 @@ public static class CompanyPhotoOrdering
         for (var i = 0; i < ordered.Count; i++)
             ordered[i].Position = i;
     }
+
+    /// <summary>
+    /// Picks one cover photo per company out of a raw batch of Position == 0 rows (ARCHITECTURE_CYCLE10.md
+    /// §102.2). The (CompanyId, Position) index is deliberately NON-unique, so more than one row per
+    /// company can legitimately arrive here — plain <c>ToDictionary</c> would throw ArgumentException on
+    /// the duplicate key and take down every caller (the anonymous public catalog included). Instead,
+    /// group by company and take the row that <see cref="Compact"/>'s read order would also pick first:
+    /// lowest Position, then oldest CreatedAtUtc, then lowest Id.
+    /// </summary>
+    public static Dictionary<Guid, CompanyPhoto> SelectCovers(IEnumerable<CompanyPhoto> positionZeroPhotos) =>
+        positionZeroPhotos
+            .GroupBy(p => p.CompanyId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(p => p.Position).ThenBy(p => p.CreatedAtUtc).ThenBy(p => p.Id).First());
 }

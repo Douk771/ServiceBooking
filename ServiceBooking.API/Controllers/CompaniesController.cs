@@ -889,10 +889,16 @@ public class CompaniesController(
         var ids = companyIds.Distinct().ToList();
         if (ids.Count == 0) return new Dictionary<Guid, (string, string)>();
 
+        // The (CompanyId, Position) index is deliberately NON-unique (§102.2) — integrity is only
+        // maintained by server-side renumbering, so a reader must tolerate a duplicate Position == 0
+        // row for the same company. Plain ToDictionary throws ArgumentException on the duplicate key and
+        // would 500 the entire public catalog page; CompanyPhotoOrdering.SelectCovers picks a single
+        // deterministic winner instead.
         var covers = await db.CompanyPhotos
             .Where(p => ids.Contains(p.CompanyId) && p.Position == 0)
             .ToListAsync();
-        return covers.ToDictionary(p => p.CompanyId, p => (p.Url, p.ThumbnailUrl));
+        return CompanyPhotoOrdering.SelectCovers(covers)
+            .ToDictionary(kv => kv.Key, kv => (kv.Value.Url, kv.Value.ThumbnailUrl));
     }
 
     // The full ordered gallery for exactly one company — only GET /api/companies/{slug} needs this

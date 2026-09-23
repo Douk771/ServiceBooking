@@ -147,4 +147,73 @@ public class CompanyPhotoOrderingTests
 
         act.Should().NotThrow();
     }
+
+    // ── SelectCovers ─────────────────────────────────────────────────────────
+
+    private static CompanyPhoto PhotoFor(Guid companyId, Guid id, int position, DateTime createdAtUtc) => new()
+    {
+        Id = id,
+        CompanyId = companyId,
+        Position = position,
+        CreatedAtUtc = createdAtUtc,
+        Url = $"/uploads/companies/{id}.jpg",
+        ThumbnailUrl = $"/uploads/companies/{id}-thumb.jpg",
+    };
+
+    [Fact]
+    public void SelectCovers_OneRowPerCompany_ReturnsThatRow()
+    {
+        var companyA = Guid.NewGuid();
+        var companyB = Guid.NewGuid();
+        var a = PhotoFor(companyA, Guid.NewGuid(), 0, DateTime.UtcNow);
+        var b = PhotoFor(companyB, Guid.NewGuid(), 0, DateTime.UtcNow);
+
+        var covers = CompanyPhotoOrdering.SelectCovers([a, b]);
+
+        covers.Should().HaveCount(2);
+        covers[companyA].Should().BeSameAs(a);
+        covers[companyB].Should().BeSameAs(b);
+    }
+
+    [Fact]
+    public void SelectCovers_DuplicatePositionZeroForSameCompany_DoesNotThrow_PicksOldestCreatedAt()
+    {
+        // §102.2: (CompanyId, Position) is deliberately non-unique — two rows can legitimately share
+        // Position == 0 for the same company. A naive ToDictionary would throw ArgumentException here.
+        var companyId = Guid.NewGuid();
+        var earlier = DateTime.UtcNow;
+        var later = earlier.AddMinutes(5);
+        var older = PhotoFor(companyId, Guid.NewGuid(), 0, earlier);
+        var newer = PhotoFor(companyId, Guid.NewGuid(), 0, later);
+
+        var act = () => CompanyPhotoOrdering.SelectCovers([newer, older]);
+
+        act.Should().NotThrow();
+        var covers = act();
+        covers.Should().HaveCount(1);
+        covers[companyId].Should().BeSameAs(older);
+    }
+
+    [Fact]
+    public void SelectCovers_DuplicatePositionZeroTiedOnCreatedAt_BreaksTieById()
+    {
+        var companyId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        var idLow = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var idHigh = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var low = PhotoFor(companyId, idLow, 0, now);
+        var high = PhotoFor(companyId, idHigh, 0, now);
+
+        var covers = CompanyPhotoOrdering.SelectCovers([high, low]);
+
+        covers[companyId].Should().BeSameAs(low);
+    }
+
+    [Fact]
+    public void SelectCovers_EmptyInput_ReturnsEmptyDictionary()
+    {
+        var covers = CompanyPhotoOrdering.SelectCovers([]);
+
+        covers.Should().BeEmpty();
+    }
 }
