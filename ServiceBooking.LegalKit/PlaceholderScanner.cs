@@ -32,13 +32,13 @@ internal static partial class PlaceholderScanner
     /// <see cref="LegalDocumentProvider.PlaceholderPattern"/> rather than declaring its own copy.</summary>
     public static string KnownPattern => LegalDocumentProvider.PlaceholderPattern;
 
-    /// <summary>The 13 values-file keys plus the 2 manifest-derived ones (version/effective date) —
-    /// contracts/cycle11/legal-values.schema.json's "15 имён" (API_CONTRACT_CYCLE11.md §112, risk A4).
+    /// <summary>The 12 values-file keys plus the 2 manifest-derived ones (version/effective date) —
+    /// contracts/cycle11/legal-values.schema.json's "14 имён" (API_CONTRACT_CYCLE11.md §112, risk A4).
     /// Any `{{…}}` token in a source file whose inner text isn't exactly one of these (in this exact
     /// case) is an unrecognized form of placeholder, not a filled-in value.</summary>
     public static readonly IReadOnlySet<string> KnownNames = new HashSet<string>(StringComparer.Ordinal)
     {
-        "НАИМЕНОВАНИЕ_ОПЕРАТОРА", "ИНН_ОПЕРАТОРА", "ОГРН_ОПЕРАТОРА", "ЮРИДИЧЕСКИЙ_АДРЕС",
+        "НАИМЕНОВАНИЕ_ОПЕРАТОРА", "ИНН_ОПЕРАТОРА", "ЮРИДИЧЕСКИЙ_АДРЕС",
         "ПОЧТОВЫЙ_АДРЕС", "ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ", "ТЕЛЕФОН_ОПЕРАТОРА", "ОТВЕТСТВЕННЫЙ_ЗА_ОБРАБОТКУ",
         "ПОЧТА_ОТВЕТСТВЕННОГО", "НОМЕР_УВЕДОМЛЕНИЯ_РКН", "ДАТА_УВЕДОМЛЕНИЯ_РКН", "СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ",
         "НДС_ОГОВОРКА", "ВЕРСИЯ_ДОКУМЕНТА", "ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ",

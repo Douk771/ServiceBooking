@@ -25,7 +25,7 @@ public static class LegalReadinessReportBuilder
         new("""href\s*=\s*["'](?<href>/[^"'#]*(?:#[^"']*)?)["']""",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>LEGAL_REVIEW.md §13-бис's own grouping of the 13 `legal-values.schema.json` placeholder
+    /// <summary>LEGAL_REVIEW.md §13-бис's own grouping of the 12 `legal-values.schema.json` placeholder
     /// names plus the 2 manifest-derived ones — the schema's `source` enum is that grouping verbatim, and
     /// it's a static fact about the document set (which fact never changes without a legal review), not
     /// something derived at runtime. Any placeholder name not in this map is new/unclassified and falls
@@ -34,7 +34,6 @@ public static class LegalReadinessReportBuilder
     {
         ["НАИМЕНОВАНИЕ_ОПЕРАТОРА"] = "ЕГРЮЛ",
         ["ИНН_ОПЕРАТОРА"] = "ЕГРЮЛ",
-        ["ОГРН_ОПЕРАТОРА"] = "ЕГРЮЛ",
         ["ЮРИДИЧЕСКИЙ_АДРЕС"] = "ЕГРЮЛ",
         ["НОМЕР_УВЕДОМЛЕНИЯ_РКН"] = "после уведомления РКН",
         ["ДАТА_УВЕДОМЛЕНИЯ_РКН"] = "после уведомления РКН",
