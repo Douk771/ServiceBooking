@@ -72,7 +72,6 @@ describe('CompanyPhotosSection — API_CONTRACT_CYCLE10.md §125–§128', () =>
     await screen.findByText('10 / 10')
     expect(screen.queryByRole('button', { name: 'Выбрать файл' })).not.toBeInTheDocument()
     expect(screen.getByText(`Достигнут лимит в 10 фото`)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Достигнут лимит/ })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('swapping a photo one position right calls reorder with the full permutation, cover first', async () => {

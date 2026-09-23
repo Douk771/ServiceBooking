@@ -168,17 +168,13 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
           e.target.value = ''
         }}
       />
-      {/* Review finding — §109.2 asks for a drop zone, not just the file picker button; a plain
-          click target with drag handlers layered on top, so keyboard/click upload keeps working
-          unchanged. */}
+      {/* Review finding — §109.2 asks for a drop zone, not just the file picker button. This is a
+          plain <div> with no role/tabIndex/keyboard handler: drag-and-drop has no keyboard
+          equivalent, so making the whole zone a fake "button" only doubled up on the real
+          <Button> below it (a button nested inside a button, and a click handler that only worked
+          because of stopPropagation). The <Button> stays the sole interactive element and the sole
+          keyboard/click path to the file picker. */}
       <div
-        role="button"
-        tabIndex={atLimit ? -1 : 0}
-        aria-disabled={atLimit}
-        onClick={() => !atLimit && fileInputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (!atLimit && (e.key === 'Enter' || e.key === ' ')) fileInputRef.current?.click()
-        }}
         onDragOver={(e) => {
           e.preventDefault()
           if (!atLimit) setDragOver(true)
@@ -193,10 +189,10 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
         }}
         className={`rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors mb-1 ${
           atLimit
-            ? 'border-line bg-cream-deep opacity-60 cursor-not-allowed'
+            ? 'border-line bg-cream-deep opacity-60'
             : dragOver
-              ? 'border-gold bg-cream-deep cursor-pointer'
-              : 'border-line hover:border-line-strong cursor-pointer'
+              ? 'border-gold bg-cream-deep'
+              : 'border-line'
         }`}
       >
         <p className="text-sm text-ink-soft mb-2">
@@ -207,10 +203,7 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
             size="sm"
             variant="secondary"
             loading={uploadMut.isPending}
-            onClick={(e) => {
-              e.stopPropagation()
-              fileInputRef.current?.click()
-            }}
+            onClick={() => fileInputRef.current?.click()}
           >
             Выбрать файл
           </Button>

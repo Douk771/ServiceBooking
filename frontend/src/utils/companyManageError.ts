@@ -35,18 +35,25 @@ export function getCompanyManageErrorMessage(error: unknown, fallback: string): 
 }
 
 /**
- * Logo upload answers 400 for three different reasons and the distinction is actionable — the owner
- * needs to know whether to shrink the file or convert it. These are matched on the server's own
- * wording (CompaniesController.UploadLogo), which is why this is separate from the status-only mapper
- * above.
+ * Logo upload answers 400 for several different reasons and the distinction is actionable — the owner
+ * needs to know whether to shrink the file, convert it, or simply retry later. These are matched on
+ * the server's own wording (the shared `ImageUploadService` pipeline behind
+ * `CompaniesController.UploadLogo`), which is why this is separate from the status-only mapper above.
+ *
+ * All five rejection reasons the pipeline can produce are covered here, in the same buckets
+ * `uploadError.ts` uses for the other four upload paths — otherwise "the server ran out of disk" or
+ * "this file isn't an image" would fall through to the status-only 400 text ("Проверьте введённые
+ * данные…"), which tells the owner nothing about what to do next.
  */
 export function getLogoErrorMessage(error: unknown): string {
   const ax = error as AxiosError
   const body = typeof ax?.response?.data === 'string' ? ax.response.data : ''
 
   if (body.includes('Слишком больш')) return 'Файл больше 5 МБ. Уменьшите изображение и попробуйте снова.'
-  if (body.includes('Можно загрузить JPEG')) return 'Неподдерживаемый формат. Подойдут JPEG, PNG или WEBP.'
+  if (body.includes('Можно загрузить JPEG') || body.includes('не изображение'))
+    return 'Неподдерживаемый формат. Подойдут JPEG, PNG или WEBP.'
   if (body.includes('Нужно выбрать файл')) return 'Файл не выбран.'
+  if (body.includes('закончилось место')) return 'На сервере закончилось место. Попробуйте позже.'
 
   return getCompanyManageErrorMessage(error, 'Не удалось загрузить изображение.')
 }
