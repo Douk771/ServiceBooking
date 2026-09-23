@@ -17,17 +17,6 @@ public class LegalController(
 {
     private const string UnavailableMessage = "Правовые документы временно недоступны.";
 
-    // The SPA route each document reads from (ARCHITECTURE_CYCLE5.md §43.4) — the footer and the
-    // GetDocuments response build their links off this, never a hand-written literal per call site.
-    private static readonly IReadOnlyDictionary<LegalDocumentType, string> Urls = new Dictionary<LegalDocumentType, string>
-    {
-        [LegalDocumentType.Privacy] = "/privacy",
-        [LegalDocumentType.TermsClient] = "/terms",
-        [LegalDocumentType.TermsOwner] = "/terms-owner",
-        [LegalDocumentType.PdnConsent] = "/pdn-consent",
-        [LegalDocumentType.ChannelRiskNotice] = "/channel-risk",
-    };
-
     // Public. Metadata for all five documents and all six interface texts — enough for the footer, the
     // registration form and version comparison, without shipping the (potentially large) HTML text
     // (API_CONTRACT_CYCLE5.md §39.1). `purposes` is the source of truth for the PdnConsent form — the
@@ -69,7 +58,7 @@ public class LegalController(
 
         return Ok(new LegalDocumentDto(
             doc.Type.ToString(), doc.Title, doc.Version, doc.EffectiveFrom, doc.IsDraft,
-            doc.ChangeKind.ToString(), doc.Gate.ToString(), Urls.GetValueOrDefault(doc.Type, ""),
+            doc.ChangeKind.ToString(), doc.Gate.ToString(), LegalRoutes.UrlFor(doc.Type),
             doc.Purposes.Count == 0 ? null : doc.Purposes.Select(p => new LegalPurposeDto(p.Key.ToString(), p.Title)).ToList(),
             doc.ContentHtml));
     }
@@ -225,7 +214,7 @@ public class LegalController(
 
     private static LegalDocumentMetaDto MapToMetaDto(LegalDocument d) =>
         new(d.Type.ToString(), d.Title, d.Version, d.EffectiveFrom, d.IsDraft, d.ChangeKind.ToString(), d.Gate.ToString(),
-            Urls.GetValueOrDefault(d.Type, ""),
+            LegalRoutes.UrlFor(d.Type),
             d.Purposes.Count == 0 ? null : d.Purposes.Select(p => new LegalPurposeDto(p.Key.ToString(), p.Title)).ToList());
 }
 
