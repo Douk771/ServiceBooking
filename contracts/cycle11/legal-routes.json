@@ -1,0 +1,31 @@
+{
+  "_comment": "ЕДИНСТВЕННЫЙ источник карты правовых маршрутов (ARCHITECTURE_CYCLE11.md §104.3). Читают трое: бэкенд (Services/Legal/LegalRoutes.cs, embedded resource), CLI (`legal links`), фронтенд (тест src/legalRoutes.test.ts против App.tsx). Правка руками в любом из трёх мест вместо этого файла — дефект.",
+
+  "documents": {
+    "Privacy": "/privacy",
+    "TermsClient": "/terms",
+    "TermsOwner": "/terms-owner",
+    "PdnConsent": "/pdn-consent",
+    "ChannelRiskNotice": "/channel-risk"
+  },
+
+  "_aliasesComment": "Маршруты, которые существуют во фронтенде, но не являются отдельным типом документа. `/offer-channel` — оферта D9, приложение № 1 к TermsOwner (ARCHITECTURE_CYCLE11.md §102.2): шестого типа документа нет и не будет, поэтому это редирект на якорь.",
+  "aliases": {
+    "/offer-channel": "/terms-owner#offer-channel"
+  },
+
+  "_anchorsComment": "Якоря, которые ОБЯЗАНЫ существовать в отданном HTML. Отсутствие — код возврата 6 у `legal links` и красный CI: без якоря редирект /offer-channel приводит человека на страницу без оферты, которую ему предлагают принять. Именно это состояние и есть сегодня в App_Data/legal/terms-owner.html (ARCHITECTURE_CYCLE11.md §108.1).",
+  "anchors": {
+    "/terms-owner": ["offer-channel"]
+  },
+
+  "_allowedTargetsComment": "Полный набор целей, на которые внутренняя ссылка из правового текста может указывать. Всё, что не отсюда, — битая ссылка.",
+  "allowedTargets": [
+    "/privacy",
+    "/terms",
+    "/terms-owner",
+    "/pdn-consent",
+    "/channel-risk",
+    "/offer-channel"
+  ]
+}
