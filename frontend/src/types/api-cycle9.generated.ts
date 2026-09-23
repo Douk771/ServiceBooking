@@ -209,6 +209,13 @@ export interface paths {
          *     Нераспознанный transport в пути → 404, а НЕ 400: маршрут не рассказывает, какие транспорты
          *     существуют. Нераспознанный формат тела НЕ роняет обработчик: 200 и одна строка лога Information.
          *
+         *     Неверный/отсутствующий `{token}` → 401 (пустое тело, EmptyResult — НЕ ProblemDetails), тот же
+         *     код и то же обоснование (API_CONTRACT_CYCLE4.md §19.2/33), что и у оригинального
+         *     `POST /api/notifications/provider-webhook/{token}`: обработчик токена общий для обоих маршрутов.
+         *     Редакция 1 этого документа объединяла «нераспознанный транспорт либо неверный токен» под одним
+         *     404 — расхождение с реализацией и с цикла-4-прецедентом, исправлено здесь задним числом без
+         *     изменения кода (см. отчёт backend-developer по проходу B, найдено schemathesis).
+         *
          *     ⚠️ DEVOPS: этот маршрут содержит секрет в пути и ОБЯЗАН получить маскирование в access-логе nginx.
          */
         post: operations["providerWebhookByTransport"];
@@ -1146,6 +1153,18 @@ export interface operations {
                     "application/json": components["schemas"]["PagedNotificationLogItemDto"];
                 };
             };
+            /**
+             * @description Нераспознанное значение `?transport=` — автоматическая проверка модели `[ApiController]`,
+             *     голая строка по-русски (та же форма, что и у остальных 400 в этом документе).
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["ForbiddenEmpty"];
             451: components["responses"]["LegalGate"];
@@ -1171,6 +1190,18 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PagedAdminChannelDto"];
+                };
+            };
+            /**
+             * @description Нераспознанное значение `?transport=` — автоматическая проверка модели `[ApiController]`,
+             *     голая строка по-русски (та же форма, что и у остальных 400 в этом документе).
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -1204,7 +1235,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Нераспознанный транспорт либо неверный токен. */
+            /** @description Неверный или отсутствующий токен. Тело ПУСТОЕ (EmptyResult, не ProblemDetails). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нераспознанный `{transport}` в пути (не `whatsapp`/`max`). */
             404: {
                 headers: {
                     [name: string]: unknown;
