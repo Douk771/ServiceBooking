@@ -945,4 +945,100 @@ public class DeploymentSafetyChecksTests
 
         act.Should().Throw<InvalidOperationException>();
     }
+
+    // ── ValidateStaffPushSecrets: ARCHITECTURE_CYCLE9.md §105.3 (Q15, R12) ─────────────────────────
+
+    private static (string PublicKey, string PrivateKey) GenerateValidVapidPair()
+    {
+        using var ecdh = System.Security.Cryptography.ECDiffieHellman.Create(
+            System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        var parameters = ecdh.ExportParameters(includePrivateParameters: true);
+
+        var publicKeyBytes = new byte[65];
+        publicKeyBytes[0] = 0x04;
+        Buffer.BlockCopy(parameters.Q.X!, 0, publicKeyBytes, 1, 32);
+        Buffer.BlockCopy(parameters.Q.Y!, 0, publicKeyBytes, 33, 32);
+
+        static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        return (Base64Url(publicKeyBytes), Base64Url(parameters.D!));
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_DefaultLoggingProvider_DoesNotThrow_InProduction()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>());
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_UnrecognizedProvider_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:StaffPush:Provider"] = "carrier-pigeon" });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*carrier-pigeon*");
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_MissingKeys_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:StaffPush:Provider"] = "web-push" });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*VapidPublicKey*");
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_MalformedKeys_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:StaffPush:Provider"] = "web-push",
+            ["Notifications:StaffPush:VapidPublicKey"] = "not-a-real-key",
+            ["Notifications:StaffPush:VapidPrivateKey"] = "also-not-a-real-key",
+            ["Notifications:StaffPush:VapidSubject"] = "mailto:ops@ezbook.ru",
+        });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_ValidKeysButNoSubject_Throws()
+    {
+        var (publicKey, privateKey) = GenerateValidVapidPair();
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:StaffPush:Provider"] = "web-push",
+            ["Notifications:StaffPush:VapidPublicKey"] = publicKey,
+            ["Notifications:StaffPush:VapidPrivateKey"] = privateKey,
+        });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*VapidSubject*");
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_ValidConfiguration_DoesNotThrow()
+    {
+        var (publicKey, privateKey) = GenerateValidVapidPair();
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:StaffPush:Provider"] = "web-push",
+            ["Notifications:StaffPush:VapidPublicKey"] = publicKey,
+            ["Notifications:StaffPush:VapidPrivateKey"] = privateKey,
+            ["Notifications:StaffPush:VapidSubject"] = "mailto:ops@ezbook.ru",
+        });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public void ValidateStaffPushSecrets_WebPushInDeveloperEnvironment_MissingKeys_DoesNotThrow(string environmentName)
+    {
+        // §105.3: developer environments are expected to churn keys freely, same carve-out as
+        // ValidateNotificationSecrets' rules 1-2.
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:StaffPush:Provider"] = "web-push" });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, environmentName);
+        act.Should().NotThrow();
+    }
 }
