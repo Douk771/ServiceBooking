@@ -329,6 +329,17 @@ public class ProfileController(
             .ToListAsync();
         db.ClientHealthNotes.RemoveRange(healthNotesAboutMe);
 
+        // Step 2c (ARCHITECTURE_CYCLE9.md §105.5, US-123): this person's OWN Web Push subscriptions —
+        // ⚠️ the Cascade FK on PushSubscription.UserId (AppDbContext) does NOT fire here: this method
+        // leaves a TOMBSTONE (AppUser.DeletedAtUtc is set below; the row itself is never removed), so
+        // nothing about this deletion is actually a cascadable "AppUser row went away". Deleted
+        // explicitly instead, in the same transaction, same reasoning as I10's owned-channel cleanup
+        // further below (a channel this person OWNS is decommissioned explicitly for the identical
+        // reason). A person who deletes their account must stop receiving push about a platform they no
+        // longer have credentials to see.
+        var ownPushSubscriptions = await db.PushSubscriptions.Where(s => s.UserId == userId).ToListAsync();
+        db.PushSubscriptions.RemoveRange(ownPushSubscriptions);
+
         // Step 3: bookings are anonymized, never deleted — the salon's revenue/commission history for a
         // completed visit must stay intact (US-39 p.3). Matches both the client path and the guest path
         // (a booking made before this person registered, found the same way as step 2's notes).
