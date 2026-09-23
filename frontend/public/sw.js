@@ -21,10 +21,13 @@ self.addEventListener('activate', (event) => {
 // API_CONTRACT_CYCLE9.md §115.6 — payload shape: { title, body, tag, url }. `url` is a relative path;
 // this worker adds the origin itself, so the server can never smuggle an absolute cross-origin URL in.
 self.addEventListener('push', (event) => {
-  // §115.6 default: no bookingId is known yet, so we can only land the master on the bookings list,
-  // not a specific booking — matches the shape the server sends (`/cabinet?tab=bookings&booking=<id>`)
-  // rather than the unrelated client-facing `/my-bookings` route.
-  let data = { title: 'Новая запись', body: '', tag: undefined, url: '/cabinet?tab=bookings' }
+  // §115.6 default: no bookingId is known yet, so we can only land the master on the bookings list.
+  // `/my-bookings` (ProtectedRoute roles Master/CompanyOwner/SuperAdmin, frontend/src/App.tsx) is the
+  // master's own bookings screen — not to be confused with `/my-visits`, the client-facing one. There
+  // is no `bookings` tab on `/cabinet` (CabinetPage's tabs are dashboard/companies/schedule/clients/
+  // reports/mailing/notifications, and it does not read the query string), so a `/cabinet?tab=bookings`
+  // URL would silently strand the master on whatever the default tab is.
+  let data = { title: 'Новая запись', body: '', tag: undefined, url: '/my-bookings' }
   try {
     if (event.data) data = { ...data, ...event.data.json() }
   } catch {
@@ -38,7 +41,7 @@ self.addEventListener('push', (event) => {
       body: data.body || '',
       // §115.6 — `tag` collapses repeat notifications for the same booking (`b-<bookingId>`) into one.
       tag: data.tag,
-      data: { url: data.url || '/cabinet?tab=bookings' },
+      data: { url: data.url || '/my-bookings' },
     }),
   )
 })
@@ -47,7 +50,7 @@ self.addEventListener('push', (event) => {
 // opening a new one.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = event.notification.data?.url || '/cabinet?tab=bookings'
+  const url = event.notification.data?.url || '/my-bookings'
 
   event.waitUntil(
     (async () => {
