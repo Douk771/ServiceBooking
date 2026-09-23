@@ -18,7 +18,7 @@ internal static class LegalSourceSet
     public const string AppendixBodyMarker = "<!-- APPENDIX-BODY-START -->";
     private const string ManifestFileName = "legal.json";
 
-    public sealed record ManifestFileEntry(string Kind, string Type, string File, bool IsDraft);
+    public sealed record ManifestFileEntry(string Kind, string Type, string File);
 
     /// <summary>Builds the artifact into <paramref name="outDir"/> (created if missing). Throws
     /// <see cref="InvalidOperationException"/> with a clear message on any structural problem — a marker
@@ -42,7 +42,8 @@ internal static class LegalSourceSet
         {
             var sourcePath = Path.Combine(sourceDir, entry.File);
             if (!File.Exists(sourcePath))
-                throw new InvalidOperationException($"{entry.Type ?? entry.Kind}: файл '{entry.File}' не найден в {sourceDir}.");
+                throw new InvalidOperationException(
+                    $"{(string.IsNullOrEmpty(entry.Type) ? entry.Kind : entry.Type)}: файл '{entry.File}' не найден в {sourceDir}.");
 
             var content = NormalizeLineEndings(File.ReadAllText(sourcePath));
 
@@ -116,8 +117,7 @@ internal static class LegalSourceSet
             {
                 var type = d.GetProperty("type").GetString() ?? "";
                 var file = d.GetProperty("file").GetString() ?? "";
-                var isDraft = d.TryGetProperty("isDraft", out var draftProp) && draftProp.GetBoolean();
-                entries.Add(new ManifestFileEntry("document", type, file, isDraft));
+                entries.Add(new ManifestFileEntry("document", type, file));
             }
         }
 
@@ -127,8 +127,7 @@ internal static class LegalSourceSet
             {
                 var key = t.GetProperty("key").GetString() ?? "";
                 var file = t.GetProperty("file").GetString() ?? "";
-                var isDraft = t.TryGetProperty("isDraft", out var draftProp) && draftProp.GetBoolean();
-                entries.Add(new ManifestFileEntry("uiText", key, file, isDraft));
+                entries.Add(new ManifestFileEntry("uiText", key, file));
             }
         }
 

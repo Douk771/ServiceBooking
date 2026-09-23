@@ -91,8 +91,22 @@ public class AdminLegalController(LegalDocumentProvider legalDocuments, AppDbCon
     /// isn't miscounted as already covered.</summary>
     private async Task<LegalReadinessImpactSummaryDto> GetImpactAsync(LegalSnapshot snapshot, CancellationToken ct)
     {
+        // contracts/cycle11/legal-status.schema.json restricts reAcceptanceRequired[].documentType to
+        // exactly {Privacy, TermsClient, TermsOwner} — the three document types LegalGate can plausibly be
+        // Global/OwnerScope for today. Filtering on "Gate != None" instead of this explicit allow-list
+        // means an unrecognized `gate` string in a hand-edited manifest (LegalDocumentProvider falls back
+        // to LegalGate.Global for anything it doesn't recognize) could surface a document type the schema
+        // never listed — e.g. PdnConsent with a typo'd gate — and the response would fail its own
+        // contract. ARCHITECTURE_CYCLE11.md §111: the schema is the source of truth.
+        var reAcceptanceEligibleTypes = new HashSet<LegalDocumentType>
+        {
+            LegalDocumentType.Privacy, LegalDocumentType.TermsClient, LegalDocumentType.TermsOwner,
+        };
+
         var results = new List<LegalReadinessImpactEntryDto>();
-        foreach (var doc in snapshot.Documents.Values.Where(d => d.Gate != LegalGate.None).OrderBy(d => d.Type))
+        foreach (var doc in snapshot.Documents.Values
+                     .Where(d => reAcceptanceEligibleTypes.Contains(d.Type) && d.Gate != LegalGate.None)
+                     .OrderBy(d => d.Type))
         {
             var documentKey = doc.Type.ToString();
 

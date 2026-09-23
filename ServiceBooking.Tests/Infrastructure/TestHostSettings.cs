@@ -152,11 +152,11 @@ public static class TestHostSettings
         File.WriteAllText(legalJsonPath, json.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    // Mirrors LegalDocumentProvider's own [GeneratedRegex(@"\{\{[А-ЯЁ_]+\}\}")] (ARCHITECTURE_CYCLE5.md
-    // §43.3) — kept as a plain Regex (not source-generated) since this is test-only code run a handful of
-    // times per process, not a hot path.
+    // The shared pattern, not a second copy of it — LegalDocumentProvider.PlaceholderPattern is public
+    // specifically so nothing else in the repo hand-rolls its own placeholder regex (ARCHITECTURE_CYCLE11.md
+    // §106.3): a fixture with its own copy is exactly the drift that guarantee exists to prevent.
     private static readonly System.Text.RegularExpressions.Regex PlaceholderRegexInstance =
-        new(@"\{\{[А-ЯЁ_]+\}\}");
+        new(ServiceBooking.API.Services.Legal.LegalDocumentProvider.PlaceholderPattern);
 
     private static System.Text.RegularExpressions.Regex PlaceholderRegex() => PlaceholderRegexInstance;
 

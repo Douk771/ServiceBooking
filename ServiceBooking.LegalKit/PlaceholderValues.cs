@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ServiceBooking.LegalKit;
 
@@ -21,6 +22,32 @@ internal sealed class PlaceholderValues
         "ПОЧТА_ОТВЕТСТВЕННОГО", "НОМЕР_УВЕДОМЛЕНИЯ_РКН", "ДАТА_УВЕДОМЛЕНИЯ_РКН", "СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ",
         "НДС_ОГОВОРКА",
     ];
+
+    /// <summary>Extra shape checks contracts/cycle11/legal-values.schema.json imposes on top of "present
+    /// and non-empty" — ARCHITECTURE_CYCLE11.md §111: "прав контракт, расхождение чинится кодом". Keyed
+    /// by the same 13 names as <see cref="RequiredKeys"/>; a key absent from this dictionary has no
+    /// pattern beyond non-empty.</summary>
+    private static readonly IReadOnlyDictionary<string, (Regex Pattern, string Description)> PatternedKeys =
+        new Dictionary<string, (Regex, string)>(StringComparer.Ordinal)
+        {
+            ["ИНН_ОПЕРАТОРА"] = (new Regex(@"^(?:[0-9]{10}|[0-9]{12})$"),
+                "10 цифр у юрлица или 12 у ИП/самозанятого"),
+            ["ОГРН_ОПЕРАТОРА"] = (new Regex(@"^(?:[0-9]{13}|[0-9]{15})$"),
+                "13 цифр (ОГРН) или 15 (ОГРНИП)"),
+            ["ДАТА_УВЕДОМЛЕНИЯ_РКН"] = (new Regex(@"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}$"),
+                "формат ДД.ММ.ГГГГ"),
+        };
+
+    /// <summary>Keys the schema marks <c>format: email</c>. Deliberately a pragmatic "looks like an
+    /// email" check (one <c>@</c>, something on each side, a dot in the domain part) rather than
+    /// RFC-5322 parsing — the schema's own intent is to catch "ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ": "уточнить у
+    /// бухгалтера", not to reject every technically-unusual-but-real address.</summary>
+    private static readonly HashSet<string> EmailKeys = new(StringComparer.Ordinal)
+    {
+        "ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ", "ПОЧТА_ОТВЕТСТВЕННОГО",
+    };
+
+    private static readonly Regex LooksLikeEmail = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$");
 
     public IReadOnlyDictionary<string, string> Values { get; }
 
@@ -65,9 +92,21 @@ internal sealed class PlaceholderValues
             foreach (var key in RequiredKeys)
             {
                 if (!result.TryGetValue(key, out var value))
+                {
                     problems.Add($"{key}: значение отсутствует.");
-                else if (string.IsNullOrWhiteSpace(value))
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(value))
+                {
                     problems.Add($"{key}: значение пустое.");
+                    continue;
+                }
+
+                if (PatternedKeys.TryGetValue(key, out var check) && !check.Pattern.IsMatch(value))
+                    problems.Add($"{key}: значение '{value}' не соответствует формату ({check.Description}).");
+
+                if (EmailKeys.Contains(key) && !LooksLikeEmail.IsMatch(value))
+                    problems.Add($"{key}: значение '{value}' не похоже на адрес электронной почты.");
             }
 
             if (problems.Count > 0)

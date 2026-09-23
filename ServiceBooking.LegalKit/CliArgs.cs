@@ -7,6 +7,17 @@ internal sealed class CliArgs
     private readonly Dictionary<string, string> _values = new(StringComparer.Ordinal);
     private readonly HashSet<string> _flags = new(StringComparer.Ordinal);
 
+    /// <summary>Switches — no value follows. §117.2.</summary>
+    private static readonly HashSet<string> SwitchFlags = new(StringComparer.Ordinal) { "dry-run", "json" };
+
+    /// <summary>Every <c>--flag value</c> name §117.2 defines. Anything outside this set (and outside
+    /// <see cref="SwitchFlags"/>) is a typo, not a forward-compatible extension point — silently accepting
+    /// it just means the intended flag was never actually read.</summary>
+    private static readonly HashSet<string> ValueFlags = new(StringComparer.Ordinal)
+    {
+        "source", "out", "root", "values", "version", "effective-from",
+    };
+
     public static CliArgs Parse(IReadOnlyList<string> args)
     {
         var result = new CliArgs();
@@ -17,14 +28,23 @@ internal sealed class CliArgs
                 throw new CliUsageException($"Неожиданный аргумент: '{arg}'.");
 
             var name = arg[2..];
-            if (name is "dry-run" or "json")
+            if (SwitchFlags.Contains(name))
             {
                 result._flags.Add(name);
                 continue;
             }
 
+            if (!ValueFlags.Contains(name))
+                throw new CliUsageException($"Неизвестный флаг: --{name}.");
+
             if (i + 1 >= args.Count)
                 throw new CliUsageException($"Флагу --{name} требуется значение.");
+
+            var next = args[i + 1];
+            if (next.StartsWith("--", StringComparison.Ordinal))
+                throw new CliUsageException(
+                    $"Флагу --{name} требуется значение, а следующий токен '{next}' сам похож на флаг.");
+
             result._values[name] = args[++i];
         }
         return result;

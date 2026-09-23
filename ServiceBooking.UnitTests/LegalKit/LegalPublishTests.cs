@@ -203,4 +203,71 @@ public class LegalPublishTests
             LegalKitFixture.Delete(outDir);
         }
     }
+
+    [Fact]
+    public void Rollback_RecordsItsOwnJournalEntry_RatherThanErasingThePublishEntry()
+    {
+        var source = LegalKitFixture.CreateSourceDir();
+        var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
+        var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
+        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        try
+        {
+            LegalSourceSet.Build(source, built);
+            PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-10-05", "--effective-from", "2026-10-05"]))
+                .Should().Be(0);
+            PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-11-01", "--effective-from", "2026-11-01"]))
+                .Should().Be(0);
+
+            RollbackCommand.Run(CliArgs.Parse(["--out", outDir])).Should().Be(0);
+
+            var log = File.ReadAllText(Path.Combine(outDir, "legal.published.json"));
+            // Both publish entries are still there — rollback appended, it did not delete.
+            log.Should().Contain("2026-10-05").And.Contain("2026-11-01").And.Contain("\"rollback\"");
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(built);
+            LegalKitFixture.Delete(outDir);
+            File.Delete(valuesPath);
+        }
+    }
+
+    [Fact]
+    public void Rollback_TwiceInARowWithoutANewPublish_RefusesTheSecondCall()
+    {
+        var source = LegalKitFixture.CreateSourceDir();
+        var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
+        var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
+        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        try
+        {
+            LegalSourceSet.Build(source, built);
+            PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-10-05", "--effective-from", "2026-10-05"]))
+                .Should().Be(0);
+            PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-11-01", "--effective-from", "2026-11-01"]))
+                .Should().Be(0);
+
+            RollbackCommand.Run(CliArgs.Parse(["--out", outDir])).Should().Be(0);
+            var manifestAfterFirstRollback = File.ReadAllText(Path.Combine(outDir, "legal.json"));
+
+            // Second rollback in a row, with no new publish in between: must refuse, not walk one more
+            // generation back to the first-ever-publish state.
+            RollbackCommand.Run(CliArgs.Parse(["--out", outDir])).Should().Be(1);
+
+            File.ReadAllText(Path.Combine(outDir, "legal.json")).Should().Be(manifestAfterFirstRollback);
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(built);
+            LegalKitFixture.Delete(outDir);
+            File.Delete(valuesPath);
+        }
+    }
 }
