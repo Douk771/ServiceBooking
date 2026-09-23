@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Icon } from '../../components/ui/Icon'
 import { ChannelBreachBanner } from '../../components/notifications/ChannelBreachBanner'
+import { StaffPushSettingsCard } from '../../components/push/StaffPushSettingsCard'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import { TRANSPORT_LABELS } from '../../utils/notificationTransport'
 import type { NotificationType, NotificationDeliveryMode, NotificationTransport } from '../../types'
@@ -78,42 +79,62 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
     saveMut.mutate()
   }
 
-  if (isLoading) return <div className="h-64 bg-cream-deep rounded-2xl animate-pulse" />
+  // C18 (§105.7): staff push is its OWN route, not gated by planAllowsChannel/channel state below —
+  // rendered unconditionally, ahead of the client-notifications gates that follow.
+  const staffPushCard = <StaffPushSettingsCard companyId={companyId} />
+
+  if (isLoading)
+    return (
+      <div className="flex flex-col gap-4">
+        {staffPushCard}
+        <div className="h-64 bg-cream-deep rounded-2xl animate-pulse" />
+      </div>
+    )
   if (isError || !data)
     return (
-      <Card className="p-10 text-center text-muted">
-        <Icon name="alert-circle" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
-        <p>Не удалось загрузить настройки уведомлений.</p>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {staffPushCard}
+        <Card className="p-10 text-center text-muted">
+          <Icon name="alert-circle" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+          <p>Не удалось загрузить настройки уведомлений.</p>
+        </Card>
+      </div>
     )
 
   // Trois-level gate convention (CURRENT_STATE.md §4.6, SPEC US-31 п. 4): tariff off → upsell stub;
   // no/unpaid/disconnected channel → "connect a channel" stub; only then does the real form render.
   if (!data.planAllowsChannel) {
     return (
-      <Card className="p-10 text-center text-muted">
-        <Icon name="settings" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
-        <p>Уведомления клиентам через WhatsApp доступны на более высоком тарифе</p>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {staffPushCard}
+        <Card className="p-10 text-center text-muted">
+          <Icon name="settings" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+          <p>Уведомления клиентам через WhatsApp доступны на более высоком тарифе</p>
+        </Card>
+      </div>
     )
   }
 
   if (!data.channel?.assigned || data.channel.paymentState !== 'Paid') {
     return (
-      <Card className="p-10 text-center text-muted">
-        <Icon name="megaphone" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
-        <p className="mb-3">{data.blockedReason ?? 'Салон не привязан к каналу'}</p>
-        <Link to="/cabinet">
-          <Button size="sm" variant="secondary">
-            Перейти к разделу «Уведомления → Каналы»
-          </Button>
-        </Link>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {staffPushCard}
+        <Card className="p-10 text-center text-muted">
+          <Icon name="megaphone" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+          <p className="mb-3">{data.blockedReason ?? 'Салон не привязан к каналу'}</p>
+          <Link to="/cabinet">
+            <Button size="sm" variant="secondary">
+              Перейти к разделу «Уведомления → Каналы»
+            </Button>
+          </Link>
+        </Card>
+      </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {staffPushCard}
       {/* API_CONTRACT_CYCLE4.md §28.1 doesn't include the channel's full stateText here (only `state`
           and `blockedReason`), so blockedReason stands in for it — it's the same "channel is broken"
           episode already covered in the channel list, just approximated with what this endpoint sends.
