@@ -10,20 +10,28 @@ function axiosErrorWith(status: number, data: unknown): AxiosError {
 }
 
 describe('getUploadErrorMessage', () => {
-  it('400 "too large" → file-size message', () => {
-    expect(getUploadErrorMessage(axiosErrorWith(400, 'Image is too large — the limit is 5 MB'))).toBe(
+  it('400 "Слишком больш…" (byte-size limit) → file-size message', () => {
+    expect(getUploadErrorMessage(axiosErrorWith(400, 'Слишком большой файл — максимум 5 МБ.'))).toBe(
       'Файл больше 5 МБ. Уменьшите изображение и попробуйте снова.',
     )
   })
 
-  it('400 "Unsupported image type" → format message', () => {
-    expect(getUploadErrorMessage(axiosErrorWith(400, 'Unsupported image type — use JPEG, PNG or WEBP'))).toBe(
+  it('400 "Слишком больш…" (pixel-dimension limit) → same file-size message', () => {
+    expect(
+      getUploadErrorMessage(
+        axiosErrorWith(400, 'Слишком большое изображение — попробуйте файл меньшего размера.'),
+      ),
+    ).toBe('Файл больше 5 МБ. Уменьшите изображение и попробуйте снова.')
+  })
+
+  it('400 "Можно загрузить JPEG…" → format message', () => {
+    expect(getUploadErrorMessage(axiosErrorWith(400, 'Можно загрузить JPEG, PNG или WEBP.'))).toBe(
       'Поддерживаются только JPEG, PNG и WEBP.',
     )
   })
 
-  it('400 "not a valid image" → format message (same branch as unsupported type)', () => {
-    expect(getUploadErrorMessage(axiosErrorWith(400, 'File is not a valid image'))).toBe(
+  it('400 "…не изображение" → format message (same branch as unsupported type)', () => {
+    expect(getUploadErrorMessage(axiosErrorWith(400, 'Файл повреждён или это не изображение.'))).toBe(
       'Поддерживаются только JPEG, PNG и WEBP.',
     )
   })
@@ -48,14 +56,14 @@ describe('getUploadErrorMessage', () => {
     )
   })
 
-  it('400 "storage is full" → server disk message', () => {
-    expect(getUploadErrorMessage(axiosErrorWith(400, 'Server storage is full — try again later.'))).toBe(
+  it('400 "закончилось место" → server disk message', () => {
+    expect(getUploadErrorMessage(axiosErrorWith(400, 'На сервере закончилось место. Попробуйте позже.'))).toBe(
       'На сервере закончилось место. Попробуйте позже.',
     )
   })
 
   it('400 with an unrecognized body → generic Russian message, not the raw server text', () => {
-    expect(getUploadErrorMessage(axiosErrorWith(400, 'File is required'))).toBe(
+    expect(getUploadErrorMessage(axiosErrorWith(400, 'Нужно выбрать файл для загрузки.'))).toBe(
       'Не удалось загрузить фото. Проверьте файл и попробуйте снова.',
     )
   })

@@ -44,9 +44,9 @@ export function getLogoErrorMessage(error: unknown): string {
   const ax = error as AxiosError
   const body = typeof ax?.response?.data === 'string' ? ax.response.data : ''
 
-  if (body.includes('too large')) return 'Файл больше 5 МБ. Уменьшите изображение и попробуйте снова.'
-  if (body.includes('Unsupported image type')) return 'Неподдерживаемый формат. Подойдут JPEG, PNG или WEBP.'
-  if (body.includes('No file uploaded')) return 'Файл не выбран.'
+  if (body.includes('Слишком больш')) return 'Файл больше 5 МБ. Уменьшите изображение и попробуйте снова.'
+  if (body.includes('Можно загрузить JPEG')) return 'Неподдерживаемый формат. Подойдут JPEG, PNG или WEBP.'
+  if (body.includes('Нужно выбрать файл')) return 'Файл не выбран.'
 
   return getCompanyManageErrorMessage(error, 'Не удалось загрузить изображение.')
 }
