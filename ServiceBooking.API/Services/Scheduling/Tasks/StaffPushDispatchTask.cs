@@ -55,9 +55,15 @@ public sealed class StaffPushDispatchTask(
         {
             var now = clock.UtcNow;
 
+            // N6: LastAttemptAtUtc is the same in-flight marker OutboundNotification uses
+            // (NotificationDispatchTask's own inFlightCutoff filter) — without excluding rows still
+            // inside their grace window, an overlapping/slow-running pass could select and send a row
+            // that a still-in-progress previous pass already picked up.
+            var inFlightCutoff = now - TimeSpan.FromMinutes(opts.InFlightGraceMinutes);
             var candidates = await db.StaffPushNotifications
                 .Where(n => n.Status == NotificationStatus.Pending)
                 .Where(n => n.NextAttemptAtUtc == null || n.NextAttemptAtUtc <= now)
+                .Where(n => n.LastAttemptAtUtc == null || n.LastAttemptAtUtc < inFlightCutoff)
                 .OrderBy(n => n.ExpiresAtUtc).ThenBy(n => n.CreatedAt)
                 .Take(opts.BatchSize)
                 .ToListAsync(linkedCt);

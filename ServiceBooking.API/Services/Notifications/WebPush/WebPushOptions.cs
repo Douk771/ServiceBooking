@@ -62,5 +62,14 @@ public sealed class WebPushOptions
         /// <summary>§105.8: temporary failures (429/5xx/timeout/connection refused) retry up to this many
         /// attempts before becoming <c>Failed</c>/<c>RetriesExhausted</c>.</summary>
         public int MaxAttempts { get; set; } = 4;
+
+        /// <summary>N6: same "in-flight marker" convention <c>StaffPushNotification.LastAttemptAtUtc</c>'s
+        /// own doc comment claims ("same convention as <c>OutboundNotification</c>") — a row whose
+        /// <c>LastAttemptAtUtc</c> is within this many minutes of now is excluded from the candidate
+        /// selection, exactly like <see cref="NotificationOptions.DispatchOptions.InFlightGraceMinutes"/>
+        /// does for <c>OutboundNotification</c>. Without this, two overlapping dispatch passes (a slow
+        /// pass still running when the next scheduled one starts) could select and send the same row
+        /// twice.</summary>
+        public int InFlightGraceMinutes { get; set; } = 5;
     }
 }

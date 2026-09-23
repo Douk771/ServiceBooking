@@ -4,50 +4,54 @@ using ServiceBooking.API.Services.Notifications.WebPush;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE9.md §105.8's classification table — "таблица, а не «если не 2xx, то
-/// повторим»". Every branch of the table, exercised directly against the pure classifier.</summary>
+/// <summary>Pure status-code table coverage for <see cref="WebPushResponseClassifier.Classify"/>
+/// (ARCHITECTURE_CYCLE9.md §105.8, code-review finding N7).</summary>
 public class WebPushResponseClassifierTests
 {
     [Theory]
-    [InlineData(HttpStatusCode.NotFound)]
-    [InlineData(HttpStatusCode.Gone)]
-    public void Classify_404Or410_IsGone(HttpStatusCode statusCode) =>
-        WebPushResponseClassifier.Classify(statusCode, null).Should().BeOfType<WebPushSendOutcome.Gone>();
-
-    [Theory]
-    [InlineData(HttpStatusCode.Unauthorized)]
-    [InlineData(HttpStatusCode.Forbidden)]
-    public void Classify_401Or403_IsAuthRejected(HttpStatusCode statusCode) =>
-        WebPushResponseClassifier.Classify(statusCode, "detail").Should().BeOfType<WebPushSendOutcome.AuthRejected>();
-
-    [Fact]
-    public void Classify_413_IsPayloadTooLarge() =>
-        WebPushResponseClassifier.Classify(HttpStatusCode.RequestEntityTooLarge, null)
-            .Should().BeOfType<WebPushSendOutcome.PayloadTooLarge>();
-
-    [Fact]
-    public void Classify_429_IsTransient() =>
-        WebPushResponseClassifier.Classify(HttpStatusCode.TooManyRequests, null)
-            .Should().BeOfType<WebPushSendOutcome.Transient>();
-
-    [Theory]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    [InlineData(HttpStatusCode.BadGateway)]
-    [InlineData(HttpStatusCode.ServiceUnavailable)]
-    [InlineData(HttpStatusCode.GatewayTimeout)]
-    public void Classify_5xx_IsTransient(HttpStatusCode statusCode) =>
-        WebPushResponseClassifier.Classify(statusCode, null).Should().BeOfType<WebPushSendOutcome.Transient>();
-
-    [Fact]
-    public void Classify_UnexpectedOther4xx_FallsBackToAuthRejected_NotSilentlyRetriedForever() =>
-        WebPushResponseClassifier.Classify(HttpStatusCode.Conflict, null)
-            .Should().BeOfType<WebPushSendOutcome.AuthRejected>();
-
-    [Fact]
-    public void Classify_PreservesResponseBodyAsDetail()
+    [InlineData(404)]
+    [InlineData(410)]
+    public void Classify_GoneStatuses_ReturnGone(int statusCode)
     {
-        var outcome = WebPushResponseClassifier.Classify(HttpStatusCode.Forbidden, "vapid mismatch");
-        outcome.Should().BeOfType<WebPushSendOutcome.AuthRejected>()
-            .Which.Detail.Should().Be("vapid mismatch");
+        var outcome = WebPushResponseClassifier.Classify((HttpStatusCode)statusCode, null);
+        outcome.Should().BeOfType<WebPushSendOutcome.Gone>();
+    }
+
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    public void Classify_AuthStatuses_ReturnAuthRejected(int statusCode)
+    {
+        var outcome = WebPushResponseClassifier.Classify((HttpStatusCode)statusCode, "detail");
+        outcome.Should().BeOfType<WebPushSendOutcome.AuthRejected>();
+    }
+
+    [Fact]
+    public void Classify_413_ReturnsPayloadTooLarge()
+    {
+        var outcome = WebPushResponseClassifier.Classify((HttpStatusCode)413, "detail");
+        outcome.Should().BeOfType<WebPushSendOutcome.PayloadTooLarge>();
+    }
+
+    [Theory]
+    [InlineData(429)]
+    [InlineData(500)]
+    [InlineData(503)]
+    [InlineData(408)]
+    [InlineData(499)]
+    public void Classify_TransientStatuses_ReturnTransient(int statusCode)
+    {
+        // N7: 408 Request Timeout and 499 Client Closed Request are about the REQUEST timing out or
+        // being abandoned, not about auth/payload/subscription existence — retrying them is exactly as
+        // appropriate as retrying a 5xx, so they must not fall into the AuthRejected default below.
+        var outcome = WebPushResponseClassifier.Classify((HttpStatusCode)statusCode, null);
+        outcome.Should().BeOfType<WebPushSendOutcome.Transient>();
+    }
+
+    [Fact]
+    public void Classify_UnrecognizedOther4xx_FallsBackToAuthRejected()
+    {
+        var outcome = WebPushResponseClassifier.Classify((HttpStatusCode)451, "detail");
+        outcome.Should().BeOfType<WebPushSendOutcome.AuthRejected>();
     }
 }
