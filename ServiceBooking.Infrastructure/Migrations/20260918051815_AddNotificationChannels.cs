@@ -22,6 +22,28 @@ namespace ServiceBooking.Infrastructure.Migrations
         /// CitySearch.Normalize; this array only exposes those same hand-typed values for reuse, it does
         /// not change how they were produced.
         /// </summary>
+        /// <summary>
+        /// Builds the object[,] (true 2D array) InsertData's multi-row overload requires, from
+        /// <see cref="SeedRows"/>. NOT SeedRows.Select(...).ToArray() (object[][], one row per element):
+        /// because C# arrays are covariant, an object[][] silently binds to InsertData's SINGLE-row
+        /// object[] overload instead (object[][] is-a object[]) — the exact failure mode this comment
+        /// exists to prevent, caught only by actually running this migration against Postgres, not by a
+        /// successful `dotnet build`.
+        /// </summary>
+        private static object[,] BuildSeedRowsValues()
+        {
+            var values = new object[SeedRows.Length, 5];
+            for (var i = 0; i < SeedRows.Length; i++)
+            {
+                values[i, 0] = SeedRows[i].Name;
+                values[i, 1] = SeedRows[i].Region;
+                values[i, 2] = SeedRows[i].TimeZoneId;
+                values[i, 3] = true;
+                values[i, 4] = SeedRows[i].SearchName;
+            }
+            return values;
+        }
+
         public static readonly (string Name, string Region, string TimeZoneId, string SearchName)[] SeedRows =
         {
             ("Калининград", "Калининградская область", "Europe/Kaliningrad", "калининград"),
@@ -168,8 +190,7 @@ namespace ServiceBooking.Infrastructure.Migrations
             migrationBuilder.InsertData(
                 table: "Cities",
                 columns: new[] { "Name", "Region", "TimeZoneId", "IsActive", "SearchName" },
-                values: SeedRows.Select(r => new object[] { r.Name, r.Region, r.TimeZoneId, true, r.SearchName })
-                    .ToArray());
+                values: BuildSeedRowsValues());
 
             // §34.2, §35 migration 2: seed ~90 administrative centers/major cities FIRST (SeedCities must
             // precede AddCompanyCityAndTimeZone — jointly implemented here as one migration since this
