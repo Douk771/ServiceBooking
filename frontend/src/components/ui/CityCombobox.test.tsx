@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ReactElement } from 'react'
+import { useState } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -78,5 +79,25 @@ describe('CityCombobox', () => {
     await user.type(screen.getByRole('combobox'), 'zzz')
 
     expect(await screen.findByText('Город не найден')).toBeInTheDocument()
+  })
+
+  /**
+   * Н6 (code review): real callers (CabinetPage, CompanyManagePage) are controlled — onChange writes
+   * to state that flows back in as `value`. A test that only asserts onChange was called, without a
+   * parent that actually feeds the value back, would miss a component that can't settle into its
+   * selected state (R8).
+   */
+  it('a controlled parent shows the selected city after picking an option', async () => {
+    const user = userEvent.setup()
+    function ControlledWrapper() {
+      const [value, setValue] = useState<City | null>(null)
+      return <CityCombobox value={value} onChange={setValue} />
+    }
+    renderWithProviders(<ControlledWrapper />)
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(await screen.findByRole('option', { name: /Москва/ }))
+
+    expect(await screen.findByDisplayValue(MOSCOW.label)).toBeInTheDocument()
   })
 })
