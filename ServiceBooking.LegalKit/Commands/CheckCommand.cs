@@ -13,7 +13,7 @@ namespace ServiceBooking.LegalKit.Commands;
 ///     difference — "этим краснеет CI".
 ///  2. Links/anchors on the freshly-built (i.e. source-of-truth) snapshot (exit 6).
 ///  3. Risk A4 (API_CONTRACT_CYCLE11.md §112): every source file is scanned for `{{…}}` tokens that
-///     aren't one of the 15 recognized placeholder names — a Latin or lowercase-Cyrillic placeholder
+///     aren't one of the 14 recognized placeholder names — a Latin or lowercase-Cyrillic placeholder
 ///     that the product's own narrow regex would silently accept as filled text is failed here instead.
 ///     The contract's exit-code table (§117.3) has no code reserved for this specific failure; it is
 ///     mapped onto exit 6 (the other "structural integrity of the source" failure) rather than inventing
@@ -75,7 +75,7 @@ internal static class CheckCommand
             }
             if (unknownForms.Count > 0)
             {
-                Console.Error.WriteLine("Плейсхолдеры в нераспознанной форме (не входят в 15 известных имён):");
+                Console.Error.WriteLine("Плейсхолдеры в нераспознанной форме (не входят в 14 известных имён):");
                 foreach (var (file, token) in unknownForms) Console.Error.WriteLine($"  - {file}: {token}");
                 brokenReported = true;
             }

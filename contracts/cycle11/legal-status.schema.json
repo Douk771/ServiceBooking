@@ -68,7 +68,7 @@
             "ArtifactDrift",
             "LegalUnavailable"
           ],
-          "description": "UnresolvedPlaceholders — в тексте остались {{…}}; MissingValues — файла значений нет или в нём не все 13 ключей; DraftDocuments — isDraft=true (ожидаемое состояние по итогам цикла 11, а не дефект); BrokenLinks/MissingAnchors — внутренняя ссылка или якорь ведут в никуда; ArtifactDrift — App_Data/legal разошёлся с legal-drafts; LegalUnavailable — снимок вообще не загрузился."
+          "description": "UnresolvedPlaceholders — в тексте остались {{…}}; MissingValues — файла значений нет или в нём не все 12 ключей; DraftDocuments — isDraft=true (ожидаемое состояние по итогам цикла 11, а не дефект); BrokenLinks/MissingAnchors — внутренняя ссылка или якорь ведут в никуда; ArtifactDrift — App_Data/legal разошёлся с legal-drafts; LegalUnavailable — снимок вообще не загрузился."
         },
         "detail": { "type": "string", "minLength": 1 }
       }

@@ -291,12 +291,12 @@ production разрешено осознанно (см.
 ссылки, якорь `offer-channel`) и легко оставляет комплект в непубликуемом виде незамеченно.
 
 **US-11-08.** Заполните `legal.values.json` рядом с `.env` (образец с пояснениями — в репозитории,
-`legal.values.example.json`; 4 значения — из ЕГРЮЛ, 2 появятся только после подачи уведомления в
+`legal.values.example.json`; 3 значения — из реквизитов оператора, 2 появятся только после подачи уведомления в
 Роскомнадзор, 7 — решения заказчика), затем одной командой:
 
 ```bash
 cd /opt/ezbook/app
-cp legal.values.example.json legal.values.json   # заполните все 13 значений перед публикацией
+cp legal.values.example.json legal.values.json   # заполните все 12 значений перед публикацией
 docker compose -f docker-compose.prod.yml run --rm legal-tools status --root /app/App_Data/legal
 docker compose -f docker-compose.prod.yml run --rm legal-tools publish \
   --source /app/App_Data/legal --out /work/legal --values /work/legal.values.json \

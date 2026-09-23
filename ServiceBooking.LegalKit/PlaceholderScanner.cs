@@ -52,7 +52,7 @@ internal static partial class PlaceholderScanner
     private static partial Regex BroadTokenRegex();
 
     /// <summary>Every <c>{{…}}</c> token in <paramref name="html"/> that is NOT an exact, case-sensitive
-    /// match of one of the 15 <see cref="KnownNames"/> — i.e. a placeholder written in a form the
+    /// match of one of the 14 <see cref="KnownNames"/> — i.e. a placeholder written in a form the
     /// product's own detector would silently accept as "filled in".</summary>
     public static IReadOnlyList<string> FindUnknownForms(string html)
     {
