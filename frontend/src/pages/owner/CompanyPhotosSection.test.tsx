@@ -63,14 +63,16 @@ describe('CompanyPhotosSection — API_CONTRACT_CYCLE10.md §125–§128', () =>
     expect(await screen.findByText('Обложка')).toBeInTheDocument()
   })
 
-  it('disables "Добавить фото" once the gallery has 10 photos', async () => {
+  it('disables the upload drop zone once the gallery has 10 photos', async () => {
     list.mockResolvedValue(
       Array.from({ length: 10 }, (_, i) => photo({ id: `p${i}`, position: i, isCover: i === 0 })),
     )
     renderSection()
 
     await screen.findByText('10 / 10')
-    expect(screen.getByRole('button', { name: 'Добавить фото' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Выбрать файл' })).not.toBeInTheDocument()
+    expect(screen.getByText(`Достигнут лимит в 10 фото`)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Достигнут лимит/ })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('swapping a photo one position right calls reorder with the full permutation, cover first', async () => {

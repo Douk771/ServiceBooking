@@ -19,13 +19,22 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const [reordering, setReordering] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   const { data: photos, isLoading } = useQuery({
     queryKey: ['company-photos', companyId],
     queryFn: () => companyPhotosApi.list(companyId),
   })
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['company-photos', companyId] })
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['company-photos', companyId] })
+    // Review finding — `CompanyPage.tsx` reads `photos`/`coverPhotoUrl` off `['company', slug]`
+    // (§109.3, `CompanyDto`), a DIFFERENT cache entry from this section's own `company-photos`
+    // list. Without this the public company card kept showing the gallery as it was before the
+    // edit until a full page reload. There's no `slug` in scope here, so match by prefix — a plain
+    // `['company']` key matches every `['company', slug]` entry (react-query's default).
+    qc.invalidateQueries({ queryKey: ['company'] })
+  }
 
   const uploadMut = useMutation({
     mutationFn: (file: File) => companyPhotosApi.upload(companyId, file),
@@ -159,15 +168,54 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
           e.target.value = ''
         }}
       />
-      <Button
-        size="sm"
-        variant="secondary"
-        loading={uploadMut.isPending}
-        disabled={atLimit}
-        onClick={() => fileInputRef.current?.click()}
+      {/* Review finding — §109.2 asks for a drop zone, not just the file picker button; a plain
+          click target with drag handlers layered on top, so keyboard/click upload keeps working
+          unchanged. */}
+      <div
+        role="button"
+        tabIndex={atLimit ? -1 : 0}
+        aria-disabled={atLimit}
+        onClick={() => !atLimit && fileInputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (!atLimit && (e.key === 'Enter' || e.key === ' ')) fileInputRef.current?.click()
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          if (!atLimit) setDragOver(true)
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          if (atLimit) return
+          const f = e.dataTransfer.files?.[0]
+          if (f) uploadMut.mutate(f)
+        }}
+        className={`rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors mb-1 ${
+          atLimit
+            ? 'border-line bg-cream-deep opacity-60 cursor-not-allowed'
+            : dragOver
+              ? 'border-gold bg-cream-deep cursor-pointer'
+              : 'border-line hover:border-line-strong cursor-pointer'
+        }`}
       >
-        Добавить фото
-      </Button>
+        <p className="text-sm text-ink-soft mb-2">
+          {atLimit ? `Достигнут лимит в ${MAX_PHOTOS} фото` : 'Перетащите фото сюда или'}
+        </p>
+        {!atLimit && (
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={uploadMut.isPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              fileInputRef.current?.click()
+            }}
+          >
+            Выбрать файл
+          </Button>
+        )}
+      </div>
       <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ, не больше {MAX_PHOTOS} фото</p>
       {error && <p className="text-xs text-danger mt-1">{error}</p>}
     </Card>
