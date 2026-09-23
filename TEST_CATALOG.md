@@ -49,8 +49,8 @@ grep -rn "BK-003" ServiceBooking.Tests/
 | `BLL-` | `BillingTests.cs` | 5 |
 | `TRF-` | `CompanyTransferTests.cs` | 5 |
 | `MAX-` | `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` | 5 (4 + 1) |
-| `PUSH-` | `StaffPushTests.cs` (`StaffPushSubscriptionAndQueueingTests` + `StaffPushDispatchTests`) | 8 |
-| **Итого** | | **528** запусков |
+| `PUSH-` | `StaffPushTests.cs` (`StaffPushSubscriptionAndQueueingTests` + `StaffPushDispatchTests`) | 9 |
+| **Итого** | | **529** запусков |
 
 🆕 **Цикл 6, `excludeBookingId` в `GET /api/bookings/slots` — приёмка QA.** +6 запусков к прогону
 цикла 6 (466 → 472): `BK-068`…`BK-073` в `BookingsFlowSmokeTests.cs`. Новый необязательный параметр
@@ -76,19 +76,22 @@ code-review (`6d762f8` — валидация `IsSystemFree` и сохранен
 `ADM-044…047` на первую пару правок, `LEG-037` на вторую.
 
 🆕 **Цикл 9 (MAX как второй транспорт, режим доставки, Web Push мастеру) — приёмка QA (проходы B и C).**
-+13 запусков (515 → 528, отдельно от переименования `NTF-C005B`, см. ниже): `MAX-001`…`MAX-005` в
++14 запусков (515 → 529, отдельно от переименования `NTF-C005B`, см. ниже): `MAX-001`…`MAX-005` в
 новом `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` (два подключённых
 транспорта → две строки `OutboundNotification` на одно событие, повторный прогон → ноль новых;
 `PriorityChannel` → ровно одна строка на приоритетный транспорт; отписка гасит оба транспорта;
 сломанный MAX-канал не течёт в очередь WhatsApp; нераспознанный `Notifications:Provider` роняет старт
-ДО того, как хост становится здоровым — §104.2/B13) и `PUSH-001`…`PUSH-008` в новом `StaffPushTests.cs`
+ДО того, как хост становится здоровым — §104.2/B13) и `PUSH-001`…`PUSH-009` в новом `StaffPushTests.cs`
 (§105/C12: переподписка того же endpoint другим мастером переносит строку, а не 409; логаут
 идемпотентен; три устройства → три очереди, повтор того же endpoint не плодит четвёртую; мастер не
 шлёт push сам себе; `StaffPushEnabled=false` гасит доставку в момент постановки в очередь, но не рвёт
 подписку; `410 Gone` удаляет подписку в тот же проход БЕЗ повтора; `429`/`5xx` — транзиентная неудача,
-подписка остаётся; вывод мастера из компании после постановки в очередь гасит доставку на отправке).
-Написаны по `SPEC.md`/`ARCHITECTURE_CYCLE9.md`, не по реализации; проверялись против ТЕКУЩЕГО кода
-(после того как code-reviewer нашёл и закрыл 6 блокеров, `7a15c45`…`0dfe31d`).
+подписка остаётся; вывод мастера из компании после постановки в очередь гасит доставку на отправке;
+**`PUSH-009`** — регрессионная защита B1/R4: строка, уже стоящая в очереди для мастера A, чья подписка
+затем переподписывается мастером B на том же общем компьютере ДО отправки, пропускается с причиной
+`PushSubscriptionReassigned`, а не уходит ни A, ни B). Написаны по `SPEC.md`/`ARCHITECTURE_CYCLE9.md`,
+не по реализации; проверялись против ТЕКУЩЕГО кода (после того как code-reviewer нашёл и закрыл 6
+блокеров, `7a15c45`…`0dfe31d`).
 
 ⚠️ **Регрессия найдена и исправлена тем же прогоном (не блокер, тестовый долг, не продуктовый):**
 `NTF-C005B` `OrderSecondChannel_WithOnlyOneNumberPaid…` в `NotificationChannelsTests.cs` был написан

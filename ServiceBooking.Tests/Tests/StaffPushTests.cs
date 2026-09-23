@@ -282,6 +282,45 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
             "a master already removed from the company must never actually be sent to, even for an already-queued row");
     }
 
+    [Fact, TestCase("PUSH-009")]
+    public async Task RealRunner_SubscriptionReassignedToAnotherMasterAfterRowWasQueued_SkipsInsteadOfLeakingToTheNewOwner()
+    {
+        // QA cycle 9 regression guard the developers explicitly asked for after 7a15c45 (B1, R4): two
+        // logins on the SAME shared-salon device — master A subscribes, a row gets queued for A on THAT
+        // subscription row, then master B logs in on the same computer and resubscribes the same
+        // endpoint BEFORE the row is sent. PushSubscriptionWriter.UpsertAsync reassigns the subscription
+        // row's UserId to B; the queued row still says UserId=A. The dispatcher must never fire this row
+        // at all (neither to A — the endpoint is now B's browser session — nor, worse, appear to reach
+        // B with A's queued client-name payload): it must Skip with PushSubscriptionReassigned.
+        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var (subscription, row) = await SeedPendingRowAsync(factory, db);
+
+        // Master B (a distinct account) re-registers the SAME endpoint via the real upsert path — the
+        // same one a shared-computer resubscribe goes through — reassigning subscription.UserId away
+        // from row.UserId (master A) without touching the already-queued row.
+        var masterBUserId = $"qa9-push-b-{Guid.NewGuid():N}";
+        db.Users.Add(new AppUser
+        {
+            Id = masterBUserId, UserName = $"{masterBUserId}@test.local", Email = $"{masterBUserId}@test.local",
+            PhoneNumber = "79990001000", FirstName = "QA", LastName = "MasterB",
+        });
+        await db.SaveChangesAsync();
+        var trackedSubscription = await db.PushSubscriptions.FirstAsync(s => s.Id == subscription.Id);
+        trackedSubscription.UserId = masterBUserId;
+        await db.SaveChangesAsync();
+
+        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, 20);
+
+        await db.Entry(row).ReloadAsync();
+        row.Status.Should().Be(NotificationStatus.Skipped);
+        row.Reason.Should().Be(NotificationReason.PushSubscriptionReassigned);
+        factory.Sender.Calls.Should().NotContain(c => c.SubscriptionId == subscription.Id,
+            "a stale row queued for the PREVIOUS owner must never fire against a subscription that now belongs to someone else");
+    }
+
     // ── Seeding helpers ──────────────────────────────────────────────────────────────────────────
 
     private static async Task<(PushSubscription Subscription, StaffPushNotification Row)> SeedPendingRowAsync(
