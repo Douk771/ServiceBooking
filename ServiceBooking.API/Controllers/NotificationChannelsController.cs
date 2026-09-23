@@ -130,10 +130,26 @@ public class NotificationChannelsController(
         // the request on it being non-null blocked every request the moment nobody had bothered to keep
         // a now-decorative setting non-null, with no way for an owner to tell why.
 
+        // ARCHITECTURE_CYCLE9.md §104.2/§114.2 (US-119): absent → WhatsApp, computed here (not only at
+        // BuildRow time below) so the N8 duplicate-transport check right after has a concrete value to
+        // compare against.
+        var requestedTransport = dto.Transport ?? NotificationTransport.WhatsApp;
+
         // accountId is guaranteed here — GetOffer/AllowNotificationChannel above already required a
         // usable plan, and a usable plan requires an AccountSubscription, which requires an account
         // (BillingAccountProvisioner.EnsureAccountAsync is idempotent if one already exists).
         var ownerAccountId = accountId ?? await billingAccountProvisioner.EnsureAccountAsync(userId);
+
+        // §114.2 (N8): "у аккаунта уже есть канал этого транспорта в живом состоянии" → 409. "Живое"
+        // means State != Replaced — the SAME definition LoadFundingAsync already uses to pick the
+        // account's working channel per transport (this endpoint's own doc comment on that method).
+        // Without this check an owner could request unlimited pending/NotConnected channels of the same
+        // transport for one account.
+        var hasLiveChannelOfTransport = await db.NotificationChannels.AsNoTracking().AnyAsync(c =>
+            c.BillingAccountId == ownerAccountId && c.Transport == requestedTransport && c.State != ChannelState.Replaced);
+        if (hasLiveChannelOfTransport)
+            return Conflict($"У аккаунта уже есть канал транспорта «{ChannelPresentation.TransportDisplayName(requestedTransport)}» в живом состоянии");
+
         var channel = new NotificationChannel
         {
             Id = Guid.NewGuid(),
@@ -143,7 +159,7 @@ public class NotificationChannelsController(
             // that never sends this field keeps requesting exactly what it always requested. An
             // unparseable string in the JSON body never reaches here at all — [ApiController]'s own model
             // binding already 400s a value that doesn't match NotificationTransport before this action runs.
-            Transport = dto.Transport ?? NotificationTransport.WhatsApp,
+            Transport = requestedTransport,
             State = ChannelState.NotConnected,
             RequestedAtUtc = DateTime.UtcNow,
             LegalEntityForm = dto.LegalEntityForm,
