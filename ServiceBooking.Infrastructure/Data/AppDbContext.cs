@@ -84,6 +84,18 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(c => new { c.ShowInPublicListing, c.CityId, c.Name })
                 .HasDatabaseName("IX_Companies_PublicListing")
                 .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
+            // Cycle 9 code review (US-115 follow-up): IX_Companies_PublicListing's leading CityId column
+            // only helps the ?cityId=... branch of GET /api/companies/public. With no cityId (the
+            // default "все города" view — also what the home page opens with first, ARCHITECTURE_CYCLE9.md
+            // §103.5) that index cannot serve the ORDER BY Name at all: Postgres falls back to a full
+            // scan + sort of every publicly-listed company. Measured live against a throwaway Postgres 16
+            // container seeded with 20,000 companies: ~8.3ms (Seq Scan + Sort) without this index vs
+            // ~0.3ms (Index Scan, no sort step) with it — not a marginal difference at this table's
+            // realistic future size. A second, narrower partial index — same filter, but ordered by
+            // (ShowInPublicListing, Name, Id) with no CityId — serves exactly that default branch instead.
+            e.HasIndex(c => new { c.ShowInPublicListing, c.Name, c.Id })
+                .HasDatabaseName("IX_Companies_PublicListing_Default")
+                .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
         });
 
         builder.Entity<Service>(e =>
