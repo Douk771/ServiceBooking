@@ -58,6 +58,33 @@ public partial class LegalDocumentProvider
         }
     }
 
+    /// <summary>The one Cyrillic-uppercase placeholder pattern for the whole repository
+    /// (ARCHITECTURE_CYCLE11.md §106.3) — <c>ServiceBooking.LegalKit</c>'s placeholder scanner is
+    /// required to use this exact pattern rather than declaring its own, so the product's notion of "an
+    /// unresolved placeholder" and the CLI's can never quietly diverge.</summary>
+    public static string PlaceholderPattern => PlaceholderRegex().ToString();
+
+    /// <summary>
+    /// One load attempt that throws on any failure instead of silently keeping the previous snapshot
+    /// (ARCHITECTURE_CYCLE11.md §104.2). <see cref="TryReload"/>/<see cref="EnsureFresh"/> are the
+    /// product's read path and are NOT changed by this — they must keep serving the last good text no
+    /// matter what's on disk right now. This method exists for callers that need the opposite: a tool
+    /// (ServiceBooking.LegalKit) or a startup fail-fast check that wants the real exception, not a
+    /// swallowed log line.
+    /// </summary>
+    public LegalSnapshot LoadStrict()
+    {
+        var manifestPath = Path.Combine(_root, "legal.json");
+        if (!File.Exists(manifestPath))
+            throw new InvalidOperationException($"Legal documents manifest not found at {manifestPath}.");
+
+        var json = File.ReadAllText(manifestPath);
+        var manifest = JsonSerializer.Deserialize<ManifestFile>(json, JsonOptions)
+            ?? throw new InvalidOperationException("legal.json parsed to null.");
+
+        return LoadSnapshot(manifest.Documents ?? [], manifest.UiTexts ?? []);
+    }
+
     /// <summary>
     /// Forces an immediate load attempt outside the ReloadSeconds cache window, for Program.cs's
     /// startup fail-fast (ARCHITECTURE.md §4.4/§13) — without this, the very first request would pay
