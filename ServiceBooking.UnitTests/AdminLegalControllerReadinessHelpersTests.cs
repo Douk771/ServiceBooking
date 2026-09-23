@@ -109,7 +109,6 @@ public class AdminLegalControllerReadinessHelpersTests
     [Theory]
     [InlineData("НАИМЕНОВАНИЕ_ОПЕРАТОРА", "ЕГРЮЛ")]
     [InlineData("ИНН_ОПЕРАТОРА", "ЕГРЮЛ")]
-    [InlineData("ОГРН_ОПЕРАТОРА", "ЕГРЮЛ")]
     [InlineData("ЮРИДИЧЕСКИЙ_АДРЕС", "ЕГРЮЛ")]
     [InlineData("НОМЕР_УВЕДОМЛЕНИЯ_РКН", "после уведомления РКН")]
     [InlineData("ДАТА_УВЕДОМЛЕНИЯ_РКН", "после уведомления РКН")]

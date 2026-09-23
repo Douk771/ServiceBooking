@@ -15,13 +15,13 @@ public class PlaceholderValuesTests
     }
 
     [Fact]
-    public void Load_AllThirteenKeysPresentAndNonEmpty_Succeeds()
+    public void Load_AllTwelveKeysPresentAndNonEmpty_Succeeds()
     {
         var path = WriteTempFile(LegalKitFixture.ValidValuesJson());
         try
         {
             var values = PlaceholderValues.Load(path);
-            values.Values.Should().HaveCount(13);
+            values.Values.Should().HaveCount(12);
             values.Values["НАИМЕНОВАНИЕ_ОПЕРАТОРА"].Should().Be("ООО Тест");
         }
         finally { File.Delete(path); }
@@ -115,20 +115,6 @@ public class PlaceholderValuesTests
             var act = () => PlaceholderValues.Load(path);
             act.Should().Throw<PlaceholderValuesException>()
                 .Which.Problems.Should().Contain(p => p.Contains("ИНН_ОПЕРАТОРА"));
-        }
-        finally { File.Delete(path); }
-    }
-
-    [Fact]
-    public void Load_OgrnWrongLength_IsRejected()
-    {
-        var json = LegalKitFixture.ValidValuesJson().Replace("\"1234567890123\"", "\"12345\"");
-        var path = WriteTempFile(json);
-        try
-        {
-            var act = () => PlaceholderValues.Load(path);
-            act.Should().Throw<PlaceholderValuesException>()
-                .Which.Problems.Should().Contain(p => p.Contains("ОГРН_ОПЕРАТОРА"));
         }
         finally { File.Delete(path); }
     }
