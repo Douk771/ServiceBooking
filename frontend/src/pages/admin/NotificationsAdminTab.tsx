@@ -181,13 +181,22 @@ function PlatformSettingsCard() {
   }, [data])
 
   const mut = useMutation({
-    mutationFn: (nextPricingPublicEnabled: boolean) =>
-      adminNotificationsApi.updateSettings({
-        channelPricePerMonth: price.trim() === '' ? null : Number(price),
-        channelIdleDays: Number(idleDays),
+    mutationFn: (nextPricingPublicEnabled: boolean) => {
+      const parsedPrice = price.trim() === '' ? null : Number(price)
+      const parsedIdleDays = Number(idleDays)
+      if (parsedPrice !== null && Number.isNaN(parsedPrice)) {
+        throw new Error('Некорректная цена опции «канал» — исправьте поле перед сохранением.')
+      }
+      if (Number.isNaN(parsedIdleDays)) {
+        throw new Error('Некорректный срок простоя — исправьте поле перед сохранением.')
+      }
+      return adminNotificationsApi.updateSettings({
+        channelPricePerMonth: parsedPrice,
+        channelIdleDays: parsedIdleDays,
         pricingPublicEnabled: nextPricingPublicEnabled,
         pricingPublicBlockedReason: data?.pricingPublicBlockedReason ?? null,
-      }),
+      })
+    },
     onSuccess: (res) => {
       qc.setQueryData(['admin-platform-settings'], res)
       qc.invalidateQueries({ queryKey: ['notification-channel-offer'] })
