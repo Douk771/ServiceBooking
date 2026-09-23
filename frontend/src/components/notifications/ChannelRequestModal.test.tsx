@@ -8,13 +8,36 @@ import type { LegalManifest } from '../../types'
 
 const request = vi.fn()
 const getManifest = vi.fn()
+const offer = vi.fn()
 
 vi.mock('../../api/notificationChannels', () => ({
-  notificationChannelsApi: { request: (...args: unknown[]) => request(...args) },
+  notificationChannelsApi: {
+    request: (...args: unknown[]) => request(...args),
+    offer: (...args: unknown[]) => offer(...args),
+  },
 }))
 vi.mock('../../api/legal', () => ({
   legalApi: { getManifest: (...args: unknown[]) => getManifest(...args) },
 }))
+
+function offerResponse(overrides: Partial<import('../../types').ChannelOffer> = {}): import('../../types').ChannelOffer {
+  return {
+    pricePerMonth: 990,
+    allowedByPlan: true,
+    riskText: 'Текст о рисках',
+    riskVersion: '2026-09-21-draft',
+    transports: [
+      { transport: 'WhatsApp', displayName: 'WhatsApp', available: true, connectionNotice: null },
+      {
+        transport: 'Max',
+        displayName: 'MAX',
+        available: true,
+        connectionNotice: 'Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере.',
+      },
+    ],
+    ...overrides,
+  }
+}
 
 function manifest(): LegalManifest {
   return {
@@ -48,7 +71,9 @@ function renderModal() {
 beforeEach(() => {
   request.mockReset()
   getManifest.mockReset()
+  offer.mockReset()
   getManifest.mockResolvedValue(manifest())
+  offer.mockResolvedValue(offerResponse())
 })
 
 describe('ChannelRequestModal', () => {
@@ -86,7 +111,42 @@ describe('ChannelRequestModal', () => {
         legalEntityForm: 'Company',
         inn: '7707083893',
         offerAccepted: { version: '2026-09-21' },
+        transport: 'WhatsApp',
       }),
     )
+  })
+
+  // §104.9/§114.2 (US-119) — the MAX connection notice must be visible BEFORE the request is sent, and
+  // picking MAX must actually change the payload, not silently stay WhatsApp.
+  it('shows the MAX connection notice before request and sends the picked transport', async () => {
+    const user = userEvent.setup()
+    request.mockResolvedValueOnce({ id: 'ch1' })
+    renderModal()
+
+    const transportSelect = await screen.findByLabelText('Мессенджер')
+    expect(screen.queryByText(/отключить пароль входа/i)).not.toBeInTheDocument()
+
+    await user.selectOptions(transportSelect, 'Max')
+    expect(screen.getByText(/отключить пароль входа в мессенджере/i)).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('ИНН'), '7707083893')
+    await user.click(screen.getByRole('checkbox'))
+    await user.click(screen.getByRole('button', { name: 'Подать заявку' }))
+
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        expect.objectContaining({ transport: 'Max' }),
+      ),
+    )
+  })
+
+  it('hides the transport picker entirely when the offer only lists one transport', async () => {
+    offer.mockResolvedValue(
+      offerResponse({ transports: [{ transport: 'WhatsApp', displayName: 'WhatsApp', available: true, connectionNotice: null }] }),
+    )
+    renderModal()
+
+    await screen.findByLabelText('ИНН')
+    expect(screen.queryByLabelText('Мессенджер')).not.toBeInTheDocument()
   })
 })

@@ -6,15 +6,21 @@ import { legalApi } from '../../api/legal'
 import { Modal } from '../ui/Modal'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
+import { Icon } from '../ui/Icon'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import { isPlausibleInn } from '../../utils/inn'
-import type { LegalEntityForm } from '../../types'
+import type { LegalEntityForm, NotificationTransport, TransportOffer } from '../../types'
 
 const FORM_LABELS: Record<LegalEntityForm, string> = {
   Ip: 'Индивидуальный предприниматель',
   Company: 'Юридическое лицо',
   SelfEmployed: 'Самозанятый (плательщик НПД)',
 }
+
+// Fallback shown only until GET /notification-channels/offer resolves (it's normally already cached —
+// this modal only opens from a screen that already fetched the offer). Never invented per-transport
+// content beyond the label: connectionNotice is server text (§104.9) and stays null until it arrives.
+const FALLBACK_TRANSPORTS: TransportOffer[] = [{ transport: 'WhatsApp', displayName: 'WhatsApp', available: true, connectionNotice: null }]
 
 /**
  * API_CONTRACT_CYCLE5.md §50.1 (BREAKING № 7), US-82. The channel offer (D9) lives as an appendix to
@@ -26,14 +32,26 @@ export function ChannelRequestModal({ onClose }: { onClose: () => void }) {
   const [legalEntityForm, setLegalEntityForm] = useState<LegalEntityForm>('Ip')
   const [inn, setInn] = useState('')
   const [offerAccepted, setOfferAccepted] = useState(false)
+  const [transport, setTransport] = useState<NotificationTransport>('WhatsApp')
 
   const { data: manifest } = useQuery({ queryKey: ['legal-documents'], queryFn: legalApi.getManifest })
   const ownerTerms = manifest?.documents.find((d) => d.type === 'TermsOwner')
 
+  // Same query key as OfferCard/ChannelCard (NotificationsSection) — this modal only ever opens from a
+  // screen that already loaded the offer, so this is a cache hit, not a second network call.
+  const { data: offer } = useQuery({ queryKey: ['notification-channel-offer'], queryFn: notificationChannelsApi.offer })
+  const transports = offer?.transports?.length ? offer.transports : FALLBACK_TRANSPORTS
+  const selectedOffer = transports.find((t) => t.transport === transport) ?? transports[0]
+
   const mut = useMutation({
     mutationFn: () => {
       if (!ownerTerms) throw new Error('TermsOwner version not loaded')
-      return notificationChannelsApi.request({ legalEntityForm, inn, offerAccepted: { version: ownerTerms.version } })
+      return notificationChannelsApi.request({
+        legalEntityForm,
+        inn,
+        offerAccepted: { version: ownerTerms.version },
+        transport,
+      })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notification-channels'] })
@@ -50,6 +68,34 @@ export function ChannelRequestModal({ onClose }: { onClose: () => void }) {
           Платные функции доступны только тем, кто ведёт предпринимательскую деятельность (US-82). Бесплатная часть
           сервиса статуса не требует.
         </p>
+
+        {transports.length > 1 && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="channel-transport" className="text-[13px] font-medium text-[#4A4038]">
+              Мессенджер
+            </label>
+            <select
+              id="channel-transport"
+              value={transport}
+              onChange={(e) => setTransport(e.target.value as NotificationTransport)}
+              className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold bg-white text-ink"
+            >
+              {transports.map((t) => (
+                <option key={t.transport} value={t.transport} disabled={!t.available}>
+                  {t.displayName}
+                  {!t.available ? ' (сейчас недоступен)' : ''}
+                </option>
+              ))}
+            </select>
+            {/* §104.9 — server-composed text, printed verbatim, shown BEFORE the request (not after). */}
+            {selectedOffer?.connectionNotice && (
+              <p className="text-xs text-ink-soft bg-cream-deep rounded-xl px-3.5 py-2.5 flex items-start gap-2">
+                <Icon name="alert-circle" size={14} strokeWidth={1.8} className="shrink-0 mt-0.5 text-muted" />
+                <span>{selectedOffer.connectionNotice}</span>
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="channel-legal-form" className="text-[13px] font-medium text-[#4A4038]">
@@ -102,7 +148,7 @@ export function ChannelRequestModal({ onClose }: { onClose: () => void }) {
           </Button>
           <Button
             className="flex-1"
-            disabled={!innValid || !offerAccepted || !ownerTerms}
+            disabled={!innValid || !offerAccepted || !ownerTerms || selectedOffer?.available === false}
             loading={mut.isPending}
             onClick={() => mut.mutate()}
           >
