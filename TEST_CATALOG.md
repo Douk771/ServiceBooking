@@ -44,11 +44,13 @@ grep -rn "BK-003" ServiceBooking.Tests/
 | `SEC-` | `RateLimitingTests.cs` + `IdentityRoleSyncTests.cs` | 10 (6 + 4) |
 | `OPS-` | `HealthTests.cs` | 4 |
 | `PAG-` | `PaginationTests.cs` | 14 (9 `[Fact]` + `[Theory]` PAG-007 × 5 `InlineData`) |
-| `NTF-` | `NotificationDispatchTests.cs` + `NotificationChannelsTests.cs` + `NotificationQueueingTests.cs` + `NotificationWebhookUnsubscribeTests.cs` + `NotificationDispatchExtraTests.cs` + `NotificationCitiesTimeZoneTests.cs` | 44 (2 + 19 + 5 + 9 + 3 + 6) |
+| `NTF-` | `NotificationDispatchTests.cs` + `NotificationChannelsTests.cs` + `NotificationQueueingTests.cs` + `NotificationWebhookUnsubscribeTests.cs` + `NotificationDispatchExtraTests.cs` + `NotificationCitiesTimeZoneTests.cs` | 45 (2 + 20 + 5 + 9 + 3 + 6) |
 | `PRC-` | `PricingTests.cs` | 33 |
 | `BLL-` | `BillingTests.cs` | 5 |
 | `TRF-` | `CompanyTransferTests.cs` | 5 |
-| **Итого** | | **514** запуска |
+| `MAX-` | `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` | 5 (4 + 1) |
+| `PUSH-` | `StaffPushTests.cs` (`StaffPushSubscriptionAndQueueingTests` + `StaffPushDispatchTests`) | 8 |
+| **Итого** | | **528** запусков |
 
 🆕 **Цикл 6, `excludeBookingId` в `GET /api/bookings/slots` — приёмка QA.** +6 запусков к прогону
 цикла 6 (466 → 472): `BK-068`…`BK-073` в `BookingsFlowSmokeTests.cs`. Новый необязательный параметр
@@ -72,6 +74,33 @@ grep -rn "BK-003" ServiceBooking.Tests/
 code-review (`6d762f8` — валидация `IsSystemFree` и сохранение полей цикла 7 на `PUT /api/admin/plans`;
 `3945256` — allow-лист `GET /api/pricing` в `LegalConsentFilter`) — добавил ещё +5 запусков (482 → 487):
 `ADM-044…047` на первую пару правок, `LEG-037` на вторую.
+
+🆕 **Цикл 9 (MAX как второй транспорт, режим доставки, Web Push мастеру) — приёмка QA (проходы B и C).**
++13 запусков (515 → 528, отдельно от переименования `NTF-C005B`, см. ниже): `MAX-001`…`MAX-005` в
+новом `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` (два подключённых
+транспорта → две строки `OutboundNotification` на одно событие, повторный прогон → ноль новых;
+`PriorityChannel` → ровно одна строка на приоритетный транспорт; отписка гасит оба транспорта;
+сломанный MAX-канал не течёт в очередь WhatsApp; нераспознанный `Notifications:Provider` роняет старт
+ДО того, как хост становится здоровым — §104.2/B13) и `PUSH-001`…`PUSH-008` в новом `StaffPushTests.cs`
+(§105/C12: переподписка того же endpoint другим мастером переносит строку, а не 409; логаут
+идемпотентен; три устройства → три очереди, повтор того же endpoint не плодит четвёртую; мастер не
+шлёт push сам себе; `StaffPushEnabled=false` гасит доставку в момент постановки в очередь, но не рвёт
+подписку; `410 Gone` удаляет подписку в тот же проход БЕЗ повтора; `429`/`5xx` — транзиентная неудача,
+подписка остаётся; вывод мастера из компании после постановки в очередь гасит доставку на отправке).
+Написаны по `SPEC.md`/`ARCHITECTURE_CYCLE9.md`, не по реализации; проверялись против ТЕКУЩЕГО кода
+(после того как code-reviewer нашёл и закрыл 6 блокеров, `7a15c45`…`0dfe31d`).
+
+⚠️ **Регрессия найдена и исправлена тем же прогоном (не блокер, тестовый долг, не продуктовый):**
+`NTF-C005B` `OrderSecondChannel_WithOnlyOneNumberPaid…` в `NotificationChannelsTests.cs` был написан
+ДО `af2c38b` («enforce 409 on duplicate live channel per transport», N8/§114.2) и заказывал ВТОРОЙ
+канал того же транспорта (WhatsApp) через `POST /api/notification-channels` — ровно то, что `af2c38b`
+теперь корректно отвечает `409` на. Тест обновлён: второй канал для проверки ранжирования финансирования
+(`ChannelFunding.Rank`) заводится через МАКС-транспорт (по БД напрямую, как и остальные MAX-тесты этого
+цикла — два live-канала одного транспорта на аккаунте больше физически недостижимы через API), сам
+сценарий финансирования не изменился. Плюс добавлен отдельный `NTF-N8-001`
+`Create_SecondLiveChannelOfSameTransport_Returns409_AllowedAgainAfterFirstIsReplaced` — та самая пара
+сценариев, которую architect явно назвал для этой находки: 409 пока первый `NotConnected`, снова 200
+после того как первый становится `Replaced`.
 
 **Этот (третий) прогон** — после `5dcaf3f` ("align plans/platform-settings/legacy endpoints with
 cycle-7 contract"), которая привела `GET/POST/PUT /admin/plans` к контрактной форме `AdminPlanDto`

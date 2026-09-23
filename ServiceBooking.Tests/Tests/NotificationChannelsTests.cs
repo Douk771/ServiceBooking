@@ -136,6 +136,14 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         // a second number while only one is paid must leave the FIRST one untouched (still Funded) and
         // mark the new, second one NotPaid — never silently spread the one paid slot across both, and
         // never let the newcomer bump the existing one out of its slot.
+        //
+        // QA cycle 9 (N8, §114.2): the SECOND channel here is seeded directly in the database rather
+        // than through POST /api/notification-channels — after af2c38b, a second live channel of the
+        // SAME transport on one account now 409s at that endpoint (see
+        // Create_SecondLiveChannelOfSameTransport_Returns409_AllowedAgainAfterFirstIsReplaced below for
+        // that contract on its own). §104.4 funding ("ChannelFunding.Rank ranks ALL live channels of the
+        // account, transport-blind") still applies across transports, so a MAX channel here exercises
+        // the exact same ranking code path the original WhatsApp/WhatsApp version of this test did.
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         await GiveNotificationCapablePlanAsync(owner.UserId);
         var owned = AuthedClient(owner.Token);
@@ -143,24 +151,65 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         var first = (await (await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest()))
             .Content.ReadJsonAsync<ChannelDto>())!;
 
+        Guid secondId;
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var billingAccountId = await db.NotificationChannels.Where(c => c.Id == first.Id)
                 .Select(c => c.BillingAccountId!.Value).FirstAsync();
             await NotificationTestBase.EnsureWhatsAppPaidAsync(db, billingAccountId, quantity: 1);
+
+            var second = new NotificationChannel
+            {
+                Id = Guid.NewGuid(), OwnerUserId = owner.UserId, BillingAccountId = billingAccountId,
+                State = ChannelState.NotConnected, Transport = NotificationTransport.Max,
+                RequestedAtUtc = DateTime.UtcNow.AddSeconds(1), // strictly after `first` (oldest-first ranking)
+            };
+            db.NotificationChannels.Add(second);
+            secondId = second.Id;
             await db.SaveChangesAsync();
         }
-
-        var second = (await (await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest()))
-            .Content.ReadJsonAsync<ChannelDto>())!;
 
         var list = (await (await owned.GetAsync("/api/notification-channels"))
             .Content.ReadJsonAsync<ChannelListDto>())!;
         list.Channels.Should().ContainSingle(c => c.Id == first.Id).Which.PaymentState
             .Should().Be(ChannelPaymentStatus.Paid, "the first, already-funded number must keep its slot");
-        list.Channels.Should().ContainSingle(c => c.Id == second.Id).Which.PaymentState
+        list.Channels.Should().ContainSingle(c => c.Id == secondId).Which.PaymentState
             .Should().Be(ChannelPaymentStatus.NotPaid, "only 1 number is paid for — the 2nd registered number has nothing left to fund it");
+    }
+
+    [Fact, TestCase("NTF-N8-001")]
+    public async Task Create_SecondLiveChannelOfSameTransport_Returns409_AllowedAgainAfterFirstIsReplaced()
+    {
+        // QA cycle 9 (N8, §114.2, af2c38b) — the exact scenario the fix's own test description names:
+        // "второй запрос канала того же транспорта, пока первый NotConnected → 409; после того как
+        // первый Replaced → 200".
+        var (owner, _) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        var owned = AuthedClient(owner.Token);
+
+        var firstResponse = await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var first = (await firstResponse.Content.ReadJsonAsync<ChannelDto>())!;
+
+        var duplicateResponse = await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
+        duplicateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            "the account already has a live (non-Replaced) channel of this transport");
+
+        // Move the first channel to State=Replaced directly (bypassing the /replace endpoint's own
+        // plumbing — this test cares only about the dedup check reading State, not about what put it
+        // there) and retry the same request.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var tracked = await db.NotificationChannels.FirstAsync(c => c.Id == first.Id);
+            tracked.State = ChannelState.Replaced;
+            await db.SaveChangesAsync();
+        }
+
+        var retryResponse = await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
+        retryResponse.StatusCode.Should().Be(HttpStatusCode.Created,
+            "once the old channel is Replaced (no longer 'live'), a new one of the same transport must be orderable again");
     }
 
     // ── Accept-risk / connect gating ─────────────────────────────────────────────────────────────

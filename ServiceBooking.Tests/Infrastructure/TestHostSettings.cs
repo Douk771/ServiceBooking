@@ -23,6 +23,9 @@ public static class TestHostSettings
             ["uploads"] = ("+70000000004", "superadmin-uploads@test.local"),
             ["dispatch"] = ("+70000000005", "superadmin-dispatch@test.local"),
             ["legal"] = ("+70000099999", "superadmin-legal-isolated@test.local"),
+            // QA cycle 9 (ARCHITECTURE_CYCLE9.md §104.2, B13) — a host that is deliberately never meant
+            // to finish starting (bad Notifications:Provider value), see NotificationTransportStartupTests.
+            ["startup-qa9"] = ("+70000000006", "superadmin-startup-qa9@test.local"),
         };
 
     /// <param name="builder">the host being configured</param>
