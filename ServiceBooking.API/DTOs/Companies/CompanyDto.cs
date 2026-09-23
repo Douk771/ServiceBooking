@@ -78,7 +78,16 @@ public record CompanyDto(
     int UtcOffsetMinutes,
     // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): always the already-normalized value (never 0/null) —
     // the calendar and the /embed/:slug widget read the horizon from here for free.
-    int BookingHorizonDays
+    int BookingHorizonDays,
+    // ARCHITECTURE_CYCLE10.md §109.3/API_CONTRACT_CYCLE10.md §129 — additive, appended at the end with
+    // defaults so existing positional CompanyDto(...) call sites keep compiling (§115 convention).
+    // Null when there is no cover photo (CompanyPhoto with Position == 0 doesn't exist for this company).
+    string? CoverPhotoUrl = null,
+    string? CoverThumbnailUrl = null,
+    // null = "this endpoint doesn't return the list" (catalog/list endpoints — batched cover-only lookup
+    // is cheap, a full photo list per company in a 100-company page is not); [] = "no photos yet".
+    // Filled ONLY on GET /api/companies/{slug} (the public page), per §109.3's zero-extra-requests rule.
+    List<CompanyPhotoDto>? Photos = null
 );
 
 // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance of TermsOwner (D3) that gates company creation. Checked

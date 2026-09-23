@@ -30,6 +30,9 @@ public class CompaniesController(
         var plans = await subscriptionResolver.GetEffectivePlansAsync(companies.Select(c => c.Id));
         var ratings = await GetReviewAggregatesAsync(companies.Select(c => c.Id));
         var cities = await GetCitiesAsync(companies.Select(c => c.CityId));
+        // §109.3: catalog gets covers only (one batched query for the whole page), never the full
+        // `photos` list — a hundred companies × up to 10 photos each is a thousand rows nobody sees here.
+        var covers = await GetCoversAsync(companies.Select(c => c.Id));
 
         // The public directory additionally requires both the owner's own opt-in (ShowInPublicListing)
         // and the tariff's AllowPublicListing — unlike GetMy/GetMemberOf/GetBySlug, which show the
@@ -41,7 +44,8 @@ public class CompaniesController(
         return Ok(companies
             .Where(c => c.ShowInPublicListing && plans[c.Id].AllowPublicListing)
             .Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
-                c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null)));
+                c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
+                covers.GetValueOrDefault(c.Id))));
     }
 
     [HttpGet("my")]
@@ -57,12 +61,14 @@ public class CompaniesController(
         var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
         var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
         var (employeeCounts, usageByAccount) = await GetUsageAsync(memberships.Select(cm => cm.Company));
+        var covers = await GetCoversAsync(memberships.Select(cm => cm.CompanyId));
 
         return Ok(memberships.Select(cm =>
             MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount,
                 cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
                 employeeCounts.GetValueOrDefault(cm.CompanyId),
-                cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null)));
+                cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null,
+                covers.GetValueOrDefault(cm.CompanyId))));
     }
 
     // Returns all companies where the current user is a member (any role)
@@ -79,12 +85,14 @@ public class CompaniesController(
         var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
         var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
         var (employeeCounts, usageByAccount) = await GetUsageAsync(memberships.Select(cm => cm.Company));
+        var covers = await GetCoversAsync(memberships.Select(cm => cm.CompanyId));
 
         return Ok(memberships.Select(cm =>
             MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount,
                 cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
                 employeeCounts.GetValueOrDefault(cm.CompanyId),
-                cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null)));
+                cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null,
+                covers.GetValueOrDefault(cm.CompanyId))));
     }
 
     [HttpGet("{slug}")]
@@ -100,8 +108,12 @@ public class CompaniesController(
         // caller paged through reviews — ARCHITECTURE.md §11.2/§21.5 pagination note).
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(c.Id);
         var city = c.CityId.HasValue ? await db.Cities.FindAsync(c.CityId.Value) : null;
+        // §109.3: the public page is the ONE place `photos` is filled — gallery with zero extra
+        // requests. The cover is just photos[0] here, so it's derived rather than queried a second time.
+        var photos = await GetPhotosOrderedAsync(c.Id);
+        var cover = photos.Count > 0 ? (photos[0].Url, photos[0].ThumbnailUrl) : ((string, string)?)null;
         // Reachable anonymously (no [Authorize]) — same §46.2 treatment as GetAll: no usage computed.
-        return Ok(MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null));
+        return Ok(MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null, cover, photos));
     }
 
     // Public: list masters for a company, optionally filtered by serviceId
@@ -447,9 +459,11 @@ public class CompaniesController(
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
         var (updateEmployeeCounts, updateUsageByAccount) = await GetUsageAsync([company]);
+        var updateCovers = await GetCoversAsync([company.Id]);
         return Ok(MapToDto(company, plan, averageRating, reviewCount, city,
             updateEmployeeCounts.GetValueOrDefault(company.Id),
-            company.BillingAccountId.HasValue ? updateUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null));
+            company.BillingAccountId.HasValue ? updateUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
+            updateCovers.GetValueOrDefault(company.Id)));
     }
 
     // Uploads/replaces the company's logo. US-25 p.6: moved onto the same ImageUploadService every other
@@ -493,9 +507,11 @@ public class CompaniesController(
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
         var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
         var (logoEmployeeCounts, logoUsageByAccount) = await GetUsageAsync([company]);
+        var logoCovers = await GetCoversAsync([company.Id]);
         return Ok(MapToDto(company, plan, averageRating, reviewCount, city,
             logoEmployeeCounts.GetValueOrDefault(company.Id),
-            company.BillingAccountId.HasValue ? logoUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null));
+            company.BillingAccountId.HasValue ? logoUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
+            logoCovers.GetValueOrDefault(company.Id)));
     }
 
     // US-24 p.4 / US-19 p.7: the only place a company's client-photo storage usage is exposed. NOT
@@ -826,7 +842,13 @@ public class CompaniesController(
     // (AccountSeatsLimit is a real null when the plan itself is unlimited, WITH a non-null usage).
     private static CompanyDto MapToDto(
         Company c, EffectivePlan plan, double? averageRating, int reviewCount, City? city,
-        int employeeCount, AccountUsage? usage)
+        int employeeCount, AccountUsage? usage,
+        // ARCHITECTURE_CYCLE10.md §109.3/API_CONTRACT_CYCLE10.md §129: cover is a single (Url,
+        // ThumbnailUrl) pair resolved by the caller (batched via GetCoversAsync for list endpoints, or a
+        // single lookup for the others) — null when the company has no photos yet. `photos` stays null
+        // everywhere except GET /api/companies/{slug} (GetBySlug), which is the only caller that passes
+        // the full ordered list.
+        (string Url, string ThumbnailUrl)? cover = null, List<CompanyPhotoDto>? photos = null)
     {
         TimeZoneOffset.TryGetUtcOffsetMinutes(c.TimeZoneId, DateTime.UtcNow, out var utcOffsetMinutes);
         var accountSeatsUsed = usage?.SeatsUsed;
@@ -855,7 +877,34 @@ public class CompaniesController(
             averageRating,
             reviewCount,
             c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes,
-            BookingHorizon.Normalize(c.BookingHorizonDays));
+            BookingHorizon.Normalize(c.BookingHorizonDays),
+            cover?.Url, cover?.ThumbnailUrl, photos);
+    }
+
+    // ARCHITECTURE_CYCLE10.md §109.3: one batched query for the whole page's cover photos (Position ==
+    // 0), never one query per company — same pattern as GetCitiesAsync/GetReviewAggregatesAsync above.
+    // A company with no CompanyPhoto rows simply has no entry in the result.
+    private async Task<Dictionary<Guid, (string Url, string ThumbnailUrl)>> GetCoversAsync(IEnumerable<Guid> companyIds)
+    {
+        var ids = companyIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, (string, string)>();
+
+        var covers = await db.CompanyPhotos
+            .Where(p => ids.Contains(p.CompanyId) && p.Position == 0)
+            .ToListAsync();
+        return covers.ToDictionary(p => p.CompanyId, p => (p.Url, p.ThumbnailUrl));
+    }
+
+    // The full ordered gallery for exactly one company — only GET /api/companies/{slug} needs this
+    // (§109.3: the public page gets its gallery with zero extra requests; every other endpoint gets
+    // `photos: null` and, at most, the batched cover above).
+    private async Task<List<CompanyPhotoDto>> GetPhotosOrderedAsync(Guid companyId)
+    {
+        var photos = await db.CompanyPhotos
+            .Where(p => p.CompanyId == companyId)
+            .OrderBy(p => p.Position).ThenBy(p => p.CreatedAtUtc).ThenBy(p => p.Id)
+            .ToListAsync();
+        return photos.Select(CompanyPhotoDto.From).ToList();
     }
 
     // ARCHITECTURE_CYCLE7.md §46.1: batched account-usage lookup for the two AUTHENTICATED list/detail
