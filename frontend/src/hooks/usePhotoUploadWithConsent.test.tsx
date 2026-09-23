@@ -91,7 +91,10 @@ describe('usePhotoUploadWithConsent', () => {
   })
 
   it('an ordinary (non-consent) upload error surfaces as `error`, without opening the modal', async () => {
-    uploadPhoto.mockRejectedValueOnce({ isAxiosError: true, response: { status: 400, data: 'Image too large' } })
+    uploadPhoto.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 400, data: 'Слишком большой файл — максимум 5 МБ.' },
+    })
     const { result } = renderHook(() => usePhotoUploadWithConsent({ companyId: 'c1', clientKey: 'u1' }), { wrapper })
 
     await act(async () => {

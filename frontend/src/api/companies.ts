@@ -7,6 +7,13 @@ export interface MasterPublicDto {
   lastName: string
   avatarUrl?: string
   bio?: string
+  /**
+   * API_CONTRACT_CYCLE10.md §124 — always `true` for an anonymous/client caller (otherwise the
+   * master wouldn't be in the list at all). Only becomes `false` when `includeHidden: true` was
+   * honored (staff of this company / SuperAdmin) — the UI uses it to label why clients don't see
+   * this master.
+   */
+  providesServices: boolean
 }
 
 export interface MemberDto {
@@ -90,9 +97,11 @@ export const companiesApi = {
   getMemberOf: () => api.get<Company[]>('/companies/member').then((r) => r.data),
   create: (data: CreateCompanyPayload) => api.post<CreateCompanyResponse>('/companies', data).then((r) => r.data),
   update: (id: string, data: UpdateCompanyPayload) => api.put<Company>(`/companies/${id}`, data).then((r) => r.data),
-  getMasters: (id: string, serviceId?: string) =>
+  getMasters: (id: string, serviceId?: string, includeHidden = false) =>
     api
-      .get<MasterPublicDto[]>(`/companies/${id}/masters`, { params: serviceId ? { serviceId } : {} })
+      .get<MasterPublicDto[]>(`/companies/${id}/masters`, {
+        params: { ...(serviceId ? { serviceId } : {}), ...(includeHidden ? { includeHidden: 'true' } : {}) },
+      })
       .then((r) => r.data),
   getMembers: (id: string) => api.get<MemberDto[]>(`/companies/${id}/members`).then((r) => r.data),
   addMember: (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../../api/bookings'
@@ -24,19 +24,30 @@ import type { Company, Service } from '../../types'
 // US-67 (API_CONTRACT_CYCLE6.md §41.1/§43.1) — server rejects a visit of more than 5 services.
 const MAX_SERVICES = 5
 
+/**
+ * ARCHITECTURE_CYCLE10.md §108 — the ONE booking modal, replacing the old BookingModal +
+ * ManualBookingModal pair. Three entry points:
+ *   - `company` + `service` set        → CompanyPage.tsx (client-facing)
+ *   - same, `allowMultipleServices=false` → EmbedPage.tsx (widget, deliberately single-service)
+ *   - neither set                       → MyBookingsPage.tsx "Записать клиента" (staff picks company)
+ *
+ * `staffMode` is NEVER taken from props, `authStore`, or which entry point opened the modal — it is
+ * read exclusively from the server's `availability.staffMode` (§108.2/§131), reported up from
+ * `BookingCalendar` via `onStaffModeChange`. Until the calendar has answered, the modal behaves as
+ * the plain client flow.
+ */
 interface Props {
-  service: Service
-  company: Company
+  company?: Company
+  service?: Service
   onClose: () => void
   /**
    * US-67 (§43.3): the embed widget (`EmbedPage.tsx`) deliberately stays single-service — pass
-   * `false` there. Everywhere else (the client-facing booking on `CompanyPage`) a visit can carry
-   * up to `MAX_SERVICES` services, so this defaults to `true`.
+   * `false` there. Everywhere else a visit can carry up to `MAX_SERVICES` services (defaults `true`).
    */
   allowMultipleServices?: boolean
 }
 
-type Step = 'services' | 'master' | 'date' | 'slot' | 'info' | 'done'
+type Step = 'company' | 'services' | 'master' | 'date' | 'slot' | 'info' | 'done'
 
 function BackLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
@@ -47,9 +58,7 @@ function BackLink({ onClick, children }: { onClick: () => void; children: React.
   )
 }
 
-// US-64: label a date the way the flat list used to ("Сегодня" / "Завтра" / "24 сен, ср") — the
-// calendar picks a specific date, but the rest of the flow (summary, confirmation) still wants a
-// short human label for it.
+// US-64: label a date the way the old flat list used to ("Сегодня" / "Завтра" / "24 сен, ср").
 function formatDateLabel(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   const date = new Date(y, m - 1, d)
@@ -61,13 +70,38 @@ function formatDateLabel(dateStr: string): string {
   return format(date, 'd MMM, EEE', { locale: ru })
 }
 
-export function BookingModal({ service, company, onClose, allowMultipleServices = true }: Props) {
+export function BookingModal({ company, service, onClose, allowMultipleServices = true }: Props) {
+  const qc = useQueryClient()
   const { isAuthenticated } = useAuthStore()
-  const [step, setStep] = useState<Step>(allowMultipleServices ? 'services' : 'master')
-  const [extraServices, setExtraServices] = useState<Service[]>([])
+
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(company ?? null)
+  const effectiveCompany = company ?? selectedCompany
+
+  // §108.3 — services picking has two shapes: a fixed, non-removable primary + "add more" (client
+  // arrived from a service card), or a from-scratch multi-select (staff picking with nothing
+  // preselected). `service` being set is what tells them apart.
+  const [extraServices, setExtraServices] = useState<Service[]>([]) // used when `service` is fixed
+  const [pickedServices, setPickedServices] = useState<Service[]>([]) // used when picking from scratch
+  const [servicesLimitMessage, setServicesLimitMessage] = useState('')
+
+  const [step, setStep] = useState<Step>(company ? (allowMultipleServices ? 'services' : 'master') : 'company')
   const [selectedMasterId, setSelectedMasterId] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedSlot, setSelectedSlot] = useState('')
+  const [staffMode, setStaffMode] = useState(false)
+  // Q7 (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1) — "show the whole day", staff-only, §108.3/FE-4.
+  const [showExtendedHours, setShowExtendedHours] = useState(false)
+
+  // Review finding §1 — "recording a client" vs "booking for myself" is an EXPLICIT intent, never
+  // derived from `staffMode` (which only reports whether the server granted this caller schedule
+  // freedom, §131). The default is set by the entry point: no `company` prop means the caller came
+  // from "Мои записи → Записать клиента" (MyBookingsPage), so the intent defaults to recording a
+  // client; a `company` prop means the public company page or the embed widget, so the intent
+  // defaults to booking for oneself, exactly like the pre-cycle-10 flow. Staff who opened the
+  // public page of a company they work at can still flip this explicitly (see the toggle on the
+  // info step below) — but the default never assumes it for them.
+  const [bookForClient, setBookForClient] = useState(!company)
+
   const [guestName, setGuestName] = useState('')
   const [guestPhone, setGuestPhone] = useState('')
   const [guestEmail, setGuestEmail] = useState('')
@@ -75,8 +109,8 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
   const [captchaToken, setCaptchaToken] = useState('')
   const [bookedForOther, setBookedForOther] = useState(false)
 
-  // API_CONTRACT_CYCLE5.md §46.3 — the notice under the booking button is now informational (ст. 18),
-  // not a consent checkbox; §41.2 — the guardian-confirmation checkbox text (D12).
+  // API_CONTRACT_CYCLE5.md §46.3 — informational ст. 18 notice; §41.2 — guardian-confirmation text.
+  // §108.3 — neither applies to a staff booking (GuardianConfirmation is a self-booking concept).
   const { data: bookingNotice } = useLegalText('BookingNotice')
   const { data: guardianText } = useLegalText('GuardianConfirmation')
   const bookingNoticeSections = bookingNotice ? splitLegalSections(bookingNotice.contentHtml) : []
@@ -85,39 +119,82 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
   const guardianSections = guardianText ? splitLegalSections(guardianText.contentHtml) : []
   const guardianRevealText = findSection(guardianSections, 'Текст, который появляется после отметки')
 
-  // US-67: the full list of the visit's services — the one the client clicked "Записаться" on,
-  // plus whatever they added on the services step. Duration/price shown to the client are always
-  // the SUM across this list, never just the first service's.
-  const allServices = [service, ...extraServices]
+  // ── Company step (only rendered when `company` prop is absent) ──────────────────────────────
+  const { data: companies, isLoading: companiesLoading } = useQuery({
+    queryKey: ['my-companies-all'],
+    queryFn: async () => {
+      const [owned, member] = await Promise.all([companiesApi.getMy(), companiesApi.getMemberOf()])
+      const all = [...owned, ...member]
+      return Array.from(new Map(all.map((c) => [c.id, c])).values())
+    },
+    enabled: !company,
+  })
+
+  // Auto-select when there's exactly one company to pick from (mirrors the old ManualBookingModal).
+  useEffect(() => {
+    if (!company && companies?.length === 1 && !selectedCompany) {
+      setSelectedCompany(companies[0])
+      setStep(allowMultipleServices ? 'services' : 'master')
+    }
+  }, [company, companies, selectedCompany, allowMultipleServices])
+
+  // ── Services step ────────────────────────────────────────────────────────────────────────────
+  // Fixed-primary mode (`service` prop set): `service` + whatever's been added.
+  const allServicesFixed = service ? [service, ...extraServices] : []
+  const allServices = service ? allServicesFixed : pickedServices
   const totalDurationMinutes = allServices.reduce((sum, s) => sum + s.durationMinutes, 0)
   const totalPrice = allServices.reduce((sum, s) => sum + s.price, 0)
-  const extraServiceIds = allowMultipleServices ? extraServices.map((s) => s.id) : undefined
+  const primaryService = service ?? pickedServices[0] ?? null
+  const extraServiceIds = allowMultipleServices
+    ? service
+      ? extraServices.map((s) => s.id)
+      : pickedServices.slice(1).map((s) => s.id)
+    : undefined
 
-  // Full company service catalogue, for the "add another service" list. Not needed by the embed
-  // widget, which never shows this step.
   const { data: companyServices, isLoading: companyServicesLoading } = useQuery({
-    queryKey: ['services', company.id],
-    queryFn: () => servicesApi.getByCompany(company.id),
-    enabled: allowMultipleServices,
+    queryKey: ['services', effectiveCompany?.id],
+    queryFn: () => servicesApi.getByCompany(effectiveCompany!.id),
+    enabled: allowMultipleServices && !!effectiveCompany,
   })
-  const addableServices = (companyServices ?? []).filter((s) => !allServices.some((picked) => picked.id === s.id))
+  const addableServices = (companyServices ?? []).filter((s) => !allServicesFixed.some((picked) => picked.id === s.id))
 
-  // Load masters that can perform this service. US-62 (backend) already filters out staff who
-  // toggled off "provides services" — this list is the post-filter, active count for US-64.
-  // Filtered by the primary service only (API_CONTRACT_CYCLE6.md §40.1 doesn't take a service list);
-  // if an added service turns out to be one this master doesn't do, that surfaces later as a 400
-  // on the slots/availability call ("Мастер не оказывает услугу: …"), not silently here.
+  const addService = (s: Service) => {
+    if (allServicesFixed.length >= MAX_SERVICES) {
+      setServicesLimitMessage(`За один визит можно выбрать не больше ${MAX_SERVICES} услуг`)
+      return
+    }
+    setServicesLimitMessage('')
+    setExtraServices((prev) => [...prev, s])
+  }
+  const removeService = (id: string) => {
+    setServicesLimitMessage('')
+    setExtraServices((prev) => prev.filter((s) => s.id !== id))
+  }
+  const togglePickedService = (s: Service) => {
+    setServicesLimitMessage('')
+    setPickedServices((prev) => {
+      const exists = prev.some((p) => p.id === s.id)
+      if (exists) return prev.filter((p) => p.id !== s.id)
+      if (prev.length >= MAX_SERVICES) {
+        setServicesLimitMessage(`За один визит можно выбрать не больше ${MAX_SERVICES} услуг`)
+        return prev
+      }
+      return [...prev, s]
+    })
+  }
+
+  // ── Masters step ─────────────────────────────────────────────────────────────────────────────
+  // includeHidden is always REQUESTED (§103.5/§124) — the server only honors it for staff of this
+  // company or SuperAdmin, and silently ignores it for everyone else. `providesServices: false`
+  // therefore only ever shows up when it was actually honored, and is what we label "hidden" by.
   const { data: masters, isLoading: mastersLoading } = useQuery({
-    queryKey: ['company-masters', company.id, service.id],
-    queryFn: () => companiesApi.getMasters(company.id, service.id),
+    queryKey: ['company-masters', effectiveCompany?.id, primaryService?.id],
+    queryFn: () => companiesApi.getMasters(effectiveCompany!.id, primaryService!.id, true),
+    enabled: !!effectiveCompany && !!primaryService,
   })
 
-  // US-64: with exactly one active master there's nothing to pick — auto-select and skip the
-  // step entirely. With zero, there's nobody to book with at all; the master step stays on screen
-  // to show that message rather than a broken empty list further down the flow.
-  // Keyed on `step` (not just on `masters` loading) — with the services step now shown first
-  // (allowMultipleServices), `masters` can finish loading well before the user ever reaches the
-  // master step, and a one-shot "masters just arrived" effect would then miss the skip entirely.
+  // US-64: exactly one active master → auto-select and skip the step. Keyed on `step` so it fires
+  // even if `masters` finished loading while the user was still on an earlier step.
   useEffect(() => {
     if (step === 'master' && masters && masters.length === 1 && !selectedMasterId) {
       setSelectedMasterId(masters[0].userId)
@@ -125,6 +202,11 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
     }
   }, [step, masters, selectedMasterId])
 
+  const selectedMaster = masters?.find((m) => m.userId === selectedMasterId)
+  const showMasterStep = !!masters && masters.length > 1
+  const noMastersAvailable = !!masters && masters.length === 0
+
+  // ── Date / slot ──────────────────────────────────────────────────────────────────────────────
   const now = new Date()
   const todayStr = format(now, 'yyyy-MM-dd')
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
@@ -138,70 +220,81 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
     isLoading: slotsLoading,
     error: slotsError,
   } = useQuery({
-    queryKey: ['slots', company.id, selectedMasterId, service.id, extraServiceIds, selectedDate],
-    queryFn: () => bookingsApi.getSlots(company.id, selectedMasterId, service.id, extraServiceIds, selectedDate),
-    enabled: !!selectedMasterId && !!selectedDate,
-    staleTime: 0, // always fetch fresh — bookings made by others should be reflected immediately
+    queryKey: [
+      'slots',
+      effectiveCompany?.id,
+      selectedMasterId,
+      primaryService?.id,
+      extraServiceIds,
+      selectedDate,
+      showExtendedHours,
+    ],
+    queryFn: () =>
+      bookingsApi.getSlots(
+        effectiveCompany!.id,
+        selectedMasterId,
+        primaryService!.id,
+        extraServiceIds,
+        selectedDate,
+        true, // manual: a REQUEST for staff mode — the server decides based on real membership (§121.2)
+        showExtendedHours,
+      ),
+    enabled: !!effectiveCompany && !!selectedMasterId && !!primaryService && !!selectedDate,
+    staleTime: 0,
     retry: false,
   })
   const slots = rawSlots?.filter((s) => selectedDate !== todayStr || timeToMinutes(s.start) > nowMinutes)
 
+  // ── Submit ───────────────────────────────────────────────────────────────────────────────────
   const mutation = useMutation({
     mutationFn: () =>
       bookingsApi.create({
-        companyId: company.id,
-        serviceId: service.id,
+        companyId: effectiveCompany!.id,
+        serviceId: primaryService!.id,
         serviceIds: allowMultipleServices ? allServices.map((s) => s.id) : undefined,
         masterId: selectedMasterId,
         date: selectedDate,
         startTime: selectedSlot,
         notes,
-        guestName: isAuthenticated() ? undefined : guestName,
-        guestPhone: isAuthenticated() ? undefined : guestPhone,
-        guestEmail: isAuthenticated() ? undefined : guestEmail,
-        captchaToken: isAuthenticated() ? undefined : captchaToken || undefined,
-        // US-78 — §46.1: omitted (falsy) is exactly today's behaviour; sent only when the person
-        // ticked "записываю другого человека", and only with a confirmed guardian text version.
-        bookedForOther: bookedForOther || undefined,
+        // Review finding §1 — `bookForClient` (explicit intent), NOT `staffMode`, decides whether
+        // this request carries guest fields. A self-booking authenticated caller — staff or not —
+        // must send a body byte-for-byte identical to the pre-cycle-10 client flow.
+        guestName: bookForClient || !isAuthenticated() ? guestName : undefined,
+        guestPhone: bookForClient || !isAuthenticated() ? guestPhone : undefined,
+        guestEmail: bookForClient || !isAuthenticated() ? guestEmail || undefined : undefined,
+        captchaToken: !bookForClient && !isAuthenticated() ? captchaToken || undefined : undefined,
+        // GuardianConfirmation is a self-booking concept only; never sent when recording a client.
+        bookedForOther: !bookForClient && bookedForOther ? true : undefined,
         guardianConfirmation:
-          bookedForOther && guardianText ? { textVersion: guardianText.version, confirmed: true } : undefined,
+          !bookForClient && bookedForOther && guardianText
+            ? { textVersion: guardianText.version, confirmed: true }
+            : undefined,
       }),
-    onSuccess: () => setStep('done'),
+    onSuccess: () => {
+      // §108.4 item 14 — must survive the merge: "Мои записи" (staff list) needs to see a booking
+      // made through this modal immediately. A no-op when the query doesn't exist (client flow).
+      qc.invalidateQueries({ queryKey: ['master-bookings'] })
+      setStep('done')
+    },
   })
 
-  // US-67: adding a 6th service is rejected up front with a clear message rather than sent to the
-  // server to bounce back as a 400.
-  const [servicesLimitMessage, setServicesLimitMessage] = useState('')
-  const addService = (s: Service) => {
-    if (allServices.length >= MAX_SERVICES) {
-      setServicesLimitMessage(`За один визит можно выбрать не больше ${MAX_SERVICES} услуг`)
-      return
-    }
-    setServicesLimitMessage('')
-    setExtraServices((prev) => [...prev, s])
-  }
-  const removeService = (id: string) => {
-    setServicesLimitMessage('')
-    setExtraServices((prev) => prev.filter((s) => s.id !== id))
-  }
-
-  const pickMaster = (id: string) => {
-    setSelectedMasterId(id)
-    setStep('date')
-  }
-
-  const selectedMaster = masters?.find((m) => m.userId === selectedMasterId)
-
-  // US-64: the progress indicator must reflect the actual number of steps — with a single master
-  // (or while the count isn't known yet) the "choose a master" step never renders, so it shouldn't
-  // be counted either. Only show it when there's a real choice to make.
-  const showMasterStep = !!masters && masters.length > 1
-  const noMastersAvailable = !!masters && masters.length === 0
+  // ── Steps / progress ─────────────────────────────────────────────────────────────────────────
   const baseSteps: Step[] = showMasterStep ? ['master', 'date', 'slot', 'info'] : ['date', 'slot', 'info']
-  const progressSteps: Step[] = allowMultipleServices ? ['services', ...baseSteps] : baseSteps
+  const withServices: Step[] = allowMultipleServices ? ['services', ...baseSteps] : baseSteps
+  // Review finding — when there's exactly one company to pick from, the 'company' step is
+  // auto-skipped (see the effect above) and `selectedCompany` is set without ever visiting it; the
+  // progress bar must not count a step nobody sees. Only prepend 'company' when it will actually be
+  // rendered: no `company` prop AND more than one company to choose from (or still loading, since
+  // we don't yet know if it'll be skipped).
+  const companyStepRendered = !company && (companiesLoading || (companies?.length ?? 0) !== 1)
+  const progressSteps: Step[] = companyStepRendered ? ['company', ...withServices] : withServices
   const currentIdx = progressSteps.indexOf(step)
 
+  const formattedSelectedDate = selectedDate && formatDateLabel(selectedDate)
+
   const dismiss = useOverlayDismiss(onClose)
+
+  const servicesContinueDisabled = service ? false : pickedServices.length === 0
 
   return (
     <div className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-5" {...dismiss}>
@@ -210,18 +303,21 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
         <div className="p-6 pb-[22px] border-b border-line">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Запись на услугу</h2>
-              <p className="text-[13px] text-ink-soft">
-                {allServices.map((s) => s.name).join(', ')} · {totalDurationMinutes} мин ·{' '}
-                {totalPrice.toLocaleString('ru-RU')} ₽
-              </p>
+              <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">
+                {bookForClient ? 'Записать клиента' : 'Запись на услугу'}
+              </h2>
+              {allServices.length > 0 && (
+                <p className="text-[13px] text-ink-soft">
+                  {allServices.map((s) => s.name).join(', ')} · {totalDurationMinutes} мин ·{' '}
+                  {totalPrice.toLocaleString('ru-RU')} ₽
+                </p>
+              )}
             </div>
             <button onClick={onClose} className="text-muted hover:text-ink shrink-0">
               <Icon name="x" size={18} strokeWidth={1.8} />
             </button>
           </div>
 
-          {/* Progress bar */}
           {step !== 'done' && (
             <div className="flex gap-1.5 mt-4">
               {progressSteps.map((s, i) => (
@@ -235,81 +331,166 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
         </div>
 
         <div className="p-6 pt-[22px]">
+          {/* ── Step: Company (only when `company` prop is absent) ── */}
+          {step === 'company' && (
+            <div>
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите компанию</h3>
+              {companiesLoading ? (
+                <div className="flex flex-col gap-2.5">
+                  {[1, 2].map((i) => (
+                    <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />
+                  ))}
+                </div>
+              ) : companies && companies.length > 0 ? (
+                <div className="flex flex-col gap-2.5">
+                  {companies.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        setSelectedCompany(c)
+                        setStep(allowMultipleServices ? 'services' : 'master')
+                      }}
+                      className="flex items-center gap-3 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-cream-deep flex items-center justify-center text-gold-dark font-bold text-sm shrink-0">
+                        {c.name[0]}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm text-ink">{c.name}</p>
+                        {c.address && <p className="text-xs text-muted">{c.address}</p>}
+                      </div>
+                      <Icon
+                        name="chevron-right"
+                        size={16}
+                        strokeWidth={1.8}
+                        className="ml-auto text-line-strong shrink-0"
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-muted py-8">Вы не состоите ни в одной компании</p>
+              )}
+            </div>
+          )}
+
           {/* ── Step: Services (US-67) ── */}
           {step === 'services' && (
             <div>
-              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Услуги за визит</h3>
+              {!company && companies && companies.length > 1 && (
+                <BackLink onClick={() => setStep('company')}>{effectiveCompany?.name}</BackLink>
+              )}
+              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">
+                {service ? 'Услуги за визит' : 'Выберите услуги'}
+              </h3>
 
-              <div className="flex flex-col gap-2 mb-4">
-                {allServices.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-line bg-white"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-ink">{s.name}</p>
-                      <p className="text-xs text-muted mt-0.5">
-                        {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
-                      </p>
+              {service ? (
+                <div className="flex flex-col gap-2 mb-4">
+                  {allServices.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between gap-3 p-3 rounded-xl border border-line bg-white"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-ink">{s.name}</p>
+                        <p className="text-xs text-muted mt-0.5">
+                          {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                        </p>
+                      </div>
+                      {s.id !== service.id && (
+                        <button
+                          type="button"
+                          aria-label={`Убрать «${s.name}»`}
+                          onClick={() => removeService(s.id)}
+                          className="text-muted hover:text-danger shrink-0"
+                        >
+                          <Icon name="x" size={16} strokeWidth={1.8} />
+                        </button>
+                      )}
                     </div>
-                    {s.id !== service.id && (
+                  ))}
+                </div>
+              ) : companyServicesLoading ? (
+                <div className="flex flex-col gap-2.5 mb-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />
+                  ))}
+                </div>
+              ) : companyServices && companyServices.length > 0 ? (
+                <div className="flex flex-col gap-2.5 mb-4">
+                  {companyServices.map((s) => {
+                    const checked = pickedServices.some((p) => p.id === s.id)
+                    return (
                       <button
-                        type="button"
-                        aria-label={`Убрать «${s.name}»`}
-                        onClick={() => removeService(s.id)}
-                        className="text-muted hover:text-danger shrink-0"
+                        key={s.id}
+                        onClick={() => togglePickedService(s)}
+                        aria-pressed={checked}
+                        className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all text-left ${
+                          checked ? 'border-ink bg-cream-deep' : 'border-line bg-white hover:border-line-strong'
+                        }`}
                       >
-                        <Icon name="x" size={16} strokeWidth={1.8} />
+                        <div>
+                          <p className="font-semibold text-sm text-ink">{s.name}</p>
+                          <p className="text-xs text-muted mt-0.5">
+                            {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                          </p>
+                        </div>
+                        <Icon
+                          name={checked ? 'check' : 'plus'}
+                          size={16}
+                          strokeWidth={1.8}
+                          className={checked ? 'text-ink shrink-0' : 'text-line-strong shrink-0'}
+                        />
                       </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-center text-muted py-8">Нет доступных услуг</p>
+              )}
 
-              <div className="flex items-center justify-between text-[13.5px] font-semibold text-ink bg-cream-deep rounded-xl px-3.5 py-2.5 mb-4">
-                <span>Итого</span>
-                <span>
-                  {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
-                </span>
-              </div>
+              {allServices.length > 0 && (
+                <div className="flex items-center justify-between text-[13.5px] font-semibold text-ink bg-cream-deep rounded-xl px-3.5 py-2.5 mb-4">
+                  <span>Итого</span>
+                  <span>
+                    {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
+                  </span>
+                </div>
+              )}
 
               {servicesLimitMessage && (
                 <p className="text-sm text-danger text-center mb-3">{servicesLimitMessage}</p>
               )}
 
-              {addableServices.length > 0 && (
+              {service && addableServices.length > 0 && (
                 <>
                   <h4 className="text-[13px] font-semibold text-ink-soft mb-2">Добавить услугу</h4>
-                  {companyServicesLoading ? (
-                    <div className="flex flex-col gap-2">
-                      {Array.from({ length: 2 }).map((_, i) => (
-                        <div key={i} className="h-12 bg-cream-deep rounded-xl animate-pulse" />
-                      ))}
-                    </div>
-                  ) : addableServices.length > 0 ? (
-                    <div className="flex flex-col gap-2 mb-2">
-                      {addableServices.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => addService(s)}
-                          className="flex items-center justify-between gap-3 p-3 rounded-xl border border-line bg-white hover:border-line-strong transition-all text-left"
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-ink">{s.name}</p>
-                            <p className="text-xs text-muted mt-0.5">
-                              {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
-                            </p>
-                          </div>
-                          <Icon name="plus" size={16} strokeWidth={1.8} className="text-line-strong shrink-0" />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+                  <div className="flex flex-col gap-2 mb-2">
+                    {addableServices.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => addService(s)}
+                        className="flex items-center justify-between gap-3 p-3 rounded-xl border border-line bg-white hover:border-line-strong transition-all text-left"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-ink">{s.name}</p>
+                          <p className="text-xs text-muted mt-0.5">
+                            {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                          </p>
+                        </div>
+                        <Icon name="plus" size={16} strokeWidth={1.8} className="text-line-strong shrink-0" />
+                      </button>
+                    ))}
+                  </div>
                 </>
               )}
 
-              <Button className="w-full mt-3" onClick={() => setStep('master')}>
+              <Button
+                className="w-full mt-3"
+                disabled={servicesContinueDisabled}
+                onClick={() => setStep('master')}
+              >
                 Продолжить
               </Button>
             </div>
@@ -346,7 +527,10 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
                       {masters?.map((m) => (
                         <button
                           key={m.userId}
-                          onClick={() => pickMaster(m.userId)}
+                          onClick={() => {
+                            setSelectedMasterId(m.userId)
+                            setStep('date')
+                          }}
                           className="flex items-center gap-3.5 p-3.5 rounded-2xl border border-line bg-white hover:border-line-strong transition-all text-left"
                         >
                           <Avatar
@@ -361,6 +545,10 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
                               {m.firstName} {m.lastName}
                             </p>
                             {m.bio && <p className="text-xs text-muted mt-0.5">{m.bio}</p>}
+                            {/* §103.5 — only ever true when includeHidden was actually honored (staff). */}
+                            {!m.providesServices && (
+                              <p className="text-[11px] text-gold-dark mt-0.5">Не виден клиентам</p>
+                            )}
                           </div>
                           <Icon
                             name="chevron-right"
@@ -387,15 +575,18 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
               )}
               <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите дату</h3>
               <BookingCalendar
-                companyId={company.id}
+                companyId={effectiveCompany!.id}
                 masterId={selectedMasterId}
-                serviceId={service.id}
+                serviceId={primaryService!.id}
                 extraServiceIds={extraServiceIds}
                 selectedDate={selectedDate}
                 onSelectDate={(date) => {
                   setSelectedDate(date)
                   setStep('slot')
                 }}
+                manual
+                extendedHours={showExtendedHours}
+                onStaffModeChange={setStaffMode}
               />
             </div>
           )}
@@ -404,7 +595,24 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
           {step === 'slot' && (
             <div>
               <BackLink onClick={() => setStep('date')}>Изменить дату</BackLink>
-              <h3 className="text-[14.5px] font-semibold text-[#4A4038] mb-4">Выберите время</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[14.5px] font-semibold text-[#4A4038]">Выберите время</h3>
+                {/* §108.3/FE-4 — staff-only, drives extendedHours (§121.1). */}
+                {staffMode && (
+                  <button
+                    type="button"
+                    onClick={() => setShowExtendedHours((v) => !v)}
+                    className="text-[12.5px] font-medium text-gold-dark hover:underline"
+                  >
+                    {showExtendedHours ? 'Скрыть остальные часы' : 'Показать остальные часы'}
+                  </button>
+                )}
+              </div>
+              {staffMode && showExtendedHours && (
+                <p className="text-[12px] text-ink-soft -mt-2 mb-3">
+                  Мастер в это время не работает — запись вне графика.
+                </p>
+              )}
               {slotsLoading ? (
                 <div className="grid grid-cols-3 gap-2">
                   {Array.from({ length: 9 }).map((_, i) => (
@@ -432,8 +640,7 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
                 </div>
               ) : slotsError ? (
                 // US-67 (§41.1): a service added after the master was picked may turn out to be one
-                // the master doesn't do — the server says so explicitly, so show that text instead
-                // of a bare empty state that reads as "just no free time".
+                // the master doesn't do — show the server's explicit reason instead of a bare empty state.
                 <p className="text-center text-danger py-8">{getBookingErrorMessage(slotsError)}</p>
               ) : (
                 <p className="text-center text-muted py-8">Нет доступных слотов на этот день</p>
@@ -446,9 +653,37 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
             <div className="flex flex-col gap-3.5">
               <BackLink onClick={() => setStep('slot')}>Изменить время</BackLink>
 
+              {/* Review finding §1 — staff who opened the PUBLIC page/widget of a company they work
+                  at may still want to record a walk-in client instead of booking for themselves;
+                  give them an explicit switch, defaulting to "себя" (§108/staff-self regression). A
+                  caller with no `company` prop came from "Записать клиента" specifically — there is
+                  no "себя" alternative to offer there. */}
+              {company && staffMode && (
+                <div className="flex rounded-xl bg-cream-deep p-1 -mt-1" role="group" aria-label="Кого записываем">
+                  <button
+                    type="button"
+                    aria-pressed={!bookForClient}
+                    onClick={() => setBookForClient(false)}
+                    className={`flex-1 rounded-lg py-2 text-[12.5px] font-medium transition-colors ${
+                      !bookForClient ? 'bg-white text-ink shadow-sm' : 'text-ink-soft'
+                    }`}
+                  >
+                    Записываюсь сам
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={bookForClient}
+                    onClick={() => setBookForClient(true)}
+                    className={`flex-1 rounded-lg py-2 text-[12.5px] font-medium transition-colors ${
+                      bookForClient ? 'bg-white text-ink shadow-sm' : 'text-ink-soft'
+                    }`}
+                  >
+                    Записать клиента
+                  </button>
+                </div>
+              )}
+
               <div className="bg-cream-deep rounded-2xl p-4 text-[13.5px] text-ink">
-                {/* US-67: the visit's every service, plus the summed duration/price — never just
-                    the first service, so the client confirms what they're actually paying for. */}
                 <div className="font-semibold">{allServices.map((s) => s.name).join(', ')}</div>
                 <div className="text-ink-soft mt-0.5">
                   {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
@@ -459,14 +694,16 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
                   </div>
                 )}
                 <div className="text-ink-soft mt-0.5">
-                  {selectedDate && formatDateLabel(selectedDate)} · {selectedSlot.slice(0, 5)}
+                  {formattedSelectedDate} · {selectedSlot.slice(0, 5)}
                 </div>
               </div>
 
-              {!isAuthenticated() && (
+              {/* §108.3 — staff always fills the client's contact fields; otherwise only a guest
+                  (not-yet-authenticated visitor) does. */}
+              {(bookForClient || !isAuthenticated()) && (
                 <>
                   <Input
-                    label="Ваше имя *"
+                    label={bookForClient ? 'Имя клиента *' : 'Ваше имя *'}
                     placeholder="Иван Иванов"
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
@@ -482,9 +719,9 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
                     }
                   />
                   <Input
-                    label="Email"
+                    label={bookForClient ? 'Email (необязательно)' : 'Email'}
                     type="email"
-                    placeholder="your@email.com"
+                    placeholder={bookForClient ? 'client@email.com' : 'your@email.com'}
                     value={guestEmail}
                     onChange={(e) => setGuestEmail(e.target.value)}
                   />
@@ -492,7 +729,9 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
               )}
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[13px] font-medium text-[#4A4038]">Комментарий (необязательно)</label>
+                <label className="text-[13px] font-medium text-[#4A4038]">
+                  {bookForClient ? 'Комментарий' : 'Комментарий (необязательно)'}
+                </label>
                 <textarea
                   className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep resize-none bg-white text-ink"
                   rows={3}
@@ -502,29 +741,32 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
                 />
               </div>
 
-              {!isAuthenticated() && smartCaptchaEnabled && (
+              {!bookForClient && !isAuthenticated() && smartCaptchaEnabled && (
                 <div className="flex flex-col gap-1">
                   <SmartCaptcha onToken={setCaptchaToken} />
                   <p className="text-xs text-muted">Подтвердите, что вы не робот (Yandex SmartCaptcha)</p>
                 </div>
               )}
 
-              {/* US-78, §46.1 — a single checkbox both flags `bookedForOther` and stands as the
-                  guardian/representative confirmation itself; no second action is asked for. */}
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 mt-0.5 rounded accent-gold"
-                  checked={bookedForOther}
-                  onChange={(e) => setBookedForOther(e.target.checked)}
-                />
-                <span className="text-[13px] text-ink-soft leading-snug">Я записываю другого человека</span>
-              </label>
-              {bookedForOther && guardianRevealText && (
-                <div
-                  className="legal-content -mt-2 rounded-xl bg-cream-deep px-3.5 py-2.5 text-xs text-ink-soft leading-[1.6] [&_p]:mb-1.5 last:[&_p]:mb-0 [&_a]:text-gold [&_a]:hover:text-gold-dark"
-                  dangerouslySetInnerHTML={{ __html: guardianRevealText.html }}
-                />
+              {/* GuardianConfirmation is a self-booking concept; not shown when recording a client. */}
+              {!bookForClient && (
+                <>
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 mt-0.5 rounded accent-gold"
+                      checked={bookedForOther}
+                      onChange={(e) => setBookedForOther(e.target.checked)}
+                    />
+                    <span className="text-[13px] text-ink-soft leading-snug">Я записываю другого человека</span>
+                  </label>
+                  {bookedForOther && guardianRevealText && (
+                    <div
+                      className="legal-content -mt-2 rounded-xl bg-cream-deep px-3.5 py-2.5 text-xs text-ink-soft leading-[1.6] [&_p]:mb-1.5 last:[&_p]:mb-0 [&_a]:text-gold [&_a]:hover:text-gold-dark"
+                      dangerouslySetInnerHTML={{ __html: guardianRevealText.html }}
+                    />
+                  )}
+                </>
               )}
 
               <Button
@@ -532,16 +774,16 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
                 loading={mutation.isPending}
                 onClick={() => mutation.mutate()}
                 disabled={
-                  (!isAuthenticated() && (!guestName || !isRussianPhone(guestPhone))) ||
-                  (!isAuthenticated() && smartCaptchaEnabled && !captchaToken) ||
-                  (bookedForOther && !guardianText)
+                  ((bookForClient || !isAuthenticated()) && (!guestName || !isRussianPhone(guestPhone))) ||
+                  (!bookForClient && !isAuthenticated() && smartCaptchaEnabled && !captchaToken) ||
+                  (!bookForClient && bookedForOther && !guardianText)
                 }
                 className="w-full"
               >
-                Подтвердить запись
+                {bookForClient ? 'Записать клиента' : 'Подтвердить запись'}
               </Button>
 
-              {!isAuthenticated() && (
+              {!bookForClient && !isAuthenticated() && (
                 <p className="text-center text-xs text-muted -mt-1.5">
                   Нажимая «Подтвердить запись», вы соглашаетесь с{' '}
                   <Link to="/terms" target="_blank" className="text-gold hover:text-gold-dark">
@@ -554,40 +796,37 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
                 </p>
               )}
 
-              {/* API_CONTRACT_CYCLE5.md §46.3 — informational notice под ст. 18, not a consent
-                  checkbox: who the operator is, purposes, legal basis, who the data goes to (named).
-                  Falls back to the whole fetched text if the "short line" section isn't found, so
-                  nothing silently disappears if the heading wording changes during legal review. */}
-              <div className="text-center text-xs text-muted -mt-1.5">
-                {bookingNoticeShort || bookingNoticeFull ? (
-                  <>
-                    <div
-                      className="legal-content [&_a]:text-gold [&_a]:hover:text-gold-dark [&_p]:mb-0"
-                      dangerouslySetInnerHTML={{ __html: (bookingNoticeShort ?? bookingNoticeFull)!.html }}
-                    />
-                    {bookingNoticeFull && bookingNoticeShort && (
-                      <details className="mt-1">
-                        <summary className="cursor-pointer text-gold hover:text-gold-dark inline">Подробнее</summary>
-                        <div
-                          className="legal-content text-left mt-2 [&_p]:mb-2 [&_a]:text-gold [&_a]:hover:text-gold-dark"
-                          dangerouslySetInnerHTML={{ __html: bookingNoticeFull.html }}
-                        />
-                      </details>
-                    )}
-                  </>
-                ) : (
-                  // §33 п. 1 fallback while the text hasn't loaded yet or the manifest is unreachable —
-                  // still names WhatsApp and links to the policy, never a blank notice.
-                  <p>
-                    Оставляя номер телефона, вы получите сервисные сообщения о записи в WhatsApp от салона. Подробнее
-                    — в{' '}
-                    <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
-                      политике обработки персональных данных
-                    </Link>
-                    .
-                  </p>
-                )}
-              </div>
+              {/* API_CONTRACT_CYCLE5.md §46.3 — ст. 18 notice; doesn't apply when recording a client. */}
+              {!bookForClient && (
+                <div className="text-center text-xs text-muted -mt-1.5">
+                  {bookingNoticeShort || bookingNoticeFull ? (
+                    <>
+                      <div
+                        className="legal-content [&_a]:text-gold [&_a]:hover:text-gold-dark [&_p]:mb-0"
+                        dangerouslySetInnerHTML={{ __html: (bookingNoticeShort ?? bookingNoticeFull)!.html }}
+                      />
+                      {bookingNoticeFull && bookingNoticeShort && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-gold hover:text-gold-dark inline">Подробнее</summary>
+                          <div
+                            className="legal-content text-left mt-2 [&_p]:mb-2 [&_a]:text-gold [&_a]:hover:text-gold-dark"
+                            dangerouslySetInnerHTML={{ __html: bookingNoticeFull.html }}
+                          />
+                        </details>
+                      )}
+                    </>
+                  ) : (
+                    <p>
+                      Оставляя номер телефона, вы получите сервисные сообщения о записи в WhatsApp от салона. Подробнее
+                      — в{' '}
+                      <Link to="/privacy" target="_blank" className="text-gold hover:text-gold-dark">
+                        политике обработки персональных данных
+                      </Link>
+                      .
+                    </p>
+                  )}
+                </div>
+              )}
 
               {mutation.isError && (
                 <p className="text-sm text-danger text-center">{getBookingErrorMessage(mutation.error)}</p>
@@ -601,9 +840,13 @@ export function BookingModal({ service, company, onClose, allowMultipleServices 
               <div className="w-14 h-14 rounded-full bg-success-bg flex items-center justify-center mx-auto mb-[18px]">
                 <Icon name="check" size={26} strokeWidth={1.8} className="text-success" />
               </div>
-              <h3 className="font-serif text-xl font-medium text-ink mb-2">Запись подтверждена!</h3>
+              <h3 className="font-serif text-xl font-medium text-ink mb-2">
+                {bookForClient ? 'Клиент записан!' : 'Запись подтверждена!'}
+              </h3>
               <p className="text-sm text-ink-soft mb-6">
-                Ждём вас {selectedDate && formatDateLabel(selectedDate)} в {selectedSlot.slice(0, 5)}
+                {bookForClient && guestName
+                  ? `${guestName} · ${formattedSelectedDate} в ${selectedSlot.slice(0, 5)}`
+                  : `Ждём вас ${formattedSelectedDate} в ${selectedSlot.slice(0, 5)}`}
               </p>
               <Button onClick={onClose} variant="secondary" size="lg">
                 Закрыть

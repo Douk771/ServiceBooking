@@ -24,7 +24,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
   const qc = useQueryClient()
 
   // US-67: after multi-service visits, every service of the booking counts toward duration —
-  // same rule `ManualBookingModal`/`BookingModal` use for the primary/extra split.
+  // same rule `BookingModal` uses for the primary/extra split.
   const extraServiceIds = (booking.services ?? []).slice(1).map((s) => s.serviceId)
 
   const now = new Date()
@@ -34,11 +34,11 @@ export function RescheduleModal({ booking, onClose }: Props) {
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
   // F7 (ARCHITECTURE_CYCLE6.md §46.4) — same "show the rest of the hours" toggle as
-  // `ManualBookingModal`, on the same rule: 09:00–21:00 is only the default, not a boundary.
+  // `BookingModal`'s staff slot step, on the same rule: 09:00–21:00 is only the default, not a boundary.
   const [showExtendedHours, setShowExtendedHours] = useState(false)
 
   // Today is only offered as a reschedule target if the server still has at least one slot left
-  // for it — mirrors `ManualBookingModal`'s "slots today" check, now via the same endpoint.
+  // for it — mirrors `BookingModal`'s "slots today" check, now via the same endpoint.
   const { data: slotsToday = [] } = useQuery({
     queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, todayStr, 'manual', showExtendedHours, booking.id],
     queryFn: () =>
@@ -183,7 +183,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
                   })}
                 </div>
               ) : slotsError ? (
-                // Same reader ManualBookingModal uses on the same endpoint: GET /api/bookings/slots
+                // Same reader `BookingModal` uses on the same endpoint: GET /api/bookings/slots
                 // answers with a bare string that says WHY there is no grid ("Мастер не оказывает
                 // услугу: …", «Услуга сейчас недоступна», the rate limit) — a fixed "попробуйте
                 // снова" throws that away and leaves the operator guessing, which is the exact

@@ -50,7 +50,13 @@ public record BookingDto(
     // snapshot in effect at creation time, never from the request body.
     string? BookingNoticeVersion = null,
     bool BookedForOther = false,
-    DateTime? GuardianConfirmedAt = null
+    DateTime? GuardianConfirmedAt = null,
+    // ARCHITECTURE_CYCLE10.md §123, API_CONTRACT_CYCLE10.md §123: additive. Filled ONLY on
+    // GET /api/bookings/master and GET /api/bookings/{id} when the caller is staff of this company or
+    // SuperAdmin — computed in one grouping query per page/call, never N+1 (ReminderStatusesForAsync's
+    // pattern). Always null on GET /api/bookings/client and the Create response: not filtered on the
+    // frontend, simply never computed there (П8). null means "server didn't count", not "zero events".
+    int? HistoryEventCount = null
 );
 
 // US-67 (API_CONTRACT_CYCLE6.md §43.2): one line per service in the visit, in visit order.

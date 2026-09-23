@@ -10,6 +10,7 @@ import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { Pagination } from '../components/ui/Pagination'
 import { BookingModal } from '../components/booking/BookingModal'
+import { CompanyPhotoGallery } from '../components/company/CompanyPhotoGallery'
 import type { Service } from '../types'
 
 function ServiceCard({
@@ -114,9 +115,10 @@ export function CompanyPage() {
     <div className="max-w-[900px] mx-auto px-8 pt-10 pb-24">
       {/* Company Header */}
       <div className="bg-white border border-line rounded-3xl p-2 mb-10 overflow-hidden">
-        <div className="w-full h-[220px] rounded-[18px] bg-cream-deep flex items-center justify-center">
-          <span className="text-xs font-mono text-muted">Фото: компания</span>
-        </div>
+        {/* API_CONTRACT_CYCLE10.md §129 — `photos` arrives WITH the company on this endpoint (§109.3
+            performance), so no extra request; `null`/absent (server not yet on cycle 10) behaves as
+            an empty gallery, same as an actually-empty one. */}
+        <CompanyPhotoGallery photos={company.photos ?? []} companyName={company.name} />
         <div className="px-6 pb-6 pt-7 flex items-start gap-5">
           {company.logoUrl ? (
             <img
