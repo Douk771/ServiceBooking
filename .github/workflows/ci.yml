@@ -131,6 +131,16 @@ jobs:
           VITE_SMARTCAPTCHA_SITEKEY: ${{ vars.VITE_SMARTCAPTCHA_SITEKEY }}
         run: npm run build
 
+      # US-112 (ARCHITECTURE_CYCLE9.md §103.2): proves the tab icon is actually reachable over HTTP from
+      # the built dist/ - a request, not a glance at frontend/public/ in source. Runs from the repo root
+      # (working-directory: frontend does not apply to run: shell commands' cwd for this step by
+      # default, so cd explicitly) against the artifact this job is about to upload.
+      - name: Smoke test (favicon served from built dist)
+        working-directory: .
+        run: bash deploy/ci/smoke-frontend.sh
+        env:
+          DIST_DIR: frontend/dist
+
       # Frontend build moves off the production server entirely (T-D3, US-44, ARCHITECTURE.md §12.3):
       # deploy/deploy.sh downloads this artifact and ships it to the VPS instead of running `npm ci &&
       # npm run build` on the box being served from. 30-day retention matches the number of recent
