@@ -447,11 +447,11 @@ export interface components {
             allowSelfBooking: boolean;
             requirePrepayment: boolean;
             onlineBookingEnabled: boolean;
-            analyticsEnabled: boolean;
-            mailingEnabled: boolean;
+            allowAnalytics: boolean;
+            allowMailing: boolean;
             showInPublicListing: boolean;
-            visibleInPublicListing: boolean;
-            onlinePaymentEnabled: boolean;
+            publicListingEnabled: boolean;
+            prepaymentEnabled: boolean;
             planAllowsOnlineBooking: boolean;
             planAllowsOnlinePayment: boolean;
             planAllowsPublicListing: boolean;
@@ -605,7 +605,7 @@ export interface components {
             /** @description 🆕 добавлено циклом 9; по нему же работает query-фильтр ?transport=. */
             transport: components["schemas"]["NotificationTransport"];
             status: components["schemas"]["NotificationStatus"];
-            reason?: components["schemas"]["NotificationReason"] | null;
+            reason?: (string & components["schemas"]["NotificationReason"]) | null;
             /** @description Русский текст, собранный СЕРВЕРОМ (NotificationTexts). */
             reasonText?: string | null;
             recipientPhoneMasked: string;
