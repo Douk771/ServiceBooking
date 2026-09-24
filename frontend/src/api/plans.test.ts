@@ -17,6 +17,20 @@ describe('plansApi.setSystemFree', () => {
   })
 })
 
+describe('plansApi.list', () => {
+  // Cycle 7 wrapped this response in a { plans } envelope to match the contract
+  // (contracts/cycle7/openapi.yaml — required: [plans]) but the client kept asking for a bare array,
+  // so PlansTab crashed on `plans.filter is not a function` the first time the release reached a
+  // machine. The sibling listOptions envelope had a test; this one did not.
+  it('unwraps the { plans } envelope', async () => {
+    const plans = [{ id: 'p1', name: 'Базовый' }]
+    vi.mocked(api.get).mockResolvedValueOnce({ data: { plans } })
+
+    await expect(plansApi.list()).resolves.toEqual(plans)
+    expect(api.get).toHaveBeenCalledWith('/admin/plans')
+  })
+})
+
 describe('plansApi.listOptions', () => {
   it('unwraps the { options } envelope', async () => {
     const options = [{ id: 'o1', name: 'Опция' }]

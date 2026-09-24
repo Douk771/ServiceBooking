@@ -17,7 +17,7 @@ export type AdminPlanInput = Schemas['AdminPlanInput']
 export type AdminOptionDto = Schemas['AdminOptionDto']
 
 export const plansApi = {
-  list: () => api.get<PlanConfig[]>('/admin/plans').then((r) => r.data),
+  list: () => api.get<{ plans: PlanConfig[] }>('/admin/plans').then((r) => r.data.plans),
   create: (data: AdminPlanInput) => api.post<PlanConfig>('/admin/plans', data).then((r) => r.data),
   update: (id: string, data: AdminPlanInput) =>
     api.put<PlanConfig>(`/admin/plans/${id}`, data).then((r) => r.data),
