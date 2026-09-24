@@ -70,8 +70,8 @@ function Carousel({
   // the focused element would end up hidden from the accessibility tree while still holding focus.
   // Move focus along to the newly active slide in that case (review finding, cycle 13).
   useEffect(() => {
-    const active = document.activeElement
-    if (active instanceof HTMLElement && slideRefs.current.includes(active) && active !== slideRefs.current[index]) {
+    const active = document.activeElement as HTMLButtonElement | null
+    if (active && slideRefs.current.includes(active) && active !== slideRefs.current[index]) {
       slideRefs.current[index]?.focus()
     }
   }, [index])

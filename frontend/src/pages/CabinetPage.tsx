@@ -103,10 +103,11 @@ function CompanyChips({
 
 // ── My companies (owner) ──────────────────────────────────────────────────────
 
-function MyCompaniesTab() {
+export function MyCompaniesTab() {
   const [showCreate, setShowCreate] = useState(false)
   const [city, setCity] = useState<City | null>(null)
   const [cityError, setCityError] = useState('')
+  const [termsError, setTermsError] = useState('')
   const [ownerTermsAccepted, setOwnerTermsAccepted] = useState(false)
   // ARCHITECTURE_CYCLE13.md §220.2/§220.4 — the public-address notice gates the address text ITSELF,
   // not the whole form: it must reappear if the address is edited again after being confirmed once,
@@ -170,6 +171,10 @@ function MyCompaniesTab() {
       setCityError('Укажите город салона')
       return
     }
+    // Defence in depth — the submit button is already disabled while `ownerTerms` hasn't loaded
+    // (`!ownerTerms` in its `disabled`), and the pre-gate check below stops the notice (and its
+    // consent-ledger write) from firing in that state too. This just keeps `submitCompany` itself
+    // safe if it's ever called some other way.
     if (!ownerTerms) return
     setCityError('')
     create.mutate({
@@ -264,6 +269,15 @@ function MyCompaniesTab() {
                 setCityError('Укажите город салона')
                 return
               }
+              // Same reasoning for `ownerTerms` (review finding, cycle 13): if `GET
+              // /api/legal/documents` hasn't produced a `TermsOwner` entry by submit time, the
+              // owner must see WHY nothing happened rather than have the notice write a consent
+              // ledger entry for a submission that then silently no-ops in `submitCompany`.
+              if (!ownerTerms) {
+                setTermsError('Не удалось загрузить текст соглашения. Обновите страницу и попробуйте снова.')
+                return
+              }
+              setTermsError('')
               // ARCHITECTURE_CYCLE13.md §220.2 — shown on first fill AND on any later edit, before
               // saving. An address that's already been confirmed once at this exact text can submit
               // straight through; anything else routes through the notice first.
@@ -345,6 +359,7 @@ function MyCompaniesTab() {
               </span>
             </label>
 
+            {termsError && <p className="text-sm text-danger">{termsError}</p>}
             {create.isError && <p className="text-sm text-danger">{getCreateCompanyErrorMessage(create.error)}</p>}
             <div className="flex gap-3 pt-1">
               <Button

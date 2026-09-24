@@ -9,6 +9,7 @@ import type {
   AddressLookupResultDto,
   Company,
   CompanyAddressVerificationDto,
+  CompanyAddressVerificationResultDto,
 } from '../../types'
 
 interface Props {
