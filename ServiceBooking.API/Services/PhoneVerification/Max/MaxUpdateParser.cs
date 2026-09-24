@@ -66,6 +66,13 @@ public static class MaxUpdateParser
             senderId = GetIdString(user, "user_id");
         if (chatId is null && TryGetObject(root, "chat", out var chat))
             chatId = GetIdString(chat, "chat_id");
+        // И только потом — корневой `chat_id`. Это и есть форма `bot_started`: у него в корне лежат
+        // `chat_id` числом и объект `user`, никакого `message` и никакого вложенного `chat` там нет.
+        // Проверено живым проходом 24.09.2026: отправитель доставался из корневого `user`, а чат
+        // оставался null — бот получал апдейт, отвечал вебхуком 200 и молчал, потому что отвечать
+        // было некуда. Порядок проверок важен: `message.recipient.chat_id` остаётся первым, он
+        // относится к `message_created`.
+        chatId ??= GetIdString(root, "chat_id");
 
         return new MaxUpdateData(updateType, payload, senderId, chatId, contact);
     }

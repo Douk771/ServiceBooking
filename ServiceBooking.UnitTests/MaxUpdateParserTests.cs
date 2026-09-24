@@ -26,6 +26,31 @@ public class MaxUpdateParserTests
     }
 
     [Fact]
+    public void Parse_BotStarted_TakesChatIdFromTheRoot_NotFromANestedChatObject()
+    {
+        // Настоящая форма апдейта, снятая с боевого прохода 24.09.2026: у `bot_started` и `chat_id`,
+        // и `user` лежат В КОРНЕ. Прежняя фикстура этого класса вообще не содержала `chat_id`,
+        // поэтому разбор чата был не покрыт — бот получал апдейт и молчал, отвечать было некуда.
+        var root = Parse("""
+            {
+              "update_type": "bot_started",
+              "timestamp": 1790255221341,
+              "chat_id": 123456789,
+              "user": { "user_id": 555, "first_name": "Иван", "is_bot": false },
+              "user_locale": "ru",
+              "payload": "v1.abc123"
+            }
+            """);
+
+        var result = MaxUpdateParser.Parse(root);
+
+        result.UpdateType.Should().Be("bot_started");
+        result.Payload.Should().Be("v1.abc123");
+        result.SenderId.Should().Be("555");
+        result.ChatId.Should().Be("123456789", "без чата бот не может ответить — именно это и сломалось вживую");
+    }
+
+    [Fact]
     public void Parse_MessageWithContactAttachment_ExtractsVcfHashAndOwnerFromMaxInfo()
     {
         var root = Parse("""

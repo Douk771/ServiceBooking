@@ -231,7 +231,14 @@ public sealed class MaxWebhookHandler(
     /// already committed the session's own state by the time this runs).</summary>
     private async Task ReplyAsync(string? chatId, string text, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(chatId)) return;
+        if (string.IsNullOrEmpty(chatId))
+        {
+            // Раньше здесь был молчаливый `return`, и он стоил живого прохода: апдейт приходил,
+            // вебхук отвечал 200, а человек видел бота, который ничего не просит. Отсутствие чата —
+            // это всегда наша ошибка разбора апдейта, а не штатный случай, и она обязана быть видна.
+            logger.LogWarning("phone-verification webhook: nowhere to reply — the update carried no chat id");
+            return;
+        }
 
         try
         {
