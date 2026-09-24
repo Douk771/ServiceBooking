@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.WebPush;
+using ServiceBooking.API.Services.Scheduling;
 
 namespace ServiceBooking.Tests.Infrastructure;
 
@@ -17,8 +18,21 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// <see cref="FakeWebPushSender"/> (registered AFTER Program.cs's own, so it wins at resolution): no real
 /// network call ever happens through this host, matching every other dispatch-style factory in this
 /// suite (US-124's own "ни одного сетевого вызова наружу" requirement for the test contour, §105.3).
+///
+/// Cycle 14 (flaky-CI fix): <paramref name="disableAutomaticTicking"/> lets a test opt OUT of the real
+/// <c>PeriodicTimer</c>/<c>ScheduledTaskRunner</c> wall-clock tick entirely and drive one dispatch pass
+/// deterministically via <see cref="RunStaffPushDispatchPassAsync"/> instead. Tests that only assert a
+/// TERMINAL decision reached by <c>ProcessRowAsync</c> (re-checking rights/subscription ownership from the
+/// DB) rather than the runner's own scheduling behavior (its advisory lock, its due-time bookkeeping, its
+/// budget/partial-pass handling) lose nothing by skipping the timer: <c>StaffPushDispatchTask.ExecuteAsync</c>
+/// is the exact same production code either way, just invoked directly in its own DI scope instead of by
+/// the runner's <c>workScope</c> — see <see cref="RunStaffPushDispatchPassAsync"/> for why the advisory
+/// lock and <c>ScheduledTaskState</c> bookkeeping the runner ALSO does around that call are immaterial to
+/// those tests (nothing else runs the task concurrently in a single-pass test, and nothing asserts
+/// <c>ScheduledTaskState</c>). Tests that DO care about the runner's own repeated-tick/budget behavior
+/// (410/429/backoff) keep using the real timer, unchanged.
 /// </summary>
-public sealed class PushDispatchTestFactory(string connectionString) : WebApplicationFactory<Program>
+public sealed class PushDispatchTestFactory(string connectionString, bool disableAutomaticTicking = false) : WebApplicationFactory<Program>
 {
     public FakeClock Clock { get; } = new();
     public FakeWebPushSender Sender { get; } = new();
@@ -31,7 +45,10 @@ public sealed class PushDispatchTestFactory(string connectionString) : WebApplic
     {
         Identity = TestHostSettings.Apply(builder, "dispatch", connectionString);
 
-        builder.UseSetting("ScheduledTasks:Enabled", "true");
+        // disableAutomaticTicking: the runner's own BackgroundService.ExecuteAsync returns immediately
+        // when ScheduledTasks:Enabled=false (see ScheduledTaskRunner.cs) — the task itself stays fully
+        // registered and configured below, so RunStaffPushDispatchPassAsync can still resolve and run it.
+        builder.UseSetting("ScheduledTasks:Enabled", disableAutomaticTicking ? "false" : "true");
         builder.UseSetting("ScheduledTasks:TickSeconds", "1");
         builder.UseSetting("ScheduledTasks:photo-retention-cleanup:Enabled", "false");
         builder.UseSetting("ScheduledTasks:notification-dispatch:Enabled", "false");
@@ -56,6 +73,24 @@ public sealed class PushDispatchTestFactory(string connectionString) : WebApplic
             services.AddSingleton<INotificationClock>(Clock);
             services.AddSingleton<IWebPushSender>(Sender);
         });
+    }
+
+    /// <summary>
+    /// Runs exactly one <c>staff-push-dispatch</c> pass synchronously, in its own fresh DI scope — the
+    /// same call <c>ScheduledTaskRunner.RunOneAsync</c> makes (<c>workScope.ServiceProvider
+    /// .GetServices&lt;IScheduledTask&gt;().First(t => t.Name == task.Name).ExecuteAsync(...)</c>), just
+    /// without waiting for a real <see cref="PeriodicTimer"/> tick to get there. Deliberately does NOT
+    /// reproduce the runner's advisory lock or <c>ScheduledTaskState</c> due-time bookkeeping: those exist
+    /// to keep MULTIPLE overlapping runner instances from double-processing the same row, which cannot
+    /// happen from a single direct call a test makes itself — skipping them changes nothing about what
+    /// <c>ProcessRowAsync</c> decides for a given row. Requires <c>disableAutomaticTicking: true</c> so no
+    /// real tick can race this call and process the very row the test is about to seed/mutate.
+    /// </summary>
+    public async Task<ScheduledTaskOutcome> RunStaffPushDispatchPassAsync()
+    {
+        using var scope = Services.CreateScope();
+        var task = scope.ServiceProvider.GetServices<IScheduledTask>().First(t => t.Name == "staff-push-dispatch");
+        return await task.ExecuteAsync(CancellationToken.None);
     }
 }
 

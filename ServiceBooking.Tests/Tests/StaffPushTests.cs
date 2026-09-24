@@ -296,7 +296,12 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
     [Fact, TestCase("PUSH-008")]
     public async Task RealRunner_MasterRemovedFromCompany_HoldsDeliveryEvenThoughAlreadyQueued()
     {
-        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString);
+        // Cycle 14 (flaky-CI fix): disableAutomaticTicking + RunStaffPushDispatchPassAsync — a
+        // deterministic single pass through the real ProcessRowAsync path instead of waiting on a real
+        // PeriodicTimer tick under CI load (see PushDispatchTestFactory's own doc comment). This test
+        // only asserts a terminal decision ProcessRowAsync reaches by RE-READING rights from the DB, so
+        // the runner's own scheduling machinery (advisory lock, due-time bookkeeping) is immaterial here.
+        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString, disableAutomaticTicking: true);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -308,7 +313,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         db.CompanyMembers.Remove(membership);
         await db.SaveChangesAsync();
 
-        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, DispatchWaitSeconds);
+        await factory.RunStaffPushDispatchPassAsync();
 
         await db.Entry(row).ReloadAsync();
         row.Status.Should().Be(NotificationStatus.Skipped);
@@ -327,7 +332,9 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         // row's UserId to B; the queued row still says UserId=A. The dispatcher must never fire this row
         // at all (neither to A — the endpoint is now B's browser session — nor, worse, appear to reach
         // B with A's queued client-name payload): it must Skip with PushSubscriptionReassigned.
-        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString);
+        // Cycle 14 (flaky-CI fix): same deterministic single-pass trigger as the sibling test above —
+        // see PushDispatchTestFactory's doc comment on RunStaffPushDispatchPassAsync.
+        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString, disableAutomaticTicking: true);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -347,7 +354,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         trackedSubscription.UserId = masterBUserId;
         await db.SaveChangesAsync();
 
-        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, DispatchWaitSeconds);
+        await factory.RunStaffPushDispatchPassAsync();
 
         await db.Entry(row).ReloadAsync();
         row.Status.Should().Be(NotificationStatus.Skipped);
