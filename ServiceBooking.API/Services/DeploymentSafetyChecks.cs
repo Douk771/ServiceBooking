@@ -564,15 +564,20 @@ public static class DeploymentSafetyChecks
                 "ADDRESSVERIFICATION__MAXCANDIDATES to a value in [1, 5].");
 
         // §206/ARCHITECTURE_CYCLE13.md §420-422: StoreResults is a licence flag the code cannot itself
-        // verify — a Warning at every startup where it's on is the whole enforcement mechanism.
+        // verify — a Warning at every startup where it's on is the whole enforcement mechanism. This must
+        // come AFTER the "logging" early-return below: with Provider=logging there is no geocoder call and
+        // therefore no result to ever store, so warning here regardless of provider (review finding, cycle
+        // 13 recheck, non-blocking) produced a false "coordinates will be stored" warning on every dev/test
+        // host that merely inherited StoreResults=true from a shared config without a real provider enabled.
         var storeResults = configuration.GetValue($"{Geo.GeoOptions.SectionName}:StoreResults", false);
+
+        if (string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase)) return;
+
         if (storeResults)
             warn("AddressVerification:StoreResults is true — coordinates from geocoder results will be " +
                  "stored and exposed via the API. This is only licensed under Yandex Geocoder's EXTENDED " +
                  "(\"with result storage\") licence — enable only if that licence was purchased " +
                  "(ARCHITECTURE_CYCLE13.md §206/§209.2, LEGAL_REVIEW.md §16.2).");
-
-        if (string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase)) return;
 
         if (!string.Equals(provider, "yandex", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(

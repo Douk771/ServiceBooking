@@ -1166,10 +1166,18 @@ public class DeploymentSafetyChecksTests
 
     // §206/ARCHITECTURE_CYCLE13.md §420-422 — review finding (cycle 13 review, non-blocking #5): this
     // warning didn't exist at all, despite GeoOptions.StoreResults' own doc comment claiming it did.
+    // A real provider must be configured for the warning to be meaningful (see the
+    // "logging provider" test below for the companion review finding that this must NOT fire when
+    // Provider=logging, since there is no geocoder call and therefore nothing to ever store).
     [Fact]
-    public void ValidateAddressVerification_StoreResultsTrue_WarnsAboutExtendedLicence()
+    public void ValidateAddressVerification_StoreResultsTrue_WithYandexProvider_WarnsAboutExtendedLicence()
     {
-        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:StoreResults"] = "true" });
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["AddressVerification:StoreResults"] = "true",
+            ["AddressVerification:Provider"] = "yandex",
+            ["AddressVerification:Yandex:ApiKey"] = "real-key",
+        });
         var warnings = new List<string>();
 
         DeploymentSafetyChecks.ValidateAddressVerification(config, "Production", warn: warnings.Add);
@@ -1178,9 +1186,29 @@ public class DeploymentSafetyChecksTests
     }
 
     [Fact]
-    public void ValidateAddressVerification_StoreResultsFalse_DoesNotWarn()
+    public void ValidateAddressVerification_StoreResultsFalse_WithYandexProvider_DoesNotWarn()
     {
-        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:StoreResults"] = "false" });
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["AddressVerification:StoreResults"] = "false",
+            ["AddressVerification:Provider"] = "yandex",
+            ["AddressVerification:Yandex:ApiKey"] = "real-key",
+        });
+        var warnings = new List<string>();
+
+        DeploymentSafetyChecks.ValidateAddressVerification(config, "Production", warn: warnings.Add);
+
+        warnings.Should().BeEmpty();
+    }
+
+    // Review recheck (cycle 13, non-blocking backend finding): the StoreResults warning previously fired
+    // even with the default Provider=logging, where there is no geocoder call and therefore no coordinates
+    // that could ever be stored — a false "coordinates will be stored" warning on every dev/test host that
+    // merely inherited StoreResults=true from shared config without a real provider enabled.
+    [Fact]
+    public void ValidateAddressVerification_StoreResultsTrue_WithLoggingProvider_DoesNotWarn()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:StoreResults"] = "true" });
         var warnings = new List<string>();
 
         DeploymentSafetyChecks.ValidateAddressVerification(config, "Production", warn: warnings.Add);
