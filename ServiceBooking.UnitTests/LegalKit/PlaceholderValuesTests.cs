@@ -15,13 +15,13 @@ public class PlaceholderValuesTests
     }
 
     [Fact]
-    public void Load_AllThirteenKeysPresentAndNonEmpty_Succeeds()
+    public void Load_AllTwelveKeysPresentAndNonEmpty_Succeeds()
     {
         var path = WriteTempFile(LegalKitFixture.ValidValuesJson());
         try
         {
             var values = PlaceholderValues.Load(path);
-            values.Values.Should().HaveCount(13);
+            values.Values.Should().HaveCount(12);
             values.Values["НАИМЕНОВАНИЕ_ОПЕРАТОРА"].Should().Be("ООО Тест");
         }
         finally { File.Delete(path); }
@@ -119,30 +119,66 @@ public class PlaceholderValuesTests
         finally { File.Delete(path); }
     }
 
+    // НОМЕР_УВЕДОМЛЕНИЯ_РКН / ДАТА_УВЕДОМЛЕНИЯ_РКН are optional (ARCHITECTURE_CYCLE11.md §103.3): the
+    // registry entry lags the Roskomnadzor notice by up to 30 days, and publishing the number at all is
+    // not itself a legal requirement — publish must not be blocked on it being absent.
+
     [Fact]
-    public void Load_OgrnWrongLength_IsRejected()
+    public void Load_BothRknKeysAbsent_Succeeds()
     {
-        var json = LegalKitFixture.ValidValuesJson().Replace("\"1234567890123\"", "\"12345\"");
-        var path = WriteTempFile(json);
+        var path = WriteTempFile(LegalKitFixture.ValidValuesJsonWithoutRknKeys());
         try
         {
-            var act = () => PlaceholderValues.Load(path);
-            act.Should().Throw<PlaceholderValuesException>()
-                .Which.Problems.Should().Contain(p => p.Contains("ОГРН_ОПЕРАТОРА"));
+            var values = PlaceholderValues.Load(path);
+            values.Values.Should().HaveCount(10);
+            values.Values.Should().NotContainKey("НОМЕР_УВЕДОМЛЕНИЯ_РКН");
+            values.Values.Should().NotContainKey("ДАТА_УВЕДОМЛЕНИЯ_РКН");
         }
         finally { File.Delete(path); }
     }
 
     [Fact]
-    public void Load_RknDateWrongFormat_IsRejected()
+    public void Load_OneOfTwoRknKeysAbsent_Succeeds()
     {
+        var json = LegalKitFixture.ValidValuesJsonWithoutRknKeys()
+            .Replace("\"НДС_ОГОВОРКА\"", "\"НОМЕР_УВЕДОМЛЕНИЯ_РКН\": \"00-00-000000\",\n            \"НДС_ОГОВОРКА\"");
+        var path = WriteTempFile(json);
+        try
+        {
+            var values = PlaceholderValues.Load(path);
+            values.Values.Should().ContainKey("НОМЕР_УВЕДОМЛЕНИЯ_РКН");
+            values.Values.Should().NotContainKey("ДАТА_УВЕДОМЛЕНИЯ_РКН");
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void Load_RknKeyPresentButEmpty_IsRejected()
+    {
+        var json = LegalKitFixture.ValidValuesJsonWithoutRknKeys()
+            .Replace("\"НДС_ОГОВОРКА\"", "\"НОМЕР_УВЕДОМЛЕНИЯ_РКН\": \"\",\n            \"НДС_ОГОВОРКА\"");
+        var path = WriteTempFile(json);
+        try
+        {
+            var act = () => PlaceholderValues.Load(path);
+            act.Should().Throw<PlaceholderValuesException>()
+                .Which.Problems.Should().Contain(p => p.Contains("НОМЕР_УВЕДОМЛЕНИЯ_РКН") && p.Contains("пустое"));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void Load_RknDateWrongFormat_StillValidatedEvenThoughOptional_WhenKeyIsPresent()
+    {
+        // Present-but-malformed is still rejected — "optional" means "may be absent", not "format checks
+        // are relaxed when someone bothers to write it".
         var json = LegalKitFixture.ValidValuesJson().Replace("\"01.01.2026\"", "\"2026-01-01\"");
         var path = WriteTempFile(json);
         try
         {
             var act = () => PlaceholderValues.Load(path);
             act.Should().Throw<PlaceholderValuesException>()
-                .Which.Problems.Should().Contain(p => p.Contains("ДАТА_УВЕДОМЛЕНИЯ_РКН"));
+                .Which.Problems.Should().Contain(p => p.Contains("ДАТА_УВЕДОМЛЕНИЯ_РКН") && p.Contains("формату"));
         }
         finally { File.Delete(path); }
     }

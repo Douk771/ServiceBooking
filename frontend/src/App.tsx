@@ -50,6 +50,7 @@ const CONSENT_GATE_BYPASS_PATHS = [
   '/pdn-consent',
   '/channel-risk',
   '/offer-channel',
+  '/payment-terms',
   '/data-request',
   '/profile/delete',
   '/profile/consents',
@@ -217,6 +218,9 @@ export default function App() {
                       {/* §43 — the channel offer (D9) is an appendix inside TermsOwner, not a document
                         of its own; this is a redirect, not a page. */}
                       <Route path="/offer-channel" element={<Navigate to="/terms-owner#offer-channel" replace />} />
+                      {/* Приложение № 2 (оплата, автопродление, возврат) — тоже приложение внутри
+                          TermsOwner, не отдельный документ; редирект по образцу /offer-channel. */}
+                      <Route path="/payment-terms" element={<Navigate to="/terms-owner#payment-terms" replace />} />
                       {/* Legacy redirects */}
                       <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
                       <Route path="/owner" element={<Navigate to="/cabinet" replace />} />

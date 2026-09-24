@@ -25,17 +25,16 @@ public static class LegalReadinessReportBuilder
         new("""href\s*=\s*["'](?<href>/[^"'#]*(?:#[^"']*)?)["']""",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>LEGAL_REVIEW.md §13-бис's own grouping of the 13 `legal-values.schema.json` placeholder
+    /// <summary>LEGAL_REVIEW.md §13-бис's own grouping of the 12 `legal-values.schema.json` placeholder
     /// names plus the 2 manifest-derived ones — the schema's `source` enum is that grouping verbatim, and
     /// it's a static fact about the document set (which fact never changes without a legal review), not
     /// something derived at runtime. Any placeholder name not in this map is new/unclassified and falls
     /// back to "из манифеста", the schema's own bucket for "we don't know the real source".</summary>
     public static readonly IReadOnlyDictionary<string, string> PlaceholderSources = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["НАИМЕНОВАНИЕ_ОПЕРАТОРА"] = "ЕГРЮЛ",
-        ["ИНН_ОПЕРАТОРА"] = "ЕГРЮЛ",
-        ["ОГРН_ОПЕРАТОРА"] = "ЕГРЮЛ",
-        ["ЮРИДИЧЕСКИЙ_АДРЕС"] = "ЕГРЮЛ",
+        ["НАИМЕНОВАНИЕ_ОПЕРАТОРА"] = "из реквизитов оператора",
+        ["ИНН_ОПЕРАТОРА"] = "из реквизитов оператора",
+        ["ЮРИДИЧЕСКИЙ_АДРЕС"] = "из реквизитов оператора",
         ["НОМЕР_УВЕДОМЛЕНИЯ_РКН"] = "после уведомления РКН",
         ["ДАТА_УВЕДОМЛЕНИЯ_РКН"] = "после уведомления РКН",
         ["ПОЧТОВЫЙ_АДРЕС"] = "решение заказчика",
@@ -47,6 +46,19 @@ public static class LegalReadinessReportBuilder
         ["НДС_ОГОВОРКА"] = "решение заказчика",
         ["ВЕРСИЯ_ДОКУМЕНТА"] = "из манифеста",
         ["ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ"] = "из манифеста",
+    };
+
+    /// <summary>The 2 placeholder names contracts/cycle11/legal-values.schema.json allows to be absent
+    /// from <c>legal.values.json</c> (ARCHITECTURE_CYCLE11.md §103.3): publishing the Roskomnadzor
+    /// registry notice number is not itself a legal obligation, and the registry entry lags the notice by
+    /// up to 30 days. Kept here — not just in <c>ServiceBooking.LegalKit.PlaceholderValues</c> — because
+    /// this is the one place both `status`/readiness callers build the placeholder summary the human
+    /// reads: an absent optional value must show up as its own, clearly-labelled line in that summary
+    /// (`optional: true, valuePresent: false`) rather than as a `MissingValues` blocker, so a reader can
+    /// tell "the registry line just won't be in the published text yet" apart from "publish is broken".</summary>
+    public static readonly IReadOnlySet<string> OptionalPlaceholderKeys = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "НОМЕР_УВЕДОМЛЕНИЯ_РКН", "ДАТА_УВЕДОМЛЕНИЯ_РКН",
     };
 
     public static LegalReadinessDocumentDto BuildDocumentReport(LegalDocument d) =>
@@ -89,7 +101,8 @@ public static class LegalReadinessReportBuilder
                 g.Key, g.Sum(h => h.Count),
                 PlaceholderSources.GetValueOrDefault(g.Key, "из манифеста"),
                 g.Select(h => h.File).Distinct(StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList(),
-                ValuePresent: presentValueNames?.Contains(g.Key) ?? false))
+                ValuePresent: presentValueNames?.Contains(g.Key) ?? false,
+                Optional: OptionalPlaceholderKeys.Contains(g.Key)))
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ToList();
     }
@@ -191,7 +204,7 @@ public record LegalReadinessUiTextDto(
 public record LegalReadinessBlockerDto(string Kind, string Detail);
 
 public record LegalReadinessPlaceholderSummaryDto(
-    string Name, int Count, string Source, List<string> Files, bool ValuePresent);
+    string Name, int Count, string Source, List<string> Files, bool ValuePresent, bool Optional);
 
 public record LegalReadinessBrokenLinkDto(string File, string Href);
 

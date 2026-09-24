@@ -9,14 +9,20 @@
     "ChannelRiskNotice": "/channel-risk"
   },
 
-  "_aliasesComment": "Маршруты, которые существуют во фронтенде, но не являются отдельным типом документа. `/offer-channel` — оферта D9, приложение № 1 к TermsOwner (ARCHITECTURE_CYCLE11.md §102.2): шестого типа документа нет и не будет, поэтому это редирект на якорь.",
+  "_aliasesComment": "Маршруты, которые существуют во фронтенде, но не являются отдельным типом документа. `/offer-channel` — оферта D9, приложение № 1 к TermsOwner (ARCHITECTURE_CYCLE11.md §102.2): шестого типа документа нет и не будет, поэтому это редирект на якорь. `/payment-terms` — приложение № 2 к TermsOwner (Оплата, автопродление и возврат, legal-drafts/13-payment-terms.html), устроено так же — редирект на якорь. ВНИМАНИЕ: приложение № 2 намеренно не подключено к legal-drafts/legal.json и не приклеено к App_Data/legal/03-terms-owner.html до запуска оплаты картой, поэтому якорь `payment-terms` сознательно числится в `anchorsPending`, а не в `anchors` ниже — требовать его наличия в текущем артефакте было бы ложной тревогой.",
   "aliases": {
-    "/offer-channel": "/terms-owner#offer-channel"
+    "/offer-channel": "/terms-owner#offer-channel",
+    "/payment-terms": "/terms-owner#payment-terms"
   },
 
   "_anchorsComment": "Якоря, которые ОБЯЗАНЫ существовать в отданном HTML. Отсутствие — код возврата 6 у `legal links` и красный CI: без якоря редирект /offer-channel приводит человека на страницу без оферты, которую ему предлагают принять. Именно это состояние и есть сегодня в App_Data/legal/terms-owner.html (ARCHITECTURE_CYCLE11.md §108.1).",
   "anchors": {
     "/terms-owner": ["offer-channel"]
+  },
+
+  "_anchorsPendingComment": "Cycle 12 review finding 2.1: каждый якорь, который цель какого-то alias'а подразумевает, обязан быть либо в `anchors`, либо здесь — третьего не дано (см. LegalRoutesTests.EveryAliasAnchor_IsEitherLiveOrPending). `payment-terms` — целевой якорь /payment-terms, но Приложение № 2 ещё не подключено к манифесту (см. deferredDrafts в legal-drafts/legal.json), поэтому в собранном артефакте его сегодня НЕТ — и LegalRoutesTests.AnchorsPending_AreNotYetInTheArtifact проверяет именно это. Как только Приложение № 2 подключат к appendices, этот тест начнёт падать, и запись нужно будет перенести из anchorsPending в anchors — самим себя завершающая защита от 'забыли добавить якорь'.",
+  "anchorsPending": {
+    "/terms-owner": ["payment-terms"]
   },
 
   "_allowedTargetsComment": "Полный набор целей, на которые внутренняя ссылка из правового текста может указывать. Всё, что не отсюда, — битая ссылка.",
@@ -26,6 +32,7 @@
     "/terms-owner",
     "/pdn-consent",
     "/channel-risk",
-    "/offer-channel"
+    "/offer-channel",
+    "/payment-terms"
   ]
 }

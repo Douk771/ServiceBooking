@@ -97,26 +97,53 @@ internal static class PublishCommand
             ["ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ"] = effectiveFromFormatted,
         };
 
+        // The two Roskomnadzor-registry keys are the only ones that may legitimately be missing from
+        // `values.Values` (ARCHITECTURE_CYCLE11.md §103.3 / PlaceholderValues.OptionalKeys — publishing
+        // the registration number is not a legal requirement, and the ~30-day gap between notice and
+        // registration would otherwise block publication for a month for no legal reason). A missing
+        // optional key must not turn into a substituted-empty string in the middle of a sentence
+        // ("регистрационный номер , уведомление направлено ") — see RemoveElementsForMissingOptionalKeys.
+        var missingOptionalKeys = PlaceholderValues.OptionalKeys
+            .Where(key => !substitutions.ContainsKey(key))
+            .ToList();
+
         // Each entry carries its own manifest fields directly rather than the source object being looked
         // back up later by BaseFile — two manifest entries sharing a source file name (a malformed but
         // not impossible manifest) would otherwise make that later lookup ambiguous.
         var substituted = new List<PublishedFile>();
         var leftoverProblems = new List<string>();
+        var removalBlockingProblems = new List<string>();
+        var removedBlockDescriptions = new List<string>();
         var usedNewFileNames = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var doc in snapshot.Documents.Values.OrderBy(d => d.Type))
         {
-            var content = Substitute(doc.ContentHtml, substitutions);
+            var withRemovals = RemoveElementsForMissingOptionalKeys(
+                doc.ContentHtml, doc.File, missingOptionalKeys, removalBlockingProblems, removedBlockDescriptions);
+            var content = Substitute(withRemovals, substitutions);
             CollectLeftovers(doc.File, content, leftoverProblems);
             var newFile = VersionedFileName(doc.File, version, usedNewFileNames);
             substituted.Add(new PublishedFile(doc.File, newFile, content, IsDocument: true, doc.Type.ToString(), doc));
         }
         foreach (var text in snapshot.UiTexts.Values.OrderBy(t => t.Key, StringComparer.Ordinal))
         {
-            var content = Substitute(text.ContentHtml, substitutions);
+            var withRemovals = RemoveElementsForMissingOptionalKeys(
+                text.ContentHtml, text.File, missingOptionalKeys, removalBlockingProblems, removedBlockDescriptions);
+            var content = Substitute(withRemovals, substitutions);
             CollectLeftovers(text.File, content, leftoverProblems);
             var newFile = VersionedFileName(text.File, version, usedNewFileNames);
             substituted.Add(new PublishedFile(text.File, newFile, content, IsDocument: false, text.Key, UiText: text));
+        }
+
+        // Review finding 5.1: a block dropped for a missing OPTIONAL key must not silently take an
+        // unrelated REQUIRED placeholder down with it (e.g. a future draft writing "ИНН {{ИНН_ОПЕРАТОРА}};
+        // сведения внесены в реестр: {{НОМЕР_УВЕДОМЛЕНИЯ_РКН}}" in one <li> would otherwise lose the ИНН
+        // from the published text with nothing reporting it). Refuse instead of guessing — §105.3's
+        // "отказываемся целиком, а не догадываемся" applies here exactly as much as to a leftover token.
+        if (removalBlockingProblems.Count > 0)
+        {
+            PrintRejection(removalBlockingProblems);
+            return 5;
         }
 
         if (leftoverProblems.Count > 0)
@@ -184,6 +211,8 @@ internal static class PublishCommand
                     .ToList());
                 return 5;
             }
+
+            PrintRemovedBlocks(removedBlockDescriptions);
 
             if (dryRun)
             {
@@ -254,6 +283,90 @@ internal static class PublishCommand
             var name = m.Value.Trim('{', '}');
             return values.TryGetValue(name, out var value) ? value : m.Value;
         });
+
+    /// <summary>The nearest containing block elements a placeholder may live in — the ones legal-drafts
+    /// actually uses for a self-contained sentence/bullet (a single &lt;li&gt; item or a standalone
+    /// &lt;p&gt;). Matched non-greedily against the SAME tag name via a backreference, and the body is
+    /// forbidden from containing an OPENING tag of that same name (<c>(?!&lt;\1\b)</c>) so that "nearest
+    /// containing block" stays literally true: without that guard, an outer &lt;li&gt; wrapping a nested
+    /// list would match from the outer opening tag to the INNER &lt;/li&gt;, and removing that span would
+    /// delete a placeholder together with half of two elements — leaving malformed HTML that the leftover
+    /// scan can no longer see, because the token it would have rejected went away with the text. With the
+    /// guard, the outer element simply doesn't match and the inner one (the real nearest block) does.
+    /// Verified to select exactly the same spans as the unguarded pattern on every file in legal-drafts/
+    /// and App_Data/legal/ today — this only changes behaviour on same-tag nesting, which the document set
+    /// does not currently contain.</summary>
+    private static readonly Regex BlockElementRegex =
+        new(@"<(li|p)\b[^>]*>(?:(?!<\1\b).)*?</\1>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Drops the whole nearest &lt;li&gt;/&lt;p&gt; block for every occurrence of a missing OPTIONAL
+    /// placeholder, instead of substituting it with an empty string. Simply leaving the value blank would
+    /// produce a grammatically broken sentence ("регистрационный номер , уведомление направлено ") —
+    /// worse than not mentioning the registry entry at all, and exactly the failure mode this method
+    /// exists to prevent.
+    ///
+    /// Design choice, spelled out because it is not the only defensible one: a block is removed as soon
+    /// as it contains AT LEAST ONE missing-optional token, regardless of what else (other optional
+    /// values, plain text) shares that same block. The alternative — "keep the block and blank only the
+    /// missing token" — was rejected because a block mixing an optional registry fact with unrelated
+    /// content is a drafting decision made in legal-drafts/*.html, not something this tool can safely
+    /// second-guess: once one sentence in a bullet becomes unverifiable, the tool cannot tell whether the
+    /// REST of that bullet still reads correctly without the missing clause, so refusing to guess and
+    /// dropping the whole unit is the safer default.
+    ///
+    /// Review finding 5.1: if the block ALSO contains a known placeholder that is NOT itself one of the
+    /// currently-missing optional keys — i.e. a required requisite, or a manifest-derived one — removing
+    /// the block would silently take that unrelated, filled-in requisite down with it (a future draft
+    /// combining an optional registry fact with ИНН_ОПЕРАТОРА in one &lt;li&gt; is exactly this
+    /// scenario). That case is refused outright via <paramref name="blockingProblems"/> instead of
+    /// guessed at — consistent with §105.3's "отказываемся целиком, а не догадываемся". A block that only
+    /// ever combines missing-optional keys with EACH OTHER (both Roskomnadzor registry placeholders in
+    /// one bullet — the document set's actual current shape) is still removed silently, exactly as
+    /// before, and is recorded in <paramref name="removedBlockDescriptions"/> so the operator can see
+    /// what disappeared from the published text.
+    ///
+    /// This runs BEFORE <see cref="Substitute"/> and BEFORE the leftover scan: a missing optional token
+    /// that is not inside a recognized &lt;li&gt;/&lt;p&gt; is left untouched here and therefore still
+    /// survives to <see cref="CollectLeftovers"/>, which rejects publication exactly as strictly as before
+    /// — this method only ever REMOVES text, it never causes a token that should be caught to be missed.
+    /// </summary>
+    private static string RemoveElementsForMissingOptionalKeys(
+        string html, string file, IReadOnlyList<string> missingOptionalKeys,
+        List<string> blockingProblems, List<string> removedBlockDescriptions)
+    {
+        if (missingOptionalKeys.Count == 0)
+            return html;
+
+        return BlockElementRegex.Replace(html, m =>
+        {
+            var missingInBlock = missingOptionalKeys
+                .Where(key => m.Value.Contains("{{" + key + "}}", StringComparison.Ordinal))
+                .ToList();
+            if (missingInBlock.Count == 0)
+                return m.Value;
+
+            // Any known placeholder in this block that is NOT one of the optional keys it's being removed
+            // for — a required requisite, or a manifest-derived one — would be lost silently if the whole
+            // block is dropped.
+            var otherRequiredTokens = PlaceholderScanner.KnownNames
+                .Where(name => !PlaceholderValues.OptionalKeys.Contains(name))
+                .Where(name => m.Value.Contains("{{" + name + "}}", StringComparison.Ordinal))
+                .ToList();
+
+            if (otherRequiredTokens.Count > 0)
+            {
+                blockingProblems.Add(
+                    $"{file}: в блоке, который пришлось бы удалить из-за отсутствующего " +
+                    $"{string.Join(", ", missingInBlock.Select(k => "{{" + k + "}}"))}, есть также " +
+                    $"{string.Join(", ", otherRequiredTokens.Select(k => "{{" + k + "}}"))} — разнесите предложение на отдельные элементы.");
+                return m.Value;
+            }
+
+            removedBlockDescriptions.Add($"{file}: удалён блок ({string.Join(", ", missingInBlock.Select(k => "{{" + k + "}}"))}).");
+            return string.Empty;
+        });
+    }
 
     /// <summary>One document or uiText being published, carrying everything <see cref="BuildManifestJson"/>
     /// needs directly — no later lookup by file name back into the snapshot, which would be ambiguous if
@@ -346,5 +459,15 @@ internal static class PublishCommand
     {
         Console.Error.WriteLine("Публикация отклонена:");
         foreach (var p in problems) Console.Error.WriteLine($"  - {p}");
+    }
+
+    /// <summary>Review finding 5.1: publish must surface every block it silently dropped for a missing
+    /// optional key, so the operator can see that something disappeared from the published text instead
+    /// of finding out by reading the final HTML line by line.</summary>
+    private static void PrintRemovedBlocks(List<string> removedBlockDescriptions)
+    {
+        if (removedBlockDescriptions.Count == 0) return;
+        Console.WriteLine("Удалены блоки с отсутствующими необязательными реквизитами:");
+        foreach (var description in removedBlockDescriptions) Console.WriteLine($"  - {description}");
     }
 }
