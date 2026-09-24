@@ -532,6 +532,11 @@ export type LegalTextKey =
   | 'GuardianConfirmation'
   /** §220.1 — 7th key, cycle 13: public-address-notice warning shown next to the address field. */
   | 'PublicAddressNotice'
+  /** API_CONTRACT_CYCLE16.md §276.3 — 8th key, cycle 16: `GuestDataGateNotice` shown on `/profile`
+   *  and `/profile/delete` when `profile.phoneVerified === false` (§245.6 п.2/3). Until legal-counsel
+   *  publishes the key server-side, `GuestDataGateNotice.tsx` renders a neutral fallback instead of
+   *  leaving the screen empty. */
+  | 'GuestDataGateNotice'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
 export type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =

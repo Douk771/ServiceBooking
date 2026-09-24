@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, Link } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { profileApi } from '../api/profile'
 import { useAuthStore } from '../store/authStore'
+import { GuestDataGateNotice } from '../components/profile/GuestDataGateNotice'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -18,6 +19,8 @@ export function DeleteAccountPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const { logout } = useAuthStore()
+  // Shared cache with ProfilePage's ['profile'] query (§276.1) — no second, gate-specific fetch.
+  const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: profileApi.get })
   const [password, setPassword] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState('')
@@ -67,6 +70,8 @@ export function DeleteAccountPage() {
             .
           </p>
         </div>
+
+        {profile && <GuestDataGateNotice phoneVerified={profile.phoneVerified} />}
 
         <Input label="Текущий пароль" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
 
