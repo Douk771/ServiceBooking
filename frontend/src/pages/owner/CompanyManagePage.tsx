@@ -717,6 +717,11 @@ function SettingsTab({ companyId }: { companyId: string }) {
           bookingHorizonDays: company.bookingHorizonDays || '',
         }
       : undefined,
+    // `values` resyncs the form whenever the `['my-companies']` cache updates — which now also
+    // happens on `AddressVerifyField`'s own save (§209), a save this form's fields know nothing
+    // about. Without `keepDirtyValues`, that resync silently reverts whatever the owner had typed
+    // into THIS form but not yet submitted (review finding, cycle 13).
+    resetOptions: { keepDirtyValues: true },
   })
 
   const [settingsError, setSettingsError] = useState('')
