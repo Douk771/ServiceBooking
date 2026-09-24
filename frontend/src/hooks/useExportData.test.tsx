@@ -60,7 +60,7 @@ describe('useExportData', () => {
           applied: true,
           reason: 'PhoneNotVerified',
           explanation: 'Часть данных не попала в файл — номер не подтверждён.',
-          subjectRequestPath: '/subject-request',
+          subjectRequestPath: '/data-request',
         },
       }),
     )
@@ -77,7 +77,7 @@ describe('useExportData', () => {
 
   it('applied true with explanation null still flips the notice on, just with no text to show (schema allows it)', async () => {
     exportData.mockResolvedValue(
-      jsonBlob({ guestDataGate: { applied: true, reason: 'PhoneNotVerified', explanation: null, subjectRequestPath: '/subject-request' } }),
+      jsonBlob({ guestDataGate: { applied: true, reason: 'PhoneNotVerified', explanation: null, subjectRequestPath: '/data-request' } }),
     )
     const { result } = renderHook(() => useExportData(), { wrapper })
 
@@ -103,7 +103,7 @@ describe('useExportData', () => {
 
   it('resets gateNotice on a fresh attempt (onMutate)', async () => {
     exportData.mockResolvedValueOnce(
-      jsonBlob({ guestDataGate: { applied: true, reason: 'PhoneNotVerified', explanation: 'Текст.', subjectRequestPath: '/subject-request' } }),
+      jsonBlob({ guestDataGate: { applied: true, reason: 'PhoneNotVerified', explanation: 'Текст.', subjectRequestPath: '/data-request' } }),
     )
     const { result } = renderHook(() => useExportData(), { wrapper })
 
