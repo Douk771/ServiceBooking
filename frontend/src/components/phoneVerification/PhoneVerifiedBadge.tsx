@@ -10,7 +10,7 @@ interface PhoneVerifiedBadgeProps {
 }
 
 /**
- * §5 "Доступность" / US-12-14, US-12-15 — a confirmed phone is announced with a TEXT label, never by
+ * §5 "Доступность" / US-14-14, US-14-15 — a confirmed phone is announced with a TEXT label, never by
  * colour or a bare icon alone. Used on the profile page (with a date) and on the staff client list
  * (label only, R15 — no colour-only signal there either, and it never renders for `false`/`null`).
  */

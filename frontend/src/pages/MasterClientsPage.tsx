@@ -125,7 +125,7 @@ function ClientCard({ client, companyId }: ClientCardProps) {
             </a>
           )}
           {client.email && <p className="text-xs text-muted">{client.email}</p>}
-          {/* API_CONTRACT_CYCLE12.md §170.2 (R15) — `true` only, positive signal only. `false` (has an
+          {/* API_CONTRACT_CYCLE14.md §170.2 (R15) — `true` only, positive signal only. `false` (has an
               account, just not verified) and `null` (guest, no account — "не применимо") both render
               nothing at all: no colour, no icon, no "not verified" wording. */}
           {client.phoneVerified === true && <PhoneVerifiedBadge label="Телефон подтверждён" className="mt-1" />}

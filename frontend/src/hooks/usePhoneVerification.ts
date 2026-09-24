@@ -4,7 +4,7 @@ import { phoneVerificationApi } from '../api/phoneVerification'
 import { getPhoneVerificationErrorMessage } from '../utils/phoneVerificationError'
 import type { PhoneVerificationConfig, PhoneVerificationSessionCreated, PhoneVerificationSessionStatus, PhoneVerificationStatus } from '../types'
 
-// ARCHITECTURE_CYCLE12.md §148.4 (Q12, П9) — a session in one of these statuses is done; the poller
+// ARCHITECTURE_CYCLE14.md §148.4 (Q12, П9) — a session in one of these statuses is done; the poller
 // stops itself, matching the server's own rule (Pending/Linked keep going, everything else is final).
 const TERMINAL_STATUSES: ReadonlySet<PhoneVerificationStatus> = new Set(['Verified', 'Rejected', 'Cancelled', 'Expired'])
 
@@ -44,7 +44,7 @@ export interface UsePhoneVerificationResult {
   cancel: () => Promise<void>
   /**
    * Call whenever the phone field the caller is tracking changes value. If an open session was
-   * started for a DIFFERENT number, it's cancelled automatically (US-12-05, R8: "the user edited the
+   * started for a DIFFERENT number, it's cancelled automatically (US-14-05, R8: "the user edited the
    * number after asking to verify it" must not leave a stale session presentable at submit time).
    * The server does not rely on this — it re-checks the session's own phone independently at
    * consumption time (§148.5) — this is purely so the UI doesn't keep offering a QR/link that can

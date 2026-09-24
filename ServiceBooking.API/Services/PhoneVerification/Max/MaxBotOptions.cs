@@ -1,7 +1,7 @@
 namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>Typed binding of <c>PhoneVerification:Max</c> — everything specific to talking to the MAX
-/// bot platform (ARCHITECTURE_CYCLE12.md §150.1). Kept as a nested section, not flattened, so a future
+/// bot platform (ARCHITECTURE_CYCLE14.md §150.1). Kept as a nested section, not flattened, so a future
 /// second method (call/SMS) gets an equally-scoped sibling section instead of everyone's settings
 /// interleaved under one flat namespace.</summary>
 public sealed class MaxBotOptions

@@ -132,7 +132,7 @@ DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
 // checked the same "fail loud outside a developer environment" way as ValidateNotificationSecrets above,
 // but gated on ITS OWN Provider value, independent of Notifications:Provider.
 DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.Environment.EnvironmentName);
-// ARCHITECTURE_CYCLE12.md §150.2 — own secret set (PHONEVERIFY_*), own provider switch
+// ARCHITECTURE_CYCLE14.md §150.2 — own secret set (PHONEVERIFY_*), own provider switch
 // (PhoneVerification:Provider), checked unconditionally (even in Development — an unrecognized
 // provider value is a config-correctness bug there too, unlike the secrets themselves).
 DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(builder.Configuration, builder.Environment.EnvironmentName);
@@ -494,7 +494,7 @@ builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.
         ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>()
         : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>());
 
-// ── Подтверждение телефона через MAX (ARCHITECTURE_CYCLE12.md §140-§158) ──────────────────────────────
+// ── Подтверждение телефона через MAX (ARCHITECTURE_CYCLE14.md §140-§158) ──────────────────────────────
 // R5/§144.1: a PLATFORM subsystem, deliberately with NO reference anywhere in this block to
 // Notifications:*/NotificationChannel/ChannelCompanyAssignment/LegalOptionGuards — own top-level config
 // section, own secrets, own registry, its own named HttpClient.
@@ -664,7 +664,7 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
-    // ARCHITECTURE_CYCLE12.md §150.4 (Q8) — three new policies, twelve total.
+    // ARCHITECTURE_CYCLE14.md §150.4 (Q8) — three new policies, twelve total.
     //
     // phone-verify-start: POST /phone-verification/sessions — 10/час, per user when authenticated
     // (profile flow), otherwise per IP (registration flow, anonymous) — same "user id if present, else
@@ -689,7 +689,7 @@ builder.Services.AddRateLimiter(o =>
     });
 
     // phone-change: POST /api/profile/change-phone — 5/час на пользователя (R14). The route was NOT
-    // covered by any policy before this cycle; US-12-17 turns it into a perebor oracle (Р3), so it gets
+    // covered by any policy before this cycle; US-14-17 turns it into a perebor oracle (Р3), so it gets
     // one now.
     o.AddPolicy("phone-change", ctx =>
     {
@@ -768,7 +768,7 @@ static string? MaskSensitiveRequestPath(string? path)
 
     const string webhookPrefix = "/api/notifications/provider-webhook/";
     const string unsubscribePrefix = "/api/notifications/unsubscribe/";
-    // ARCHITECTURE_CYCLE12.md §146.1 (R12) — same coordinated fix as the two above, same incident this
+    // ARCHITECTURE_CYCLE14.md §146.1 (R12) — same coordinated fix as the two above, same incident this
     // cycle explicitly avoids repeating (cycle 9's nginx access-log leak, §9 N9-*). This app-level
     // masking covers what THIS process logs; deploy/nginx/ezbook.conf's own map/log_format (added in the
     // SAME commit) is what stops nginx's access log from writing the token before the request even
@@ -803,7 +803,7 @@ builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Schedulin
 // internal budget, same shape as notification-dispatch above but bounded PARALLEL across devices instead
 // of per-channel sequential antiban pacing — see the task's own doc comment for why).
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaffPushDispatchTask>();
-// ARCHITECTURE_CYCLE12.md §146.3 — the SIXTH task, "max-webhook-renew" (period 4h, under the platform's
+// ARCHITECTURE_CYCLE14.md §146.3 — the SIXTH task, "max-webhook-renew" (period 4h, under the platform's
 // own 8h no-response-drops-the-subscription window, О4). Registered unconditionally, same as every other
 // IScheduledTask — a no-op in practice while PhoneVerification:Provider = "stub" (its own doc comment).
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.MaxWebhookRenewTask>();
@@ -848,7 +848,7 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.PushSubscriptionRule>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.StaffPushNotificationRule>();
-// ARCHITECTURE_CYCLE12.md §151.1 — the 17th and 18th rules. ⚠️ Registered LAST, deliberately — see
+// ARCHITECTURE_CYCLE14.md §151.1 — the 17th and 18th rules. ⚠️ Registered LAST, deliberately — see
 // PhoneVerificationSessionRule's own doc comment for why (N9-6, the pre-existing unprotected foreach
 // this cycle does not fix).
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
@@ -878,7 +878,7 @@ using (var transportCheckScope = app.Services.CreateScope())
     DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
         nameof(ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry), provisioningRegistry.RegisteredTransports);
 
-    // ARCHITECTURE_CYCLE12.md §144.2 (Q2) — same shape, for the phone-verification method registry.
+    // ARCHITECTURE_CYCLE14.md §144.2 (Q2) — same shape, for the phone-verification method registry.
     var phoneVerificationRegistry = transportCheckScope.ServiceProvider
         .GetRequiredService<ServiceBooking.API.Services.PhoneVerification.IPhoneVerificationMethodRegistry>();
     DeploymentSafetyChecks.ValidateVerificationMethodRegistry(phoneVerificationRegistry.Registered);

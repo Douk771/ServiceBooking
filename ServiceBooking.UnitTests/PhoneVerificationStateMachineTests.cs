@@ -5,7 +5,7 @@ using static ServiceBooking.API.Services.PhoneVerification.PhoneVerificationStat
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §145.2, §147, §156.1 — transitions and failure reasons, as a pure
+/// <summary>ARCHITECTURE_CYCLE14.md §145.2, §147, §156.1 — transitions and failure reasons, as a pure
 /// function of already-evaluated facts.</summary>
 public class PhoneVerificationStateMachineTests
 {
@@ -100,7 +100,7 @@ public class PhoneVerificationStateMachineTests
     [Fact]
     public void Contact_ForeignContact_RejectsWithContactNotOwnedBySender_TheMainSecurityScenario()
     {
-        // US-12-04: this is the "sent someone else's contact from the address book" attack the whole
+        // US-14-04: this is the "sent someone else's contact from the address book" attack the whole
         // cycle exists to close. Signature can be perfectly valid (the platform DID sign this vCard) —
         // ownership is what fails.
         var checks = AllPass with { ContactOwnedBySender = false };

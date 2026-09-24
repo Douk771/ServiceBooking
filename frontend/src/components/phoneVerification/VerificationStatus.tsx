@@ -7,7 +7,7 @@ import type { PhoneVerificationSessionStatus } from '../../types'
 
 interface VerificationStatusProps {
   status: PhoneVerificationSessionStatus | null
-  /** Offered on Rejected/Expired for reasons where trying again makes sense (§165, US-12-06). Omit to hide the action entirely (e.g. read-only contexts). */
+  /** Offered on Rejected/Expired for reasons where trying again makes sense (§165, US-14-06). Omit to hide the action entirely (e.g. read-only contexts). */
   onRestart?: () => void
   /** Set when the status poll itself failed (e.g. session 404'd server-side). Takes priority over
    * `status` — there's nothing meaningful left to show about a session the server no longer knows. */
@@ -15,7 +15,7 @@ interface VerificationStatusProps {
 }
 
 /**
- * ARCHITECTURE_CYCLE12.md §148.4 — announced to assistive tech via `aria-live="polite"`, not only a
+ * ARCHITECTURE_CYCLE14.md §148.4 — announced to assistive tech via `aria-live="polite"`, not only a
  * colour change. `message` is always the server's own text (§164: "фронт её не сочиняет"); this
  * component never assembles wording from `failureReason` itself except as a last-resort fallback if
  * the server ever sends a reason without a message.

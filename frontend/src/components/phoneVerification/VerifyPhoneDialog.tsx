@@ -13,7 +13,7 @@ interface VerifyPhoneDialogProps {
 }
 
 /**
- * ARCHITECTURE_CYCLE12.md §163, T12-F3 (US-12-02) — mobile gets a direct "open the bot" link, desktop
+ * ARCHITECTURE_CYCLE14.md §163, T14-F3 (US-14-02) — mobile gets a direct "open the bot" link, desktop
  * gets a QR code, and BOTH always show the deep link as selectable/copyable text next to it: that text
  * is the accessible fallback (screen reader, QR camera unavailable, desktop-without-phone-nearby) and
  * is never hidden behind either device branch.
@@ -98,7 +98,7 @@ export function VerifyPhoneDialog({ session, status, statusError, onClose, onRes
           </div>
         )}
 
-        {/* Always present, on both breakpoints — the accessible/copyable fallback (US-12-02). */}
+        {/* Always present, on both breakpoints — the accessible/copyable fallback (US-14-02). */}
         <div className="flex items-center gap-2 mb-5">
           <label htmlFor="verify-phone-deep-link" className="sr-only">
             Ссылка на бота MAX

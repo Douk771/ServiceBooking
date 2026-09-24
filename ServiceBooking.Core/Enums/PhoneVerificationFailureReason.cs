@@ -2,12 +2,12 @@ namespace ServiceBooking.Core.Enums;
 
 /// <summary>
 /// Machine-readable reason a <see cref="Core.Entities.PhoneVerificationSession"/> ended up
-/// <see cref="PhoneVerificationStatus.Rejected"/> (ARCHITECTURE_CYCLE12.md §147.4). The Russian sentence
+/// <see cref="PhoneVerificationStatus.Rejected"/> (ARCHITECTURE_CYCLE14.md §147.4). The Russian sentence
 /// shown to a person is composed server-side (<c>PhoneVerificationTexts</c>) from this code — the
 /// frontend never invents wording, it only maps a code it doesn't recognise to a generic fallback.
 ///
 /// APPEND-ONLY: persisted on <see cref="Core.Entities.PhoneVerificationSession.FailureReason"/> and
-/// exposed verbatim in <c>GET /phone-verification/sessions/{id}</c> (API_CONTRACT_CYCLE12.md §165).
+/// exposed verbatim in <c>GET /phone-verification/sessions/{id}</c> (API_CONTRACT_CYCLE14.md §165).
 /// </summary>
 public enum PhoneVerificationFailureReason
 {
@@ -30,7 +30,7 @@ public enum PhoneVerificationFailureReason
     /// <c>hash</c> — the contact attachment cannot be trusted to be what the bot actually sent.</summary>
     SignatureMismatch = 4,
 
-    /// <summary>§147.2 — the главный сценарий безопасности цикла (US-12-04): the contact's own owner id
+    /// <summary>§147.2 — the главный сценарий безопасности цикла (US-14-04): the contact's own owner id
     /// (<c>max_info</c>/<c>tam_info</c>) does not equal the update's sender id. Covers both "different
     /// person" and "unknown owner" (fail-closed, §147.2).</summary>
     ContactNotOwnedBySender = 5,

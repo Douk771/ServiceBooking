@@ -98,7 +98,7 @@ public sealed class RetentionPeriods
     /// of).</summary>
     public int StaffPushNotificationDays { get; set; } = 365;
 
-    /// <summary>ARCHITECTURE_CYCLE12.md §151.1 (R11, R13). Age of a
+    /// <summary>ARCHITECTURE_CYCLE14.md §151.1 (R11, R13). Age of a
     /// <see cref="Core.Entities.PhoneVerificationSession"/> since <c>CreatedAtUtc</c>, of ANY status —
     /// the session itself lives minutes, this is incident-review slack, not a working lifetime. ⚠️
     /// Deliberately NON-ZERO in the committed configuration (D1, cycle 10's own lesson: zero reads as

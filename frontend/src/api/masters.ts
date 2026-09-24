@@ -40,7 +40,7 @@ export interface MasterClient {
   totalVisits: number
   notes: ClientNote[]
   bookingSummaries?: { date: string; serviceName: string; status: string }[]
-  /** API_CONTRACT_CYCLE12.md §170.2 — `true` → badge; `false`/`null`/`undefined` → render NOTHING
+  /** API_CONTRACT_CYCLE14.md §170.2 — `true` → badge; `false`/`null`/`undefined` → render NOTHING
    *  (R15: no colour, no icon, no "not verified" text; not a gate, no sort/filter by this field). */
   phoneVerified?: boolean | null
 }

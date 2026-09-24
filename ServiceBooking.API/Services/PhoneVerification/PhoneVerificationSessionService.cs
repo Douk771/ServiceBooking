@@ -8,7 +8,7 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
 /// Creation, lookup and cancellation of a <see cref="PhoneVerificationSession"/> — the DB-backed half of
-/// §145.1's lifecycle (ARCHITECTURE_CYCLE12.md §144.3); the actual state transitions when an update
+/// §145.1's lifecycle (ARCHITECTURE_CYCLE14.md §144.3); the actual state transitions when an update
 /// arrives from the bot live in <c>Max.PhoneVerificationWebhookHandler</c> instead, since only THAT code
 /// path knows how to evaluate a check like "does the signature match".
 /// </summary>
@@ -33,7 +33,7 @@ public sealed class PhoneVerificationSessionService(
 
     public async Task<StartResult> StartAsync(string canonicalPhone, string? userId, PhoneVerificationPurpose purpose, CancellationToken ct)
     {
-        // Cycle 12 has exactly one method — §144.2 explicitly forbids a "pick a method" step existing at
+        // Cycle 14 has exactly one method — §144.2 explicitly forbids a "pick a method" step existing at
         // all. A future second method picks among registry.Registered instead of this literal.
         var adapter = registry.Get(PhoneVerificationMethod.MaxBot);
         if (!adapter.Enabled)

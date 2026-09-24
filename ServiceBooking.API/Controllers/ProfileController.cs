@@ -178,7 +178,7 @@ public class ProfileController(
             healthNotesExport.Add(new ExportHealthNoteDto(companyNameById.GetValueOrDefault(note.CompanyId, ""), value, note.UpdatedAt));
         }
 
-        // ARCHITECTURE_CYCLE12.md §151.3, API_CONTRACT_CYCLE12.md §170.3: only the fact/method/date of
+        // ARCHITECTURE_CYCLE14.md §151.3, API_CONTRACT_CYCLE14.md §170.3: only the fact/method/date of
         // verification for the CURRENT number — read straight from VerifiedPhone (source of truth) rather
         // than trusting the mirror alone, since the mirror could in principle drift. The MAX-account
         // identifier (even hashed) and any open session are deliberately excluded — neither is data the
@@ -240,8 +240,8 @@ public class ProfileController(
     // PhoneNumber and UserName/NormalizedUserName in one write. Requires the current password,
     // same as changing the password, since it's effectively changing the login identifier.
     //
-    // ⚠️ ARCHITECTURE_CYCLE12.md §148.5, API_CONTRACT_CYCLE12.md §169 (US-12-17) — LOMAYUSHCHEE
-    // (breaking) change of behavior, the ONE HTTP-visible breaking change of cycle 12: changing to a
+    // ⚠️ ARCHITECTURE_CYCLE14.md §148.5, API_CONTRACT_CYCLE14.md §169 (US-14-17) — LOMAYUSHCHEE
+    // (breaking) change of behavior, the ONE HTTP-visible breaking change of cycle 14: changing to a
     // number that already has GUEST bookings on it now requires a verified MAX session for that number
     // first. Every other change (no guest bookings on the new number, or the number not changing at
     // all) works exactly as before — Р1. Formulation that MUST accompany any description of this
@@ -305,7 +305,7 @@ public class ProfileController(
 
         if (phoneIsChanging)
         {
-            // §148.5 step 6 (US-12-11): the whole change — UserName/PhoneNumber, dropping the OLD
+            // §148.5 step 6 (US-14-11): the whole change — UserName/PhoneNumber, dropping the OLD
             // number's verification, and writing whatever THIS call proved about the NEW one — happens
             // in ONE transaction (review finding: SetUserNameAsync used to save on its own, before the
             // transaction below even opened, so a later failure in this block would leave the account's
@@ -424,7 +424,7 @@ public class ProfileController(
         var ownPushSubscriptions = await db.PushSubscriptions.Where(s => s.UserId == userId).ToListAsync();
         db.PushSubscriptions.RemoveRange(ownPushSubscriptions);
 
-        // Step 2d (ARCHITECTURE_CYCLE12.md §151.2, US-12-12): same reasoning as step 2c — the Cascade FK
+        // Step 2d (ARCHITECTURE_CYCLE14.md §151.2, US-14-12): same reasoning as step 2c — the Cascade FK
         // on VerifiedPhone.UserId/PhoneVerificationSession.UserId never actually fires (this account is
         // tombstoned, not removed), so both are cleaned up explicitly, in the same transaction. This is
         // what makes the MAX-account identifier (as HMAC) genuinely unrecoverable after deletion (Р4),
@@ -713,7 +713,7 @@ public class ProfileController(
 
     private async Task<ProfileDto> MapToDtoAsync(AppUser u, IList<string> roles)
     {
-        // ARCHITECTURE_CYCLE12.md §149.1: the boolean comes from the mirror (cheap, already loaded with
+        // ARCHITECTURE_CYCLE14.md §149.1: the boolean comes from the mirror (cheap, already loaded with
         // the account — one indexed read either way, per profile request, not per row of a list); the
         // date comes from VerifiedPhone itself, since the mirror carries no timestamp of its own.
         DateTime? phoneVerifiedAtUtc = null;
@@ -1058,8 +1058,8 @@ public class ProfileController(
 
 // CommissionPercent removed (US-22): commission became per-company (CompanyMember.CommissionPercent)
 // in cycle A, so the account-level value here no longer means anything and the UI never showed it.
-// ARCHITECTURE_CYCLE12.md §149.1, API_CONTRACT_CYCLE12.md §170.1: PhoneVerified/PhoneVerifiedAtUtc are
-// ADDITIVE (US-12-14). PhoneVerifiedAtUtc is null whenever PhoneVerified is false.
+// ARCHITECTURE_CYCLE14.md §149.1, API_CONTRACT_CYCLE14.md §170.1: PhoneVerified/PhoneVerifiedAtUtc are
+// ADDITIVE (US-14-14). PhoneVerifiedAtUtc is null whenever PhoneVerified is false.
 public record ProfileDto(string Id, string Phone, string? Email, string FirstName, string LastName, string? AvatarUrl,
     List<string> Roles, ProfilePlanDto? Plan, bool PhoneVerified, DateTime? PhoneVerifiedAtUtc);
 
@@ -1089,7 +1089,7 @@ public record RevokeConsentResponseDto(int Revoked, RevokeEffectsDto Effects);
 
 public record UpdateProfileDto(string FirstName, string LastName);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
-// ARCHITECTURE_CYCLE12.md §148.5, API_CONTRACT_CYCLE12.md §169: Verification is ADDITIVE and OPTIONAL —
+// ARCHITECTURE_CYCLE14.md §148.5, API_CONTRACT_CYCLE14.md §169: Verification is ADDITIVE and OPTIONAL —
 // required ONLY when the new number already has guest bookings on it (checked server-side, never
 // assumed from the presence of this field).
 public record ChangePhoneDto(string CurrentPassword, string NewPhone, PhoneVerificationRefDto? Verification = null);
@@ -1103,7 +1103,7 @@ public record DeleteAccountDto(string CurrentPassword);
 // field names exactly (cycle 3 used different names for the same two fields); four sections added
 // (T5-B11, §50.2): `Operators` (which companies hold data about this subject — the routing §50.2
 // replaces "результат работы салона" with), `Notifications`/`OptOut` (US-75), `HealthNotes` (US-77).
-// ARCHITECTURE_CYCLE12.md §151.3: PhoneVerification is the one section this cycle adds — additive,
+// ARCHITECTURE_CYCLE14.md §151.3: PhoneVerification is the one section this cycle adds — additive,
 // appended last, same convention as T5-B11's own additions above it.
 public record ProfileExportDto(
     DateTime GeneratedAt, ExportProfileDto Profile, List<ExportConsentDto> Consents,

@@ -13,7 +13,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <!-- ARCHITECTURE_CYCLE12.md §141: the cycle's one new dependency — US-12-02's desktop QR code.
+    <!-- ARCHITECTURE_CYCLE14.md §141: the cycle's one new dependency — US-14-02's desktop QR code.
          Chosen over SkiaSharp (already a dependency, but decode/resize only in this codebase — it has
          no QR ENCODER) and over doing it in the browser (would grow npm's already-red audit surface,
          §9 D5). Pure managed, MIT, no System.Drawing/libgdiplus — the aspnet:8.0 image is unaffected.

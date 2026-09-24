@@ -4,7 +4,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
-/// What starting a verification challenge produces (ARCHITECTURE_CYCLE12.md §144.2). Method-specific
+/// What starting a verification challenge produces (ARCHITECTURE_CYCLE14.md §144.2). Method-specific
 /// content (for MAX: a deep link and, optionally, a QR PNG) alongside <see cref="PayloadHash"/> — the ONE
 /// piece every method must produce, since it's what <c>PhoneVerificationSession.PayloadHash</c> is looked
 /// up by when that method's own inbound event (MAX's webhook, a future call/SMS callback) arrives. The
@@ -14,7 +14,7 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 public sealed record VerificationChallenge(string PayloadHash, string DeepLink, byte[]? QrPng);
 
 /// <summary>
-/// Port under future verification methods (ARCHITECTURE_CYCLE12.md §144.2, Q2). Cycle 12 ships exactly
+/// Port under future verification methods (ARCHITECTURE_CYCLE14.md §144.2, Q2). Cycle 14 ships exactly
 /// one implementation (<c>Max.MaxBotVerificationAdapter</c>) — this interface exists so a second method
 /// (call/SMS, a later cycle) is a new adapter registration, never a rewrite of
 /// <c>PhoneVerificationSessionService</c>/the controller.

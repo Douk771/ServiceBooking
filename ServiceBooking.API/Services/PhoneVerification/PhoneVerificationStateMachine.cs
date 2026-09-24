@@ -4,7 +4,7 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
 /// Pure state-transition rules for a <see cref="Core.Entities.PhoneVerificationSession"/>
-/// (ARCHITECTURE_CYCLE12.md §145.2, §147). Takes only plain facts (current status, whether the TTL has
+/// (ARCHITECTURE_CYCLE14.md §145.2, §147). Takes only plain facts (current status, whether the TTL has
 /// elapsed, the outcome of each check) and returns what should happen — no DB, no clock, no crypto. The
 /// caller (<c>PhoneVerificationWebhookHandler</c>) is what actually reads/writes the entity and performs
 /// the checks this class only interprets the RESULT of.

@@ -4,7 +4,7 @@ using System.Text;
 namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
-/// The one-time secret a person shares by opening a MAX deep link (ARCHITECTURE_CYCLE12.md §145.1,
+/// The one-time secret a person shares by opening a MAX deep link (ARCHITECTURE_CYCLE14.md §145.1,
 /// R8). Pure — no clock, no DB, no I/O other than the CSPRNG — so it is covered by a plain unit test.
 /// The payload itself is NEVER stored; only its SHA-256 (<see cref="Hash"/>) goes into
 /// <c>PhoneVerificationSession.PayloadHash</c>, so a database dump cannot be used to open anyone's

@@ -60,7 +60,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     // today, only read for the "notifications.whatsapp" option's Quantity (§47.1's N).
     public DbSet<AccountSubscriptionOption> AccountSubscriptionOptions => Set<AccountSubscriptionOption>();
 
-    // ARCHITECTURE_CYCLE12.md §142 — platform phone-ownership verification (MAX bot track). Deliberately
+    // ARCHITECTURE_CYCLE14.md §142 — platform phone-ownership verification (MAX bot track). Deliberately
     // NOT part of the Notifications:* subsystem (own top-level config section, own secrets, §140.2/R5).
     public DbSet<PhoneVerificationSession> PhoneVerificationSessions => Set<PhoneVerificationSession>();
     public DbSet<VerifiedPhone> VerifiedPhones => Set<VerifiedPhone>();
@@ -216,7 +216,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(b => b.Service).WithMany(s => s.Bookings).HasForeignKey(b => b.ServiceId);
             e.HasOne(b => b.Master).WithMany(u => u.MasterBookings).HasForeignKey(b => b.MasterId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(b => b.Client).WithMany(u => u.ClientBookings).HasForeignKey(b => b.ClientId).OnDelete(DeleteBehavior.SetNull);
-            // ARCHITECTURE_CYCLE12.md §142.5 (Q16): the change-phone gate (US-12-17) asks "does this
+            // ARCHITECTURE_CYCLE14.md §142.5 (Q16): the change-phone gate (US-14-17) asks "does this
             // number have any guest booking" on every phone change, against the fastest-growing table in
             // the product. Partial — only guest rows carry a value here, a registered client's Booking
             // row always has GuestPhone null — so the index stays a fraction of the table's size.
@@ -643,7 +643,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
         // backed by no real table (ToView(null)) so it never shows up as an empty migrated table.
         builder.Entity<AccountUsageRow>().HasNoKey().ToView(null);
 
-        // ARCHITECTURE_CYCLE12.md §142.1 (Q1, Q7). PayloadHash is the ONLY thing an incoming bot_started
+        // ARCHITECTURE_CYCLE14.md §142.1 (Q1, Q7). PayloadHash is the ONLY thing an incoming bot_started
         // update can be looked up by — unique so a hash collision fails loudly instead of silently
         // reusing another session. (Status, ExpiresAtUtc) backs both the "Expired" computation and the
         // retention sweep; (UserId, CreatedAtUtc) backs "my open sessions" and DeleteAccount's cleanup.
@@ -660,7 +660,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(s => new { s.UserId, s.CreatedAtUtc });
         });
 
-        // ARCHITECTURE_CYCLE12.md §142.2 (Q3, Q10). Phone is unique — verification belongs to the number,
+        // ARCHITECTURE_CYCLE14.md §142.2 (Q3, Q10). Phone is unique — verification belongs to the number,
         // not the account (Р4). ExternalAccountKey is indexed — §147.5's per-MAX-account ceiling is a
         // single COUNT(*) against it.
         builder.Entity<VerifiedPhone>(e =>

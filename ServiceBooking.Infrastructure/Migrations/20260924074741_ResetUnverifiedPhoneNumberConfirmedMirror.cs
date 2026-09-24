@@ -8,7 +8,7 @@ namespace ServiceBooking.Infrastructure.Migrations
     /// Data-only migration, no model change (cycle-12 review, blocker 3). Before this cycle,
     /// AppUser.PhoneNumberConfirmed was set to true for every staff account CompaniesController
     /// auto-created on the owner's behalf ("added by the owner → treated as a verified number") — a
-    /// harmless internal note back when the flag had no visible meaning. Cycle 12 turned it into a
+    /// harmless internal note back when the flag had no visible meaning. Cycle 14 turned it into a
     /// PUBLIC "phoneVerified" signal (ProfileDto/AuthResponseDto/MasterClientDto) that is only supposed
     /// to be true once <c>PhoneVerificationWriter</c> — the sole other writer of this column — has
     /// actually recorded a MAX-verified <c>VerifiedPhones</c> row for that phone.

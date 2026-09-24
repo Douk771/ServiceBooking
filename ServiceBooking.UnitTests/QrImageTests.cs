@@ -3,7 +3,7 @@ using ServiceBooking.API.Services.PhoneVerification;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §141, §156.1 — the QR encoder produces a real, decodable PNG.</summary>
+/// <summary>ARCHITECTURE_CYCLE14.md §141, §156.1 — the QR encoder produces a real, decodable PNG.</summary>
 public class QrImageTests
 {
     [Fact]

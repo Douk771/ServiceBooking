@@ -19,9 +19,9 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 12 (SPEC.md §8.2's acceptance checklist, blocks A/B/C/E of the user stories) — functional
+/// QA cycle 14 (SPEC.md §8.2's acceptance checklist, blocks A/B/C/E of the user stories) — functional
 /// tests for the free MAX phone-verification track. Written against SPEC.md's acceptance criteria, not
-/// against the implementation — see each test's own <c>TestCase</c> id / comment for which US-12-xx it
+/// against the implementation — see each test's own <c>TestCase</c> id / comment for which US-14-xx it
 /// proves.
 ///
 /// Every test that needs the subsystem actually ENABLED uses its own <see cref="PhoneVerificationEnabledFactory"/>
@@ -31,7 +31,7 @@ namespace ServiceBooking.Tests.Tests;
 /// </summary>
 public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 {
-    // ── Block B: disabled by default (§0.5, US-12-08) ───────────────────────────────
+    // ── Block B: disabled by default (§0.5, US-14-08) ───────────────────────────────
 
     [Fact, TestCase("PHV-001")]
     public async Task Config_SubsystemDisabledByDefault_ReportsDisabledAndNoMethods()
@@ -58,7 +58,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-003")]
     public async Task Register_WithoutPhoneVerification_WorksExactlyAsBeforeTheCycle()
     {
-        // US-12-07: omitting the optional field entirely must not change existing behavior at all.
+        // US-14-07: omitting the optional field entirely must not change existing behavior at all.
         var auth = await RegisterAsync();
         auth.PhoneVerified.Should().BeFalse();
     }
@@ -67,7 +67,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     public async Task StartSession_InvalidPhoneFormat_Returns400AndExplains()
     {
         // Needs the subsystem enabled — otherwise a bad phone and a disabled subsystem would both be a
-        // rejection and this test couldn't tell which one actually fired (US-12-01's own criterion:
+        // rejection and this test couldn't tell which one actually fired (US-14-01's own criterion:
         // "действие недоступно и объяснено почему").
         using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
         var response = await enabled.CreateClient().PostAsJsonAsync(
@@ -78,7 +78,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         body.Should().Contain(PhoneVerificationTexts.InvalidPhoneFormat);
     }
 
-    // ── Block A: starting a session, polling, cancelling (US-12-01, US-12-02, US-12-03, US-12-06) ──
+    // ── Block A: starting a session, polling, cancelling (US-14-01, US-14-02, US-14-03, US-14-06) ──
 
     [Fact, TestCase("PHV-010")]
     public async Task StartSession_Enabled_ReturnsDeepLinkQrAndShortOpaquePayload()
@@ -91,11 +91,11 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await response.Content.ReadJsonAsync<PhoneVerificationSessionCreatedDto>();
-        created!.DeepLink.Should().StartWith("https://max.ru/qa_cycle12_bot?start=");
+        created!.DeepLink.Should().StartWith("https://max.ru/qa_cycle14_bot?start=");
         created.PhoneMasked.Should().NotBe(phone, "the raw phone must never come back in the response");
 
         var payload = ExtractPayload(created.DeepLink);
-        payload.Length.Should().BeLessOrEqualTo(128, "US-12-02's own bound on the payload length");
+        payload.Length.Should().BeLessOrEqualTo(128, "US-14-02's own bound on the payload length");
         created.QrPngBase64.Should().NotBeNullOrEmpty("desktop needs the QR — П8");
     }
 
@@ -163,7 +163,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         (await PostWebhookAsync(client, BotStartedBody(payload, senderId: "42"))).StatusCode.Should().Be(HttpStatusCode.OK);
         var afterSecond = await GetStatusAsync(client, created);
-        afterSecond!.Status.Should().Be(PhoneVerificationDisplayStatus.Linked, "US-12-03: idempotent, does not create a second session/break the first");
+        afterSecond!.Status.Should().Be(PhoneVerificationDisplayStatus.Linked, "US-14-03: idempotent, does not create a second session/break the first");
     }
 
     [Fact, TestCase("PHV-016")]
@@ -178,7 +178,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // ── Block A: the security-critical checks (US-12-04, US-12-05) ─────────────────
+    // ── Block A: the security-critical checks (US-14-04, US-14-05) ─────────────────
 
     [Fact, TestCase("PHV-020")]
     public async Task HappyPath_LinkAndValidOwnContact_VerifiesAndFeedsRegistration()
@@ -206,7 +206,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         enabled.RecordingClient.SentMessages.Should().NotBeEmpty();
         enabled.RecordingClient.SentMessages.Should().OnlyContain(m => !m.Text.Contains(payload));
 
-        // US-12-01's last criterion: the completed session actually feeds registration and the account
+        // US-14-01's last criterion: the completed session actually feeds registration and the account
         // comes out phoneVerified:true.
         var legal = CurrentRegisterLegalDto();
         var registerResponse = await client.PostAsJsonAsync("/api/auth/register", new RegisterDto(
@@ -225,7 +225,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-021")]
     public async Task ForeignContact_ValidSignature_ButOwnerIsNotSender_IsRejected()
     {
-        // US-12-04's headline scenario: a valid signature alone must NEVER be enough — the platform also
+        // US-14-04's headline scenario: a valid signature alone must NEVER be enough — the platform also
         // proves the contact belongs to whoever sent it.
         using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
         var client = enabled.CreateClient();
@@ -248,7 +248,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-022")]
     public async Task OwnContact_TamperedSignature_IsRejected()
     {
-        // The second half of US-12-04: contact IS the sender's own, but the HMAC does not check out.
+        // The second half of US-14-04: contact IS the sender's own, but the HMAC does not check out.
         using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
         var client = enabled.CreateClient();
         var phone = UniquePhone();
@@ -269,7 +269,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-023")]
     public async Task ValidOwnContact_DifferentPhoneThanForm_IsRejected_MessageNamesBothMasked()
     {
-        // US-12-05: everything checks out except the number itself does not match what was typed on
+        // US-14-05: everything checks out except the number itself does not match what was typed on
         // the site.
         using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
         var client = enabled.CreateClient();
@@ -312,7 +312,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         status.FailureReason.Should().Be(PhoneVerificationFailureReason.NoPhoneInContact);
     }
 
-    // ── Р5: the per-MAX-account ceiling (US-12-04's last criterion) ────────────────
+    // ── Р5: the per-MAX-account ceiling (US-14-04's last criterion) ────────────────
 
     [Fact, TestCase("PHV-025")]
     public async Task Ceiling_FourthDistinctPhoneFromSameMaxAccount_IsRejected_TextDoesNotRevealOthers()
@@ -370,7 +370,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         recordedTexts.Should().NotContain(t => t.Contains(fourthPhone));
     }
 
-    // ── Block C: profile view, change-phone gate (US-12-16, US-12-17, R6/§6.4) ─────
+    // ── Block C: profile view, change-phone gate (US-14-16, US-14-17, R6/§6.4) ─────
 
     [Fact, TestCase("PHV-030")]
     public async Task ChangePhone_NewNumberHasNoGuestBookings_WorksWithoutVerification_EvenSubsystemDisabled()
@@ -393,7 +393,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
     [Fact, TestCase("PHV-031")]
     public async Task ChangePhone_NewNumberHasGuestBookings_SubsystemDisabled_HonestRefusal_NotHang()
     {
-        // US-12-17's explicit "not a hang, not a silent failure" criterion for the disabled state.
+        // US-14-17's explicit "not a hang, not a silent failure" criterion for the disabled state.
         var user = await RegisterAsync();
         var guestPhone = UniquePhone();
         await CreateGuestBookingOnAsync(guestPhone);
@@ -452,13 +452,13 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         });
 
         withVerification.StatusCode.Should().Be(HttpStatusCode.OK,
-            "US-12-17: a verified session for the target number lets the gate through");
+            "US-14-17: a verified session for the target number lets the gate through");
     }
 
     [Fact, TestCase("PHV-033")]
     public async Task PhoneVerified_ResetsOnChangePhone_BadgeAndPersonnelViewUpdateImmediately()
     {
-        // US-12-11 + US-12-14/US-12-15: verify from profile, confirm the badge/personnel signal is on,
+        // US-14-11 + US-14-14/US-14-15: verify from profile, confirm the badge/personnel signal is on,
         // then change to a fresh (no guest bookings) number and confirm the mark is gone immediately —
         // not "eventually", and visible both to the user's own profile and to company staff.
         using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
@@ -564,15 +564,15 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
         var clientsResponse = await AuthedClient(master.Token).GetAsync($"/api/masters/clients?companyId={company.Id}");
         var json = await clientsResponse.Content.ReadAsStringAsync();
-        json.Should().Contain("\"phoneVerified\":null", "US-12-15: 'neither applicable' must not read as false/'not verified'");
+        json.Should().Contain("\"phoneVerified\":null", "US-14-15: 'neither applicable' must not read as false/'not verified'");
     }
 
-    // ── Block B: no dependency on billing/tariff/company (US-12-10) ────────────────
+    // ── Block B: no dependency on billing/tariff/company (US-14-10) ────────────────
 
     [Fact, TestCase("PHV-050")]
     public async Task RegistrationVerification_HappensBeforeAnyCompanyOrPlanExists()
     {
-        // US-12-10: the whole happy path above (PHV-020) already proves this implicitly — verifying at
+        // US-14-10: the whole happy path above (PHV-020) already proves this implicitly — verifying at
         // registration necessarily happens before the account (let alone a company/plan) exists. This
         // test names the property directly: the diagnostics endpoint (SuperAdmin-only, unrelated to
         // billing) is reachable without any billing wiring, and Register's phoneVerified field does not
@@ -689,7 +689,7 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
 
     /// <summary>Creates a guest (no account) booking on <paramref name="guestPhone"/> through the ordinary
     /// booking flow — the exact shape <c>GuestBookingLookup.HasGuestBookingsAsync</c> looks for
-    /// (<c>ClientId == null &amp;&amp; GuestPhone == canonicalPhone</c>), needed to exercise US-12-17's gate.</summary>
+    /// (<c>ClientId == null &amp;&amp; GuestPhone == canonicalPhone</c>), needed to exercise US-14-17's gate.</summary>
     private async Task CreateGuestBookingOnAsync(string guestPhone)
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync(allowSelfBooking: true);

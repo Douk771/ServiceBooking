@@ -1,7 +1,7 @@
 namespace ServiceBooking.API.Services.PhoneVerification;
 
-/// <summary>What <c>POST /api/profile/change-phone</c> should do next (ARCHITECTURE_CYCLE12.md §148.5,
-/// US-12-17). Pure — a function of three already-evaluated facts, with no knowledge of HTTP status codes
+/// <summary>What <c>POST /api/profile/change-phone</c> should do next (ARCHITECTURE_CYCLE14.md §148.5,
+/// US-14-17). Pure — a function of three already-evaluated facts, with no knowledge of HTTP status codes
 /// or wording; the controller maps this to 200/409 and picks the exact text.</summary>
 public enum ChangePhoneGateOutcome
 {
@@ -21,7 +21,7 @@ public enum ChangePhoneGateOutcome
 }
 
 /// <summary>
-/// Р3/Р6's gate, isolated to one pure decision (ARCHITECTURE_CYCLE12.md §144.3). Every fact it needs —
+/// Р3/Р6's gate, isolated to one pure decision (ARCHITECTURE_CYCLE14.md §144.3). Every fact it needs —
 /// whether the number is actually changing, whether <c>GuestBookingLookup</c> found a guest booking on
 /// the new number, whether a session satisfying §148.5's five conditions was presented, whether the
 /// subsystem is enabled — is evaluated by the caller; this function only encodes the DECISION TABLE.

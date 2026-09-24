@@ -87,7 +87,7 @@ export function RegisterPage() {
         password: data.password,
         email: data.email || undefined,
         legal: { privacyAcknowledgedVersion: privacy.version, termsAcceptedVersion: terms.version },
-        // US-12-01/07 — omitted entirely unless the person actually completed the MAX flow above;
+        // US-14-01/07 — omitted entirely unless the person actually completed the MAX flow above;
         // a session that no longer matches `phone` (edited afterwards) was already cleared by
         // VerifyPhoneButton's own syncPhone, so there's nothing extra to check here.
         phoneVerification: phoneVerificationRef ?? undefined,
@@ -189,7 +189,7 @@ export function RegisterPage() {
                     />
                   )}
                 />
-                {/* US-12-01/03 — renders nothing at all when the subsystem is off/unhealthy or the
+                {/* US-14-01/03 — renders nothing at all when the subsystem is off/unhealthy or the
                     number isn't valid yet (VerifyPhoneButton decides this itself, §162). */}
                 <VerifyPhoneButton phone={phoneValue ?? ''} onVerifiedChange={setPhoneVerificationRef} />
                 <Input label="Email (необязательно)" type="email" placeholder="your@email.com" {...register('email')} />

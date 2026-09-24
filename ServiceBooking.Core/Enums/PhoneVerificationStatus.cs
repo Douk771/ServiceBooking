@@ -1,7 +1,7 @@
 namespace ServiceBooking.Core.Enums;
 
 /// <summary>
-/// State machine of a <see cref="Core.Entities.PhoneVerificationSession"/> (ARCHITECTURE_CYCLE12.md
+/// State machine of a <see cref="Core.Entities.PhoneVerificationSession"/> (ARCHITECTURE_CYCLE14.md
 /// §145.2):
 /// <code>
 /// Pending ──bot_started(ok)──► Linked ──contact(all checks pass)──► Verified ──register/profile──► Consumed

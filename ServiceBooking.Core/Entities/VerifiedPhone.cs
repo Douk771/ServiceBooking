@@ -4,7 +4,7 @@ namespace ServiceBooking.Core.Entities;
 
 /// <summary>
 /// Source of truth for "this phone number has been proven to belong to whoever controls it"
-/// (ARCHITECTURE_CYCLE12.md §142.2, Q3, Q10). Verification belongs to the NUMBER (Р4), not to the
+/// (ARCHITECTURE_CYCLE14.md §142.2, Q3, Q10). Verification belongs to the NUMBER (Р4), not to the
 /// account that happened to hold it at the time — <see cref="Phone"/> is unique, and a number moving to
 /// a different account (or a different MAX account) updates this row rather than creating a second one.
 ///

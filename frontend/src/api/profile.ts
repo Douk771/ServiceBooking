@@ -33,8 +33,8 @@ export interface ProfileDto {
   roles: string[]
   /** Only present for CompanyOwner — subscriptions are bound to the owner account. */
   plan: ProfilePlanDto | null
-  /** API_CONTRACT_CYCLE12.md §170.1 — mirrors Identity's `PhoneNumberConfirmed`, the platform's own
-   *  subsystem is the single writer of both (ARCHITECTURE_CYCLE12.md §142.4). */
+  /** API_CONTRACT_CYCLE14.md §170.1 — mirrors Identity's `PhoneNumberConfirmed`, the platform's own
+   *  subsystem is the single writer of both (ARCHITECTURE_CYCLE14.md §142.4). */
   phoneVerified: boolean
   phoneVerifiedAtUtc: string | null
 }
@@ -49,8 +49,8 @@ export const profileApi = {
   update: (data: UpdateProfilePayload) => api.put<ProfileDto>('/profile', data).then((r) => r.data),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.post('/profile/change-password', { currentPassword, newPassword }),
-  /** `verification` (API_CONTRACT_CYCLE12.md §169) is NEW and optional — needed ONLY when the new
-   *  number already has guest bookings on it (US-12-17); otherwise the call behaves exactly as
+  /** `verification` (API_CONTRACT_CYCLE14.md §169) is NEW and optional — needed ONLY when the new
+   *  number already has guest bookings on it (US-14-17); otherwise the call behaves exactly as
    *  before the cycle (Р1). */
   changePhone: (currentPassword: string, newPhone: string, verification?: PhoneVerificationRef) =>
     api.post<ProfileDto>('/profile/change-phone', { currentPassword, newPhone, verification }).then((r) => r.data),

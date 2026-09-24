@@ -4,7 +4,7 @@ using ServiceBooking.API.Services.PhoneVerification.Max;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §144.3 — pure parsing of the two update shapes the webhook cares
+/// <summary>ARCHITECTURE_CYCLE14.md §144.3 — pure parsing of the two update shapes the webhook cares
 /// about, plus tolerance of unknown/missing fields (§167's "неизвестные поля игнорируются").</summary>
 public class MaxUpdateParserTests
 {
@@ -80,7 +80,7 @@ public class MaxUpdateParserTests
     [Fact]
     public void Parse_ContactAttachedFromForeignAccount_OwnerIdDiffersFromSender()
     {
-        // The main attack shape (US-12-04): a contact attachment whose OWNER isn't the sender.
+        // The main attack shape (US-14-04): a contact attachment whose OWNER isn't the sender.
         var root = Parse("""
             {
               "update_type": "message_created",

@@ -7,7 +7,7 @@ using ServiceBooking.API.Services.PhoneVerification.Max;
 namespace ServiceBooking.Tests.Infrastructure;
 
 /// <summary>
-/// QA cycle 12 — a secondary host against the SAME class database an <see cref="ApiTestBase"/> subclass
+/// QA cycle 14 — a secondary host against the SAME class database an <see cref="ApiTestBase"/> subclass
 /// already has, same shape/reasoning as <see cref="PushEnabledFactory"/> and
 /// <see cref="NotificationTestFactory"/>: the shared "Api" collection factory
 /// (<see cref="CustomWebApplicationFactory"/>) leaves <c>PhoneVerification:Provider</c> at its Testing
@@ -43,10 +43,10 @@ public sealed class PhoneVerificationEnabledFactory(string connectionString) : W
         builder.UseSetting("PhoneVerification:MaxPhonesPerExternalAccount", "3");
         builder.UseSetting("PhoneVerification:MaxOpenSessionsPerPhone", "3");
         builder.UseSetting("PhoneVerification:ExternalKeyHmac", TestExternalKeyHmacBase64);
-        builder.UseSetting("PhoneVerification:Max:BotUsername", "qa_cycle12_bot");
+        builder.UseSetting("PhoneVerification:Max:BotUsername", "qa_cycle14_bot");
         builder.UseSetting("PhoneVerification:Max:BotToken", TestBotToken);
         builder.UseSetting("PhoneVerification:Max:WebhookToken", TestWebhookToken);
-        builder.UseSetting("PhoneVerification:Max:PublicBaseUrl", "https://qa-cycle12.example.test");
+        builder.UseSetting("PhoneVerification:Max:PublicBaseUrl", "https://qa-cycle14.example.test");
 
         builder.ConfigureServices(services =>
         {

@@ -6,7 +6,7 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
 /// The ONLY writer of <see cref="VerifiedPhone"/> and of <c>AppUser.PhoneNumberConfirmed</c>
-/// (ARCHITECTURE_CYCLE12.md §142.4) — no controller touches either directly, the same convention this
+/// (ARCHITECTURE_CYCLE14.md §142.4) — no controller touches either directly, the same convention this
 /// codebase already applies to <c>BookingEventLog</c>/<c>IdentityRoleSync</c>. Callers are responsible
 /// for the surrounding transaction and for <c>AdvisoryLock.AcquireAsync(db, $"phone-verification:{key}")</c>
 /// (§145.2) — this class only decides WHAT to write, never when to lock or commit.
@@ -77,7 +77,7 @@ public sealed class PhoneVerificationWriter(AppDbContext db)
         return WriteOutcome.Written;
     }
 
-    /// <summary>§148.5 step 6 (US-12-11): a successful number change removes the OLD number's
+    /// <summary>§148.5 step 6 (US-14-11): a successful number change removes the OLD number's
     /// verification outright — the badge must not keep pointing at a number this account no longer
     /// holds. Does not touch the mirror; the caller sets <c>PhoneNumberConfirmed</c> itself based on
     /// whether the NEW number is verified by the session it just consumed.</summary>

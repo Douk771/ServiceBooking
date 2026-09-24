@@ -1,7 +1,7 @@
 namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>
-/// Every Russian sentence the BOT ITSELF sends back in chat (ARCHITECTURE_CYCLE12.md §147.4, П11) — kept
+/// Every Russian sentence the BOT ITSELF sends back in chat (ARCHITECTURE_CYCLE14.md §147.4, П11) — kept
 /// separate from <see cref="PhoneVerificationTexts"/> (site wording) because the two audiences and tones
 /// differ, exactly as the architecture's file layout (§154) specifies. None of these strings are ever
 /// generated text in the "sent an AI-composed message" sense (R1) — they are fixed, reviewed sentences a

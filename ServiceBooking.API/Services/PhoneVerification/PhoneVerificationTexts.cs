@@ -4,8 +4,8 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
 /// Every Russian sentence the SITE (not the bot — see <c>Max.MaxBotTexts</c>) shows about phone
-/// verification, in one place (ARCHITECTURE_CYCLE12.md §147.4, conforming to cycle 9's convention №6
-/// "the server composes wording, the frontend never does"). API_CONTRACT_CYCLE12.md §162-§172 pins these
+/// verification, in one place (ARCHITECTURE_CYCLE14.md §147.4, conforming to cycle 9's convention №6
+/// "the server composes wording, the frontend never does"). API_CONTRACT_CYCLE14.md §162-§172 pins these
 /// strings verbatim — this class IS that contract's implementation, changing one changes the other.
 /// </summary>
 public static class PhoneVerificationTexts

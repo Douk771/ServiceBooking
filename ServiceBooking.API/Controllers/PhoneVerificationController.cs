@@ -17,7 +17,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.API.Controllers;
 
 /// <summary>
-/// ARCHITECTURE_CYCLE12.md §148, API_CONTRACT_CYCLE12.md §162-§166. Every route here is either fully
+/// ARCHITECTURE_CYCLE14.md §148, API_CONTRACT_CYCLE14.md §162-§166. Every route here is either fully
 /// anonymous or "anonymous OR bearer" (§163) — none of them go through the regular
 /// <c>[Authorize]</c>-everything-by-default shape this codebase otherwise uses, since the whole point of
 /// the registration entry point is that no account exists yet.
@@ -49,7 +49,7 @@ public class PhoneVerificationController(
     }
 
     /// <summary>§163. Accepts a request with no bearer token (registration) or with one (profile,
-    /// US-12-16) — <c>[AllowAnonymous]</c> on the controller means the framework never rejects a missing
+    /// US-14-16) — <c>[AllowAnonymous]</c> on the controller means the framework never rejects a missing
     /// token on its own, so a PRESENT-but-invalid token is checked by hand below (the one case §163's
     /// 401 actually covers).</summary>
     [HttpPost("sessions")]

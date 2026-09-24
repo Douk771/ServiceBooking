@@ -65,9 +65,9 @@ public class AuthController(
         if (!PhoneNormalizer.TryNormalizeRussian(dto.Phone, out var canonicalPhone))
             return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
 
-        // ARCHITECTURE_CYCLE12.md §148.1 step 3, API_CONTRACT_CYCLE12.md §168: NEW, only when the
+        // ARCHITECTURE_CYCLE14.md §148.1 step 3, API_CONTRACT_CYCLE14.md §168: NEW, only when the
         // optional field is present at all — an omitted field behaves exactly as before this cycle
-        // (US-12-07). Checked AFTER legal/phone (§148.1's own ordering: "порядок — часть контракта").
+        // (US-14-07). Checked AFTER legal/phone (§148.1's own ordering: "порядок — часть контракта").
         PhoneVerificationSession? verificationSession = null;
         if (dto.PhoneVerification is not null)
         {
@@ -121,7 +121,7 @@ public class AuthController(
             subject, LegalDocumentType.TermsClient.ToString(), termsDoc.Version, termsDoc.ContentHash,
             Purpose: null, ConsentAct.Accepted, ConsentSource.Registration, ipAddress, userAgent));
 
-        // ARCHITECTURE_CYCLE12.md §148.1 step 5: in the SAME transaction as the VerifiedPhone write, the
+        // ARCHITECTURE_CYCLE14.md §148.1 step 5: in the SAME transaction as the VerifiedPhone write, the
         // ceiling is re-checked (it could have been exhausted by the same MAX account between the
         // session being verified and this request arriving) and the mirror is set. Р1: a ceiling hit
         // here does NOT fail registration — the account exists either way, just with phoneVerified:false.

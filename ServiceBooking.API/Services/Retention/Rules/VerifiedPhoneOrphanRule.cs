@@ -3,7 +3,7 @@ using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Retention.Rules;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §151.1 — the 18th retention rule. Removes a
+/// <summary>ARCHITECTURE_CYCLE14.md §151.1 — the 18th retention rule. Removes a
 /// <see cref="Core.Entities.VerifiedPhone"/> row that no LIVE account currently holds (its
 /// <c>UserId</c> points to a tombstone, OR its number was reassigned away — either way, no
 /// <c>AppUser</c> with <c>DeletedAtUtc == null</c> currently has this exact phone), once it has aged

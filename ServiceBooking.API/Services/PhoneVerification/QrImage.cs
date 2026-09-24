@@ -3,7 +3,7 @@ using QRCoder;
 namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
-/// Thin, pure wrapper over QRCoder (ARCHITECTURE_CYCLE12.md §141, §144.3) — encodes a deep link into a
+/// Thin, pure wrapper over QRCoder (ARCHITECTURE_CYCLE14.md §141, §144.3) — encodes a deep link into a
 /// PNG and returns it base64-encoded, with no <c>data:</c> prefix (the frontend prepends that itself,
 /// §163). Only <see cref="PngByteQRCode"/> is used: no <c>System.Drawing</c>, no <c>SkiaSharp</c>, so the
 /// choice never touches the app's own image pipeline or its Docker base image.

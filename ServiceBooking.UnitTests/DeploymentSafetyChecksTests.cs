@@ -1062,7 +1062,7 @@ public class DeploymentSafetyChecksTests
         act.Should().NotThrow();
     }
 
-    // ── ValidatePhoneVerificationSecrets (ARCHITECTURE_CYCLE12.md §150.2) ──────────────────────────
+    // ── ValidatePhoneVerificationSecrets (ARCHITECTURE_CYCLE14.md §150.2) ──────────────────────────
 
     private static Dictionary<string, string?> ValidPhoneVerificationSecrets() => new()
     {
@@ -1182,7 +1182,7 @@ public class DeploymentSafetyChecksTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*ExternalKeyHmac*");
     }
 
-    // ── ValidateVerificationMethodRegistry (ARCHITECTURE_CYCLE12.md §144.2) ────────────────────────
+    // ── ValidateVerificationMethodRegistry (ARCHITECTURE_CYCLE14.md §144.2) ────────────────────────
 
     [Fact]
     public void ValidateVerificationMethodRegistry_EveryMethodRegistered_DoesNotThrow()

@@ -1,8 +1,8 @@
 namespace ServiceBooking.Core.Enums;
 
 /// <summary>
-/// How a phone number was proven to belong to the person who typed it (ARCHITECTURE_CYCLE12.md §142.1,
-/// §144.2). Cycle 12 ships exactly one member — <see cref="MaxBot"/> — behind
+/// How a phone number was proven to belong to the person who typed it (ARCHITECTURE_CYCLE14.md §142.1,
+/// §144.2). Cycle 14 ships exactly one member — <see cref="MaxBot"/> — behind
 /// <c>IPhoneVerificationMethodAdapter</c>/<c>IPhoneVerificationMethodRegistry</c>; a call/SMS method is a
 /// future adapter registration, not a redesign.
 ///

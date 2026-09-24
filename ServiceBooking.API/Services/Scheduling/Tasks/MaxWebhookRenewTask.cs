@@ -5,7 +5,7 @@ using ServiceBooking.API.Services.PhoneVerification.Max;
 namespace ServiceBooking.API.Services.Scheduling.Tasks;
 
 /// <summary>
-/// The SIXTH scheduled task (ARCHITECTURE_CYCLE12.md §146.3, Q4, R3) — period 4 hours, comfortably under
+/// The SIXTH scheduled task (ARCHITECTURE_CYCLE14.md §146.3, Q4, R3) — period 4 hours, comfortably under
 /// the platform's own 8-hour "no successful response → subscription silently dropped" window (О4), so a
 /// long-lived process never goes more than half that window without re-confirming. Registered
 /// unconditionally in <c>Program.cs</c> (like every other <see cref="IScheduledTask"/>), but a TRUE no-op

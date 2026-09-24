@@ -4,7 +4,7 @@ using ServiceBooking.API.Services.PhoneVerification;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §142.3, §156.1 — determinism (same account id + same key → same
+/// <summary>ARCHITECTURE_CYCLE14.md §142.3, §156.1 — determinism (same account id + same key → same
 /// key), and that either a different account id OR a different HMAC key produces a different result
 /// (the whole point of §147.5's ceiling relying on equality search).</summary>
 public class ExternalAccountKeyTests

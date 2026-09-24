@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>
-/// Shared "subscribe (or re-subscribe) the webhook, record the outcome" logic (ARCHITECTURE_CYCLE12.md
+/// Shared "subscribe (or re-subscribe) the webhook, record the outcome" logic (ARCHITECTURE_CYCLE14.md
 /// §146.3, Q4) — used by BOTH <c>MaxWebhookStartupSubscriber</c> (at process start, registered only when
 /// <c>PhoneVerification:Provider = "max-bot"</c>) and <c>MaxWebhookRenewTask</c> (every 4 hours,
 /// registered UNCONDITIONALLY like every other <c>IScheduledTask</c>). Neither caller has to know how to

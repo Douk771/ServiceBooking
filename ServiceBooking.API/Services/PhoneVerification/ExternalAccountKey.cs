@@ -5,7 +5,7 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
 /// Computes the opaque, unlinkable identifier a MAX account is recognized by inside this subsystem
-/// (ARCHITECTURE_CYCLE12.md §142.3, Q3). Deliberately HMAC, not AES-GCM
+/// (ARCHITECTURE_CYCLE14.md §142.3, Q3). Deliberately HMAC, not AES-GCM
 /// (<c>Notifications.SecretProtector</c>): the ceiling in §147.5 needs equality search over a MAX
 /// account id, which a randomized-nonce cipher cannot support — two encryptions of the same plaintext
 /// produce different ciphertexts by design. HMAC gives that equality search back while staying

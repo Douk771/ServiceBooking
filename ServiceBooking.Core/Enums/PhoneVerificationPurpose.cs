@@ -1,7 +1,7 @@
 namespace ServiceBooking.Core.Enums;
 
 /// <summary>
-/// Which of the two entry points (ARCHITECTURE_CYCLE12.md §148, Q18) created a
+/// Which of the two entry points (ARCHITECTURE_CYCLE14.md §148, Q18) created a
 /// <see cref="Core.Entities.PhoneVerificationSession"/>. The mechanism is identical for both — only
 /// whether <c>UserId</c> is set and when the result is written (immediately vs. on registration) differs.
 ///

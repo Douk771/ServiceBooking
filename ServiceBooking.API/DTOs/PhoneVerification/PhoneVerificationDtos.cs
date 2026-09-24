@@ -3,7 +3,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.API.DTOs.PhoneVerification;
 
 /// <summary>
-/// The status vocabulary the HTTP API exposes (API_CONTRACT_CYCLE12.md §164) — a STRICT superset of
+/// The status vocabulary the HTTP API exposes (API_CONTRACT_CYCLE14.md §164) — a STRICT superset of
 /// <see cref="PhoneVerificationStatus"/> that adds <c>Expired</c>. Deliberately its own DTO-only enum,
 /// not a member added to the persisted <see cref="PhoneVerificationStatus"/>: §145.2 is explicit that
 /// "Expired" is computed, never written to a row — giving it a real, persistable enum member would make
@@ -11,7 +11,7 @@ namespace ServiceBooking.API.DTOs.PhoneVerification;
 /// </summary>
 public enum PhoneVerificationDisplayStatus { Pending, Linked, Verified, Rejected, Cancelled, Expired }
 
-/// <summary>GET /phone-verification/config (API_CONTRACT_CYCLE12.md §162, anonymous).</summary>
+/// <summary>GET /phone-verification/config (API_CONTRACT_CYCLE14.md §162, anonymous).</summary>
 public record PhoneVerificationConfigDto(
     bool Enabled, bool Healthy, IReadOnlyList<PhoneVerificationMethod> Methods, int SessionTtlSeconds, int PollIntervalSeconds);
 

@@ -2,7 +2,7 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
 /// Typed binding of the top-level <c>PhoneVerification</c> configuration section
-/// (ARCHITECTURE_CYCLE12.md §150.1). Deliberately its OWN top-level section, not a subsection of
+/// (ARCHITECTURE_CYCLE14.md §150.1). Deliberately its OWN top-level section, not a subsection of
 /// <c>Notifications</c> — a structural guarantee (§144.1, R5) that this platform subsystem never grows a
 /// dependency on which channel/tariff/legal gate a salon happens to have.
 /// </summary>

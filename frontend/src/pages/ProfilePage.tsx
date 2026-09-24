@@ -139,7 +139,7 @@ function NotificationPreferencesCard() {
 }
 
 /**
- * US-12-14, T12-F6 — reused as-is; `phoneVerified` is written directly by the webhook handler once
+ * US-14-14, T14-F6 — reused as-is; `phoneVerified` is written directly by the webhook handler once
  * the Profile-purpose session is redeemed (§148.3), so there's no separate "confirm the session"
  * call here: verifying just means refetching `profile` once the dialog reports `Verified`.
  *
@@ -250,7 +250,7 @@ export function ProfilePage() {
   }>({ defaultValues: { newPhone: '' } })
   const newPhoneValue = watchPhone('newPhone')
 
-  // US-12-17 (Р3 + Р6) — the new 409 the gate can return: the number already has guest bookings on
+  // US-14-17 (Р3 + Р6) — the new 409 the gate can return: the number already has guest bookings on
   // it and needs a verified MAX session before the change can go through. `changePhoneVerification`
   // is presented once and then cleared on success/failure — it is never persisted across page loads.
   const [needsPhoneVerification, setNeedsPhoneVerification] = useState(false)
@@ -282,7 +282,7 @@ export function ProfilePage() {
       setTimeout(() => setPhoneSuccess(false), 3000)
     },
     onError: (err: unknown) => {
-      // US-12-17 (§169) — the two new 409 wordings are told apart by substring (same convention as
+      // US-14-17 (§169) — the two new 409 wordings are told apart by substring (same convention as
       // `utils/authError.ts`'s two meanings of 409 on /auth/register), and drive two different UIs
       // below the form rather than just an inline field error.
       if (isPhoneChangeVerificationRequired(err)) {
@@ -471,7 +471,7 @@ export function ProfilePage() {
             error={phoneErrors.currentPassword?.message}
             {...regPhone('currentPassword', { required: true })}
           />
-          {/* US-12-17 (§169) — this number already has guest bookings on it: offer the same MAX
+          {/* US-14-17 (§169) — this number already has guest bookings on it: offer the same MAX
               verification widget, scoped to the number just typed above. §169's OTHER 409 (subsystem
               off) gets no such offer — there is nothing to click that would actually work. */}
           {needsPhoneVerification && (

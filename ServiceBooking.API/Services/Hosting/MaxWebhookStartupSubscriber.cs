@@ -3,7 +3,7 @@ using ServiceBooking.API.Services.PhoneVerification.Max;
 namespace ServiceBooking.API.Services.Hosting;
 
 /// <summary>
-/// One-shot subscribe attempt at process start (ARCHITECTURE_CYCLE12.md §146.3, Q4) — registered in
+/// One-shot subscribe attempt at process start (ARCHITECTURE_CYCLE14.md §146.3, Q4) — registered in
 /// Program.cs ONLY when <c>PhoneVerification:Provider = "max-bot"</c>. Deliberately an
 /// <see cref="IHostedService"/>, not a seventh <c>IScheduledTask</c>: the scheduled-task runner decides
 /// "is it time yet" from <c>ScheduledTaskState</c> persisted in the database, which survives a restart —

@@ -5,7 +5,7 @@ using ServiceBooking.API.Services.PhoneVerification.Max;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §147.1, §156.1 — matching/mismatched signature, empty hash, empty
+/// <summary>ARCHITECTURE_CYCLE14.md §147.1, §156.1 — matching/mismatched signature, empty hash, empty
 /// vcf_info, and both accepted encodings (hex/base64). Constant-time comparison itself isn't
 /// black-box-testable from a unit test, but the behavior it implements (match/no-match) is.</summary>
 public class MaxContactSignatureTests

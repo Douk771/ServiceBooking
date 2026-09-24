@@ -1,7 +1,7 @@
 namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>
-/// The bot's own outbound surface toward the MAX platform (ARCHITECTURE_CYCLE12.md §146). Deliberately
+/// The bot's own outbound surface toward the MAX platform (ARCHITECTURE_CYCLE14.md §146). Deliberately
 /// exactly the two operations R1 names as the license-safe set — nothing here ever sends
 /// platform-generated text, only fixed sentences from <see cref="MaxBotTexts"/>. Swapped for
 /// <see cref="StubMaxBotClient"/> in DI when <c>PhoneVerification:Provider</c> is <c>"stub"</c> (§150.3

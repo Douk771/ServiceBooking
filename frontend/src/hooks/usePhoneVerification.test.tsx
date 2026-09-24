@@ -131,7 +131,7 @@ describe('usePhoneVerification', () => {
     expect(result.current.isPolling).toBe(false)
   })
 
-  it('cancel() never throws even if the network call fails (US-12-05 is fire-and-forget)', async () => {
+  it('cancel() never throws even if the network call fails (US-14-05 is fire-and-forget)', async () => {
     startSession.mockResolvedValue(session())
     getStatus.mockResolvedValue(status())
     cancelSession.mockRejectedValue(new Error('network down'))

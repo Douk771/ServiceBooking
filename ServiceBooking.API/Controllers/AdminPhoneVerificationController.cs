@@ -10,7 +10,7 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Controllers;
 
 /// <summary>
-/// ARCHITECTURE_CYCLE12.md §152, API_CONTRACT_CYCLE12.md §172 (US-12-13). SuperAdmin-only, read via
+/// ARCHITECTURE_CYCLE14.md §152, API_CONTRACT_CYCLE14.md §172 (US-14-13). SuperAdmin-only, read via
 /// <c>curl</c> per DEPLOY.md — this cycle deliberately does not add an admin SCREEN for it (§154, §158).
 /// Every number here is a COUNT over <see cref="Core.Entities.PhoneVerificationSession"/> — no separate
 /// counters table exists to drift out of sync with it.

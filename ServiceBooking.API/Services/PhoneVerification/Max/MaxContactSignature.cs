@@ -4,7 +4,7 @@ using System.Text;
 namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>
-/// Check 1 of 2 (ARCHITECTURE_CYCLE12.md §147.1) — proves the <c>contact</c> attachment's <c>vcf_info</c>
+/// Check 1 of 2 (ARCHITECTURE_CYCLE14.md §147.1) — proves the <c>contact</c> attachment's <c>vcf_info</c>
 /// was not tampered with in transit: MAX's own platform signs it with HMAC-SHA256 keyed by the bot's own
 /// token. This is the ONLY place the bot token is ever used as a cryptographic key (everywhere else it is
 /// a bearer credential in an <c>Authorization</c> header) — if a live-bot recon ever shows a different

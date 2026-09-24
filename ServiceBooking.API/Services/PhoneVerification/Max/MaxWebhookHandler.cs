@@ -9,7 +9,7 @@ namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>
 /// Everything that happens once a MAX update has passed webhook-token authentication (ARCHITECTURE_
-/// CYCLE12.md §145, §146, §147) — session lookup, the two mandatory checks (§147.1/§147.2), vCard
+/// CYCLE14.md §145, §146, §147) — session lookup, the two mandatory checks (§147.1/§147.2), vCard
 /// parsing (§147.3), the per-account ceiling (§147.5), and the actual status/VerifiedPhone write. Called
 /// from <c>PhoneVerificationController.ReceiveWebhook</c>, which is what guarantees the caller's own
 /// contract (§146.2's "always 200, exceptions logged, never propagated").
@@ -157,10 +157,10 @@ public sealed class MaxWebhookHandler(
 
                     // Purpose=Profile covers TWO different scenarios that must not be treated alike
                     // (review finding, blockers 1+2 of the cycle-12 review):
-                    //  - US-12-16, "confirm the number I already have" — session.CanonicalPhone equals
+                    //  - US-14-16, "confirm the number I already have" — session.CanonicalPhone equals
                     //    the account's CURRENT PhoneNumber. Nobody is ever going to "present" this
                     //    session anywhere else, so it is written and consumed right here.
-                    //  - US-12-17, the change-phone gate — session.CanonicalPhone is a NEW number the
+                    //  - US-14-17, the change-phone gate — session.CanonicalPhone is a NEW number the
                     //    account does not hold yet (ChangePhoneDto.NewPhone, not the account's current
                     //    number). Writing VerifiedPhone/PhoneNumberConfirmed here would mark a number
                     //    the account doesn't own; consuming the session here would make it impossible to

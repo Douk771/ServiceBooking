@@ -3,7 +3,7 @@ using ServiceBooking.API.Services.PhoneVerification;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §148.5, §156.1 (US-12-17, Р1/Р3) — the change-phone gate as a pure
+/// <summary>ARCHITECTURE_CYCLE14.md §148.5, §156.1 (US-14-17, Р1/Р3) — the change-phone gate as a pure
 /// function of three facts.</summary>
 public class GuestBookingGateDecisionTests
 {

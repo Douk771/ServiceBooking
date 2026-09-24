@@ -3,13 +3,13 @@ using System.Text.Json;
 namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>A <c>contact</c> attachment inside a <c>message_created</c> update, as far as this subsystem
-/// cares (ARCHITECTURE_CYCLE12.md §147). <see cref="OwnerId"/> comes from <c>max_info</c>, falling back
+/// cares (ARCHITECTURE_CYCLE14.md §147). <see cref="OwnerId"/> comes from <c>max_info</c>, falling back
 /// to <c>tam_info</c> when the former is absent — the contract (§167, <c>MaxUpdate</c> schema) carries
 /// both because which one the live platform actually populates was unconfirmed at write time.</summary>
 public sealed record MaxContactAttachment(string? VcfInfo, string? Hash, string? OwnerId);
 
 /// <summary>Everything <c>MaxWebhookController</c> needs out of one MAX update, already reduced to plain
-/// values (ARCHITECTURE_CYCLE12.md §144.3 — this class has no DB/HTTP dependency, only
+/// values (ARCHITECTURE_CYCLE14.md §144.3 — this class has no DB/HTTP dependency, only
 /// <see cref="System.Text.Json"/>). Unrecognized fields are ignored everywhere, matching §167's "апдейт —
 /// минимальная форма, неизвестные поля игнорируются".</summary>
 public sealed record MaxUpdateData(string? UpdateType, string? Payload, string? SenderId, string? ChatId, MaxContactAttachment? Contact);

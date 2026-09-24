@@ -3,7 +3,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.Core.Entities;
 
 /// <summary>
-/// One phone-ownership confirmation attempt (ARCHITECTURE_CYCLE12.md §142.1, Q1). The one-time secret a
+/// One phone-ownership confirmation attempt (ARCHITECTURE_CYCLE14.md §142.1, Q1). The one-time secret a
 /// person actually shares (the deep-link <c>payload</c>) is NEVER stored — only its SHA-256
 /// (<see cref="PayloadHash"/>); the same is true of <see cref="StatusTokenHash"/>, the second half of the
 /// poll key. A dump of this table gives an attacker nothing they could present back to either endpoint.
@@ -48,7 +48,7 @@ public class PhoneVerificationSession
 
     /// <summary>Set only when <see cref="FailureReason"/> is <c>PhoneMismatch</c> — the MASKED (never
     /// raw) form of the number that was actually shared, so <c>GET /phone-verification/sessions/{id}</c>'s
-    /// <c>message</c> can name both numbers (API_CONTRACT_CYCLE12.md §165's exact wording: "Вы
+    /// <c>message</c> can name both numbers (API_CONTRACT_CYCLE14.md §165's exact wording: "Вы
     /// поделились номером X, а на сайте введён Y"). Deliberately not the extra field the architecture
     /// doc's §142.1 table enumerates — added because the contract's own wording for this one reason
     /// needs a second number that <see cref="CanonicalPhone"/> alone cannot supply, and only the masked

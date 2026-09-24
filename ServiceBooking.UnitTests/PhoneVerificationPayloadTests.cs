@@ -3,7 +3,7 @@ using ServiceBooking.API.Services.PhoneVerification;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §144.3, §156.1 — payload length (≤128, О6), unpredictability, and
+/// <summary>ARCHITECTURE_CYCLE14.md §144.3, §156.1 — payload length (≤128, О6), unpredictability, and
 /// the hash relationship (same input → same hash; different input → different hash; the payload itself
 /// is never recoverable from the hash).</summary>
 public class PhoneVerificationPayloadTests

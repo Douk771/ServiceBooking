@@ -2,8 +2,8 @@ import { api } from './client'
 import type { PhoneVerificationConfig, PhoneVerificationSessionCreated, PhoneVerificationSessionStatus } from '../types'
 
 /**
- * API_CONTRACT_CYCLE12.md §162-§166 — platform-wide phone verification via the MAX bot (own
- * PhoneVerification subsystem, NOT a notification channel — ARCHITECTURE_CYCLE12.md §144.1).
+ * API_CONTRACT_CYCLE14.md §162-§166 — platform-wide phone verification via the MAX bot (own
+ * PhoneVerification subsystem, NOT a notification channel — ARCHITECTURE_CYCLE14.md §144.1).
  *
  * One `config` endpoint serves the registration form, the profile screen and the change-phone gate
  * alike (Q5) — every caller decides whether to show anything itself from the same `enabled/healthy`

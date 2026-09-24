@@ -1,7 +1,7 @@
 namespace ServiceBooking.API.Services.PhoneVerification;
 
 /// <summary>
-/// In-memory, process-lifetime record of "is the webhook currently subscribed" (ARCHITECTURE_CYCLE12.md
+/// In-memory, process-lifetime record of "is the webhook currently subscribed" (ARCHITECTURE_CYCLE14.md
 /// §146.3, §152) — written by <c>MaxWebhookStartupSubscriber</c> and the <c>max-webhook-renew</c>
 /// scheduled task, read by <c>GET /phone-verification/config</c>'s <c>healthy</c> field and
 /// <c>GET /admin/phone-verification/diagnostics</c>. Deliberately NOT persisted: a restart re-subscribes

@@ -10,8 +10,8 @@ export const authApi = {
    *  separate, non-blocking request (§41.2) made after this one succeeds, so the two-consent split
    *  required by ст. 9 is enforced by the protocol shape, not just by the form's layout.
    *
-   *  `phoneVerification` (API_CONTRACT_CYCLE12.md §168) is NEW and optional — omitting it keeps this
-   *  call byte-for-byte what it was before cycle 12 (US-12-07); a stale/invalid session for the
+   *  `phoneVerification` (API_CONTRACT_CYCLE14.md §168) is NEW and optional — omitting it keeps this
+   *  call byte-for-byte what it was before cycle 14 (US-14-07); a stale/invalid session for the
    *  phone actually submitted is rejected server-side with its own 409, so the caller doesn't have to
    *  duplicate that check here. */
   register: (data: {

@@ -107,7 +107,7 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
                     BookingSummaries: g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
                         .Select(b => new BookingSummaryDto(b.Date, b.Service.Name, b.Status.ToString()))
                         .ToList(),
-                    // ARCHITECTURE_CYCLE12.md §149.2 (Q17): ZERO extra queries — Client is already
+                    // ARCHITECTURE_CYCLE14.md §149.2 (Q17): ZERO extra queries — Client is already
                     // Include()d above, so PhoneNumberConfirmed rides along with the name/phone that were
                     // already being read from the same row.
                     PhoneVerified: client?.PhoneNumberConfirmed

@@ -7,7 +7,7 @@ namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>
 /// The real <see cref="IMaxBotClient"/> (<c>PhoneVerification:Provider = "max-bot"</c>).
-/// ARCHITECTURE_CYCLE12.md §146.4 (О3, R10): a GLOBAL token-bucket limiter (30 req/s) and a PER-CHAT
+/// ARCHITECTURE_CYCLE14.md §146.4 (О3, R10): a GLOBAL token-bucket limiter (30 req/s) and a PER-CHAT
 /// partitioned limiter (2 msg/s) — both built with <c>System.Threading.RateLimiting</c>, no new
 /// dependency. Registered as a singleton (Program.cs) so both limiters' state is actually shared across
 /// requests instead of being reset per-instance.

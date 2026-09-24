@@ -3,7 +3,7 @@ import type { PhoneVerificationFailureReason } from '../types'
 
 /**
  * Maps a failed `/phone-verification/sessions` call (start/cancel) to a Russian message.
- * API_CONTRACT_CYCLE12.md §163: 400/409/429 carry a bare-string body written by the server; 401 is
+ * API_CONTRACT_CYCLE14.md §163: 400/409/429 carry a bare-string body written by the server; 401 is
  * empty (an invalid token on an otherwise-anonymous-capable call, §163).
  */
 export function getPhoneVerificationErrorMessage(
@@ -32,7 +32,7 @@ export function getPhoneVerificationErrorMessage(
 }
 
 /**
- * Fallback Russian text per `failureReason` (API_CONTRACT_CYCLE12.md §165), used ONLY when a session
+ * Fallback Russian text per `failureReason` (API_CONTRACT_CYCLE14.md §165), used ONLY when a session
  * somehow carries a `failureReason` without a server-composed `message` — the server is expected to
  * always fill `message` (§164: "фронт её не сочиняет и не собирает из кусочков"), so this table exists
  * purely as a defensive fallback, not as the primary source of copy.
@@ -72,9 +72,9 @@ export function isRetryableFailure(reason: PhoneVerificationFailureReason | null
   return !!reason && RETRYABLE_REASONS.has(reason)
 }
 
-// ── POST /api/profile/change-phone — US-12-17 gate (§169) ─────────────────────────────────────────
+// ── POST /api/profile/change-phone — US-14-17 gate (§169) ─────────────────────────────────────────
 // The two new 409 wordings are told apart by substring, the same convention `utils/authError.ts`
-// already uses for the two meanings of 409 on /auth/register (ARCHITECTURE_CYCLE12.md §148.5).
+// already uses for the two meanings of 409 on /auth/register (ARCHITECTURE_CYCLE14.md §148.5).
 
 const VERIFICATION_REQUIRED_MARK = 'Подтвердите его через MAX'
 const SUBSYSTEM_DISABLED_MARK = 'подтверждение номера на платформе пока не работает'

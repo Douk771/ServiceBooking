@@ -3,7 +3,7 @@ using ServiceBooking.API.Services.PhoneVerification.Max;
 
 namespace ServiceBooking.UnitTests;
 
-/// <summary>ARCHITECTURE_CYCLE12.md §147.3, §156.1 — multiple TEL, TYPE=CELL ordering, garbage/unusable
+/// <summary>ARCHITECTURE_CYCLE14.md §147.3, §156.1 — multiple TEL, TYPE=CELL ordering, garbage/unusable
 /// numbers, no TEL at all, and the byte/count ceilings.</summary>
 public class MaxVCardParserTests
 {

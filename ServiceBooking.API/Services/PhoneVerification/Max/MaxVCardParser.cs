@@ -3,7 +3,7 @@ using System.Text;
 namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>
-/// Pure vCard <c>TEL</c> extraction (ARCHITECTURE_CYCLE12.md §147.3, Q11). The rule is deliberately
+/// Pure vCard <c>TEL</c> extraction (ARCHITECTURE_CYCLE14.md §147.3, Q11). The rule is deliberately
 /// simple and entirely test-fixed: every <c>TEL</c> property, canonicalized, <c>TYPE=CELL</c>/
 /// <c>TYPE=MOBILE</c> ones first, everything else afterward in the order it appeared. A match against the
 /// session's phone is then searched for among ALL of them (§147.3 p.4) — a person with two numbers in

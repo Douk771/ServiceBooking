@@ -4,21 +4,21 @@ openapi: 3.0.3
 # (Бесплатная дорожка подтверждения телефона через собственного бота MAX, без отправки кодов.)
 #
 # ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ ИНТЕРФЕЙСА. Человекочитаемое объяснение смысла и правил —
-# API_CONTRACT_CYCLE12.md (§160–§172); решения и обоснования — ARCHITECTURE_CYCLE12.md (§140–§158).
+# API_CONTRACT_CYCLE14.md (§160–§172); решения и обоснования — ARCHITECTURE_CYCLE14.md (§140–§158).
 # При расхождении прав ЭТОТ файл.
 #
 # Как пользоваться:
-#   frontend  npx @stoplight/prism mock contracts/cycle12/openapi.yaml --port 4010
-#             npm run types:api:cycle12   # openapi-typescript → src/types/api-cycle12.generated.ts
-#   QA        schemathesis run contracts/cycle12/openapi.yaml --base-url http://localhost:5000/api --checks all
-#             npx @redocly/cli lint contracts/cycle12/openapi.yaml
+#   frontend  npx @stoplight/prism mock contracts/cycle14/openapi.yaml --port 4010
+#             npm run types:api:cycle14   # openapi-typescript → src/types/api-cycle14.generated.ts
+#   QA        schemathesis run contracts/cycle14/openapi.yaml --base-url http://localhost:5000/api --checks all
+#             npx @redocly/cli lint contracts/cycle14/openapi.yaml
 #
-# Здесь описаны ТОЛЬКО эндпоинты, которые цикл 12 добавляет или меняет. Остальной API —
+# Здесь описаны ТОЛЬКО эндпоинты, которые цикл 14 добавляет или меняет. Остальной API —
 # в API_DOCUMENTATION.md и контрактах циклов 3–11 (contracts/cycle7, cycle8, cycle9, cycle11,
 # openapi-cycle6.yaml).
 
 info:
-  title: ServiceBooking API — цикл 12 (подтверждение телефона через бота MAX)
+  title: ServiceBooking API — цикл 14 (подтверждение телефона через бота MAX)
   version: "7.0.0"
   license:
     name: Proprietary
@@ -34,7 +34,7 @@ info:
         бесплатно и тарифом не гейтится (решение заказчика Р2, SPEC §3).
 
     ЧТО ЦИКЛ ДОБАВЛЯЕТ В HTTP — АДДИТИВНО, КРОМЕ ОДНОГО МЕСТА:
-      ⚠️ POST /api/profile/change-phone получает НОВЫЙ отказ 409 (US-12-17) — это видимое снаружи
+      ⚠️ POST /api/profile/change-phone получает НОВЫЙ отказ 409 (US-14-17) — это видимое снаружи
       изменение поведения. Всё остальное (поле phoneVerification в register, поля phoneVerified
       в профиле и в списке клиентов, секция в export) аддитивно, существующие вызовы не ломает.
 
@@ -51,17 +51,17 @@ servers:
 
 tags:
   - name: phone-verification
-    description: Платформенная подсистема подтверждения телефона (US-12-01…US-12-06, US-12-16).
+    description: Платформенная подсистема подтверждения телефона (US-14-01…US-14-06, US-14-16).
   - name: phone-verification-webhook
-    description: Приём апдейтов бота MAX (US-12-09). Анонимно, секрет — последним сегментом пути.
+    description: Приём апдейтов бота MAX (US-14-09). Анонимно, секрет — последним сегментом пути.
   - name: phone-verification-admin
-    description: Наблюдаемость для оператора платформы (US-12-13).
+    description: Наблюдаемость для оператора платформы (US-14-13).
   - name: auth
-    description: Регистрация — аддитивное поле подтверждения (US-12-01, US-12-07).
+    description: Регистрация — аддитивное поле подтверждения (US-14-01, US-14-07).
   - name: profile
-    description: Профиль, смена номера, выгрузка (US-12-11, US-12-14, US-12-16, US-12-17).
+    description: Профиль, смена номера, выгрузка (US-14-11, US-14-14, US-14-16, US-14-17).
   - name: masters
-    description: Список клиентов персонала — признак подтверждения (US-12-15).
+    description: Список клиентов персонала — признак подтверждения (US-14-15).
 
 security:
   - bearerAuth: []
@@ -76,7 +76,7 @@ paths:
     get:
       tags: [phone-verification]
       operationId: getPhoneVerificationConfig
-      summary: Состояние подсистемы подтверждения (US-12-08)
+      summary: Состояние подсистемы подтверждения (US-14-08)
       description: |
         АНОНИМНЫЙ. Единственный источник ответа на вопрос «показывать ли кнопку» — один и тот же
         для формы регистрации, профиля и экрана смены номера (Q5). Образец — GET /push/config.
@@ -102,9 +102,9 @@ paths:
     post:
       tags: [phone-verification]
       operationId: startPhoneVerification
-      summary: Начать подтверждение — получить одноразовую ссылку и QR (US-12-01, US-12-02)
+      summary: Начать подтверждение — получить одноразовую ссылку и QR (US-14-01, US-14-02)
       description: |
-        Анонимно (сценарий регистрации) ИЛИ с токеном (сценарий профиля, US-12-16). Механизм один
+        Анонимно (сценарий регистрации) ИЛИ с токеном (сценарий профиля, US-14-16). Механизм один
         и тот же; авторизованный вызов может не присылать phone — берётся текущий номер аккаунта.
 
         Политика лимитов phone-verify-start: 10/час на пользователя, для анонимных — на IP (Q8, R10).
@@ -173,7 +173,7 @@ paths:
                     expiresAtUtc: "2026-09-24T12:34:56Z"
                     verifiedAtUtc: null
                 rejectedForeignContact:
-                  summary: Прислан ЧУЖОЙ контакт (главный сценарий безопасности US-12-04)
+                  summary: Прислан ЧУЖОЙ контакт (главный сценарий безопасности US-14-04)
                   value:
                     sessionId: "3f6b2f1e-6b3a-4a1e-9c2d-5f0e1d2c3b4a"
                     status: Rejected
@@ -187,7 +187,7 @@ paths:
     delete:
       tags: [phone-verification]
       operationId: cancelPhoneVerificationSession
-      summary: Отменить сессию (US-12-05 — пользователь изменил номер в форме)
+      summary: Отменить сессию (US-14-05 — пользователь изменил номер в форме)
       description: |
         ВСЕГДА 204, идемпотентно. Сессия отменяется только при совпадении statusToken; несовпадение
         и несуществующий id дают тот же 204 — эндпоинт не отвечает на вопрос «такая сессия есть?».
@@ -206,7 +206,7 @@ paths:
     post:
       tags: [phone-verification-webhook]
       operationId: receiveMaxBotUpdate
-      summary: Вебхук бота MAX (US-12-09)
+      summary: Вебхук бота MAX (US-14-09)
       description: |
         АНОНИМНЫЙ. Аутентификация — секрет последним сегментом пути; он маскируется в access-логе
         nginx (deploy/nginx/ezbook.conf) и в логах приложения. Требования площадки: HTTPS на 443,
@@ -245,7 +245,7 @@ paths:
     get:
       tags: [phone-verification-admin]
       operationId: getPhoneVerificationDiagnostics
-      summary: Наблюдаемость подсистемы для оператора платформы (US-12-13)
+      summary: Наблюдаемость подсистемы для оператора платформы (US-14-13)
       description: |
         Только SuperAdmin. НИ ОДНОГО телефона, идентификатора MAX-аккаунта или payload'а в ответе
         нет и быть не может. Счётчики — агрегат по таблице сессий, отдельной таблицы счётчиков нет.
@@ -266,7 +266,7 @@ paths:
     post:
       tags: [auth]
       operationId: register
-      summary: Регистрация — аддитивное поле phoneVerification (US-12-01, US-12-07)
+      summary: Регистрация — аддитивное поле phoneVerification (US-14-01, US-14-07)
       description: |
         КОНТРАКТ ОБРАТНОСОВМЕСТИМ. phoneVerification необязателен; вызов без него ведёт себя ровно
         как до цикла (те же два обязательных акцепта, тот же лимит auth-register 5/час на IP,
@@ -303,7 +303,7 @@ paths:
         "409":
           description: |
             Либо «Документы были обновлены ещё раз…» (цикл 5), либо «Подтверждение номера не
-            подходит к этой регистрации…» / «Подтверждение телефона сейчас недоступно.» (цикл 12).
+            подходит к этой регистрации…» / «Подтверждение телефона сейчас недоступно.» (цикл 14).
           content:
             text/plain:
               schema: { type: string }
@@ -319,7 +319,7 @@ paths:
     post:
       tags: [profile]
       operationId: changePhone
-      summary: "⚠️ ЛОМАЮЩЕЕ: смена номера получает новый отказ 409 (US-12-17)"
+      summary: "⚠️ ЛОМАЮЩЕЕ: смена номера получает новый отказ 409 (US-14-17)"
       description: |
         Новое поведение (Р3 + Р6):
           * номер не меняется → как сегодня;
@@ -331,7 +331,7 @@ paths:
         Новая политика лимитов phone-change (5/час на пользователя) — маршрут раньше не был покрыт
         никакой политикой. Каждая упёршаяся в гейт попытка журналируется (R14).
 
-        Успешная смена снимает отметку со старого номера в той же транзакции (US-12-11).
+        Успешная смена снимает отметку со старого номера в той же транзакции (US-14-11).
 
         🔴 Формулировка результата: закрыт путь через смену номера; путь через регистрацию нового
         аккаунта на чужой номер остаётся открытым осознанно (SPEC §6.4, блок V1 в CURRENT_STATE §9).
@@ -368,7 +368,7 @@ paths:
     get:
       tags: [profile]
       operationId: getProfile
-      summary: Профиль — аддитивные поля phoneVerified / phoneVerifiedAtUtc (US-12-14)
+      summary: Профиль — аддитивные поля phoneVerified / phoneVerifiedAtUtc (US-14-14)
       responses:
         "200":
           description: Профиль.
@@ -382,7 +382,7 @@ paths:
     get:
       tags: [masters]
       operationId: getMasterClients
-      summary: Список клиентов персонала — аддитивный признак phoneVerified (US-12-15)
+      summary: Список клиентов персонала — аддитивный признак phoneVerified (US-14-15)
       description: |
         Признак считается БЕЗ дополнительного запроса на строку: выборка уже делает Include(Client),
         флаг приезжает вместе с именем и телефоном (Q17).
@@ -424,7 +424,7 @@ paths:
     get:
       tags: [profile]
       operationId: exportProfileData
-      summary: Выгрузка данных — аддитивная секция phoneVerification (US-12-12)
+      summary: Выгрузка данных — аддитивная секция phoneVerification (US-14-12)
       description: |
         Цикл добавляет ОДНУ секцию. Идентификатор MAX-аккаунта (в том числе хешированный) и открытые
         сессии в выгрузку НЕ входят. Сопоставление гостевых сущностей по телефону НЕ меняется
@@ -478,7 +478,7 @@ components:
 
     PhoneVerificationMethod:
       type: string
-      description: Способ подтверждения. Перечисление append-only; в цикле 12 реализован ровно один.
+      description: Способ подтверждения. Перечисление append-only; в цикле 14 реализован ровно один.
       enum: [MaxBot]
 
     PhoneVerificationStatus:
@@ -647,7 +647,7 @@ components:
                             nullable: true
                             description: |
                               Сведения о владельце контакта. Его идентификатор ОБЯЗАН совпасть с
-                              отправителем апдейта, иначе подтверждение отклоняется (US-12-04).
+                              отправителем апдейта, иначе подтверждение отклоняется (US-14-04).
                             properties:
                               user_id: { type: integer, format: int64 }
                           tam_info:
@@ -657,7 +657,7 @@ components:
                               user_id: { type: integer, format: int64 }
                           hash:
                             type: string
-                            description: HMAC-SHA256 от vcf_info; проверяется ОБЯЗАТЕЛЬНО (US-12-04).
+                            description: HMAC-SHA256 от vcf_info; проверяется ОБЯЗАТЕЛЬНО (US-14-04).
       additionalProperties: true
 
     PhoneVerificationDiagnostics:
@@ -708,7 +708,7 @@ components:
           nullable: true
           description: |
             НОВОЕ В ЦИКЛЕ 12, НЕОБЯЗАТЕЛЬНОЕ. Отсутствие поля = регистрация ровно как до цикла
-            (Р1, US-12-07). Негодная сессия → 409, аккаунт не создаётся.
+            (Р1, US-14-07). Негодная сессия → 409, аккаунт не создаётся.
 
     AuthResponse:
       type: object
@@ -747,12 +747,12 @@ components:
           nullable: true
           description: |
             НОВОЕ В ЦИКЛЕ 12, НЕОБЯЗАТЕЛЬНОЕ. Требуется ТОЛЬКО когда на новом номере уже есть
-            гостевые записи (US-12-17). В остальных случаях смена работает как сегодня (Р1).
+            гостевые записи (US-14-17). В остальных случаях смена работает как сегодня (Р1).
 
     ProfilePlan:
       type: object
       nullable: true
-      description: Форма цикла 7, цикл 12 её не меняет.
+      description: Форма цикла 7, цикл 14 её не меняет.
       additionalProperties: true
 
     Profile:
@@ -818,7 +818,7 @@ components:
     ProfileExportPhoneVerificationSlice:
       type: object
       description: |
-        Описан ТОЛЬКО тот срез выгрузки, который добавляет цикл 12. Остальные секции — контракты
+        Описан ТОЛЬКО тот срез выгрузки, который добавляет цикл 14. Остальные секции — контракты
         циклов 3 и 5, они не меняются.
       properties:
         phoneVerification:

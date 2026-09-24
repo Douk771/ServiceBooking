@@ -5,7 +5,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.API.Services.PhoneVerification.Max;
 
 /// <summary>
-/// The single <see cref="IPhoneVerificationMethodAdapter"/> this cycle ships (ARCHITECTURE_CYCLE12.md
+/// The single <see cref="IPhoneVerificationMethodAdapter"/> this cycle ships (ARCHITECTURE_CYCLE14.md
 /// §144.2, §154). Always registered in DI regardless of <c>PhoneVerification:Provider</c> — what actually
 /// changes with the provider switch is which <see cref="IMaxBotClient"/> it was built with
 /// (<see cref="StubMaxBotClient"/> vs. <see cref="MaxBotClient"/>, §150.3), never whether the registry

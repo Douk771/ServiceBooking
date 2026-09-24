@@ -155,7 +155,7 @@ public class PhoneVerificationSessionAcceptanceTests
     [Fact]
     public void OwnNumberConfirmation_SessionPhoneIsANewNumber_ReturnsFalse()
     {
-        // The exact scenario behind review blocker 2 (change-phone gate, US-12-17): the session was
+        // The exact scenario behind review blocker 2 (change-phone gate, US-14-17): the session was
         // opened for a number the account does NOT hold yet — must not be treated as "confirm my own
         // number", or the mirror would falsely light up on a number the account may never actually get.
         PhoneVerificationSessionAcceptance.IsOwnCurrentNumberConfirmation("+79001234567", "+79007654321")

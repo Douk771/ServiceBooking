@@ -21,7 +21,7 @@ interface VerifyPhoneButtonProps {
 }
 
 /**
- * ARCHITECTURE_CYCLE12.md §148.1, T12-F4 — "сама решает, показываться ли": mounts unconditionally,
+ * ARCHITECTURE_CYCLE14.md §148.1, T14-F4 — "сама решает, показываться ли": mounts unconditionally,
  * renders nothing when the subsystem is off/unhealthy or the phone isn't a valid Russian number yet
  * (§162 — "не показывается ничего: ни кнопки, ни объяснения, ни пустого места").
  */
@@ -30,7 +30,7 @@ export function VerifyPhoneButton({ phone, onVerifiedChange, label = 'Подтв
   const pv = usePhoneVerification(config?.pollIntervalSeconds ? config.pollIntervalSeconds * 1000 : undefined)
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  // US-12-05 (R8) — the session this button holds is only ever valid for the phone it was started
+  // US-14-05 (R8) — the session this button holds is only ever valid for the phone it was started
   // for; the moment the caller's own field changes, drop it.
   useEffect(() => {
     pv.syncPhone(phone)
