@@ -97,4 +97,17 @@ public sealed class RetentionPeriods
     /// <c>Payload</c> is a one-shot system message, not correspondence worth keeping a scrubbed trace
     /// of).</summary>
     public int StaffPushNotificationDays { get; set; } = 365;
+
+    /// <summary>ARCHITECTURE_CYCLE12.md §151.1 (R11, R13). Age of a
+    /// <see cref="Core.Entities.PhoneVerificationSession"/> since <c>CreatedAtUtc</c>, of ANY status —
+    /// the session itself lives minutes, this is incident-review slack, not a working lifetime. ⚠️
+    /// Deliberately NON-ZERO in the committed configuration (D1, cycle 10's own lesson: zero reads as
+    /// "no period configured" and deletes nothing). Default 1.</summary>
+    public int PhoneVerificationSessionDays { get; set; } = 1;
+
+    /// <summary>§151.1. Age of a <see cref="Core.Entities.VerifiedPhone"/> row whose account is either a
+    /// tombstone or no longer matches any live account's phone, since <c>VerifiedAtUtc</c>. A row still
+    /// attached to a LIVE account is never touched by this rule regardless of age — see
+    /// <see cref="Rules.VerifiedPhoneOrphanRule"/>'s own doc comment for why. Default 365.</summary>
+    public int VerifiedPhoneOrphanDays { get; set; } = 365;
 }
