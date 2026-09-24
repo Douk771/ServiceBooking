@@ -13,6 +13,7 @@ import { Avatar } from '../../components/ui/Avatar'
 import { CityCombobox } from '../../components/ui/CityCombobox'
 import { ScheduleTab } from './ScheduleTab'
 import { CompanyPhotosSection } from './CompanyPhotosSection'
+import { AddressVerifyField } from '../../components/company/AddressVerifyField'
 import { NotificationSettingsTab } from './NotificationSettingsTab'
 import { NotificationTemplatesTab } from './NotificationTemplatesTab'
 import { NotificationLogTab } from './NotificationLogTab'
@@ -708,7 +709,6 @@ function SettingsTab({ companyId }: { companyId: string }) {
       ? {
           name: company.name,
           description: company.description ?? '',
-          address: company.address ?? '',
           phone: company.phone ?? '',
           email: company.email ?? '',
           allowSelfBooking: company.allowSelfBooking,
@@ -804,7 +804,18 @@ function SettingsTab({ companyId }: { companyId: string }) {
               {...register('description')}
             />
           </div>
-          <Input label="Адрес" {...register('address')} />
+          {/* ARCHITECTURE_CYCLE13.md §209/§211: address writes go through their own endpoint
+              (`PUT /api/companies/{id}/address`), never through this form's submit — so this field
+              owns its own save action instead of being `register('address')`d into `updateMut`. */}
+          {company && (
+            <AddressVerifyField
+              companyId={companyId}
+              initialAddress={company.address ?? ''}
+              cityId={company.cityId}
+              addressVerification={company.addressVerification}
+              onSaved={() => qc.invalidateQueries({ queryKey: ['my-companies'] })}
+            />
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Input label="Телефон" {...register('phone')} />
             <Input label="Email" type="email" {...register('email')} />
