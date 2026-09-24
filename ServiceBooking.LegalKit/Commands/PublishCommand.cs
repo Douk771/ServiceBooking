@@ -267,11 +267,18 @@ internal static class PublishCommand
 
     /// <summary>The nearest containing block elements a placeholder may live in — the ones legal-drafts
     /// actually uses for a self-contained sentence/bullet (a single &lt;li&gt; item or a standalone
-    /// &lt;p&gt;). Matched non-greedily against the SAME tag name via a backreference, on the assumption
-    /// (true of legal-drafts today, and enforced indirectly by the strict leftover scan below if it ever
-    /// stops being true) that these do not nest inside another element of the same tag name.</summary>
+    /// &lt;p&gt;). Matched non-greedily against the SAME tag name via a backreference, and the body is
+    /// forbidden from containing an OPENING tag of that same name (<c>(?!&lt;\1\b)</c>) so that "nearest
+    /// containing block" stays literally true: without that guard, an outer &lt;li&gt; wrapping a nested
+    /// list would match from the outer opening tag to the INNER &lt;/li&gt;, and removing that span would
+    /// delete a placeholder together with half of two elements — leaving malformed HTML that the leftover
+    /// scan can no longer see, because the token it would have rejected went away with the text. With the
+    /// guard, the outer element simply doesn't match and the inner one (the real nearest block) does.
+    /// Verified to select exactly the same spans as the unguarded pattern on every file in legal-drafts/
+    /// and App_Data/legal/ today — this only changes behaviour on same-tag nesting, which the document set
+    /// does not currently contain.</summary>
     private static readonly Regex BlockElementRegex =
-        new(@"<(li|p)\b[^>]*>.*?</\1>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        new(@"<(li|p)\b[^>]*>(?:(?!<\1\b).)*?</\1>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
     /// <summary>
     /// Drops the whole nearest &lt;li&gt;/&lt;p&gt; block for every occurrence of a missing OPTIONAL

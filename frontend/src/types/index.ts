@@ -667,6 +667,10 @@ export interface LegalReadinessPlaceholderSummary {
   source: LegalPlaceholderSource
   files: string[]
   valuePresent: boolean
+  // Cycle 12: `required` in legal-status.schema.json. true only for НОМЕР_УВЕДОМЛЕНИЯ_РКН /
+  // ДАТА_УВЕДОМЛЕНИЯ_РКН — an absent value for those is not a blocker; publish drops the containing
+  // element instead. `valuePresent: false` therefore means two different things depending on this flag.
+  optional: boolean
 }
 
 export interface LegalReadinessBrokenLink {
