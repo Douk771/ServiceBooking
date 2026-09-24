@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.GreenApi;
 using ServiceBooking.API.Services.Notifications.WebPush;
+using ServiceBooking.API.Services.PhoneVerification;
 
 namespace ServiceBooking.API.Services;
 
@@ -515,5 +516,83 @@ public static class DeploymentSafetyChecks
                 "Every NotificationTransport member must have an adapter wired up in Program.cs before the " +
                 "app finishes starting — a transport with no adapter must fail loud at startup, not silently " +
                 "\"just not send\" the first time a message for it comes due (ARCHITECTURE_CYCLE9.md §104.2).");
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE14.md §150.2 (Q13). <c>PhoneVerification:Provider = "stub"</c> (default) needs
+    /// nothing — that IS the documented "невыпущенность" state (§140.1), not a misconfiguration.
+    /// <c>"max-bot"</c> outside a developer environment REQUIRES every one of the five secrets below;
+    /// any other <c>Provider</c> value fails loud in EVERY environment, including Development (unlike
+    /// most of this class's other checks — an unrecognized provider is a code/config-correctness bug,
+    /// not something a developer machine should tolerate any more than Production does).
+    /// </summary>
+    public static void ValidatePhoneVerificationSecrets(IConfiguration configuration, string environmentName)
+    {
+        var provider = configuration[$"{PhoneVerificationOptions.SectionName}:Provider"] ?? "stub";
+
+        if (!string.Equals(provider, "stub", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(provider, "max-bot", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"PhoneVerification:Provider is '{provider}', which is neither 'stub' nor 'max-bot'. Fix " +
+                "the configured value — see ARCHITECTURE_CYCLE14.md §150.1.");
+
+        if (string.Equals(provider, "stub", StringComparison.OrdinalIgnoreCase)) return;
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        var section = $"{PhoneVerificationOptions.SectionName}:Max";
+        if (string.IsNullOrWhiteSpace(configuration[$"{section}:BotToken"]))
+            throw new InvalidOperationException(
+                "PhoneVerification:Provider is 'max-bot' but PhoneVerification:Max:BotToken is empty. Set " +
+                "PHONEVERIFY_MAX_BOT_TOKEN in .env — see ARCHITECTURE_CYCLE14.md §150.2.");
+        if (string.IsNullOrWhiteSpace(configuration[$"{section}:BotUsername"]))
+            throw new InvalidOperationException(
+                "PhoneVerification:Provider is 'max-bot' but PhoneVerification:Max:BotUsername is empty. Set " +
+                "PHONEVERIFY_MAX_BOT_USERNAME in .env — see ARCHITECTURE_CYCLE14.md §150.2.");
+
+        var webhookToken = configuration[$"{section}:WebhookToken"];
+        if (string.IsNullOrWhiteSpace(webhookToken) || webhookToken.Length < 32)
+            throw new InvalidOperationException(
+                "PhoneVerification:Provider is 'max-bot' but PhoneVerification:Max:WebhookToken is missing " +
+                "or shorter than 32 characters. Set PHONEVERIFY_MAX_WEBHOOK_TOKEN in .env (e.g. `openssl " +
+                "rand -hex 32`) — see ARCHITECTURE_CYCLE14.md §146.1/§150.2.");
+
+        var publicBaseUrl = configuration[$"{section}:PublicBaseUrl"];
+        if (string.IsNullOrWhiteSpace(publicBaseUrl) ||
+            !Uri.TryCreate(publicBaseUrl, UriKind.Absolute, out var parsedBaseUrl) ||
+            parsedBaseUrl.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException(
+                "PhoneVerification:Provider is 'max-bot' but PhoneVerification:Max:PublicBaseUrl is missing " +
+                "or not an absolute https:// URL. Set PHONEVERIFY_MAX_PUBLIC_BASE_URL in .env — see " +
+                "ARCHITECTURE_CYCLE14.md §146.2 (О4: HTTPS on 443 only).");
+
+        var externalKeyHmac = configuration[$"{PhoneVerificationOptions.SectionName}:ExternalKeyHmac"];
+        byte[]? externalKeyBytes = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(externalKeyHmac)) externalKeyBytes = Convert.FromBase64String(externalKeyHmac);
+        }
+        catch (FormatException) { /* handled by the length check below (null stays null) */ }
+
+        if (externalKeyBytes is not { Length: 32 })
+            throw new InvalidOperationException(
+                "PhoneVerification:Provider is 'max-bot' but PhoneVerification:ExternalKeyHmac is missing, " +
+                "not valid base64, or does not decode to exactly 32 bytes. Set PHONEVERIFY_EXTERNAL_KEY in " +
+                ".env to a base64-encoded 32-byte key (openssl rand -base64 32) — see ARCHITECTURE_CYCLE14.md " +
+                "§142.3/§150.2. Rotating this key later does not lose any VERIFIED phone, only the per-MAX-" +
+                "account ceiling for accounts verified under the OLD key — see DEPLOY.md.");
+    }
+
+    /// <summary>ARCHITECTURE_CYCLE14.md §144.2 (Q2) — mirrors <see cref="ValidateTransportRegistryCompleteness"/>
+    /// for <c>IPhoneVerificationMethodRegistry</c>: every member of <c>PhoneVerificationMethod</c> must
+    /// have an adapter wired up in <c>Program.cs</c> before the app finishes starting. Runs
+    /// unconditionally (every environment) — a code-correctness check, not a secrets one.</summary>
+    public static void ValidateVerificationMethodRegistry(IReadOnlyCollection<Core.Enums.PhoneVerificationMethod> registeredMethods)
+    {
+        var missing = Enum.GetValues<Core.Enums.PhoneVerificationMethod>().Except(registeredMethods).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"IPhoneVerificationMethodRegistry has no adapter registered for: {string.Join(", ", missing)}. " +
+                "Every PhoneVerificationMethod member must have an IPhoneVerificationMethodAdapter wired up " +
+                "in Program.cs before the app finishes starting (ARCHITECTURE_CYCLE14.md §144.2).");
     }
 }

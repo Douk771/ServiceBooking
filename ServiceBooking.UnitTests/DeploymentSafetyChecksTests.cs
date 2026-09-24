@@ -1061,4 +1061,141 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, environmentName);
         act.Should().NotThrow();
     }
+
+    // ── ValidatePhoneVerificationSecrets (ARCHITECTURE_CYCLE14.md §150.2) ──────────────────────────
+
+    private static Dictionary<string, string?> ValidPhoneVerificationSecrets() => new()
+    {
+        ["PhoneVerification:Provider"] = "max-bot",
+        ["PhoneVerification:Max:BotToken"] = "real-bot-token",
+        ["PhoneVerification:Max:BotUsername"] = "ezbookbot",
+        ["PhoneVerification:Max:WebhookToken"] = new string('a', 32),
+        ["PhoneVerification:Max:PublicBaseUrl"] = "https://ezbook.ru",
+        ["PhoneVerification:ExternalKeyHmac"] = Convert.ToBase64String(new byte[32]),
+    };
+
+    [Fact]
+    public void ValidatePhoneVerificationSecrets_StubProvider_RequiresNothing()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["PhoneVerification:Provider"] = "stub" });
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidatePhoneVerificationSecrets_UnsetProvider_DefaultsToStub_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>());
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidatePhoneVerificationSecrets_UnrecognizedProvider_ThrowsEvenInDevelopment()
+    {
+        // Unlike the secrets checks, an unrecognized Provider value fails EVERYWHERE, including
+        // Development — it's a code/config-correctness bug, not something a dev machine should tolerate.
+        var config = BuildConfig(new Dictionary<string, string?> { ["PhoneVerification:Provider"] = "sms" });
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*sms*");
+    }
+
+    [Fact]
+    public void ValidatePhoneVerificationSecrets_MaxBotInProduction_ValidConfig_DoesNotThrow()
+    {
+        var config = BuildConfig(ValidPhoneVerificationSecrets());
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public void ValidatePhoneVerificationSecrets_MaxBotInDeveloperEnvironment_MissingSecrets_DoesNotThrow(string environmentName)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["PhoneVerification:Provider"] = "max-bot" });
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(config, environmentName);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidatePhoneVerificationSecrets_MaxBotInProduction_MissingBotToken_Throws()
+    {
+        var values = ValidPhoneVerificationSecrets();
+        values["PhoneVerification:Max:BotToken"] = "";
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*BotToken*");
+    }
+
+    [Fact]
+    public void ValidatePhoneVerificationSecrets_MaxBotInProduction_MissingBotUsername_Throws()
+    {
+        var values = ValidPhoneVerificationSecrets();
+        values["PhoneVerification:Max:BotUsername"] = "";
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*BotUsername*");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("too-short")]
+    public void ValidatePhoneVerificationSecrets_MaxBotInProduction_WebhookTokenTooShort_Throws(string? webhookToken)
+    {
+        var values = ValidPhoneVerificationSecrets();
+        values["PhoneVerification:Max:WebhookToken"] = webhookToken;
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*WebhookToken*");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-a-url")]
+    [InlineData("http://ezbook.ru")] // О4: HTTPS only
+    public void ValidatePhoneVerificationSecrets_MaxBotInProduction_InvalidPublicBaseUrl_Throws(string? publicBaseUrl)
+    {
+        var values = ValidPhoneVerificationSecrets();
+        values["PhoneVerification:Max:PublicBaseUrl"] = publicBaseUrl;
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PublicBaseUrl*");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-base64!!!")]
+    public void ValidatePhoneVerificationSecrets_MaxBotInProduction_InvalidExternalKeyHmac_Throws(string? externalKey)
+    {
+        var values = ValidPhoneVerificationSecrets();
+        values["PhoneVerification:ExternalKeyHmac"] = externalKey;
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ExternalKeyHmac*");
+    }
+
+    [Fact]
+    public void ValidatePhoneVerificationSecrets_MaxBotInProduction_ExternalKeyHmacWrongLength_Throws()
+    {
+        var values = ValidPhoneVerificationSecrets();
+        values["PhoneVerification:ExternalKeyHmac"] = Convert.ToBase64String(new byte[16]); // 16, not 32 bytes
+        var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ExternalKeyHmac*");
+    }
+
+    // ── ValidateVerificationMethodRegistry (ARCHITECTURE_CYCLE14.md §144.2) ────────────────────────
+
+    [Fact]
+    public void ValidateVerificationMethodRegistry_EveryMethodRegistered_DoesNotThrow()
+    {
+        var act = () => DeploymentSafetyChecks.ValidateVerificationMethodRegistry(
+            Enum.GetValues<PhoneVerificationMethod>());
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateVerificationMethodRegistry_MissingAdapter_ThrowsNamingTheMissingMethod()
+    {
+        var act = () => DeploymentSafetyChecks.ValidateVerificationMethodRegistry([]);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*MaxBot*");
+    }
 }

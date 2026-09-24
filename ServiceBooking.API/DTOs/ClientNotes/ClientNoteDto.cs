@@ -30,6 +30,11 @@ public record ClientNoteDto(
 
 public record BookingSummaryDto(DateOnly Date, string ServiceName, string Status);
 
+// ARCHITECTURE_CYCLE14.md §149.2, API_CONTRACT_CYCLE14.md §170.2 (US-14-15, R15): PhoneVerified is
+// ADDITIVE. true only for a registered client whose number is confirmed (positive indicator only, drawn
+// with a text label, never a color); false for a registered client who isn't (renders as NOTHING — no
+// icon, no color, no "not verified" wording); null for a guest with no account ("not applicable", also
+// nothing). No sorting, no filter, and it must never gate any staff action.
 public record MasterClientDto(
     string? ClientId,
     string? GuestPhone,
@@ -39,7 +44,8 @@ public record MasterClientDto(
     DateOnly LastVisitDate,
     int TotalVisits,
     List<ClientNoteDto> Notes,
-    List<BookingSummaryDto> BookingSummaries
+    List<BookingSummaryDto> BookingSummaries,
+    bool? PhoneVerified
 );
 
 // Note length/emptiness are checked by hand in the controller, not via [Required]/[MaxLength]: those

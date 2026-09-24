@@ -132,6 +132,10 @@ DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
 // checked the same "fail loud outside a developer environment" way as ValidateNotificationSecrets above,
 // but gated on ITS OWN Provider value, independent of Notifications:Provider.
 DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+// ARCHITECTURE_CYCLE14.md §150.2 — own secret set (PHONEVERIFY_*), own provider switch
+// (PhoneVerification:Provider), checked unconditionally (even in Development — an unrecognized
+// provider value is a config-correctness bug there too, unlike the secrets themselves).
+DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(builder.Configuration, builder.Environment.EnvironmentName);
 
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
@@ -490,6 +494,56 @@ builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.
         ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>()
         : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>());
 
+// ── Подтверждение телефона через MAX (ARCHITECTURE_CYCLE14.md §140-§158) ──────────────────────────────
+// R5/§144.1: a PLATFORM subsystem, deliberately with NO reference anywhere in this block to
+// Notifications:*/NotificationChannel/ChannelCompanyAssignment/LegalOptionGuards — own top-level config
+// section, own secrets, own registry, its own named HttpClient.
+builder.Services.Configure<ServiceBooking.API.Services.PhoneVerification.PhoneVerificationOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.PhoneVerification.PhoneVerificationOptions.SectionName));
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.PhoneVerificationDiagnostics>();
+
+// §150.3: the adapter is ALWAYS registered — what actually changes with the provider switch is which
+// IMaxBotClient it was built with underneath (stub vs. real), never whether the registry has an entry
+// for MaxBot at all.
+var phoneVerificationProvider = builder.Configuration["PhoneVerification:Provider"];
+builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.Max.StubMaxBotClient>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.Max.MaxBotClient>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.Max.IMaxBotClient>(sp =>
+    string.Equals(phoneVerificationProvider, "max-bot", StringComparison.OrdinalIgnoreCase)
+        ? sp.GetRequiredService<ServiceBooking.API.Services.PhoneVerification.Max.MaxBotClient>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.PhoneVerification.Max.StubMaxBotClient>());
+
+// Request/URL logging silenced the same way as "green-api"/"web-push" — the bot token lives in the
+// Authorization header (О3), never a query string, but this client's own request logging is muted
+// regardless as a second rung of defence.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.max-bot.LogicalHandler", LogLevel.None);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.max-bot.ClientHandler", LogLevel.None);
+builder.Services.AddHttpClient("max-bot", client =>
+{
+    var maxOptions = builder.Configuration.GetSection("PhoneVerification:Max")
+        .Get<ServiceBooking.API.Services.PhoneVerification.Max.MaxBotOptions>() ?? new();
+    client.Timeout = TimeSpan.FromSeconds(maxOptions.TimeoutSeconds);
+});
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.Max.MaxBotVerificationAdapter>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.IPhoneVerificationMethodAdapter>(sp =>
+    sp.GetRequiredService<ServiceBooking.API.Services.PhoneVerification.Max.MaxBotVerificationAdapter>());
+builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.IPhoneVerificationMethodRegistry,
+    ServiceBooking.API.Services.PhoneVerification.PhoneVerificationMethodRegistry>();
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.PhoneVerification.Max.MaxWebhookSubscriber>();
+builder.Services.AddScoped<ServiceBooking.API.Services.PhoneVerification.Max.MaxWebhookHandler>();
+builder.Services.AddScoped<ServiceBooking.API.Services.PhoneVerification.PhoneVerificationSessionService>();
+builder.Services.AddScoped<ServiceBooking.API.Services.PhoneVerification.PhoneVerificationWriter>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.GuestBookingLookup>();
+
+// §146.3, Q4: re-subscribes once at process start. Registered ONLY when the provider is actually
+// "max-bot" — under "stub" there is nothing to subscribe (and StubMaxBotClient.SubscribeAsync would
+// just return false forever, which is correct but pointless to schedule at all).
+if (string.Equals(phoneVerificationProvider, "max-bot", StringComparison.OrdinalIgnoreCase))
+    builder.Services.AddHostedService<ServiceBooking.API.Services.Hosting.MaxWebhookStartupSubscriber>();
+
 // ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
 // gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default
 // KnownNetworks/KnownProxies ship with loopback pre-trusted, which happens to be exactly the address
@@ -610,6 +664,48 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // ARCHITECTURE_CYCLE14.md §150.4 (Q8) — three new policies, twelve total.
+    //
+    // phone-verify-start: POST /phone-verification/sessions — 10/час, per user when authenticated
+    // (profile flow), otherwise per IP (registration flow, anonymous) — same "user id if present, else
+    // IP" shape as booking-create above.
+    o.AddPolicy("phone-verify-start", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var permitLimit = config.GetValue("RateLimits:phone-verify-start:PermitLimit", 10);
+        var windowMinutes = config.GetValue("RateLimits:phone-verify-start:WindowMinutes", 60);
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is not null)
+            return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimit, Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+            });
+
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = permitLimit, Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+        });
+    });
+
+    // phone-change: POST /api/profile/change-phone — 5/час на пользователя (R14). The route was NOT
+    // covered by any policy before this cycle; US-14-17 turns it into a perebor oracle (Р3), so it gets
+    // one now.
+    o.AddPolicy("phone-change", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:phone-change:PermitLimit", 5),
+            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:phone-change:WindowMinutes", 60)),
+            QueueLimit = 0
+        });
+    });
+
+    // phone-verify-webhook: MAX's own webhook — same shape as notifications-webhook above (600/min per IP).
+    o.AddPolicy("phone-verify-webhook", ctx => IpWindowPolicy(ctx, "phone-verify-webhook", defaultPermitLimit: 600, defaultWindowMinutes: 1));
+
     // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
     // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
     // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -628,8 +724,15 @@ builder.Services.AddRateLimiter(o =>
             "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
             "notifications-webhook" => "Too many requests.",
             "push-subscribe" => "Слишком много подписок устройств. Повторите позже.",
+            "phone-verify-start" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyStartAttempts,
+            "phone-change" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyChangePhoneAttempts,
+            "phone-verify-webhook" => "Too many requests.",
             _ => "Too many uploads. Try again in a minute."
         };
+        // WriteAsync alone never sets Content-Type (unlike controller-level BadRequest(string)/Conflict(string),
+        // which set it via ASP.NET's content negotiation) — set it explicitly so 429 bodies match the
+        // "text/plain everywhere" contract (ARCHITECTURE.md §14) the same way every other 4xx body already does.
+        ctx.HttpContext.Response.ContentType = "text/plain; charset=utf-8";
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
     };
 });
@@ -665,11 +768,19 @@ static string? MaskSensitiveRequestPath(string? path)
 
     const string webhookPrefix = "/api/notifications/provider-webhook/";
     const string unsubscribePrefix = "/api/notifications/unsubscribe/";
+    // ARCHITECTURE_CYCLE14.md §146.1 (R12) — same coordinated fix as the two above, same incident this
+    // cycle explicitly avoids repeating (cycle 9's nginx access-log leak, §9 N9-*). This app-level
+    // masking covers what THIS process logs; deploy/nginx/ezbook.conf's own map/log_format (added in the
+    // SAME commit) is what stops nginx's access log from writing the token before the request even
+    // reaches here — neither alone is sufficient.
+    const string maxWebhookPrefix = "/api/phone-verification/max/webhook/";
 
     if (path.StartsWith(webhookPrefix, StringComparison.Ordinal) && path.Length > webhookPrefix.Length)
         return webhookPrefix + "***";
     if (path.StartsWith(unsubscribePrefix, StringComparison.Ordinal) && path.Length > unsubscribePrefix.Length)
         return unsubscribePrefix + "***";
+    if (path.StartsWith(maxWebhookPrefix, StringComparison.Ordinal) && path.Length > maxWebhookPrefix.Length)
+        return maxWebhookPrefix + "***";
 
     return null;
 }
@@ -692,6 +803,10 @@ builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Schedulin
 // internal budget, same shape as notification-dispatch above but bounded PARALLEL across devices instead
 // of per-channel sequential antiban pacing — see the task's own doc comment for why).
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaffPushDispatchTask>();
+// ARCHITECTURE_CYCLE14.md §146.3 — the SIXTH task, "max-webhook-renew" (period 4h, under the platform's
+// own 8h no-response-drops-the-subscription window, О4). Registered unconditionally, same as every other
+// IScheduledTask — a no-op in practice while PhoneVerification:Provider = "stub" (its own doc comment).
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.MaxWebhookRenewTask>();
 
 // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
 // is registered individually (not discovered by reflection) so the list here IS the list of what runs —
@@ -733,6 +848,13 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.PushSubscriptionRule>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.StaffPushNotificationRule>();
+// ARCHITECTURE_CYCLE14.md §151.1 — the 17th and 18th rules. ⚠️ Registered LAST, deliberately — see
+// PhoneVerificationSessionRule's own doc comment for why (N9-6, the pre-existing unprotected foreach
+// this cycle does not fix).
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.PhoneVerificationSessionRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.VerifiedPhoneOrphanRule>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
 builder.Services.AddHostedService<ScheduledTaskRunner>();
@@ -755,6 +877,11 @@ using (var transportCheckScope = app.Services.CreateScope())
         .GetRequiredService<ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry>();
     DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
         nameof(ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry), provisioningRegistry.RegisteredTransports);
+
+    // ARCHITECTURE_CYCLE14.md §144.2 (Q2) — same shape, for the phone-verification method registry.
+    var phoneVerificationRegistry = transportCheckScope.ServiceProvider
+        .GetRequiredService<ServiceBooking.API.Services.PhoneVerification.IPhoneVerificationMethodRegistry>();
+    DeploymentSafetyChecks.ValidateVerificationMethodRegistry(phoneVerificationRegistry.Registered);
 }
 
 // FIRST in the pipeline, before anything reads Connection.RemoteIpAddress — the rate limiter's IP

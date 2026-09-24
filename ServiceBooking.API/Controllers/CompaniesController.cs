@@ -713,7 +713,11 @@ public class CompaniesController(
             {
                 UserName = canonicalPhone,
                 PhoneNumber = canonicalPhone,
-                PhoneNumberConfirmed = true, // added by the owner → treated as a verified number
+                // Cycle 14 review, blocker 3: PhoneNumberConfirmed is now a PUBLIC "phoneVerified"
+                // signal (ProfileDto, AuthResponseDto, MasterClientDto) backed by an actual MAX
+                // verification (PhoneVerificationWriter is its only other writer). An owner typing in a
+                // colleague's phone number is not a verification of anything — leave this false; the
+                // badge only lights up once the person verifies through MAX themselves.
                 Email = dto.Email,
                 FirstName = dto.FirstName,
                 LastName = dto.LastName,

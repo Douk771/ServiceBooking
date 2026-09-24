@@ -1,0 +1,833 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 12, РЕДАКЦИЯ 1.
+# (Бесплатная дорожка подтверждения телефона через собственного бота MAX, без отправки кодов.)
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ ИНТЕРФЕЙСА. Человекочитаемое объяснение смысла и правил —
+# API_CONTRACT_CYCLE14.md (§160–§172); решения и обоснования — ARCHITECTURE_CYCLE14.md (§140–§158).
+# При расхождении прав ЭТОТ файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle14/openapi.yaml --port 4010
+#             npm run types:api:cycle14   # openapi-typescript → src/types/api-cycle14.generated.ts
+#   QA        schemathesis run contracts/cycle14/openapi.yaml --base-url http://localhost:5000/api --checks all
+#             npx @redocly/cli lint contracts/cycle14/openapi.yaml
+#
+# Здесь описаны ТОЛЬКО эндпоинты, которые цикл 14 добавляет или меняет. Остальной API —
+# в API_DOCUMENTATION.md и контрактах циклов 3–11 (contracts/cycle7, cycle8, cycle9, cycle11,
+# openapi-cycle6.yaml).
+
+info:
+  title: ServiceBooking API — цикл 14 (подтверждение телефона через бота MAX)
+  version: "7.0.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase в JSON; enum — строками (имена членов C#, PascalCase);
+        DateTime — ISO-8601 UTC; DateOnly — YYYY-MM-DD;
+      * тела осознанных ошибок 400/409/429 — ГОЛАЯ СТРОКА (text/plain) по-русски;
+      * 401 и 403 — ПУСТОЕ тело; ProblemDetails не используется (кроме необработанных 500);
+      * 451 Unavailable For Legal Reasons — «требуется принять новую редакцию документов»;
+        все неанонимные маршруты этого файла по умолчанию ЗАКРЫТЫ гейтом LegalConsentFilter;
+      * 402 Payment Required НЕ ВОЗВРАЩАЕТ НИ ОДИН маршрут этого цикла: подтверждение телефона
+        бесплатно и тарифом не гейтится (решение заказчика Р2, SPEC §3).
+
+    ЧТО ЦИКЛ ДОБАВЛЯЕТ В HTTP — АДДИТИВНО, КРОМЕ ОДНОГО МЕСТА:
+      ⚠️ POST /api/profile/change-phone получает НОВЫЙ отказ 409 (US-14-17) — это видимое снаружи
+      изменение поведения. Всё остальное (поле phoneVerification в register, поля phoneVerified
+      в профиле и в списке клиентов, секция в export) аддитивно, существующие вызовы не ломает.
+
+    РУБИЛЬНИК ЦИКЛ НЕ ПЕРЕВОДИТ: в закоммиченной конфигурации PhoneVerification:Provider = stub,
+    GET /phone-verification/config отвечает enabled:false, исходящих вызовов к platform-api2.max.ru
+    не происходит. Это ожидаемое состояние после выката (SPEC §0.5), а не дефект.
+
+    НИ ОДИН ОТВЕТ НЕ СОДЕРЖИТ: идентификатора MAX-аккаунта (в том числе хешированного), payload'а
+    одноразовой ссылки, немаскированного телефона в диагностике.
+
+servers:
+  - url: /api
+    description: Тот же base URL, что у axios-инстанса фронта (frontend/src/api/client.ts).
+
+tags:
+  - name: phone-verification
+    description: Платформенная подсистема подтверждения телефона (US-14-01…US-14-06, US-14-16).
+  - name: phone-verification-webhook
+    description: Приём апдейтов бота MAX (US-14-09). Анонимно, секрет — последним сегментом пути.
+  - name: phone-verification-admin
+    description: Наблюдаемость для оператора платформы (US-14-13).
+  - name: auth
+    description: Регистрация — аддитивное поле подтверждения (US-14-01, US-14-07).
+  - name: profile
+    description: Профиль, смена номера, выгрузка (US-14-11, US-14-14, US-14-16, US-14-17).
+  - name: masters
+    description: Список клиентов персонала — признак подтверждения (US-14-15).
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+  # Подсистема подтверждения
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /phone-verification/config:
+    get:
+      tags: [phone-verification]
+      operationId: getPhoneVerificationConfig
+      summary: Состояние подсистемы подтверждения (US-14-08)
+      description: |
+        АНОНИМНЫЙ. Единственный источник ответа на вопрос «показывать ли кнопку» — один и тот же
+        для формы регистрации, профиля и экрана смены номера (Q5). Образец — GET /push/config.
+
+        Действие «Подтвердить номер через MAX» показывается ТОЛЬКО при enabled && healthy.
+        При enabled=false не показывается НИЧЕГО: ни кнопки, ни объяснения, ни пустого места.
+      security: []
+      responses:
+        "200":
+          description: Состояние подсистемы.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PhoneVerificationConfig" }
+              examples:
+                disabled:
+                  summary: Штатное состояние после выката цикла
+                  value: { enabled: false, healthy: false, methods: [], sessionTtlSeconds: 600, pollIntervalSeconds: 2 }
+                enabled:
+                  summary: Подсистема включена оператором и вебхук подписан
+                  value: { enabled: true, healthy: true, methods: ["MaxBot"], sessionTtlSeconds: 600, pollIntervalSeconds: 2 }
+
+  /phone-verification/sessions:
+    post:
+      tags: [phone-verification]
+      operationId: startPhoneVerification
+      summary: Начать подтверждение — получить одноразовую ссылку и QR (US-14-01, US-14-02)
+      description: |
+        Анонимно (сценарий регистрации) ИЛИ с токеном (сценарий профиля, US-14-16). Механизм один
+        и тот же; авторизованный вызов может не присылать phone — берётся текущий номер аккаунта.
+
+        Политика лимитов phone-verify-start: 10/час на пользователя, для анонимных — на IP (Q8, R10).
+
+        НИ ОДНОГО исходящего вызова к MAX в этом запросе не делается: бот узнаёт о сессии только
+        когда пользователь сам его откроет по ссылке (О2 — бот не может написать первым).
+
+        statusToken отдаётся ЕДИНОЖДЫ; на сервере хранится только его SHA-256.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartPhoneVerificationRequest" }
+      responses:
+        "201":
+          description: Сессия создана.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PhoneVerificationSessionCreated" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Прислан невалидный токен (анонимный вызов без токена — норма). Тело пустое.
+        "409":
+          description: |
+            Подсистема выключена или вебхук не подписан.
+            Тело: «Подтверждение телефона сейчас недоступно.»
+          content:
+            text/plain:
+              schema: { type: string }
+        "429":
+          $ref: "#/components/responses/PlainTextTooManyRequests"
+
+  /phone-verification/sessions/{sessionId}:
+    get:
+      tags: [phone-verification]
+      operationId: getPhoneVerificationSession
+      summary: Опрос статуса сессии (Q12, П9 — результат без перезагрузки страницы)
+      description: |
+        Поллинг раз в pollIntervalSeconds, пока статус Pending|Linked и не истёк expiresAtUtc.
+        Отдельной политикой лимитов НЕ покрыт намеренно (это штатный поллинг фронта).
+
+        404 отдаётся и на неизвестный sessionId, и на неподходящий statusToken — различать эти
+        случаи контракт не позволяет намеренно (иначе эндпоинт станет оракулом существования сессий).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/StatusToken"
+      responses:
+        "200":
+          description: Текущее состояние сессии.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PhoneVerificationSessionStatus" }
+              examples:
+                pending:
+                  value:
+                    sessionId: "3f6b2f1e-6b3a-4a1e-9c2d-5f0e1d2c3b4a"
+                    status: Pending
+                    failureReason: null
+                    message: null
+                    phoneMasked: "+7 (900) ***-**-01"
+                    expiresAtUtc: "2026-09-24T12:34:56Z"
+                    verifiedAtUtc: null
+                rejectedForeignContact:
+                  summary: Прислан ЧУЖОЙ контакт (главный сценарий безопасности US-14-04)
+                  value:
+                    sessionId: "3f6b2f1e-6b3a-4a1e-9c2d-5f0e1d2c3b4a"
+                    status: Rejected
+                    failureReason: ContactNotOwnedBySender
+                    message: "Поделиться можно только собственным контактом."
+                    phoneMasked: "+7 (900) ***-**-01"
+                    expiresAtUtc: "2026-09-24T12:34:56Z"
+                    verifiedAtUtc: null
+        "404":
+          description: Сессия не найдена либо statusToken не подходит. Тело пустое.
+    delete:
+      tags: [phone-verification]
+      operationId: cancelPhoneVerificationSession
+      summary: Отменить сессию (US-14-05 — пользователь изменил номер в форме)
+      description: |
+        ВСЕГДА 204, идемпотентно. Сессия отменяется только при совпадении statusToken; несовпадение
+        и несуществующий id дают тот же 204 — эндпоинт не отвечает на вопрос «такая сессия есть?».
+
+        Фронтенд обязан звать этот маршрут при изменении номера в форме. Сервер на это не
+        полагается: при регистрации номер сессии сверяется независимо (R8).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/StatusToken"
+      responses:
+        "204":
+          description: Готово (в том числе если отменять было нечего).
+
+  /phone-verification/max/webhook/{token}:
+    post:
+      tags: [phone-verification-webhook]
+      operationId: receiveMaxBotUpdate
+      summary: Вебхук бота MAX (US-14-09)
+      description: |
+        АНОНИМНЫЙ. Аутентификация — секрет последним сегментом пути; он маскируется в access-логе
+        nginx (deploy/nginx/ezbook.conf) и в логах приложения. Требования площадки: HTTPS на 443,
+        сертификат доверенного УЦ (О4).
+
+        200 отдаётся и на распознанный, и на НЕРАСПОЗНАННЫЙ апдейт, и при внутреннем исключении:
+        площадка снимает подписку после 8 часов без успешного ответа (О4), поэтому любой не-2xx на
+        неожиданный апдейт — способ уронить дорожку своими руками. Незнакомое уходит в лог.
+
+        404 — токен не совпал либо подсистема выключена (прецедент цикла 9: нераспознанное на
+        вебхуке → 404, не 400).
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          description: PhoneVerification:Max:WebhookToken. ⚠️ Секрет; в логах маскируется.
+          schema: { type: string, minLength: 32, maxLength: 200 }
+      requestBody:
+        required: true
+        description: |
+          Апдейт площадки MAX. Описана минимальная форма, на которую опирается разбор; неизвестные
+          поля игнорируются.
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MaxUpdate" }
+      responses:
+        "200":
+          description: Принято (в том числе «апдейт не распознан» и «внутренняя ошибка»). Тело пустое.
+        "404":
+          description: Токен не совпал либо подсистема выключена. Тело пустое.
+        "429":
+          $ref: "#/components/responses/PlainTextTooManyRequests"
+
+  /admin/phone-verification/diagnostics:
+    get:
+      tags: [phone-verification-admin]
+      operationId: getPhoneVerificationDiagnostics
+      summary: Наблюдаемость подсистемы для оператора платформы (US-14-13)
+      description: |
+        Только SuperAdmin. НИ ОДНОГО телефона, идентификатора MAX-аккаунта или payload'а в ответе
+        нет и быть не может. Счётчики — агрегат по таблице сессий, отдельной таблицы счётчиков нет.
+      responses:
+        "200":
+          description: Состояние подсистемы и счётчики за сутки.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PhoneVerificationDiagnostics" }
+        "401": { description: Нет токена. Тело пустое. }
+        "403": { description: Не SuperAdmin. Тело пустое. }
+
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+  # Существующие маршруты, которые цикл меняет
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Регистрация — аддитивное поле phoneVerification (US-14-01, US-14-07)
+      description: |
+        КОНТРАКТ ОБРАТНОСОВМЕСТИМ. phoneVerification необязателен; вызов без него ведёт себя ровно
+        как до цикла (те же два обязательных акцепта, тот же лимит auth-register 5/час на IP,
+        deploy/ci/smoke.sh не правится).
+
+        Порядок проверок — часть контракта: legal → телефон → (новое) годность сессии → создание
+        аккаунта → (новое) запись отметки. Негодная сессия = 409 и аккаунт НЕ создаётся.
+        Исчерпанный потолок Р5 на последнем шаге аккаунт НЕ ломает — он создаётся с
+        phoneVerified:false (Р1).
+
+        ⚠️ У 409 на этом маршруте теперь ДВА смысла: устаревшие версии правовых документов (цикл 5)
+        и негодное подтверждение (этот цикл). Различаются текстом.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "200":
+          description: Аккаунт создан.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400":
+          description: |
+            Строка (text/plain) — правовые версии/телефон, ЛИБО массив ошибок Identity
+            (application/json) — единственное намеренное исключение из «4xx — строка» (§4.1).
+          content:
+            text/plain:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentityErrors" }
+        "409":
+          description: |
+            Либо «Документы были обновлены ещё раз…» (цикл 5), либо «Подтверждение номера не
+            подходит к этой регистрации…» / «Подтверждение телефона сейчас недоступно.» (цикл 14).
+          content:
+            text/plain:
+              schema: { type: string }
+        "429":
+          $ref: "#/components/responses/PlainTextTooManyRequests"
+        "503":
+          description: Правовые документы временно недоступны. text/plain.
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /profile/change-phone:
+    post:
+      tags: [profile]
+      operationId: changePhone
+      summary: "⚠️ ЛОМАЮЩЕЕ: смена номера получает новый отказ 409 (US-14-17)"
+      description: |
+        Новое поведение (Р3 + Р6):
+          * номер не меняется → как сегодня;
+          * на новом номере НЕТ гостевых записей → как сегодня, подтверждение не требуется (Р1);
+          * ЕСТЬ гостевые записи и предъявлено годное подтверждение → 200;
+          * ЕСТЬ гостевые записи, подтверждения нет → 409 «На этом номере уже есть записи…»;
+          * то же при ВЫКЛЮЧЕННОЙ подсистеме → 409 «Сейчас сменить номер на этот нельзя…».
+
+        Новая политика лимитов phone-change (5/час на пользователя) — маршрут раньше не был покрыт
+        никакой политикой. Каждая упёршаяся в гейт попытка журналируется (R14).
+
+        Успешная смена снимает отметку со старого номера в той же транзакции (US-14-11).
+
+        🔴 Формулировка результата: закрыт путь через смену номера; путь через регистрацию нового
+        аккаунта на чужой номер остаётся открытым осознанно (SPEC §6.4, блок V1 в CURRENT_STATE §9).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChangePhoneRequest" }
+      responses:
+        "200":
+          description: Номер изменён.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401": { description: Нет токена. Тело пустое. }
+        "404": { description: Аккаунт не найден. Тело пустое. }
+        "409":
+          description: |
+            НОВОЕ В ЦИКЛЕ 12. Две формулировки:
+            «На этом номере уже есть записи. Подтвердите его через MAX — тогда номер можно будет
+            сменить.» и «Сейчас сменить номер на этот нельзя: подтверждение номера на платформе
+            пока не работает.»
+          content:
+            text/plain:
+              schema: { type: string }
+        "429":
+          $ref: "#/components/responses/PlainTextTooManyRequests"
+        "451":
+          description: Требуется принять новую редакцию документов. Тело — как у гейта цикла 5.
+
+  /profile:
+    get:
+      tags: [profile]
+      operationId: getProfile
+      summary: Профиль — аддитивные поля phoneVerified / phoneVerifiedAtUtc (US-14-14)
+      responses:
+        "200":
+          description: Профиль.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "401": { description: Нет токена. Тело пустое. }
+        "451": { description: Требуется принять новую редакцию документов. }
+
+  /masters/clients:
+    get:
+      tags: [masters]
+      operationId: getMasterClients
+      summary: Список клиентов персонала — аддитивный признак phoneVerified (US-14-15)
+      description: |
+        Признак считается БЕЗ дополнительного запроса на строку: выборка уже делает Include(Client),
+        флаг приезжает вместе с именем и телефоном (Q17).
+
+        🔴 Правила показа (R15): true → значок с ТЕКСТОВОЙ подписью; false → НИЧЕГО (ни цвета, ни
+        иконки, ни слов «не подтверждён»); null (гость без аккаунта) → НИЧЕГО, это «неприменимо».
+        Сортировки и фильтрации по признаку НЕТ. Это не гейт: ни одно действие персонала от признака
+        не зависит.
+
+        Признака НЕТ в публичных/анонимных ответах (каталог компаний, карточка, виджет).
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Страница клиентов.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedMasterClients" }
+        "401": { description: Нет токена. Тело пустое. }
+        "403": { description: Вызывающий не персонал этой компании. Тело пустое. }
+        "451": { description: Требуется принять новую редакцию документов. }
+
+  /profile/export:
+    get:
+      tags: [profile]
+      operationId: exportProfileData
+      summary: Выгрузка данных — аддитивная секция phoneVerification (US-14-12)
+      description: |
+        Цикл добавляет ОДНУ секцию. Идентификатор MAX-аккаунта (в том числе хешированный) и открытые
+        сессии в выгрузку НЕ входят. Сопоставление гостевых сущностей по телефону НЕ меняется
+        (решение Р6, SPEC §6.4). Лимит data-export 3/сутки — без изменений.
+      responses:
+        "200":
+          description: "JSON-файл выгрузки (Content-Disposition: attachment)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProfileExportPhoneVerificationSlice" }
+        "401": { description: Нет токена. Тело пустое. }
+        "429":
+          $ref: "#/components/responses/PlainTextTooManyRequests"
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StatusToken:
+      name: statusToken
+      in: query
+      required: true
+      description: |
+        Вторая половина ключа доступа к сессии; выдаётся один раз при создании. На сервере хранится
+        только SHA-256 — сессия не перечислима по идентификатору.
+      schema: { type: string, minLength: 16, maxLength: 128 }
+
+  responses:
+    PlainTextBadRequest:
+      description: Осознанная ошибка — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    PlainTextTooManyRequests:
+      description: Превышен лимит именованной политики. Голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+
+  schemas:
+
+    PhoneVerificationMethod:
+      type: string
+      description: Способ подтверждения. Перечисление append-only; в цикле 14 реализован ровно один.
+      enum: [MaxBot]
+
+    PhoneVerificationStatus:
+      type: string
+      description: |
+        Expired ВЫЧИСЛЯЕТСЯ (Pending/Linked с истёкшим expiresAtUtc), отдельно не хранится.
+      enum: [Pending, Linked, Verified, Rejected, Cancelled, Expired]
+
+    PhoneVerificationFailureReason:
+      type: string
+      description: |
+        Машиночитаемая причина отказа. Русский текст собирает СЕРВЕР и отдаёт в поле message —
+        фронт формулировок не сочиняет.
+      enum:
+        - PayloadUnknown
+        - PayloadExpired
+        - PayloadAlreadyUsed
+        - PayloadLinkedToAnotherAccount
+        - SignatureMismatch
+        - ContactNotOwnedBySender
+        - NoPhoneInContact
+        - PhoneMismatch
+        - MaxAccountLimitReached
+        - SessionCancelled
+        - SubsystemDisabled
+
+    PhoneVerificationConfig:
+      type: object
+      required: [enabled, healthy, methods, sessionTtlSeconds, pollIntervalSeconds]
+      properties:
+        enabled:
+          type: boolean
+          description: Подсистема включена оператором (PhoneVerification:Provider = max-bot).
+        healthy:
+          type: boolean
+          description: |
+            Вебхук подписан. enabled && !healthy означает «включено, но сейчас не сработает» —
+            кнопка в этом состоянии НЕ показывается.
+        methods:
+          type: array
+          items: { $ref: "#/components/schemas/PhoneVerificationMethod" }
+          description: Пустой массив, когда enabled=false.
+        sessionTtlSeconds:
+          type: integer
+          example: 600
+        pollIntervalSeconds:
+          type: integer
+          example: 2
+
+    StartPhoneVerificationRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          maxLength: 32
+          nullable: true
+          description: |
+            Обязателен для анонимного вызова. Для авторизованного можно опустить — берётся текущий
+            номер аккаунта. Принимается только российский формат (PhoneNormalizer.TryNormalizeRussian).
+          example: "+7 (900) 000-00-01"
+
+    PhoneVerificationSessionCreated:
+      type: object
+      required: [sessionId, statusToken, method, deepLink, phoneMasked, expiresAtUtc, ttlSeconds]
+      properties:
+        sessionId: { type: string, format: uuid }
+        statusToken:
+          type: string
+          description: Выдаётся ЕДИНОЖДЫ. На сервере хранится только SHA-256.
+        method: { $ref: "#/components/schemas/PhoneVerificationMethod" }
+        deepLink:
+          type: string
+          format: uri
+          maxLength: 256
+          description: |
+            https://max.ru/<bot>?start=<payload>; payload одноразовый, ≤128 символов (О6).
+            На десктопе показывается ТЕКСТОМ рядом с QR — обязательное требование доступности.
+          example: "https://max.ru/ezbookbot?start=v1.Zm9vYmFyYmF6"
+        qrPngBase64:
+          type: string
+          nullable: true
+          description: |
+            Содержимое data:image/png;base64,… БЕЗ префикса. null допустим — тогда QR рисует клиент
+            из deepLink. У изображения обязателен осмысленный текстовый эквивалент.
+        phoneMasked:
+          type: string
+          description: Телефон в маскированном виде (LogMasking.Phone). Немаскированного здесь нет.
+          example: "+7 (900) ***-**-01"
+        expiresAtUtc: { type: string, format: date-time }
+        ttlSeconds: { type: integer, example: 600 }
+
+    PhoneVerificationSessionStatus:
+      type: object
+      required: [sessionId, status, phoneMasked, expiresAtUtc]
+      properties:
+        sessionId: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/PhoneVerificationStatus" }
+        failureReason:
+          allOf: [{ $ref: "#/components/schemas/PhoneVerificationFailureReason" }]
+          nullable: true
+        message:
+          type: string
+          nullable: true
+          description: Готовый русский текст причины; собирает сервер.
+        phoneMasked: { type: string }
+        expiresAtUtc: { type: string, format: date-time }
+        verifiedAtUtc: { type: string, format: date-time, nullable: true }
+
+    PhoneVerificationRef:
+      type: object
+      description: Ссылка на завершённую сессию, предъявляемая при регистрации или смене номера.
+      required: [sessionId, statusToken]
+      properties:
+        sessionId: { type: string, format: uuid }
+        statusToken: { type: string }
+
+    MaxUpdate:
+      type: object
+      description: |
+        Минимальная форма апдейта MAX, на которую опирается разбор. Неизвестные поля игнорируются;
+        нераспознанный апдейт даёт 200 (иначе площадка снимет подписку — О4).
+      properties:
+        update_type:
+          type: string
+          description: Например bot_started или message_created.
+          example: bot_started
+        timestamp: { type: integer, format: int64 }
+        payload:
+          type: string
+          maxLength: 128
+          nullable: true
+          description: Одноразовый payload из deep link; приходит с bot_started (О6).
+        user:
+          type: object
+          nullable: true
+          description: Отправитель апдейта. Его идентификатор сверяется с владельцем контакта (О5).
+          properties:
+            user_id: { type: integer, format: int64 }
+        message:
+          type: object
+          nullable: true
+          properties:
+            sender:
+              type: object
+              properties:
+                user_id: { type: integer, format: int64 }
+            body:
+              type: object
+              properties:
+                attachments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                        example: contact
+                      payload:
+                        type: object
+                        properties:
+                          vcf_info:
+                            type: string
+                            description: vCard; из неё извлекается номер (Q11).
+                          max_info:
+                            type: object
+                            nullable: true
+                            description: |
+                              Сведения о владельце контакта. Его идентификатор ОБЯЗАН совпасть с
+                              отправителем апдейта, иначе подтверждение отклоняется (US-14-04).
+                            properties:
+                              user_id: { type: integer, format: int64 }
+                          tam_info:
+                            type: object
+                            nullable: true
+                            properties:
+                              user_id: { type: integer, format: int64 }
+                          hash:
+                            type: string
+                            description: HMAC-SHA256 от vcf_info; проверяется ОБЯЗАТЕЛЬНО (US-14-04).
+      additionalProperties: true
+
+    PhoneVerificationDiagnostics:
+      type: object
+      required: [enabled, provider, methods, webhookSubscribed, last24h]
+      properties:
+        enabled: { type: boolean }
+        provider:
+          type: string
+          enum: [stub, max-bot]
+        methods:
+          type: array
+          items: { $ref: "#/components/schemas/PhoneVerificationMethod" }
+        webhookSubscribed: { type: boolean }
+        lastSubscriptionAttemptAtUtc: { type: string, format: date-time, nullable: true }
+        lastSubscriptionError: { type: string, nullable: true }
+        last24h:
+          type: object
+          required: [started, verified, rejected, rejectedByReason]
+          properties:
+            started: { type: integer }
+            verified: { type: integer }
+            rejected: { type: integer }
+            rejectedByReason:
+              type: object
+              additionalProperties: { type: integer }
+              description: Ключи — значения PhoneVerificationFailureReason.
+
+    RegisterLegal:
+      type: object
+      required: [privacyAcknowledgedVersion, termsAcceptedVersion]
+      properties:
+        privacyAcknowledgedVersion: { type: string, maxLength: 64 }
+        termsAcceptedVersion: { type: string, maxLength: 64 }
+
+    RegisterRequest:
+      type: object
+      required: [firstName, lastName, phone, password, legal]
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        phone: { type: string }
+        password: { type: string }
+        email: { type: string, nullable: true }
+        legal: { $ref: "#/components/schemas/RegisterLegal" }
+        phoneVerification:
+          allOf: [{ $ref: "#/components/schemas/PhoneVerificationRef" }]
+          nullable: true
+          description: |
+            НОВОЕ В ЦИКЛЕ 12, НЕОБЯЗАТЕЛЬНОЕ. Отсутствие поля = регистрация ровно как до цикла
+            (Р1, US-14-07). Негодная сессия → 409, аккаунт не создаётся.
+
+    AuthResponse:
+      type: object
+      required: [token, userId, phone, firstName, lastName, roles, phoneVerified]
+      properties:
+        token: { type: string }
+        userId: { type: string }
+        phone: { type: string }
+        email: { type: string, nullable: true }
+        firstName: { type: string }
+        lastName: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+        phoneVerified:
+          type: boolean
+          description: НОВОЕ В ЦИКЛЕ 12. false у любого, кто не предъявил годное подтверждение.
+
+    IdentityErrors:
+      type: array
+      description: Единственное намеренное исключение из «4xx — строка» (§4.1 CURRENT_STATE).
+      items:
+        type: object
+        properties:
+          code: { type: string }
+          description: { type: string }
+
+    ChangePhoneRequest:
+      type: object
+      required: [currentPassword, newPhone]
+      properties:
+        currentPassword: { type: string }
+        newPhone: { type: string }
+        verification:
+          allOf: [{ $ref: "#/components/schemas/PhoneVerificationRef" }]
+          nullable: true
+          description: |
+            НОВОЕ В ЦИКЛЕ 12, НЕОБЯЗАТЕЛЬНОЕ. Требуется ТОЛЬКО когда на новом номере уже есть
+            гостевые записи (US-14-17). В остальных случаях смена работает как сегодня (Р1).
+
+    ProfilePlan:
+      type: object
+      nullable: true
+      description: Форма цикла 7, цикл 14 её не меняет.
+      additionalProperties: true
+
+    Profile:
+      type: object
+      required: [id, phone, firstName, lastName, roles, phoneVerified]
+      properties:
+        id: { type: string }
+        phone: { type: string }
+        email: { type: string, nullable: true }
+        firstName: { type: string }
+        lastName: { type: string }
+        avatarUrl: { type: string, nullable: true }
+        roles:
+          type: array
+          items: { type: string }
+        plan: { $ref: "#/components/schemas/ProfilePlan" }
+        phoneVerified:
+          type: boolean
+          description: НОВОЕ В ЦИКЛЕ 12.
+        phoneVerifiedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: НОВОЕ В ЦИКЛЕ 12; null, когда номер не подтверждён.
+
+    MasterClient:
+      type: object
+      required: [name, lastVisitDate, totalVisits, notes, bookingSummaries]
+      properties:
+        clientId: { type: string, nullable: true }
+        guestPhone: { type: string, nullable: true }
+        name: { type: string }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        lastVisitDate: { type: string, format: date }
+        totalVisits: { type: integer }
+        notes:
+          type: array
+          items: { type: object, additionalProperties: true }
+        bookingSummaries:
+          type: array
+          items: { type: object, additionalProperties: true }
+        phoneVerified:
+          type: boolean
+          nullable: true
+          description: |
+            НОВОЕ В ЦИКЛЕ 12. true — значок с текстовой подписью; false — НИЧЕГО не рисуется;
+            null — гость без аккаунта, «неприменимо», тоже НИЧЕГО. Сортировки и фильтра по признаку
+            нет; это не гейт (R15).
+
+    PagedMasterClients:
+      type: object
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MasterClient" }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        hasNext: { type: boolean }
+
+    ProfileExportPhoneVerificationSlice:
+      type: object
+      description: |
+        Описан ТОЛЬКО тот срез выгрузки, который добавляет цикл 14. Остальные секции — контракты
+        циклов 3 и 5, они не меняются.
+      properties:
+        phoneVerification:
+          type: object
+          required: [phoneVerified]
+          properties:
+            phoneVerified: { type: boolean }
+            method:
+              allOf: [{ $ref: "#/components/schemas/PhoneVerificationMethod" }]
+              nullable: true
+            verifiedAtUtc: { type: string, format: date-time, nullable: true }
+      additionalProperties: true

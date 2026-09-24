@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using ServiceBooking.API.DTOs.PhoneVerification;
 
 namespace ServiceBooking.API.DTOs.Auth;
 
@@ -22,11 +23,16 @@ public record RegisterLegalDto(
 // Registration is phone-primary: the phone number is the account identifier (stored as UserName, which
 // carries Identity's unique index). Email is optional. [EmailAddress] treats null as valid, so it only
 // validates the format when an email is actually supplied.
+// ARCHITECTURE_CYCLE14.md §148.1, API_CONTRACT_CYCLE14.md §168: PhoneVerification is ADDITIVE and
+// OPTIONAL — omitting it entirely (existing frontend, deploy/ci/smoke.sh) behaves exactly as before this
+// cycle (US-14-07). When present it must name a session already Verified for THIS phone before the
+// account is created — see AuthController.Register's own comment for the exact check.
 public record RegisterDto(
     [Required] string FirstName,
     [Required] string LastName,
     [Required] string Phone,
     [Required, MinLength(8)] string Password,
     [EmailAddress] string? Email,
-    RegisterLegalDto? Legal
+    RegisterLegalDto? Legal,
+    PhoneVerificationRefDto? PhoneVerification = null
 );
