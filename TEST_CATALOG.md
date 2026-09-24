@@ -54,8 +54,9 @@ grep -rn "BK-003" ServiceBooking.Tests/
 | `MAX-` | `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` | 5 (4 + 1) |
 | `PUSH-` | `StaffPushTests.cs` (`StaffPushSubscriptionAndQueueingTests` + `StaffPushDispatchTests`) | 10 |
 | `ABA-` 🆕 | `AdminBillingAccountsTests.cs` | 3 |
-| `ADDR-` 🆕 | `AddressVerificationTests.cs` | 28 |
-| **Итого** | | **621** запусков (без учёта `ADDR-`, добавленного позже — см. цикл 13 ниже) |
+| `ADDR-` 🆕 | `AddressVerificationTests.cs` | 28 (цикл 13, см. ниже) |
+| `PHV-` 🆕 | `PhoneVerificationTests.cs` | 25 (цикл 14, см. ниже) |
+| **Итого** | | **679** запусков — **621** по этой таблице без `ADDR-`/`PHV-` (базовая сумма пересчёта цикла 9, дрейф по отдельным доменам после неё не отслеживался) **+ 28 `ADDR-`** (цикл 13) **+ 25 `PHV-`** (цикл 14, слит из `develop`); сверено фактическим прогоном `dotnet test ServiceBooking.Tests --list-tests` на HEAD этой ветки (679 тестов), а не на глаз |
 
 ⚠️ **Пересчёт цикла 9 (закрытие хвоста, стык с циклом 10).** Таблица выше пересчитана заново по
 исходникам (`grep -c 'TestCase("<префикс>-'` + `dotnet test ServiceBooking.Tests --list-tests` для
@@ -4609,12 +4610,55 @@ PNG или WEBP.», «Слишком большое изображение — �
 **Готовность к интеграции в `develop` (вторая повторная проверка) — да.** Блокирующих находок нет,
 регрессий после правок нет.
 
+### Проверка чередующихся миграций после мерджа `develop` (коммит `ff49638`)
+
+Цикл 14 приехал в `develop`, пока цикл 13 ещё был в работе. В финальном дереве миграций три файла
+24 сентября чередуются по времени: `20260924063240_AddPhoneVerification` (`develop`),
+`20260924065320_AddCompanyAddressVerification` (этот цикл), `20260924074741_ResetUnverifiedPhoneNumberConfirmedMirror`
+(`develop`). На базе, уже накатанной до головы `develop` (т.е. содержащей `063240` и `074741`, но не
+`065320`), миграция этого цикла применяется ВНЕ ПОРЯДКА — уже после `074741`, а не между `063240` и
+`074741`, как в файловой сортировке.
+
+Проверено фактическим прогоном, не рассуждением: коммит `a5d831c` (точка `develop`, вошедшая в мердж
+`ff49638`) выгружен во временный `git worktree`, его миграции накачены на чистый Postgres 16
+(`dotnet ef database update`, история после этого шага — 64 миграции, обрывается на `074741`). Затем
+поверх ТОЙ ЖЕ базы применены миграции головы этой ветки (`dotnet ef database update` без указания
+таргета) — команда прошла без ошибок, добавив ровно одну строку `__EFMigrationsHistory`
+(`20260924065320_AddCompanyAddressVerification`, физически последняя по `ctid`, то есть применена
+последней и правда вне хронологического порядка файла). `Companies` после этого содержит все пять
+новых nullable-колонок (`AddressLatitude`/`AddressLongitude`/`AddressPrecision`/`AddressVerifiedAt`/
+`AddressVerifiedInputKey`), данные телефонных таблиц не задеты. **Вывод: миграция безопасна и в
+хронологически «неправильном» порядке применения** — её `Up` состоит только из `ALTER TABLE Companies
+ADD COLUMN` пяти nullable-колонок и ни от одной телефонной таблицы не зависит.
+
+Следом на HEAD этой ветки (после мерджа, `6d40948`, окружение — colima,
+`DOCKER_HOST`/`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`, Ryuk не отключался) перепрогнан весь
+функциональный/юнит/фронтовый набор:
+- `dotnet build` — 0 предупреждений.
+- `ServiceBooking.UnitTests` — **1388/1388**.
+- `ServiceBooking.Tests` — **679/679** (`dotnet test --list-tests` подтверждает те же 679, что
+  вошли в пересчёт таблицы префиксов в начале документа: 626 ранее существовавших + 28 `ADDR-` +
+  25 `PHV-`).
+- `frontend` (`npx vitest run`) — **530/530**, 79 файлов.
+
+Регрессий нет по всем трём наборам. Известный флейк `StaffPushDispatchTests.RealRunner_
+MasterRemovedFromCompany_HoldsDeliveryEvenThoughAlreadyQueued` в этом прогоне не воспроизвёлся.
+
 ---
 
-## Цикл 12 (`cycle/14-phone-verification-max`) — QA "Вызов 2": новые тесты + регрессия
+## Цикл 14 (`cycle/14-phone-verification-max`) — QA "Вызов 2": новые тесты + регрессия
+
+⚠️ Ветка изначально называлась и разрабатывалась как «цикл 12»: этот номер заняла другая работа, и
+проект переномеровал её в 14 уже после того, как часть коммитов/веток закрепила старое имя — отсюда
+`cycle/14-phone-verification-max` (имя ветки с новым номером) при более старых внутренних следах
+«цикл 12» кое-где в истории. Ниже везде используется актуальный номер 14; упоминание «цикл 12» —
+не опечатка этого документа, а происхождение имени ветки.
 
 Дата: 2026-09-24. Ветка `cycle/14-phone-verification-max`, отправная точка `develop` `608fbd9`. Написано по
-`SPEC.md` (редакция 3, блоки A/B/C/E user stories, §8.2 чек-лист приёмки), независимо от реализации
+`SPEC_CYCLE14_PHONE_VERIFICATION.md` (на момент написания — корневой `SPEC.md` редакции 3 ветки
+`develop`; после мерджа `develop` в цикл 13 корневой `SPEC.md` в этой ветке отражает уже спеку цикла 13,
+а спека цикла 14 сохранена отдельным файлом `SPEC_CYCLE14_PHONE_VERIFICATION.md`, byte-in-byte равным
+тому, что было в `develop`), блоки A/B/C/E user stories, §8.2 чек-лист приёмки, независимо от реализации
 `PhoneVerificationController`/`MaxWebhookHandler`/`ProfileController`. Новый функциональный набор —
 `ServiceBooking.Tests/Tests/PhoneVerificationTests.cs` (префикс `PHV-`), новая тестовая инфраструктура —
 `ServiceBooking.Tests/Infrastructure/PhoneVerificationEnabledFactory.cs` (тот же приём, что
@@ -4721,7 +4765,7 @@ Baseline (до начала работы цикла 14, тот же коммит
 
 ### Проверка формулировки про `change-phone` (§8.2, R6)
 
-Прочитаны `SPEC.md` §6.4/§8.1 п.11-12 и текст `PhoneVerificationTexts.ChangePhoneNeedsVerification`/
+Прочитаны `SPEC_CYCLE14_PHONE_VERIFICATION.md` §6.4/§8.1 п.11-12 и текст `PhoneVerificationTexts.ChangePhoneNeedsVerification`/
 `GuestBookingGateDecision` — нигде в исходниках цикла не встретилось формулировки «дефект `change-phone`
 закрыт» без оговорки про вторую дверь. Блок принятого риска Р6 в `CURRENT_STATE.md` §9 — вне зоны этого
 прохода (это задача автора итоговой редакции `CURRENT_STATE.md`, §8.1 п.12 SPEC), не проверялся здесь,
@@ -4776,7 +4820,7 @@ backend-developer закрыл блокер и попутно устранил �
 - `f299346`, `206192e`, `5fee3b7` — три находки ревью вне периметра `PHV-032` (`Content-Type` на 429,
   бесконечный поллинг статуса при ошибке + протухшая ссылка на сессию смены номера во фронте, 409 на
   отписанном от вебхука провайдере) — не проверялись этим проходом отдельными новыми тестами (не были
-  предметом «Вызова 2» по SPEC.md), но не противоречат ни одному существующему сценарию.
+  предметом «Вызова 2» по `SPEC_CYCLE14_PHONE_VERIFICATION.md`), но не противоречат ни одному существующему сценарию.
 
 **Прогон на `5fee3b7` (окружение: colima, `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`,
 `TESTCONTAINERS_RYUK_DISABLED=true`, собственный testcontainers-контейнер этого прогона — не общий
@@ -4800,7 +4844,7 @@ backend-developer закрыл блокер и попутно устранил �
 
 ### Итоговый вердикт (после исправлений)
 
-**Все критерии приёмки блоков A/B/C/E из SPEC.md — выполнены**, включая ранее блокировавший
+**Все критерии приёмки блоков A/B/C/E из `SPEC_CYCLE14_PHONE_VERIFICATION.md` — выполнены**, включая ранее блокировавший
 US-14-17 (`change-phone` гейт теперь технически достижим и проверен тестом `PHV-032`). Блок D
 (наблюдаемость/деплой) — вне периметра функционального прогона, зона devops-engineer.
 
