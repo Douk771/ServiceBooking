@@ -28,6 +28,8 @@ public static class TestHostSettings
             // QA cycle 9 (ARCHITECTURE_CYCLE9.md §104.2, B13) — a host that is deliberately never meant
             // to finish starting (bad Notifications:Provider value), see NotificationTransportStartupTests.
             ["startup-qa9"] = ("+70000000006", "superadmin-startup-qa9@test.local"),
+            // QA cycle 13 (ARCHITECTURE_CYCLE13.md §207/§214) — AddressVerificationTestFactory.
+            ["addr"] = ("+70000000007", "superadmin-addr@test.local"),
         };
 
     /// <param name="builder">the host being configured</param>

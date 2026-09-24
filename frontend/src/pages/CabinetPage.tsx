@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import { companiesApi, type CreateCompanyPayload } from '../api/companies'
+import { companyAddressApi } from '../api/companyAddress'
+import { PublicAddressNotice } from '../components/company/PublicAddressNotice'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { legalApi } from '../api/legal'
 import { adminApi } from '../api/admin'
@@ -101,11 +103,18 @@ function CompanyChips({
 
 // ── My companies (owner) ──────────────────────────────────────────────────────
 
-function MyCompaniesTab() {
+export function MyCompaniesTab() {
   const [showCreate, setShowCreate] = useState(false)
   const [city, setCity] = useState<City | null>(null)
   const [cityError, setCityError] = useState('')
+  const [termsError, setTermsError] = useState('')
   const [ownerTermsAccepted, setOwnerTermsAccepted] = useState(false)
+  // ARCHITECTURE_CYCLE13.md §220.2/§220.4 — the public-address notice gates the address text ITSELF,
+  // not the whole form: it must reappear if the address is edited again after being confirmed once,
+  // so this tracks which exact string was last confirmed rather than a plain boolean.
+  const [addressNoticeConfirmedFor, setAddressNoticeConfirmedFor] = useState<string | null>(null)
+  const [showAddressNotice, setShowAddressNotice] = useState(false)
+  const [pendingSubmit, setPendingSubmit] = useState<FormData | null>(null)
   const qc = useQueryClient()
   const { user, token, setAuth } = useAuthStore()
   const { data: companies, isLoading } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
@@ -139,13 +148,48 @@ function MyCompaniesTab() {
       // saving it immediately, the owner gets owner-scope 451 on the company they just created,
       // a second after creating it, until their next login.
       if (user && token) setAuth(user, res.token)
+      // ARCHITECTURE_CYCLE13.md §211/§235 — `POST /api/companies` gained no new fields; a brand-new
+      // company's address always starts `Unverified`. If the owner typed an address, make the one
+      // extra verification call right after creation. Best-effort: a 404 here (switch off, the
+      // default) is expected and not an error worth surfacing — the company itself was created fine.
+      if (res.company.address) {
+        companyAddressApi.saveAddress(res.company.id, res.company.address, true).catch(() => {})
+      }
       qc.invalidateQueries({ queryKey: ['my-companies'] })
       setShowCreate(false)
       setCity(null)
       setOwnerTermsAccepted(false)
+      setAddressNoticeConfirmedFor(null)
       reset()
     },
   })
+
+  function submitCompany(d: FormData) {
+    // US-30 п. 5: city is required for new companies (400 "Укажите город салона" otherwise) —
+    // checked client-side so the owner sees it before submitting, not as a server round trip.
+    if (!city) {
+      setCityError('Укажите город салона')
+      return
+    }
+    // Defence in depth — the submit button is already disabled while `ownerTerms` hasn't loaded
+    // (`!ownerTerms` in its `disabled`), and the pre-gate check below stops the notice (and its
+    // consent-ledger write) from firing in that state too. This just keeps `submitCompany` itself
+    // safe if it's ever called some other way.
+    if (!ownerTerms) return
+    setCityError('')
+    create.mutate({
+      name: d.name,
+      slug: d.slug || slugify(d.name),
+      description: d.description || undefined,
+      address: d.address || undefined,
+      phone: d.phone || undefined,
+      email: d.email || undefined,
+      allowSelfBooking: d.allowSelfBooking,
+      showInPublicListing: d.showInPublicListing,
+      cityId: city.id,
+      ownerTerms: { version: ownerTerms.version },
+    })
+  }
 
   return (
     <div>
@@ -210,31 +254,39 @@ function MyCompaniesTab() {
             setShowCreate(false)
             setCity(null)
             setOwnerTermsAccepted(false)
+            setShowAddressNotice(false)
+            setPendingSubmit(null)
+            setAddressNoticeConfirmedFor(null)
             reset()
           }}
         >
           <form
             onSubmit={handleSubmit((d) => {
-              // US-30 п. 5: city is required for new companies (400 "Укажите город салона" otherwise) —
-              // checked client-side so the owner sees it before submitting, not as a server round trip.
+              // US-30 п. 5 — validated before the notice gate below, not just inside `submitCompany`:
+              // the notice writes an entry to the consent ledger the moment it's confirmed (review
+              // finding, cycle 13), so a missing city must fail BEFORE that write, not after it.
               if (!city) {
                 setCityError('Укажите город салона')
                 return
               }
-              if (!ownerTerms) return
-              setCityError('')
-              create.mutate({
-                name: d.name,
-                slug: d.slug || slugify(d.name),
-                description: d.description || undefined,
-                address: d.address || undefined,
-                phone: d.phone || undefined,
-                email: d.email || undefined,
-                allowSelfBooking: d.allowSelfBooking,
-                showInPublicListing: d.showInPublicListing,
-                cityId: city.id,
-                ownerTerms: { version: ownerTerms.version },
-              })
+              // Same reasoning for `ownerTerms` (review finding, cycle 13): if `GET
+              // /api/legal/documents` hasn't produced a `TermsOwner` entry by submit time, the
+              // owner must see WHY nothing happened rather than have the notice write a consent
+              // ledger entry for a submission that then silently no-ops in `submitCompany`.
+              if (!ownerTerms) {
+                setTermsError('Не удалось загрузить текст соглашения. Обновите страницу и попробуйте снова.')
+                return
+              }
+              setTermsError('')
+              // ARCHITECTURE_CYCLE13.md §220.2 — shown on first fill AND on any later edit, before
+              // saving. An address that's already been confirmed once at this exact text can submit
+              // straight through; anything else routes through the notice first.
+              if (d.address && addressNoticeConfirmedFor !== d.address) {
+                setPendingSubmit(d)
+                setShowAddressNotice(true)
+                return
+              }
+              submitCompany(d)
             })}
             className="flex flex-col gap-4"
           >
@@ -307,6 +359,7 @@ function MyCompaniesTab() {
               </span>
             </label>
 
+            {termsError && <p className="text-sm text-danger">{termsError}</p>}
             {create.isError && <p className="text-sm text-danger">{getCreateCompanyErrorMessage(create.error)}</p>}
             <div className="flex gap-3 pt-1">
               <Button
@@ -317,6 +370,7 @@ function MyCompaniesTab() {
                   setShowCreate(false)
                   setCity(null)
                   setOwnerTermsAccepted(false)
+                  setAddressNoticeConfirmedFor(null)
                   reset()
                 }}
               >
@@ -328,6 +382,21 @@ function MyCompaniesTab() {
             </div>
           </form>
         </Modal>
+      )}
+
+      {showAddressNotice && pendingSubmit && (
+        <PublicAddressNotice
+          onConfirmed={() => {
+            setAddressNoticeConfirmedFor(pendingSubmit.address)
+            setShowAddressNotice(false)
+            submitCompany(pendingSubmit)
+            setPendingSubmit(null)
+          }}
+          onCancel={() => {
+            setShowAddressNotice(false)
+            setPendingSubmit(null)
+          }}
+        />
       )}
     </div>
   )

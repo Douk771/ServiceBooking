@@ -1,5 +1,20 @@
 import type { components as Cycle9Components } from './api-cycle9.generated'
+import type { components as Cycle13Components } from './api-cycle13.generated'
 import type { components as Cycle14Components } from './api-cycle14.generated'
+
+// ── Cycle 13 (ARCHITECTURE_CYCLE13.md §208/§211, API_CONTRACT_CYCLE13.md §232): read straight off
+// the generated schema, same convention as the cycle 9 aliases above (§118 п. 1).
+export type AddressPrecision = Cycle13Components['schemas']['AddressPrecision']
+export type AddressVerificationStatus = Cycle13Components['schemas']['AddressVerificationStatus']
+export type AddressLookupOutcome = Cycle13Components['schemas']['AddressLookupOutcome']
+export type AddressWarningCode = Cycle13Components['schemas']['AddressWarningCode']
+export type AddressWarningDto = Cycle13Components['schemas']['AddressWarningDto']
+export type GeoPointDto = Cycle13Components['schemas']['GeoPointDto']
+export type AddressCandidateDto = Cycle13Components['schemas']['AddressCandidateDto']
+export type AddressLookupResultDto = Cycle13Components['schemas']['AddressLookupResultDto']
+export type CompanyAddressVerificationDto = Cycle13Components['schemas']['CompanyAddressVerificationDto']
+export type CompanyAddressVerificationResultDto = Cycle13Components['schemas']['CompanyAddressVerificationResultDto']
+export type AddressNoticeResultDto = Cycle13Components['schemas']['AddressNoticeResultDto']
 
 // ── Cycle 9 (ARCHITECTURE_CYCLE9.md §104, API_CONTRACT_CYCLE9.md §112): these two enums are read
 // straight off the generated schema instead of being retyped as string literals here, so a future
@@ -105,6 +120,19 @@ export interface Company {
    * `GET /api/companies/{slug}` (the public page) fills this in, on purpose (§109.3 performance).
    */
   photos?: CompanyPhoto[] | null
+  /**
+   * API_CONTRACT_CYCLE13.md §232 — filled in only where the caller MANAGES the company (owner,
+   * SuperAdmin); `null`/absent means "not computed for this caller" (anonymous, client, catalog,
+   * older server), the same convention as `photos`/`historyEventCount` — NOT "unverified". Never
+   * shown on the public page even to the owner (MVP decision, §208).
+   */
+  addressVerification?: CompanyAddressVerificationDto | null
+  /**
+   * API_CONTRACT_CYCLE13.md §232 — only on `GET /api/companies/{slug}`, and only `null`-free when
+   * coordinate storage is licensed AND the address is `Verified` at `House` precision. `null` in the
+   * product's default configuration; map links then search by text instead of centring on a point.
+   */
+  addressPoint?: GeoPointDto | null
 }
 
 /** API_CONTRACT_CYCLE10.md §125 */
@@ -502,6 +530,8 @@ export type LegalTextKey =
   | 'PhotoConsent'
   | 'HealthDataConsent'
   | 'GuardianConfirmation'
+  /** §220.1 — 7th key, cycle 13: public-address-notice warning shown next to the address field. */
+  | 'PublicAddressNotice'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
 export type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =
@@ -515,6 +545,8 @@ export type ConsentSource =
   | 'HealthForm'
   | 'Booking'
   | 'Migrated'
+  /** §220.3 — cycle 13, `POST /api/companies/address/notice` (append-only, backend-side `int`). */
+  | 'AddressForm'
 export type SubjectRequestKind = 'Access' | 'Rectification' | 'Erasure' | 'ConsentWithdrawal' | 'Complaint'
 export type SubjectRequestStatus = 'Received' | 'InProgress' | 'Answered' | 'Rejected'
 export type DueState = 'OnTime' | 'DueSoon' | 'Overdue'

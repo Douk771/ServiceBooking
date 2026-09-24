@@ -132,6 +132,10 @@ DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
 // checked the same "fail loud outside a developer environment" way as ValidateNotificationSecrets above,
 // but gated on ITS OWN Provider value, independent of Notifications:Provider.
 DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+// ARCHITECTURE_CYCLE13.md §206/§209.2 — own secret (Yandex Geocoder API key), own provider switch, own
+// unconditional check (CacheHours ≤ 720 is a licence ceiling, checked in every environment, not just
+// outside Development — see the method's own doc comment).
+DeploymentSafetyChecks.ValidateAddressVerification(builder.Configuration, builder.Environment.EnvironmentName);
 // ARCHITECTURE_CYCLE14.md §150.2 — own secret set (PHONEVERIFY_*), own provider switch
 // (PhoneVerification:Provider), checked unconditionally (even in Development — an unrecognized
 // provider value is a config-correctness bug there too, unlike the secrets themselves).
@@ -143,6 +147,7 @@ builder.Services.AddControllers(options =>
         // pattern here.
         options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>())
     .ConfigureApiBehaviorOptions(options =>
+    {
         // Cycle 6 contract finding: automatic model-state validation (missing/invalid query or body
         // fields, caught by [ApiController] before the action runs) used to answer with
         // application/problem+json (ValidationProblemDetails). Every OTHER 4xx a controller raises by
@@ -150,7 +155,20 @@ builder.Services.AddControllers(options =>
         // error reader only understands that form, so the machine-shaped body was silently swallowed
         // into "Проверьте введённые данные", the same failure mode as the US-60 blocker. See
         // ModelValidationErrorFormatter's doc comment for the full story.
-        options.InvalidModelStateResponseFactory = ServiceBooking.API.Services.ModelValidationErrorFormatter.BuildResponse)
+        options.InvalidModelStateResponseFactory = ServiceBooking.API.Services.ModelValidationErrorFormatter.BuildResponse;
+        // Cycle 13 contract check finding: [ApiController]'s ClientErrorResultFilter auto-converts
+        // every bare `return NotFound()`/`Conflict()`/etc. (any IClientErrorActionResult) into
+        // application/problem+json, same failure family as the model-validation case fixed above —
+        // except this path was never addressed, so all ~90 hand-written `NotFound()` calls across the
+        // controllers silently answered with a ProblemDetails body instead of the empty/bare body every
+        // contract (cycle 6 onward, including contracts/cycle13/openapi.yaml's NotFoundEmpty) documents
+        // and the frontend error reader expects. SuppressMapClientErrors turns this filter off entirely,
+        // so IClientErrorActionResult results (NotFoundResult, ConflictResult, UnauthorizedResult, ...)
+        // pass through exactly as the controller wrote them — empty body for NotFound()/Conflict(),
+        // whatever body a controller explicitly attaches otherwise. InvalidModelStateResponseFactory
+        // above is unaffected: it runs before an action even executes, so it never reaches this filter.
+        options.SuppressMapClientErrors = true;
+    })
     .AddJsonOptions(o =>
     {
         o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
@@ -494,6 +512,42 @@ builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.
         ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>()
         : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>());
 
+// ── Проверка адреса по карте (ARCHITECTURE_CYCLE13.md §206–§209, §215) ─────────────────────────────
+// Own section, own Provider switch, own secret — independent of the WhatsApp/MAX switch above, same
+// pattern the Web Push block just followed. "logging" (default, safe everywhere) never makes a network
+// call at all (LoggingAddressGeocoder) — that IS the intended production state until a licence is bought
+// (P2), not a placeholder.
+builder.Services.Configure<ServiceBooking.API.Services.Geo.GeoOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName));
+
+// The "yandex-geocoder" named client (§206): request/URL logging silenced at the category level, same
+// rung-1 defence as "green-api"/"web-push" — the query string carries `apikey`. Registered
+// unconditionally, not inside the switch below, for the same "changing Provider needs no different DI
+// graph" reason green-api's own client is registered unconditionally.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.LogicalHandler", LogLevel.None);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.ClientHandler", LogLevel.None);
+builder.Services.AddHttpClient("yandex-geocoder", client =>
+    {
+        var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
+            .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
+        client.Timeout = TimeSpan.FromSeconds(geoOptions.Yandex.TimeoutSeconds);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
+            .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
+        return ServiceBooking.API.Services.Geo.GeoHandlerFactory.Create(geoOptions.Yandex);
+    });
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>();
+var addressVerificationProvider = builder.Configuration["AddressVerification:Provider"];
+builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.IAddressGeocoder>(sp =>
+    string.Equals(addressVerificationProvider, "yandex", StringComparison.OrdinalIgnoreCase)
+        ? sp.GetRequiredService<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>());
+builder.Services.AddScoped<ServiceBooking.API.Services.Geo.AddressLookupService>();
+
 // ── Подтверждение телефона через MAX (ARCHITECTURE_CYCLE14.md §140-§158) ──────────────────────────────
 // R5/§144.1: a PLATFORM subsystem, deliberately with NO reference anywhere in this block to
 // Notifications:*/NotificationChannel/ChannelCompanyAssignment/LegalOptionGuards — own top-level config
@@ -664,6 +718,23 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // address-verify: ARCHITECTURE_CYCLE13.md §210/§238 — the tenth named policy, "30/час на
+    // пользователя". Keyed by user id only, same shape as data-export/push-subscribe above: all three
+    // routes it guards require [Authorize], there is no anonymous case. Applied to all three
+    // CompanyAddressController routes — two can reach the paid geocoder, the third writes journal rows —
+    // and one budget covers all three on purpose (§210: "один и тот же бюджет одного и того же человека").
+    o.AddPolicy("address-verify", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:address-verify:PermitLimit", 30),
+            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:address-verify:WindowMinutes", 60)),
+            QueueLimit = 0
+        });
+    });
+
     // ARCHITECTURE_CYCLE14.md §150.4 (Q8) — three new policies, twelve total.
     //
     // phone-verify-start: POST /phone-verification/sessions — 10/час, per user when authenticated
@@ -724,6 +795,7 @@ builder.Services.AddRateLimiter(o =>
             "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
             "notifications-webhook" => "Too many requests.",
             "push-subscribe" => "Слишком много подписок устройств. Повторите позже.",
+            "address-verify" => "Слишком много обращений к проверке адреса. Повторите позже.",
             "phone-verify-start" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyStartAttempts,
             "phone-change" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyChangePhoneAttempts,
             "phone-verify-webhook" => "Too many requests.",

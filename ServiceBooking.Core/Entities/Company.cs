@@ -1,3 +1,5 @@
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.Core.Entities;
 
 public class Company
@@ -63,4 +65,25 @@ public class Company
     // ARCHITECTURE_CYCLE10.md §102.2/§109.2 — showcase photos of the salon. Public storage class,
     // deliberately NOT a substitute for LogoUrl (a logo and a gallery photo are different things, §109.2).
     public ICollection<CompanyPhoto> Photos { get; set; } = [];
+
+    // ARCHITECTURE_CYCLE13.md §202 (LEGAL_REVIEW.md §16.2/§16.5) — address verification. Five additive,
+    // nullable columns; deliberately hold ONLY OUR OWN data (the owner's own address text, the fact/date/
+    // precision of our own check) — never the geocoder's normalized string, never a locality/object id
+    // from its response. The standard Yandex Geocoder licence does not permit storing that "result"; it
+    // permits only a short-lived cache (§209.2) and our own derived facts (Q-L10).
+    //
+    // AddressVerifiedInputKey is the normalized (AddressNormalization.Key) form of the OWNER'S OWN
+    // address text at the moment it was verified — never candidate.formattedAddress. The name is
+    // deliberately "…InputKey", not "…Value": a reader who stores the geocoder's own wording here would
+    // be doing so against the name, not by a plausible reading of it (§202's own remarks on the rename).
+    public string? AddressVerifiedInputKey { get; set; }
+    public DateTime? AddressVerifiedAt { get; set; }
+    public AddressPrecision? AddressPrecision { get; set; }
+
+    // Coordinates: written ONLY when AddressVerification:StoreResults is true, which is itself only
+    // legitimate under Yandex's extended ("with result storage") licence (§206, §209.2). Under the
+    // standard licence (the shipped default) these two columns stay null forever — that is the normal,
+    // fully-functional state of the product (P3), not a degraded one.
+    public double? AddressLatitude { get; set; }
+    public double? AddressLongitude { get; set; }
 }

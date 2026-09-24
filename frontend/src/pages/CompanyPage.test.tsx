@@ -135,3 +135,90 @@ describe('CompanyPage — review rating', () => {
     expect(screen.getByText('4.2')).toBeInTheDocument()
   })
 })
+
+describe('CompanyPage — ARCHITECTURE_CYCLE13.md §204 (logo-over-gallery layer contract, R10, US-131)', () => {
+  it('the row carrying the logo is `relative z-10`, so the fix survives the next redesign', async () => {
+    getBySlug.mockResolvedValueOnce(makeCompany({ name: 'Гвоздь' }))
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+
+    const heading = await screen.findByRole('heading', { name: 'Гвоздь' })
+    // The row is the closest ancestor that also contains the logo/logo-placeholder — walk up from
+    // the heading rather than hardcoding a DOM depth that a redesign could silently change.
+    const row = heading.closest('div.relative.z-10')
+    expect(row).not.toBeNull()
+    expect(row?.className).toMatch(/\bflex\b/)
+  })
+
+  it.each([1, 3, 5, 10])('the logo placeholder renders on top with %i gallery photos', async (n) => {
+    getBySlug.mockResolvedValueOnce(
+      makeCompany({
+        name: 'Гвоздь',
+        photos: Array.from({ length: n }, (_, i) => ({
+          id: `p${i}`,
+          url: `/p${i}.jpg`,
+          thumbnailUrl: `/p${i}-thumb.jpg`,
+          width: 800,
+          height: 600,
+          position: i,
+          isCover: i === 0,
+        })),
+      }),
+    )
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+
+    await screen.findByRole('heading', { name: 'Гвоздь' })
+    // No logoUrl on this fixture company -> the placeholder icon renders; it must still exist (not
+    // hidden behind the gallery) regardless of photo count.
+    expect(document.querySelector('.-mt-\\[52px\\]')).not.toBeNull()
+  })
+
+  it('the lightbox overlay is a sibling of the carousel root, not nested inside its transformed track', async () => {
+    const user = userEvent.setup()
+    getBySlug.mockResolvedValueOnce(
+      makeCompany({
+        name: 'Гвоздь',
+        photos: [
+          { id: 'p0', url: '/p0.jpg', thumbnailUrl: '/p0-thumb.jpg', width: 800, height: 600, position: 0, isCover: true },
+        ],
+      }),
+    )
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+    await screen.findByRole('heading', { name: 'Гвоздь' })
+
+    await user.click(screen.getAllByRole('img')[0])
+    const closeButton = screen.getByRole('button', { name: 'Закрыть' })
+    const carouselRoot = screen.getByRole('group', { name: 'Фотографии Гвоздь' })
+    // The lightbox overlay must NOT be inside the carousel root (§204 — a `position: fixed`
+    // descendant of a `transform`ed ancestor gets clipped by it instead of covering the viewport).
+    expect(carouselRoot.contains(closeButton)).toBe(false)
+  })
+})
+
+describe('CompanyMapLinks — ARCHITECTURE_CYCLE13.md §205, wired into the address block', () => {
+  it('shows both map links next to the address when one is set', async () => {
+    getBySlug.mockResolvedValueOnce(makeCompany({ address: 'Ленина, 5', cityName: 'Барнаул' }))
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+
+    expect(await screen.findByText('Ленина, 5')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Открыть в Яндекс Картах/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Открыть в 2ГИС/ })).toBeInTheDocument()
+  })
+
+  it('shows no map links when the company has no address', async () => {
+    getBySlug.mockResolvedValueOnce(makeCompany({ address: undefined }))
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+
+    await screen.findByRole('heading', { name: makeCompany().name })
+    expect(screen.queryByRole('link', { name: /Открыть в/ })).not.toBeInTheDocument()
+  })
+})

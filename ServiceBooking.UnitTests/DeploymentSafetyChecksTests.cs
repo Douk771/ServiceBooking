@@ -1062,6 +1062,16 @@ public class DeploymentSafetyChecksTests
         act.Should().NotThrow();
     }
 
+    // ── ValidateAddressVerification: ARCHITECTURE_CYCLE13.md §206/§209.2 ──────────────────────────────
+
+    [Fact]
+    public void ValidateAddressVerification_DefaultLoggingProvider_DoesNotThrow_InProduction()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>());
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().NotThrow();
+    }
+
     // ── ValidatePhoneVerificationSecrets (ARCHITECTURE_CYCLE14.md §150.2) ──────────────────────────
 
     private static Dictionary<string, string?> ValidPhoneVerificationSecrets() => new()
@@ -1079,6 +1089,34 @@ public class DeploymentSafetyChecksTests
     {
         var config = BuildConfig(new Dictionary<string, string?> { ["PhoneVerification:Provider"] = "stub" });
         var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_UnrecognizedProvider_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:Provider"] = "2gis" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Provider*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_YandexInProduction_MissingApiKey_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:Provider"] = "yandex" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ApiKey*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_YandexInProduction_WithApiKey_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["AddressVerification:Provider"] = "yandex",
+            ["AddressVerification:Yandex:ApiKey"] = "real-key",
+        });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
         act.Should().NotThrow();
     }
 
@@ -1106,6 +1144,122 @@ public class DeploymentSafetyChecksTests
         var config = BuildConfig(ValidPhoneVerificationSecrets());
         var act = () => DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(config, "Production");
         act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public void ValidateAddressVerification_YandexInDeveloperEnvironment_MissingApiKey_DoesNotThrow(string environmentName)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:Provider"] = "yandex" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, environmentName);
+        act.Should().NotThrow();
+    }
+
+    // §209.2/§218 R23: the licensed ceiling on caching a geocoder result is 720 hours (30 days) — this
+    // is checked in EVERY environment, unlike the Provider/ApiKey checks above, because it is a fact
+    // about the licence, not a Production-only safety net.
+    [Fact]
+    public void ValidateAddressVerification_CacheHours721_ThrowsEvenInDevelopment()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:CacheHours"] = "721" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*CacheHours*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_CacheHours720_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:CacheHours"] = "720" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_NegativeCacheHours_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:CacheHours"] = "-1" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*CacheHours*");
+    }
+
+    // §233/contracts/cycle13/openapi.yaml (maxItems: 5) — review finding (cycle 13 review, non-blocking #6):
+    // MaxCandidates previously wasn't validated at all, so a misconfigured value either broke the contract
+    // (>5) or silently emptied every lookup result (Take(-1) for a non-positive value).
+    [Fact]
+    public void ValidateAddressVerification_MaxCandidatesAboveFive_ThrowsEvenInDevelopment()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:MaxCandidates"] = "50" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*MaxCandidates*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_MaxCandidatesZeroOrNegative_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:MaxCandidates"] = "0" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*MaxCandidates*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_MaxCandidatesInRange_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:MaxCandidates"] = "5" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    // §206/ARCHITECTURE_CYCLE13.md §420-422 — review finding (cycle 13 review, non-blocking #5): this
+    // warning didn't exist at all, despite GeoOptions.StoreResults' own doc comment claiming it did.
+    // A real provider must be configured for the warning to be meaningful (see the
+    // "logging provider" test below for the companion review finding that this must NOT fire when
+    // Provider=logging, since there is no geocoder call and therefore nothing to ever store).
+    [Fact]
+    public void ValidateAddressVerification_StoreResultsTrue_WithYandexProvider_WarnsAboutExtendedLicence()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["AddressVerification:StoreResults"] = "true",
+            ["AddressVerification:Provider"] = "yandex",
+            ["AddressVerification:Yandex:ApiKey"] = "real-key",
+        });
+        var warnings = new List<string>();
+
+        DeploymentSafetyChecks.ValidateAddressVerification(config, "Production", warn: warnings.Add);
+
+        warnings.Should().ContainSingle(w => w.Contains("StoreResults") && w.Contains("licence"));
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_StoreResultsFalse_WithYandexProvider_DoesNotWarn()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["AddressVerification:StoreResults"] = "false",
+            ["AddressVerification:Provider"] = "yandex",
+            ["AddressVerification:Yandex:ApiKey"] = "real-key",
+        });
+        var warnings = new List<string>();
+
+        DeploymentSafetyChecks.ValidateAddressVerification(config, "Production", warn: warnings.Add);
+
+        warnings.Should().BeEmpty();
+    }
+
+    // Review recheck (cycle 13, non-blocking backend finding): the StoreResults warning previously fired
+    // even with the default Provider=logging, where there is no geocoder call and therefore no coordinates
+    // that could ever be stored — a false "coordinates will be stored" warning on every dev/test host that
+    // merely inherited StoreResults=true from shared config without a real provider enabled.
+    [Fact]
+    public void ValidateAddressVerification_StoreResultsTrue_WithLoggingProvider_DoesNotWarn()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:StoreResults"] = "true" });
+        var warnings = new List<string>();
+
+        DeploymentSafetyChecks.ValidateAddressVerification(config, "Production", warn: warnings.Add);
+
+        warnings.Should().BeEmpty();
     }
 
     [Theory]

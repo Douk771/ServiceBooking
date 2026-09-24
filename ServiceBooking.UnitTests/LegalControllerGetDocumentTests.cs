@@ -50,7 +50,8 @@ public class LegalControllerGetDocumentTests : IDisposable
                 { "key": "UnsubscribePage", "version": "v1", "isDraft": false, "file": "unsubscribe.html" },
                 { "key": "PhotoConsent", "version": "v1", "isDraft": false, "file": "photo-consent.html" },
                 { "key": "HealthDataConsent", "version": "v1", "isDraft": false, "file": "health-consent.html" },
-                { "key": "GuardianConfirmation", "version": "v1", "isDraft": false, "file": "guardian.html" }
+                { "key": "GuardianConfirmation", "version": "v1", "isDraft": false, "file": "guardian.html" },
+                { "key": "PublicAddressNotice", "version": "v1", "isDraft": false, "file": "public-address-notice.html" }
               ]
             }
             """);
@@ -58,7 +59,7 @@ public class LegalControllerGetDocumentTests : IDisposable
                  {
                      "privacy.html", "terms.html", "terms-owner.html", "pdn.html", "risk.html",
                      "booking-notice.html", "ad-warning.html", "unsubscribe.html", "photo-consent.html",
-                     "health-consent.html", "guardian.html"
+                     "health-consent.html", "guardian.html", "public-address-notice.html"
                  })
         {
             File.WriteAllText(Path.Combine(_root, file), "<p>text</p>");

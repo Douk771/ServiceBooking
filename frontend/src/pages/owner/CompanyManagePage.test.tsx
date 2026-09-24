@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MembersTab } from './CompanyManagePage'
+import { MembersTab, SettingsTab } from './CompanyManagePage'
 import type { MemberDto } from '../../api/companies'
 
 const getMembers = vi.fn()
 const getByCompany = vi.fn()
 const getMy = vi.fn()
 const updateMemberProvidesServices = vi.fn()
+const update = vi.fn()
 
 vi.mock('../../api/companies', () => ({
   companiesApi: {
@@ -19,6 +20,8 @@ vi.mock('../../api/companies', () => ({
     updateMemberCommission: vi.fn(),
     addMember: vi.fn(),
     removeMember: vi.fn(),
+    update: (...args: unknown[]) => update(...args),
+    uploadLogo: vi.fn(),
   },
 }))
 
@@ -107,5 +110,47 @@ describe('MembersTab — US-62 "provides services" toggle', () => {
     expect(screen.queryByText('У специалиста 1 будущая запись.')).not.toBeInTheDocument()
     // Still checked — the cancelled toggle never got persisted.
     expect(screen.getByRole('checkbox', { name: 'Оказывает услуги' })).toBeChecked()
+  })
+})
+
+describe('SettingsTab — unsaved edits survive an unrelated `my-companies` refetch (review finding, cycle 13)', () => {
+  function renderSettings(companyId = 'co1') {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const utils = render(
+      <QueryClientProvider client={qc}>
+        <SettingsTab companyId={companyId} />
+      </QueryClientProvider>,
+    )
+    return { ...utils, qc }
+  }
+
+  beforeEach(() => {
+    update.mockReset()
+  })
+
+  it('keeps typed-but-unsubmitted text and an enabled Save button after `values` resyncs to an unrelated field change', async () => {
+    getMy.mockReset().mockResolvedValue([{ id: 'co1', name: 'Салон красоты', allowSelfBooking: true }])
+    const { qc } = renderSettings()
+
+    const nameInput = await screen.findByLabelText('Название')
+    // Let the initial `values` resync settle before editing, so it can't race with the interactions
+    // below and produce a flaky "typed text landed before/after a resync" result.
+    await waitFor(() => expect(nameInput).toHaveValue('Салон красоты'))
+
+    await userEvent.clear(nameInput)
+    await userEvent.type(nameInput, 'Новое название')
+    await waitFor(() => expect(nameInput).toHaveValue('Новое название'))
+
+    const saveButton = screen.getByRole('button', { name: 'Сохранить изменения' })
+    expect(saveButton).not.toBeDisabled()
+
+    // Simulate `['my-companies']` resyncing mid-edit because of an unrelated change (e.g. the
+    // address field's own save via AddressVerifyField, §209) — writing a new value into the SAME
+    // query cache the form's `values` prop reads from triggers RHF's `keepDirtyValues` resync path,
+    // exactly like a real refetch landing while the owner is still typing.
+    qc.setQueryData(['my-companies'], [{ id: 'co1', name: 'Салон красоты', allowSelfBooking: false }])
+
+    await waitFor(() => expect(nameInput).toHaveValue('Новое название'))
+    expect(saveButton).not.toBeDisabled()
   })
 })

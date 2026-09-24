@@ -519,6 +519,84 @@ public static class DeploymentSafetyChecks
     }
 
     /// <summary>
+    /// ARCHITECTURE_CYCLE13.md §206/§209.2 (LEGAL_REVIEW.md §16.2). Mirrors
+    /// <see cref="ValidateNotificationSecrets"/>'s shape (own section, own Provider switch, unrecognized
+    /// value ALWAYS fails startup) with one addition that is NOT environment-gated at all:
+    /// <c>AddressVerification:CacheHours</c> outside [0, 720] fails startup in EVERY environment,
+    /// including Development/Testing — 720 hours (30 days) is the standard Yandex Geocoder licence's own
+    /// ceiling on "temporary caching for performance" (LEGAL_REVIEW.md §16.2/§16.5), a legal fact about
+    /// the licence, not a tunable that is only risky in Production. Do not move this check inside an
+    /// <c>if (!isDeveloperEnvironment)</c> guard — a developer testing a higher cache value locally must
+    /// hit the same wall a Production deployment would, or the ceiling is not actually enforced anywhere
+    /// that catches a mistake before it ships.
+    /// </summary>
+    /// <param name="configuration">Configuration to validate.</param>
+    /// <param name="environmentName">Current host environment name — gates the API-key requirement and
+    /// (via <see cref="IsDeveloperEnvironment"/>) whether a missing key fails startup.</param>
+    /// <param name="warn">Sink for the non-fatal StoreResults warning (§206, ARCHITECTURE_CYCLE13.md
+    /// §420-422: "включайте только при расширенной лицензии") — same "warn, don't block" shape as
+    /// <see cref="ValidateSecrets"/>'s SuperAdmin:Phone check, since the code cannot verify a human bought
+    /// the extended licence. Defaults to <see cref="Console.WriteLine(string?)"/>, matching ValidateSecrets;
+    /// tests supply their own to assert on it without touching stdout. Review finding (cycle 13 review,
+    /// non-blocking #5): this warning previously did not exist at all, despite <see cref="Geo.GeoOptions"/>'s
+    /// own doc comment on <c>StoreResults</c> claiming it did.</param>
+    public static void ValidateAddressVerification(IConfiguration configuration, string environmentName, Action<string>? warn = null)
+    {
+        warn ??= Console.WriteLine;
+
+        var provider = configuration[$"{Geo.GeoOptions.SectionName}:Provider"] ?? "logging";
+
+        var cacheHours = configuration.GetValue($"{Geo.GeoOptions.SectionName}:CacheHours", 24);
+        if (cacheHours < 0 || cacheHours > 720)
+            throw new InvalidOperationException(
+                $"AddressVerification:CacheHours is {cacheHours}, outside the licensed 0–720 hour (30-day) " +
+                "range for temporary caching of geocoder results under the standard Yandex Geocoder licence " +
+                "(LEGAL_REVIEW.md §16.2/§16.5). This is a legal ceiling, not a performance knob — do not raise " +
+                "it above 720 without a different licence. Set ADDRESSVERIFICATION__CACHEHOURS to a value in [0, 720].");
+
+        // §233/contracts/cycle13/openapi.yaml:652 (maxItems: 5): a misconfigured MaxCandidates must fail
+        // loud, not silently break the contract (a value above 5) or silently empty every result (a
+        // non-positive value feeding Take(N) downstream). Review finding (cycle 13 review, non-blocking #6).
+        var maxCandidates = configuration.GetValue($"{Geo.GeoOptions.SectionName}:MaxCandidates", 5);
+        if (maxCandidates < 1 || maxCandidates > 5)
+            throw new InvalidOperationException(
+                $"AddressVerification:MaxCandidates is {maxCandidates}, outside the contractual 1–5 range " +
+                "(contracts/cycle13/openapi.yaml declares maxItems: 5 for the candidates list). Set " +
+                "ADDRESSVERIFICATION__MAXCANDIDATES to a value in [1, 5].");
+
+        // §206/ARCHITECTURE_CYCLE13.md §420-422: StoreResults is a licence flag the code cannot itself
+        // verify — a Warning at every startup where it's on is the whole enforcement mechanism. This must
+        // come AFTER the "logging" early-return below: with Provider=logging there is no geocoder call and
+        // therefore no result to ever store, so warning here regardless of provider (review finding, cycle
+        // 13 recheck, non-blocking) produced a false "coordinates will be stored" warning on every dev/test
+        // host that merely inherited StoreResults=true from a shared config without a real provider enabled.
+        var storeResults = configuration.GetValue($"{Geo.GeoOptions.SectionName}:StoreResults", false);
+
+        if (string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase)) return;
+
+        if (storeResults)
+            warn("AddressVerification:StoreResults is true — coordinates from geocoder results will be " +
+                 "stored and exposed via the API. This is only licensed under Yandex Geocoder's EXTENDED " +
+                 "(\"with result storage\") licence — enable only if that licence was purchased " +
+                 "(ARCHITECTURE_CYCLE13.md §206/§209.2, LEGAL_REVIEW.md §16.2).");
+
+        if (!string.Equals(provider, "yandex", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"AddressVerification:Provider is '{provider}', which is neither 'logging' nor 'yandex'. " +
+                "Fix the configured value — see ARCHITECTURE_CYCLE13.md §206.");
+
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        var apiKey = configuration[$"{Geo.GeoOptions.SectionName}:Yandex:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException(
+                "AddressVerification:Provider is 'yandex' but AddressVerification:Yandex:ApiKey is missing. " +
+                "Set ADDRESSVERIFICATION__YANDEX__APIKEY in .env — see ARCHITECTURE_CYCLE13.md §206/§216 for " +
+                "the full pre-enable checklist (licence variant chosen, licence purchased, CacheHours ≤ 720, " +
+                "the matching privacy-policy paragraph published at the same moment).");
+    }
+
+    /// <summary>
     /// ARCHITECTURE_CYCLE14.md §150.2 (Q13). <c>PhoneVerification:Provider = "stub"</c> (default) needs
     /// nothing — that IS the documented "невыпущенность" state (§140.1), not a misconfiguration.
     /// <c>"max-bot"</c> outside a developer environment REQUIRES every one of the five secrets below;

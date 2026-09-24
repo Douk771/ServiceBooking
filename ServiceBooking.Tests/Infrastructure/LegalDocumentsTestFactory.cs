@@ -92,6 +92,7 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
                      ("unsubscribe-page.html", "Страница отписки"), ("photo-consent.html", "Согласие на фото"),
                      ("health-data-consent.html", "Согласие на сведения о здоровье"),
                      ("guardian-confirmation.html", "Подтверждение полномочий"),
+                     ("public-address-notice.html", "Предупреждение о публичности адреса"),
                  })
             File.WriteAllText(Path.Combine(LegalRoot, file), $"<p>{title}.</p>");
 
@@ -115,7 +116,8 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
             { "key": "UnsubscribePage", "version": "fixed-text-1", "isDraft": false, "file": "unsubscribe-page.html" },
             { "key": "PhotoConsent", "version": "fixed-text-1", "isDraft": false, "file": "photo-consent.html" },
             { "key": "HealthDataConsent", "version": "fixed-text-1", "isDraft": false, "file": "health-data-consent.html" },
-            { "key": "GuardianConfirmation", "version": "fixed-text-1", "isDraft": false, "file": "guardian-confirmation.html" }
+            { "key": "GuardianConfirmation", "version": "fixed-text-1", "isDraft": false, "file": "guardian-confirmation.html" },
+            { "key": "PublicAddressNotice", "version": "fixed-text-1", "isDraft": false, "file": "public-address-notice.html" }
           ]
         }
         """);

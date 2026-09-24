@@ -90,6 +90,25 @@ services:
       - PhoneVerification__Max__WebhookToken=${PHONEVERIFY_MAX_WEBHOOK_TOKEN:-}
       - PhoneVerification__Max__PublicBaseUrl=${PHONEVERIFY_MAX_PUBLIC_BASE_URL:-}
       - PhoneVerification__ExternalKeyHmac=${PHONEVERIFY_EXTERNAL_KEY:-}
+      # ARCHITECTURE_CYCLE13.md §206/§213/§216 — address verification kill switch. `logging` (default)
+      # is the STANDARD state of prod after cycle 13, not an unfinished feature (§200 п.3): no network
+      # call is ever made, the lookup endpoint answers 404, and CompanyDto.addressVerification.available
+      # is false. DeploymentSafetyChecks.ValidateAddressVerification enforces the rest at startup
+      # (unrecognized Provider always fails; Provider=yandex with empty ApiKey fails outside
+      # Development; CacheHours outside [0, 720] always fails — see DEPLOY.md "Включение проверки
+      # адреса" for the full checklist, including the linked legal-policy task L3.2, before ever
+      # touching this).
+      - AddressVerification__Provider=${ADDRESSVERIFICATION__PROVIDER:-logging}
+      # Licence flag, not a performance knob (§209.2): may only be `true` under Yandex Geocoder's
+      # EXTENDED ("with result storage") licence. See DEPLOY.md before flipping this.
+      - AddressVerification__StoreResults=${ADDRESSVERIFICATION__STORERESULTS:-false}
+      - AddressVerification__MaxCandidates=${ADDRESSVERIFICATION__MAXCANDIDATES:-5}
+      # Licensed ceiling is 720 hours (30 days) — a value outside [0, 720] fails startup ALWAYS, not
+      # just outside Development (§209.2).
+      - AddressVerification__CacheHours=${ADDRESSVERIFICATION__CACHEHOURS:-24}
+      # Server-side secret, never sent to the browser, never logged. REQUIRED when
+      # AddressVerification__Provider=yandex in Production.
+      - AddressVerification__Yandex__ApiKey=${ADDRESSVERIFICATION__YANDEX__APIKEY:-}
       # Retention (ARCHITECTURE_CYCLE5.md §49, DEPLOY.md §11.4): appsettings.json bakes DryRun=true —
       # deletion-by-age rules only log what they WOULD delete until this is deliberately flipped to
       # false on the host, per the two-run procedure in DEPLOY.md. Empty/unset keeps the baked-in

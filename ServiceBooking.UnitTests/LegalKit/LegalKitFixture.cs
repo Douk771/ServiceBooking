@@ -2,8 +2,9 @@ using System.Text.Json;
 
 namespace ServiceBooking.UnitTests.LegalKit;
 
-/// <summary>Builds a minimal, valid legal-drafts-shaped directory (all five document types, all six
-/// uiTexts, the channel-offer appendix with its marker) in a throwaway temp directory — every LegalKit
+/// <summary>Builds a minimal, valid legal-drafts-shaped directory (all five document types, all seven
+/// uiTexts (cycle 13, §220.1, adds PublicAddressNotice), the channel-offer appendix with its marker) in
+/// a throwaway temp directory — every LegalKit
 /// unit test starts from one of these rather than touching the real <c>legal-drafts/</c> (which
 /// legal-counsel owns, T0, and which this session is explicitly not allowed to modify).</summary>
 internal static class LegalKitFixture
@@ -42,13 +43,14 @@ internal static class LegalKitFixture
                 new { key = "PhotoConsent", version = "2026-09-22-draft", isDraft = true, file = "photo.html" },
                 new { key = "HealthDataConsent", version = "2026-09-22-draft", isDraft = true, file = "health.html" },
                 new { key = "GuardianConfirmation", version = "2026-09-22-draft", isDraft = true, file = "guardian.html" },
+                new { key = "PublicAddressNotice", version = "2026-09-22-draft", isDraft = true, file = "address-notice.html" },
             },
             appendices = new { TermsOwner = new[] { "09-channel-offer.html" } },
         };
 
         File.WriteAllText(Path.Combine(dir, "legal.json"), JsonSerializer.Serialize(manifest));
 
-        foreach (var file in new[] { "terms", "pdn", "risk", "booking", "ad", "unsub", "photo", "health", "guardian" })
+        foreach (var file in new[] { "terms", "pdn", "risk", "booking", "ad", "unsub", "photo", "health", "guardian", "address-notice" })
             File.WriteAllText(Path.Combine(dir, $"{file}.html"), $"<p>{{{{ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ}}}} {file}</p>");
 
         File.WriteAllText(Path.Combine(dir, "privacy.html"), privacyHtml ?? "<p>{{ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ}} privacy</p>");

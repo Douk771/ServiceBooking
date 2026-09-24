@@ -2,8 +2,8 @@
   "documents": [
     {
       "type": "Privacy",
-      "version": "2026-09-22-draft",
-      "effectiveFrom": "2026-09-22",
+      "version": "2026-09-24-draft",
+      "effectiveFrom": "2026-09-24",
       "isDraft": true,
       "changeKind": "Material",
       "gate": "Global",
@@ -62,7 +62,8 @@
     { "key": "UnsubscribePage", "version": "2026-09-22-draft", "isDraft": true, "file": "08-unsubscribe-page.html" },
     { "key": "PhotoConsent", "version": "2026-09-22-draft", "isDraft": true, "file": "10-photo-consent.html" },
     { "key": "HealthDataConsent", "version": "2026-09-22-draft", "isDraft": true, "file": "11-health-data-consent.html" },
-    { "key": "GuardianConfirmation", "version": "2026-09-22-draft", "isDraft": true, "file": "12-guardian-confirmation.html" }
+    { "key": "GuardianConfirmation", "version": "2026-09-22-draft", "isDraft": true, "file": "12-guardian-confirmation.html" },
+    { "key": "PublicAddressNotice", "version": "2026-09-24-draft", "isDraft": true, "file": "13-public-address-notice.html" }
   ],
 
   "_appendicesComment": "Document `type` -> ordered list of appendix files spliced into that document's body at the <!-- APPENDIX-BODY-START --> marker, in list order (cycle 12 review finding 4.1: order used to be a prose rule — 'file 13 strictly after file 09' — enforced by nothing; it is now data). Appendix № 2 (13-payment-terms.html) is intentionally NOT listed here yet — see deferredDrafts below.",

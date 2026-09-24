@@ -37,7 +37,8 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
         body.Documents.Select(d => d.Type).Should().BeEquivalentTo(
             ["Privacy", "TermsClient", "TermsOwner", "PdnConsent", "ChannelRiskNotice"]);
         body.Documents.Should().OnlyContain(d => d.Version != "" && d.EffectiveFrom != default);
-        body.UiTexts.Should().HaveCount(6);
+        // ARCHITECTURE_CYCLE13.md §220.1: seventh uiTexts key, PublicAddressNotice.
+        body.UiTexts.Should().HaveCount(7);
     }
 
     [Fact, TestCase("LEG-001b")]
