@@ -133,6 +133,20 @@ export interface Company {
    * product's default configuration; map links then search by text instead of centring on a point.
    */
   addressPoint?: GeoPointDto | null
+  /**
+   * API_CONTRACT_CYCLE15.md §282 — a URL the owner pasted themselves, saved and returned byte for
+   * byte (never built or rewritten by the server). `null`/absent = not filled in → the interface
+   * must not show a "go to service" link at all, not an empty one. Sent to any caller, including
+   * anonymous — public info about the salon, no rights computed on it.
+   */
+  yandexMapsUrl?: string | null
+  twoGisUrl?: string | null
+  /**
+   * API_CONTRACT_CYCLE15.md §282 — hours before a visit a client can still self-reschedule it.
+   * Always a number (server default 2), 0 = "up to the start of the visit". A company setting, not
+   * a product constant.
+   */
+  clientRescheduleMinHours?: number
 }
 
 /** API_CONTRACT_CYCLE10.md §125 */
