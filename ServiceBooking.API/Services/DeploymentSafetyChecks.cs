@@ -529,8 +529,20 @@ public static class DeploymentSafetyChecks
     /// hit the same wall a Production deployment would, or the ceiling is not actually enforced anywhere
     /// that catches a mistake before it ships.
     /// </summary>
-    public static void ValidateAddressVerification(IConfiguration configuration, string environmentName)
+    /// <param name="configuration">Configuration to validate.</param>
+    /// <param name="environmentName">Current host environment name — gates the API-key requirement and
+    /// (via <see cref="IsDeveloperEnvironment"/>) whether a missing key fails startup.</param>
+    /// <param name="warn">Sink for the non-fatal StoreResults warning (§206, ARCHITECTURE_CYCLE13.md
+    /// §420-422: "включайте только при расширенной лицензии") — same "warn, don't block" shape as
+    /// <see cref="ValidateSecrets"/>'s SuperAdmin:Phone check, since the code cannot verify a human bought
+    /// the extended licence. Defaults to <see cref="Console.WriteLine(string?)"/>, matching ValidateSecrets;
+    /// tests supply their own to assert on it without touching stdout. Review finding (cycle 13 review,
+    /// non-blocking #5): this warning previously did not exist at all, despite <see cref="Geo.GeoOptions"/>'s
+    /// own doc comment on <c>StoreResults</c> claiming it did.</param>
+    public static void ValidateAddressVerification(IConfiguration configuration, string environmentName, Action<string>? warn = null)
     {
+        warn ??= Console.WriteLine;
+
         var provider = configuration[$"{Geo.GeoOptions.SectionName}:Provider"] ?? "logging";
 
         var cacheHours = configuration.GetValue($"{Geo.GeoOptions.SectionName}:CacheHours", 24);
@@ -540,6 +552,25 @@ public static class DeploymentSafetyChecks
                 "range for temporary caching of geocoder results under the standard Yandex Geocoder licence " +
                 "(LEGAL_REVIEW.md §16.2/§16.5). This is a legal ceiling, not a performance knob — do not raise " +
                 "it above 720 without a different licence. Set ADDRESSVERIFICATION__CACHEHOURS to a value in [0, 720].");
+
+        // §233/contracts/cycle13/openapi.yaml:652 (maxItems: 5): a misconfigured MaxCandidates must fail
+        // loud, not silently break the contract (a value above 5) or silently empty every result (a
+        // non-positive value feeding Take(N) downstream). Review finding (cycle 13 review, non-blocking #6).
+        var maxCandidates = configuration.GetValue($"{Geo.GeoOptions.SectionName}:MaxCandidates", 5);
+        if (maxCandidates < 1 || maxCandidates > 5)
+            throw new InvalidOperationException(
+                $"AddressVerification:MaxCandidates is {maxCandidates}, outside the contractual 1–5 range " +
+                "(contracts/cycle13/openapi.yaml declares maxItems: 5 for the candidates list). Set " +
+                "ADDRESSVERIFICATION__MAXCANDIDATES to a value in [1, 5].");
+
+        // §206/ARCHITECTURE_CYCLE13.md §420-422: StoreResults is a licence flag the code cannot itself
+        // verify — a Warning at every startup where it's on is the whole enforcement mechanism.
+        var storeResults = configuration.GetValue($"{Geo.GeoOptions.SectionName}:StoreResults", false);
+        if (storeResults)
+            warn("AddressVerification:StoreResults is true — coordinates from geocoder results will be " +
+                 "stored and exposed via the API. This is only licensed under Yandex Geocoder's EXTENDED " +
+                 "(\"with result storage\") licence — enable only if that licence was purchased " +
+                 "(ARCHITECTURE_CYCLE13.md §206/§209.2, LEGAL_REVIEW.md §16.2).");
 
         if (string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase)) return;
 

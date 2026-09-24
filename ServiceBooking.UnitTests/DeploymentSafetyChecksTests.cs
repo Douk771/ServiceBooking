@@ -1136,4 +1136,55 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
         act.Should().Throw<InvalidOperationException>().WithMessage("*CacheHours*");
     }
+
+    // §233/contracts/cycle13/openapi.yaml (maxItems: 5) — review finding (cycle 13 review, non-blocking #6):
+    // MaxCandidates previously wasn't validated at all, so a misconfigured value either broke the contract
+    // (>5) or silently emptied every lookup result (Take(-1) for a non-positive value).
+    [Fact]
+    public void ValidateAddressVerification_MaxCandidatesAboveFive_ThrowsEvenInDevelopment()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:MaxCandidates"] = "50" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*MaxCandidates*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_MaxCandidatesZeroOrNegative_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:MaxCandidates"] = "0" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*MaxCandidates*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_MaxCandidatesInRange_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:MaxCandidates"] = "5" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    // §206/ARCHITECTURE_CYCLE13.md §420-422 — review finding (cycle 13 review, non-blocking #5): this
+    // warning didn't exist at all, despite GeoOptions.StoreResults' own doc comment claiming it did.
+    [Fact]
+    public void ValidateAddressVerification_StoreResultsTrue_WarnsAboutExtendedLicence()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:StoreResults"] = "true" });
+        var warnings = new List<string>();
+
+        DeploymentSafetyChecks.ValidateAddressVerification(config, "Production", warn: warnings.Add);
+
+        warnings.Should().ContainSingle(w => w.Contains("StoreResults") && w.Contains("licence"));
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_StoreResultsFalse_DoesNotWarn()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:StoreResults"] = "false" });
+        var warnings = new List<string>();
+
+        DeploymentSafetyChecks.ValidateAddressVerification(config, "Production", warn: warnings.Add);
+
+        warnings.Should().BeEmpty();
+    }
 }

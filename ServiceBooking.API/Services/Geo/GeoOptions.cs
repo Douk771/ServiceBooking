@@ -23,6 +23,8 @@ public sealed class GeoOptions
     /// product is fully functional with this off (§209.2's own promise).</summary>
     public bool StoreResults { get; set; }
 
+    /// <summary>§233/contracts/cycle13/openapi.yaml (maxItems: 5) — must stay in [1, 5];
+    /// <see cref="DeploymentSafetyChecks.ValidateAddressVerification"/> fails startup otherwise.</summary>
     public int MaxCandidates { get; set; } = 5;
 
     /// <summary>Licensed ceiling is 720 hours (30 days, LEGAL_REVIEW.md §16.2/§16.5) — a value outside
