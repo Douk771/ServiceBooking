@@ -73,7 +73,7 @@ public class CompanyAddressController(
         }
 
         var result = await lookupService.LookupAsync(new AddressQuery(trimmed, city?.Name), HttpContext.RequestAborted);
-        return Ok(BuildLookupResult(result, city?.Name));
+        return Ok(BuildLookupResult(result, city?.Name, geoOptions.Value));
     }
 
     // ── PUT /api/companies/{id}/address (§234) ──────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ public class CompanyAddressController(
 
         var outcome = GeocodeOutcome.Ok; // §234 table, row "verify:false" — no external call, no failure
         IReadOnlyList<AddressWarning> warnings = [];
-        string? attribution = null;
+        var attribution = ""; // §234: "" whenever the map wasn't reached — verify:false, or Disabled below
 
         if (dto.Verify && !string.IsNullOrEmpty(company.Address))
         {
@@ -116,7 +116,7 @@ public class CompanyAddressController(
             var result = await lookupService.LookupAsync(
                 new AddressQuery(company.Address, city?.Name), HttpContext.RequestAborted);
             outcome = result.Outcome;
-            attribution = result.Attribution;
+            attribution = result.Attribution ?? "";
 
             var best = result.Candidates.Count > 0 ? result.Candidates[0] : null;
             if (outcome == GeocodeOutcome.Ok && best is { Precision: AddressPrecision.House })
@@ -179,7 +179,8 @@ public class CompanyAddressController(
         var record = await ledger.GrantAsync(new ConsentGrant(
             subject, LegalTextKey.PublicAddressNotice, text.Version, text.ContentHash,
             Purpose: null, ConsentAct.Acknowledged, ConsentSource.AddressForm,
-            IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()));
+            IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()),
+            HttpContext.RequestAborted);
 
         return Ok(new AddressNoticeResultDto(record.DocumentVersion, record.GrantedAtUtc));
     }
@@ -198,7 +199,10 @@ public class CompanyAddressController(
         return await CompanyMembership.IsOwnerAsync(db, companyId, userId);
     }
 
-    private static AddressLookupResultDto BuildLookupResult(GeocodeResult result, string? companyCityName)
+    // Takes `geoOptions` explicitly (review finding — cycle 13 review, blocking #1): §209.2/P3's
+    // coordinate switch has to reach every place a GeocodeCandidate becomes an AddressCandidateDto, and
+    // this was the one that didn't, so `point` leaked real coordinates regardless of StoreResults.
+    private static AddressLookupResultDto BuildLookupResult(GeocodeResult result, string? companyCityName, GeoOptions geoOptions)
     {
         IReadOnlyList<AddressWarning> topLevel = result.Outcome switch
         {
@@ -208,12 +212,12 @@ public class CompanyAddressController(
         };
 
         var candidates = result.Candidates
-            .Select(c => c.ToDto(BuildCandidateWarnings(c.Precision, c.CityName, companyCityName)))
+            .Select(c => c.ToDto(BuildCandidateWarnings(c.Precision, c.CityName, companyCityName), geoOptions.StoreResults))
             .ToList();
 
         return new AddressLookupResultDto(
             result.Outcome.ToString(), result.QueriedAddress, candidates,
-            topLevel.Select(w => w.ToDto()).ToList(), result.Attribution);
+            topLevel.Select(w => w.ToDto()).ToList(), result.Attribution ?? "");
     }
 
     private static IReadOnlyList<AddressWarning> BuildCandidateWarnings(
@@ -251,11 +255,14 @@ public class CompanyAddressController(
         var coverPhoto = await db.CompanyPhotos.Where(p => p.CompanyId == company.Id && p.Position == 0).ToListAsync();
         var cover = CompanyPhotoOrdering.SelectCovers(coverPhoto).GetValueOrDefault(company.Id);
 
+        // §234: reached only after SaveAddress's own CanManageCompanyAsync check passed, so this caller
+        // always manages the company (review finding, cycle 13 review, blocking #2).
         return CompaniesController.MapToDto(
             company, plan, averageRating, reviewCount, city,
             employeeCounts.GetValueOrDefault(company.Id),
             company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
             geoOptions.Value,
-            cover is null ? null : (cover.Url, cover.ThumbnailUrl));
+            cover is null ? null : (cover.Url, cover.ThumbnailUrl),
+            canManage: true);
     }
 }
