@@ -97,6 +97,16 @@ internal static class PublishCommand
             ["ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ"] = effectiveFromFormatted,
         };
 
+        // The two Roskomnadzor-registry keys are the only ones that may legitimately be missing from
+        // `values.Values` (ARCHITECTURE_CYCLE11.md §103.3 / PlaceholderValues.OptionalKeys — publishing
+        // the registration number is not a legal requirement, and the ~30-day gap between notice and
+        // registration would otherwise block publication for a month for no legal reason). A missing
+        // optional key must not turn into a substituted-empty string in the middle of a sentence
+        // ("регистрационный номер , уведомление направлено ") — see RemoveElementsForMissingOptionalKeys.
+        var missingOptionalKeys = PlaceholderValues.OptionalKeys
+            .Where(key => !substitutions.ContainsKey(key))
+            .ToList();
+
         // Each entry carries its own manifest fields directly rather than the source object being looked
         // back up later by BaseFile — two manifest entries sharing a source file name (a malformed but
         // not impossible manifest) would otherwise make that later lookup ambiguous.
@@ -106,14 +116,14 @@ internal static class PublishCommand
 
         foreach (var doc in snapshot.Documents.Values.OrderBy(d => d.Type))
         {
-            var content = Substitute(doc.ContentHtml, substitutions);
+            var content = Substitute(RemoveElementsForMissingOptionalKeys(doc.ContentHtml, missingOptionalKeys), substitutions);
             CollectLeftovers(doc.File, content, leftoverProblems);
             var newFile = VersionedFileName(doc.File, version, usedNewFileNames);
             substituted.Add(new PublishedFile(doc.File, newFile, content, IsDocument: true, doc.Type.ToString(), doc));
         }
         foreach (var text in snapshot.UiTexts.Values.OrderBy(t => t.Key, StringComparer.Ordinal))
         {
-            var content = Substitute(text.ContentHtml, substitutions);
+            var content = Substitute(RemoveElementsForMissingOptionalKeys(text.ContentHtml, missingOptionalKeys), substitutions);
             CollectLeftovers(text.File, content, leftoverProblems);
             var newFile = VersionedFileName(text.File, version, usedNewFileNames);
             substituted.Add(new PublishedFile(text.File, newFile, content, IsDocument: false, text.Key, UiText: text));
@@ -254,6 +264,50 @@ internal static class PublishCommand
             var name = m.Value.Trim('{', '}');
             return values.TryGetValue(name, out var value) ? value : m.Value;
         });
+
+    /// <summary>The nearest containing block elements a placeholder may live in — the ones legal-drafts
+    /// actually uses for a self-contained sentence/bullet (a single &lt;li&gt; item or a standalone
+    /// &lt;p&gt;). Matched non-greedily against the SAME tag name via a backreference, on the assumption
+    /// (true of legal-drafts today, and enforced indirectly by the strict leftover scan below if it ever
+    /// stops being true) that these do not nest inside another element of the same tag name.</summary>
+    private static readonly Regex BlockElementRegex =
+        new(@"<(li|p)\b[^>]*>.*?</\1>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Drops the whole nearest &lt;li&gt;/&lt;p&gt; block for every occurrence of a missing OPTIONAL
+    /// placeholder, instead of substituting it with an empty string. Simply leaving the value blank would
+    /// produce a grammatically broken sentence ("регистрационный номер , уведомление направлено ") —
+    /// worse than not mentioning the registry entry at all, and exactly the failure mode this method
+    /// exists to prevent.
+    ///
+    /// Design choice, spelled out because it is not the only defensible one: a block is removed as soon
+    /// as it contains AT LEAST ONE missing-optional token, regardless of what else (required values,
+    /// other optional values, plain text) shares that same block. The alternative — "keep the block and
+    /// blank only the missing token" — was rejected because a block mixing an optional registry fact with
+    /// unrelated required content is a drafting decision made in legal-drafts/*.html, not something this
+    /// tool can safely second-guess: once one sentence in a bullet becomes unverifiable, the tool cannot
+    /// tell whether the REST of that bullet still reads correctly without the missing clause, so refusing
+    /// to guess and dropping the whole unit is the safer default. In the current document set every
+    /// occurrence of an optional key is already alone in its own &lt;li&gt;, so this only ever removes
+    /// self-contained bullets — but the rule is written generically because a future draft may combine
+    /// НОМЕР_УВЕДОМЛЕНИЯ_РКН and ДАТА_УВЕДОМЛЕНИЯ_РКН with a required value in one sentence, and that must
+    /// keep working the same way rather than silently blanking part of a sentence.
+    ///
+    /// This runs BEFORE <see cref="Substitute"/> and BEFORE the leftover scan: a missing optional token
+    /// that is not inside a recognized &lt;li&gt;/&lt;p&gt; is left untouched here and therefore still
+    /// survives to <see cref="CollectLeftovers"/>, which rejects publication exactly as strictly as before
+    /// — this method only ever REMOVES text, it never causes a token that should be caught to be missed.
+    /// </summary>
+    private static string RemoveElementsForMissingOptionalKeys(string html, IReadOnlyList<string> missingOptionalKeys)
+    {
+        if (missingOptionalKeys.Count == 0)
+            return html;
+
+        return BlockElementRegex.Replace(html, m =>
+            missingOptionalKeys.Any(key => m.Value.Contains("{{" + key + "}}", StringComparison.Ordinal))
+                ? string.Empty
+                : m.Value);
+    }
 
     /// <summary>One document or uiText being published, carrying everything <see cref="BuildManifestJson"/>
     /// needs directly — no later lookup by file name back into the snapshot, which would be ambiguous if

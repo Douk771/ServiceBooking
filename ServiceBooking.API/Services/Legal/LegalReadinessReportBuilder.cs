@@ -48,6 +48,19 @@ public static class LegalReadinessReportBuilder
         ["ДАТА_ВСТУПЛЕНИЯ_В_СИЛУ"] = "из манифеста",
     };
 
+    /// <summary>The 2 placeholder names contracts/cycle11/legal-values.schema.json allows to be absent
+    /// from <c>legal.values.json</c> (ARCHITECTURE_CYCLE11.md §103.3): publishing the Roskomnadzor
+    /// registry notice number is not itself a legal obligation, and the registry entry lags the notice by
+    /// up to 30 days. Kept here — not just in <c>ServiceBooking.LegalKit.PlaceholderValues</c> — because
+    /// this is the one place both `status`/readiness callers build the placeholder summary the human
+    /// reads: an absent optional value must show up as its own, clearly-labelled line in that summary
+    /// (`optional: true, valuePresent: false`) rather than as a `MissingValues` blocker, so a reader can
+    /// tell "the registry line just won't be in the published text yet" apart from "publish is broken".</summary>
+    public static readonly IReadOnlySet<string> OptionalPlaceholderKeys = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "НОМЕР_УВЕДОМЛЕНИЯ_РКН", "ДАТА_УВЕДОМЛЕНИЯ_РКН",
+    };
+
     public static LegalReadinessDocumentDto BuildDocumentReport(LegalDocument d) =>
         new(d.Type.ToString(), d.Title, d.Version, d.EffectiveFrom, d.IsDraft, d.ChangeKind.ToString(),
             d.Gate.ToString(), d.File, LegalRoutes.UrlFor(d.Type), d.ContentHash, FindPlaceholders(d.ContentHtml));
@@ -88,7 +101,8 @@ public static class LegalReadinessReportBuilder
                 g.Key, g.Sum(h => h.Count),
                 PlaceholderSources.GetValueOrDefault(g.Key, "из манифеста"),
                 g.Select(h => h.File).Distinct(StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal).ToList(),
-                ValuePresent: presentValueNames?.Contains(g.Key) ?? false))
+                ValuePresent: presentValueNames?.Contains(g.Key) ?? false,
+                Optional: OptionalPlaceholderKeys.Contains(g.Key)))
             .OrderBy(p => p.Name, StringComparer.Ordinal)
             .ToList();
     }
@@ -190,7 +204,7 @@ public record LegalReadinessUiTextDto(
 public record LegalReadinessBlockerDto(string Kind, string Detail);
 
 public record LegalReadinessPlaceholderSummaryDto(
-    string Name, int Count, string Source, List<string> Files, bool ValuePresent);
+    string Name, int Count, string Source, List<string> Files, bool ValuePresent, bool Optional);
 
 public record LegalReadinessBrokenLinkDto(string File, string Href);
 

@@ -159,6 +159,7 @@ internal static class StatusReport
         ["source"] = p.Source,
         ["files"] = new JsonArray(p.Files.Select(f => (JsonNode)f).ToArray()),
         ["valuePresent"] = p.ValuePresent,
+        ["optional"] = p.Optional,
     };
 
     private static readonly JsonSerializerOptions PrintOptions = new()

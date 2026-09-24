@@ -129,7 +129,7 @@
     "placeholderSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "count", "source", "files", "valuePresent"],
+      "required": ["name", "count", "source", "files", "valuePresent", "optional"],
       "properties": {
         "name": { "type": "string", "pattern": "^[А-ЯЁ_]+$" },
         "count": { "type": "integer", "minimum": 1, "description": "Число вхождений во всём комплекте." },
@@ -142,6 +142,10 @@
         "valuePresent": {
           "type": "boolean",
           "description": "Есть ли непустое значение в legal.values.json. Без --values всегда false: отсутствие файла значений — это отсутствие значений, а не неизвестность."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "true для НОМЕР_УВЕДОМЛЕНИЯ_РКН и ДАТА_УВЕДОМЛЕНИЯ_РКН (contracts/cycle11/legal-values.schema.json — эти два ключа не входят в required этого файла). Отсутствие значения у optional=true плейсхолдера НЕ порождает блокер MissingValues и не мешает publish: соответствующий элемент документа при публикации будет исключён целиком. Эта строка — способ увидеть тот факт заранее, до публикации, а не узнать о нём постфактум по опубликованному тексту."
         }
       }
     },

@@ -270,4 +270,107 @@ public class LegalPublishTests
             File.Delete(valuesPath);
         }
     }
+
+    // The two Roskomnadzor-registry keys are optional (ARCHITECTURE_CYCLE11.md §103.3): publish must
+    // succeed either with or without them, and — crucially — must never leave a half-filled sentence
+    // behind when they are absent. See LegalKitFixture.PrivacyHtmlWithRknBullet for the exact real
+    // sentence this guards (legal-drafts/01-privacy-policy.html line 24).
+
+    [Fact]
+    public void Publish_RknValuesPresent_KeepsTheRegistryBulletSubstituted()
+    {
+        var source = LegalKitFixture.CreateSourceDir(privacyHtml: LegalKitFixture.PrivacyHtmlWithRknBullet);
+        var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
+        var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
+        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJson());
+        try
+        {
+            LegalSourceSet.Build(source, built);
+
+            var exitCode = PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-10-05", "--effective-from", "2026-10-05"]));
+
+            exitCode.Should().Be(0);
+            var privacyHtml = File.ReadAllText(Path.Combine(outDir, "privacy.2026-10-05.html"));
+            privacyHtml.Should().Contain("регистрационный номер 00-00-000000");
+            privacyHtml.Should().Contain("уведомление направлено 01.01.2026");
+            privacyHtml.Should().Contain("bullet before").And.Contain("bullet after");
+            privacyHtml.Should().NotContain("{{");
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(built);
+            LegalKitFixture.Delete(outDir);
+            File.Delete(valuesPath);
+        }
+    }
+
+    [Fact]
+    public void Publish_RknValuesAbsent_DropsTheWholeRegistryBulletAndKeepsNeighborsIntact()
+    {
+        var source = LegalKitFixture.CreateSourceDir(privacyHtml: LegalKitFixture.PrivacyHtmlWithRknBullet);
+        var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
+        var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
+        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJsonWithoutRknKeys());
+        try
+        {
+            LegalSourceSet.Build(source, built);
+
+            var exitCode = PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-10-05", "--effective-from", "2026-10-05"]));
+
+            exitCode.Should().Be(0, "publishing without the registry number is legal (152-ФЗ doesn't require it) and must not be blocked");
+            var privacyHtml = File.ReadAllText(Path.Combine(outDir, "privacy.2026-10-05.html"));
+            privacyHtml.Should().NotContain("регистрационный номер");
+            privacyHtml.Should().NotContain("НОМЕР_УВЕДОМЛЕНИЯ_РКН");
+            privacyHtml.Should().NotContain("ДАТА_УВЕДОМЛЕНИЯ_РКН");
+            privacyHtml.Should().NotContain("{{");
+            privacyHtml.Should().Contain("bullet before").And.Contain("bullet after");
+            // The remaining <li>s stay well-formed: exactly two <li>...</li> pairs left in the list.
+            System.Text.RegularExpressions.Regex.Matches(privacyHtml, "<li>").Count.Should().Be(2);
+            System.Text.RegularExpressions.Regex.Matches(privacyHtml, "</li>").Count.Should().Be(2);
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(built);
+            LegalKitFixture.Delete(outDir);
+            File.Delete(valuesPath);
+        }
+    }
+
+    [Fact]
+    public void Publish_OnlyOneOfTwoRknValuesPresent_StillDropsTheWholeBulletRatherThanHalfSubstitutingIt()
+    {
+        var source = LegalKitFixture.CreateSourceDir(privacyHtml: LegalKitFixture.PrivacyHtmlWithRknBullet);
+        var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
+        var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
+        // Has НОМЕР_УВЕДОМЛЕНИЯ_РКН but not ДАТА_УВЕДОМЛЕНИЯ_РКН — an in-between state a real operator
+        // could plausibly have if the two facts arrive on different days.
+        var json = LegalKitFixture.ValidValuesJsonWithoutRknKeys()
+            .Replace("\"НДС_ОГОВОРКА\"", "\"НОМЕР_УВЕДОМЛЕНИЯ_РКН\": \"00-00-000000\",\n            \"НДС_ОГОВОРКА\"");
+        var valuesPath = WriteValuesFile(json);
+        try
+        {
+            LegalSourceSet.Build(source, built);
+
+            var exitCode = PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-10-05", "--effective-from", "2026-10-05"]));
+
+            exitCode.Should().Be(0);
+            var privacyHtml = File.ReadAllText(Path.Combine(outDir, "privacy.2026-10-05.html"));
+            privacyHtml.Should().NotContain("регистрационный номер", "a half-filled sentence is worse than no sentence");
+            privacyHtml.Should().NotContain("00-00-000000");
+            privacyHtml.Should().NotContain("{{");
+            privacyHtml.Should().Contain("bullet before").And.Contain("bullet after");
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(built);
+            LegalKitFixture.Delete(outDir);
+            File.Delete(valuesPath);
+        }
+    }
 }

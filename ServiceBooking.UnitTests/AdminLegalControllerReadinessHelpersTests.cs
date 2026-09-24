@@ -104,6 +104,46 @@ public class AdminLegalControllerReadinessHelpersTests
         summary.Count.Should().Be(3);
         summary.Files.Should().BeEquivalentTo(["privacy.html", "booking-notice.html"]);
         summary.ValuePresent.Should().BeFalse();
+        summary.Optional.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("НОМЕР_УВЕДОМЛЕНИЯ_РКН", true)]
+    [InlineData("ДАТА_УВЕДОМЛЕНИЯ_РКН", true)]
+    [InlineData("НАИМЕНОВАНИЕ_ОПЕРАТОРА", false)]
+    public void BuildPlaceholderSummary_MarksOnlyTheTwoRknKeysOptional(string placeholderName, bool expectedOptional)
+    {
+        var documents = new List<LegalReadinessDocumentDto>
+        {
+            new("Privacy", "T", "v1", new DateOnly(2026, 1, 1), false, "Material", "Global", "privacy.html",
+                "/privacy", "hash", [new LegalReadinessPlaceholderDto(placeholderName, 1)]),
+        };
+
+        var result = LegalReadinessReportBuilder.BuildPlaceholderSummary(documents, []);
+
+        result.Should().ContainSingle().Which.Optional.Should().Be(expectedOptional);
+    }
+
+    [Fact]
+    public void BuildPlaceholderSummary_MissingOptionalValue_IsNotAMissingValuesBlocker()
+    {
+        // An absent НОМЕР_УВЕДОМЛЕНИЯ_РКН must be visible in the placeholder summary (valuePresent=false,
+        // optional=true) but must never itself be turned into a MissingValues blocker — that would make
+        // publication wait on a fact 152-ФЗ doesn't require at all (ARCHITECTURE_CYCLE11.md §103.3).
+        var documents = new List<LegalReadinessDocumentDto>
+        {
+            new("Privacy", "T", "v1", new DateOnly(2026, 1, 1), false, "Material", "Global", "privacy.html",
+                "/privacy", "hash", [new LegalReadinessPlaceholderDto("НОМЕР_УВЕДОМЛЕНИЯ_РКН", 1)]),
+        };
+        var presentValueNames = new HashSet<string>(); // no --values file supplied → nothing is present
+
+        var placeholders = LegalReadinessReportBuilder.BuildPlaceholderSummary(documents, [], presentValueNames);
+        var blockers = LegalReadinessReportBuilder.BuildBlockers(
+            documents, [], placeholders,
+            new LegalReadinessLinksDto(0, []), new LegalReadinessAnchorsDto([]));
+
+        placeholders.Should().ContainSingle(p => p.Name == "НОМЕР_УВЕДОМЛЕНИЯ_РКН" && p.Optional && !p.ValuePresent);
+        blockers.Should().NotContain(b => b.Kind == "MissingValues");
     }
 
     [Theory]
