@@ -87,7 +87,16 @@ public record CompanyDto(
     // null = "this endpoint doesn't return the list" (catalog/list endpoints — batched cover-only lookup
     // is cheap, a full photo list per company in a 100-company page is not); [] = "no photos yet".
     // Filled ONLY on GET /api/companies/{slug} (the public page), per §109.3's zero-extra-requests rule.
-    List<CompanyPhotoDto>? Photos = null
+    List<CompanyPhotoDto>? Photos = null,
+    // ARCHITECTURE_CYCLE13.md §208/API_CONTRACT_CYCLE13.md §232 — additive, appended at the end with
+    // defaults so every existing positional CompanyDto(...) call site keeps compiling (§115 convention).
+    // null = "not computed for this caller" (anonymous/client reads, or an endpoint that doesn't bother) —
+    // NEVER "unverified"; the frontend must read addressVerification.status, not its mere presence.
+    CompanyAddressVerificationDto? AddressVerification = null,
+    // null = no point, or the point exists but may not be exposed under the current licence
+    // (AddressVerification:StoreResults=false — the shipped default). Filled ONLY on
+    // GET /api/companies/{slug}, same "one endpoint, zero extra requests" rule as Photos above.
+    GeoPointDto? AddressPoint = null
 );
 
 // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance of TermsOwner (D3) that gates company creation. Checked

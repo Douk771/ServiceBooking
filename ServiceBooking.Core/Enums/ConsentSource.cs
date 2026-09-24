@@ -17,5 +17,10 @@ public enum ConsentSource
     PhotoForm,
     HealthForm,
     Booking,
-    Migrated
+    Migrated,
+
+    // ARCHITECTURE_CYCLE13.md §220.3 (LEGAL_REVIEW.md §16.4) — the "understood, save the address"
+    // confirmation on the public-address-notice screen (POST /api/companies/address/notice). Append-only
+    // member, no migration: the underlying column is a plain int (see ConsentRecord.Source).
+    AddressForm
 }
