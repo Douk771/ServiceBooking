@@ -20,7 +20,7 @@
 > `App_Data/legal/` намеренно не тронуты.
 
 **Источники в репозитории:** `README.md`, `CURRENT_STATE.md` §3, §4.14, §4.15, §4.17, §5, §9;
-`SPEC.md` (цикл 4, ред. 6) §0.1–0.3, §2.2, §8 (US-33), §4.1 п. 7 (US-53), §9 (US-57, US-59), §15.3;
+`SPEC_CYCLE4_NOTIFICATIONS.md` (цикл 4, ред. 6 — не корневой `SPEC.md`, он занят текущим циклом) §0.1–0.3, §2.2, §8 (US-33), §4.1 п. 7 (US-53), §9 (US-57, US-59), §15.3;
 `ARCHITECTURE_CYCLE4.md` §23, §24, §31; `ServiceBooking.API/App_Data/legal/*`;
 `ServiceBooking.API/Services/Legal/*`.
 
