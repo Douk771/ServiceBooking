@@ -128,7 +128,13 @@ public sealed class MaxBotClient : IMaxBotClient, IDisposable
     {
         var client = _httpClientFactory.CreateClient("max-bot");
         client.BaseAddress = new Uri(maxOptions.ApiUrl.TrimEnd('/') + "/");
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", maxOptions.BotToken);
+        // Токен идёт в Authorization БЕЗ схемы — `Authorization: <token>`, не `Bearer <token>`.
+        // Проверено вживую 24.09.2026 на platform-api.max.ru: голый заголовок даёт 200 на GET /me,
+        // тот же токен со схемой `Bearer` — 401. Архитектура (§146.4) говорила «только заголовком
+        // Authorization», и это было прочитано как Bearer; формат подтвердить было негде, пока бота
+        // не существовало. TryAddWithoutValidation нужен потому, что HttpHeaders отказывается
+        // принимать значение без схемы через типизированное свойство Authorization.
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", maxOptions.BotToken);
         return client;
     }
 

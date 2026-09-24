@@ -33,7 +33,11 @@ public sealed class MaxBotOptions
     /// <c>subscribe</c> is built from (e.g. <c>https://ezbook.ru</c>).</summary>
     public string? PublicBaseUrl { get; set; }
 
-    public int TimeoutSeconds { get; set; } = 5;
+    // Было 5 — и этого не хватало буквально: platform-api.max.ru отвечает на /me и /subscriptions
+    // примерно за 5,15 с (замерено с боевой машины 24.09.2026, три замера подряд), поэтому каждый
+    // вызов срывался в таймаут ещё до того, как приходил ответ. 20 с даёт четырёхкратный запас и
+    // при этом не держит фоновую задачу бесконечно.
+    public int TimeoutSeconds { get; set; } = 20;
 
     /// <summary>О3 — platform-wide outgoing-call budget, enforced by <c>MaxBotClient</c>'s
     /// <c>TokenBucketRateLimiter</c>.</summary>
