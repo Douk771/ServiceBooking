@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { formatMonthlyPrice } from '../utils/pricingFormat'
 import { getBillingErrorMessage } from '../utils/billingError'
+import { STATUS_BADGE_CLASS } from './billingPageHelpers'
 
 /**
  * Owner screen "Ваша подписка" (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41. One request
@@ -18,14 +19,6 @@ import { getBillingErrorMessage } from '../utils/billingError'
  * real endpoint from the contract, so it lights up unchanged once the backend exists; until then it
  * renders the error state below (also exercised by unit tests via a mocked client).
  */
-// N23: status badge colour must reflect the actual subscription state — a green "Active" badge on
-// an expired subscription is misleading. Free is neutral, Active is success, Expired is danger.
-export const STATUS_BADGE_CLASS: Record<string, string> = {
-  Free: 'bg-cream-deep text-muted',
-  Active: 'bg-success-bg text-success',
-  Expired: 'bg-danger-bg text-danger',
-}
-
 export function BillingPage() {
   const qc = useQueryClient()
   const [requestError, setRequestError] = useState('')
