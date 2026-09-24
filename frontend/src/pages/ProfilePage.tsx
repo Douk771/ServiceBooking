@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { Link } from 'react-router-dom'
 import { AxiosError } from 'axios'
 import { format } from 'date-fns'
-import { profileApi, type ProfilePlanDto } from '../api/profile'
+import { profileApi, type ProfilePlanDto, type ProfileDto } from '../api/profile'
 import { notificationsApi } from '../api/notifications'
 import { useAuthStore } from '../store/authStore'
 import { useExportData } from '../hooks/useExportData'
@@ -16,6 +16,10 @@ import { Avatar } from '../components/ui/Avatar'
 import { PhoneInput } from '../components/ui/PhoneInput'
 import { formatPhone, isRussianPhone } from '../utils/phone'
 import { getUploadErrorMessage } from '../utils/uploadError'
+import { isPhoneChangeVerificationRequired, isPhoneChangeVerificationUnavailable } from '../utils/phoneVerificationError'
+import { usePhoneVerificationConfig } from '../hooks/usePhoneVerification'
+import { VerifyPhoneButton, type PhoneVerificationRefValue } from '../components/phoneVerification/VerifyPhoneButton'
+import { PhoneVerifiedBadge } from '../components/phoneVerification/PhoneVerifiedBadge'
 
 const roleLabel: Record<string, string> = {
   Client: 'Клиент',
@@ -134,6 +138,31 @@ function NotificationPreferencesCard() {
   )
 }
 
+/**
+ * US-12-14, T12-F6 — reused as-is; `phoneVerified` is written directly by the webhook handler once
+ * the Profile-purpose session is redeemed (§148.3), so there's no separate "confirm the session"
+ * call here: verifying just means refetching `profile` once the dialog reports `Verified`.
+ *
+ * §149.1 — three states, no fourth: verified (badge + date), unverified with the subsystem on
+ * (neutral offer), unverified with the subsystem off (renders nothing — the screen must look exactly
+ * like it did before this cycle).
+ */
+function PhoneVerificationNotice({ profile, onVerified }: { profile: ProfileDto; onVerified: () => void }) {
+  const { data: config } = usePhoneVerificationConfig()
+
+  if (profile.phoneVerified) {
+    return <PhoneVerifiedBadge verifiedAtUtc={profile.phoneVerifiedAtUtc} className="mt-2" />
+  }
+  if (!config?.enabled || !config.healthy) return null
+
+  return (
+    <div className="mt-2">
+      <p className="text-xs text-ink-soft mb-1.5">Номер ещё не подтверждён — это не обязательно, но открывает больше возможностей.</p>
+      <VerifyPhoneButton phone={profile.phone} onVerifiedChange={(ref) => ref && onVerified()} />
+    </div>
+  )
+}
+
 export function ProfilePage() {
   const { user, setAuth, token } = useAuthStore()
   const qc = useQueryClient()
@@ -213,23 +242,60 @@ export function ProfilePage() {
     reset: resetPhone,
     setError: setPhoneError,
     control: phoneControl,
+    watch: watchPhone,
     formState: { errors: phoneErrors },
   } = useForm<{
     currentPassword: string
     newPhone: string
   }>({ defaultValues: { newPhone: '' } })
+  const newPhoneValue = watchPhone('newPhone')
+
+  // US-12-17 (Р3 + Р6) — the new 409 the gate can return: the number already has guest bookings on
+  // it and needs a verified MAX session before the change can go through. `changePhoneVerification`
+  // is presented once and then cleared on success/failure — it is never persisted across page loads.
+  const [needsPhoneVerification, setNeedsPhoneVerification] = useState(false)
+  const [phoneVerificationUnavailable, setPhoneVerificationUnavailable] = useState(false)
+  const [changePhoneVerification, setChangePhoneVerification] = useState<PhoneVerificationRefValue | null>(null)
+
+  // Editing the number again after a 409 is a fresh attempt — the previous gate result no longer
+  // says anything about whatever's now in the field (VerifyPhoneButton's own effect already drops a
+  // now-mismatched session via `onVerifiedChange(null)`; this just retires the gate's own banners).
+  useEffect(() => {
+    setNeedsPhoneVerification(false)
+    setPhoneVerificationUnavailable(false)
+  }, [newPhoneValue])
 
   const phoneMut = useMutation({
-    mutationFn: (d: { currentPassword: string; newPhone: string }) =>
-      profileApi.changePhone(d.currentPassword, d.newPhone),
+    mutationFn: (d: { currentPassword: string; newPhone: string; verification?: PhoneVerificationRefValue }) =>
+      profileApi.changePhone(d.currentPassword, d.newPhone, d.verification ?? undefined),
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: ['profile'] })
       if (user && token) setAuth({ ...user, phone: updated.phone }, token)
       resetPhone()
+      setNeedsPhoneVerification(false)
+      setPhoneVerificationUnavailable(false)
+      setChangePhoneVerification(null)
       setPhoneSuccess(true)
       setTimeout(() => setPhoneSuccess(false), 3000)
     },
     onError: (err: unknown) => {
+      // US-12-17 (§169) — the two new 409 wordings are told apart by substring (same convention as
+      // `utils/authError.ts`'s two meanings of 409 on /auth/register), and drive two different UIs
+      // below the form rather than just an inline field error.
+      if (isPhoneChangeVerificationRequired(err)) {
+        setNeedsPhoneVerification(true)
+        setPhoneVerificationUnavailable(false)
+        setPhoneError('newPhone', { message: 'На этом номере уже есть записи. Подтвердите его через MAX ниже.' })
+        return
+      }
+      if (isPhoneChangeVerificationUnavailable(err)) {
+        setNeedsPhoneVerification(false)
+        setPhoneVerificationUnavailable(true)
+        setPhoneError('newPhone', { message: 'Сейчас сменить номер на этот нельзя: подтверждение номера на платформе пока не работает.' })
+        return
+      }
+      setNeedsPhoneVerification(false)
+      setPhoneVerificationUnavailable(false)
       const message =
         err instanceof AxiosError && typeof err.response?.data === 'string'
           ? err.response.data
@@ -293,6 +359,9 @@ export function ProfilePage() {
             {formatPhone(profile?.phone)}
             {profile?.email ? ` · ${profile.email}` : ''}
           </p>
+          {profile && (
+            <PhoneVerificationNotice profile={profile} onVerified={() => qc.invalidateQueries({ queryKey: ['profile'] })} />
+          )}
           <div className="flex flex-wrap gap-1.5 mt-2.5">
             {profile?.roles.map((r) => (
               <span key={r} className="text-xs font-semibold bg-cream-deep text-gold-dark px-2.5 py-1 rounded-full">
@@ -372,7 +441,10 @@ export function ProfilePage() {
       {/* Phone */}
       <Card className="p-[26px] mt-[18px]">
         <h2 className="text-[15.5px] font-semibold text-ink mb-[18px]">Смена телефона</h2>
-        <form onSubmit={hsPhone((d) => phoneMut.mutate(d))} className="flex flex-col gap-4">
+        <form
+          onSubmit={hsPhone((d) => phoneMut.mutate({ ...d, verification: changePhoneVerification ?? undefined }))}
+          className="flex flex-col gap-4"
+        >
           <Controller
             name="newPhone"
             control={phoneControl}
@@ -396,6 +468,19 @@ export function ProfilePage() {
             error={phoneErrors.currentPassword?.message}
             {...regPhone('currentPassword', { required: true })}
           />
+          {/* US-12-17 (§169) — this number already has guest bookings on it: offer the same MAX
+              verification widget, scoped to the number just typed above. §169's OTHER 409 (subsystem
+              off) gets no such offer — there is nothing to click that would actually work. */}
+          {needsPhoneVerification && (
+            <div>
+              <VerifyPhoneButton phone={newPhoneValue} onVerifiedChange={setChangePhoneVerification} />
+            </div>
+          )}
+          {phoneVerificationUnavailable && (
+            <p className="text-xs text-muted">
+              Сменить номер на этот можно будет, когда на платформе снова заработает подтверждение телефона.
+            </p>
+          )}
           {phoneSuccess && (
             <p className="text-sm text-success flex items-center gap-1.5">
               <Icon name="check" size={14} strokeWidth={2} /> Телефон изменён

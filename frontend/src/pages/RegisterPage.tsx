@@ -14,6 +14,7 @@ import { getAuthErrorMessage } from '../utils/authError'
 import { isRussianPhone } from '../utils/phone'
 import { useState } from 'react'
 import type { ConsentPurpose } from '../types'
+import { VerifyPhoneButton, type PhoneVerificationRefValue } from '../components/phoneVerification/VerifyPhoneButton'
 
 interface FormData {
   firstName: string
@@ -55,8 +56,10 @@ export function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [purposes, setPurposes] = useState<ConsentPurpose[]>([])
+  const [phoneVerificationRef, setPhoneVerificationRef] = useState<PhoneVerificationRefValue | null>(null)
   const privacyAcknowledged = watch('privacyAcknowledged')
   const termsAccepted = watch('termsAccepted')
+  const phoneValue = watch('phone')
 
   const { data: manifest, isLoading: manifestLoading, isError: manifestError, refetch } = useQuery({
     queryKey: ['legal-documents'],
@@ -84,6 +87,10 @@ export function RegisterPage() {
         password: data.password,
         email: data.email || undefined,
         legal: { privacyAcknowledgedVersion: privacy.version, termsAcceptedVersion: terms.version },
+        // US-12-01/07 — omitted entirely unless the person actually completed the MAX flow above;
+        // a session that no longer matches `phone` (edited afterwards) was already cleared by
+        // VerifyPhoneButton's own syncPhone, so there's nothing extra to check here.
+        phoneVerification: phoneVerificationRef ?? undefined,
       })
       // Signing in over a live session (a direct /login link, or registering a second account without
       // logging out) would otherwise leave the previous user's cached queries in place, and the new
@@ -182,6 +189,9 @@ export function RegisterPage() {
                     />
                   )}
                 />
+                {/* US-12-01/03 — renders nothing at all when the subsystem is off/unhealthy or the
+                    number isn't valid yet (VerifyPhoneButton decides this itself, §162). */}
+                <VerifyPhoneButton phone={phoneValue ?? ''} onVerifiedChange={setPhoneVerificationRef} />
                 <Input label="Email (необязательно)" type="email" placeholder="your@email.com" {...register('email')} />
                 <div className="flex flex-col gap-1.5">
                   <Input
