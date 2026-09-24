@@ -729,6 +729,10 @@ builder.Services.AddRateLimiter(o =>
             "phone-verify-webhook" => "Too many requests.",
             _ => "Too many uploads. Try again in a minute."
         };
+        // WriteAsync alone never sets Content-Type (unlike controller-level BadRequest(string)/Conflict(string),
+        // which set it via ASP.NET's content negotiation) — set it explicitly so 429 bodies match the
+        // "text/plain everywhere" contract (ARCHITECTURE.md §14) the same way every other 4xx body already does.
+        ctx.HttpContext.Response.ContentType = "text/plain; charset=utf-8";
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
     };
 });
