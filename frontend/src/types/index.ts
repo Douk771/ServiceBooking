@@ -1,4 +1,5 @@
 import type { components as Cycle9Components } from './api-cycle9.generated'
+import type { components as Cycle12Components } from './api-cycle12.generated'
 
 // ── Cycle 9 (ARCHITECTURE_CYCLE9.md §104, API_CONTRACT_CYCLE9.md §112): these two enums are read
 // straight off the generated schema instead of being retyped as string literals here, so a future
@@ -14,6 +15,19 @@ export type TransportOffer = Cycle9Components['schemas']['TransportOfferDto']
 export type PushConfig = Cycle9Components['schemas']['PushConfigDto']
 export type PushSubscriptionDevice = Cycle9Components['schemas']['PushSubscriptionDto']
 export type StaffPushSettings = Cycle9Components['schemas']['StaffPushSettingsDto']
+
+// API_CONTRACT_CYCLE12.md §162-§166 — platform-wide phone verification (MAX bot). Read straight off
+// the generated schema (§118 п. 1 convention) so an append-only enum member (e.g. a future failure
+// reason, or a second method once calls/SMS land) shows up as a type error at every switch that needs
+// updating, instead of silently falling through to a default branch.
+export type PhoneVerificationMethod = Cycle12Components['schemas']['PhoneVerificationMethod']
+export type PhoneVerificationStatus = Cycle12Components['schemas']['PhoneVerificationStatus']
+export type PhoneVerificationFailureReason = Cycle12Components['schemas']['PhoneVerificationFailureReason']
+export type PhoneVerificationConfig = Cycle12Components['schemas']['PhoneVerificationConfig']
+export type PhoneVerificationSessionCreated = Cycle12Components['schemas']['PhoneVerificationSessionCreated']
+export type PhoneVerificationSessionStatus = Cycle12Components['schemas']['PhoneVerificationSessionStatus']
+/** Sent back to the server at registration / change-phone time to redeem a completed session. */
+export type PhoneVerificationRef = Cycle12Components['schemas']['PhoneVerificationRef']
 
 export interface Company {
   id: string
@@ -445,6 +459,10 @@ export interface AuthResponse {
   firstName: string
   lastName: string
   roles: string[]
+  /** API_CONTRACT_CYCLE12.md §168 — false for anyone who didn't present a valid MaxBot session, or
+   *  whose session was still accepted but the per-MAX-account cap (Р5) was hit at the last moment
+   *  (registration itself is never blocked by that, US-12-01 Р1). */
+  phoneVerified: boolean
 }
 
 export interface User {
