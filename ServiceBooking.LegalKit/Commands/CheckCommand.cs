@@ -31,6 +31,8 @@ internal static class CheckCommand
 
         var unknownForms = ScanSourceForUnknownPlaceholderForms(source);
         var unaccountedFiles = LegalSourceSet.FindUnaccountedDraftFiles(source);
+        var unknownRuntimeValueNames = ScanSourceForUnknownRuntimeValueNames(source);
+        var runtimeValuesWithoutFallback = ScanSourceForRuntimeValuesWithoutFallback(source);
 
         List<string> differentFiles;
         var staging = Path.Combine(Path.GetTempPath(), "legalkit-check-" + Guid.NewGuid().ToString("N"));
@@ -89,6 +91,19 @@ internal static class CheckCommand
                 foreach (var file in unaccountedFiles) Console.Error.WriteLine($"  - {file}");
                 brokenReported = true;
             }
+            if (unknownRuntimeValueNames.Count > 0)
+            {
+                // ARCHITECTURE_CYCLE15.md §256.5 — an unrecognized data-legal-value|when|unless name
+                // (typo or a value the frontend doesn't know how to fill) fails the build.
+                Console.Error.WriteLine("Неизвестное имя в data-legal-value|when|unless (не входит в известный набор):");
+                foreach (var (file, token) in unknownRuntimeValueNames) Console.Error.WriteLine($"  - {file}: {token}");
+                brokenReported = true;
+            }
+            // §256.5 — a known name used as a bare data-legal-value with no when/unless fallback is a
+            // WARNING, not a build failure (the document remains grammatically incomplete for an
+            // unknown value, but that's an explicit, allowed authoring choice).
+            foreach (var (file, name) in runtimeValuesWithoutFallback)
+                Console.Error.WriteLine($"Предупреждение: {file} использует data-legal-value=\"{name}\" без data-legal-when/unless — текст станет неполным, если значение неизвестно.");
 
             if (brokenReported) return 6;
 
@@ -111,6 +126,34 @@ internal static class CheckCommand
             var html = File.ReadAllText(path);
             foreach (var token in PlaceholderScanner.FindUnknownForms(html))
                 found.Add((Path.GetFileName(path), token));
+        }
+        return found;
+    }
+
+    private static List<(string File, string Token)> ScanSourceForUnknownRuntimeValueNames(string source)
+    {
+        var found = new List<(string, string)>();
+        if (!Directory.Exists(source)) return found;
+
+        foreach (var path in Directory.EnumerateFiles(source, "*.html", SearchOption.TopDirectoryOnly))
+        {
+            var html = File.ReadAllText(path);
+            foreach (var token in RuntimeValueScanner.FindUnknownNames(html))
+                found.Add((Path.GetFileName(path), token));
+        }
+        return found;
+    }
+
+    private static List<(string File, string Name)> ScanSourceForRuntimeValuesWithoutFallback(string source)
+    {
+        var found = new List<(string, string)>();
+        if (!Directory.Exists(source)) return found;
+
+        foreach (var path in Directory.EnumerateFiles(source, "*.html", SearchOption.TopDirectoryOnly))
+        {
+            var html = File.ReadAllText(path);
+            foreach (var name in RuntimeValueScanner.FindValuesWithoutFallback(html))
+                found.Add((Path.GetFileName(path), name));
         }
         return found;
     }

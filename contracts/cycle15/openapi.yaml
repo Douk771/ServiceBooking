@@ -392,7 +392,7 @@ paths:
           example: BookingNotice
       responses:
         "200":
-          description: Текст найден (кешируется 5 минут — Cache-Control: public, max-age=300)
+          description: "Текст найден (кешируется 5 минут — Cache-Control: public, max-age=300)"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/LegalUiText" }
@@ -611,7 +611,7 @@ components:
         name: { type: string }
         isActive:
           type: boolean
-          description: false = «Архивный»: назначить нельзя никому.
+          description: "false = «Архивный»: назначить нельзя никому."
         isPublic:
           type: boolean
           description: |
@@ -645,4 +645,3 @@ components:
              data-legal-unless="companyName">компании, в которую вы записываетесь,</span>
             и {{НАИМЕНОВАНИЕ_ОПЕРАТОРА}} — это нужно, чтобы запись состоялась.
             <a href="/privacy">Как мы обращаемся с данными</a> · <a href="/terms">Условия</a></p>
-</content>

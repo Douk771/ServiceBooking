@@ -76,6 +76,85 @@ public sealed class StaffPushScheduler(AppDbContext db)
         }
     }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE15.md §257.6/§287.5 — queues a StaffBookingRescheduled push row for the
+    /// booking's master. Called ONLY when the caller who moved the booking has ClientOwner authority
+    /// (BookingsController.Reschedule) — staff rescheduling their own booking never reaches this method,
+    /// the same rule <see cref="OnBookingCreatedAsync"/> already applies via its creatorUserId check.
+    /// </summary>
+    /// <param name="booking">The just-rescheduled booking (already updated to its NEW date/time — same
+    /// convention as <see cref="NotificationScheduler.OnBookingRescheduledAsync"/>, called right before
+    /// this in the same transaction).</param>
+    /// <param name="serviceNames">Visit's service names, in visit order.</param>
+    /// <param name="actorUserId">The authenticated caller's own id — always the client who owns this
+    /// booking on this path, never trusted as a staff id.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task OnBookingRescheduledAsync(
+        Booking booking, IReadOnlyList<string> serviceNames, string? actorUserId, CancellationToken ct)
+    {
+        var settings = await db.CompanyNotificationSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.CompanyId == booking.CompanyId, ct);
+        var staffPushEnabled = settings?.StaffPushEnabled ?? new CompanyNotificationSettings().StaffPushEnabled;
+        if (!staffPushEnabled) return;
+
+        // Defensive mirror of OnBookingCreatedAsync's own guard: the master rescheduling their own
+        // booking (should never reach here via the ClientOwner-only call site, but the method itself
+        // must not depend on the caller getting that right) gets nothing.
+        if (actorUserId is not null && string.Equals(actorUserId, booking.MasterId, StringComparison.Ordinal))
+            return;
+
+        var subscriptions = await db.PushSubscriptions.AsNoTracking()
+            .Where(s => s.UserId == booking.MasterId).ToListAsync(ct);
+        if (subscriptions.Count == 0) return;
+
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
+        if (company is null) return;
+
+        var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, company.TimeZoneId);
+        var clientName = await ResolveClientNameAsync(booking, ct);
+        var payload = BuildRescheduledPayload(serviceNames, booking.Date, booking.StartTime, clientName, booking.Id);
+        var nowUtc = DateTime.UtcNow;
+        var expiresAtUtc = nowUtc.AddHours(1) < visitStartUtc ? nowUtc.AddHours(1) : visitStartUtc;
+
+        foreach (var subscription in subscriptions)
+        {
+            db.StaffPushNotifications.Add(new StaffPushNotification
+            {
+                Id = Guid.NewGuid(),
+                UserId = booking.MasterId,
+                CompanyId = booking.CompanyId,
+                BookingId = booking.Id,
+                SubscriptionId = subscription.Id,
+                Type = NotificationType.StaffBookingRescheduled,
+                Payload = payload,
+                Status = NotificationStatus.Pending,
+                ExpiresAtUtc = expiresAtUtc,
+                CreatedAt = nowUtc,
+                IdempotencyKey = BuildRescheduledIdempotencyKey(booking.Id, booking.MasterId, subscription.Id, booking.Date, booking.StartTime),
+            });
+        }
+    }
+
+    /// <summary>Includes the new date/time (unlike <see cref="BuildIdempotencyKey"/>'s create-only key)
+    /// so a SECOND reschedule of the same booking queues its own row instead of colliding into the
+    /// first one's idempotency key and silently vanishing.</summary>
+    public static string BuildRescheduledIdempotencyKey(Guid bookingId, string userId, Guid subscriptionId, DateOnly date, TimeOnly startTime) =>
+        $"{NotificationType.StaffBookingRescheduled}:{bookingId}:{userId}:{subscriptionId}:{date:O}:{startTime:O}";
+
+    internal static string BuildRescheduledPayload(
+        IReadOnlyList<string> serviceNames, DateOnly date, TimeOnly startTime, string clientName, Guid bookingId)
+    {
+        var services = serviceNames.Count > 0 ? string.Join(", ", serviceNames) : "услуга";
+        var body = $"{services} · перенесено на {date:dd.MM.yyyy} в {startTime:HH:mm} · {clientName}";
+        return JsonSerializer.Serialize(new
+        {
+            title = "Запись перенесена",
+            body,
+            tag = $"b-{bookingId}",
+            url = $"/my-bookings?booking={bookingId}",
+        });
+    }
+
     public static string BuildIdempotencyKey(Guid bookingId, string userId, Guid subscriptionId) =>
         $"{NotificationType.StaffBookingCreated}:{bookingId}:{userId}:{subscriptionId}";
 

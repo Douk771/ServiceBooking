@@ -8,6 +8,8 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Bookings;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Geo;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
@@ -504,6 +506,32 @@ public class CompaniesController(
             if (!BookingHorizon.TryNormalize(dto.BookingHorizonDays, out var horizonDays))
                 return BadRequest("Горизонт записи — от 1 до 365 дней");
             company.BookingHorizonDays = horizonDays;
+        }
+
+        // ARCHITECTURE_CYCLE15.md §253.4/§283 — the ONLY write path for these two fields. Order matters
+        // (§283: "если оба поля ссылок невалидны — сервер отвечает первым отказом"): Yandex is checked
+        // before 2ГИС.
+        if (dto.YandexMapsUrl is not null)
+        {
+            if (!MapLinkValidation.TryNormalize(dto.YandexMapsUrl, MapLinkService.Yandex, out var normalizedYandexUrl, out var yandexError))
+                return BadRequest(yandexError);
+            company.YandexMapsUrl = normalizedYandexUrl;
+        }
+
+        if (dto.TwoGisUrl is not null)
+        {
+            if (!MapLinkValidation.TryNormalize(dto.TwoGisUrl, MapLinkService.TwoGis, out var normalizedTwoGisUrl, out var twoGisError))
+                return BadRequest(twoGisError);
+            company.TwoGisUrl = normalizedTwoGisUrl;
+        }
+
+        // ARCHITECTURE_CYCLE15.md §252.3/§283: omitted/null leaves it untouched; 0 IS a legitimate
+        // explicit value here (unlike BookingHorizonDays's 0), so it is not special-cased.
+        if (dto.ClientRescheduleMinHours is not null)
+        {
+            if (!ClientRescheduleWindow.TryNormalize(dto.ClientRescheduleMinHours, out var minHours))
+                return BadRequest("Окно переноса — от 0 до 168 часов");
+            company.ClientRescheduleMinHours = minHours;
         }
 
         // Cycle 4 (API_CONTRACT_CYCLE4.md §31.3, US-30 p.3): city and time zone. cityChanged tracks
@@ -1006,7 +1034,8 @@ public class CompaniesController(
             c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes,
             BookingHorizon.Normalize(c.BookingHorizonDays),
             cover?.Url, cover?.ThumbnailUrl, photos,
-            addressVerification, addressPoint);
+            addressVerification, addressPoint,
+            c.YandexMapsUrl, c.TwoGisUrl, ClientRescheduleWindow.Normalize(c.ClientRescheduleMinHours));
     }
 
     // ARCHITECTURE_CYCLE10.md §109.3: one batched query for the whole page's cover photos (Position ==
