@@ -27,7 +27,8 @@ public class LegalConsentFilterTests : IDisposable
         Directory.CreateDirectory(_root);
 
         // CYCLE5-BREAKING: "Terms" is renamed to "TermsClient", and a valid manifest now needs all five
-        // document types plus all six uiTexts keys to load at all (ARCHITECTURE_CYCLE5.md §43.3). Only
+        // document types plus all six uiTexts keys to load at all (ARCHITECTURE_CYCLE5.md §43.3). Cycle
+        // 13 (§220.1) adds a seventh uiTexts key, PublicAddressNotice, under the same rule. Only
         // Privacy/TermsClient carry `gate: Global` — the only gate this filter ever enforces (§46.3).
         File.WriteAllText(Path.Combine(_root, "legal.json"), """
             {
@@ -44,7 +45,8 @@ public class LegalConsentFilterTests : IDisposable
                 { "key": "UnsubscribePage", "version": "v2", "isDraft": false, "file": "unsubscribe.html" },
                 { "key": "PhotoConsent", "version": "v2", "isDraft": false, "file": "photo-consent.html" },
                 { "key": "HealthDataConsent", "version": "v2", "isDraft": false, "file": "health-consent.html" },
-                { "key": "GuardianConfirmation", "version": "v2", "isDraft": false, "file": "guardian.html" }
+                { "key": "GuardianConfirmation", "version": "v2", "isDraft": false, "file": "guardian.html" },
+                { "key": "PublicAddressNotice", "version": "v2", "isDraft": false, "file": "public-address-notice.html" }
               ]
             }
             """);
@@ -59,6 +61,7 @@ public class LegalConsentFilterTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "photo-consent.html"), "<p>photo consent</p>");
         File.WriteAllText(Path.Combine(_root, "health-consent.html"), "<p>health consent</p>");
         File.WriteAllText(Path.Combine(_root, "guardian.html"), "<p>guardian</p>");
+        File.WriteAllText(Path.Combine(_root, "public-address-notice.html"), "<p>address notice</p>");
     }
 
     public void Dispose()
