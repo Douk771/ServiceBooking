@@ -105,6 +105,31 @@ describe('CompanyPhotoGallery — ARCHITECTURE_CYCLE13.md §204/§211 (US-131, U
     })
   })
 
+  it('moves focus to the new active slide if the old active slide (about to become aria-hidden) had it', async () => {
+    const user = userEvent.setup()
+    render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
+
+    const firstSlide = screen.getByRole('button', { name: 'Фото 1 из 3' })
+    firstSlide.focus()
+    expect(firstSlide).toHaveFocus()
+
+    await user.keyboard('{ArrowRight}')
+
+    // `firstSlide` is now `aria-hidden`/`tabIndex=-1` — focus must not be left stranded on it.
+    expect(firstSlide).not.toHaveFocus()
+    expect(slideByLabel('Фото 2 из 3')).toHaveFocus()
+  })
+
+  it('does not steal focus from elsewhere (e.g. an arrow button) when the active slide changes', async () => {
+    const user = userEvent.setup()
+    render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
+
+    const nextButton = screen.getByRole('button', { name: 'Следующее фото' })
+    await user.click(nextButton)
+
+    expect(nextButton).toHaveFocus()
+  })
+
   it('single photo: the carousel root is not in the tab order (nothing to navigate to)', () => {
     render(<CompanyPhotoGallery photos={photos(1)} companyName="Гвоздь" />)
     expect(screen.getByRole('group', { name: 'Фотографии Гвоздь' })).toHaveAttribute('tabIndex', '-1')

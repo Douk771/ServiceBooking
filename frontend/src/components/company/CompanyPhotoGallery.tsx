@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCarousel } from '../../hooks/useCarousel'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { orderPhotosForDisplay } from '../../utils/companyPhotos'
@@ -63,6 +63,18 @@ function Carousel({
 }) {
   const { index, next, prev, goTo, onKeyDown, touchHandlers } = useCarousel(photos.length)
   const single = photos.length === 1
+  const slideRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  // The slide that just became inactive gets `aria-hidden`/`tabIndex={-1}` (below) the moment `index`
+  // changes — if focus was still sitting on it (ArrowLeft/ArrowRight pressed with a slide focused),
+  // the focused element would end up hidden from the accessibility tree while still holding focus.
+  // Move focus along to the newly active slide in that case (review finding, cycle 13).
+  useEffect(() => {
+    const active = document.activeElement
+    if (active instanceof HTMLElement && slideRefs.current.includes(active) && active !== slideRefs.current[index]) {
+      slideRefs.current[index]?.focus()
+    }
+  }, [index])
 
   return (
     // `isolate` (CSS `isolation: isolate`) gives everything inside its own stacking context, so no
@@ -92,6 +104,9 @@ function Carousel({
           return (
             <button
               key={p.id}
+              ref={(el) => {
+                slideRefs.current[i] = el
+              }}
               type="button"
               className="w-full h-full shrink-0 relative"
               onClick={() => onOpenSlide(i)}
