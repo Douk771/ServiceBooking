@@ -163,6 +163,101 @@ describe('AddressVerifyField — ARCHITECTURE_CYCLE13.md §211/§220', () => {
     expect(screen.getByRole('button', { name: 'Сохранить' })).not.toBeDisabled()
   })
 
+  it('renders per-candidate warnings (e.g. CityMismatch), not just top-level ones', async () => {
+    const result: AddressLookupResultDto = {
+      outcome: 'Ok',
+      queriedAddress: 'Барнаул, Ленина 5',
+      candidates: [
+        {
+          formattedAddress: 'Россия, Новосибирская область, Ленина, 5',
+          precision: 'House',
+          cityName: 'Новосибирск',
+          point: null,
+          warnings: [{ code: 'CityMismatch', message: 'Адрес найден в другом городе — проверьте часовой пояс.' }],
+        },
+      ],
+      warnings: [],
+      attribution: '© Яндекс',
+    }
+    lookup.mockResolvedValue(result)
+    const user = userEvent.setup()
+    render(
+      <AddressVerifyField
+        companyId="c1"
+        initialAddress="Ленина 5"
+        addressVerification={{ available: true, status: 'Unverified', verifiedAt: null, precision: null }}
+        onSaved={vi.fn()}
+      />,
+      { wrapper },
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Проверить адрес' }))
+    expect(await screen.findByText('Адрес найден в другом городе — проверьте часовой пояс.')).toBeInTheDocument()
+  })
+
+  it('after a save with outcome Unavailable: shows the outcome message and offers a retry button even though the text is unchanged', async () => {
+    confirmNotice.mockResolvedValue({ version: 'v1', acknowledgedAt: '2026-09-24T10:00:00Z' })
+    saveAddress.mockResolvedValue({
+      company: stubCompany(),
+      verification: {
+        outcome: 'Unavailable',
+        status: 'Unverified',
+        verifiedAt: null,
+        precision: null,
+        warnings: [],
+        attribution: '',
+      },
+    })
+    const user = userEvent.setup()
+    render(
+      <AddressVerifyField
+        companyId="c1"
+        initialAddress="Ленина 5"
+        addressVerification={{ available: true, status: 'Unverified', verifiedAt: null, precision: null }}
+        onSaved={vi.fn()}
+      />,
+      { wrapper },
+    )
+
+    await user.type(screen.getByLabelText('Адрес'), ', 7')
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await user.click(await screen.findByRole('button', { name: 'Понятно, сохранить адрес' }))
+
+    await waitFor(() => expect(saveAddress).toHaveBeenCalled())
+    expect(
+      await screen.findByText('Карта временно недоступна. Адрес сохранён, но не подтверждён — можно повторить проверку позже.'),
+    ).toBeInTheDocument()
+    // The field's live value now equals `initialAddress` again (save reset `dirty`), yet a retry
+    // affordance must still be present — this is the "no way to retry" gap the review flagged.
+    expect(screen.getByRole('button', { name: 'Повторить проверку' })).toBeInTheDocument()
+  })
+
+  it('after a save with outcome Ok: no outcome message, no lingering retry button', async () => {
+    confirmNotice.mockResolvedValue({ version: 'v1', acknowledgedAt: '2026-09-24T10:00:00Z' })
+    saveAddress.mockResolvedValue({
+      company: stubCompany(),
+      verification: { outcome: 'Ok', status: 'Verified', verifiedAt: '2026-09-24T10:00:00Z', precision: 'House', warnings: [], attribution: '© Яндекс' },
+    })
+    const user = userEvent.setup()
+    render(
+      <AddressVerifyField
+        companyId="c1"
+        initialAddress="Ленина 5"
+        addressVerification={{ available: true, status: 'Unverified', verifiedAt: null, precision: null }}
+        onSaved={vi.fn()}
+      />,
+      { wrapper },
+    )
+
+    await user.type(screen.getByLabelText('Адрес'), ', 7')
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await user.click(await screen.findByRole('button', { name: 'Понятно, сохранить адрес' }))
+
+    await waitFor(() => expect(saveAddress).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Повторить проверку' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Сохранить' })).not.toBeInTheDocument()
+  })
+
   it('end to end: edit, save, confirm the notice — saveAddress is called with the new text and verify=available', async () => {
     confirmNotice.mockResolvedValue({ version: 'v1', acknowledgedAt: '2026-09-24T10:00:00Z' })
     saveAddress.mockResolvedValue({

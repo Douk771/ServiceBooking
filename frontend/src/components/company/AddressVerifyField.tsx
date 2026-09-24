@@ -4,7 +4,22 @@ import { companyAddressApi } from '../../api/companyAddress'
 import { PublicAddressNotice } from './PublicAddressNotice'
 import { Input } from '../ui/Input'
 import { Button } from '../ui/Button'
-import type { AddressCandidateDto, AddressLookupResultDto, Company, CompanyAddressVerificationDto } from '../../types'
+import type {
+  AddressCandidateDto,
+  AddressLookupResultDto,
+  Company,
+  CompanyAddressVerificationDto,
+  CompanyAddressVerificationResultDto,
+} from '../../types'
+
+// §237 — the server-composed copy for `verification.outcome`, shown next to the field after a save.
+// `Ok`/`Disabled` need no extra line here: `Ok` is covered by the "Подтверждён по карте …" status
+// derived from `addressVerification` once the parent refetches, and `Disabled` means the switch is
+// off, i.e. this whole block is never reached (`available` is false).
+const OUTCOME_MESSAGE: Partial<Record<CompanyAddressVerificationResultDto['outcome'], string>> = {
+  Empty: 'Карта не нашла такой адрес. Адрес сохранён, но не подтверждён.',
+  Unavailable: 'Карта временно недоступна. Адрес сохранён, но не подтверждён — можно повторить проверку позже.',
+}
 
 interface Props {
   companyId: string
@@ -32,6 +47,7 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
   const [dirty, setDirty] = useState(false)
   const [showNotice, setShowNotice] = useState(false)
   const [lookupResult, setLookupResult] = useState<AddressLookupResultDto | null>(null)
+  const [saveVerification, setSaveVerification] = useState<CompanyAddressVerificationResultDto | null>(null)
   const [saveError, setSaveError] = useState('')
 
   // §237 — the ONLY correct source for "show the verify button": `company.addressVerification
@@ -39,10 +55,21 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
   // means "ordinary address field, as before the cycle" — no button, no status, no candidates.
   const available = addressVerification?.available === true
   const warningsId = `${inputId}-warnings`
+  const saveWarningsId = `${inputId}-save-warnings`
+  const describedBy =
+    [
+      lookupResult && lookupResult.warnings.length > 0 ? warningsId : null,
+      saveVerification && saveVerification.warnings.length > 0 ? saveWarningsId : null,
+    ]
+      .filter(Boolean)
+      .join(' ') || undefined
 
   const lookupMut = useMutation({
     mutationFn: () => companyAddressApi.lookup({ address: value, cityId, companyId }),
-    onSuccess: setLookupResult,
+    onSuccess: (r) => {
+      setSaveVerification(null)
+      setLookupResult(r)
+    },
   })
 
   const saveMut = useMutation({
@@ -51,6 +78,11 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
       setSaveError('')
       setDirty(false)
       setLookupResult(null)
+      // §237 — `verification.outcome` + `verification.warnings[].message` is what tells the owner
+      // WHY the save didn't end in "Подтверждён": surface it here rather than discarding it, since
+      // `addressVerification` on the refreshed `company` only carries the terminal status/precision,
+      // not the per-attempt outcome or warnings that produced it.
+      setSaveVerification(result.verification)
       onSaved(result.company)
     },
     // §234 — this call never 4xx/5xx's on the map being unreachable (`outcome: "Unavailable"` in a
@@ -62,6 +94,7 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
     setValue(v)
     setDirty(v !== initialAddress)
     setLookupResult(null)
+    setSaveVerification(null)
     setSaveError('')
   }
 
@@ -72,6 +105,7 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
     // списком вариантов, пока варианты на экране", and picking one is how a person actually reads it.
     setValue(c.formattedAddress)
     setDirty(c.formattedAddress !== initialAddress)
+    setSaveVerification(null)
     setSaveError('')
   }
 
@@ -82,7 +116,7 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
         label="Адрес"
         value={value}
         onChange={(e) => handleChange(e.target.value)}
-        aria-describedby={lookupResult && lookupResult.warnings.length > 0 ? warningsId : undefined}
+        aria-describedby={describedBy}
       />
 
       {available && !dirty && (
@@ -106,9 +140,12 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
             Проверить адрес
           </Button>
         )}
-        {dirty && (
+        {/* Also offered when the address text hasn't changed but the last save didn't confirm it
+            (`Empty`/`Unavailable`) — otherwise there is no way to retry a lookup-less save once the
+            field settles back to `initialAddress` (review finding, cycle 13). */}
+        {(dirty || (saveVerification && saveVerification.outcome !== 'Ok')) && (
           <Button type="button" size="sm" loading={saveMut.isPending} onClick={() => setShowNotice(true)}>
-            Сохранить
+            {dirty ? 'Сохранить' : 'Повторить проверку'}
           </Button>
         )}
       </div>
@@ -119,9 +156,9 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
         // "second version of the copy drifts from the server's" trap the convention exists to avoid).
         <div className="rounded-xl border border-line bg-cream-deep/40 p-3 flex flex-col gap-2 text-xs">
           {lookupResult.candidates.length > 0 && (
-            <ul className="flex flex-col gap-1">
+            <ul className="flex flex-col gap-2">
               {lookupResult.candidates.map((c, i) => (
-                <li key={i}>
+                <li key={i} className="flex flex-col gap-0.5">
                   <button
                     type="button"
                     className="text-left text-gold-dark hover:text-gold-darker hover:underline"
@@ -129,6 +166,15 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
                   >
                     {c.formattedAddress}
                   </button>
+                  {/* Per-candidate warnings (precision, city mismatch) — separate from the top-level
+                      `lookupResult.warnings` below, which cover the request as a whole. */}
+                  {c.warnings.length > 0 && (
+                    <ul className="flex flex-col gap-0.5 text-warning">
+                      {c.warnings.map((w, wi) => (
+                        <li key={wi}>{w.message}</li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               ))}
             </ul>
@@ -144,6 +190,21 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
             <p className="text-muted">{lookupResult.attribution}</p>
           )}
         </div>
+      )}
+
+      {/* §237 — what the save actually resulted in: for `Empty`/`Unavailable` this is the only place
+          the owner learns the address was saved but not confirmed, and why. `Ok` needs no extra line
+          (covered by the "Подтверждён по карте …" status above once the parent refetches); `Disabled`
+          can't happen here (`available` gates this whole block). */}
+      {saveVerification && OUTCOME_MESSAGE[saveVerification.outcome] && (
+        <p className="text-xs text-warning">{OUTCOME_MESSAGE[saveVerification.outcome]}</p>
+      )}
+      {saveVerification && saveVerification.warnings.length > 0 && (
+        <ul id={saveWarningsId} className="flex flex-col gap-1 text-xs text-warning">
+          {saveVerification.warnings.map((w, i) => (
+            <li key={i}>{w.message}</li>
+          ))}
+        </ul>
       )}
 
       {saveError && <p className="text-xs text-danger">{saveError}</p>}
