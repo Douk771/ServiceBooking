@@ -27,6 +27,14 @@ function lightboxImg() {
   return screen.getByRole('button', { name: 'Закрыть' }).parentElement!.querySelector('img')!
 }
 
+// `aria-hidden="true"` (set on the currently off-screen slides, see review finding below) makes the
+// accessible NAME of the element itself compute to `""` — not just its role query visibility — so a
+// name-filtered `getByRole` can never find them, `hidden: true` or not. Reach them by their
+// `aria-label` attribute directly instead, the way a plain DOM query would.
+function slideByLabel(label: string): HTMLElement {
+  return screen.getAllByRole('button', { hidden: true }).find((el) => el.getAttribute('aria-label') === label)!
+}
+
 describe('CompanyPhotoGallery — ARCHITECTURE_CYCLE13.md §204/§211 (US-131, US-141…US-143)', () => {
   it('renders a plain placeholder, no technical text, when there are no photos', () => {
     render(<CompanyPhotoGallery photos={[]} companyName="Гвоздь" />)
@@ -59,7 +67,7 @@ describe('CompanyPhotoGallery — ARCHITECTURE_CYCLE13.md §204/§211 (US-131, U
       await user.click(next)
     }
     // The last photo (by display order — cover first, then position) is now the active/eager slide.
-    const activeImg = screen.getAllByRole('img').find((img) => img.getAttribute('loading') === 'eager')
+    const activeImg = screen.getAllByRole('img', { hidden: true }).find((img) => img.getAttribute('loading') === 'eager')
     expect(activeImg).toHaveAttribute('src', all[9].url)
   })
 
@@ -73,8 +81,33 @@ describe('CompanyPhotoGallery — ARCHITECTURE_CYCLE13.md §204/§211 (US-131, U
     await user.click(screen.getByRole('button', { name: 'Показать фото 3' }))
     expect(screen.queryByRole('button', { name: 'Закрыть' })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Фото 1 из 3' }))
+    // Slide 1 is currently off-screen (`translateX`'d out of view) and, per the a11y fix below, out
+    // of the accessibility tree too (its own `aria-hidden="true"` — not just ancestor CSS — zeroes
+    // out its accessible name, so it must be reached by attribute, not by `getByRole(..., {name})`).
+    await user.click(slideByLabel('Фото 1 из 3'))
     expect(screen.getByRole('button', { name: 'Закрыть' })).toBeInTheDocument()
+  })
+
+  it('only the active slide is reachable by keyboard/screen reader; the rest are tabIndex=-1 and aria-hidden', () => {
+    render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
+    const allSlides = ['Фото 1 из 3', 'Фото 2 из 3', 'Фото 3 из 3'].map(slideByLabel)
+    expect(allSlides).toHaveLength(3)
+
+    const active = screen.getByRole('button', { name: 'Фото 1 из 3' }) // findable by name: not aria-hidden
+    expect(active).toHaveAttribute('tabIndex', '0')
+    expect(active).toHaveAttribute('aria-hidden', 'false')
+
+    const hidden = allSlides.filter((el) => el !== active)
+    expect(hidden).toHaveLength(2)
+    hidden.forEach((el) => {
+      expect(el).toHaveAttribute('tabIndex', '-1')
+      expect(el).toHaveAttribute('aria-hidden', 'true')
+    })
+  })
+
+  it('single photo: the carousel root is not in the tab order (nothing to navigate to)', () => {
+    render(<CompanyPhotoGallery photos={photos(1)} companyName="Гвоздь" />)
+    expect(screen.getByRole('group', { name: 'Фотографии Гвоздь' })).toHaveAttribute('tabIndex', '-1')
   })
 
   it('opens a full-size lightbox on click and closes it on Escape', async () => {
@@ -103,7 +136,7 @@ describe('CompanyPhotoGallery — ARCHITECTURE_CYCLE13.md §204/§211 (US-131, U
     const user = userEvent.setup()
     render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
     const root = screen.getByRole('group', { name: 'Фотографии Гвоздь' })
-    const active = () => screen.getAllByRole('img').find((img) => img.getAttribute('loading') === 'eager')!
+    const active = () => screen.getAllByRole('img', { hidden: true }).find((img) => img.getAttribute('loading') === 'eager')!
 
     root.focus()
     expect(active()).toHaveAttribute('src', '/uploads/companies/p0.jpg')
@@ -120,7 +153,7 @@ describe('CompanyPhotoGallery — ARCHITECTURE_CYCLE13.md §204/§211 (US-131, U
     vi.useFakeTimers()
     try {
       render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
-      const active = () => screen.getAllByRole('img').find((img) => img.getAttribute('loading') === 'eager')!
+      const active = () => screen.getAllByRole('img', { hidden: true }).find((img) => img.getAttribute('loading') === 'eager')!
       expect(active()).toHaveAttribute('src', '/uploads/companies/p0.jpg')
       vi.advanceTimersByTime(10_000)
       expect(active()).toHaveAttribute('src', '/uploads/companies/p0.jpg')
@@ -131,7 +164,7 @@ describe('CompanyPhotoGallery — ARCHITECTURE_CYCLE13.md §204/§211 (US-131, U
 
   it('uses eager loading only for the active slide, lazy for its neighbours, and the company name as alt text', () => {
     render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
-    const images = screen.getAllByRole('img')
+    const images = screen.getAllByRole('img', { hidden: true })
     expect(images).toHaveLength(3) // active + both (wrap-aware) neighbours, all within the preload window
     const eager = images.filter((img) => img.getAttribute('loading') === 'eager')
     const lazy = images.filter((img) => img.getAttribute('loading') === 'lazy')

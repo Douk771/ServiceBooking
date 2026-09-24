@@ -72,7 +72,7 @@ function Carousel({
     // is "never add one here" precisely so that stays true).
     <div
       className="relative isolate h-[280px] overflow-hidden rounded-[18px] bg-cream-deep"
-      tabIndex={0}
+      tabIndex={single ? -1 : 0}
       role="group"
       aria-roledescription="карусель"
       aria-label={`Фотографии ${companyName}`}
@@ -96,6 +96,12 @@ function Carousel({
               className="w-full h-full shrink-0 relative"
               onClick={() => onOpenSlide(i)}
               aria-label={`Фото ${i + 1} из ${photos.length}`}
+              // Only the active slide is visible (the track is `translateX`'d out of view for the
+              // rest) — keep the other 1..N-1 buttons out of both tab order and the accessibility
+              // tree so keyboard/screen-reader users don't step through invisible slides (review
+              // finding, cycle 13). The arrows/indicators below remain the way to reach them.
+              tabIndex={i === index ? 0 : -1}
+              aria-hidden={i !== index}
             >
               {inWindow && (
                 <img
