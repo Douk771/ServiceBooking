@@ -694,7 +694,7 @@ export function MembersTab({ companyId }: { companyId: string }) {
 
 // ── Settings tab ──────────────────────────────────────────────────────────────
 
-function SettingsTab({ companyId }: { companyId: string }) {
+export function SettingsTab({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
   const { data: companies } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
   const company = companies?.find((c) => c.id === companyId)
@@ -703,7 +703,7 @@ function SettingsTab({ companyId }: { companyId: string }) {
   const {
     register,
     handleSubmit,
-    formState: { isDirty },
+    formState: { dirtyFields },
   } = useForm({
     values: company
       ? {
@@ -723,6 +723,12 @@ function SettingsTab({ companyId }: { companyId: string }) {
     // into THIS form but not yet submitted (review finding, cycle 13).
     resetOptions: { keepDirtyValues: true },
   })
+  // react-hook-form's `keepDirtyValues` resync keeps `dirtyFields` accurate but force-resets
+  // `isDirty` to `false` on every resync regardless of actual pending edits (known RHF quirk —
+  // `Ue`'s `isDirty` branch ignores `keepDirtyValues`, only `dirtyFields` respects it). Deriving
+  // "has unsaved edits" from `dirtyFields` instead avoids the submit button going stale-disabled
+  // right after a concurrent `my-companies` refetch (review finding, cycle 13).
+  const isDirty = Object.keys(dirtyFields).length > 0
 
   const [settingsError, setSettingsError] = useState('')
 
