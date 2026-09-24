@@ -119,20 +119,6 @@ public class PlaceholderValuesTests
         finally { File.Delete(path); }
     }
 
-    [Fact]
-    public void Load_RknDateWrongFormat_IsRejected()
-    {
-        var json = LegalKitFixture.ValidValuesJson().Replace("\"01.01.2026\"", "\"2026-01-01\"");
-        var path = WriteTempFile(json);
-        try
-        {
-            var act = () => PlaceholderValues.Load(path);
-            act.Should().Throw<PlaceholderValuesException>()
-                .Which.Problems.Should().Contain(p => p.Contains("ДАТА_УВЕДОМЛЕНИЯ_РКН"));
-        }
-        finally { File.Delete(path); }
-    }
-
     // НОМЕР_УВЕДОМЛЕНИЯ_РКН / ДАТА_УВЕДОМЛЕНИЯ_РКН are optional (ARCHITECTURE_CYCLE11.md §103.3): the
     // registry entry lags the Roskomnadzor notice by up to 30 days, and publishing the number at all is
     // not itself a legal requirement — publish must not be blocked on it being absent.

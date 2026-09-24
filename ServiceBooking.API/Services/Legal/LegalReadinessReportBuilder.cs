@@ -32,9 +32,9 @@ public static class LegalReadinessReportBuilder
     /// back to "из манифеста", the schema's own bucket for "we don't know the real source".</summary>
     public static readonly IReadOnlyDictionary<string, string> PlaceholderSources = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["НАИМЕНОВАНИЕ_ОПЕРАТОРА"] = "ЕГРЮЛ",
-        ["ИНН_ОПЕРАТОРА"] = "ЕГРЮЛ",
-        ["ЮРИДИЧЕСКИЙ_АДРЕС"] = "ЕГРЮЛ",
+        ["НАИМЕНОВАНИЕ_ОПЕРАТОРА"] = "из реквизитов оператора",
+        ["ИНН_ОПЕРАТОРА"] = "из реквизитов оператора",
+        ["ЮРИДИЧЕСКИЙ_АДРЕС"] = "из реквизитов оператора",
         ["НОМЕР_УВЕДОМЛЕНИЯ_РКН"] = "после уведомления РКН",
         ["ДАТА_УВЕДОМЛЕНИЯ_РКН"] = "после уведомления РКН",
         ["ПОЧТОВЫЙ_АДРЕС"] = "решение заказчика",
