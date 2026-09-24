@@ -1,0 +1,1260 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 9, РЕДАКЦИЯ 1.
+# (MAX как второй транспорт, режим доставки, Web Push мастеру, публичный каталог с фильтром по городу).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ ИНТЕРФЕЙСА. Человекочитаемое объяснение смысла и правил —
+# API_CONTRACT_CYCLE9.md; решения и обоснования — ARCHITECTURE_CYCLE9.md. При расхождении прав этот файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle9/openapi.yaml --port 4010
+#             npx openapi-typescript contracts/cycle9/openapi.yaml -o frontend/src/types/api-cycle9.generated.ts
+#   QA        schemathesis run contracts/cycle9/openapi.yaml --base-url http://localhost:5000 --checks all
+#             npx @redocly/cli lint contracts/cycle9/openapi.yaml
+#
+# Здесь описаны ТОЛЬКО эндпоинты, которые цикл 9 добавляет или меняет. Остальной API —
+# в API_DOCUMENTATION.md и контрактах циклов 3-8 (contracts/cycle7/openapi.yaml,
+# contracts/cycle8/servicebooking-invariant.openapi.yaml, openapi-cycle6.yaml).
+
+info:
+  title: ServiceBooking API — цикл 9 (MAX, режим доставки, Web Push, города)
+  version: "6.0.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase в JSON; enum — строками; DateTime — ISO-8601 UTC; DateOnly — YYYY-MM-DD;
+      * тела осознанных ошибок 400/402/409/429 — ГОЛАЯ СТРОКА (text/plain) по-русски;
+      * 401 и 403 — ПУСТОЕ тело; ProblemDetails не используется (кроме необработанных 500);
+      * 451 Unavailable For Legal Reasons — «требуется принять новую редакцию документов»;
+        все неанонимные маршруты этого файла по умолчанию ЗАКРЫТЫ гейтом, в allow-list не вносится ни один;
+      * 402 Payment Required — «упёрлись в тариф». НИ ОДИН маршрут Web Push не отдаёт 402:
+        push бесплатен и тарифом не гейтится (SPEC П6).
+
+    ВСЁ, ЧТО ДОБАВЛЯЕТ ЦИКЛ 9 В HTTP, — АДДИТИВНО. Два ломающих изменения существуют, но они НЕ в HTTP:
+      1) схема: ChannelCompanyAssignment получает Transport, уникальность становится (CompanyId, Transport)
+         — ARCHITECTURE_CYCLE9.md §104.3;
+      2) внутренний инвариант: OutboundNotification.IdempotencyKey получает транспорт в составе ключа
+         — ARCHITECTURE_CYCLE9.md §104.5.
+
+    РУБИЛЬНИКИ ВЫПУСКА ЦИКЛ НЕ ПЕРЕВОДИТ: AllowNotificationChannel=false, цена опции не задана,
+    Notifications:Provider=logging, Notifications:StaffPush:Provider=logging, pricing.public-enabled=false.
+
+servers:
+  - url: /api
+    description: Тот же base URL, что у axios-инстанса фронта (frontend/src/api/client.ts).
+
+tags:
+  - name: companies-public
+    description: Публичный каталог компаний с серверным фильтром по городу (US-115).
+  - name: notification-channels
+    description: Каналы уведомлений владельца; цикл 9 добавляет второй транспорт (US-119, US-121).
+  - name: company-notifications
+    description: Настройки уведомлений компании; цикл 9 добавляет режим доставки (US-125).
+  - name: push
+    description: Web Push мастеру — подписки устройств и конфигурация (US-116, US-118, US-123).
+  - name: company-push
+    description: Настройка компании «уведомлять сотрудников» (US-117). Тарифом НЕ гейтится.
+  - name: webhooks
+    description: Вебхуки статусов доставки от провайдера, по транспорту (US-120).
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+  # ПРОХОД A — публичный каталог с фильтром по городу
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /companies/public:
+    get:
+      tags: [companies-public]
+      operationId: getPublicCompanies
+      summary: Публичный каталог компаний (US-115)
+      description: |
+        АНОНИМНЫЙ. Заменяет для главной страницы GET /api/companies, который ОСТАЁТСЯ и НЕ МЕНЯЕТСЯ.
+
+        Фильтрация по городу, поиск по названию/адресу и ограничение объёма считаются НА СЕРВЕРЕ, в SQL.
+        Скачивание всего списка с последующей фильтрацией в браузере считается регрессом (SPEC §5, §6).
+
+        Правила видимости НЕ МЕНЯЮТСЯ: компания попадает в выдачу при isActive И showInPublicListing
+        И allowPublicListing действующего тарифа. Город видимости не добавляет и не отнимает.
+        Компания без города (cityId = null) попадает ТОЛЬКО во «Все города».
+
+        Несуществующий cityId даёт ПУСТУЮ СТРАНИЦУ, а не 404: публичный каталог не подтверждает
+        существование справочных записей.
+      security: []
+      parameters:
+        - name: cityId
+          in: query
+          required: false
+          description: |
+            Не передан или пуст → «Все города». Нечисловое значение (например, cityId=abc) — 400
+            (автоматическая проверка модели [ApiController], тело — голая строка по правилам этого
+            файла, НЕ ProblemDetails): это ошибка формата запроса, а не значение фильтра, и отличается
+            от «несуществующий, но числовой cityId», который отдаёт пустую страницу, а не 400.
+
+            `minimum: 1` не отвергается 400-м: cityId=0 и отрицательные значения — числа, поэтому
+            проходят проверку модели и трактуются как «несуществующий, но числовой cityId» — пустая
+            страница, тем же приёмом, каким pageSize и search клампятся/поглощаются, а не отвергаются.
+          schema: { type: integer, format: int32, minimum: 1 }
+        - name: search
+          in: query
+          required: false
+          description: |
+            Подстрока по названию ИЛИ адресу, регистронезависимо. Комбинируется с cityId через «и».
+            Длиннее 200 символов — НЕ отвергается 400-м: обрезается сервером до 200 символов перед
+            поиском, тем же приёмом, каким pageSize клампится, а не отвергается.
+            Ограничение намеренно НЕ выражено через maxLength: этим ключевым словом строгий
+            потребитель схемы отверг бы запрос, который сервер принимает и обслуживает.
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          description: Клампится к [1,100], а не отвергается 400-м.
+          schema: { type: integer, format: int32, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Страница каталога. Порядок — по name, затем по id (устойчивый).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedCompanyDto" }
+        "400": { $ref: "#/components/responses/BadRequestText" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+  # ПРОХОД B — MAX и режим доставки
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /notification-channels/offer:
+    get:
+      tags: [notification-channels]
+      operationId: getChannelOffer
+      summary: Что предлагается владельцу (расширено полем transports)
+      description: |
+        ИЗМЕНЕНО АДДИТИВНО: добавлен массив transports[].
+
+        ⚠️ riskText/riskVersion теперь берутся из документа ChannelRiskNotice (LegalDocumentProvider),
+        а не из константы Services/NotificationRiskText.cs, которая УДАЛЯЕТСЯ (ARCHITECTURE_CYCLE9.md §104.8).
+        Следствие: riskVersion изменит значение после выката, и владельцы принимают текст о рисках заново.
+      responses:
+        "200":
+          description: Предложение.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelOfferDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /notification-channels:
+    get:
+      tags: [notification-channels]
+      operationId: listNotificationChannels
+      summary: Каналы владельца (в элементе появилось transport)
+      responses:
+        "200":
+          description: |
+            Список каналов, ЗАВЁРНУТЫЙ в объект — не голый массив.
+            Реализация отдаёт ChannelListDto ({ channels: [...] }), и фронт читает именно её;
+            схема раньше объявляла массив, что расходилось с обеими сторонами.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channels]
+                properties:
+                  channels:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChannelDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+    post:
+      tags: [notification-channels]
+      operationId: requestNotificationChannel
+      summary: Заявка на канал (US-119; добавлено необязательное transport)
+      description: |
+        АДДИТИВНО: поле transport необязательно, отсутствие означает "WhatsApp" — старый клиент
+        продолжает работать без изменений.
+
+        409 означает «у аккаунта уже есть канал ЭТОГО транспорта в живом состоянии». Раньше это означало
+        «уже есть канал вообще» — инвариант расширен транспортом (ARCHITECTURE_CYCLE9.md §104.3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChannelRequestInput" }
+      responses:
+        "201":
+          description: Заявка принята.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelDto" }
+        "400": { $ref: "#/components/responses/BadRequestText" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/PaymentRequired" }
+        "409": { $ref: "#/components/responses/ConflictText" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /notification-channels/{id}:
+    get:
+      tags: [notification-channels]
+      operationId: getNotificationChannel
+      summary: Карточка канала (появилось transport)
+      parameters:
+        - $ref: "#/components/parameters/ChannelId"
+      responses:
+        "200":
+          description: Канал.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFoundEmpty" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /notification-channels/{id}/companies:
+    post:
+      tags: [notification-channels]
+      operationId: assignCompanyToChannel
+      summary: Назначить компанию на канал
+      description: |
+        ИНВАРИАНТ ИЗМЕНИЛСЯ: компания может быть назначена максимум на ОДИН канал КАЖДОГО транспорта,
+        а не на один канал вообще. Держится уникальным индексом (CompanyId, Transport), а не проверкой
+        в контроллере. Подключение MAX не трогает и не отвязывает существующий WhatsApp-канал.
+      parameters:
+        - $ref: "#/components/parameters/ChannelId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [companyId]
+              properties:
+                companyId: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Назначено.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChannelDto" }
+        "400": { $ref: "#/components/responses/BadRequestText" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ForbiddenEmpty" }
+        "404": { $ref: "#/components/responses/NotFoundEmpty" }
+        "409":
+          description: Компания уже назначена на другой канал ТОГО ЖЕ транспорта.
+          content:
+            text/plain:
+              schema: { type: string }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /companies/{companyId}/notification-settings:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+    get:
+      tags: [company-notifications]
+      operationId: getNotificationSettings
+      summary: Настройки уведомлений компании (добавлен режим доставки)
+      responses:
+        "200":
+          description: Настройки.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationSettingsDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ForbiddenEmpty" }
+        "404": { $ref: "#/components/responses/NotFoundEmpty" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+    put:
+      tags: [company-notifications]
+      operationId: updateNotificationSettings
+      summary: Сохранить настройки, включая режим доставки (US-125)
+      description: |
+        ⚠️ ЭТОТ МАРШРУТ БЫЛ И ОСТАЁТСЯ ТАРИФНО ГЕЙТЯЩИМСЯ (402 «Недоступно на вашем тарифе» /
+        «Канал не оплачен»). Именно поэтому бесплатная настройка Web Push живёт в ОТДЕЛЬНОМ маршруте
+        /companies/{companyId}/staff-push-settings (ARCHITECTURE_CYCLE9.md §105.4).
+
+        Режим применяется В МОМЕНТ ПОСТАНОВКИ В ОЧЕРЕДЬ: уже поставленные сообщения адресата не меняют.
+        Отписка (NotificationOptOut) СИЛЬНЕЕ режима: отписавшийся номер не получает ничего ни в одном
+        транспорте.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateNotificationSettingsInput" }
+      responses:
+        "200":
+          description: Сохранено.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationSettingsDto" }
+        "400":
+          description: |
+            Голая строка по-русски. Причины цикла 9: priorityTransport не входит в connectedTransports;
+            нераспознанное значение deliveryMode/priorityTransport. Прежние причины без изменений.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/PaymentRequired" }
+        "403": { $ref: "#/components/responses/ForbiddenEmpty" }
+        "404": { $ref: "#/components/responses/NotFoundEmpty" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /companies/{companyId}/notifications:
+    get:
+      tags: [company-notifications]
+      operationId: getNotificationLog
+      summary: Журнал доставки (добавлены поле transport и фильтр по нему)
+      description: |
+        В режиме AllChannels одно событие даёт НЕСКОЛЬКО строк — по одной на транспорт, с одинаковым
+        bookingId и type. Владелец не должен решать, что клиента уведомили дважды по ошибке: экран
+        группирует их по событию.
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+        - name: transport
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/NotificationTransport" }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Страница журнала.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedNotificationLogItemDto" }
+        "400":
+          description: |
+            Нераспознанное значение `?transport=` — автоматическая проверка модели `[ApiController]`,
+            голая строка по-русски (та же форма, что и у остальных 400 в этом документе).
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ForbiddenEmpty" }
+        "404":
+          description: Компании с таким companyId нет.
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /admin/notification-channels:
+    get:
+      tags: [notification-channels]
+      operationId: adminListNotificationChannels
+      summary: Админский список каналов (добавлены transport и фильтр по нему)
+      parameters:
+        - name: transport
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/NotificationTransport" }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Страница списка.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PagedAdminChannelDto" }
+        "400":
+          description: |
+            Нераспознанное значение `?transport=` — автоматическая проверка модели `[ApiController]`,
+            голая строка по-русски (та же форма, что и у остальных 400 в этом документе).
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ForbiddenEmpty" }
+
+  /notifications/provider-webhook/{transport}/{token}:
+    post:
+      tags: [webhooks]
+      operationId: providerWebhookByTransport
+      summary: Вебхук статусов доставки, по транспорту (US-120)
+      description: |
+        АНОНИМНЫЙ, политика лимита notifications-webhook (600/мин на IP).
+
+        Существующий POST /api/notifications/provider-webhook/{token} ОСТАЁТСЯ и означает WhatsApp —
+        он мог быть уже прописан в настройках экземпляра у провайдера.
+
+        Нераспознанный transport в пути → 404, а НЕ 400: маршрут не рассказывает, какие транспорты
+        существуют. Нераспознанный формат тела НЕ роняет обработчик: 200 и одна строка лога Information.
+
+        Неверный/отсутствующий `{token}` → 401 (пустое тело, EmptyResult — НЕ ProblemDetails), тот же
+        код и то же обоснование (API_CONTRACT_CYCLE4.md §19.2/33), что и у оригинального
+        `POST /api/notifications/provider-webhook/{token}`: обработчик токена общий для обоих маршрутов.
+        Редакция 1 этого документа объединяла «нераспознанный транспорт либо неверный токен» под одним
+        404 — расхождение с реализацией и с цикла-4-прецедентом, исправлено здесь задним числом без
+        изменения кода (см. отчёт backend-developer по проходу B, найдено schemathesis).
+
+        ⚠️ DEVOPS: этот маршрут содержит секрет в пути и ОБЯЗАН получить маскирование в access-логе nginx.
+      security: []
+      parameters:
+        - name: transport
+          in: path
+          required: true
+          description: Регистронезависимо.
+          schema:
+            type: string
+            enum: [whatsapp, max]
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        description: Форма зависит от провайдера и транспорта; сервер разбирает её своим парсером.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Принято (в том числе если формат не распознан).
+        "401":
+          description: Неверный или отсутствующий токен. Тело ПУСТОЕ (EmptyResult, не ProblemDetails).
+        "404":
+          description: Нераспознанный `{transport}` в пути (не `whatsapp`/`max`).
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+  # ПРОХОД C — Web Push мастеру
+  # ─────────────────────────────────────────────────────────────────────────────────────────────
+
+  /push/config:
+    get:
+      tags: [push]
+      operationId: getPushConfig
+      summary: Конфигурация Web Push и состояние моих компаний (US-118)
+      description: |
+        Одним запросом отдаёт всё, что нужно фронту, чтобы решить: показывать ли тумблер подписки и что
+        именно объяснить мастеру.
+
+        publicKey — ЕДИНСТВЕННЫЙ способ, которым VAPID-ключ попадает в браузер. Второй VITE_*-переменной
+        не заводится, приватный ключ в клиентский бандл попасть не может.
+
+        enabled=false означает Notifications:StaffPush:Provider=logging — ШТАТНОЕ выключенное состояние
+        (SPEC П13), а не сбой. Фронт объясняет это текстом и не предлагает подписку.
+
+        companies[].staffPushEnabled=false → разрешение у мастера НЕ ЗАПРАШИВАЕТСЯ ВОВСЕ (US-118).
+      responses:
+        "200":
+          description: Конфигурация.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushConfigDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /push/subscriptions:
+    get:
+      tags: [push]
+      operationId: listPushSubscriptions
+      summary: Мои подписанные устройства (US-123)
+      description: |
+        Выборка ВСЕГДА по userId из токена — чужие подписки не видны ни при каких параметрах.
+        ⚠️ Ключи подписки (p256dh, auth) не отдаются НИ В ОДНОМ DTO — ни мастеру, ни владельцу,
+        ни суперадмину.
+      parameters:
+        - name: currentEndpoint
+          in: query
+          required: false
+          description: Endpoint устройства, с которого пришёл запрос — сервер помечает его isCurrent. Без параметра isCurrent всегда false.
+          schema: { type: string, maxLength: 500 }
+      responses:
+        "200":
+          description: Список устройств.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushSubscriptionListDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+    post:
+      tags: [push]
+      operationId: createPushSubscription
+      summary: Подписать это устройство (US-123)
+      description: |
+        Владелец подписки берётся ИЗ ТОКЕНА — поля владельца в контракте нет вовсе, поэтому «создать
+        чужую подписку» невозможно по форме запроса.
+
+        Поведение по endpoint:
+          * новый endpoint                          → 201, создана;
+          * тот же endpoint, тот же пользователь     → 200, обновлены ключи и метка, строка НЕ дублируется;
+          * тот же endpoint, ДРУГОЙ пользователь     → 200, подписка ПЕРЕНАЗНАЧАЕТСЯ вызывающему.
+            Это намеренно (ответ на Q16): общий компьютер в салоне — реальный сценарий, и «уведомления
+            с именами клиентов приходят тому, кто зашёл до меня» недопустимо. 409 здесь был бы хуже.
+
+        Превышение потолка maxSubscriptionsPerUser не ошибка: подписка создаётся, а самая старая
+        по createdAtUtc удаляется молча.
+
+        Политика лимита: push-subscribe, 20/час на пользователя.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatePushSubscriptionInput" }
+      responses:
+        "200":
+          description: Существующая подписка обновлена либо переназначена вызывающему.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushSubscriptionDto" }
+        "201":
+          description: Подписка создана.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PushSubscriptionDto" }
+        "400":
+          description: Пустой или слишком длинный endpoint, не-URL, пустые ключи. Голая строка по-русски.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: Подсистема выключена на платформе (GET /push/config → enabled=false).
+          content:
+            text/plain:
+              schema: { type: string }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /push/subscriptions/current:
+    delete:
+      tags: [push]
+      operationId: deleteCurrentPushSubscription
+      summary: Отписать это устройство при выходе из аккаунта (US-123, Q16)
+      description: |
+        Идемпотентен: 204 даже если строки уже нет. Вызывается фронтом при logout ВМЕСТЕ с
+        pushManager.getSubscription()?.unsubscribe() в браузере — «просто спрятали кнопку» приёмку
+        не проходит.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [endpoint]
+              properties:
+                endpoint: { type: string, maxLength: 500 }
+      responses:
+        "204":
+          description: Подписки этого устройства у вызывающего больше нет.
+        "400": { $ref: "#/components/responses/BadRequestText" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /push/subscriptions/{id}:
+    delete:
+      tags: [push]
+      operationId: deletePushSubscription
+      summary: Отключить любое моё устройство (US-123)
+      description: |
+        Позволяет отключить устройство, с которого вы НЕ зашли, — сценарий «забыл выйти на компьютере
+        в салоне». Чужая подписка даёт 404, а НЕ 403: существование чужой строки не подтверждается.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Удалена.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFoundEmpty" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+  /companies/{companyId}/staff-push-settings:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+    get:
+      tags: [company-push]
+      operationId: getStaffPushSettings
+      summary: Уведомлять ли сотрудников о новых записях (US-117)
+      description: |
+        ⚠️ ТАРИФОМ НЕ ГЕЙТИТСЯ и канала у провайдера НЕ ТРЕБУЕТ (SPEC П6). 402 этот маршрут не отдаёт
+        никогда — в отличие от /notification-settings, который сегодня отвечает 402 всем владельцам,
+        потому что AllowNotificationChannel выключен у всех тарифов.
+
+        По умолчанию true — включая компании, созданные до цикла, и компании без строки настроек.
+        Backfill не требуется (колонка с DB-дефолтом + правило «нет строки = дефолты»).
+      responses:
+        "200":
+          description: Настройка.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffPushSettingsDto" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ForbiddenEmpty" }
+        "404": { $ref: "#/components/responses/NotFoundEmpty" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+    put:
+      tags: [company-push]
+      operationId: updateStaffPushSettings
+      summary: Включить или выключить уведомления сотрудникам (US-117)
+      description: |
+        Доступно владельцу компании и суперадмину; мастеру — 403 (явный Forbid, а не пустое значение).
+
+        Выключение ГАСИТ ДОСТАВКУ, НО НЕ УДАЛЯЕТ подписки мастеров. Включили обратно — уведомления
+        возобновились без перелогина и без повторной подписки.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StaffPushSettingsDto" }
+      responses:
+        "200":
+          description: Сохранено.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffPushSettingsDto" }
+        "400": { $ref: "#/components/responses/BadRequestText" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/ForbiddenEmpty" }
+        "404": { $ref: "#/components/responses/NotFoundEmpty" }
+        "451": { $ref: "#/components/responses/LegalGate" }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ChannelId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Не аутентифицирован. Тело ПУСТОЕ.
+    ForbiddenEmpty:
+      description: Нет прав. Тело ПУСТОЕ.
+    NotFoundEmpty:
+      description: Не найдено (или не принадлежит вызывающему). Тело пустое.
+    BadRequestText:
+      description: Голая строка по-русски (text/plain), не ProblemDetails.
+      content:
+        text/plain:
+          schema: { type: string }
+    ConflictText:
+      description: Голая строка по-русски (text/plain).
+      content:
+        text/plain:
+          schema: { type: string }
+    PaymentRequired:
+      description: |
+        «Упёрлись в тариф». Голая строка по-русски.
+        ⚠️ НИ ОДИН маршрут Web Push этого кода не возвращает.
+      content:
+        text/plain:
+          schema: { type: string }
+    TooManyRequests:
+      description: Превышен именованный лимит. Тело пишет OnRejected.
+      content:
+        text/plain:
+          schema: { type: string }
+    LegalGate:
+      description: |
+        451 Unavailable For Legal Reasons — требуется принять новую редакцию документов.
+        Фронт обрабатывает отдельно; разлогинивать пользователя нельзя.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+
+  schemas:
+
+    # ── Перечисления ──────────────────────────────────────────────────────────────────────────
+
+    NotificationTransport:
+      type: string
+      description: |
+        APPEND-ONLY. Участвует в данных и в уникальном индексе (CompanyId, Transport).
+        Новый член добавляется ТОЛЬКО в конец.
+      enum: [WhatsApp, Max]
+
+    NotificationDeliveryMode:
+      type: string
+      description: |
+        PriorityChannel — сообщение уходит ТОЛЬКО в приоритетный транспорт; если он не в рабочем
+        состоянии, отправки НЕТ (фолбэка в цикле нет, SPEC §3).
+        AllChannels — по одной отправке на каждый подключённый и живой транспорт.
+        Дефолт — PriorityChannel с priorityTransport=WhatsApp: поведение существующих компаний
+        не меняется вообще, backfill не нужен.
+      enum: [PriorityChannel, AllChannels]
+
+    NotificationStatus:
+      type: string
+      enum: [Pending, Sent, Delivered, Failed, Expired, Skipped, Cancelled]
+
+    NotificationType:
+      type: string
+      enum: [BookingConfirmed, Reminder, BookingCancelled, BookingRescheduled, StaffBookingCreated, StaffBookingCancelled]
+
+    NotificationReason:
+      type: string
+      description: |
+        APPEND-ONLY. Машиночитаемый код; РУССКИЙ ТЕКСТ СОБИРАЕТ СЕРВЕР (NotificationTexts) и отдаёт
+        отдельным полем reasonText. Фронт текст не сочиняет и не собирает из кусочков.
+      enum:
+        - Delivered
+        - RecipientHasNoWhatsApp
+        - RejectedByProvider
+        - RetriesExhausted
+        - VisitAlreadyStarted
+        - RecipientOptedOut
+        - NotOnPaidPlan
+        - NoUsableChannel
+        - TypeDisabledByCompany
+        - BelowMinimumLeadTime
+        - BookingOrAssignmentCancelled
+        - RecipientNotInMax
+        - PriorityChannelUnavailable
+        - PushSubscriptionGone
+        - PushAuthRejected
+        - PushPayloadTooLarge
+        - PushTtlExhausted
+        - StaffPushDisabledByCompany
+        - MasterNoLongerInCompany
+
+    ChannelState:
+      type: string
+      enum: [NotConnected, Connecting, Connected, Disconnected, Blocked, DisabledByOwner, NeedsReconnect, Replaced]
+
+    LegalEntityForm:
+      type: string
+      enum: [Ip, Company, SelfEmployed]
+
+    # ── Конверт пагинации ─────────────────────────────────────────────────────────────────────
+
+    PagedCompanyDto:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CompanyDto" }
+        page: { type: integer, format: int32 }
+        pageSize: { type: integer, format: int32 }
+        total: { type: integer, format: int32 }
+        hasNext: { type: boolean }
+
+    PagedNotificationLogItemDto:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationLogItemDto" }
+        page: { type: integer, format: int32 }
+        pageSize: { type: integer, format: int32 }
+        total: { type: integer, format: int32 }
+        hasNext: { type: boolean }
+
+    PagedAdminChannelDto:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AdminChannelDto" }
+        page: { type: integer, format: int32 }
+        pageSize: { type: integer, format: int32 }
+        total: { type: integer, format: int32 }
+        hasNext: { type: boolean }
+
+    # ── Компании ──────────────────────────────────────────────────────────────────────────────
+
+    CompanyDto:
+      type: object
+      description: |
+        ТОТ ЖЕ DTO, что отдаёт GET /api/companies, собранный тем же маппером. Второго DTO и второго
+        маппера цикл 9 не заводит.
+
+        В публичном вызове employeeCount = 0, а accountSeatsUsed / accountSeatsLimit / canAddEmployee = null:
+        публичный каталог НЕ считает использование аккаунта (это стоило бы лишних запросов на самом
+        горячем анонимном списке сайта).
+      additionalProperties: false
+      required:
+        [id, name, slug, allowSelfBooking, requirePrepayment, onlineBookingEnabled, allowAnalytics,
+         allowMailing, showInPublicListing, publicListingEnabled, prepaymentEnabled,
+         planAllowsOnlineBooking, planAllowsOnlinePayment, planAllowsPublicListing, reviewCount,
+         timeZoneId, timeZoneIsManual, utcOffsetMinutes, bookingHorizonDays]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        allowSelfBooking: { type: boolean }
+        requirePrepayment: { type: boolean }
+        onlineBookingEnabled: { type: boolean }
+        allowAnalytics: { type: boolean }
+        allowMailing: { type: boolean }
+        showInPublicListing: { type: boolean }
+        publicListingEnabled: { type: boolean }
+        prepaymentEnabled: { type: boolean }
+        planAllowsOnlineBooking: { type: boolean }
+        planAllowsOnlinePayment: { type: boolean }
+        planAllowsPublicListing: { type: boolean }
+        maxEmployees: { type: integer, format: int32, nullable: true }
+        employeeCount: { type: integer, format: int32 }
+        accountSeatsUsed: { type: integer, format: int32, nullable: true }
+        accountSeatsLimit: { type: integer, format: int32, nullable: true }
+        canAddEmployee: { type: boolean, nullable: true }
+        averageRating: { type: number, format: double, nullable: true }
+        reviewCount: { type: integer, format: int32 }
+        cityId: { type: integer, format: int32, nullable: true }
+        cityName: { type: string, nullable: true }
+        cityRegion: { type: string, nullable: true }
+        timeZoneId: { type: string }
+        timeZoneIsManual: { type: boolean }
+        utcOffsetMinutes: { type: integer, format: int32 }
+        bookingHorizonDays: { type: integer, format: int32 }
+
+    # ── Каналы ────────────────────────────────────────────────────────────────────────────────
+
+    ChannelOfferDto:
+      type: object
+      additionalProperties: false
+      required: [allowedByPlan, riskText, riskVersion, transports]
+      properties:
+        pricePerMonth:
+          type: number
+          format: double
+          nullable: true
+          description: null означает «опция не предлагается», а НЕ «бесплатно».
+        allowedByPlan: { type: boolean }
+        riskText:
+          type: string
+          description: ⚠️ Берётся из документа ChannelRiskNotice, а не из удаляемой константы NotificationRiskText.
+        riskVersion:
+          type: string
+          description: ⚠️ Значение изменится после выката — владельцы принимают текст о рисках заново.
+        transports:
+          type: array
+          items: { $ref: "#/components/schemas/TransportOfferDto" }
+
+    TransportOfferDto:
+      type: object
+      additionalProperties: false
+      required: [transport, displayName, available]
+      properties:
+        transport: { $ref: "#/components/schemas/NotificationTransport" }
+        displayName: { type: string, example: "MAX" }
+        available: { type: boolean }
+        connectionNotice:
+          type: string
+          nullable: true
+          description: |
+            Ограничение провайдера, которое пользователь обязан узнать ДО привязки, а не после.
+            Для MAX: «Для авторизации по QR нужно отключить пароль входа в мессенджере.»
+            Текст собирает СЕРВЕР; фронт его печатает и не сочиняет.
+          example: "Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере."
+
+    # ⚠️ Расхождение с редакцией 1, закрытое backend-разработчиком задним числом (тем же приёмом, каким
+    # §113.2 уже закрыл расхождение для CompanyDto): ChannelRequestInput/ChannelListItemDto (переименован
+    # в ChannelDto — так называется реальный C# record)/AdminChannelDto/NotificationLogItemDto/
+    # NotificationSettingsDto ниже были в редакции 1 заново придуманы по мотивам API_CONTRACT_CYCLE4.md,
+    # а не сверены с актуальными полями существующих DTO — расхождение было только в схеме, поведение
+    # сервера (и то, против чего уже собран фронт, см. коммиты c97c680/d46e3a7/d890aee) всегда было таким,
+    # как описано ниже. Правки — только аддитивное поле transport/deliveryMode-и-соседи + переименования,
+    # которые редакция 1 УЖЕ ошибочно предполагала (allowedByPlan/riskText/riskVersion/transports[] в
+    # ChannelOfferDto) — то есть эта правка приводит схему в соответствие узкому месту, а не расширяет его.
+
+    ChannelRequestInput:
+      type: object
+      additionalProperties: false
+      required: [legalEntityForm, inn]
+      properties:
+        transport:
+          allOf:
+            - $ref: "#/components/schemas/NotificationTransport"
+          description: 🆕 Необязательное. Отсутствует → WhatsApp (аддитивность для старых клиентов).
+          default: WhatsApp
+        legalEntityForm: { $ref: "#/components/schemas/LegalEntityForm" }
+        inn:
+          type: string
+          minLength: 10
+          maxLength: 12
+          description: Проверяется только формальной контрольной суммой; против ЕГРЮЛ/ЕГРИП не сверяется.
+        offerAccepted:
+          type: object
+          additionalProperties: false
+          properties:
+            version: { type: string, nullable: true }
+          description: |
+            D9 — приложение к TermsOwner (ARCHITECTURE_CYCLE5.md §43.2), поэтому версия сверяется против
+            ЭТОГО документа, а не отдельного акцепта риска. Приём риска остаётся отдельным шагом —
+            POST /notification-channels/{id}/accept-risk, ПОСЛЕ создания заявки, не в этом теле.
+
+    ChannelDto:
+      type: object
+      additionalProperties: false
+      required:
+        [id, transport, state, stateText, paymentState, canConnect, canReplace,
+         fundingState, fundingText, companies]
+      properties:
+        id: { type: string, format: uuid }
+        transport:
+          allOf:
+            - $ref: "#/components/schemas/NotificationTransport"
+          description: 🆕 добавлено циклом 9, аддитивно.
+        state: { $ref: "#/components/schemas/ChannelState" }
+        stateText:
+          type: string
+          description: Русская формулировка, собранная СЕРВЕРОМ (ChannelPresentation). Фронт её печатает.
+        phoneMasked: { type: string, nullable: true }
+        paymentState: { $ref: "#/components/schemas/ChannelPaymentStatus" }
+        paidFrom:
+          type: string
+          format: date-time
+          nullable: true
+          description: "Устарело (ARCHITECTURE_CYCLE7.md §47.3): всегда null."
+        paidUntil: { type: string, format: date-time, nullable: true }
+        requestedAt: { type: string, format: date-time, nullable: true }
+        connectedAt: { type: string, format: date-time, nullable: true }
+        riskAcceptedAt: { type: string, format: date-time, nullable: true }
+        idleSince: { type: string, format: date-time, nullable: true }
+        idleDeadline: { type: string, format: date-time, nullable: true }
+        replacedByChannelId: { type: string, format: uuid, nullable: true }
+        companies:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [companyId, companyName, isActive]
+            properties:
+              companyId: { type: string, format: uuid }
+              companyName: { type: string }
+              isActive: { type: boolean }
+        canConnect: { type: boolean }
+        canReplace: { type: boolean }
+        fundingState: { type: string, enum: [Funded, Unfunded, NotPaid] }
+        fundingText: { type: string }
+        inn: { type: string, nullable: true }
+        legalEntityForm:
+          type: string
+          allOf: [{ $ref: "#/components/schemas/LegalEntityForm" }]
+          nullable: true
+
+    ChannelPaymentStatus:
+      type: string
+      enum: [Paid, NotPaid, Suspended]
+
+    AdminChannelDto:
+      type: object
+      additionalProperties: false
+      required: [id, transport, state, paymentState, ownerName, companyCount, isSuspendedByAdmin]
+      properties:
+        id: { type: string, format: uuid }
+        transport:
+          allOf:
+            - $ref: "#/components/schemas/NotificationTransport"
+          description: 🆕 добавлено циклом 9; по нему же работает query-фильтр ?transport=.
+        state: { $ref: "#/components/schemas/ChannelState" }
+        paymentState: { $ref: "#/components/schemas/ChannelPaymentStatus" }
+        ownerName: { type: string }
+        ownerPhoneMasked: { type: string, nullable: true }
+        paidFrom: { type: string, format: date-time, nullable: true }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        companyCount: { type: integer, format: int32 }
+        idleSince: { type: string, format: date-time, nullable: true }
+        requestedAt: { type: string, format: date-time, nullable: true }
+        isSuspendedByAdmin: { type: boolean }
+        inn: { type: string, nullable: true }
+        legalEntityForm:
+          type: string
+          allOf: [{ $ref: "#/components/schemas/LegalEntityForm" }]
+          nullable: true
+
+    # ── Настройки уведомлений компании ────────────────────────────────────────────────────────
+
+    NotificationSettingsDto:
+      type: object
+      additionalProperties: false
+      required:
+        [enabledTypes, reminderLeadMinutes, minLeadMinutes, planAllowsChannel, channel,
+         effectiveEnabled, deliveryMode, priorityTransport, connectedTransports, priorityChannelHealthy]
+      properties:
+        enabledTypes:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationType" }
+        reminderLeadMinutes: { type: integer, format: int32, minimum: 60, maximum: 4320 }
+        minLeadMinutes: { type: integer, format: int32, minimum: 0, maximum: 720 }
+        planAllowsChannel: { type: boolean }
+        channel:
+          allOf:
+            - $ref: "#/components/schemas/SettingsChannelDto"
+          description: |
+            Канал ПРИОРИТЕТНОГО транспорта (priorityTransport), если он у компании подключён — этому
+            полю (и effectiveEnabled/blockedReason рядом) больше 1 транспорта не нужно, оно осталось из
+            цикла 4 для экранов, которые ещё не научились работать со списком транспортов.
+        effectiveEnabled: { type: boolean }
+        blockedReason: { type: string, nullable: true }
+        deliveryMode:
+          allOf:
+            - $ref: "#/components/schemas/NotificationDeliveryMode"
+          description: 🆕
+        priorityTransport:
+          allOf:
+            - $ref: "#/components/schemas/NotificationTransport"
+          description: 🆕 Имеет смысл только при deliveryMode=PriorityChannel.
+        connectedTransports:
+          type: array
+          description: 🆕 ТОЛЬКО ДЛЯ ЧТЕНИЯ — что реально подключено и живо. Если элемент один, режим ни на что не влияет, и экран обязан это объяснить.
+          items: { $ref: "#/components/schemas/NotificationTransport" }
+        priorityChannelHealthy:
+          type: boolean
+          description: |
+            🆕 ТОЛЬКО ДЛЯ ЧТЕНИЯ. false → в кабинете владельца показывается плашка «приоритетный канал
+            не работает: выберите другой или включите отправку во все». Автоподмены транспорта НЕТ.
+
+    SettingsChannelDto:
+      type: object
+      additionalProperties: false
+      required: [assigned]
+      properties:
+        assigned: { type: boolean }
+        channelId: { type: string, format: uuid, nullable: true }
+        state:
+          type: string
+          allOf: [{ $ref: "#/components/schemas/ChannelState" }]
+          nullable: true
+        stateText: { type: string, nullable: true }
+        paymentState:
+          type: string
+          allOf: [{ $ref: "#/components/schemas/ChannelPaymentStatus" }]
+          nullable: true
+        paidUntil: { type: string, format: date-time, nullable: true }
+
+    UpdateNotificationSettingsInput:
+      type: object
+      additionalProperties: false
+      required: [enabledTypes, reminderLeadMinutes, minLeadMinutes]
+      properties:
+        enabledTypes:
+          type: array
+          items: { $ref: "#/components/schemas/NotificationType" }
+        reminderLeadMinutes: { type: integer, format: int32, minimum: 60, maximum: 4320 }
+        minLeadMinutes: { type: integer, format: int32, minimum: 0, maximum: 720 }
+        deliveryMode:
+          allOf:
+            - $ref: "#/components/schemas/NotificationDeliveryMode"
+          description: 🆕 Не прислали — не меняем.
+        priorityTransport:
+          allOf:
+            - $ref: "#/components/schemas/NotificationTransport"
+          description: 🆕 Не прислали — не меняем. Значение вне connectedTransports → 400.
+
+    NotificationLogItemDto:
+      type: object
+      additionalProperties: false
+      required:
+        [id, createdAt, type, typeText, recipientPhoneMasked, status, statusText, visitStart,
+         transport, contentRedacted]
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        type: { $ref: "#/components/schemas/NotificationType" }
+        typeText: { type: string, description: "Русский текст, собранный СЕРВЕРОМ (NotificationTexts)." }
+        recipientName: { type: string, nullable: true }
+        recipientPhoneMasked: { type: string }
+        status: { $ref: "#/components/schemas/NotificationStatus" }
+        statusText:
+          type: string
+          description: |
+            Русский текст статуса/причины, собранный СЕРВЕРОМ (NotificationTexts.StatusText) — фронт его
+            печатает, не собирает из отдельных полей status/reason.
+        bookingId:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            В режиме AllChannels одно событие даёт несколько строк с ОДИНАКОВЫМ bookingId и type,
+            различающихся transport. Экран группирует их по событию, чтобы владелец не решил,
+            что клиента уведомили дважды по ошибке.
+        visitStart: { type: string, format: date-time }
+        sentAt: { type: string, format: date-time, nullable: true }
+        channelId: { type: string, format: uuid, nullable: true }
+        transport:
+          allOf:
+            - $ref: "#/components/schemas/NotificationTransport"
+          description: 🆕 добавлено циклом 9; по нему же работает query-фильтр ?transport=.
+        contentRedacted:
+          type: boolean
+          description: "ARCHITECTURE_CYCLE5.md §49.3 — текст затёрт правилом хранения."
+
+    # ── Web Push ──────────────────────────────────────────────────────────────────────────────
+
+    PushConfigDto:
+      type: object
+      additionalProperties: false
+      required: [enabled, maxSubscriptionsPerUser, companies]
+      properties:
+        enabled:
+          type: boolean
+          description: |
+            false = Notifications:StaffPush:Provider=logging — ШТАТНОЕ выключенное состояние подсистемы
+            (SPEC П13), а не сбой. Фронт объясняет это текстом и не предлагает подписку.
+        publicKey:
+          type: string
+          nullable: true
+          description: |
+            VAPID public key, base64url. ЕДИНСТВЕННЫЙ способ, которым ключ попадает в браузер —
+            второй VITE_*-переменной не заводится, приватный ключ в бандл попасть не может.
+            null, когда enabled=false.
+        maxSubscriptionsPerUser:
+          type: integer
+          format: int32
+          description: Потолок подписок; при превышении самая старая вытесняется молча.
+          example: 10
+        companies:
+          type: array
+          description: Компании, где вызывающий — персонал.
+          items:
+            type: object
+            additionalProperties: false
+            required: [companyId, companyName, staffPushEnabled]
+            properties:
+              companyId: { type: string, format: uuid }
+              companyName: { type: string }
+              staffPushEnabled:
+                type: boolean
+                description: false → разрешение у мастера НЕ ЗАПРАШИВАЕТСЯ ВОВСЕ (US-118).
+
+    PushSubscriptionListDto:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PushSubscriptionDto" }
+
+    PushSubscriptionDto:
+      type: object
+      description: |
+        ⚠️ Ключи подписки (p256dh, auth) НЕ ОТДАЮТСЯ НИ В ОДНОМ DTO — ни мастеру, ни владельцу,
+        ни суперадмину. additionalProperties:false закрепляет это машинно.
+      additionalProperties: false
+      required: [id, deviceLabel, createdAtUtc, isCurrent]
+      properties:
+        id: { type: string, format: uuid }
+        deviceLabel:
+          type: string
+          maxLength: 100
+          description: Чтобы мастер понимал, что именно он отключает.
+          example: "Chrome на Windows"
+        createdAtUtc: { type: string, format: date-time }
+        lastSuccessAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: По нему работает правило срока хранения (180 дней без успешной доставки).
+        isCurrent:
+          type: boolean
+          description: Считает СЕРВЕР, сравнивая с currentEndpoint из query. Без параметра — всегда false.
+
+    CreatePushSubscriptionInput:
+      type: object
+      description: |
+        Поля владельца здесь НЕТ ВОВСЕ — владелец берётся из токена, поэтому «создать чужую подписку»
+        невозможно по форме запроса (US-123).
+      additionalProperties: false
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          maxLength: 500
+          format: uri
+          example: "https://fcm.googleapis.com/fcm/send/dQw4w9WgXcQ"
+        keys:
+          type: object
+          additionalProperties: false
+          required: [p256dh, auth]
+          properties:
+            p256dh: { type: string, maxLength: 200 }
+            auth: { type: string, maxLength: 100 }
+        deviceLabel: { type: string, maxLength: 100, nullable: true }
+
+    StaffPushSettingsDto:
+      type: object
+      additionalProperties: false
+      required: [staffPushEnabled]
+      properties:
+        staffPushEnabled:
+          type: boolean
+          default: true
+          description: |
+            По умолчанию true — включая компании, созданные до цикла, и компании без строки настроек.
+            Выключение ГАСИТ ДОСТАВКУ, НО НЕ УДАЛЯЕТ подписки мастеров.
+
+    # ── Не HTTP, но часть контракта: тело push-сообщения ───────────────────────────────────────
+
+    PushPayload:
+      type: object
+      description: |
+        ⚠️ ЭТО НЕ HTTP-ОТВЕТ. Тело push-сообщения, зашифрованное по RFC 8291 и разбираемое
+        service worker'ом (frontend/public/sw.js). Описано здесь, чтобы фронт и бэкенд сошлись
+        по форме и здесь тоже.
+
+        ТЕЛЕФОНА КЛИЕНТА ЗДЕСЬ НЕТ и быть не должно (SPEC П8): уведомление рисует операционная система,
+        в том числе на личном телефоне мастера и на заблокированном экране.
+
+        Заголовки запроса к push-сервису: TTL = min(3600, секунд до начала визита), Urgency: high,
+        Topic: b-<bookingId>.
+      additionalProperties: false
+      required: [title, body, tag, url]
+      properties:
+        title: { type: string, example: "Новая запись" }
+        body:
+          type: string
+          description: Услуга · дата и время · имя клиента. Без телефона.
+          example: "Стрижка · 24.09 в 14:00 · Анна Петрова"
+        tag:
+          type: string
+          description: Схлопывает повторы по одному визиту.
+          example: "b-3f1c2e44-0000-0000-0000-000000000000"
+        url:
+          type: string
+          description: |
+            ОТНОСИТЕЛЬНЫЙ путь; service worker сам добавляет origin. Абсолютный URL открыл бы дорогу
+            к открытию произвольного адреса. Ведёт на экран записей мастера (маршрут `/my-bookings`).
+          example: "/my-bookings?booking=3f1c2e44-0000-0000-0000-000000000000"

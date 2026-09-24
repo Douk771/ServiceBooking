@@ -41,7 +41,8 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         var response = await AuthedClient(owner.Token).GetAsync("/api/notification-channels/offer");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var offer = (await response.Content.ReadJsonAsync<ChannelOfferDto>())!;
-        offer.Available.Should().BeFalse();
+        // API_CONTRACT_CYCLE9.md §114.1: `available` was dropped from ChannelOfferDto — it was always
+        // exactly `pricePerMonth is not null`, so the assertion below already covers it.
         offer.PricePerMonth.Should().BeNull("§21: unavailable must read as null, not a misleading 0");
     }
 
@@ -55,7 +56,8 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
 
         var response = await AuthedClient(owner.Token).GetAsync("/api/notification-channels/offer");
         var offer = (await response.Content.ReadJsonAsync<ChannelOfferDto>())!;
-        offer.PlanAllows.Should().BeFalse();
+        // API_CONTRACT_CYCLE9.md §114.1: PlanAllows renamed to AllowedByPlan.
+        offer.AllowedByPlan.Should().BeFalse();
     }
 
     [Fact, TestCase("NTF-C004")]
@@ -134,6 +136,14 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         // a second number while only one is paid must leave the FIRST one untouched (still Funded) and
         // mark the new, second one NotPaid — never silently spread the one paid slot across both, and
         // never let the newcomer bump the existing one out of its slot.
+        //
+        // QA cycle 9 (N8, §114.2): the SECOND channel here is seeded directly in the database rather
+        // than through POST /api/notification-channels — after af2c38b, a second live channel of the
+        // SAME transport on one account now 409s at that endpoint (see
+        // Create_SecondLiveChannelOfSameTransport_Returns409_AllowedAgainAfterFirstIsReplaced below for
+        // that contract on its own). §104.4 funding ("ChannelFunding.Rank ranks ALL live channels of the
+        // account, transport-blind") still applies across transports, so a MAX channel here exercises
+        // the exact same ranking code path the original WhatsApp/WhatsApp version of this test did.
         var (owner, _) = await CreateOwnerWithCompanyAsync();
         await GiveNotificationCapablePlanAsync(owner.UserId);
         var owned = AuthedClient(owner.Token);
@@ -141,24 +151,65 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         var first = (await (await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest()))
             .Content.ReadJsonAsync<ChannelDto>())!;
 
+        Guid secondId;
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var billingAccountId = await db.NotificationChannels.Where(c => c.Id == first.Id)
                 .Select(c => c.BillingAccountId!.Value).FirstAsync();
             await NotificationTestBase.EnsureWhatsAppPaidAsync(db, billingAccountId, quantity: 1);
+
+            var second = new NotificationChannel
+            {
+                Id = Guid.NewGuid(), OwnerUserId = owner.UserId, BillingAccountId = billingAccountId,
+                State = ChannelState.NotConnected, Transport = NotificationTransport.Max,
+                RequestedAtUtc = DateTime.UtcNow.AddSeconds(1), // strictly after `first` (oldest-first ranking)
+            };
+            db.NotificationChannels.Add(second);
+            secondId = second.Id;
             await db.SaveChangesAsync();
         }
-
-        var second = (await (await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest()))
-            .Content.ReadJsonAsync<ChannelDto>())!;
 
         var list = (await (await owned.GetAsync("/api/notification-channels"))
             .Content.ReadJsonAsync<ChannelListDto>())!;
         list.Channels.Should().ContainSingle(c => c.Id == first.Id).Which.PaymentState
             .Should().Be(ChannelPaymentStatus.Paid, "the first, already-funded number must keep its slot");
-        list.Channels.Should().ContainSingle(c => c.Id == second.Id).Which.PaymentState
+        list.Channels.Should().ContainSingle(c => c.Id == secondId).Which.PaymentState
             .Should().Be(ChannelPaymentStatus.NotPaid, "only 1 number is paid for — the 2nd registered number has nothing left to fund it");
+    }
+
+    [Fact, TestCase("NTF-N8-001")]
+    public async Task Create_SecondLiveChannelOfSameTransport_Returns409_AllowedAgainAfterFirstIsReplaced()
+    {
+        // QA cycle 9 (N8, §114.2, af2c38b) — the exact scenario the fix's own test description names:
+        // "второй запрос канала того же транспорта, пока первый NotConnected → 409; после того как
+        // первый Replaced → 200".
+        var (owner, _) = await CreateOwnerWithCompanyAsync();
+        await GiveNotificationCapablePlanAsync(owner.UserId);
+        var owned = AuthedClient(owner.Token);
+
+        var firstResponse = await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var first = (await firstResponse.Content.ReadJsonAsync<ChannelDto>())!;
+
+        var duplicateResponse = await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
+        duplicateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            "the account already has a live (non-Replaced) channel of this transport");
+
+        // Move the first channel to State=Replaced directly (bypassing the /replace endpoint's own
+        // plumbing — this test cares only about the dedup check reading State, not about what put it
+        // there) and retry the same request.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var tracked = await db.NotificationChannels.FirstAsync(c => c.Id == first.Id);
+            tracked.State = ChannelState.Replaced;
+            await db.SaveChangesAsync();
+        }
+
+        var retryResponse = await owned.PostAsJsonAsync("/api/notification-channels", ValidCreateChannelRequest());
+        retryResponse.StatusCode.Should().Be(HttpStatusCode.Created,
+            "once the old channel is Replaced (no longer 'live'), a new one of the same transport must be orderable again");
     }
 
     // ── Accept-risk / connect gating ─────────────────────────────────────────────────────────────
@@ -209,8 +260,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         await GiveNotificationCapablePlanAsync(owner.UserId);
         await SetChannelPriceAsync(990);
         var created = await CreateChannelAsync(owner.Token);
-        await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
+        var acceptRisk = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
             new AcceptRiskDto(NotificationRiskTextVersion()));
+        acceptRisk.EnsureSuccessStatusCode();
         // Mark paid directly (the owner-facing flow has no self-serve payment, SPEC §9.1 — an admin does it).
         await MarkPaidAsync(created.Id);
 
@@ -244,8 +296,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         await GiveNotificationCapablePlanAsync(owner.UserId);
         await SetChannelPriceAsync(990);
         var created = await CreateChannelAsync(owner.Token);
-        await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
+        var acceptRisk = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{created.Id}/accept-risk",
             new AcceptRiskDto(NotificationRiskTextVersion()));
+        acceptRisk.EnsureSuccessStatusCode();
         await MarkPaidAsync(created.Id);
 
         await using var disabledFactory = new NotificationTestFactory(ConnectionString).WithWebHostBuilder(builder =>
@@ -263,6 +316,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         var body = await response.Content.ReadAsStringAsync();
         body.Should().NotBeNullOrWhiteSpace();
         body.Should().NotContain("stack", "the text must be human, not a stack trace");
+        body.Should().Contain("платформ",
+            "the 409 must be specifically the InstanceCreationEnabled=false gate, not e.g. the unrelated " +
+            "\"risk not accepted\" gate — a wrong-reason 409 would make this test pass without proving anything");
     }
 
     // ── Company assignment ───────────────────────────────────────────────────────────────────────
@@ -307,8 +363,9 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
     {
         var (owner, company1, channel) = await CreateConnectedChannelAsync();
         var company2 = await CreateCompanyAsync(owner.Token);
-        await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channel.Id}/companies",
+        var assignCompany2 = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/notification-channels/{channel.Id}/companies",
             new AssignCompanyDto(company2.Id, WarningAcknowledged: true));
+        assignCompany2.EnsureSuccessStatusCode();
 
         using (var scope = Factory.Services.CreateScope())
         {
@@ -532,12 +589,17 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         await db.SaveChangesAsync();
     }
 
-    private static string NotificationRiskTextVersion() =>
-        // Mirrors NotificationRiskText.CurrentVersion (API_CONTRACT_CYCLE4.md §23) — read from the live
-        // offer response instead of hardcoding it would be more robust, but every other call site in this
-        // file already has a channel, not an offer; kept as a named constant so a version bump surfaces
-        // here as a single, obvious compile-time-adjacent failure rather than scattered string literals.
-        "2026-09-18-draft";
+    private string NotificationRiskTextVersion()
+    {
+        // ARCHITECTURE_CYCLE9.md §104.8 (B12): riskText/riskVersion now come from the ChannelRiskNotice
+        // legal document (App_Data/legal/legal.json), not the deleted NotificationRiskText constant.
+        // Read live from LegalDocumentProvider (same pattern as NotificationTestBase.CreateCompanyAsync)
+        // instead of hardcoding a version string, so a legal.json bump can't silently desync this file
+        // from the running manifest.
+        using var scope = Factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Legal.LegalDocumentProvider>();
+        return provider.Current!.Get(LegalDocumentType.ChannelRiskNotice)!.Version;
+    }
 
     private static OutboundNotification NewPendingNotification(Guid companyId, Guid channelId)
     {

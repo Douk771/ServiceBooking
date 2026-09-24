@@ -26,31 +26,74 @@ grep -rn "BK-003" ServiceBooking.Tests/
 
 | Префикс | Файл | Тестов |
 |---|---|---|
-| `AUTH-` | `AuthTests.cs` | 15 |
-| `BK-` | `BookingsFlowSmokeTests.cs` + `MultiServiceBookingTests.cs` + `ManualBookingFreedomTests.cs` | 88 (62 + 8 + 18) |
+| `AUTH-` | `AuthTests.cs` | 16 (15 `[Fact]` + `[Theory]` AUTH-003 × доп. `InlineData`) |
+| `BK-` | `BookingsFlowSmokeTests.cs` + `MultiServiceBookingTests.cs` + `ManualBookingFreedomTests.cs` | 89 (63 + 8 + 18) |
 | `BKH-` | `BookingHistoryTests.cs` | 16 |
-| `CPH-` | `CompanyPhotosTests.cs` | 20 |
-| `CO-` | `CompaniesTests.cs` | 80 |
+| `CPH-` | `CompanyPhotosTests.cs` | 21 |
+| `CO-` | `CompaniesTests.cs` | 85 (83 `[Fact]`/`[Theory]` id + доп. `InlineData` на CO-026) |
 | `SVC-` | `ServicesTests.cs` | 19 |
 | `WH-` | `WorkingHoursTests.cs` | 17 |
 | `ST-` | `ScheduleTemplateTests.cs` | 15 |
-| `MC-` | `MastersTests.cs` + `ClientNotePhotosTests.cs` | 37 (17 + 20) |
+| `MC-` | `MastersTests.cs` + `ClientNotePhotosTests.cs` | 39 (19 + 20) |
 | `UPL-` | `UploadsStaticFilesTests.cs` | 2 |
-| `RV-` | `ReviewsTests.cs` | 13 |
+| `RV-` | `ReviewsTests.cs` | 17 (13 `[Fact]`/`[Theory]` id + доп. `InlineData` на RV-006/RV-007) |
 | `MAIL-` | `MailingTests.cs` | 9 |
-| `RPT-` | `ReportsTests.cs` | 12 |
+| `RPT-` | `ReportsTests.cs` | 13 |
 | `PROF-` | `ProfileTests.cs` | 18 |
 | `ADM-` | `AdminTests.cs` | 51 |
 | `SCH-` | `SchedulerTests.cs` | 9 |
-| `LEG-` | `LegalConsentTests.cs` + `LegalConsentVersionChangeTests.cs` + `DataRightsTests.cs` | 32 (14 + 8 + 10) |
+| `LEG-` | `LegalConsentTests.cs` + `LegalConsentVersionChangeTests.cs` + `DataRightsTests.cs` | 35 (17 + 8 + 10) |
+| `LGL-` 🆕 | `LegalPriorityTests.cs` + `ClientNotePhotosTests.cs` + `NotificationQueueingTests.cs` + `NotificationChannelsTests.cs` | 13 (9 + 1 + 1 + 2) |
 | `SEC-` | `RateLimitingTests.cs` + `IdentityRoleSyncTests.cs` | 10 (6 + 4) |
 | `OPS-` | `HealthTests.cs` | 4 |
 | `PAG-` | `PaginationTests.cs` | 14 (9 `[Fact]` + `[Theory]` PAG-007 × 5 `InlineData`) |
-| `NTF-` | `NotificationDispatchTests.cs` + `NotificationChannelsTests.cs` + `NotificationQueueingTests.cs` + `NotificationWebhookUnsubscribeTests.cs` + `NotificationDispatchExtraTests.cs` + `NotificationCitiesTimeZoneTests.cs` | 44 (2 + 19 + 5 + 9 + 3 + 6) |
+| `NTF-` | `NotificationDispatchTests.cs` + `NotificationChannelsTests.cs` + `NotificationQueueingTests.cs` + `NotificationWebhookUnsubscribeTests.cs` + `NotificationDispatchExtraTests.cs` + `NotificationCitiesTimeZoneTests.cs` | 45 (2 + 20 + 5 + 9 + 3 + 6) |
 | `PRC-` | `PricingTests.cs` | 33 |
-| `BLL-` | `BillingTests.cs` | 5 |
-| `TRF-` | `CompanyTransferTests.cs` | 5 |
-| **Итого** | | **514** запуска |
+| `BLL-` | `BillingTests.cs` | 7 |
+| `TRF-` | `CompanyTransferTests.cs` | 6 |
+| `MAX-` | `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` | 5 (4 + 1) |
+| `PUSH-` | `StaffPushTests.cs` (`StaffPushSubscriptionAndQueueingTests` + `StaffPushDispatchTests`) | 10 |
+| `ABA-` 🆕 | `AdminBillingAccountsTests.cs` | 3 |
+| **Итого** | | **621** запусков |
+
+⚠️ **Пересчёт цикла 9 (закрытие хвоста, стык с циклом 10).** Таблица выше пересчитана заново по
+исходникам (`grep -c 'TestCase("<префикс>-'` + `dotnet test ServiceBooking.Tests --list-tests` для
+`[Theory]`-разворота), а не поправлена точечно: сумма по таблице (584) разошлась с фактическим
+`dotnet test ServiceBooking.Tests` (620 на момент начала этого прогона, 621 после добавления `CPH-021`
+ниже) на 36 тестов. Дрейф копился по нескольким независимым причинам:
+- **`[Theory]`-развороты никогда не считались.** `AUTH-003` (`AuthTests.cs`), `CO-026`
+  (`CompaniesTests.cs`), `RV-006`/`RV-007` (`ReviewsTests.cs`) — каждый `[Theory]` даёт больше одного
+  реального запуска на один `TestCase`-атрибут (как `PAG-007`, который таблица и раньше считала
+  правильно: 9 `[Fact]` + 5 `InlineData` = 14). Отсюда AUTH 15→16, CO 83→85 (плюс отдельно устаревшее
+  81→83 — см. ниже), RV 13→17.
+- **Два префикса отсутствовали в таблице целиком.** `ABA-` (`AdminBillingAccountsTests.cs`, 3 теста —
+  `GET /api/admin/billing-accounts` из цикла 7) и `LGL-` (13 тестов, разбросанных по четырём файлам —
+  `LegalPriorityTests.cs` + по одному-два теста в `ClientNotePhotosTests.cs`/
+  `NotificationQueueingTests.cs`/`NotificationChannelsTests.cs`) — оба существовали до цикла 9, ни разу
+  не попав в эту таблицу.
+- **Обычный дрейф «код поменялся, таблицу не поправили» копился и до цикла 9** (как уже отмечено ниже
+  в разделе про цикл 3): `CO-` 81→83, `BK-` 88→89, `RPT-` 12→13, `BLL-` 5→7, `TRF-` 5→6, `MC-` 37→39,
+  `LEG-` 32→35 — фактические числа в файлах разошлись с таблицей независимо от `[Theory]`-вопроса.
+- **Цикл 10, слитый в эту ветку,** не менял ни один из этих доменов численно (`CPH-` на момент слияния
+  всё ещё 20) — сам по себе слиянием дрейф не усугубил, просто был слит поверх уже разошедшегося
+  документа.
+
+Ни один из этих 36 тестов не новый и не регрессия — это исключительно ошибка учёта в документе, не в
+коде.
+
+🆕 **`CPH-021` — закрытие пробела в покрытии, найденного на стыке циклов 9/10.** +1 запуск (620 → 621).
+Ревью стыка нашло дефект: `GET /api/companies/public` (эндпоинт цикла 9) не отдавал обложку компании,
+потому что цикл 10 завёл обложки во все списковые эндпоинты компаний, кроме этого — `GetPublic` не
+попал в поле зрения правки, а параметр `cover` у `MapToDto` тихо подставлял `null` по умолчанию.
+Дефект уже починен бэкендом (`GetCoversAsync` по компаниям текущей страницы, как у соседних
+эндпоинтов), но прошёл все зелёные прогоны, потому что `CPH-011`…`CPH-013` проверяют обложку только на
+`GET /api/companies/{slug}` и `GET /api/companies` — ни один тест не смотрел на `GET
+/api/companies/public`. `CPH-021` (`CompanyPhotosTests.cs`) проверяет и саму обложку на
+`/api/companies/public`, и — по образцу `CO-083` — полное совпадение формы `CompanyDto` между
+`GET /api/companies` и `GET /api/companies/public` для одной и той же компании, чтобы поймать не
+только этот конкретный дефект, но и любой будущий той же формы (поле заполнено на одном списковом
+эндпоинте и не заполнено на другом). Проверено локально откатом фикса — без него тест падает с
+`Expected publicEntry.CoverPhotoUrl … but found <null>`; с фиксом — зелёный.
 
 🆕 **Цикл 6, `excludeBookingId` в `GET /api/bookings/slots` — приёмка QA.** +6 запусков к прогону
 цикла 6 (466 → 472): `BK-068`…`BK-073` в `BookingsFlowSmokeTests.cs`. Новый необязательный параметр
@@ -74,6 +117,48 @@ grep -rn "BK-003" ServiceBooking.Tests/
 code-review (`6d762f8` — валидация `IsSystemFree` и сохранение полей цикла 7 на `PUT /api/admin/plans`;
 `3945256` — allow-лист `GET /api/pricing` в `LegalConsentFilter`) — добавил ещё +5 запусков (482 → 487):
 `ADM-044…047` на первую пару правок, `LEG-037` на вторую.
+
+🆕 **Цикл 9 (MAX как второй транспорт, режим доставки, Web Push мастеру) — приёмка QA (проходы B и C).**
++14 запусков (515 → 529, отдельно от переименования `NTF-C005B`, см. ниже): `MAX-001`…`MAX-005` в
+новом `NotificationMaxTransportTests.cs` + `NotificationTransportStartupTests.cs` (два подключённых
+транспорта → две строки `OutboundNotification` на одно событие, повторный прогон → ноль новых;
+`PriorityChannel` → ровно одна строка на приоритетный транспорт; отписка гасит оба транспорта;
+сломанный MAX-канал не течёт в очередь WhatsApp; нераспознанный `Notifications:Provider` роняет старт
+ДО того, как хост становится здоровым — §104.2/B13) и `PUSH-001`…`PUSH-009` в новом `StaffPushTests.cs`
+(§105/C12: переподписка того же endpoint другим мастером переносит строку, а не 409; логаут
+идемпотентен; три устройства → три очереди, повтор того же endpoint не плодит четвёртую; мастер не
+шлёт push сам себе; `StaffPushEnabled=false` гасит доставку в момент постановки в очередь, но не рвёт
+подписку; `410 Gone` удаляет подписку в тот же проход БЕЗ повтора; `429`/`5xx` — транзиентная неудача,
+подписка остаётся; вывод мастера из компании после постановки в очередь гасит доставку на отправке;
+**`PUSH-009`** — регрессионная защита B1/R4: строка, уже стоящая в очереди для мастера A, чья подписка
+затем переподписывается мастером B на том же общем компьютере ДО отправки, пропускается с причиной
+`PushSubscriptionReassigned`, а не уходит ни A, ни B). Написаны по `SPEC.md`/`ARCHITECTURE_CYCLE9.md`,
+не по реализации; проверялись против ТЕКУЩЕГО кода (после того как code-reviewer нашёл и закрыл 6
+блокеров, `7a15c45`…`0dfe31d`).
+
+🆕 **Регрессия после `develop → cycle/09` (цикл 10 «свобода ручной записи» влит поверх цикла 9) —
+QA-прогон на коммите слияния.** +1 запуск (529 → 530 в этом домене, не считая BK-/BKH-/CPH- цикла
+10 уже отражённых в таблице префиксов выше): `PUSH-010` в `StaffPushTests.cs` —
+`OwnerRecordsWalkInForAnotherMaster_QueuesRows`, стык, которого не существовало ни в одном из циклов
+по отдельности: владелец (staff, не мастер) записывает клиента вручную (Block A цикла 10 — свобода
+записи на любого мастера) на ДРУГОГО мастера. `PUSH-004` уже проверял «мастер не шлёт себе сам», но
+не проверял обратный случай — что запись, заведённую кем-то ДРУГИМ на этого мастера, push всё-таки
+должен получить. Тест прошёл на реальном смердженном коде без правок — `StaffPushScheduler` сравнивает
+АУТЕНТИФИЦИРОВАННОГО вызывающего (не `booking.ClientId`, не факт «это ручная запись») с
+`booking.MasterId`, что уже правильно обрабатывает этот случай; тест закрывает найденный пробел в
+покрытии, не найденный дефект.
+
+⚠️ **Регрессия найдена и исправлена тем же прогоном (не блокер, тестовый долг, не продуктовый):**
+`NTF-C005B` `OrderSecondChannel_WithOnlyOneNumberPaid…` в `NotificationChannelsTests.cs` был написан
+ДО `af2c38b` («enforce 409 on duplicate live channel per transport», N8/§114.2) и заказывал ВТОРОЙ
+канал того же транспорта (WhatsApp) через `POST /api/notification-channels` — ровно то, что `af2c38b`
+теперь корректно отвечает `409` на. Тест обновлён: второй канал для проверки ранжирования финансирования
+(`ChannelFunding.Rank`) заводится через МАКС-транспорт (по БД напрямую, как и остальные MAX-тесты этого
+цикла — два live-канала одного транспорта на аккаунте больше физически недостижимы через API), сам
+сценарий финансирования не изменился. Плюс добавлен отдельный `NTF-N8-001`
+`Create_SecondLiveChannelOfSameTransport_Returns409_AllowedAgainAfterFirstIsReplaced` — та самая пара
+сценариев, которую architect явно назвал для этой находки: 409 пока первый `NotConnected`, снова 200
+после того как первый становится `Replaced`.
 
 **Этот (третий) прогон** — после `5dcaf3f` ("align plans/platform-settings/legacy endpoints with
 cycle-7 contract"), которая привела `GET/POST/PUT /admin/plans` к контрактной форме `AdminPlanDto`
@@ -778,6 +863,12 @@ US-61/Q4 (ARCHITECTURE_CYCLE6.md §48.2/§48.4): `PhoneNormalizer.TryNormalizeRu
 #### CO-056 — «Мои компании» продолжают показывать скрытую из списка компанию
 
 Владелец скрывает компанию из общего списка, но `GET /api/companies/my` по-прежнему её содержит, при этом `ShowInPublicListing = false` и вычисляемый `PublicListingEnabled = false` — кабинет владельца не каталог, скрытые компании из него не пропадают.
+
+### GET /api/companies/public
+
+#### CO-083 — Выдача без фильтров совпадает с GET /api/companies (US-115, A13)
+
+Защита от расхождения двух независимых определений «публично размещена»: `GET /api/companies` вычисляет его в памяти через `SubscriptionResolver.GetEffectivePlansAsync`, `GET /api/companies/public` — в SQL через `Services/Billing/PublicListingQuery.cs` (ARCHITECTURE_CYCLE9.md §103.5). Заводится смешанный набор компаний: должны попасть в выдачу — никогда не подписывавшаяся (бесплатный базлайн), компания на полнофункциональном платном тарифе, компания с истёкшей подпиской (откатывается на бесплатный базлайн); не должны попасть — компания, которую владелец скрыл сам (`showInPublicListing = false`), компания на тарифе с `AllowPublicListing = false`, деактивированная компания. `GET /api/companies/public` обходится постранично (`pageSize=100`) до последней страницы, набор `Id` со всех страниц сравнивается с набором `Id` из `GET /api/companies` — они обязаны совпасть целиком, а не просто пересечься. Дополнительно проверяется, что каждая компания из фикстуры оказалась на своей стороне сравнения.
 
 ### Онлайн-оплата (опция владельца × гейт тарифа)
 

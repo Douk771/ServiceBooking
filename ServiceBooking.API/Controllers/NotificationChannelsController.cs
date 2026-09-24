@@ -26,8 +26,8 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class NotificationChannelsController(
     AppDbContext db,
-    IChannelProvisioning provisioning,
-    INotificationTransport transport,
+    IChannelProvisioningRegistry provisioningRegistry,
+    INotificationTransportRegistry transportRegistry,
     IMemoryCache cache,
     IOptions<NotificationOptions> options,
     SubscriptionResolver subscriptionResolver,
@@ -72,12 +72,26 @@ public class NotificationChannelsController(
             ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
             : EffectivePlan.Free;
         var price = await platformSettings.GetChannelPricePerMonthAsync();
-        var idleDays = await platformSettings.GetChannelIdleDaysAsync();
+
+        // B12 (§104.8): riskText/riskVersion now come from the SAME ChannelRiskNotice legal document the
+        // /channel-risk public page and accept-risk's own version check read — one noticeholder, not
+        // three copies of "roughly the same paragraph" drifting apart.
+        var riskDoc = legalProvider.Current?.Get(LegalDocumentType.ChannelRiskNotice);
+        if (riskDoc is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+
+        var available = price is not null;
+        var transports = new List<TransportOfferDto>
+        {
+            new(NotificationTransport.WhatsApp, ChannelPresentation.TransportDisplayName(NotificationTransport.WhatsApp),
+                available, ChannelPresentation.TransportConnectionNotice(NotificationTransport.WhatsApp)),
+            new(NotificationTransport.Max, ChannelPresentation.TransportDisplayName(NotificationTransport.Max),
+                available, ChannelPresentation.TransportConnectionNotice(NotificationTransport.Max)),
+        };
 
         return Ok(new ChannelOfferDto(
-            Available: price is not null, PricePerMonth: price, Currency: "RUB",
-            IdleDays: idleDays, PlanAllows: plan.AllowNotificationChannel,
-            RiskTextVersion: NotificationRiskText.CurrentVersion));
+            PricePerMonth: price, AllowedByPlan: plan.AllowNotificationChannel,
+            RiskText: riskDoc.ContentHtml, RiskVersion: riskDoc.Version, Transports: transports));
     }
 
     [HttpPost]
@@ -116,15 +130,36 @@ public class NotificationChannelsController(
         // the request on it being non-null blocked every request the moment nobody had bothered to keep
         // a now-decorative setting non-null, with no way for an owner to tell why.
 
+        // ARCHITECTURE_CYCLE9.md §104.2/§114.2 (US-119): absent → WhatsApp, computed here (not only at
+        // BuildRow time below) so the N8 duplicate-transport check right after has a concrete value to
+        // compare against.
+        var requestedTransport = dto.Transport ?? NotificationTransport.WhatsApp;
+
         // accountId is guaranteed here — GetOffer/AllowNotificationChannel above already required a
         // usable plan, and a usable plan requires an AccountSubscription, which requires an account
         // (BillingAccountProvisioner.EnsureAccountAsync is idempotent if one already exists).
         var ownerAccountId = accountId ?? await billingAccountProvisioner.EnsureAccountAsync(userId);
+
+        // §114.2 (N8): "у аккаунта уже есть канал этого транспорта в живом состоянии" → 409. "Живое"
+        // means State != Replaced — the SAME definition LoadFundingAsync already uses to pick the
+        // account's working channel per transport (this endpoint's own doc comment on that method).
+        // Without this check an owner could request unlimited pending/NotConnected channels of the same
+        // transport for one account.
+        var hasLiveChannelOfTransport = await db.NotificationChannels.AsNoTracking().AnyAsync(c =>
+            c.BillingAccountId == ownerAccountId && c.Transport == requestedTransport && c.State != ChannelState.Replaced);
+        if (hasLiveChannelOfTransport)
+            return Conflict($"У аккаунта уже есть канал транспорта «{ChannelPresentation.TransportDisplayName(requestedTransport)}» в живом состоянии");
+
         var channel = new NotificationChannel
         {
             Id = Guid.NewGuid(),
             OwnerUserId = userId,
             BillingAccountId = ownerAccountId,
+            // ARCHITECTURE_CYCLE9.md §104.2/§114.2 (US-119): absent → WhatsApp, so a pre-cycle-9 caller
+            // that never sends this field keeps requesting exactly what it always requested. An
+            // unparseable string in the JSON body never reaches here at all — [ApiController]'s own model
+            // binding already 400s a value that doesn't match NotificationTransport before this action runs.
+            Transport = requestedTransport,
             State = ChannelState.NotConnected,
             RequestedAtUtc = DateTime.UtcNow,
             LegalEntityForm = dto.LegalEntityForm,
@@ -164,7 +199,14 @@ public class NotificationChannelsController(
         var channel = await LoadOwnedChannelAsync(id, forUpdate: true);
         if (channel is null) return NotFound();
 
-        if (dto.Version != NotificationRiskText.CurrentVersion)
+        // B12 (§104.8): compared against the live ChannelRiskNotice document version instead of the
+        // deleted NotificationRiskText constant — the SAME version GetOffer's riskVersion just handed
+        // the frontend, so "текст изменился, прочитайте заново" is provably about THIS document, not a
+        // second copy that could drift from it.
+        var riskDoc = legalProvider.Current?.Get(LegalDocumentType.ChannelRiskNotice);
+        if (riskDoc is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+        if (dto.Version != riskDoc.Version)
             return BadRequest("Текст изменился, прочитайте заново");
 
         channel.RiskAcceptedAtUtc = DateTime.UtcNow;
@@ -259,7 +301,7 @@ public class NotificationChannelsController(
             // downstream is awaiting RequestAborted either); the only remaining boundary is
             // HttpClient.Timeout (§28.1's "green-api" named client), same as every other necessary-but-
             // irreversible provider call in this cycle.
-            instance = await provisioning.CreateInstanceAsync(CancellationToken.None);
+            instance = await provisioningRegistry.For(channel.Transport).CreateInstanceAsync(CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -328,12 +370,21 @@ public class NotificationChannelsController(
         // than registering a callback URL nobody can authenticate against. Deliberately NOT
         // HttpContext.RequestAborted, same reasoning as CreateInstanceAsync above — this call still
         // mutates the SAME billed instance, and a closed tab must not race it either.
+        // ARCHITECTURE_CYCLE9.md §104.7: the ORIGINAL provider-webhook/{token} route stays WhatsApp-only
+        // (it may already be configured at a live instance) — a WhatsApp channel keeps using it exactly
+        // as before this cycle. A MAX channel is configured against the NEW provider-webhook/{transport}/
+        // {token} route instead, so its delivery-status/state events reach GreenApiMaxWebhookParser (via
+        // the transport-keyed registry) rather than the WhatsApp-only parser at the old route — the two
+        // parsers agree on field NAMES but not on which NotificationReason a "noAccount"/"failed" status
+        // means, so a MAX channel pointed at the wrong route would log the wrong reason for every failure.
         var webhookUrl = string.IsNullOrEmpty(options.Value.WebhookToken)
             ? null
-            : $"https://{NotificationTemplateValidator.OwnDomain}/api/notifications/provider-webhook/{options.Value.WebhookToken}";
+            : channel.Transport == NotificationTransport.WhatsApp
+                ? $"https://{NotificationTemplateValidator.OwnDomain}/api/notifications/provider-webhook/{options.Value.WebhookToken}"
+                : $"https://{NotificationTemplateValidator.OwnDomain}/api/notifications/provider-webhook/{channel.Transport}/{options.Value.WebhookToken}";
         try
         {
-            await provisioning.ConfigureInstanceAsync(
+            await provisioningRegistry.For(channel.Transport).ConfigureInstanceAsync(
                 new ChannelCredentials(instance.InstanceId, instance.Token), options.Value.Dispatch.PauseMinMs,
                 webhookUrl, CancellationToken.None);
         }
@@ -374,7 +425,7 @@ public class NotificationChannelsController(
                 return Conflict("Канал не в процессе подключения");
             }
 
-            snapshot = await provisioning.GetQrAsync(credentials, HttpContext.RequestAborted);
+            snapshot = await provisioningRegistry.For(channel.Transport).GetQrAsync(credentials, HttpContext.RequestAborted);
             cache.Set(cacheKey, snapshot, TimeSpan.FromSeconds(2));
         }
 
@@ -434,7 +485,7 @@ public class NotificationChannelsController(
         }
 
         channel.LastTestMessageAtUtc = DateTime.UtcNow;
-        var outcome = await transport.SendAsync(credentials, ownerPhone, TestMessageText, HttpContext.RequestAborted);
+        var outcome = await transportRegistry.For(channel.Transport).SendAsync(credentials, ownerPhone, TestMessageText, HttpContext.RequestAborted);
         await db.SaveChangesAsync();
 
         return outcome switch
@@ -483,6 +534,12 @@ public class NotificationChannelsController(
             // §47.1's stability guarantee is about ranking, not about the row itself losing its
             // account — a replaced-after-ban number still belongs to the SAME account it always did.
             BillingAccountId = channel.BillingAccountId,
+            // ARCHITECTURE_CYCLE9.md §104.3: a replacement is a same-transport swap — copied explicitly
+            // rather than left at NotificationChannel.Transport's own WhatsApp default, or a banned MAX
+            // channel would silently "replace" into a WhatsApp one, and every moved assignment below
+            // would then fail the composite FK (assignment.Transport still says Max, newChannel.Transport
+            // would say WhatsApp).
+            Transport = channel.Transport,
             State = ChannelState.NotConnected,
             RequestedAtUtc = DateTime.UtcNow,
             PaidFromUtc = channel.PaidFromUtc,
@@ -550,8 +607,13 @@ public class NotificationChannelsController(
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"channel-assignment:{id}");
 
+        // ARCHITECTURE_CYCLE9.md §104.3/§114.3 (US-119): the invariant widened from "one channel ever" to
+        // "one channel PER TRANSPORT" — the uniqueness this lookup guards is now (CompanyId, Transport),
+        // matching the database's own unique index exactly. A company already on a WhatsApp channel is
+        // still a perfectly valid candidate for a MAX channel (a DIFFERENT transport's existing
+        // assignment simply doesn't match this WHERE and falls through to a normal new assignment below).
         var existingAssignment = await db.ChannelCompanyAssignments
-            .FirstOrDefaultAsync(a => a.CompanyId == dto.CompanyId);
+            .FirstOrDefaultAsync(a => a.CompanyId == dto.CompanyId && a.Transport == channel.Transport);
 
         if (existingAssignment is not null)
         {
@@ -562,7 +624,7 @@ public class NotificationChannelsController(
                 await transaction.CommitAsync();
                 return await BuildAssignedResponseAsync(channel, idleDaysSame);
             }
-            return Conflict("Салон уже привязан к другому номеру");
+            return Conflict("Салон уже привязан к другому номеру этого мессенджера");
         }
 
         var otherCompanyCount = await db.ChannelCompanyAssignments.CountAsync(a => a.ChannelId == id);
@@ -575,6 +637,10 @@ public class NotificationChannelsController(
             ChannelId = id,
             CompanyId = dto.CompanyId,
             BillingAccountId = channel.BillingAccountId!.Value,
+            // ARCHITECTURE_CYCLE9.md §104.3: the denormalized copy the composite FK pins to — MUST match
+            // channel.Transport exactly, or the FK on (ChannelId, BillingAccountId, Transport) rejects
+            // the insert outright.
+            Transport = channel.Transport,
             AssignedByUserId = userId,
         });
         await db.SaveChangesAsync();
@@ -731,7 +797,7 @@ public class NotificationChannelsController(
         {
             try
             {
-                await provisioning.LogoutAsync(credentials, HttpContext.RequestAborted);
+                await provisioningRegistry.For(channel.Transport).LogoutAsync(credentials, HttpContext.RequestAborted);
             }
             catch (Exception ex)
             {
@@ -744,7 +810,7 @@ public class NotificationChannelsController(
         InstanceDeletion deletion;
         try
         {
-            deletion = await provisioning.DeleteInstanceAsync(instanceId, HttpContext.RequestAborted);
+            deletion = await provisioningRegistry.For(channel.Transport).DeleteInstanceAsync(instanceId, HttpContext.RequestAborted);
         }
         catch (Exception ex)
         {
@@ -824,7 +890,7 @@ public class NotificationChannelsController(
         var riskAccepted = channel.RiskAcceptedAtUtc is not null;
 
         return new ChannelDto(
-            channel.Id, channel.State, stateText, phoneMasked, paymentState,
+            channel.Id, channel.Transport, channel.State, stateText, phoneMasked, paymentState,
             PaidFrom: null, // §47.3: deprecated, always null — PaidFromUtc is a historical column, not read.
             subscriptionPaidUntil, channel.RequestedAtUtc, channel.ConnectedAtUtc,
             channel.RiskAcceptedAtUtc, channel.IdleSinceUtc,

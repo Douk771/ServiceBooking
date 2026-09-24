@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { ChannelDto, ChannelOffer, LegalEntityForm } from '../types'
+import type { ChannelDto, ChannelOffer, LegalEntityForm, NotificationTransport } from '../types'
 
 export interface RequestChannelPayload {
   legalEntityForm: LegalEntityForm
@@ -7,6 +7,9 @@ export interface RequestChannelPayload {
   /** Version of `TermsOwner` — the channel offer (D9) lives as its appendix (§43.2), so acceptance is
    *  recorded against the same document version rather than a standalone `ChannelOffer` type. */
   offerAccepted: { version: string }
+  /** API_CONTRACT_CYCLE9.md §114.2 — optional; server defaults to 'WhatsApp' when absent, so a caller
+   *  that doesn't set it keeps the pre-cycle-9 behaviour exactly. */
+  transport?: NotificationTransport
 }
 
 // API_CONTRACT_CYCLE4.md §20–§27 — owner-scoped WhatsApp channel management.

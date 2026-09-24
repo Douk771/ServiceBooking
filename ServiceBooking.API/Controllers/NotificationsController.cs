@@ -79,7 +79,48 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
     /// </summary>
     [HttpPost("provider-webhook/{token}")]
     [EnableRateLimiting("notifications-webhook")]
-    public async Task<IActionResult> ProviderWebhook(string token, [FromServices] IProviderWebhookParser parser)
+    public async Task<IActionResult> ProviderWebhook(string token, [FromServices] IProviderWebhookParser parser) =>
+        await HandleWebhookAsync(token, parser);
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE9.md §104.7 / API_CONTRACT_CYCLE9.md §114.5 (US-120). The ORIGINAL
+    /// <c>provider-webhook/{token}</c> route above is untouched and still means WhatsApp — it may already
+    /// be configured at the provider's end (§104.7). This one adds the transport as an explicit path
+    /// segment, resolved through <see cref="IProviderWebhookParserRegistry"/> instead of a single
+    /// injected <see cref="IProviderWebhookParser"/>.
+    ///
+    /// A <paramref name="transport"/> segment that doesn't parse as <see cref="NotificationTransport"/>
+    /// is a 404, not a 400 — this route must never tell an unauthenticated caller which transports exist
+    /// (the SAME reasoning §19.2 already applies to a wrong/missing token below).
+    /// </summary>
+    [HttpPost("provider-webhook/{transport}/{token}")]
+    [EnableRateLimiting("notifications-webhook")]
+    public async Task<IActionResult> ProviderWebhookByTransport(
+        string transport, string token, [FromServices] IProviderWebhookParserRegistry parserRegistry)
+    {
+        if (!Enum.TryParse<NotificationTransport>(transport, ignoreCase: true, out var parsedTransport))
+            return NotFound();
+
+        IProviderWebhookParser parser;
+        try
+        {
+            parser = parserRegistry.For(parsedTransport);
+        }
+        catch (MissingTransportImplementationException)
+        {
+            // Recognized enum member, genuinely no parser wired up for it — same "don't reveal what
+            // exists" treatment as an unparsable segment, not a 500 a provider would retry forever on.
+            return NotFound();
+        }
+
+        return await HandleWebhookAsync(token, parser);
+    }
+
+    /// <summary>Shared by both webhook actions above (ARCHITECTURE_CYCLE4.md §32, extended by cycle 9 to
+    /// be transport-agnostic) — token check, body read, parse, and the delivery-status/channel-state
+    /// dispatch are identical regardless of which route or which transport's parser produced the
+    /// <see cref="ProviderCallback"/>.</summary>
+    private async Task<IActionResult> HandleWebhookAsync(string token, IProviderWebhookParser parser)
     {
         var expectedToken = options.Value.WebhookToken;
         if (string.IsNullOrEmpty(expectedToken) || !ConstantTimeEquals(token, expectedToken))
@@ -151,7 +192,13 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
                 if (row.Status is NotificationStatus.Sent or NotificationStatus.Pending)
                 {
                     row.Status = NotificationStatus.Failed;
-                    row.Reason = NotificationReason.RecipientHasNoWhatsApp;
+                    // ARCHITECTURE_CYCLE9.md §104.9 (US-120): the parser that produced this callback
+                    // knows which transport it's for and, for MAX, tells us explicitly which reason
+                    // applies (RecipientNotInMax/RejectedByProvider) via TerminalReason — the fallback to
+                    // RecipientHasNoWhatsApp is EXACTLY today's behavior for every event
+                    // GreenApiWebhookParser produces (it never sets TerminalReason), so WhatsApp's own
+                    // delivery log wording is unchanged by this cycle.
+                    row.Reason = callback.TerminalReason ?? NotificationReason.RecipientHasNoWhatsApp;
                 }
                 break;
 

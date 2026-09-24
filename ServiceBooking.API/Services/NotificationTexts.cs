@@ -54,6 +54,12 @@ public static class NotificationTexts
         return reason switch
         {
             NotificationReason.RecipientHasNoWhatsApp => "не доставлено: у клиента нет WhatsApp",
+            // ARCHITECTURE_CYCLE9.md §104.9 (US-120) — MAX's own equivalent of "у клиента нет WhatsApp".
+            NotificationReason.RecipientNotInMax => "не доставлено: у клиента нет MAX",
+            // ARCHITECTURE_CYCLE9.md §104.5 (US-125) — the priority transport wasn't usable when this
+            // event was queued (unassigned/unfunded/disconnected). No автоподмена — the owner has to fix
+            // it or switch modes, so the text says exactly that instead of a generic "пропущено".
+            NotificationReason.PriorityChannelUnavailable => "приоритетный канал не был доступен",
             NotificationReason.RecipientOptedOut => "клиент отказался от уведомлений",
             NotificationReason.VisitAlreadyStarted => "визит уже начался — не отправлено",
             NotificationReason.NoUsableChannel => channelId is null ? "канал недоступен" : "срок действия канала истёк",
@@ -64,6 +70,17 @@ public static class NotificationTexts
             NotificationReason.RetriesExhausted => "не удалось отправить после нескольких попыток",
             NotificationReason.BookingOrAssignmentCancelled => "отменено",
             NotificationReason.Delivered => "доставлено",
+            // ARCHITECTURE_CYCLE9.md §105.8 (US-124) — push-specific reasons. Not surfaced through any
+            // HTTP DTO this cycle (StaffPushNotification has no delivery-log endpoint), added here anyway
+            // so a future log surface, and StaffPushDispatchTask's own diagnostic logging, reuse the same
+            // single place Russian reason text is assembled (§6 convention) instead of inventing a second one.
+            NotificationReason.PushSubscriptionGone => "устройство отписалось от уведомлений",
+            NotificationReason.PushAuthRejected => "отклонено сервисом push-уведомлений",
+            NotificationReason.PushPayloadTooLarge => "сообщение не поместилось в push-уведомление",
+            NotificationReason.PushTtlExhausted => "не отправлено: истёк срок ожидания",
+            NotificationReason.StaffPushDisabledByCompany => "push-уведомления сотрудникам отключены салоном",
+            NotificationReason.MasterNoLongerInCompany => "сотрудник больше не работает в этой компании",
+            NotificationReason.PushSubscriptionReassigned => "устройство теперь привязано к другому сотруднику",
             null => status == NotificationStatus.Failed ? "не удалось отправить" : "пропущено",
             _ => "пропущено",
         };

@@ -35,13 +35,23 @@ public enum ProviderMessageStatus
 /// returns, so <c>ChannelStateMapper</c> is the one place either path is turned into our own
 /// <see cref="Core.Enums.ChannelState"/>.</param>
 /// <param name="OccurredAtUtc">Provider's own event timestamp, or "now" when the payload carries none.</param>
+/// <param name="TerminalReason">ARCHITECTURE_CYCLE9.md §104.9 (US-120) — set only when
+/// <paramref name="MessageStatus"/> is <see cref="ProviderMessageStatus.Failed"/> AND the parser can name
+/// which terminal reason applies (e.g. MAX's <c>noAccount</c> → <see cref="Core.Enums.NotificationReason.RecipientNotInMax"/>,
+/// its generic <c>failed</c> → <see cref="Core.Enums.NotificationReason.RejectedByProvider"/>). Null for
+/// every event <see cref="GreenApi.GreenApiWebhookParser"/> produces (unchanged — WhatsApp's own terminal
+/// reason for a Failed status is decided by the controller, exactly as before this cycle) and for every
+/// non-delivery-status event. This is what lets ONE webhook handler
+/// (<c>NotificationsController.ApplyDeliveryStatusAsync</c>) serve both transports without hard-coding
+/// WhatsApp's own reason for a status a DIFFERENT transport's parser produced.</param>
 public sealed record ProviderCallback(
     ProviderCallbackKind Kind,
     string? ProviderMessageId,
     string? InstanceId,
     ProviderMessageStatus? MessageStatus,
     ProviderChannelState? ChannelState,
-    DateTime OccurredAtUtc);
+    DateTime OccurredAtUtc,
+    Core.Enums.NotificationReason? TerminalReason = null);
 
 // The DI seam (IProviderWebhookParser) that resolves THIS record lives in
 // ServiceBooking.API.Services.ProviderWebhookParsing.cs, not here — it was written by the other backend

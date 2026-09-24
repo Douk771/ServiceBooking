@@ -67,8 +67,18 @@ services:
       - Notifications__KeyRotationAck=${NOTIFICATIONS_KEY_ROTATION_ACK:-}
       - Notifications__Provider=${NOTIFICATIONS_PROVIDER:-logging}
       - Notifications__PartnerToken=${NOTIFICATIONS_PARTNER_TOKEN:-}
+      # ARCHITECTURE_CYCLE9.md §104.1/§104.9 — MAX is a separate GREEN-API product/account from
+      # WhatsApp, so it needs its own partner token, checked by the same fail-fast rules.
+      - Notifications__GreenApiMax__PartnerToken=${NOTIFICATIONS_GREENAPI_MAX_PARTNER_TOKEN:-}
       - Notifications__WebhookToken=${NOTIFICATIONS_WEBHOOK_TOKEN:-}
       - Notifications__UnsubscribeKey=${NOTIFICATIONS_UNSUBSCRIBE_KEY:-}
+      # ARCHITECTURE_CYCLE9.md §105 (проход C, Web Push мастеру) — own provider switch/secret, empty
+      # WEBPUSH_STAFFPUSH_PROVIDER/logging default keeps the subsystem off exactly like
+      # NOTIFICATIONS_PROVIDER/logging above.
+      - Notifications__StaffPush__Provider=${WEBPUSH_STAFFPUSH_PROVIDER:-logging}
+      - Notifications__StaffPush__VapidPublicKey=${WEBPUSH_VAPID_PUBLIC_KEY:-}
+      - Notifications__StaffPush__VapidPrivateKey=${WEBPUSH_VAPID_PRIVATE_KEY:-}
+      - Notifications__StaffPush__VapidSubject=${WEBPUSH_VAPID_SUBJECT:-}
       # Retention (ARCHITECTURE_CYCLE5.md §49, DEPLOY.md §11.4): appsettings.json bakes DryRun=true —
       # deletion-by-age rules only log what they WOULD delete until this is deliberately flipped to
       # false on the host, per the two-run procedure in DEPLOY.md. Empty/unset keeps the baked-in

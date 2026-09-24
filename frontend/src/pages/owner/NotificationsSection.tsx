@@ -11,6 +11,7 @@ import { QrModal } from '../../components/notifications/QrModal'
 import { AssignCompanyDialog } from '../../components/notifications/AssignCompanyDialog'
 import { ChannelRequestModal } from '../../components/notifications/ChannelRequestModal'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
+import { TRANSPORT_LABELS } from '../../utils/notificationTransport'
 import type { ChannelDto } from '../../types'
 
 // ── Offer (before any channel is bought) ────────────────────────────────────────
@@ -22,8 +23,10 @@ function OfferCard({ hasExistingChannel }: { hasExistingChannel: boolean }) {
   if (isLoading) return <div className="h-40 bg-cream-deep rounded-2xl animate-pulse" />
   if (!offer) return null
 
-  // US-57 п. 6: price not set yet → "temporarily unavailable", never a zero price.
-  if (!offer.available || offer.pricePerMonth == null) {
+  // API_CONTRACT_CYCLE9.md §114.1 — `available` was dropped from the DTO (it was always exactly
+  // `pricePerMonth is not null` server-side); price not set yet → "temporarily unavailable", never a
+  // zero price (US-57 п. 6).
+  if (offer.pricePerMonth == null) {
     return (
       <Card className="p-8 text-center text-muted">
         <Icon name="alert-circle" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
@@ -32,23 +35,27 @@ function OfferCard({ hasExistingChannel }: { hasExistingChannel: boolean }) {
     )
   }
 
-  if (!offer.planAllows) {
+  if (!offer.allowedByPlan) {
     return (
       <Card className="p-8 text-center text-muted">
         <Icon name="settings" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
-        <p>Уведомления клиентам через WhatsApp доступны на более высоком тарифе</p>
+        <p>Уведомления клиентам через мессенджеры доступны на более высоком тарифе</p>
       </Card>
     )
   }
 
+  // §104.9 — the messenger name is only fixed to "WhatsApp" while it's the only offered transport;
+  // once MAX is offered too, the card can't claim a single messenger without lying about the other.
+  const messengerNames = offer.transports.map((t) => t.displayName).join(' и ')
+
   return (
     <Card className="p-6">
       <h2 className="text-base font-semibold text-ink mb-2">
-        {hasExistingChannel ? 'Подключить ещё один номер' : 'Уведомления клиентам через WhatsApp'}
+        {hasExistingChannel ? 'Подключить ещё один номер' : `Уведомления клиентам через ${messengerNames || 'мессенджер'}`}
       </h2>
       <p className="text-sm text-ink-soft mb-3">
-        Сообщения о записи, напоминания, отмены и переносы уходят клиентам с вашего собственного номера через
-        WhatsApp.
+        Сообщения о записи, напоминания, отмены и переносы уходят клиентам с вашего собственного номера через{' '}
+        {messengerNames || 'мессенджер'}.
       </p>
       <ul className="text-sm text-ink-soft list-disc pl-5 flex flex-col gap-1 mb-4">
         <li>Подключение номера и безопасный режим отправки — пауза между сообщениями, чтобы не спровоцировать бан</li>
@@ -82,10 +89,15 @@ function ChannelCard({
   channel,
   myCompanies,
   assignedElsewhereIds,
+  riskVersion,
 }: {
   channel: ChannelDto
   myCompanies: import('../../types').Company[]
   assignedElsewhereIds: Set<string>
+  /** API_CONTRACT_CYCLE9.md §104.8/§114.1 — pinned from the live offer, not a hardcoded string: after
+   *  B12 unifies the risk text into `ChannelRiskNotice`, a stale hardcoded version would record
+   *  acceptance of a version the owner was never actually shown. */
+  riskVersion: string | undefined
 }) {
   const qc = useQueryClient()
   const [showRisk, setShowRisk] = useState(false)
@@ -154,7 +166,14 @@ function ChannelCard({
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <p className="font-semibold text-ink">{channel.phoneMasked ?? 'Номер ещё не привязан'}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-ink">{channel.phoneMasked ?? 'Номер ещё не привязан'}</p>
+              {/* API_CONTRACT_CYCLE9.md §104.3 — a company can now hold one channel per transport, so
+                  the transport must be visible on every card once there can be more than one. */}
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">
+                {TRANSPORT_LABELS[channel.transport]}
+              </span>
+            </div>
             {channel.state !== 'Blocked' && channel.state !== 'NeedsReconnect' && channel.state !== 'Disconnected' && (
               <p className="text-sm text-ink-soft mt-0.5">{channel.stateText}</p>
             )}
@@ -169,7 +188,7 @@ function ChannelCard({
 
           <div className="flex gap-2 flex-wrap justify-end">
             {channel.paymentState === 'Paid' && channel.riskAcceptedAt == null && (
-              <Button size="sm" onClick={() => setShowRisk(true)}>
+              <Button size="sm" disabled={!riskVersion} onClick={() => setShowRisk(true)}>
                 Принять условия
               </Button>
             )}
@@ -230,10 +249,10 @@ function ChannelCard({
         </div>
       </div>
 
-      {showRisk && (
+      {showRisk && riskVersion && (
         <RiskAcceptanceModal
           channelId={channel.id}
-          riskTextVersion="2026-09-18-draft"
+          riskTextVersion={riskVersion}
           onClose={() => setShowRisk(false)}
           onAccepted={() => setShowRisk(false)}
         />
@@ -261,6 +280,8 @@ export function NotificationsSection() {
     queryFn: notificationChannelsApi.list,
   })
   const { data: myCompanies } = useQuery({ queryKey: ['my-companies'], queryFn: companiesApi.getMy })
+  // Same query key as OfferCard/ChannelRequestModal — a cache hit once any of the three has loaded it.
+  const { data: offer } = useQuery({ queryKey: ['notification-channel-offer'], queryFn: notificationChannelsApi.offer })
 
   if (isLoading) {
     return (
@@ -283,14 +304,14 @@ export function NotificationsSection() {
 
   const list = channels ?? []
   const companies = myCompanies ?? []
-  // A company can be assigned to at most one channel (SPEC §4.4 п. 7) — this excludes companies
-  // already claimed by a *different* channel from every "Назначить" dropdown, not just the channel
-  // being edited (the server would 409 "Салон уже привязан к другому номеру" anyway, but catching it
-  // in the option list is friendlier than a failed submit).
-  const assignedElsewhereByChannel = (currentChannelId: string) => {
+  // API_CONTRACT_CYCLE9.md §104.3 — a company can now be assigned to at most one channel PER
+  // TRANSPORT, not one channel overall (cycle 4's original invariant). Only channels of the SAME
+  // transport as the one being assigned-to exclude a company from the candidate list — a company
+  // already on a WhatsApp channel is still a valid candidate for a MAX channel.
+  const assignedElsewhereByChannel = (currentChannelId: string, transport: ChannelDto['transport']) => {
     const ids = new Set<string>()
     for (const ch of list) {
-      if (ch.id === currentChannelId) continue
+      if (ch.id === currentChannelId || ch.transport !== transport) continue
       for (const c of ch.companies) ids.add(c.companyId)
     }
     return ids
@@ -299,7 +320,13 @@ export function NotificationsSection() {
   return (
     <div className="flex flex-col gap-4">
       {list.map((ch) => (
-        <ChannelCard key={ch.id} channel={ch} myCompanies={companies} assignedElsewhereIds={assignedElsewhereByChannel(ch.id)} />
+        <ChannelCard
+          key={ch.id}
+          channel={ch}
+          myCompanies={companies}
+          assignedElsewhereIds={assignedElsewhereByChannel(ch.id, ch.transport)}
+          riskVersion={offer?.riskVersion}
+        />
       ))}
       <OfferCard hasExistingChannel={list.length > 0} />
     </div>

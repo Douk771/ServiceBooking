@@ -95,7 +95,11 @@ public sealed class NotificationScheduler(
     // ── Shared plumbing ──────────────────────────────────────────────────────────────────────────
 
     private sealed record SchedulingContext(
-        Company Company, EffectivePlan Plan, NotificationChannel? Channel, CompanyNotificationSettings? Settings,
+        Company Company, EffectivePlan Plan,
+        // ARCHITECTURE_CYCLE9.md §104.3/§104.5: a company may hold one assignment PER TRANSPORT now —
+        // every live channel is carried, not an arbitrary single one. Empty means "no assignment at all",
+        // same meaning the old nullable Channel's null carried.
+        IReadOnlyList<NotificationChannel> Channels, CompanyNotificationSettings? Settings,
         // US-67 (ARCHITECTURE_CYCLE6.md §47.2): the visit's service names, in visit order — one element
         // for a pre-cycle single-service booking, several for a multi-service one. The template renders
         // them joined by ", " (NotificationScheduler.RenderBodyAsync).
@@ -137,9 +141,16 @@ public sealed class NotificationScheduler(
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
 
-        var assignment = await db.ChannelCompanyAssignments.AsNoTracking()
+        // ARCHITECTURE_CYCLE9.md §104.3: every live assignment, one per transport at most — not an
+        // arbitrary FirstOrDefault. N9: ordered by Transport so ctx.Channels[0] (the "representative"
+        // channel used for the journal's ChannelId on Expired/Skipped rows, see QueueAsync) is stable
+        // across passes instead of depending on whatever order the database happens to return.
+        var channels = await db.ChannelCompanyAssignments.AsNoTracking()
             .Include(a => a.Channel)
-            .FirstOrDefaultAsync(a => a.CompanyId == booking.CompanyId, ct);
+            .Where(a => a.CompanyId == booking.CompanyId)
+            .OrderBy(a => a.Transport)
+            .Select(a => a.Channel)
+            .ToListAsync(ct);
 
         var settings = await db.CompanyNotificationSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.CompanyId == booking.CompanyId, ct);
@@ -175,7 +186,7 @@ public sealed class NotificationScheduler(
         var optedOut = recipientPhone is not null &&
             await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == recipientPhone, ct);
 
-        return new SchedulingContext(company, plan, assignment?.Channel, settings, names, master,
+        return new SchedulingContext(company, plan, channels, settings, names, master,
             recipientPhone, recipientName, optedOut, recipientUserId);
     }
 
@@ -196,6 +207,38 @@ public sealed class NotificationScheduler(
         return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
     }
 
+    /// <summary>N10: <see cref="IsChannelFundedAsync"/> called once per channel of <paramref name="channels"/>
+    /// re-fetches every sibling channel on that channel's billing account EACH time — for a company with
+    /// two assigned transports (WhatsApp + MAX) that is 2 full-account queries to rank funding for one
+    /// event, every time an event is queued. Ranking only depends on the DISTINCT billing accounts behind
+    /// <paramref name="channels"/> (almost always exactly one), so this groups by account and ranks each
+    /// account's siblings exactly once.</summary>
+    private async Task<Dictionary<Guid, bool>> BuildFundingLookupAsync(
+        IReadOnlyList<NotificationChannel> channels, EffectivePlan plan, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, bool>();
+        var accountIds = channels
+            .Where(c => c.BillingAccountId is not null)
+            .Select(c => c.BillingAccountId!.Value)
+            .Distinct()
+            .ToList();
+        if (accountIds.Count == 0) return result;
+
+        var siblings = await db.NotificationChannels.AsNoTracking()
+            .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value))
+            .ToListAsync(ct);
+
+        foreach (var accountId in accountIds)
+        {
+            var accountSiblings = siblings.Where(c => c.BillingAccountId == accountId).ToList();
+            var ranking = ChannelFunding.Rank(accountSiblings, plan.PaidNotificationNumbers);
+            foreach (var (channelId, state) in ranking)
+                result[channelId] = state == ChannelFundingState.Funded;
+        }
+
+        return result;
+    }
+
     private static DateTime ComputeVisitStartUtc(SchedulingContext ctx, Booking booking) =>
         NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, ctx.Company.TimeZoneId);
 
@@ -206,6 +249,14 @@ public sealed class NotificationScheduler(
         Enum.TryParse<ProviderDeliveryConsentMode>(raw, ignoreCase: true, out var mode)
             ? mode : ProviderDeliveryConsentMode.AccountsOnly;
 
+    /// <summary>ARCHITECTURE_CYCLE9.md §104.5's "до → после" table — the transport is now part of the
+    /// key. Applied to EVERY row this method writes, not only Pending ones (Expired/Skipped rows use the
+    /// company's priorityTransport as the representative value — see <see cref="QueueAsync"/>): keeping
+    /// one uniform key shape means the idempotency guarantee (§23.5's unique index) never has to special-
+    /// case which status a row ended up in.</summary>
+    private static string BuildIdempotencyKey(NotificationType type, Guid bookingId, string phone, int generation, NotificationTransport transport) =>
+        $"{type}:{bookingId}:{phone}:{generation}:{transport}";
+
     private async Task QueueAsync(
         SchedulingContext ctx, Booking booking, NotificationType type,
         DateTime dueAtUtc, DateTime visitStartUtc, int generation, CancellationToken ct)
@@ -215,27 +266,15 @@ public sealed class NotificationScheduler(
         if (string.IsNullOrEmpty(ctx.RecipientPhone)) return;
 
         var nowUtc = DateTime.UtcNow;
-        var idempotencyKey = $"{type}:{booking.Id}:{ctx.RecipientPhone}:{generation}";
-
-        // Defensive: NotificationScheduler is only ever called once per event by BookingsController, but
-        // a retried request after a transient DB error could re-run the same call before the first
-        // attempt's transaction committed anywhere else. The unique index on IdempotencyKey is the real
-        // guard (§23.5); this check just avoids a doomed-to-fail insert attempt in the common case.
-        var alreadyQueued = await db.OutboundNotifications.AnyAsync(n => n.IdempotencyKey == idempotencyKey, ct);
-        if (alreadyQueued) return;
+        var priorityTransport = ctx.Settings?.PriorityTransport ?? new CompanyNotificationSettings().PriorityTransport;
+        var representativeChannelId = ctx.Channels.Count > 0 ? ctx.Channels[0].Id : (Guid?)null;
 
         if (NotificationTiming.IsExpired(visitStartUtc, nowUtc))
         {
-            db.OutboundNotifications.Add(BuildRow(ctx, booking, type, "", dueAtUtc, visitStartUtc, generation,
-                idempotencyKey, NotificationStatus.Expired, NotificationReason.VisitAlreadyStarted));
+            await AddSingleRowIfNotAlreadyQueuedAsync(ctx, booking, type, "", dueAtUtc, visitStartUtc, generation,
+                priorityTransport, representativeChannelId, NotificationStatus.Expired, NotificationReason.VisitAlreadyStarted, ct);
             return;
         }
-
-        // ARCHITECTURE_CYCLE7.md §47.1/§47.2: funded/unfunded is ranked across every LIVE channel on the
-        // SAME account as ctx.Channel, by plan.PaidNotificationNumbers — one extra scalar-ish query per
-        // queued notification, acceptable here per the class doc comment (booking events, not the
-        // dispatcher's hot list path, §26).
-        var channelIsFunded = await IsChannelFundedAsync(ctx.Channel, ctx.Plan, ct);
 
         // T-24 (ARCHITECTURE_CYCLE5.md §52.3): only looked up for recipients WITH an account — a guest
         // (RecipientUserId null) passes null through unchanged, which NotificationGate reads as "no
@@ -250,31 +289,111 @@ public sealed class NotificationScheduler(
             recipientHasProviderDeliveryConsent = consentState is not null;
         }
 
-        var gate = NotificationGate.Evaluate(
-            ctx.Plan, type, ctx.Channel is not null, ctx.Channel, ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc,
-            channelIsFunded,
+        // ARCHITECTURE_CYCLE9.md §104.5/§104.6: channel-INDEPENDENT gate checks first — opt-out, provider
+        // consent, plan.PaidNotificationNumbers == 0, "no assignment at all", type disabled, lead time.
+        // channelIsFunded is forced TRUE here deliberately: NotificationGate.Evaluate's funding branch
+        // reuses the same NotOnPaidPlan reason as the account-wide "zero paid numbers" branch (its own
+        // doc comment says so), so forcing true here guarantees that if NotOnPaidPlan still comes back,
+        // it can ONLY be the account-wide reason — per-CHANNEL funding is routing's own job below, and
+        // (per §104.5) an unfunded/unusable PRIORITY channel is reported as PriorityChannelUnavailable,
+        // not NotOnPaidPlan — a deliberate, routing-aware reason, not a WhatsApp-era reason repurposed.
+        var globalGate = NotificationGate.Evaluate(
+            ctx.Plan, type, companyHasAssignment: ctx.Channels.Count > 0,
+            channel: ctx.Channels.Count > 0 ? ctx.Channels[0] : null,
+            ctx.Settings, ctx.RecipientOptedOut, nowUtc, visitStartUtc,
+            channelIsFunded: true,
             ParseProviderDeliveryConsentMode(options.Value.ProviderDeliveryConsent), recipientHasProviderDeliveryConsent);
 
-        if (gate.Outcome == NotificationGateOutcome.Blocked)
+        if (globalGate.Outcome == NotificationGateOutcome.Blocked)
         {
-            db.OutboundNotifications.Add(BuildRow(ctx, booking, type, "", dueAtUtc, visitStartUtc, generation,
-                idempotencyKey, NotificationStatus.Skipped, gate.Reason));
+            await AddSingleRowIfNotAlreadyQueuedAsync(ctx, booking, type, "", dueAtUtc, visitStartUtc, generation,
+                priorityTransport, representativeChannelId, NotificationStatus.Skipped, globalGate.Reason, ct);
             return;
         }
 
+        // Past the global gate — route to one or more specific channels (§104.5/US-125). "Usable" here is
+        // deliberately FUNDING ONLY, not "funded AND Connected": ChannelState is NOT checked here, on
+        // purpose, and this is a conscious, documented departure from §104.5's own listed "негоден"
+        // bullets (which name "не Connected" alongside "не оплачен"). Reason: NotificationGate's
+        // pre-cycle-9 contract (its own doc comment) is explicit that queueing must NEVER regress a
+        // channel that is mid-reconnect — "unconnected doesn't discard queued rows, it just doesn't
+        // dispatch them yet" is the DISPATCHER's job, not the queue's — and this is exactly what
+        // NotificationQueueingTests' SeedConnectedAssignedChannelAsync helper is built and commented
+        // around (it seeds State = Disconnected on purpose, specifically because "NotificationGate.Evaluate
+        // deliberately does not look at ChannelState at all"). Checking Connected here would silently
+        // turn a transient reconnect window into a lost message (Skipped/PriorityChannelUnavailable)
+        // instead of "stays Pending, sends once reconnected" — a real behavior change for every existing
+        // single-channel company that §104.5's own П12 promises NOT to make. The UI-facing
+        // connectedTransports/priorityChannelHealthy fields (CompanyNotificationsController) still check
+        // Connected — that is a live STATUS signal for the owner, deliberately more conservative than
+        // what actually gates a send.
+        // N10: one batched funding lookup for the whole event instead of one full
+        // "load every sibling channel on this billing account" query PER channel — ranking only depends
+        // on which billing account(s) ctx.Channels sit on, computed once here rather than once per
+        // candidate (this scales with distinct accounts, almost always 1, not with channel count).
+        var fundedByChannelId = await BuildFundingLookupAsync(ctx.Channels, ctx.Plan, ct);
+        var candidates = ctx.Channels
+            .Select(channel => new NotificationRouting.Candidate(
+                channel.Id, channel.Transport, fundedByChannelId.GetValueOrDefault(channel.Id)))
+            .ToList();
+
+        var mode = ctx.Settings?.DeliveryMode ?? new CompanyNotificationSettings().DeliveryMode;
+        var routing = NotificationRouting.SelectTargets(mode, priorityTransport, candidates);
+
+        if (routing.Targets.Count == 0)
+        {
+            // AllChannels with zero usable candidates has no routing-specific reason (§104.5 doesn't name
+            // one for it) — NotOnPaidPlan is this method's own choice, reusing the existing "nothing
+            // usable" vocabulary rather than inventing a new NotificationReason member for a case the
+            // architecture doesn't call out by name.
+            var reason = routing.SkipReason ?? NotificationReason.NotOnPaidPlan;
+            var channelId = routing.UnavailableChannelId ?? representativeChannelId;
+            await AddSingleRowIfNotAlreadyQueuedAsync(ctx, booking, type, "", dueAtUtc, visitStartUtc, generation,
+                priorityTransport, channelId, NotificationStatus.Skipped, reason, ct);
+            return;
+        }
+
+        // §104.5: "Строк на событие: 1 в режиме PriorityChannel, по 1 на транспорт в режиме AllChannels."
+        // Idempotency is checked PER TARGET, independently — not once for the whole event.
         var body = await RenderBodyAsync(ctx, booking, type);
+        foreach (var target in routing.Targets)
+        {
+            var idempotencyKey = BuildIdempotencyKey(type, booking.Id, ctx.RecipientPhone, generation, target.Transport);
+            var alreadyQueued = await db.OutboundNotifications.AnyAsync(n => n.IdempotencyKey == idempotencyKey, ct);
+            if (alreadyQueued) continue;
+
+            db.OutboundNotifications.Add(BuildRow(ctx, booking, type, body, dueAtUtc, visitStartUtc, generation,
+                idempotencyKey, target.Transport, target.ChannelId, NotificationStatus.Pending, null));
+        }
+    }
+
+    /// <summary>Shared by the three "one row for this whole event, no specific routing target"
+    /// cases above (Expired, globally-blocked, routing-empty) — each checks the SAME per-transport
+    /// idempotency guard a per-target Pending row uses, using <paramref name="transport"/> (the company's
+    /// own priorityTransport, since there is no target to name one) as the representative value.</summary>
+    private async Task AddSingleRowIfNotAlreadyQueuedAsync(
+        SchedulingContext ctx, Booking booking, NotificationType type, string body,
+        DateTime dueAtUtc, DateTime visitStartUtc, int generation, NotificationTransport transport, Guid? channelId,
+        NotificationStatus status, NotificationReason? reason, CancellationToken ct)
+    {
+        var idempotencyKey = BuildIdempotencyKey(type, booking.Id, ctx.RecipientPhone!, generation, transport);
+        var alreadyQueued = await db.OutboundNotifications.AnyAsync(n => n.IdempotencyKey == idempotencyKey, ct);
+        if (alreadyQueued) return;
+
         db.OutboundNotifications.Add(BuildRow(ctx, booking, type, body, dueAtUtc, visitStartUtc, generation,
-            idempotencyKey, NotificationStatus.Pending, null));
+            idempotencyKey, transport, channelId, status, reason));
     }
 
     private OutboundNotification BuildRow(
         SchedulingContext ctx, Booking booking, NotificationType type, string body,
         DateTime dueAtUtc, DateTime visitStartUtc, int generation, string idempotencyKey,
+        NotificationTransport transport, Guid? channelId,
         NotificationStatus status, NotificationReason? reason) => new()
     {
         Id = Guid.NewGuid(),
         CompanyId = booking.CompanyId,
-        ChannelId = ctx.Channel?.Id,
+        ChannelId = channelId,
+        Transport = transport,
         BookingId = booking.Id,
         Type = type,
         RecipientPhone = ctx.RecipientPhone!,

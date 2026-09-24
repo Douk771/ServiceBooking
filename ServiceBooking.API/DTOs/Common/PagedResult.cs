@@ -73,11 +73,42 @@ public static class Pagination
     /// characters that actually caused the crash is removed. Returns null (not empty string) once
     /// stripping leaves nothing searchable, so call sites' existing `IsNullOrWhiteSpace` guard still
     /// short-circuits an all-control-character input the same way it already does for blank input.
+    ///
+    /// Also strips lone (unpaired) UTF-16 surrogate code units. ASP.NET Core's query-string binder
+    /// percent-decodes raw bytes into a .NET string without validating that surrogate pairs are well
+    /// formed, so a crafted `?search=...` can produce a string containing e.g. a high surrogate with no
+    /// following low surrogate. Such a string is not valid UTF-16 text and Npgsql's UTF-8 transcoder
+    /// throws an unhandled EncoderFallbackException (500, with an internal stack trace leaked to the
+    /// client) when it tries to bind it as a query parameter. A lone surrogate can never represent a
+    /// meaningful search character on its own, so it is simply dropped rather than surfaced as a 400 —
+    /// consistent with this method's existing "clamp/strip, don't reject" contract for `search`.
     /// </summary>
     public static string? SanitizeSearch(string? search)
     {
         if (string.IsNullOrEmpty(search)) return search;
-        var cleaned = new string(search.Where(c => !char.IsControl(c)).ToArray());
+        var cleaned = new string(search.Where((c, i) => !char.IsControl(c) && !IsLoneSurrogate(search, i)).ToArray());
         return cleaned.Length == 0 ? null : cleaned;
     }
+
+    private static bool IsLoneSurrogate(string s, int index)
+    {
+        var c = s[index];
+        if (char.IsHighSurrogate(c))
+            return index + 1 >= s.Length || !char.IsLowSurrogate(s[index + 1]);
+        if (char.IsLowSurrogate(c))
+            return index == 0 || !char.IsHighSurrogate(s[index - 1]);
+        return false;
+    }
+
+    /// <summary>
+    /// Parses a raw query-string value into an int, or null if it's absent/blank/not a valid integer —
+    /// never throws. Endpoints whose contract promises page/pageSize are "clamped, never rejected with
+    /// 400" (e.g. contracts/cycle9/openapi.yaml's GET /companies/public) must bind these params as
+    /// `string?` rather than `int?`: with [ApiController] + [FromQuery] int?, a non-integer value fails
+    /// model binding and short-circuits to an automatic 400 before the action body — and therefore
+    /// Normalize's own clamp logic below — ever runs. Route through this first to keep that promise for
+    /// malformed input too, not just out-of-range input.
+    /// </summary>
+    public static int? ParseNullableInt(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && int.TryParse(value, out var parsed) ? parsed : null;
 }

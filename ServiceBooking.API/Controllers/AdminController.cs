@@ -890,11 +890,14 @@ public class AdminController(
     [HttpGet("notification-channels")]
     public async Task<ActionResult<PagedResult<AdminChannelDto>>> GetNotificationChannels(
         [FromQuery] ChannelState? state, [FromQuery] ChannelPaymentStatus? paymentState,
+        [FromQuery] NotificationTransport? transport,
         [FromQuery] int? page, [FromQuery] int? pageSize)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.NotificationChannels.AsNoTracking().Include(c => c.Assignments).AsQueryable();
         if (state.HasValue) query = query.Where(c => c.State == state);
+        // ARCHITECTURE_CYCLE9.md §114.3 (US-121) — ?transport= filter, additive.
+        if (transport.HasValue) query = query.Where(c => c.Transport == transport);
 
         // Payment state is computed, not stored (ChannelPaymentState.Of) — filtering by it means
         // pulling candidates in state-shaped buckets rather than a single indexed WHERE. At this row
@@ -918,7 +921,7 @@ public class AdminController(
         {
             var owner = owners.GetValueOrDefault(c.OwnerUserId);
             return new AdminChannelDto(
-                c.Id, c.State, ChannelPaymentState.Of(c, nowUtc),
+                c.Id, c.Transport, c.State, ChannelPaymentState.Of(c, nowUtc),
                 owner is null ? "" : $"{owner.FirstName} {owner.LastName}",
                 owner?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(owner.PhoneNumber),
                 c.PaidFromUtc, c.PaidUntilUtc, c.Assignments.Count, c.IdleSinceUtc, c.RequestedAtUtc,
@@ -1093,7 +1096,7 @@ public class AdminController(
         };
 
     private static AdminChannelDto MapAdminChannelDto(NotificationChannel channel, int idleDays) => new(
-        channel.Id, channel.State, ChannelPaymentState.Of(channel, DateTime.UtcNow), "", null,
+        channel.Id, channel.Transport, channel.State, ChannelPaymentState.Of(channel, DateTime.UtcNow), "", null,
         channel.PaidFromUtc, channel.PaidUntilUtc, channel.Assignments.Count, channel.IdleSinceUtc, channel.RequestedAtUtc,
         channel.Inn, channel.LegalEntityForm);
 
@@ -1192,8 +1195,10 @@ public record ScheduledTaskStatusDto(
 // Inn/LegalEntityForm appended (code review, "заодно"): the owner-facing channel read already exposes
 // both (NotificationChannelsController); SuperAdmin — who has to reconcile the same channel against
 // invoicing/compliance — was the one reader who couldn't see either.
+// ARCHITECTURE_CYCLE9.md §104.3/§114.3 (US-121) — Transport is additive, inserted right after Id;
+// every other field keeps its name and position.
 public record AdminChannelDto(
-    Guid Id, ChannelState State, ChannelPaymentStatus PaymentState,
+    Guid Id, NotificationTransport Transport, ChannelState State, ChannelPaymentStatus PaymentState,
     string OwnerName, string? OwnerPhoneMasked,
     DateTime? PaidFrom, DateTime? PaidUntil, int CompanyCount, DateTime? IdleSince, DateTime? RequestedAt,
     string? Inn = null, LegalEntityForm? LegalEntityForm = null);

@@ -6,8 +6,10 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Icon } from '../../components/ui/Icon'
 import { ChannelBreachBanner } from '../../components/notifications/ChannelBreachBanner'
+import { StaffPushSettingsCard } from '../../components/push/StaffPushSettingsCard'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
-import type { NotificationType } from '../../types'
+import { TRANSPORT_LABELS } from '../../utils/notificationTransport'
+import type { NotificationType, NotificationDeliveryMode, NotificationTransport } from '../../types'
 
 const TYPE_LABELS: Record<NotificationType, string> = {
   BookingConfirmed: 'Подтверждение записи',
@@ -30,6 +32,8 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
   const [enabledTypes, setEnabledTypes] = useState<Set<NotificationType>>(new Set(CLIENT_TYPES))
   const [reminderLeadMinutes, setReminderLeadMinutes] = useState(1440)
   const [minLeadMinutes, setMinLeadMinutes] = useState(120)
+  const [deliveryMode, setDeliveryMode] = useState<NotificationDeliveryMode | null>(null)
+  const [priorityTransport, setPriorityTransport] = useState<NotificationTransport | null>(null)
   const [validationError, setValidationError] = useState('')
 
   useEffect(() => {
@@ -37,7 +41,17 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
     setEnabledTypes(new Set(data.enabledTypes))
     setReminderLeadMinutes(data.reminderLeadMinutes)
     setMinLeadMinutes(data.minLeadMinutes)
+    // §114.4 — deliveryMode/priorityTransport stay `null` (i.e. untouched) until the owner actually
+    // interacts with the picker below; the PUT then omits them entirely rather than re-sending the
+    // server's own last value back at it. That matters when the priority transport has since
+    // disconnected: re-sending it unchanged would still trip the server's "priorityTransport must be
+    // among connectedTransports" 400 for an owner who only meant to change, say, reminderLeadMinutes.
+    setDeliveryMode(null)
+    setPriorityTransport(null)
   }, [data])
+
+  const effectiveDeliveryMode = deliveryMode ?? data?.deliveryMode ?? 'PriorityChannel'
+  const effectivePriorityTransport = priorityTransport ?? data?.priorityTransport ?? 'WhatsApp'
 
   const saveMut = useMutation({
     mutationFn: () =>
@@ -45,6 +59,9 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
         enabledTypes: [...enabledTypes],
         reminderLeadMinutes,
         minLeadMinutes,
+        // Omit entirely when the owner hasn't touched the picker (§114.4: "не прислали — не меняем").
+        ...(deliveryMode !== null ? { deliveryMode } : {}),
+        ...(priorityTransport !== null ? { priorityTransport } : {}),
       }),
     onSuccess: (res) => {
       setValidationError('')
@@ -71,42 +88,62 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
     saveMut.mutate()
   }
 
-  if (isLoading) return <div className="h-64 bg-cream-deep rounded-2xl animate-pulse" />
+  // C18 (§105.7): staff push is its OWN route, not gated by planAllowsChannel/channel state below —
+  // rendered unconditionally, ahead of the client-notifications gates that follow.
+  const staffPushCard = <StaffPushSettingsCard companyId={companyId} />
+
+  if (isLoading)
+    return (
+      <div className="flex flex-col gap-4">
+        {staffPushCard}
+        <div className="h-64 bg-cream-deep rounded-2xl animate-pulse" />
+      </div>
+    )
   if (isError || !data)
     return (
-      <Card className="p-10 text-center text-muted">
-        <Icon name="alert-circle" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
-        <p>Не удалось загрузить настройки уведомлений.</p>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {staffPushCard}
+        <Card className="p-10 text-center text-muted">
+          <Icon name="alert-circle" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+          <p>Не удалось загрузить настройки уведомлений.</p>
+        </Card>
+      </div>
     )
 
   // Trois-level gate convention (CURRENT_STATE.md §4.6, SPEC US-31 п. 4): tariff off → upsell stub;
   // no/unpaid/disconnected channel → "connect a channel" stub; only then does the real form render.
   if (!data.planAllowsChannel) {
     return (
-      <Card className="p-10 text-center text-muted">
-        <Icon name="settings" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
-        <p>Уведомления клиентам через WhatsApp доступны на более высоком тарифе</p>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {staffPushCard}
+        <Card className="p-10 text-center text-muted">
+          <Icon name="settings" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+          <p>Уведомления клиентам через WhatsApp доступны на более высоком тарифе</p>
+        </Card>
+      </div>
     )
   }
 
   if (!data.channel?.assigned || data.channel.paymentState !== 'Paid') {
     return (
-      <Card className="p-10 text-center text-muted">
-        <Icon name="megaphone" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
-        <p className="mb-3">{data.blockedReason ?? 'Салон не привязан к каналу'}</p>
-        <Link to="/cabinet">
-          <Button size="sm" variant="secondary">
-            Перейти к разделу «Уведомления → Каналы»
-          </Button>
-        </Link>
-      </Card>
+      <div className="flex flex-col gap-4">
+        {staffPushCard}
+        <Card className="p-10 text-center text-muted">
+          <Icon name="megaphone" size={28} strokeWidth={1.6} className="mx-auto mb-2" />
+          <p className="mb-3">{data.blockedReason ?? 'Салон не привязан к каналу'}</p>
+          <Link to="/cabinet">
+            <Button size="sm" variant="secondary">
+              Перейти к разделу «Уведомления → Каналы»
+            </Button>
+          </Link>
+        </Card>
+      </div>
     )
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {staffPushCard}
       {/* API_CONTRACT_CYCLE4.md §28.1 doesn't include the channel's full stateText here (only `state`
           and `blockedReason`), so blockedReason stands in for it — it's the same "channel is broken"
           episode already covered in the channel list, just approximated with what this endpoint sends.
@@ -120,6 +157,93 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
           <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
           <span>{data.blockedReason}</span>
         </div>
+      )}
+
+      {/* US-125 (§104.5) — delivery mode. Rendered only once at least one transport is connected: with
+          zero, the picker has nothing to pick between and the existing gate above already covers that
+          case with its own explanation. */}
+      {data.connectedTransports.length > 0 && (
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold text-ink mb-1">Как доставлять клиенту</h2>
+
+          {data.connectedTransports.length === 1 ? (
+            <p className="text-sm text-ink-soft mt-2">
+              Подключён только один мессенджер ({TRANSPORT_LABELS[data.connectedTransports[0]]}) — выбор режима пока
+              ни на что не влияет. Подключите второй канал, чтобы отправлять в оба или выбрать приоритетный.
+            </p>
+          ) : (
+            <>
+              {effectiveDeliveryMode === 'PriorityChannel' && !data.priorityChannelHealthy && (
+                <div className="rounded-xl bg-warning-bg text-warning text-sm px-4 py-3 flex items-start gap-2 mt-3 mb-1">
+                  <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
+                  {/* §104.5 — no silent fallback to another transport; the owner must choose. */}
+                  <span>Приоритетный канал не работает: выберите другой или включите отправку во все каналы.</span>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2.5 mt-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="delivery-mode"
+                    className="w-4 h-4 mt-0.5 accent-gold"
+                    checked={effectiveDeliveryMode === 'PriorityChannel'}
+                    onChange={() => setDeliveryMode('PriorityChannel')}
+                  />
+                  <span className="text-sm text-ink-soft">
+                    Только в приоритетный канал
+                    {effectiveDeliveryMode === 'PriorityChannel' && (
+                      <select
+                        aria-label="Приоритетный канал"
+                        value={effectivePriorityTransport}
+                        onChange={(e) => setPriorityTransport(e.target.value as NotificationTransport)}
+                        className="ml-2.5 rounded-lg border border-line px-2.5 py-1 text-sm outline-none focus:border-gold bg-white text-ink"
+                      >
+                        {/* The saved priority transport must stay selectable/visible even when it's since
+                            disconnected — otherwise the <select> falls back to showing whatever option
+                            happens to be first, the owner never notices, and saving re-sends a transport
+                            the server will 400 on (§114.4). The warning banner above already explains
+                            *why* it's unhealthy; this option just makes sure it isn't invisible. */}
+                        {[
+                          ...data.connectedTransports,
+                          ...(data.connectedTransports.includes(effectivePriorityTransport)
+                            ? []
+                            : [effectivePriorityTransport]),
+                        ].map((t) => (
+                          <option key={t} value={t}>
+                            {TRANSPORT_LABELS[t] ?? t}
+                            {!data.connectedTransports.includes(t) ? ' (не подключён)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="delivery-mode"
+                    className="w-4 h-4 mt-0.5 accent-gold"
+                    checked={effectiveDeliveryMode === 'AllChannels'}
+                    onChange={() => setDeliveryMode('AllChannels')}
+                  />
+                  <span className="text-sm text-ink-soft">Во все подключённые каналы</span>
+                </label>
+              </div>
+
+              {effectiveDeliveryMode === 'AllChannels' && (
+                <p className="text-xs text-muted mt-2.5">
+                  Клиент получит два одинаковых сообщения на один номер — по одному в каждый мессенджер.
+                </p>
+              )}
+
+              {/* §104.5 — the mode only applies to events queued AFTER saving; already-queued messages
+                  keep the recipient they were assigned at that moment. */}
+              <p className="text-xs text-muted mt-2.5">Изменение действует на события, произошедшие после сохранения.</p>
+            </>
+          )}
+        </Card>
       )}
 
       <Card className="p-6">

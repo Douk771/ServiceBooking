@@ -6,6 +6,8 @@ import type {
   NotificationLogEntry,
   NotificationLogSummary,
   NotificationType,
+  NotificationDeliveryMode,
+  NotificationTransport,
   Paged,
 } from '../types'
 
@@ -16,6 +18,8 @@ export interface NotificationLogFilters {
   type?: string
   from?: string
   to?: string
+  /** API_CONTRACT_CYCLE9.md §114.3 — filters the delivery log to one transport. */
+  transport?: NotificationTransport
 }
 
 // API_CONTRACT_CYCLE4.md §28–§32.
@@ -24,7 +28,14 @@ export const notificationsApi = {
     api.get<NotificationSettings>(`/companies/${companyId}/notification-settings`).then((r) => r.data),
   updateSettings: (
     companyId: string,
-    data: { enabledTypes: NotificationType[]; reminderLeadMinutes: number; minLeadMinutes: number },
+    data: {
+      enabledTypes: NotificationType[]
+      reminderLeadMinutes: number
+      minLeadMinutes: number
+      /** API_CONTRACT_CYCLE9.md §114.4 — optional; omitting a field means "don't change it". */
+      deliveryMode?: NotificationDeliveryMode
+      priorityTransport?: NotificationTransport
+    },
   ) => api.put<NotificationSettings>(`/companies/${companyId}/notification-settings`, data).then((r) => r.data),
 
   getTemplates: (companyId: string) =>

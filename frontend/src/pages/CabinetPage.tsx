@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import { companiesApi, type CreateCompanyPayload } from '../api/companies'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import { legalApi } from '../api/legal'
 import { adminApi } from '../api/admin'
 import { Card } from '../components/ui/Card'
@@ -601,13 +602,17 @@ export function CabinetPage() {
           </button>
         ))}
       </div>
-      {tab === 'dashboard' && <DashboardSection />}
-      {tab === 'companies' && <MyCompaniesTab />}
-      {tab === 'schedule' && <ScheduleSection />}
-      {tab === 'clients' && <ClientsSection />}
-      {tab === 'reports' && <ReportsTab />}
-      {tab === 'mailing' && <MailingSection />}
-      {tab === 'notifications' && <NotificationsSection />}
+      {/* Same reasoning as AdminPage: one boundary per tab, keyed on the tab, so a crash in one
+          tab's content doesn't take the tab bar or the breach banner above it down too (§103.1). */}
+      <ErrorBoundary key={tab} label={visible.find((t) => t.key === tab)?.label}>
+        {tab === 'dashboard' && <DashboardSection />}
+        {tab === 'companies' && <MyCompaniesTab />}
+        {tab === 'schedule' && <ScheduleSection />}
+        {tab === 'clients' && <ClientsSection />}
+        {tab === 'reports' && <ReportsTab />}
+        {tab === 'mailing' && <MailingSection />}
+        {tab === 'notifications' && <NotificationsSection />}
+      </ErrorBoundary>
     </div>
   )
 }

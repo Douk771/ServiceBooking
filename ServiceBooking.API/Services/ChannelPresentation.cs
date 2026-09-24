@@ -84,6 +84,27 @@ public static class ChannelPresentation
     /// 409 rule) — every other state either doesn't need a replacement or isn't terminal yet.</summary>
     public static bool CanReplace(ChannelState state) => state == ChannelState.Blocked;
 
+    /// <summary>ARCHITECTURE_CYCLE9.md §114.1 example — the display name printed next to the messenger
+    /// picker on the channel-request screen. Russian text collected here, in ONE place, same convention
+    /// as everything else in this class.</summary>
+    public static string TransportDisplayName(NotificationTransport transport) => transport switch
+    {
+        NotificationTransport.WhatsApp => "WhatsApp",
+        NotificationTransport.Max => "MAX",
+        _ => transport.ToString(),
+    };
+
+    /// <summary>ARCHITECTURE_CYCLE9.md §104.1/§104.9, §114.1 (US-119 acceptance criterion) — a limitation
+    /// the owner is OBLIGED to see BEFORE requesting that transport, not after (B1's researched table:
+    /// "для авторизации по QR-коду необходимо отключить пароль для входа в мессенджере MAX", confirmed
+    /// against GREEN-API's own "Перед началом работы"/"Важные отличия версии v3" docs). Null for a
+    /// transport with no such prerequisite (WhatsApp).</summary>
+    public static string? TransportConnectionNotice(NotificationTransport transport) => transport switch
+    {
+        NotificationTransport.Max => "Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере.",
+        _ => null,
+    };
+
     private static string DaysWord(int days)
     {
         var lastTwo = days % 100;

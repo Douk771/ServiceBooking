@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using ServiceBooking.API.Services;
+using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.UnitTests;
 
@@ -358,6 +359,9 @@ public class DeploymentSafetyChecksTests
     {
         ["Notifications:UnsubscribeKey"] = "a-real-unsubscribe-hmac-key",
         ["Notifications:WebhookToken"] = "a-real-webhook-token",
+        // ARCHITECTURE_CYCLE9.md §104.1: MAX is a separate GREEN-API partner account, checked the same
+        // way as Notifications:PartnerToken.
+        ["Notifications:GreenApiMax:PartnerToken"] = "a-real-max-partner-token",
     };
 
     [Fact]
@@ -442,6 +446,68 @@ public class DeploymentSafetyChecksTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*PartnerToken*");
     }
 
+    // ARCHITECTURE_CYCLE9.md §104.1: MAX is a separate GREEN-API partner account and needs its own
+    // token, checked by the same rule (and failure mode) as WhatsApp's Notifications:PartnerToken above.
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_ValidWhatsAppToken_WithoutMaxPartnerToken_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>(ValidRealProviderExtras())
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:GreenApiMax:PartnerToken"] = null,
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*GreenApiMax:PartnerToken*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_GreenApiInProduction_MaxPartnerTokenIsPlaceholder_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>(ValidRealProviderExtras())
+        {
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+            ["Notifications:Provider"] = "green-api",
+            ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:GreenApiMax:PartnerToken"] = "CHANGE_ME",
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Production");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*GreenApiMax:PartnerToken*");
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    [InlineData("Staging")]
+    public void ValidateNotificationSecrets_MaxPartnerTokenSetOutsideProduction_Throws(string environmentName)
+    {
+        // Same mirror-image rule as Notifications:PartnerToken — a real MAX partner token on a
+        // dev/staging machine could create/delete a live salon's MAX instance.
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:GreenApiMax:PartnerToken"] = "a-real-max-partner-token",
+        });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, environmentName);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*GreenApiMax:PartnerToken*");
+    }
+
+    [Fact]
+    public void ValidateNotificationSecrets_EmptyMaxPartnerTokenOutsideProduction_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:GreenApiMax:PartnerToken"] = "" });
+
+        var act = () => DeploymentSafetyChecks.ValidateNotificationSecrets(config, "Development");
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public void ValidateNotificationSecrets_GreenApiInProduction_ValidConfig_DoesNotThrow()
     {
@@ -468,6 +534,7 @@ public class DeploymentSafetyChecksTests
             ["Notifications:EncryptionKey"] = ValidBase64Key(),
             ["Notifications:Provider"] = "green-api",
             ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:GreenApiMax:PartnerToken"] = "a-real-max-partner-token",
             ["Notifications:WebhookToken"] = "a-real-webhook-token",
         });
 
@@ -484,6 +551,7 @@ public class DeploymentSafetyChecksTests
             ["Notifications:EncryptionKey"] = ValidBase64Key(),
             ["Notifications:Provider"] = "green-api",
             ["Notifications:PartnerToken"] = "a-real-partner-token",
+            ["Notifications:GreenApiMax:PartnerToken"] = "a-real-max-partner-token",
             ["Notifications:UnsubscribeKey"] = "a-real-unsubscribe-hmac-key",
         });
 
@@ -686,6 +754,42 @@ public class DeploymentSafetyChecksTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    // ── ValidateTransportRegistryCompleteness (cycle 9, US-122, ARCHITECTURE_CYCLE9.md §104.2) ──────
+
+    [Fact]
+    public void ValidateTransportRegistryCompleteness_EveryMemberRegistered_DoesNotThrow()
+    {
+        var act = () => DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+            "TestRegistry", Enum.GetValues<NotificationTransport>());
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateTransportRegistryCompleteness_MissingMember_ThrowsNamingTheRegistryAndTheGap()
+    {
+        // Simulates a third transport being added to the enum without a matching adapter registration —
+        // the exact scenario this check exists to catch loud at startup (§104.2: "в реестре нет
+        // реализации для члена NotificationTransport").
+        var act = () => DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+            "INotificationTransportRegistry", [NotificationTransport.WhatsApp]);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*INotificationTransportRegistry*")
+            .WithMessage("*Max*");
+    }
+
+    [Fact]
+    public void ValidateTransportRegistryCompleteness_EmptyRegistry_ThrowsNamingEveryMember()
+    {
+        var act = () => DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+            "IChannelProvisioningRegistry", []);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*WhatsApp*")
+            .WithMessage("*Max*");
+    }
+
     // ── ValidateProviderDeliveryConsentMode (cycle 5, T-24, ARCHITECTURE_CYCLE5.md §52.3) ──────────
 
     [Theory]
@@ -840,5 +944,121 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
 
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    // ── ValidateStaffPushSecrets: ARCHITECTURE_CYCLE9.md §105.3 (Q15, R12) ─────────────────────────
+
+    private static (string PublicKey, string PrivateKey) GenerateValidVapidPair()
+    {
+        using var ecdh = System.Security.Cryptography.ECDiffieHellman.Create(
+            System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        var parameters = ecdh.ExportParameters(includePrivateParameters: true);
+
+        var publicKeyBytes = new byte[65];
+        publicKeyBytes[0] = 0x04;
+        Buffer.BlockCopy(parameters.Q.X!, 0, publicKeyBytes, 1, 32);
+        Buffer.BlockCopy(parameters.Q.Y!, 0, publicKeyBytes, 33, 32);
+
+        static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        return (Base64Url(publicKeyBytes), Base64Url(parameters.D!));
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_DefaultLoggingProvider_DoesNotThrow_InProduction()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>());
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_UnrecognizedProvider_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:StaffPush:Provider"] = "carrier-pigeon" });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*carrier-pigeon*");
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_MissingKeys_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:StaffPush:Provider"] = "web-push" });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*VapidPublicKey*");
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_MalformedKeys_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:StaffPush:Provider"] = "web-push",
+            ["Notifications:StaffPush:VapidPublicKey"] = "not-a-real-key",
+            ["Notifications:StaffPush:VapidPrivateKey"] = "also-not-a-real-key",
+            ["Notifications:StaffPush:VapidSubject"] = "mailto:ops@ezbook.ru",
+        });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_ValidKeysButNoSubject_Throws()
+    {
+        var (publicKey, privateKey) = GenerateValidVapidPair();
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:StaffPush:Provider"] = "web-push",
+            ["Notifications:StaffPush:VapidPublicKey"] = publicKey,
+            ["Notifications:StaffPush:VapidPrivateKey"] = privateKey,
+        });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*VapidSubject*");
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_ValidConfiguration_DoesNotThrow()
+    {
+        var (publicKey, privateKey) = GenerateValidVapidPair();
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:StaffPush:Provider"] = "web-push",
+            ["Notifications:StaffPush:VapidPublicKey"] = publicKey,
+            ["Notifications:StaffPush:VapidPrivateKey"] = privateKey,
+            ["Notifications:StaffPush:VapidSubject"] = "mailto:ops@ezbook.ru",
+            ["Notifications:EncryptionKey"] = ValidBase64Key(),
+        });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateStaffPushSecrets_WebPushInProduction_ValidVapidButNoEncryptionKey_Throws()
+    {
+        // B5/§105.3: Notifications:Provider=logging (no real WhatsApp/MAX provider configured) never
+        // reaches ValidateNotificationSecrets' own EncryptionKey check, so a deployment that only turns
+        // ON web-push must be caught here instead — otherwise it starts clean and only 500s on the
+        // first POST /api/push/subscriptions once a master actually subscribes.
+        var (publicKey, privateKey) = GenerateValidVapidPair();
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["Notifications:StaffPush:Provider"] = "web-push",
+            ["Notifications:StaffPush:VapidPublicKey"] = publicKey,
+            ["Notifications:StaffPush:VapidPrivateKey"] = privateKey,
+            ["Notifications:StaffPush:VapidSubject"] = "mailto:ops@ezbook.ru",
+        });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*EncryptionKey*");
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public void ValidateStaffPushSecrets_WebPushInDeveloperEnvironment_MissingKeys_DoesNotThrow(string environmentName)
+    {
+        // §105.3: developer environments are expected to churn keys freely, same carve-out as
+        // ValidateNotificationSecrets' rules 1-2.
+        var config = BuildConfig(new Dictionary<string, string?> { ["Notifications:StaffPush:Provider"] = "web-push" });
+        var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, environmentName);
+        act.Should().NotThrow();
     }
 }

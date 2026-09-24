@@ -596,16 +596,19 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Transport")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ChannelId");
 
-                    b.HasIndex("CompanyId")
+                    b.HasIndex("CompanyId", "BillingAccountId");
+
+                    b.HasIndex("CompanyId", "Transport")
                         .IsUnique();
 
-                    b.HasIndex("ChannelId", "BillingAccountId");
-
-                    b.HasIndex("CompanyId", "BillingAccountId");
+                    b.HasIndex("ChannelId", "BillingAccountId", "Transport");
 
                     b.ToTable("ChannelCompanyAssignments");
                 });
@@ -711,6 +714,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("SearchName");
+
+                    b.HasIndex("Name", "Region")
+                        .IsUnique();
 
                     b.HasIndex("Region", "Name");
 
@@ -943,6 +949,14 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
+                    b.HasIndex("ShowInPublicListing", "CityId", "Name")
+                        .HasDatabaseName("IX_Companies_PublicListing")
+                        .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
+
+                    b.HasIndex("ShowInPublicListing", "Name", "Id")
+                        .HasDatabaseName("IX_Companies_PublicListing_Default")
+                        .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
+
                     b.ToTable("Companies");
                 });
 
@@ -989,14 +1003,25 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("DeliveryMode")
+                        .HasColumnType("integer");
+
                     b.Property<int>("EnabledTypeMask")
                         .HasColumnType("integer");
 
                     b.Property<int>("MinLeadMinutes")
                         .HasColumnType("integer");
 
+                    b.Property<int>("PriorityTransport")
+                        .HasColumnType("integer");
+
                     b.Property<int>("ReminderLeadMinutes")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("StaffPushEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1548,6 +1573,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<int>("Transport")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Type")
                         .HasColumnType("integer");
 
@@ -1661,6 +1689,57 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("Key");
 
                     b.ToTable("PlatformSettingChangeLogs");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PushSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AuthCiphertext")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeviceLabel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("KeyId")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime?>("LastSuccessAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("P256dhCiphertext")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Endpoint")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PushSubscriptions");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Review", b =>
@@ -1795,6 +1874,86 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("CompanyId");
 
                     b.ToTable("Services");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StaffPushNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("BookingId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("LastAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("Reason")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReasonDetail")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime?>("SentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("SubscriptionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("CompanyId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("SubscriptionId");
+
+                    b.HasIndex("ExpiresAtUtc", "CreatedAt")
+                        .HasDatabaseName("IX_StaffPushNotifications_Dispatch")
+                        .HasFilter("\"Status\" = 0");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpiresAtUtc", "CreatedAt"), new[] { "UserId", "CompanyId", "SubscriptionId" });
+
+                    b.ToTable("StaffPushNotifications");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubjectRequest", b =>
@@ -2335,17 +2494,17 @@ namespace ServiceBooking.Infrastructure.Migrations
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelCompanyAssignment", b =>
                 {
-                    b.HasOne("ServiceBooking.Core.Entities.NotificationChannel", "Channel")
-                        .WithMany("Assignments")
-                        .HasForeignKey("ChannelId", "BillingAccountId")
-                        .HasPrincipalKey("Id", "BillingAccountId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
                         .WithMany()
                         .HasForeignKey("CompanyId", "BillingAccountId")
                         .HasPrincipalKey("Id", "BillingAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.NotificationChannel", "Channel")
+                        .WithMany("Assignments")
+                        .HasForeignKey("ChannelId", "BillingAccountId", "Transport")
+                        .HasPrincipalKey("Id", "BillingAccountId", "Transport")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -2680,6 +2839,17 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("PlanConfig");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PushSubscription", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.Review", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.Booking", "Booking")
@@ -2734,6 +2904,31 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.StaffPushNotification", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.Booking", "Booking")
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ServiceBooking.Core.Entities.PushSubscription", "Subscription")
+                        .WithMany()
+                        .HasForeignKey("SubscriptionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Booking");
+
+                    b.Navigation("Company");
+
+                    b.Navigation("Subscription");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionChangeLog", b =>

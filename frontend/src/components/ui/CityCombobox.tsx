@@ -21,24 +21,34 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
   const [query, setQuery] = useState(value?.label ?? '')
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
+  // ARCHITECTURE_CYCLE9.md §103.4 (US-114): distinguishes "field shows the selection" from "user is
+  // typing". While `dirty === false` the server sees `value.name`, never the full "{Name}, {Region}"
+  // label — sending the label produced zero matches and a false "not found" on every focus.
+  const [dirty, setDirty] = useState(false)
   const listboxId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setQuery(value?.label ?? '')
+    setDirty(false)
   }, [value])
 
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery(value?.label ?? '')
+        setDirty(false)
+      }
     }
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
-  }, [])
+  }, [value])
 
+  const searchTerm = dirty ? query : (value?.name ?? '')
   const { data: options } = useQuery({
-    queryKey: ['cities', query],
-    queryFn: () => citiesApi.search(open ? query : ''),
+    queryKey: ['cities', searchTerm],
+    queryFn: () => citiesApi.search(searchTerm),
     enabled: open,
     staleTime: 60_000,
   })
@@ -47,6 +57,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
   const select = (city: City) => {
     onChange(city)
     setQuery(city.label)
+    setDirty(false)
     setOpen(false)
   }
 
@@ -82,6 +93,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
         <input
           id={`${listboxId}-input`}
           role="combobox"
+          aria-label={label || placeholder}
           aria-expanded={open}
           aria-controls={listboxId}
           aria-autocomplete="list"
@@ -92,6 +104,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
           onFocus={() => setOpen(true)}
           onChange={(e) => {
             setQuery(e.target.value)
+            setDirty(true)
             setHighlighted(0)
             setOpen(true)
             if (value) onChange(null)
@@ -128,7 +141,7 @@ export function CityCombobox({ label = 'Город', value, onChange, error, pla
             ))}
           </ul>
         )}
-        {open && items.length === 0 && query.trim().length > 0 && (
+        {open && items.length === 0 && dirty && query.trim().length > 0 && (
           <div className="absolute z-20 mt-1 w-full rounded-xl border border-line bg-white shadow-modal px-4 py-3 text-sm text-muted">
             Город не найден
           </div>

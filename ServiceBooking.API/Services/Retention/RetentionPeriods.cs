@@ -86,4 +86,15 @@ public sealed class RetentionPeriods
     /// <summary>Directory scanned by <see cref="Rules.AppLogAgeRule"/>. Empty disables the check (no
     /// log directory configured, e.g. under Testing).</summary>
     public string AppLogDirectory { get; set; } = string.Empty;
+
+    /// <summary>ARCHITECTURE_CYCLE9.md §105.11 (US-124). Age of a <see cref="Core.Entities.PushSubscription"/>
+    /// since its last successful delivery — or, if it has NEVER delivered successfully, since it was
+    /// created (<see cref="Rules.PushSubscriptionRule"/>'s doc comment). Default 180.</summary>
+    public int PushSubscriptionDays { get; set; } = 180;
+
+    /// <summary>§105.11. Age of a <see cref="Core.Entities.StaffPushNotification"/> queue/journal row
+    /// since it was created. Default 365 — the row is deleted outright, not redacted in place (its
+    /// <c>Payload</c> is a one-shot system message, not correspondence worth keeping a scrubbed trace
+    /// of).</summary>
+    public int StaffPushNotificationDays { get; set; } = 365;
 }

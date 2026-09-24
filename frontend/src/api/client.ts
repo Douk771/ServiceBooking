@@ -20,7 +20,12 @@ api.interceptors.request.use((config) => {
 // there too would force a full page reload before the form's own error message ever renders — see
 // LoginPage.tsx. Everywhere else, a 401 on an authenticated request is a revoked/expired token
 // (US-17), and the redirect must stay: otherwise the user is stuck looking at empty screens.
-const AUTH_PATHS_WITHOUT_REDIRECT = ['/auth/login', '/auth/register']
+// §105.5 rubezh 2 — Navbar's handleLogout now awaits unsubscribeCurrentDeviceOnLogout() BEFORE
+// clearing the token, so the DELETE normally carries a valid Authorization header. But the token can
+// still be near its natural expiry at that exact moment (independent of the logout click), and this
+// call must never turn "click Log out" into a hard redirect/reload to /login instead of the app's own
+// navigate('/') a few lines below in Navbar.
+const AUTH_PATHS_WITHOUT_REDIRECT = ['/auth/login', '/auth/register', '/push/subscriptions/current']
 
 api.interceptors.response.use(
   (r) => r,
@@ -46,6 +51,12 @@ api.interceptors.response.use(
       return Promise.reject(err)
     }
     if (err.response?.status === 401 && !isAuthEndpoint) {
+      // NB: rubezh 2 (§105.5, DELETE /push/subscriptions/current) is deliberately NOT fired here. The
+      // token is already invalid at this point, so that DELETE would itself 401 and re-enter this
+      // exact branch — an unsubscribe call that can never succeed but can loop. The explicit "Log out"
+      // button (Navbar.tsx) is the one place that runs it, while the token is still valid; a token that
+      // merely expired is still closed off by rubezh 1 (endpoint reassignment on next subscribe) and
+      // rubezh 3 (server-side membership check at send time).
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }

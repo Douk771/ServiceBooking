@@ -21,3 +21,28 @@ public interface IProviderWebhookParser
     /// controller returning 200 without a matching row, per ARCHITECTURE_CYCLE4.md §32).</summary>
     ProviderCallback? Parse(string rawBody);
 }
+
+/// <summary>
+/// ARCHITECTURE_CYCLE9.md §104.7 (US-120) — resolves the right <see cref="IProviderWebhookParser"/> for
+/// the new <c>provider-webhook/{transport}/{token}</c> route's <c>{transport}</c> path segment. Mirrors
+/// <see cref="Notifications.INotificationTransportRegistry"/>'s own registry/exception shape for
+/// consistency, though the failure mode here is unreachable in practice: unlike the send-side registries
+/// (whose completeness genuinely depends on <c>Notifications:Provider</c>), BOTH parsers are registered
+/// unconditionally — the ORIGINAL <c>GreenApiWebhookParser</c>'s own doc comment already explains
+/// why (a "logging"-provider deployment that receives a stray webhook still parses and safely 200s it
+/// rather than throwing on a missing DI registration), and that reasoning applies identically to the MAX
+/// parser.
+/// </summary>
+public interface IProviderWebhookParserRegistry
+{
+    IProviderWebhookParser For(Core.Enums.NotificationTransport transport);
+}
+
+public sealed class ProviderWebhookParserRegistry(IReadOnlyDictionary<Core.Enums.NotificationTransport, IProviderWebhookParser> byTransport)
+    : IProviderWebhookParserRegistry
+{
+    public IProviderWebhookParser For(Core.Enums.NotificationTransport transport) =>
+        byTransport.TryGetValue(transport, out var parser)
+            ? parser
+            : throw new MissingTransportImplementationException(transport);
+}

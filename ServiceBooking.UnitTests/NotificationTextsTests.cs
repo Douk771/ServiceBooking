@@ -93,4 +93,24 @@ public class NotificationTextsTests
         foreach (var type in Enum.GetValues<NotificationType>())
             NotificationTexts.TypeText(type).Should().NotBeNullOrWhiteSpace();
     }
+
+    // ── ARCHITECTURE_CYCLE9.md §105.8 (US-124) — Web Push reasons ──────────────────────────────────
+
+    [Theory]
+    [InlineData(NotificationReason.PushSubscriptionGone)]
+    [InlineData(NotificationReason.PushAuthRejected)]
+    [InlineData(NotificationReason.PushPayloadTooLarge)]
+    [InlineData(NotificationReason.PushTtlExhausted)]
+    [InlineData(NotificationReason.StaffPushDisabledByCompany)]
+    [InlineData(NotificationReason.MasterNoLongerInCompany)]
+    public void StatusText_EveryPushReason_ProducesItsOwnNonGenericRussianText(NotificationReason reason)
+    {
+        var text = NotificationTexts.StatusText(NotificationStatus.Failed, reason, null, null, attemptCount: 1);
+
+        text.Should().NotBeNullOrWhiteSpace();
+        // §6 convention: "русский текст статусов и причин собирает сервер, в одном месте" — the whole
+        // point of giving each reason its own switch branch is that it must NOT fall through to the
+        // generic "пропущено"/"не удалось отправить" catch-all.
+        text.Should().NotBe("пропущено").And.NotBe("не удалось отправить");
+    }
 }

@@ -2,7 +2,14 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <!-- favicon.svg is the primary icon (modern browsers, scales); favicon.ico is the fallback for
+         bookmarks/history/older browsers that don't resolve SVG favicons. apple-touch-icon and the
+         manifest cover the Home Screen cases (US-112). There is no /vite.svg in public/ — the old
+         link here 404'd on every request. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>EZBOOK — Запись на услуги</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

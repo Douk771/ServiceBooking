@@ -19,7 +19,8 @@ namespace ServiceBooking.API.Controllers;
 public class BookingsController(
     AppDbContext db, SlotService slotService, AvailabilityService availabilityService, CaptchaService captchaService,
     SubscriptionResolver subscriptionResolver, LegalDocumentProvider legalProvider,
-    NotificationScheduler notificationScheduler, BookingEventLog eventLog, BookingActorResolver actorResolver,
+    NotificationScheduler notificationScheduler, ServiceBooking.API.Services.Notifications.StaffPushScheduler staffPushScheduler,
+    BookingEventLog eventLog, BookingActorResolver actorResolver,
     ILogger<BookingsController> logger) : ControllerBase
 {
     [HttpGet("occupied")]
@@ -525,6 +526,21 @@ public class BookingsController(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to queue notifications for booking {BookingId}", booking.Id);
+        }
+
+        // ARCHITECTURE_CYCLE9.md §105.6 (US-116) — same transaction, same "must never fail the booking"
+        // isolation as the WhatsApp/MAX scheduler call directly above. A separate try/catch (not folded
+        // into the one above) so a Web Push queueing bug can never suppress the WhatsApp/MAX event, or
+        // vice versa — each subsystem's own failure stays its own.
+        try
+        {
+            await staffPushScheduler.OnBookingCreatedAsync(
+                booking, orderedServices.Select(s => s.Name).ToList(),
+                User.FindFirstValue(ClaimTypes.NameIdentifier), HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to queue staff push notifications for booking {BookingId}", booking.Id);
         }
 
         await db.SaveChangesAsync();

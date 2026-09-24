@@ -1,10 +1,16 @@
 import { api } from './client'
-import type { AdminChannelDto, AdminChannelSummary, PlatformSettings, Paged, LegalReadiness } from '../types'
+import type { AdminChannelDto, AdminChannelSummary, PlatformSettings, NotificationTransport, Paged, LegalReadiness } from '../types'
 
 // API_CONTRACT_CYCLE4.md §34 — SuperAdmin-only.
 export const adminNotificationsApi = {
-  listChannels: (params: { state?: string; paymentState?: string; page?: number; pageSize?: number }) =>
-    api.get<Paged<AdminChannelDto>>('/admin/notification-channels', { params }).then((r) => r.data),
+  listChannels: (params: {
+    state?: string
+    paymentState?: string
+    page?: number
+    pageSize?: number
+    /** API_CONTRACT_CYCLE9.md §114.3 — new ?transport= filter. */
+    transport?: NotificationTransport
+  }) => api.get<Paged<AdminChannelDto>>('/admin/notification-channels', { params }).then((r) => r.data),
   summary: () => api.get<AdminChannelSummary>('/admin/notification-channels/summary').then((r) => r.data),
   // markPayment removed — POST /admin/notification-channels/{id}/payment is 410 Gone in cycle 7.
   // Replacement: adminBillingApi.assignSubscription (billing-accounts subscription options).

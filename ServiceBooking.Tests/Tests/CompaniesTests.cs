@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.Core.Enums;
@@ -248,6 +249,80 @@ public class CompaniesTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var entry = companies.Should().ContainSingle(c => c.Id == company.Id).Subject;
         entry.ShowInPublicListing.Should().BeFalse();
         entry.PublicListingEnabled.Should().BeFalse();
+    }
+
+    // ── GET /api/companies/public ────────────────────────────────────────────
+
+    [Fact, TestCase("CO-083")]
+    public async Task GetPublic_WithoutFilters_MatchesGetAll()
+    {
+        // A13 (ARCHITECTURE_CYCLE9.md §103.5/§106.3): "publicly listed" is computed by two independent
+        // code paths — GetAll resolves it via SubscriptionResolver.GetEffectivePlansAsync in memory,
+        // GetPublic via Services/Billing/PublicListingQuery.cs in SQL. If the two rules ever drift, this
+        // is the test meant to catch it — so the fixture deliberately mixes companies that SHOULD be
+        // public and companies that SHOULD NOT, on several different grounds, rather than asserting
+        // against an empty database (which both implementations would trivially agree on).
+
+        // Should end up public: never subscribed — Free baseline (AllowPublicListing defaults true).
+        var (_, freeCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+
+        // Should end up public: fully-featured paid plan (AllowPublicListing defaults true there too).
+        var (_, paidCompany) = await CreateOwnerWithCompanyAsync();
+
+        // Should end up public: subscription expired -> falls back to the Free baseline, which still
+        // allows public listing (mirrors GetAll_ExpiredPaidSubscription_KeepsCompanyListed... above).
+        var (_, expiredCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var expiredConfigId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+        await SetSubscriptionAsync(expiredCompany.Id, expiredConfigId, paidUntil: DateTime.UtcNow.AddDays(-1));
+
+        // Should NOT end up public: owner opted out, even on a fully-featured plan.
+        var (optOutOwner, optOutCompany) = await CreateOwnerWithCompanyAsync();
+        var optOutResponse = await AuthedClient(optOutOwner.Token).PutAsJsonAsync(
+            $"/api/companies/{optOutCompany.Id}", new { showInPublicListing = false });
+        optOutResponse.EnsureSuccessStatusCode();
+
+        // Should NOT end up public: tariff disallows it even though the owner wants to be listed.
+        var (_, tariffHiddenCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var hiddenConfigId = await CreateTestPlanConfigAsync(allowPublicListing: false);
+        await SetSubscriptionAsync(tariffHiddenCompany.Id, hiddenConfigId);
+
+        // Should NOT end up public: deactivated by an admin — excluded from GetAll entirely too.
+        var (_, inactiveCompany) = await CreateOwnerWithCompanyAsync();
+        var admin = await LoginAsSuperAdminAsync();
+        var deactivate = await AuthedClient(admin.Token).PutAsJsonAsync($"/api/admin/companies/{inactiveCompany.Id}",
+            new { name = inactiveCompany.Name, isActive = false, allowSelfBooking = true });
+        deactivate.EnsureSuccessStatusCode();
+
+        var allResponse = await AnonymousClient().GetAsync("/api/companies");
+        allResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var allIds = (await allResponse.Content.ReadFromJsonAsync<List<CompanyDto>>())!
+            .Select(c => c.Id).ToHashSet();
+
+        // Walk every page of GET /api/companies/public (no filters) rather than assuming it fits in one
+        // page — the class-shared test database accumulates companies from every other test in this
+        // class, and the invariant under test must hold over the whole set, not just this fixture's rows.
+        var publicIds = new HashSet<Guid>();
+        var page = 1;
+        while (true)
+        {
+            var response = await AnonymousClient().GetAsync($"/api/companies/public?page={page}&pageSize=100");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var paged = await response.Content.ReadFromJsonAsync<PagedResult<CompanyDto>>();
+            paged.Should().NotBeNull();
+            foreach (var item in paged!.Items) publicIds.Add(item.Id);
+            if (!paged.HasNext) break;
+            page++;
+        }
+
+        // The core A13 assertion: the two endpoints' definitions of "publicly listed" must agree on the
+        // whole set, not merely overlap.
+        publicIds.Should().BeEquivalentTo(allIds);
+
+        // And the fixture actually exercised both directions of the rule, so the assertion above wasn't
+        // vacuously true.
+        publicIds.Should().Contain(freeCompany.Id).And.Contain(paidCompany.Id).And.Contain(expiredCompany.Id);
+        publicIds.Should().NotContain(optOutCompany.Id).And.NotContain(tariffHiddenCompany.Id)
+            .And.NotContain(inactiveCompany.Id);
     }
 
     // ── Online payment (owner toggle × tariff gate) — mirrors public listing ─

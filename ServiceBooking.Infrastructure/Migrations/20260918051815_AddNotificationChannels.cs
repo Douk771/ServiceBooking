@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -9,6 +10,135 @@ namespace ServiceBooking.Infrastructure.Migrations
     /// <inheritdoc />
     public partial class AddNotificationChannels : Migration
     {
+        /// <summary>
+        /// (Name, Region, TimeZoneId, SearchName) for every row this migration seeds — the original
+        /// ~91-row city directory (§34.2/§35). Public and static, same pattern
+        /// ExpandCityDirectory.Rows uses one migration later, so
+        /// ServiceBooking.UnitTests/CityDirectoryDataTests.cs can compare the two arrays directly (e.g.
+        /// detect a (Name, Region) pair present in both, which the later migration's own
+        /// "WHERE NOT EXISTS" would then silently skip instead of actually inserting a new row) without
+        /// touching a database. SearchName is kept hand-typed here (not recomputed via a shared
+        /// normalizer) because this is the pre-existing seed CitySearchTests already cross-checks against
+        /// CitySearch.Normalize; this array only exposes those same hand-typed values for reuse, it does
+        /// not change how they were produced.
+        /// </summary>
+        /// <summary>
+        /// Builds the object[,] (true 2D array) InsertData's multi-row overload requires, from
+        /// <see cref="SeedRows"/>. NOT SeedRows.Select(...).ToArray() (object[][], one row per element):
+        /// because C# arrays are covariant, an object[][] silently binds to InsertData's SINGLE-row
+        /// object[] overload instead (object[][] is-a object[]) — the exact failure mode this comment
+        /// exists to prevent, caught only by actually running this migration against Postgres, not by a
+        /// successful `dotnet build`.
+        /// </summary>
+        private static object[,] BuildSeedRowsValues()
+        {
+            var values = new object[SeedRows.Length, 5];
+            for (var i = 0; i < SeedRows.Length; i++)
+            {
+                values[i, 0] = SeedRows[i].Name;
+                values[i, 1] = SeedRows[i].Region;
+                values[i, 2] = SeedRows[i].TimeZoneId;
+                values[i, 3] = true;
+                values[i, 4] = SeedRows[i].SearchName;
+            }
+            return values;
+        }
+
+        public static readonly (string Name, string Region, string TimeZoneId, string SearchName)[] SeedRows =
+        {
+            ("Калининград", "Калининградская область", "Europe/Kaliningrad", "калининград"),
+            ("Москва", "Москва", "Europe/Moscow", "москва"),
+            ("Санкт-Петербург", "Санкт-Петербург", "Europe/Moscow", "санктпетербург"),
+            ("Воронеж", "Воронежская область", "Europe/Moscow", "воронеж"),
+            ("Краснодар", "Краснодарский край", "Europe/Moscow", "краснодар"),
+            ("Сочи", "Краснодарский край", "Europe/Moscow", "сочи"),
+            ("Ростов-на-Дону", "Ростовская область", "Europe/Moscow", "ростовнадону"),
+            ("Нижний Новгород", "Нижегородская область", "Europe/Moscow", "нижнийновгород"),
+            ("Казань", "Республика Татарстан", "Europe/Moscow", "казань"),
+            ("Набережные Челны", "Республика Татарстан", "Europe/Moscow", "набережныечелны"),
+            ("Волгоград", "Волгоградская область", "Europe/Moscow", "волгоград"),
+            ("Ярославль", "Ярославская область", "Europe/Moscow", "ярославль"),
+            ("Тверь", "Тверская область", "Europe/Moscow", "тверь"),
+            ("Иваново", "Ивановская область", "Europe/Moscow", "иваново"),
+            ("Рязань", "Рязанская область", "Europe/Moscow", "рязань"),
+            ("Липецк", "Липецкая область", "Europe/Moscow", "липецк"),
+            ("Тула", "Тульская область", "Europe/Moscow", "тула"),
+            ("Курск", "Курская область", "Europe/Moscow", "курск"),
+            ("Белгород", "Белгородская область", "Europe/Moscow", "белгород"),
+            ("Смоленск", "Смоленская область", "Europe/Moscow", "смоленск"),
+            ("Брянск", "Брянская область", "Europe/Moscow", "брянск"),
+            ("Орёл", "Орловская область", "Europe/Moscow", "орел"),
+            ("Тамбов", "Тамбовская область", "Europe/Moscow", "тамбов"),
+            ("Пенза", "Пензенская область", "Europe/Moscow", "пенза"),
+            ("Саратов", "Саратовская область", "Europe/Moscow", "саратов"),
+            ("Астрахань", "Астраханская область", "Europe/Moscow", "астрахань"),
+            ("Ставрополь", "Ставропольский край", "Europe/Moscow", "ставрополь"),
+            ("Владимир", "Владимирская область", "Europe/Moscow", "владимир"),
+            ("Калуга", "Калужская область", "Europe/Moscow", "калуга"),
+            ("Кострома", "Костромская область", "Europe/Moscow", "кострома"),
+            ("Вологда", "Вологодская область", "Europe/Moscow", "вологда"),
+            ("Череповец", "Вологодская область", "Europe/Moscow", "череповец"),
+            ("Мурманск", "Мурманская область", "Europe/Moscow", "мурманск"),
+            ("Архангельск", "Архангельская область", "Europe/Moscow", "архангельск"),
+            ("Нарьян-Мар", "Ненецкий автономный округ", "Europe/Moscow", "нарьянмар"),
+            ("Петрозаводск", "Республика Карелия", "Europe/Moscow", "петрозаводск"),
+            ("Сыктывкар", "Республика Коми", "Europe/Moscow", "сыктывкар"),
+            ("Йошкар-Ола", "Республика Марий Эл", "Europe/Moscow", "йошкарола"),
+            ("Саранск", "Республика Мордовия", "Europe/Moscow", "саранск"),
+            ("Чебоксары", "Чувашская Республика", "Europe/Moscow", "чебоксары"),
+            ("Ульяновск", "Ульяновская область", "Europe/Moscow", "ульяновск"),
+            ("Киров", "Кировская область", "Europe/Moscow", "киров"),
+            ("Великий Новгород", "Новгородская область", "Europe/Moscow", "великийновгород"),
+            ("Псков", "Псковская область", "Europe/Moscow", "псков"),
+            ("Нальчик", "Кабардино-Балкарская Республика", "Europe/Moscow", "нальчик"),
+            ("Владикавказ", "Республика Северная Осетия — Алания", "Europe/Moscow", "владикавказ"),
+            ("Грозный", "Чеченская Республика", "Europe/Moscow", "грозный"),
+            ("Махачкала", "Республика Дагестан", "Europe/Moscow", "махачкала"),
+            ("Черкесск", "Карачаево-Черкесская Республика", "Europe/Moscow", "черкесск"),
+            ("Майкоп", "Республика Адыгея", "Europe/Moscow", "майкоп"),
+            ("Магас", "Республика Ингушетия", "Europe/Moscow", "магас"),
+            ("Элиста", "Республика Калмыкия", "Europe/Moscow", "элиста"),
+            ("Симферополь", "Республика Крым", "Europe/Simferopol", "симферополь"),
+            ("Севастополь", "Севастополь", "Europe/Simferopol", "севастополь"),
+            ("Самара", "Самарская область", "Europe/Samara", "самара"),
+            ("Тольятти", "Самарская область", "Europe/Samara", "тольятти"),
+            ("Ижевск", "Удмуртская Республика", "Europe/Samara", "ижевск"),
+            ("Екатеринбург", "Свердловская область", "Asia/Yekaterinburg", "екатеринбург"),
+            ("Нижний Тагил", "Свердловская область", "Asia/Yekaterinburg", "нижнийтагил"),
+            ("Челябинск", "Челябинская область", "Asia/Yekaterinburg", "челябинск"),
+            ("Магнитогорск", "Челябинская область", "Asia/Yekaterinburg", "магнитогорск"),
+            ("Уфа", "Республика Башкортостан", "Asia/Yekaterinburg", "уфа"),
+            ("Пермь", "Пермский край", "Asia/Yekaterinburg", "пермь"),
+            ("Оренбург", "Оренбургская область", "Asia/Yekaterinburg", "оренбург"),
+            ("Тюмень", "Тюменская область", "Asia/Yekaterinburg", "тюмень"),
+            ("Курган", "Курганская область", "Asia/Yekaterinburg", "курган"),
+            ("Ханты-Мансийск", "Ханты-Мансийский автономный округ", "Asia/Yekaterinburg", "хантымансийск"),
+            ("Сургут", "Ханты-Мансийский автономный округ", "Asia/Yekaterinburg", "сургут"),
+            ("Салехард", "Ямало-Ненецкий автономный округ", "Asia/Yekaterinburg", "салехард"),
+            ("Омск", "Омская область", "Asia/Omsk", "омск"),
+            ("Новосибирск", "Новосибирская область", "Asia/Novosibirsk", "новосибирск"),
+            ("Барнаул", "Алтайский край", "Asia/Barnaul", "барнаул"),
+            ("Горно-Алтайск", "Республика Алтай", "Asia/Barnaul", "горноалтайск"),
+            ("Томск", "Томская область", "Asia/Tomsk", "томск"),
+            ("Кемерово", "Кемеровская область", "Asia/Novokuznetsk", "кемерово"),
+            ("Новокузнецк", "Кемеровская область", "Asia/Novokuznetsk", "новокузнецк"),
+            ("Красноярск", "Красноярский край", "Asia/Krasnoyarsk", "красноярск"),
+            ("Абакан", "Республика Хакасия", "Asia/Krasnoyarsk", "абакан"),
+            ("Кызыл", "Республика Тыва", "Asia/Krasnoyarsk", "кызыл"),
+            ("Иркутск", "Иркутская область", "Asia/Irkutsk", "иркутск"),
+            ("Улан-Удэ", "Республика Бурятия", "Asia/Irkutsk", "уланудэ"),
+            ("Чита", "Забайкальский край", "Asia/Chita", "чита"),
+            ("Якутск", "Республика Саха (Якутия)", "Asia/Yakutsk", "якутск"),
+            ("Благовещенск", "Амурская область", "Asia/Yakutsk", "благовещенск"),
+            ("Владивосток", "Приморский край", "Asia/Vladivostok", "владивосток"),
+            ("Хабаровск", "Хабаровский край", "Asia/Vladivostok", "хабаровск"),
+            ("Биробиджан", "Еврейская автономная область", "Asia/Vladivostok", "биробиджан"),
+            ("Южно-Сахалинск", "Сахалинская область", "Asia/Sakhalin", "южносахалинск"),
+            ("Магадан", "Магаданская область", "Asia/Magadan", "магадан"),
+            ("Петропавловск-Камчатский", "Камчатский край", "Asia/Kamchatka", "петропавловсккамчатский"),
+            ("Анадырь", "Чукотский автономный округ", "Asia/Anadyr", "анадырь"),
+        };
+
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
@@ -60,100 +190,7 @@ namespace ServiceBooking.Infrastructure.Migrations
             migrationBuilder.InsertData(
                 table: "Cities",
                 columns: new[] { "Name", "Region", "TimeZoneId", "IsActive", "SearchName" },
-                values: new object[,]
-                {
-                    { "Калининград", "Калининградская область", "Europe/Kaliningrad", true, "калининград" },
-                    { "Москва", "Москва", "Europe/Moscow", true, "москва" },
-                    { "Санкт-Петербург", "Санкт-Петербург", "Europe/Moscow", true, "санктпетербург" },
-                    { "Воронеж", "Воронежская область", "Europe/Moscow", true, "воронеж" },
-                    { "Краснодар", "Краснодарский край", "Europe/Moscow", true, "краснодар" },
-                    { "Сочи", "Краснодарский край", "Europe/Moscow", true, "сочи" },
-                    { "Ростов-на-Дону", "Ростовская область", "Europe/Moscow", true, "ростовнадону" },
-                    { "Нижний Новгород", "Нижегородская область", "Europe/Moscow", true, "нижнийновгород" },
-                    { "Казань", "Республика Татарстан", "Europe/Moscow", true, "казань" },
-                    { "Набережные Челны", "Республика Татарстан", "Europe/Moscow", true, "набережныечелны" },
-                    { "Волгоград", "Волгоградская область", "Europe/Moscow", true, "волгоград" },
-                    { "Ярославль", "Ярославская область", "Europe/Moscow", true, "ярославль" },
-                    { "Тверь", "Тверская область", "Europe/Moscow", true, "тверь" },
-                    { "Иваново", "Ивановская область", "Europe/Moscow", true, "иваново" },
-                    { "Рязань", "Рязанская область", "Europe/Moscow", true, "рязань" },
-                    { "Липецк", "Липецкая область", "Europe/Moscow", true, "липецк" },
-                    { "Тула", "Тульская область", "Europe/Moscow", true, "тула" },
-                    { "Курск", "Курская область", "Europe/Moscow", true, "курск" },
-                    { "Белгород", "Белгородская область", "Europe/Moscow", true, "белгород" },
-                    { "Смоленск", "Смоленская область", "Europe/Moscow", true, "смоленск" },
-                    { "Брянск", "Брянская область", "Europe/Moscow", true, "брянск" },
-                    { "Орёл", "Орловская область", "Europe/Moscow", true, "орел" },
-                    { "Тамбов", "Тамбовская область", "Europe/Moscow", true, "тамбов" },
-                    { "Пенза", "Пензенская область", "Europe/Moscow", true, "пенза" },
-                    { "Саратов", "Саратовская область", "Europe/Moscow", true, "саратов" },
-                    { "Астрахань", "Астраханская область", "Europe/Moscow", true, "астрахань" },
-                    { "Ставрополь", "Ставропольский край", "Europe/Moscow", true, "ставрополь" },
-                    { "Владимир", "Владимирская область", "Europe/Moscow", true, "владимир" },
-                    { "Калуга", "Калужская область", "Europe/Moscow", true, "калуга" },
-                    { "Кострома", "Костромская область", "Europe/Moscow", true, "кострома" },
-                    { "Вологда", "Вологодская область", "Europe/Moscow", true, "вологда" },
-                    { "Череповец", "Вологодская область", "Europe/Moscow", true, "череповец" },
-                    { "Мурманск", "Мурманская область", "Europe/Moscow", true, "мурманск" },
-                    { "Архангельск", "Архангельская область", "Europe/Moscow", true, "архангельск" },
-                    { "Нарьян-Мар", "Ненецкий автономный округ", "Europe/Moscow", true, "нарьянмар" },
-                    { "Петрозаводск", "Республика Карелия", "Europe/Moscow", true, "петрозаводск" },
-                    { "Сыктывкар", "Республика Коми", "Europe/Moscow", true, "сыктывкар" },
-                    { "Йошкар-Ола", "Республика Марий Эл", "Europe/Moscow", true, "йошкарола" },
-                    { "Саранск", "Республика Мордовия", "Europe/Moscow", true, "саранск" },
-                    { "Чебоксары", "Чувашская Республика", "Europe/Moscow", true, "чебоксары" },
-                    { "Ульяновск", "Ульяновская область", "Europe/Moscow", true, "ульяновск" },
-                    { "Киров", "Кировская область", "Europe/Moscow", true, "киров" },
-                    { "Великий Новгород", "Новгородская область", "Europe/Moscow", true, "великийновгород" },
-                    { "Псков", "Псковская область", "Europe/Moscow", true, "псков" },
-                    { "Нальчик", "Кабардино-Балкарская Республика", "Europe/Moscow", true, "нальчик" },
-                    { "Владикавказ", "Республика Северная Осетия — Алания", "Europe/Moscow", true, "владикавказ" },
-                    { "Грозный", "Чеченская Республика", "Europe/Moscow", true, "грозный" },
-                    { "Махачкала", "Республика Дагестан", "Europe/Moscow", true, "махачкала" },
-                    { "Черкесск", "Карачаево-Черкесская Республика", "Europe/Moscow", true, "черкесск" },
-                    { "Майкоп", "Республика Адыгея", "Europe/Moscow", true, "майкоп" },
-                    { "Магас", "Республика Ингушетия", "Europe/Moscow", true, "магас" },
-                    { "Элиста", "Республика Калмыкия", "Europe/Moscow", true, "элиста" },
-                    { "Симферополь", "Республика Крым", "Europe/Simferopol", true, "симферополь" },
-                    { "Севастополь", "Севастополь", "Europe/Simferopol", true, "севастополь" },
-                    { "Самара", "Самарская область", "Europe/Samara", true, "самара" },
-                    { "Тольятти", "Самарская область", "Europe/Samara", true, "тольятти" },
-                    { "Ижевск", "Удмуртская Республика", "Europe/Samara", true, "ижевск" },
-                    { "Екатеринбург", "Свердловская область", "Asia/Yekaterinburg", true, "екатеринбург" },
-                    { "Нижний Тагил", "Свердловская область", "Asia/Yekaterinburg", true, "нижнийтагил" },
-                    { "Челябинск", "Челябинская область", "Asia/Yekaterinburg", true, "челябинск" },
-                    { "Магнитогорск", "Челябинская область", "Asia/Yekaterinburg", true, "магнитогорск" },
-                    { "Уфа", "Республика Башкортостан", "Asia/Yekaterinburg", true, "уфа" },
-                    { "Пермь", "Пермский край", "Asia/Yekaterinburg", true, "пермь" },
-                    { "Оренбург", "Оренбургская область", "Asia/Yekaterinburg", true, "оренбург" },
-                    { "Тюмень", "Тюменская область", "Asia/Yekaterinburg", true, "тюмень" },
-                    { "Курган", "Курганская область", "Asia/Yekaterinburg", true, "курган" },
-                    { "Ханты-Мансийск", "Ханты-Мансийский автономный округ", "Asia/Yekaterinburg", true, "хантымансийск" },
-                    { "Сургут", "Ханты-Мансийский автономный округ", "Asia/Yekaterinburg", true, "сургут" },
-                    { "Салехард", "Ямало-Ненецкий автономный округ", "Asia/Yekaterinburg", true, "салехард" },
-                    { "Омск", "Омская область", "Asia/Omsk", true, "омск" },
-                    { "Новосибирск", "Новосибирская область", "Asia/Novosibirsk", true, "новосибирск" },
-                    { "Барнаул", "Алтайский край", "Asia/Barnaul", true, "барнаул" },
-                    { "Горно-Алтайск", "Республика Алтай", "Asia/Barnaul", true, "горноалтайск" },
-                    { "Томск", "Томская область", "Asia/Tomsk", true, "томск" },
-                    { "Кемерово", "Кемеровская область", "Asia/Novokuznetsk", true, "кемерово" },
-                    { "Новокузнецк", "Кемеровская область", "Asia/Novokuznetsk", true, "новокузнецк" },
-                    { "Красноярск", "Красноярский край", "Asia/Krasnoyarsk", true, "красноярск" },
-                    { "Абакан", "Республика Хакасия", "Asia/Krasnoyarsk", true, "абакан" },
-                    { "Кызыл", "Республика Тыва", "Asia/Krasnoyarsk", true, "кызыл" },
-                    { "Иркутск", "Иркутская область", "Asia/Irkutsk", true, "иркутск" },
-                    { "Улан-Удэ", "Республика Бурятия", "Asia/Irkutsk", true, "уланудэ" },
-                    { "Чита", "Забайкальский край", "Asia/Chita", true, "чита" },
-                    { "Якутск", "Республика Саха (Якутия)", "Asia/Yakutsk", true, "якутск" },
-                    { "Благовещенск", "Амурская область", "Asia/Yakutsk", true, "благовещенск" },
-                    { "Владивосток", "Приморский край", "Asia/Vladivostok", true, "владивосток" },
-                    { "Хабаровск", "Хабаровский край", "Asia/Vladivostok", true, "хабаровск" },
-                    { "Биробиджан", "Еврейская автономная область", "Asia/Vladivostok", true, "биробиджан" },
-                    { "Южно-Сахалинск", "Сахалинская область", "Asia/Sakhalin", true, "южносахалинск" },
-                    { "Магадан", "Магаданская область", "Asia/Magadan", true, "магадан" },
-                    { "Петропавловск-Камчатский", "Камчатский край", "Asia/Kamchatka", true, "петропавловсккамчатский" },
-                    { "Анадырь", "Чукотский автономный округ", "Asia/Anadyr", true, "анадырь" },
-                });
+                values: BuildSeedRowsValues());
 
             // §34.2, §35 migration 2: seed ~90 administrative centers/major cities FIRST (SeedCities must
             // precede AddCompanyCityAndTimeZone — jointly implemented here as one migration since this

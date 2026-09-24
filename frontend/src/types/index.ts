@@ -1,3 +1,20 @@
+import type { components as Cycle9Components } from './api-cycle9.generated'
+
+// ── Cycle 9 (ARCHITECTURE_CYCLE9.md §104, API_CONTRACT_CYCLE9.md §112): these two enums are read
+// straight off the generated schema instead of being retyped as string literals here, so a future
+// append-only member shows up as a type error at every switch/Record that needs updating (§118 п. 1).
+export type NotificationTransport = Cycle9Components['schemas']['NotificationTransport']
+export type NotificationDeliveryMode = Cycle9Components['schemas']['NotificationDeliveryMode']
+/** API_CONTRACT_CYCLE9.md §114.1 — one entry per transport on the owner's channel offer; `connectionNotice`
+ *  is server-composed (e.g. MAX's "disable the messenger's own login password before scanning the QR")
+ *  and must be shown BEFORE the owner requests that transport, not after (§104.9). */
+export type TransportOffer = Cycle9Components['schemas']['TransportOfferDto']
+
+// API_CONTRACT_CYCLE9.md §115 — staff Web Push. Read straight off the generated schema (§118 п. 1).
+export type PushConfig = Cycle9Components['schemas']['PushConfigDto']
+export type PushSubscriptionDevice = Cycle9Components['schemas']['PushSubscriptionDto']
+export type StaffPushSettings = Cycle9Components['schemas']['StaffPushSettingsDto']
+
 export interface Company {
   id: string
   name: string
@@ -126,6 +143,8 @@ export type ChannelFundingState = 'Funded' | 'Unfunded' | 'NotPaid'
 
 export interface ChannelDto {
   id: string
+  /** API_CONTRACT_CYCLE9.md §114.3 — additive; absent only on pre-cycle-9 cached data. */
+  transport: NotificationTransport
   state: ChannelState
   stateText: string
   phoneMasked: string | null
@@ -152,13 +171,19 @@ export interface ChannelDto {
   legalEntityForm: LegalEntityForm | null
 }
 
+/**
+ * API_CONTRACT_CYCLE9.md §114.1 — reshaped from the cycle-4/5 offer (BE `Available` was always exactly
+ * `PricePerMonth is not null`, so it's dropped as redundant rather than kept as a second field to keep
+ * in sync; `Currency`/`IdleDays` were never read by the frontend). `riskText` is new: the risk paragraph
+ * now comes from the server (`ChannelRiskNotice`, §104.8) instead of only a version string.
+ * `transports[]` is new — what's offered per transport, with the MAX pre-connection notice (§104.9).
+ */
 export interface ChannelOffer {
-  available: boolean
   pricePerMonth: number | null
-  currency: string
-  idleDays: number
-  planAllows: boolean
-  riskTextVersion: string
+  allowedByPlan: boolean
+  riskText: string
+  riskVersion: string
+  transports: TransportOffer[]
 }
 
 export interface City {
@@ -184,6 +209,18 @@ export interface NotificationSettings {
   } | null
   effectiveEnabled: boolean
   blockedReason: string | null
+  /** API_CONTRACT_CYCLE9.md §114.4 (US-125) — delivery mode. Applies to events queued AFTER the save,
+   *  never to messages already in the queue (server-side rule, the screen must say so). */
+  deliveryMode: NotificationDeliveryMode
+  /** Only meaningful when deliveryMode === 'PriorityChannel'. Must be one of connectedTransports or the
+   *  server 400s the PUT — the picker's options are limited to connectedTransports for this reason. */
+  priorityTransport: NotificationTransport
+  /** Read-only — what's actually connected and alive right now. Length <= 1 means the mode has no
+   *  effect and the screen must say so instead of offering a meaningless choice. */
+  connectedTransports: NotificationTransport[]
+  /** Read-only. false → "priority channel isn't working" banner (§104.5) — there is deliberately no
+   *  silent fallback to another transport. */
+  priorityChannelHealthy: boolean
 }
 
 export interface NotificationPlaceholder {
@@ -216,6 +253,10 @@ export interface NotificationLogEntry {
   id: string
   createdAt: string
   type: NotificationType
+  /** API_CONTRACT_CYCLE9.md §114.3 — additive. In AllChannels mode one event produces several rows
+   *  with the same bookingId/type and different transport (§104.5) — the log groups them so the owner
+   *  doesn't read two rows as "sent twice by mistake". */
+  transport: NotificationTransport
   typeText: string
   recipientName: string | null
   recipientPhoneMasked: string | null
@@ -250,6 +291,8 @@ export interface ReminderStatus {
 
 export interface AdminChannelDto {
   id: string
+  /** API_CONTRACT_CYCLE9.md §114.3 — additive; drives the admin list's ?transport= filter. */
+  transport: NotificationTransport
   ownerName: string
   ownerPhoneMasked: string
   state: ChannelState

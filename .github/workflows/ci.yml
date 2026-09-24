@@ -127,6 +127,17 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      # ARCHITECTURE_CYCLE9.md §105.9 (R11) — the staff push service worker must never gain a `fetch`
+      # listener or touch the Cache API: that is the mechanical guarantee that it cannot intercept a
+      # navigation and strand a browser on a stale build. Three tokens, cheap insurance against a week
+      # of "why is the site not updating" debugging.
+      - name: Service worker must not intercept fetch/cache (R11)
+        run: |
+          if grep -nE "addEventListener\s*\(\s*['\"\`]fetch|\bcaches\b|CacheStorage" public/sw.js; then
+            echo "public/sw.js must never register a fetch handler or use the Cache API (ARCHITECTURE_CYCLE9.md §105.9, R11)" >&2
+            exit 1
+          fi
+
       - name: Unit tests
         run: npm run test:run
 
@@ -140,6 +151,16 @@ jobs:
         env:
           VITE_SMARTCAPTCHA_SITEKEY: ${{ vars.VITE_SMARTCAPTCHA_SITEKEY }}
         run: npm run build
+
+      # US-112 (ARCHITECTURE_CYCLE9.md §103.2): proves the tab icon is actually reachable over HTTP from
+      # the built dist/ - a request, not a glance at frontend/public/ in source. Runs from the repo root
+      # (working-directory: frontend does not apply to run: shell commands' cwd for this step by
+      # default, so cd explicitly) against the artifact this job is about to upload.
+      - name: Smoke test (favicon served from built dist)
+        working-directory: .
+        run: bash deploy/ci/smoke-frontend.sh
+        env:
+          DIST_DIR: frontend/dist
 
       # Frontend build moves off the production server entirely (T-D3, US-44, ARCHITECTURE.md §12.3):
       # deploy/deploy.sh downloads this artifact and ships it to the VPS instead of running `npm ci &&

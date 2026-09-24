@@ -3093,6 +3093,38 @@ curl http://localhost:5000/api/health/ready
 них канал можно завести и настроить, но реальная отправка идёт через заглушку
 (`Notifications:Provider=logging`, US-35).
 
+#### 🆕 Цикл 9: второй транспорт (MAX) и режим доставки — **доступно с версии cycle/09-max-notifications-and-fixes (unreleased до мёржа в `develop`/деплоя)**
+
+Полный контракт — `API_CONTRACT_CYCLE9.md` §114, `ARCHITECTURE_CYCLE9.md` §104; здесь — сводка того, что
+добавилось поверх таблиц выше. Всё аддитивно к формам ответов, кроме двух явных мест ниже.
+
+- **`NotificationTransport`** — новое значение `Max` (было только `WhatsApp`). Поле `transport`
+  добавлено аддитивно в элементы `GET /api/notification-channels`, `GET /api/notification-channels/{id}`,
+  `GET /api/admin/notification-channels` (+ query-фильтр `?transport=`), журнал доставки
+  `GET /api/companies/{id}/notifications` (+ фильтр `?transport=`).
+- **`POST /api/notification-channels`** принимает необязательное поле `transport` (отсутствует →
+  `WhatsApp`, аддитивно). Инвариант "компания на одном канале" расширен до "один канал на транспорт" —
+  `POST .../{id}/companies` даёт 409 только при попытке занять второй канал **того же** транспорта.
+- **`GET /api/notification-channels/offer`** пересобран: `available`/`currency`/`idleDays` убраны (первое
+  было всегда равно `pricePerMonth != null`, остальные два фронтом не читались), `planAllows` →
+  `allowedByPlan`, добавлены `riskText` (текст берётся из документа `ChannelRiskNotice`, а не из
+  удалённой константы `NotificationRiskText`) и `transports[]` (по одному элементу на транспорт, с
+  `connectionNotice` — для MAX: «Для авторизации по QR в MAX нужно отключить пароль входа в мессенджере»).
+- **`GET|PUT /api/companies/{id}/notification-settings`** получил четыре новых поля:
+  `deliveryMode` (`PriorityChannel`|`AllChannels`), `priorityTransport`, `connectedTransports` (только
+  чтение), `priorityChannelHealthy` (только чтение). `PUT` принимает `deliveryMode`/`priorityTransport`
+  как необязательные — «не прислали, не меняем»; `priorityTransport` вне `connectedTransports` → 400.
+- **Новый вебхук** `POST /api/notifications/provider-webhook/{transport}/{token}` — тот же токен, но с
+  транспортом в пути (`whatsapp`|`max`, регистронезависимо; нераспознанный → 404, не 400). Старый
+  `POST /api/notifications/provider-webhook/{token}` остаётся и по-прежнему означает WhatsApp.
+- **Ломающее изменение схемы (не HTTP):** `ChannelCompanyAssignment` получил колонку `Transport`,
+  уникальность — `(CompanyId, Transport)` вместо `(CompanyId)`. **Ломающее изменение внутреннего
+  инварианта (не HTTP):** `OutboundNotification.IdempotencyKey` теперь включает транспорт
+  (`{type}:{bookingId}:{phone}:{generation}:{transport}`).
+- **Рубильники не переведены** (как и в цикле 4): `Notifications:Provider=logging`,
+  `AllowNotificationChannel=false` — MAX работает в коде и в тестах, но ни один реальный владелец не
+  может им воспользоваться до отдельного решения о выпуске.
+
 ---
 
 ## 5. Сквозные сценарии использования

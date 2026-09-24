@@ -46,6 +46,16 @@ public sealed class NotificationOptions
     public string? UnsubscribeKey { get; set; }
 
     public GreenApiOptions GreenApi { get; set; } = new();
+
+    /// <summary>ARCHITECTURE_CYCLE9.md §104.1/§104.9 — GREEN-API's MAX product is a SEPARATE product
+    /// from WhatsApp: same URL/response shape (confirmed by B1's researched table), but its own account,
+    /// own partner token, own instances. <see cref="GreenApiMaxOptions.ApiUrl"/> defaults to the SAME
+    /// domain as <see cref="GreenApiOptions.ApiUrl"/> — GREEN-API's own docs confirm one apiUrl serves
+    /// WhatsApp/Telegram/MAX alike, routed by <c>idInstance</c>, not by a different hostname — kept as a
+    /// separate (overridable) setting rather than hard-reusing <c>GreenApi.ApiUrl</c> in case that stops
+    /// being true.</summary>
+    public GreenApiMaxOptions GreenApiMax { get; set; } = new();
+
     public DispatchOptions Dispatch { get; set; } = new();
 
     /// <summary>Random spread (±minutes) applied to a reminder's due time so many reminders due at the
@@ -102,9 +112,30 @@ public sealed class NotificationOptions
         public int PerAddressConnectTimeoutSeconds { get; set; } = 2;
     }
 
+    /// <summary>ARCHITECTURE_CYCLE9.md §104.1 — deliberately a SMALL sibling of
+    /// <see cref="GreenApiOptions"/>, not a full copy: timeout/connect-preference/server-country are
+    /// shared network/handler concerns (<c>GreenApiHandlerFactory</c>/<c>PreferIPv4</c> are reused as-is,
+    /// §104.2), so only what's genuinely per-product (the URL and the platform's own partner token for
+    /// THIS product) gets its own setting here.</summary>
+    public sealed class GreenApiMaxOptions
+    {
+        public string ApiUrl { get; set; } = "https://api.green-api.com";
+
+        /// <summary>GREEN-API partner token for the MAX product specifically — a SEPARATE value from
+        /// <see cref="PartnerToken"/> (WhatsApp's), because MAX is GREEN-API's own separate
+        /// product/account (§104.1/§104.9). Same "must be empty outside Production" rule as
+        /// <see cref="PartnerToken"/>, enforced by <c>DeploymentSafetyChecks.ValidateNotificationSecrets</c>.</summary>
+        public string? PartnerToken { get; set; }
+    }
+
     public sealed class DispatchOptions
     {
-        public int BatchSize { get; set; } = 200;
+        // ARCHITECTURE_CYCLE9.md §104.6: raised from 200 to 400 for AllChannels mode (US-125) — a batch
+        // is a SELECTION of rows, not connections; MaxParallelChannels below is still what bounds
+        // simultaneous outbound connections, so doubling the row count a pass can pick up keeps the
+        // queue from growing unboundedly once one event can produce two rows instead of one, without
+        // touching the antiban pacing inside any one channel's group.
+        public int BatchSize { get; set; } = 400;
         public int BudgetSeconds { get; set; } = 50;
         public int MaxParallelChannels { get; set; } = 8;
         public int PauseMinMs { get; set; } = 5000;

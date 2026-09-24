@@ -139,4 +139,54 @@ public class PaginationTests
     public void SanitizeSearch_KeepsNonLatinTextUntouched() =>
         // Only control characters are stripped — a Cyrillic company name search must not be mangled.
         Pagination.SanitizeSearch("Компания «Ромашка»").Should().Be("Компания «Ромашка»");
+
+    // Cycle-09 backend contract re-check, finding 1: GET /companies/public 500ed with an unhandled
+    // System.Text.EncoderFallbackException from Npgsql when `search` contained a lone (unpaired) UTF-16
+    // surrogate — ASP.NET Core's query-string binder percent-decodes bytes into a string without
+    // validating surrogate pairs, and such a string is not valid UTF-16 text Npgsql's UTF-8 transcoder
+    // can encode. SanitizeSearch must strip lone surrogates the same way it already strips control
+    // characters, so malformed input never reaches Npgsql.
+    [Fact]
+    public void SanitizeSearch_StripsLoneHighSurrogate()
+    {
+        var input = "abc" + '\uD800' + "def"; // high surrogate with no following low surrogate.
+        Pagination.SanitizeSearch(input).Should().Be("abcdef");
+    }
+
+    [Fact]
+    public void SanitizeSearch_StripsLoneLowSurrogate()
+    {
+        var input = "abc" + '\uDC00' + "def"; // low surrogate with no preceding high surrogate.
+        Pagination.SanitizeSearch(input).Should().Be("abcdef");
+    }
+
+    [Fact]
+    public void SanitizeSearch_KeepsValidSurrogatePairsUntouched()
+    {
+        var input = "abc" + "😀" + "def"; // 😀 — a well-formed surrogate pair (emoji).
+        Pagination.SanitizeSearch(input).Should().Be(input);
+    }
+
+    [Fact]
+    public void SanitizeSearch_AllLoneSurrogates_ReturnsNull() =>
+        // Two consecutive high surrogates: neither has a low-surrogate follower, so both are lone.
+        Pagination.SanitizeSearch(new string(new[] { '\uD800', '\uD801' })).Should().BeNull();
+
+    // Cycle-09 backend contract re-check: GET /companies/public bound page/pageSize as `int?`, so a
+    // malformed value (e.g. pageSize=false) failed [ApiController] model binding and short-circuited to
+    // an automatic 400 — contradicting contracts/cycle9/openapi.yaml's explicit "клампится к [1,100],
+    // а не отвергается 400-м" for pageSize. Binding as `string?` and routing through ParseNullableInt
+    // first keeps Normalize's existing clamp/default behavior for malformed input too.
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("false", null)]
+    [InlineData("not-a-number", null)]
+    [InlineData("20", 20)]
+    [InlineData("0", 0)]
+    [InlineData("-5", -5)]
+    [InlineData(" 7 ", 7)] // int.TryParse tolerates surrounding whitespace by default (NumberStyles.Integer).
+    public void ParseNullableInt_FallsBackToNullInsteadOfThrowingOnMalformedInput(string? input, int? expected) =>
+        Pagination.ParseNullableInt(input).Should().Be(expected);
 }

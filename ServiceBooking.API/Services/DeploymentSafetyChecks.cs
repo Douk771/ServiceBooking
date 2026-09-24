@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.GreenApi;
+using ServiceBooking.API.Services.Notifications.WebPush;
 
 namespace ServiceBooking.API.Services;
 
@@ -184,6 +185,19 @@ public static class DeploymentSafetyChecks
                     throw new InvalidOperationException(
                         $"Notifications:Provider is '{GreenApiProviderName.Value}' but Notifications:PartnerToken is missing " +
                         "or still a placeholder. Set NOTIFICATIONS_PARTNER_TOKEN in .env.");
+
+                // ARCHITECTURE_CYCLE9.md §104.1/§104.9: GREEN-API's MAX product is a SEPARATE partner
+                // account from WhatsApp (confirmed by the provider's own docs during B1 — createInstance's
+                // response typeInstance is tied to which partner token called it, not a request
+                // parameter), so it needs its OWN partner token, checked the same way and for the same
+                // reason as WhatsApp's above — a real provider configured with no way to provision MAX
+                // instances must fail loud at startup, not 503 the first owner who requests a MAX channel.
+                var maxPartnerToken = configuration["Notifications:GreenApiMax:PartnerToken"];
+                if (string.IsNullOrWhiteSpace(maxPartnerToken) || maxPartnerToken == "CHANGE_ME")
+                    throw new InvalidOperationException(
+                        $"Notifications:Provider is '{GreenApiProviderName.Value}' but Notifications:GreenApiMax:PartnerToken " +
+                        "is missing or still a placeholder — MAX is a separate GREEN-API product/account and needs its own " +
+                        "partner token, distinct from Notifications:PartnerToken. Set NOTIFICATIONS_GREENAPI_MAX_PARTNER_TOKEN in .env.");
             }
 
             // I4: an empty UnsubscribeKey doesn't fail loudly anywhere downstream — NotificationScheduler
@@ -214,6 +228,13 @@ public static class DeploymentSafetyChecks
                     "Notifications:PartnerToken is set outside Production. A real provider partner token " +
                     "here could create or delete a live salon's WhatsApp instance from a dev/test run. " +
                     "Clear NOTIFICATIONS_PARTNER_TOKEN outside Production.");
+
+            var maxPartnerToken = configuration["Notifications:GreenApiMax:PartnerToken"];
+            if (!string.IsNullOrWhiteSpace(maxPartnerToken))
+                throw new InvalidOperationException(
+                    "Notifications:GreenApiMax:PartnerToken is set outside Production — the same mirror-image " +
+                    "rule as Notifications:PartnerToken (ARCHITECTURE_CYCLE9.md §104.1). Clear " +
+                    "NOTIFICATIONS_GREENAPI_MAX_PARTNER_TOKEN outside Production.");
         }
     }
 
@@ -418,5 +439,81 @@ public static class DeploymentSafetyChecks
                 $"Booking:DefaultWorkWindow:Start ({start}) must be before End ({end}).");
 
         return (start, end);
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE9.md §105.3 (US-124, Q15, R12): mirrors <see cref="ValidateNotificationSecrets"/>'s
+    /// shape for the Web Push subsystem's OWN, separate secret (VAPID, not the channel master key).
+    /// <c>Notifications:StaffPush:Provider = "logging"</c> (the default) needs nothing — that's the
+    /// documented "невыпущенность" state (SPEC П13), not a misconfiguration. <c>"web-push"</c> outside a
+    /// developer environment REQUIRES a public/private key pair that actually parses as P-256
+    /// (<see cref="VapidKeyValidator.IsValidP256Pair"/>) and a non-empty Subject — "старт падает", not
+    /// "работает наполовину". Any other value fails loud, same append-only-provider convention as
+    /// <see cref="NotificationOptions.Provider"/>.
+    /// </summary>
+    public static void ValidateStaffPushSecrets(IConfiguration configuration, string environmentName)
+    {
+        var provider = configuration[$"{WebPushOptions.SectionName}:Provider"] ?? "logging";
+        if (string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase)) return;
+
+        if (!string.Equals(provider, "web-push", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Notifications:StaffPush:Provider is '{provider}', which is neither 'logging' nor 'web-push'. " +
+                "Fix the configured value — see ARCHITECTURE_CYCLE9.md §105.3.");
+
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        var publicKey = configuration[$"{WebPushOptions.SectionName}:VapidPublicKey"];
+        var privateKey = configuration[$"{WebPushOptions.SectionName}:VapidPrivateKey"];
+        if (!VapidKeyValidator.IsValidP256Pair(publicKey, privateKey))
+            throw new InvalidOperationException(
+                "Notifications:StaffPush:Provider is 'web-push' but VapidPublicKey/VapidPrivateKey are " +
+                "missing or do not parse as a P-256 key pair. Generate a pair (e.g. `npx web-push " +
+                "generate-vapid-keys`) and set WEBPUSH_VAPID_PUBLIC_KEY/WEBPUSH_VAPID_PRIVATE_KEY in .env " +
+                "— see ARCHITECTURE_CYCLE9.md §105.2/§105.3.");
+
+        if (string.IsNullOrWhiteSpace(configuration[$"{WebPushOptions.SectionName}:VapidSubject"]))
+            throw new InvalidOperationException(
+                "Notifications:StaffPush:Provider is 'web-push' but VapidSubject is empty. Set " +
+                "WEBPUSH_VAPID_SUBJECT in .env to a mailto: or https: URL identifying the platform " +
+                "(RFC 8292) — see ARCHITECTURE_CYCLE9.md §105.2.");
+
+        // B5/§105.3: PushSubscriptionWriter.UpsertAsync encrypts p256dh/auth with the SAME
+        // Notifications:EncryptionKey ValidateNotificationSecrets already guards — but only when
+        // Notifications:Provider itself is a real provider. A deployment can run
+        // Notifications:Provider=logging (no WhatsApp/MAX configured) with
+        // Notifications:StaffPush:Provider=web-push at the same time; that combination started up clean
+        // and then 500'd on the very first POST /api/push/subscriptions (SecretProtector.DecodeKey throws
+        // on an empty/placeholder key). "web-push" needs this key exactly as much as a real
+        // Notifications:Provider does — checked here too, last (after the keys this method already owns),
+        // so the failure is at startup, not first request.
+        ValidateEncryptionKeyFormat(configuration["Notifications:EncryptionKey"]);
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE9.md §104.2 (US-122): "нераспознанное значение по-прежнему роняет старт; вдобавок
+    /// роняет старт ситуация «в реестре нет реализации для члена NotificationTransport»." Unlike this
+    /// class's other checks, the registry itself is built from DI in <c>Program.cs</c> (it depends on
+    /// which concrete adapters got wired up), so this method takes the registry's OWN answer to "what did
+    /// you actually end up with" — <paramref name="registeredTransports"/> — as plain data instead of
+    /// re-deriving it, keeping the check itself pure/DI-free like the rest of this class and callable
+    /// directly from a unit test with a hand-built list.
+    /// </summary>
+    /// <param name="registeredTransports">What the registry actually ended up with — every member of
+    /// <see cref="Core.Enums.NotificationTransport"/> missing from this collection fails the check.</param>
+    /// <param name="registryName">Which registry this is, for the exception message —
+    /// <see cref="Notifications.INotificationTransportRegistry"/> and
+    /// <see cref="Notifications.IChannelProvisioningRegistry"/> are checked separately, since one could in
+    /// principle be complete while the other isn't (e.g. Production intentionally omits provisioning for
+    /// a transport it can still SEND through).</param>
+    public static void ValidateTransportRegistryCompleteness(string registryName, IReadOnlyCollection<Core.Enums.NotificationTransport> registeredTransports)
+    {
+        var missing = Enum.GetValues<Core.Enums.NotificationTransport>().Except(registeredTransports).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"{registryName} has no implementation registered for: {string.Join(", ", missing)}. " +
+                "Every NotificationTransport member must have an adapter wired up in Program.cs before the " +
+                "app finishes starting — a transport with no adapter must fail loud at startup, not silently " +
+                "\"just not send\" the first time a message for it comes due (ARCHITECTURE_CYCLE9.md §104.2).");
     }
 }

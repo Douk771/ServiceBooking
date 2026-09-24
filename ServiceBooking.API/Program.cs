@@ -128,6 +128,10 @@ DeploymentSafetyChecks.ValidateTimeZoneDatabase(builder.Environment.EnvironmentN
 DeploymentSafetyChecks.ValidateProviderDeliveryConsentMode(builder.Configuration);
 DeploymentSafetyChecks.ValidateGreenApiServerCountry(builder.Configuration);
 DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
+// ARCHITECTURE_CYCLE9.md §105.3 (проход C, Web Push мастеру) — own secret (VAPID), own provider switch,
+// checked the same "fail loud outside a developer environment" way as ValidateNotificationSecrets above,
+// but gated on ITS OWN Provider value, independent of Notifications:Provider.
+DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.Environment.EnvironmentName);
 
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
@@ -362,44 +366,129 @@ builder.Services.AddHttpClient("green-api", client =>
         return ServiceBooking.API.Services.Notifications.GreenApi.GreenApiHandlerFactory.Create(greenApiOptions);
     });
 
-// Transport/provisioning selection by Notifications:Provider (§28). "logging" — the default, safe in
-// every environment — never makes a network call at all (US-27 p.9). "green-api" is the real adapter
-// (T4-B5); an unrecognised value fails LOUD at startup rather than silently falling back to the logging
-// stub, which would otherwise be the one way a Production deployment could believe notifications are
-// really going out over WhatsApp when nothing is.
+// Transport/provisioning selection by Notifications:Provider (§28, extended ARCHITECTURE_CYCLE9.md
+// §104.2/US-122 to a REGISTRY per transport instead of a single DI-resolved instance). "logging" — the
+// default, safe in every environment — never makes a network call at all, for EITHER transport (US-27
+// p.9). "green-api" is the real adapter, now with TWO concrete implementations behind it (WhatsApp,
+// MAX); an unrecognised Provider value fails LOUD at startup rather than silently falling back to the
+// logging stub, which would otherwise be the one way a Production deployment could believe notifications
+// are really going out when nothing is.
+//
+// Every concrete adapter is registered as itself, AND WhatsApp's is additionally registered against the
+// bare interface (INotificationTransport/IChannelProvisioning) — the registries below resolve WhatsApp
+// through that interface specifically (not the concrete type) so that a TEST HOST overriding it the
+// pre-cycle-9 way (`services.AddSingleton<INotificationTransport>(fake)`, added to the collection AFTER
+// this block — see NotificationDispatchTestFactory/NotificationDispatchExtraTests) keeps working
+// unchanged: "last registration for a service type wins" only helps here if something still asks for
+// that exact service type at resolution time. MAX has no such backward-compatibility concern (no test
+// overrides it yet — it's new this cycle) and resolves its own concrete type directly. This is what makes
+// "add a third transport" a new registry map entry, not a second parallel switch statement.
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxTransport>();
+
 var notificationsProvider = builder.Configuration["Notifications:Provider"];
 switch (notificationsProvider)
 {
     case null or "" or "logging":
-        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport,
-            ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>();
-        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
-            ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
-        break;
+        break; // nothing further to register — both registries below route every transport to the stubs
     case "green-api":
-        // INotificationTransport uses a CHANNEL's own token (a salon's), safe to wire up in any
-        // environment — sandbox mode (Notifications:AllowedRecipients) is the guard against it reaching
-        // a real customer.
-        builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport,
-            ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>();
-
         // IChannelProvisioning uses the PLATFORM's own partner token, which can create/delete a live
         // salon's instance — IChannelProvisioning's own doc comment is explicit that DI must make this
         // implementation structurally NOT EXIST outside Production (§28, US-35 p.4), not merely fail at
-        // call time because ValidateNotificationSecrets' rule 3 already forces PartnerToken empty there.
-        // A developer who sets Provider=green-api locally (PartnerToken necessarily empty, or startup
-        // would already have refused) still gets the harmless no-op rather than a real adapter with
-        // nothing to call.
+        // call time because ValidateNotificationSecrets' rules already force both partner tokens empty
+        // there. A developer who sets Provider=green-api locally (partner tokens necessarily empty, or
+        // startup would already have refused) still gets the harmless no-op for BOTH transports rather
+        // than a real adapter with nothing to call.
         if (builder.Environment.IsProduction())
-            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
-                ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>();
-        else
-            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning,
-                ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>();
+        {
+            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>();
+            builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxProvisioning>();
+        }
         break;
     default:
         throw new InvalidOperationException($"Unknown Notifications:Provider '{notificationsProvider}'.");
 }
+
+// The bare-interface registration WhatsApp's registry entry resolves through — same override seam every
+// consumer used before this cycle (NotificationChannelsController/ChannelHealthTask/NotificationDispatchTask
+// all used to take this constructor-injected). Placed AFTER the switch so it forwards to whichever
+// concrete adapter the switch above decided on.
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransport>(sp =>
+    string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase)
+        ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiTransport>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>());
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioning>(sp =>
+    string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase) && builder.Environment.IsProduction()
+        ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApi.GreenApiProvisioning>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>());
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.INotificationTransportRegistry>(sp =>
+    new ServiceBooking.API.Services.Notifications.NotificationTransportRegistry(
+        new Dictionary<NotificationTransport, ServiceBooking.API.Services.Notifications.INotificationTransport>
+        {
+            // Resolved through the INTERFACE, not the concrete type — see this block's own comment above
+            // for why (test-host override compatibility).
+            [NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.INotificationTransport>(),
+            [NotificationTransport.Max] = string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase)
+                ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxTransport>()
+                : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.LoggingNotificationTransport>(),
+        }));
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry>(sp =>
+    new ServiceBooking.API.Services.Notifications.ChannelProvisioningRegistry(
+        new Dictionary<NotificationTransport, ServiceBooking.API.Services.Notifications.IChannelProvisioning>
+        {
+            [NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.Notifications.IChannelProvisioning>(),
+            [NotificationTransport.Max] = string.Equals(notificationsProvider, "green-api", StringComparison.OrdinalIgnoreCase) && builder.Environment.IsProduction()
+                ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxProvisioning>()
+                : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.NoopChannelProvisioning>(),
+        }));
+
+// Webhook parsers, keyed by transport for the new provider-webhook/{transport}/{token} route (§104.7,
+// B10) — registered unconditionally, same "logging-provider deployment still parses a stray webhook"
+// reasoning the original GreenApiWebhookParser registration below documents.
+builder.Services.AddSingleton<ServiceBooking.API.Services.IProviderWebhookParserRegistry>(sp =>
+{
+    var byTransport = new Dictionary<NotificationTransport, ServiceBooking.API.Services.IProviderWebhookParser>
+    {
+        [NotificationTransport.WhatsApp] = sp.GetRequiredService<ServiceBooking.API.Services.IProviderWebhookParser>(),
+        [NotificationTransport.Max] = new ServiceBooking.API.Services.Notifications.GreenApiMax.GreenApiMaxWebhookParser(),
+    };
+    return new ServiceBooking.API.Services.ProviderWebhookParserRegistry(byTransport);
+});
+
+// ── Web Push мастеру (ARCHITECTURE_CYCLE9.md §105, проход C, US-116/117/118/123/124) ─────────────────
+// Deliberately its own section, independent of the WhatsApp/MAX switch above: own config section, own
+// provider value, own secret (VAPID, not the channel master key), own named HttpClient (§105.1 — "Один
+// клиент на два очень разных назначения — источник взаимного влияния таймаутов").
+builder.Services.Configure<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions.SectionName));
+builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.PushSubscriptionWriter>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.StaffPushScheduler>();
+
+// The "web-push" named client (§105.1) — request/URL logging silenced the same way as "green-api"
+// (rung 1 of defence against a key/token reaching a log); PushServiceClient handles its own
+// content-type/headers, so no ConfigurePrimaryHttpMessageHandler is needed here (no custom
+// IPv4-first ConnectCallback like GreenApiHandlerFactory — push services don't share GREEN-API's
+// documented IPv6-flakiness history).
+builder.Logging.AddFilter("System.Net.Http.HttpClient.web-push.LogicalHandler", LogLevel.None);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.web-push.ClientHandler", LogLevel.None);
+builder.Services.AddHttpClient("web-push", client =>
+{
+    var webPushOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions.SectionName)
+        .Get<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions>() ?? new();
+    client.Timeout = TimeSpan.FromSeconds(webPushOptions.RequestTimeoutSeconds);
+});
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>();
+var staffPushProvider = builder.Configuration["Notifications:StaffPush:Provider"];
+builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.IWebPushSender>(sp =>
+    string.Equals(staffPushProvider, "web-push", StringComparison.OrdinalIgnoreCase)
+        ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>());
 
 // ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
 // gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default
@@ -505,6 +594,22 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // push-subscribe: ARCHITECTURE_CYCLE9.md §105.5 (US-123) — "20/час на пользователя". Keyed by user
+    // id only, same shape as data-export above: the endpoint requires [Authorize], there is no
+    // anonymous case, and the caller subscribing THEIR OWN devices is exactly what this bounds (not an
+    // IP, which a shared salon computer would make the wrong partition key for).
+    o.AddPolicy("push-subscribe", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:push-subscribe:PermitLimit", 20),
+            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:push-subscribe:WindowMinutes", 60)),
+            QueueLimit = 0
+        });
+    });
+
     // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
     // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
     // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -522,6 +627,7 @@ builder.Services.AddRateLimiter(o =>
             "data-export" => "Выгрузка доступна не чаще трёх раз в сутки.",
             "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
             "notifications-webhook" => "Too many requests.",
+            "push-subscribe" => "Слишком много подписок устройств. Повторите позже.",
             _ => "Too many uploads. Try again in a minute."
         };
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
@@ -582,6 +688,10 @@ builder.Services.AddScoped<IScheduledTask, PhotoRetentionCleanupTask>();
 // and channel health (15-minute period — polling, idle detection, orphaned-instance cleanup).
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.NotificationDispatchTask>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.ChannelHealthTask>();
+// ARCHITECTURE_CYCLE9.md §105.8 — the fifth task, "staff-push-dispatch" (1-minute period, its own
+// internal budget, same shape as notification-dispatch above but bounded PARALLEL across devices instead
+// of per-channel sequential antiban pacing — see the task's own doc comment for why).
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaffPushDispatchTask>();
 
 // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
 // is registered individually (not discovered by reflection) so the list here IS the list of what runs —
@@ -616,11 +726,36 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.MailLogRule>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.AppLogAgeRule>();
+// ARCHITECTURE_CYCLE9.md §105.11 — two new rules for the Web Push subsystem. Note (§105.11's own
+// warning, kept here too): NO rule for NotificationOptOut exists anywhere in this list either, on
+// purpose — a cycle-5 decision this cycle does not revisit.
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.PushSubscriptionRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.StaffPushNotificationRule>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
 builder.Services.AddHostedService<ScheduledTaskRunner>();
 
 var app = builder.Build();
+
+// ARCHITECTURE_CYCLE9.md §104.2 (US-122) — "нераспознанное значение по-прежнему роняет старт; вдобавок
+// роняет старт ситуация «в реестре нет реализации для члена NotificationTransport»." Runs unconditionally
+// (every environment, including Development/Testing) — this is a CODE-correctness check (is every
+// NotificationTransport member actually wired up above), not a secrets/deployment-safety one, so it is
+// not gated by isDeveloperEnvironment the way ValidateNotificationSecrets is.
+using (var transportCheckScope = app.Services.CreateScope())
+{
+    var transportRegistry = transportCheckScope.ServiceProvider
+        .GetRequiredService<ServiceBooking.API.Services.Notifications.INotificationTransportRegistry>();
+    DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+        nameof(ServiceBooking.API.Services.Notifications.INotificationTransportRegistry), transportRegistry.RegisteredTransports);
+
+    var provisioningRegistry = transportCheckScope.ServiceProvider
+        .GetRequiredService<ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry>();
+    DeploymentSafetyChecks.ValidateTransportRegistryCompleteness(
+        nameof(ServiceBooking.API.Services.Notifications.IChannelProvisioningRegistry), provisioningRegistry.RegisteredTransports);
+}
 
 // FIRST in the pipeline, before anything reads Connection.RemoteIpAddress — the rate limiter's IP
 // partitions (auth-login, auth-register, booking-create) and Serilog's request logging both need the

@@ -52,6 +52,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
     public DbSet<PlatformSettingChangeLog> PlatformSettingChangeLogs => Set<PlatformSettingChangeLog>();
 
+    // ARCHITECTURE_CYCLE9.md §105.4 (US-116/US-123, proход C: Web Push мастеру).
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
+    public DbSet<StaffPushNotification> StaffPushNotifications => Set<StaffPushNotification>();
+
     // Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §43.3): what's paid for on an account's subscription —
     // today, only read for the "notifications.whatsapp" option's Quantity (§47.1's N).
     public DbSet<AccountSubscriptionOption> AccountSubscriptionOptions => Set<AccountSubscriptionOption>();
@@ -79,6 +83,25 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId)
                 .IsRequired().OnDelete(DeleteBehavior.Restrict);
             e.HasAlternateKey(c => new { c.Id, c.BillingAccountId });
+            // Cycle 9 (ARCHITECTURE_CYCLE9.md §103.5) — GET /api/companies/public filters/sorts/pages
+            // in SQL on exactly this shape (ShowInPublicListing, then CityId equality, then Name order);
+            // partial on the same "IsActive AND ShowInPublicListing" predicate the query itself applies,
+            // so the index only ever covers rows that can actually appear in the public directory.
+            e.HasIndex(c => new { c.ShowInPublicListing, c.CityId, c.Name })
+                .HasDatabaseName("IX_Companies_PublicListing")
+                .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
+            // Cycle 9 code review (US-115 follow-up): IX_Companies_PublicListing's leading CityId column
+            // only helps the ?cityId=... branch of GET /api/companies/public. With no cityId (the
+            // default "все города" view — also what the home page opens with first, ARCHITECTURE_CYCLE9.md
+            // §103.5) that index cannot serve the ORDER BY Name at all: Postgres falls back to a full
+            // scan + sort of every publicly-listed company. Measured live against a throwaway Postgres 16
+            // container seeded with 20,000 companies: ~8.3ms (Seq Scan + Sort) without this index vs
+            // ~0.3ms (Index Scan, no sort step) with it — not a marginal difference at this table's
+            // realistic future size. A second, narrower partial index — same filter, but ordered by
+            // (ShowInPublicListing, Name, Id) with no CityId — serves exactly that default branch instead.
+            e.HasIndex(c => new { c.ShowInPublicListing, c.Name, c.Id })
+                .HasDatabaseName("IX_Companies_PublicListing_Default")
+                .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
         });
 
         builder.Entity<Service>(e =>
@@ -381,6 +404,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(c => c.SearchName).HasMaxLength(200);
             e.HasIndex(c => c.SearchName);
             e.HasIndex(c => new { c.Region, c.Name });
+            // ARCHITECTURE_CYCLE9.md §103.3 (US-113): added by ExpandCityDirectory alongside a
+            // one-time DELETE of any pre-existing (Name, Region) duplicates — "no duplicates" becomes a
+            // schema property from this migration forward, not something callers have to re-check.
+            e.HasIndex(c => new { c.Name, c.Region }).IsUnique();
         });
 
         builder.Entity<NotificationChannel>(e =>
@@ -396,7 +423,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(c => c.BillingAccount).WithMany().HasForeignKey(c => c.BillingAccountId)
                 .IsRequired().OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(c => c.BillingAccountId);
-            e.HasAlternateKey(c => new { c.Id, c.BillingAccountId });
+            // ARCHITECTURE_CYCLE9.md §104.3: widened from (Id, BillingAccountId) to include Transport —
+            // ChannelCompanyAssignment's composite FK now pins to THIS key, which is what makes "a
+            // company assigned to a channel whose Transport doesn't match the assignment's own
+            // (denormalized) Transport" physically impossible, the same trick cycle 7 used for
+            // BillingAccountId itself.
+            e.HasAlternateKey(c => new { c.Id, c.BillingAccountId, c.Transport });
             e.Property(c => c.Inn).HasMaxLength(12); // T5-B4: 10 (Company) or 12 (Ip/SelfEmployed) digits
             // Filtered unique index: a channel with no instance yet has ProviderInstanceId == null, and
             // there is exactly one live column value we must never see twice.
@@ -408,25 +440,30 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<ChannelCompanyAssignment>(e =>
         {
-            // Cycle 7, stage 6 (ARCHITECTURE_CYCLE7.md §43.6) — both FKs are composite, pinned to the
-            // (Id, BillingAccountId) alternate keys on NotificationChannels/Companies. This is the
+            // Cycle 7, stage 6 (ARCHITECTURE_CYCLE7.md §43.6) — the Company-side FK is still composite,
+            // pinned to the (Id, BillingAccountId) alternate key on Companies. This is (half of) the
             // co-tenancy guarantee: a row can only exist while the channel and the company it's
             // assigned to agree on BillingAccountId, so "assign a company to a number belonging to a
             // different account" is impossible at the database level, and CompanyTransferService is
             // forced to delete the assignment strictly before it can change Company.BillingAccountId
             // (§51.3 step 6/7) — the DB rejects the update otherwise.
-            e.HasOne(a => a.Channel).WithMany(c => c.Assignments)
-                .HasForeignKey(a => new { a.ChannelId, a.BillingAccountId })
-                .HasPrincipalKey(c => new { c.Id, c.BillingAccountId })
-                .OnDelete(DeleteBehavior.Cascade);
             e.HasOne(a => a.Company).WithMany()
                 .HasForeignKey(a => new { a.CompanyId, a.BillingAccountId })
                 .HasPrincipalKey(c => new { c.Id, c.BillingAccountId })
                 .OnDelete(DeleteBehavior.Cascade);
+            // ARCHITECTURE_CYCLE9.md §104.3 — the Channel-side FK grows a THIRD column, Transport,
+            // pinned to NotificationChannels' widened (Id, BillingAccountId, Transport) alternate key.
+            // Combined with NotificationChannel.Transport never changing after creation, this makes the
+            // assignment's own (denormalized) Transport column physically incapable of disagreeing with
+            // the channel it points at — the co-tenancy trick, applied to a second column.
+            e.HasOne(a => a.Channel).WithMany(c => c.Assignments)
+                .HasForeignKey(a => new { a.ChannelId, a.BillingAccountId, a.Transport })
+                .HasPrincipalKey(c => new { c.Id, c.BillingAccountId, c.Transport })
+                .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(a => a.ChannelId);
-            // US-61 p.7: a company may be assigned to at most one channel — a hard DB guarantee, not
-            // application-level check-then-act.
-            e.HasIndex(a => a.CompanyId).IsUnique();
+            // ARCHITECTURE_CYCLE9.md §104.3 (US-119, US-61 p.7 widened): a company may be assigned to at
+            // most one channel PER TRANSPORT — a hard DB guarantee, not application-level check-then-act.
+            e.HasIndex(a => new { a.CompanyId, a.Transport }).IsUnique();
         });
 
         builder.Entity<ChannelStateEvent>(e =>
@@ -482,6 +519,13 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasKey(s => s.CompanyId);
             e.HasOne(s => s.Company).WithMany().HasForeignKey(s => s.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            // ARCHITECTURE_CYCLE9.md §105.4/§105.7: DB-level default TRUE — without this, EF's generated
+            // migration would default the new column to the CLR type's own default (false), which would
+            // silently flip push OFF for every row that already exists (every company that saved
+            // notification settings before this cycle) the instant the migration runs. "По умолчанию
+            // true, включая компании, созданные до цикла" is a schema property, not something a
+            // backfill script fixes after the fact.
+            e.Property(s => s.StaffPushEnabled).HasDefaultValue(true);
         });
 
         builder.Entity<NotificationTemplate>(e =>
@@ -489,6 +533,42 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(t => t.Company).WithMany().HasForeignKey(t => t.CompanyId).OnDelete(DeleteBehavior.Cascade);
             e.Property(t => t.Body).HasMaxLength(1000);
             e.HasIndex(t => new { t.CompanyId, t.Type }).IsUnique();
+        });
+
+        // ARCHITECTURE_CYCLE9.md §105.4 (US-123). Cascade on the owner: an account tombstone
+        // (ProfileController.DeleteAccount) removes the AppUser row's own FK-reachable rows, but §105.5
+        // notes the cascade does NOT fire on account deletion in THIS product (deletion leaves a
+        // tombstone, AppUser.Id is never actually removed) — ProfileController therefore also deletes
+        // these rows explicitly; Cascade here is only the safety net for any OTHER path that really does
+        // remove an AppUser row (e.g. a future hard-delete admin tool).
+        builder.Entity<PushSubscription>(e =>
+        {
+            e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => s.UserId);
+            e.Property(s => s.Endpoint).HasMaxLength(500);
+            e.HasIndex(s => s.Endpoint).IsUnique();
+            e.Property(s => s.DeviceLabel).HasMaxLength(100);
+            e.Property(s => s.KeyId).HasMaxLength(16);
+        });
+
+        builder.Entity<StaffPushNotification>(e =>
+        {
+            e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(n => n.Booking).WithMany().HasForeignKey(n => n.BookingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(n => n.Subscription).WithMany().HasForeignKey(n => n.SubscriptionId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(n => n.Payload).HasMaxLength(1000);
+            e.Property(n => n.ReasonDetail).HasMaxLength(300);
+            e.Property(n => n.IdempotencyKey).HasMaxLength(200);
+            e.HasIndex(n => n.IdempotencyKey).IsUnique();
+
+            // §105.4's exact-copy-of-cycle-4 dispatch index: partial on Status = Pending (the enum's int
+            // value — see NotificationStatus's doc comment for why this MUST be a raw literal, not a
+            // translated enum comparison), ordered by (ExpiresAtUtc, CreatedAt) for early-expiry-first
+            // scanning, covering the columns StaffPushDispatchTask reads for every candidate row.
+            e.HasIndex(n => new { n.ExpiresAtUtc, n.CreatedAt })
+                .HasDatabaseName("IX_StaffPushNotifications_Dispatch")
+                .HasFilter("\"Status\" = 0")
+                .IncludeProperties(n => new { n.UserId, n.CompanyId, n.SubscriptionId });
         });
 
         builder.Entity<NotificationTemplateHistory>(e =>

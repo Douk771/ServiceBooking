@@ -120,4 +120,14 @@ serve_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL$AVATAR_URL")
 [ "$serve_code" = "200" ] || fail "GET $AVATAR_URL returned $serve_code (expected 200)"
 log "avatar served back OK"
 
+# NOTE on US-112 (favicon, ARCHITECTURE_CYCLE9.md §103.2/§106.3): the tab-icon files live in
+# frontend/public/, not in this API image - Program.cs only maps /uploads via UseStaticFiles, there is
+# no wwwroot/SPA fallback here, and production serves frontend/dist through nginx on the host
+# (deploy/nginx/ezbook.conf, root /var/www/ezbook/current), a separate, non-containerized artifact from
+# what this script's $BASE_URL (the API container) points at. Checking /favicon.ico or /favicon.svg
+# against $BASE_URL would always 404/000 regardless of whether the icons shipped correctly - it would
+# be testing the wrong artifact. The equivalent "request, not a glance at the source" proof for the
+# favicon lives in deploy/ci/smoke-frontend.sh instead, run against the actual built frontend/dist in
+# the `frontend` CI job (.github/workflows/ci.yml) right after `npm run build`.
+
 log "ALL SMOKE CHECKS PASSED"

@@ -18,6 +18,7 @@ import { BookingHistoryPanel } from '../components/booking/BookingHistoryPanel'
 import { RescheduleModal } from '../components/booking/RescheduleModal'
 import { NoteCard } from '../components/clientNotes/NoteCard'
 import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
+import { MyDevicesCard } from '../components/push/MyDevicesCard'
 import type { Booking } from '../types'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -479,6 +480,11 @@ export function MyBookingsPage() {
 
       {showCreateModal && <BookingModal onClose={() => setShowCreateModal(false)} />}
       {rescheduleBooking && <RescheduleModal booking={rescheduleBooking} onClose={() => setRescheduleBooking(null)} />}
+
+      {/* §105.10 — lives next to the master's own bookings, the one place SPEC US-118 calls for it. */}
+      <div className="mb-6">
+        <MyDevicesCard />
+      </div>
 
       {isLoading ? (
         <div className="grid gap-4">

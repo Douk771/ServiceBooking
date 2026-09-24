@@ -1,11 +1,38 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { companiesApi } from '../api/companies'
+import { CityCombobox } from '../components/ui/CityCombobox'
 import { Icon } from '../components/ui/Icon'
+import { Pagination } from '../components/ui/Pagination'
 import { PricingTeaser } from '../components/pricing/PricingTeaser'
-import type { Company } from '../types'
+import type { City, Company } from '../types'
 import salonHero from '../assets/salon-hero.jpg'
+
+// US-115: the visitor's city choice persists across visits (SPEC §115 п. 4, ARCHITECTURE_CYCLE9.md
+// §103.5 / §118 п. 6 name this key `home-city`).
+const HOME_CITY_KEY = 'home-city'
+const PAGE_SIZE = 20
+
+function isValidStoredCity(value: unknown): value is City {
+  if (!value || typeof value !== 'object') return false
+  const c = value as Record<string, unknown>
+  return typeof c.id === 'number' && typeof c.name === 'string'
+}
+
+function loadStoredCity(): City | null {
+  try {
+    const raw = localStorage.getItem(HOME_CITY_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (isValidStoredCity(parsed)) return parsed
+    // Malformed entry (e.g. `{}`) — treat as "all cities" and clean up so we don't keep re-reading it.
+    localStorage.removeItem(HOME_CITY_KEY)
+    return null
+  } catch {
+    return null
+  }
+}
 
 function CompanyCard({ company }: { company: Company }) {
   return (
@@ -67,17 +94,47 @@ const howItWorks = [
 ] as const
 
 export function HomePage() {
-  const { data: companies, isLoading } = useQuery({
-    queryKey: ['companies'],
-    queryFn: companiesApi.getAll,
-  })
+  const [city, setCity] = useState<City | null>(() => loadStoredCity())
   const [search, setSearch] = useState('')
+  // Debounce so the search-by-name/address query (server-side, per SPEC §115) isn't re-fired per
+  // keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [page, setPage] = useState(1)
 
-  const filtered = companies?.filter((c) => {
-    const q = search.trim().toLowerCase()
-    if (!q) return true
-    return c.name.toLowerCase().includes(q) || (c.address ?? '').toLowerCase().includes(q)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    if (city) {
+      localStorage.setItem(HOME_CITY_KEY, JSON.stringify(city))
+    } else {
+      localStorage.removeItem(HOME_CITY_KEY)
+    }
+  }, [city])
+
+  // Reset to page 1 whenever the filters change — a stale page number from a previous, longer
+  // result set would otherwise request an out-of-range page.
+  useEffect(() => {
+    setPage(1)
+  }, [city?.id, debouncedSearch])
+
+  const {
+    data: companiesPage,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ['companies-public', city?.id ?? null, debouncedSearch, page],
+    queryFn: () =>
+      companiesApi.getPublic({
+        cityId: city?.id,
+        search: debouncedSearch || undefined,
+        page,
+        pageSize: PAGE_SIZE,
+      }),
   })
+  const companies = companiesPage?.items
 
   return (
     <div>
@@ -134,10 +191,14 @@ export function HomePage() {
 
       {/* Companies */}
       <section id="companies" className="max-w-[1180px] mx-auto px-8 pt-[88px] pb-[100px]">
-        <div className="flex items-baseline justify-between mb-10 flex-wrap gap-3">
+        <div className="flex items-baseline justify-between mb-6 flex-wrap gap-3">
           <div>
-            <h2 className="font-serif text-[32px] font-medium mb-2 text-ink">Компании и салоны</h2>
-            <p className="text-[15px] text-ink-soft">Проверенные специалисты на платформе</p>
+            <h2 className="font-serif text-[32px] font-medium mb-2 text-ink">
+              {city ? `Компании и салоны — ${city.name}` : 'Компании и салоны'}
+            </h2>
+            <p className="text-[15px] text-ink-soft">
+              {city ? `Показаны салоны в городе «${city.label}»` : 'Проверенные специалисты на платформе, все города'}
+            </p>
           </div>
           <div className="relative">
             <Icon
@@ -155,17 +216,60 @@ export function HomePage() {
           </div>
         </div>
 
+        <div className="flex items-end gap-3 mb-10 flex-wrap">
+          <div className="w-[280px]">
+            <CityCombobox label="" value={city} onChange={setCity} placeholder="Выберите город" />
+          </div>
+          {city && (
+            <button
+              type="button"
+              onClick={() => setCity(null)}
+              className="text-[13px] font-medium text-ink-soft border-b border-line-strong pb-[3px] hover:text-ink"
+            >
+              Все города
+            </button>
+          )}
+        </div>
+
         {isLoading ? (
           <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-40 bg-cream-deep rounded-[20px] animate-pulse" />
             ))}
           </div>
-        ) : filtered && filtered.length > 0 ? (
-          <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
-            {filtered.map((c) => (
-              <CompanyCard key={c.id} company={c} />
-            ))}
+        ) : isError ? (
+          <div className="text-center py-16 text-muted">
+            <Icon name="alert-circle" size={36} strokeWidth={1.4} className="mx-auto mb-3" />
+            <p className="text-lg">Не удалось загрузить список компаний. Попробуйте обновить страницу.</p>
+          </div>
+        ) : companies && companies.length > 0 ? (
+          <>
+            <div className="grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+              {companies.map((c) => (
+                <CompanyCard key={c.id} company={c} />
+              ))}
+            </div>
+            {companiesPage && (
+              <Pagination
+                page={companiesPage.page}
+                pageSize={companiesPage.pageSize}
+                total={companiesPage.total}
+                hasNext={companiesPage.hasNext}
+                onPageChange={setPage}
+              />
+            )}
+          </>
+        ) : city ? (
+          <div className="text-center py-16 text-muted">
+            <Icon name="store" size={36} strokeWidth={1.4} className="mx-auto mb-3" />
+            <p className="text-lg">В городе «{city.name}» пока нет компаний на платформе.</p>
+            <button
+              type="button"
+              onClick={() => setCity(null)}
+              className="mt-4 text-[14px] font-medium text-gold-dark border-b border-gold-dark"
+            >
+              Показать все города
+            </button>
           </div>
         ) : (
           <div className="text-center py-16 text-muted">

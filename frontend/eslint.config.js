@@ -52,5 +52,11 @@ export default tseslint.config(
     files: ['**/*.test.{ts,tsx}', 'src/test/setup.ts'],
     languageOptions: { globals: globals.node },
   },
+  {
+    // ARCHITECTURE_CYCLE9.md §105.9 — plain JS served verbatim from public/, not built by Vite, so it
+    // needs the service-worker global scope (`self`, `caches`, `clients`) instead of the browser one.
+    files: ['public/sw.js'],
+    languageOptions: { globals: globals.serviceworker },
+  },
   prettierConfig,
 )

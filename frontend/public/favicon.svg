@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Same mark as the navbar badge (Navbar.tsx:37-42): an "ink" circle with the "calendar" glyph
+       from components/ui/Icon.tsx in "cream" — colors read from tailwind.config.js theme.colors so
+       this doesn't drift from the site palette (ARCHITECTURE_CYCLE9.md §103.2, US-112). There is no
+       separate logo asset in the repo; this file IS the one source, and the PNG/ICO variants below
+       are rendered from the same geometry. -->
+  <circle cx="12" cy="12" r="12" fill="#2B2420" />
+  <g transform="translate(6,6) scale(0.5)" fill="none" stroke="#FAF6F0" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="5" width="18" height="16" rx="3" />
+    <path d="M3 10h18M8 3v4M16 3v4" />
+  </g>
+</svg>

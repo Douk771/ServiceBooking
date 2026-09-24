@@ -48,6 +48,80 @@ public class CompaniesController(
                 covers.GetValueOrDefault(c.Id))));
     }
 
+    // GET /api/companies/public — US-115 (API_CONTRACT_CYCLE9.md §113.2). Anonymous; replaces GET
+    // /api/companies for the home page while GET /api/companies keeps working unchanged. Filtering by
+    // city/search and the page limit are all applied in SQL — no "download everything, filter in the
+    // browser" regression. An unknown cityId yields an empty page, not 404 (a public, anonymous catalog
+    // never confirms whether a reference row exists).
+    // page/pageSize are bound as raw strings, not int?, on purpose: contracts/cycle9/openapi.yaml §pageSize
+    // explicitly promises "клампится к [1,100], а не отвергается 400-м" (clamped, never rejected with
+    // 400). With [FromQuery] int? and [ApiController]'s automatic model validation, a non-integer value
+    // (e.g. pageSize=false) fails model binding and short-circuits to a 400 before this method body ever
+    // runs — contradicting that documented guarantee. Parsing manually and falling back to "unset" (→
+    // Pagination.Normalize's existing default/clamp path) for anything that doesn't parse keeps the
+    // promised behavior for malformed input, not just out-of-range input.
+    [HttpGet("public")]
+    public async Task<ActionResult<ServiceBooking.API.DTOs.Common.PagedResult<CompanyDto>>> GetPublic(
+        [FromQuery] int? cityId, [FromQuery] string? search, [FromQuery] string? page, [FromQuery] string? pageSize)
+    {
+        var (normalizedPage, normalizedPageSize) = ServiceBooking.API.DTOs.Common.Pagination.Normalize(
+            ServiceBooking.API.DTOs.Common.Pagination.ParseNullableInt(page),
+            ServiceBooking.API.DTOs.Common.Pagination.ParseNullableInt(pageSize));
+
+        // contracts/cycle9/openapi.yaml declares search with maxLength: 200 — the server must honor that
+        // as an input constraint, not just document it. Rather than reject an overlong search with 400
+        // (nothing in the schema's description for `search` documents a 400 the way pageSize's does),
+        // truncate to the declared limit, consistent with pageSize's own "clamp, don't reject" contract
+        // for this anonymous, best-effort catalog endpoint.
+        var truncatedSearch = search is { Length: > 200 } ? search[..200] : search;
+        var sanitizedSearch = ServiceBooking.API.DTOs.Common.Pagination.SanitizeSearch(truncatedSearch);
+
+        // Visibility rules are unchanged from GET /api/companies: isActive AND ShowInPublicListing AND
+        // the tariff's AllowPublicListing. All three legs — including the tariff check, via
+        // PublicListingQuery.WhereAllowsPublicListing (kept in lockstep with SubscriptionResolver's own
+        // AllowPublicListing rule, see that method's remarks) — are applied in SQL, so filtering and
+        // paging never require materializing the full candidate set (ARCHITECTURE_CYCLE9.md §103.5).
+        var query = db.Companies
+            .Where(c => c.IsActive && c.ShowInPublicListing)
+            .WhereAllowsPublicListing(db, DateTime.UtcNow);
+
+        if (cityId.HasValue) query = query.Where(c => c.CityId == cityId.Value);
+        if (!string.IsNullOrWhiteSpace(sanitizedSearch))
+        {
+            // EF.Functions.ILike does not auto-escape LIKE wildcards the way EF Core's own
+            // Contains/StartsWith translation does — unlike AdminController/AdminBillingController's
+            // string.Contains(search) call sites, a raw ILIKE pattern built by interpolating user input
+            // treats '%' and '_' from the caller as wildcards too (search=% would match every company,
+            // search=_ would match any single character). Escape both, plus the escape character itself,
+            // before wrapping in the leading/trailing '%'.
+            var likePattern = $"%{EscapeLikeWildcards(sanitizedSearch)}%";
+            query = query.Where(c => EF.Functions.ILike(c.Name, likePattern)
+                                      || (c.Address != null && EF.Functions.ILike(c.Address, likePattern)));
+        }
+
+        query = query.OrderBy(c => c.Name).ThenBy(c => c.Id);
+
+        var total = await query.CountAsync();
+        var pageItems = await query
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .ToListAsync();
+
+        // Rating/city/cover lookups and plan resolution (for the DTO's plan-derived fields, not for
+        // filtering) stay batched for the page only, same as GetAll/GetMy/GetMemberOf above — covers are
+        // fetched for pageItems (the current page), never the full candidate set, per §109.3.
+        var plans = await subscriptionResolver.GetEffectivePlansAsync(pageItems.Select(c => c.Id));
+        var ratings = await GetReviewAggregatesAsync(pageItems.Select(c => c.Id));
+        var cities = await GetCitiesAsync(pageItems.Select(c => c.CityId));
+        var covers = await GetCoversAsync(pageItems.Select(c => c.Id));
+
+        var items = pageItems.Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
+            c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
+            covers.GetValueOrDefault(c.Id))).ToList();
+
+        return Ok(ServiceBooking.API.DTOs.Common.Pagination.Create(items, normalizedPage, normalizedPageSize, total));
+    }
+
     [HttpGet("my")]
     [Authorize]
     public async Task<ActionResult<List<CompanyDto>>> GetMy()
@@ -973,4 +1047,17 @@ public class CompaniesController(
             result.TryAdd(id, (null, 0));
         return result;
     }
+
+    /// <summary>
+    /// Escapes Postgres' default ILIKE wildcards ('%' any-run, '_' any-single-char) and the escape
+    /// character itself ('\') out of GetPublic's user-supplied search term before it is wrapped in
+    /// leading/trailing '%' and handed to EF.Functions.ILike. Without this, a caller-supplied '%'/'_'
+    /// is interpreted as a wildcard rather than a literal character — e.g. search=% matches every
+    /// company in the public, anonymous catalog, search=_ matches any single-character name/address —
+    /// not a SQL-injection risk (the pattern is still bound as a parameter), just a filtering-bypass one.
+    /// Backslash must be escaped first, or escaping '%'/'_' afterward would double-escape their own
+    /// backslashes.
+    /// </summary>
+    private static string EscapeLikeWildcards(string value) =>
+        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 }
