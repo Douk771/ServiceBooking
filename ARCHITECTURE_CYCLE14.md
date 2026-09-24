@@ -628,7 +628,7 @@ WHERE "ExternalAccountKey" = @k AND "Phone" <> @phone;
   "Max": {
     "BotUsername": "",                    // для deep link https://max.ru/<bot>?start=…
     "BotToken": "",                       // пусто в git; PHONEVERIFY_MAX_BOT_TOKEN
-    "ApiUrl": "https://platform-api2.max.ru",
+    "ApiUrl": "https://platform-api.max.ru",
     "WebhookToken": "",                   // пусто в git; PHONEVERIFY_MAX_WEBHOOK_TOKEN
     "PublicBaseUrl": "",                  // https://ezbook.ru — из чего строится URL вебхука
     "TimeoutSeconds": 5,
@@ -683,6 +683,15 @@ WHERE "ExternalAccountKey" = @k AND "Phone" <> @phone;
 Поведение выключенной подсистемы, проверяемое тестами:
 - `POST /sessions` → **409** «Подтверждение телефона сейчас недоступно»;
 - вебхук → **404**;
+⚠️ **Поправка от 24.09.2026, внесена при первом включении подсистемы в проде.** В этом разделе
+хост назывался `platform-api2.max.ru` — по документации, до первого живого вызова. Вживую он не
+работает: `platform-api2.max.ru` и `platform-api.max.ru` резолвятся в один адрес
+(155.212.204.149), но на platform-api2 не поднимается TLS, и подписка вебхука уходила в таймаут.
+Рабочий хост — **`platform-api.max.ru`**, тот же токен отвечает на нём 200 на `GET /me`. Умолчание
+в `MaxBotOptions` исправлено, хост выведен в `PHONEVERIFY_MAX_API_URL`. Упоминания platform-api2
+ниже по тексту оставлены как есть — они описывают состояние «вызовов не делалось», и переписывать
+историю смысла нет.
+
 - ни одного исходящего вызова к `platform-api2.max.ru` — адаптер в DI структурно заменён на
   `StubMaxBotClient` (не «настоящий клиент, который решил не звонить»);
 - кнопки нет ни на регистрации, ни в профиле;

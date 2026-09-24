@@ -89,6 +89,7 @@ services:
       - PhoneVerification__Max__BotUsername=${PHONEVERIFY_MAX_BOT_USERNAME:-}
       - PhoneVerification__Max__WebhookToken=${PHONEVERIFY_MAX_WEBHOOK_TOKEN:-}
       - PhoneVerification__Max__PublicBaseUrl=${PHONEVERIFY_MAX_PUBLIC_BASE_URL:-}
+      - PhoneVerification__Max__ApiUrl=${PHONEVERIFY_MAX_API_URL:-https://platform-api.max.ru}
       - PhoneVerification__ExternalKeyHmac=${PHONEVERIFY_EXTERNAL_KEY:-}
       # ARCHITECTURE_CYCLE13.md §206/§213/§216 — address verification kill switch. `logging` (default)
       # is the STANDARD state of prod after cycle 13, not an unfinished feature (§200 п.3): no network

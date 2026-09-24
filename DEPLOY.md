@@ -1814,6 +1814,8 @@ Web Push (цикл 9).
 | `PHONEVERIFY_MAX_BOT_USERNAME` | ник бота, из него строится deep link | там же; не секрет |
 | `PHONEVERIFY_MAX_WEBHOOK_TOKEN` | секретный сегмент пути вебхука, ≥32 символов | `openssl rand -hex 32` |
 | `PHONEVERIFY_MAX_PUBLIC_BASE_URL` | публичный https-адрес этой установки | `https://ezbook.ru` |
+| `PHONEVERIFY_EXTERNAL_KEY` | ключ HMAC для идентификатора MAX-аккаунта, ровно 32 байта в base64 | `openssl rand -base64 32` |
+| `PHONEVERIFY_MAX_API_URL` | хост Bot API MAX; умолчание верное, менять не нужно | — |
 
 При `PHONEVERIFY_PROVIDER=max-bot` все четыре секрета обязательны — в Production API **не
 стартует** без них (`DeploymentSafetyChecks`), и это правильное поведение: наполовину включённая

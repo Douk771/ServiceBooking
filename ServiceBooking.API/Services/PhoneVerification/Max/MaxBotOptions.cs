@@ -15,7 +15,14 @@ public sealed class MaxBotOptions
     /// cryptographic key, not just a bearer credential.</summary>
     public string? BotToken { get; set; }
 
-    public string ApiUrl { get; set; } = "https://platform-api2.max.ru";
+    // Проверено вживую 24.09.2026 при первом включении подсистемы в проде, и умолчание пришлось
+    // сменить: `platform-api2.max.ru` и `platform-api.max.ru` резолвятся в ОДИН адрес
+    // (155.212.204.149), но на platform-api2 не поднимается TLS — curl отдаёт 000, а наш
+    // `subscribe` уходил в таймаут. На platform-api.max.ru тот же токен отвечает 200 на GET /me.
+    // Архитектура (§150) называла platform-api2 по разведданным, до первого живого вызова —
+    // это ровно тот случай, о котором предупреждал §9 V4. Хост переопределяется через
+    // PHONEVERIFY_MAX_API_URL, если MAX снова переедет.
+    public string ApiUrl { get; set; } = "https://platform-api.max.ru";
 
     /// <summary>Secret webhook path segment. Empty in git — only ever set via
     /// <c>PHONEVERIFY_MAX_WEBHOOK_TOKEN</c>. Never logged (masked both at the nginx layer and by
