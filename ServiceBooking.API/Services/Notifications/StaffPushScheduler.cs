@@ -118,6 +118,19 @@ public sealed class StaffPushScheduler(AppDbContext db)
 
         foreach (var subscription in subscriptions)
         {
+            var idempotencyKey = BuildRescheduledIdempotencyKey(
+                booking.Id, booking.MasterId, subscription.Id, booking.Date, booking.StartTime);
+
+            // Mirrors NotificationScheduler.cs:362. The key is unique-indexed (AppDbContext.cs:587) and
+            // the SaveChangesAsync that persists it lives OUTSIDE the caller's notification try/catch,
+            // so an unguarded Add turns a duplicate into a 500 that rolls the whole reschedule back.
+            // Duplicates are reachable without any misuse: 10:00 -> 14:00, back to 10:00, then 14:00
+            // again re-derives the first row's key. Same slot, same master -- the queued push already
+            // says what this one would, so skipping is the right answer, not a discriminator.
+            var alreadyQueued = await db.StaffPushNotifications
+                .AnyAsync(n => n.IdempotencyKey == idempotencyKey, ct);
+            if (alreadyQueued) continue;
+
             db.StaffPushNotifications.Add(new StaffPushNotification
             {
                 Id = Guid.NewGuid(),
@@ -130,7 +143,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
                 Status = NotificationStatus.Pending,
                 ExpiresAtUtc = expiresAtUtc,
                 CreatedAt = nowUtc,
-                IdempotencyKey = BuildRescheduledIdempotencyKey(booking.Id, booking.MasterId, subscription.Id, booking.Date, booking.StartTime),
+                IdempotencyKey = idempotencyKey,
             });
         }
     }

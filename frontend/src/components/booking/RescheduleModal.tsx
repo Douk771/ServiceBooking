@@ -69,7 +69,7 @@ export function RescheduleModal({
   // Today is only offered as a reschedule target if the server still has at least one slot left
   // for it — mirrors `BookingModal`'s "slots today" check, now via the same endpoint.
   const { data: slotsToday = [] } = useQuery({
-    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, todayStr, 'manual', showExtendedHours, booking.id],
+    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, todayStr, !isClientOwner, showExtendedHours, booking.id],
     queryFn: () =>
       bookingsApi.getSlots(
         booking.companyId,
@@ -77,7 +77,9 @@ export function RescheduleModal({
         booking.serviceId,
         extraServiceIds,
         todayStr,
-        true,
+        // §290 — `manual`/`extendedHours` are a STAFF request the server only honours for staff of
+        // this company; the client interface doesn't send them at all.
+        !isClientOwner,
         showExtendedHours,
         booking.id,
       ),
@@ -101,7 +103,7 @@ export function RescheduleModal({
     isLoading: slotsLoading,
     error: slotsError,
   } = useQuery({
-    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, selectedDate, 'manual', showExtendedHours, booking.id],
+    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, selectedDate, !isClientOwner, showExtendedHours, booking.id],
     queryFn: () =>
       bookingsApi.getSlots(
         booking.companyId,
@@ -109,7 +111,7 @@ export function RescheduleModal({
         booking.serviceId,
         extraServiceIds,
         selectedDate,
-        true,
+        !isClientOwner,
         showExtendedHours,
         booking.id,
       ),
@@ -136,8 +138,16 @@ export function RescheduleModal({
         <div className="p-6 pb-[22px] border-b border-line flex items-center justify-between">
           <div>
             <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Перенести запись</h2>
+            {/* API_CONTRACT_CYCLE15.md §291 п. 7 — the client already knows their own name; what they
+                need here is WHOSE visit is being moved (salon · master · service). Staff keeps the
+                client's name, which is the useful identifier on their side. */}
             <p className="text-[13px] text-ink-soft">
-              {booking.clientName} · {formatBookingServiceNames(booking)}
+              {(isClientOwner
+                ? [booking.companyName, booking.masterName, formatBookingServiceNames(booking)]
+                : [booking.clientName, formatBookingServiceNames(booking)]
+              )
+                .filter(Boolean)
+                .join(' · ')}
             </p>
           </div>
           <button onClick={onClose} className="text-muted hover:text-ink shrink-0">

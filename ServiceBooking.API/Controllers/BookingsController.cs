@@ -84,7 +84,10 @@ public class BookingsController(
             if (userId is null) return NotFound();
             var booking = await db.Bookings.Include(b => b.BookingServices).Include(b => b.Service)
                 .FirstOrDefaultAsync(b => b.Id == excludeBookingId);
-            if (booking is null) return NotFound("Booking not found");
+            // §257.5/§290 (BREAKING № 1): a bare 404 with an EMPTY body — identical to the
+            // "not yours" answer below. A body here ("Booking not found") would make the two cases
+            // distinguishable again and turn the endpoint back into an existence oracle.
+            if (booking is null) return NotFound();
             // ARCHITECTURE_CYCLE15.md §257.5/§290 (BREAKING № 1): a caller who is neither staff of this
             // booking nor its own client gets a bare 404, same as a booking that doesn't exist —
             // otherwise this endpoint would confirm "this booking id belongs to someone" to anyone who
@@ -852,14 +855,14 @@ public class BookingsController(
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"booking-slot:{booking.MasterId}:{dto.Date:O}");
 
-        var conflict2 = await db.Bookings.AnyAsync(b =>
+        var conflict = await db.Bookings.AnyAsync(b =>
             b.Id != id &&
             b.MasterId == booking.MasterId &&
             b.Date == dto.Date &&
             b.Status != BookingStatus.Cancelled &&
             b.StartTime < slotEnd && b.EndTime > dto.StartTime);
 
-        if (conflict2) return Conflict("Time slot is no longer available");
+        if (conflict) return Conflict("Time slot is no longer available");
 
         var previousDate = booking.Date;
         var previousStartTime = booking.StartTime;
