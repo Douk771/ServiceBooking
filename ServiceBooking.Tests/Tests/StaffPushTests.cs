@@ -250,15 +250,21 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
     [Fact, TestCase("PUSH-006")]
     public async Task RealRunner_410Gone_DeletesSubscription_SameProcessing_NoRetry()
     {
-        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString);
+        // Cycle 14 (flaky-CI fix, второй заход): e1b80e9 оставило 410/429 на реальном таймере, полагая,
+        // что «нет повтора» доказывается только несколькими тиками. Два ЯВНЫХ прохода доказывают это
+        // строже: первый отдаёт 410, второй — та самая возможность повторить, которой быть не должно.
+        // Раньше «1 вызов» означало лишь «столько тиков успело случиться за окно ожидания» — на медленной
+        // машине это давало TimeoutException вместо неверного статуса (PUSH-006 упал так на develop,
+        // а поднятие бюджета с 20s до 60s в a5d831c проблему не сняло).
+        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString, disableAutomaticTicking: true);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var (subscription, row) = await SeedPendingRowAsync(factory, db);
         factory.Sender.EnqueueOutcomeFor(subscription.Id, new WebPushSendOutcome.Gone());
 
-        await WaitForAsync(() => factory.Sender.Calls.Any(c => c.SubscriptionId == subscription.Id), 20);
-        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, DispatchWaitSeconds);
+        await factory.RunStaffPushDispatchPassAsync();
+        await factory.RunStaffPushDispatchPassAsync();
 
         await db.Entry(row).ReloadAsync();
         row.Status.Should().Be(NotificationStatus.Skipped);
@@ -266,23 +272,24 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
 
         (await db.PushSubscriptions.AnyAsync(s => s.Id == subscription.Id)).Should().BeFalse(
             "410 Gone must delete the dead subscription in the SAME pass");
-        factory.Sender.Calls.Count(c => c.SubscriptionId == subscription.Id).Should().Be(1, "no retry after 410");
+        factory.Sender.Calls.Count(c => c.SubscriptionId == subscription.Id).Should().Be(1,
+            "no retry after 410 — второй проход состоялся и НЕ отправил повторно");
     }
 
     [Fact, TestCase("PUSH-007")]
     public async Task RealRunner_429_DoesNotDeleteSubscription_StaysPendingForRetry()
     {
-        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString);
+        // Cycle 14 (flaky-CI fix, второй заход): один явный проход вместо «дождаться тика и подождать
+        // ещё 500 мс, пока попытка запишется». Ожидание завершения прохода и есть та гарантия, которую
+        // Task.Delay изображал на глазок.
+        await using var factory = new PushDispatchTestFactory(fixture.ConnectionString, disableAutomaticTicking: true);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var (subscription, row) = await SeedPendingRowAsync(factory, db);
         factory.Sender.EnqueueOutcomeFor(subscription.Id, new WebPushSendOutcome.Transient("simulated 429"));
 
-        await WaitForAsync(() => factory.Sender.Calls.Any(c => c.SubscriptionId == subscription.Id), 20);
-        // Give the (single) attempt time to be recorded — the row stays Pending with a future
-        // NextAttemptAtUtc rather than transitioning to any terminal state.
-        await Task.Delay(500);
+        await factory.RunStaffPushDispatchPassAsync();
 
         await db.Entry(row).ReloadAsync();
         row.Status.Should().Be(NotificationStatus.Pending, "429/5xx is a TRANSIENT failure — it must not fail the row outright");
@@ -411,38 +418,5 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         await db.SaveChangesAsync();
 
         return (subscription, row);
-    }
-
-    private static async Task WaitForAsync(Func<bool> predicate, int timeoutSeconds)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-        while (DateTime.UtcNow < deadline)
-        {
-            if (predicate()) return;
-            await Task.Delay(200);
-        }
-        predicate().Should().BeTrue($"condition did not become true within {timeoutSeconds}s");
-    }
-
-    // Cycle 14 raised this from a hard-coded 20s. The dispatcher these three tests wait on is a real
-    // hosted background service, so the wait is bounded by wall-clock, not by work done — and the
-    // functional suite grew from 626 to 651 tests, tripling its own runtime under the same parallel
-    // slots. Three runs in a row produced three different outcomes here (two failures, one failure,
-    // all green), always a TimeoutException in this class and never a wrong status: the assertions
-    // below still demand the exact status and reason, this budget only tolerates a loaded machine.
-    private const int DispatchWaitSeconds = 60;
-
-    private static async Task WaitForRowStatusAsync(PushDispatchTestFactory factory, Guid rowId, NotificationStatus expected, int timeoutSeconds)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-        while (DateTime.UtcNow < deadline)
-        {
-            await using var scope = factory.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var current = await db.StaffPushNotifications.AsNoTracking().FirstAsync(n => n.Id == rowId);
-            if (current.Status == expected) return;
-            await Task.Delay(200);
-        }
-        throw new TimeoutException($"StaffPushNotification {rowId} did not reach status {expected} within {timeoutSeconds}s");
     }
 }

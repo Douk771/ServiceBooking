@@ -22,7 +22,21 @@ public sealed class TestClassDatabaseLease(string classSlot, string connectionSt
         if (Interlocked.Exchange(ref _dropped, 1) == 1)
             return; // defensive — DropAsync must be idempotent if a fixture's DisposeAsync is ever retried.
 
-        await TestRunEnvironment.ReleaseClassDatabaseAsync(ClassSlot, cancellationToken);
+        try
+        {
+            await TestRunEnvironment.ReleaseClassDatabaseAsync(ClassSlot, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Провалившийся teardown — это утёкшая база, а не провалившийся тест. xUnit же приписывает
+            // Test Class Cleanup Failure КАЖДОМУ тесту класса: на develop так «упали» все шесть
+            // RateLimitingTests (по 1 ms каждый), хотя все они прошли, а истёк DROP DATABASE.
+            // Утёкшую базу подбирает Sweeper по имени sbtest_<key>_<slot>, а на CI сервер БД и вовсе
+            // умирает вместе с service-контейнером — цена утечки нулевая, цена ложной красноты высокая.
+            // Молчать при этом нельзя: строка ниже печатается всегда, чтобы утечка была видна глазами.
+            Console.WriteLine($"[sb-test] WARNING: не удалось удалить базу класса (slot={ClassSlot}): {ex.Message}. " +
+                              "База останется до ближайшего sweep; тесты класса не считаются упавшими.");
+        }
     }
 
     /// <summary>T9 review (M3): annotates this class' database with the owning test class' name, once it
