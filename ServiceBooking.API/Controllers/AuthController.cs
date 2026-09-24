@@ -79,15 +79,10 @@ public class AuthController(
             var candidate = await db.PhoneVerificationSessions
                 .FirstOrDefaultAsync(s => s.Id == dto.PhoneVerification.SessionId);
 
-            var statusTokenMatches = candidate is not null &&
+            var statusTokenMatches = candidate is not null && !string.IsNullOrEmpty(dto.PhoneVerification.StatusToken) &&
                 StatusTokenGenerator.Hash(dto.PhoneVerification.StatusToken) == candidate.StatusTokenHash;
 
-            var valid = candidate is not null && statusTokenMatches
-                && candidate.Status == PhoneVerificationStatus.Verified
-                && candidate.Purpose == PhoneVerificationPurpose.Registration
-                && candidate.UserId == null
-                && candidate.ConsumableUntilUtc is { } consumableUntil && consumableUntil > now
-                && candidate.CanonicalPhone == canonicalPhone;
+            var valid = PhoneVerificationSessionAcceptance.IsUsableForRegistration(candidate, statusTokenMatches, canonicalPhone, now);
 
             if (!valid)
                 return Conflict(PhoneVerificationTexts.RegisterSessionInvalid);

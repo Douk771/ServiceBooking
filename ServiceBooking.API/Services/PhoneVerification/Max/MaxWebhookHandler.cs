@@ -154,21 +154,39 @@ public sealed class MaxWebhookHandler(
                 if (session.Purpose == PhoneVerificationPurpose.Profile)
                 {
                     var user = session.UserId is null ? null : await db.Users.FirstOrDefaultAsync(u => u.Id == session.UserId, ct);
-                    var writeOutcome = await writer.WriteAsync(session, user, options.Value.MaxPhonesPerExternalAccount, ct);
-                    if (writeOutcome == PhoneVerificationWriter.WriteOutcome.LimitReached)
-                    {
-                        // Defence in depth: the pre-check above already reserved the slot under the same
-                        // lock, so this branch should be unreachable in practice — WriteAsync re-checks
-                        // for real regardless of what the pre-check found.
-                        session.Status = PhoneVerificationStatus.Rejected;
-                        session.FailureReason = PhoneVerificationFailureReason.MaxAccountLimitReached;
-                        replyText = MaxBotTexts.MaxAccountLimitReached;
-                        break;
-                    }
 
-                    // §148.3: for Profile, there is nobody left to "present" this session to — it is
-                    // consumed the instant the contact is accepted.
-                    session.Status = PhoneVerificationStatus.Consumed;
+                    // Purpose=Profile covers TWO different scenarios that must not be treated alike
+                    // (review finding, blockers 1+2 of the cycle-12 review):
+                    //  - US-12-16, "confirm the number I already have" — session.CanonicalPhone equals
+                    //    the account's CURRENT PhoneNumber. Nobody is ever going to "present" this
+                    //    session anywhere else, so it is written and consumed right here.
+                    //  - US-12-17, the change-phone gate — session.CanonicalPhone is a NEW number the
+                    //    account does not hold yet (ChangePhoneDto.NewPhone, not the account's current
+                    //    number). Writing VerifiedPhone/PhoneNumberConfirmed here would mark a number
+                    //    the account doesn't own; consuming the session here would make it impossible to
+                    //    ever satisfy ProfileController.ChangePhone's `Status == Verified` check — the
+                    //    gate could never be passed. So this branch must leave the session Verified;
+                    //    ProfileController.ChangePhone is the only caller allowed to consume it, in the
+                    //    same transaction it actually changes the account's phone (§148.5 step 6).
+                    if (user is not null && PhoneVerificationSessionAcceptance.IsOwnCurrentNumberConfirmation(session.CanonicalPhone, user.PhoneNumber))
+                    {
+                        var writeOutcome = await writer.WriteAsync(session, user, options.Value.MaxPhonesPerExternalAccount, ct);
+                        if (writeOutcome == PhoneVerificationWriter.WriteOutcome.LimitReached)
+                        {
+                            // Defence in depth: the pre-check above already reserved the slot under the
+                            // same lock, so this branch should be unreachable in practice — WriteAsync
+                            // re-checks for real regardless of what the pre-check found.
+                            session.Status = PhoneVerificationStatus.Rejected;
+                            session.FailureReason = PhoneVerificationFailureReason.MaxAccountLimitReached;
+                            replyText = MaxBotTexts.MaxAccountLimitReached;
+                            break;
+                        }
+
+                        // §148.3: for the "confirm my own number" case, there is nobody left to
+                        // "present" this session to — it is consumed the instant the contact is
+                        // accepted.
+                        session.Status = PhoneVerificationStatus.Consumed;
+                    }
                 }
 
                 replyText = MaxBotTexts.Success;

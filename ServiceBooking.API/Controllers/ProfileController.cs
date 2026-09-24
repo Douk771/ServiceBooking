@@ -277,14 +277,9 @@ public class ProfileController(
             if (dto.Verification is not null)
             {
                 var candidate = await db.PhoneVerificationSessions.FirstOrDefaultAsync(s => s.Id == dto.Verification.SessionId);
-                var tokenMatches = candidate is not null &&
+                var tokenMatches = candidate is not null && !string.IsNullOrEmpty(dto.Verification.StatusToken) &&
                     StatusTokenGenerator.Hash(dto.Verification.StatusToken) == candidate.StatusTokenHash;
-                if (candidate is not null && tokenMatches
-                    && candidate.Status == PhoneVerificationStatus.Verified
-                    && candidate.Purpose == PhoneVerificationPurpose.Profile
-                    && candidate.UserId == user.Id
-                    && candidate.CanonicalPhone == canonicalPhone
-                    && candidate.ConsumableUntilUtc is { } consumableUntil && consumableUntil > now)
+                if (PhoneVerificationSessionAcceptance.IsUsableForChangePhone(candidate, tokenMatches, user.Id, canonicalPhone, now))
                 {
                     verificationSession = candidate;
                 }
@@ -310,6 +305,13 @@ public class ProfileController(
 
         if (phoneIsChanging)
         {
+            // §148.5 step 6 (US-12-11): the whole change — UserName/PhoneNumber, dropping the OLD
+            // number's verification, and writing whatever THIS call proved about the NEW one — happens
+            // in ONE transaction (review finding: SetUserNameAsync used to save on its own, before the
+            // transaction below even opened, so a later failure in this block would leave the account's
+            // login identifier changed while the verification rows stayed on the old number).
+            await using var transaction = await db.Database.BeginTransactionAsync();
+
             user.PhoneNumber = canonicalPhone;
             var result = await userManager.SetUserNameAsync(user, canonicalPhone);
             if (!result.Succeeded)
@@ -319,11 +321,6 @@ public class ProfileController(
                     ? "Этот номер телефона уже используется другим аккаунтом"
                     : result.Errors.FirstOrDefault()?.Description ?? "Не удалось изменить номер телефона");
             }
-
-            // §148.5 step 6 (US-12-11): in the SAME transaction — the OLD number's verification is
-            // dropped outright, and the mirror reflects whatever THIS call proved about the NEW one
-            // (true only if a valid session for the new number was actually presented and consumed).
-            await using var transaction = await db.Database.BeginTransactionAsync();
 
             if (oldPhone is not null)
                 await phoneVerificationWriter.RemoveForOldNumberAsync(oldPhone, user.Id, HttpContext.RequestAborted);
@@ -436,9 +433,17 @@ public class ProfileController(
         db.VerifiedPhones.RemoveRange(
             await db.VerifiedPhones.Where(v => v.UserId == userId
                 || (canonicalPhone != null && v.Phone == canonicalPhone)).ToListAsync());
+        // Review finding: matching purely by CanonicalPhone (with no UserId check) used to also delete a
+        // COMPLETE STRANGER's still-live session on the same number — e.g. someone else mid-registration
+        // on the exact phone this account is being deleted from under, whose next poll would 404 without
+        // warning. Own sessions (any status) are always this account's to remove; a session that merely
+        // SHARES the phone is only swept up once it's already terminal — cleanup, not a race with a live
+        // caller.
         db.PhoneVerificationSessions.RemoveRange(
             await db.PhoneVerificationSessions.Where(s => s.UserId == userId
-                || (canonicalPhone != null && s.CanonicalPhone == canonicalPhone)).ToListAsync());
+                || (canonicalPhone != null && s.CanonicalPhone == canonicalPhone
+                    && s.Status != PhoneVerificationStatus.Pending && s.Status != PhoneVerificationStatus.Linked))
+                .ToListAsync());
 
         // Step 3: bookings are anonymized, never deleted — the salon's revenue/commission history for a
         // completed visit must stay intact (US-39 p.3). Matches both the client path and the guest path
