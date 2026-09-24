@@ -11,8 +11,12 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 /// raw secret itself is never returned to the caller a second time — <see cref="IPhoneVerificationMethodAdapter.StartAsync"/>'s
 /// caller (<c>PhoneVerificationSessionService</c>) only persists the hash.
 /// </summary>
+/// <param name="PayloadHash">Хеш секрета сессии — то единственное, что обязан вернуть любой способ
+/// подтверждения: по нему <c>PhoneVerificationSession</c> находится, когда придёт входящее событие.</param>
+/// <param name="DeepLink">Ссылка, открывающая приложение мессенджера сразу в диалоге с ботом.</param>
 /// <param name="WebLink">Ссылка на веб-клиент мессенджера для тех, у кого приложение не установлено;
 /// <c>null</c>, если у способа подтверждения такой дорожки нет.</param>
+/// <param name="QrPng">QR-код с той же ссылкой, PNG; <c>null</c>, если способ его не рисует.</param>
 public sealed record VerificationChallenge(string PayloadHash, string DeepLink, string? WebLink, byte[]? QrPng);
 
 /// <summary>

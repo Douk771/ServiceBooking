@@ -18,8 +18,11 @@ public interface IMaxBotClient
     /// conversation). Bounded by a 5s timeout and by <c>MaxBotClient</c>'s own rate limiters (§146.4);
     /// failure is swallowed by the CALLER (the webhook handler), never allowed to turn a handled update
     /// into a non-2xx response (§146.2).</summary>
+    /// <param name="chatId">Идентификатор чата, в который уходит сообщение.</param>
+    /// <param name="text">Текст сообщения.</param>
     /// <param name="requestContact">Приложить к сообщению клавиатуру с кнопкой
     /// <c>request_contact</c> — единственный способ, которым человек отдаёт боту свой номер.
     /// Без неё текст «нажмите кнопку ниже» приглашает нажать то, чего нет.</param>
+    /// <param name="ct">Токен отмены.</param>
     Task SendMessageAsync(string chatId, string text, bool requestContact, CancellationToken ct);
 }
