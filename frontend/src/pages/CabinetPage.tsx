@@ -257,6 +257,13 @@ function MyCompaniesTab() {
         >
           <form
             onSubmit={handleSubmit((d) => {
+              // US-30 п. 5 — validated before the notice gate below, not just inside `submitCompany`:
+              // the notice writes an entry to the consent ledger the moment it's confirmed (review
+              // finding, cycle 13), so a missing city must fail BEFORE that write, not after it.
+              if (!city) {
+                setCityError('Укажите город салона')
+                return
+              }
               // ARCHITECTURE_CYCLE13.md §220.2 — shown on first fill AND on any later edit, before
               // saving. An address that's already been confirmed once at this exact text can submit
               // straight through; anything else routes through the notice first.
