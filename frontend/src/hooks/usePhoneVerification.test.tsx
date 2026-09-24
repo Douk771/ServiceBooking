@@ -164,6 +164,24 @@ describe('usePhoneVerification', () => {
     await waitFor(() => expect(result.current.session).toBeNull())
   })
 
+  it('a failed status poll (e.g. 404 — session expired server-side) stops polling and surfaces an error', async () => {
+    startSession.mockResolvedValue(session())
+    getStatus.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 404, data: '' },
+    })
+    const { result } = renderHook(() => usePhoneVerification(), { wrapper })
+
+    await act(async () => {
+      await result.current.start('79000000001')
+    })
+
+    await waitFor(() => expect(result.current.statusError).not.toBeNull())
+    expect(result.current.isPolling).toBe(false)
+    // Only ever called once — refetchInterval must not keep retrying on a hard error.
+    expect(getStatus).toHaveBeenCalledTimes(1)
+  })
+
   it('syncPhone is a no-op when the phone still matches the session', async () => {
     startSession.mockResolvedValue(session())
     getStatus.mockResolvedValue(status())

@@ -71,6 +71,7 @@ export function VerifyPhoneButton({ phone, onVerifiedChange, label = 'Подтв
         <VerifyPhoneDialog
           session={pv.session}
           status={pv.status}
+          statusError={pv.statusError}
           onClose={() => setDialogOpen(false)}
           onRestart={() => void pv.start(phone)}
         />

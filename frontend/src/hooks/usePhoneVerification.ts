@@ -34,6 +34,10 @@ export interface UsePhoneVerificationResult {
   isPolling: boolean
   isStarting: boolean
   startError: string | null
+  /** Set once the status poll itself fails (e.g. 404 — session expired/reaped server-side, wrong
+   * token). The poller stops itself in this case (see `isPolling`) instead of hammering the endpoint
+   * forever; the caller is expected to surface this next to the dialog/button. */
+  statusError: string | null
   /** `phone` — canonical digits; omit to let the server use the signed-in account's current number. */
   start: (phone?: string) => Promise<void>
   /** Fire-and-forget per the contract (§166) — always resolves, clears local state regardless. */
@@ -60,7 +64,10 @@ export function usePhoneVerification(pollIntervalMs = DEFAULT_POLL_MS): UsePhone
     queryFn: () => phoneVerificationApi.getStatus(session!.sessionId, session!.statusToken),
     enabled: !!session,
     retry: false,
-    refetchInterval: (query) => (isTerminalStatus(query.state.data?.status) ? false : pollIntervalMs),
+    // Stop polling once the status is terminal — OR once the poll itself is erroring (e.g. 404: the
+    // session was reaped/expired server-side, or the token is wrong). Without the error branch this
+    // hit `pollIntervalMs` forever, since `query.state.data` never gets set on a failed request.
+    refetchInterval: (query) => (isTerminalStatus(query.state.data?.status) || query.state.error ? false : pollIntervalMs),
     refetchIntervalInBackground: false,
   })
 
@@ -104,9 +111,12 @@ export function usePhoneVerification(pollIntervalMs = DEFAULT_POLL_MS): UsePhone
   return {
     session,
     status: statusQuery.data ?? null,
-    isPolling: !!session && !isTerminalStatus(statusQuery.data?.status),
+    isPolling: !!session && !isTerminalStatus(statusQuery.data?.status) && !statusQuery.isError,
     isStarting,
     startError,
+    statusError: statusQuery.isError
+      ? getPhoneVerificationErrorMessage(statusQuery.error, 'Не удалось получить статус подтверждения. Попробуйте получить новую ссылку.')
+      : null,
     start,
     cancel,
     syncPhone,

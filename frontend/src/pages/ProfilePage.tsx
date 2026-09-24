@@ -258,11 +258,14 @@ export function ProfilePage() {
   const [changePhoneVerification, setChangePhoneVerification] = useState<PhoneVerificationRefValue | null>(null)
 
   // Editing the number again after a 409 is a fresh attempt — the previous gate result no longer
-  // says anything about whatever's now in the field (VerifyPhoneButton's own effect already drops a
-  // now-mismatched session via `onVerifiedChange(null)`; this just retires the gate's own banners).
+  // says anything about whatever's now in the field. This also unmounts `VerifyPhoneButton` (it only
+  // renders while `needsPhoneVerification` is true), and an unmount doesn't run its "drop a
+  // now-mismatched session" effect — so `changePhoneVerification` must be cleared here explicitly,
+  // or a stale session ref for the OLD number could still ride along on submit.
   useEffect(() => {
     setNeedsPhoneVerification(false)
     setPhoneVerificationUnavailable(false)
+    setChangePhoneVerification(null)
   }, [newPhoneValue])
 
   const phoneMut = useMutation({

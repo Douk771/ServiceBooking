@@ -9,6 +9,9 @@ interface VerificationStatusProps {
   status: PhoneVerificationSessionStatus | null
   /** Offered on Rejected/Expired for reasons where trying again makes sense (§165, US-12-06). Omit to hide the action entirely (e.g. read-only contexts). */
   onRestart?: () => void
+  /** Set when the status poll itself failed (e.g. session 404'd server-side). Takes priority over
+   * `status` — there's nothing meaningful left to show about a session the server no longer knows. */
+  statusError?: string | null
 }
 
 /**
@@ -17,7 +20,25 @@ interface VerificationStatusProps {
  * component never assembles wording from `failureReason` itself except as a last-resort fallback if
  * the server ever sends a reason without a message.
  */
-export function VerificationStatus({ status, onRestart }: VerificationStatusProps) {
+export function VerificationStatus({ status, onRestart, statusError }: VerificationStatusProps) {
+  if (statusError) {
+    return (
+      <div role="status" aria-live="polite">
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-danger flex items-start gap-2">
+            <Icon name="alert-circle" size={16} strokeWidth={1.8} className="shrink-0 mt-0.5" />
+            {statusError}
+          </p>
+          {onRestart && (
+            <Button type="button" variant="secondary" size="sm" onClick={onRestart} className="self-start">
+              Получить новую ссылку
+            </Button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (!status) return null
 
   // §165 — "SessionCancelled: ничего, экран уже не показывает сессию". Cancellation here is always

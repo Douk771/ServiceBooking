@@ -7,6 +7,7 @@ import type { PhoneVerificationSessionCreated, PhoneVerificationSessionStatus } 
 interface VerifyPhoneDialogProps {
   session: PhoneVerificationSessionCreated
   status: PhoneVerificationSessionStatus | null
+  statusError?: string | null
   onClose: () => void
   onRestart: () => void
 }
@@ -20,7 +21,7 @@ interface VerifyPhoneDialogProps {
  * Device targeting is done with a CSS breakpoint (`sm:`), not UA sniffing — consistent with the rest
  * of the app's responsive components and avoids a wrong guess on unusual browsers.
  */
-export function VerifyPhoneDialog({ session, status, onClose, onRestart }: VerifyPhoneDialogProps) {
+export function VerifyPhoneDialog({ session, status, statusError, onClose, onRestart }: VerifyPhoneDialogProps) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -116,7 +117,7 @@ export function VerifyPhoneDialog({ session, status, onClose, onRestart }: Verif
           </Button>
         </div>
 
-        <VerificationStatus status={status} onRestart={onRestart} />
+        <VerificationStatus status={status} onRestart={onRestart} statusError={statusError} />
 
         {status?.status === 'Verified' && (
           <Button type="button" onClick={onClose} className="w-full mt-5">
