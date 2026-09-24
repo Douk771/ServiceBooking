@@ -79,6 +79,17 @@ services:
       - Notifications__StaffPush__VapidPublicKey=${WEBPUSH_VAPID_PUBLIC_KEY:-}
       - Notifications__StaffPush__VapidPrivateKey=${WEBPUSH_VAPID_PRIVATE_KEY:-}
       - Notifications__StaffPush__VapidSubject=${WEBPUSH_VAPID_SUBJECT:-}
+      # ARCHITECTURE_CYCLE12.md §150.1-§150.2 — phone verification via the MAX bot. A PLATFORM
+      # subsystem: own top-level section, own five secrets, deliberately NOT nested under Notifications__
+      # (§140.2/R5 — the whole point is that it never depends on the WhatsApp/MAX channel machinery
+      # above). Empty PHONEVERIFY_PROVIDER/stub default keeps it off exactly like
+      # NOTIFICATIONS_PROVIDER/logging above — `docker-build` stays green without any of the five.
+      - PhoneVerification__Provider=${PHONEVERIFY_PROVIDER:-stub}
+      - PhoneVerification__Max__BotToken=${PHONEVERIFY_MAX_BOT_TOKEN:-}
+      - PhoneVerification__Max__BotUsername=${PHONEVERIFY_MAX_BOT_USERNAME:-}
+      - PhoneVerification__Max__WebhookToken=${PHONEVERIFY_MAX_WEBHOOK_TOKEN:-}
+      - PhoneVerification__Max__PublicBaseUrl=${PHONEVERIFY_MAX_PUBLIC_BASE_URL:-}
+      - PhoneVerification__ExternalKeyHmac=${PHONEVERIFY_EXTERNAL_KEY:-}
       # Retention (ARCHITECTURE_CYCLE5.md §49, DEPLOY.md §11.4): appsettings.json bakes DryRun=true —
       # deletion-by-age rules only log what they WOULD delete until this is deliberately flipped to
       # false on the host, per the two-run procedure in DEPLOY.md. Empty/unset keeps the baked-in
