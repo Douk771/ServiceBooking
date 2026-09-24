@@ -238,6 +238,10 @@ public sealed class MaxWebhookHandler(
     /// <summary>§146.2's own timeout budget — a reply that never arrives must not hold the webhook
     /// response open, and a failure here must never surface as anything but a log line (the caller has
     /// already committed the session's own state by the time this runs).</summary>
+    /// <param name="chatId">Чат, в который уходит ответ; <c>null</c>/пустая строка означает, что чат
+    /// в апдейте не пришёл, и отвечать некуда.</param>
+    /// <param name="text">Текст ответа.</param>
+    /// <param name="ct">Токен отмены.</param>
     /// <param name="requestContact">Показать кнопку «Отправить контакт» вместе с текстом. Нужна
     /// везде, где от человека ждут следующего действия: приветствие, напоминание уже связанной
     /// сессии и любой отказ, который лечится повторной отправкой контакта. НЕ нужна там, где
