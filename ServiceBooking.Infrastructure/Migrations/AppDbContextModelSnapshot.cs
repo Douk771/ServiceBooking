@@ -473,6 +473,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId");
 
+                    b.HasIndex("GuestPhone")
+                        .HasDatabaseName("IX_Bookings_GuestPhone")
+                        .HasFilter("\"GuestPhone\" IS NOT NULL");
+
                     b.HasIndex("MasterId");
 
                     b.HasIndex("ServiceId");
@@ -1624,6 +1628,80 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("OutboundNotifications");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PhoneVerificationSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CanonicalPhone")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ConsumableUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalAccountKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int?>("FailureReason")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("LinkedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Method")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("MismatchedPhoneMasked")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StatusTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PayloadHash")
+                        .IsUnique();
+
+                    b.HasIndex("Status", "ExpiresAtUtc");
+
+                    b.HasIndex("UserId", "CreatedAtUtc");
+
+                    b.ToTable("PhoneVerificationSessions");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.PlanOptionRule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2238,6 +2316,48 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("SubscriptionPlanConfigs");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.VerifiedPhone", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ExternalAccountKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Method")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("VerifiedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExternalAccountKey");
+
+                    b.HasIndex("Phone")
+                        .IsUnique();
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("VerifiedPhones");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.WeeklyScheduleTemplate", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2836,6 +2956,16 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Company");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PhoneVerificationSession", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.PlanOptionRule", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.SubscriptionOption", "Option")
@@ -2962,6 +3092,23 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("BillingAccount");
 
                     b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.VerifiedPhone", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.PhoneVerificationSession", "Session")
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ServiceBooking.Core.Entities.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Session");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.WeeklyScheduleTemplate", b =>

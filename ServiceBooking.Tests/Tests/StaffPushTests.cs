@@ -258,7 +258,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         factory.Sender.EnqueueOutcomeFor(subscription.Id, new WebPushSendOutcome.Gone());
 
         await WaitForAsync(() => factory.Sender.Calls.Any(c => c.SubscriptionId == subscription.Id), 20);
-        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, 20);
+        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, DispatchWaitSeconds);
 
         await db.Entry(row).ReloadAsync();
         row.Status.Should().Be(NotificationStatus.Skipped);
@@ -308,7 +308,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         db.CompanyMembers.Remove(membership);
         await db.SaveChangesAsync();
 
-        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, 20);
+        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, DispatchWaitSeconds);
 
         await db.Entry(row).ReloadAsync();
         row.Status.Should().Be(NotificationStatus.Skipped);
@@ -347,7 +347,7 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         trackedSubscription.UserId = masterBUserId;
         await db.SaveChangesAsync();
 
-        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, 20);
+        await WaitForRowStatusAsync(factory, row.Id, NotificationStatus.Skipped, DispatchWaitSeconds);
 
         await db.Entry(row).ReloadAsync();
         row.Status.Should().Be(NotificationStatus.Skipped);
@@ -416,6 +416,14 @@ public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture
         }
         predicate().Should().BeTrue($"condition did not become true within {timeoutSeconds}s");
     }
+
+    // Cycle 14 raised this from a hard-coded 20s. The dispatcher these three tests wait on is a real
+    // hosted background service, so the wait is bounded by wall-clock, not by work done — and the
+    // functional suite grew from 626 to 651 tests, tripling its own runtime under the same parallel
+    // slots. Three runs in a row produced three different outcomes here (two failures, one failure,
+    // all green), always a TimeoutException in this class and never a wrong status: the assertions
+    // below still demand the exact status and reason, this budget only tolerates a loaded machine.
+    private const int DispatchWaitSeconds = 60;
 
     private static async Task WaitForRowStatusAsync(PushDispatchTestFactory factory, Guid rowId, NotificationStatus expected, int timeoutSeconds)
     {

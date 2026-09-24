@@ -92,6 +92,61 @@ public class LegalBuildDeterminismTests
         }
     }
 
+    /// <summary>Cycle 12 review finding, top priority: the artifact the browser receives must not ship
+    /// `ЮРИСТУ:`/`РАЗРАБОТКЕ:` review comments as visible page-source HTML comments. Also proves ordering:
+    /// the comment that IS the splice marker (<c>&lt;!-- APPENDIX-BODY-START --&gt;</c>) must still work —
+    /// stripping has to happen AFTER splicing, not before.</summary>
+    [Fact]
+    public void Build_StripsHtmlComments_FromArtifact_ButStillSplicesUsingTheMarkerComment()
+    {
+        var source = LegalKitFixture.CreateSourceDir(
+            termsOwnerHtml: "<!-- ЮРИСТУ: внутренняя пометка, не для публики -->\n" + LegalKitFixture.DefaultTermsOwnerHtml);
+        var outDir = Path.Combine(Path.GetTempPath(), "legalkit-out-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            LegalSourceSet.Build(source, outDir);
+
+            var termsOwner = File.ReadAllText(Path.Combine(outDir, "terms-owner.html"));
+            termsOwner.Should().NotContain("<!--");
+            termsOwner.Should().NotContain("-->");
+            termsOwner.Should().NotContain("ЮРИСТУ");
+            // The splice still happened even though the marker comment itself got stripped afterwards —
+            // ordering (splice, THEN strip) has to hold.
+            termsOwner.Should().Contain("Offer appendix body {{НДС_ОГОВОРКА}}");
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(outDir);
+        }
+    }
+
+    /// <summary>Determinism has to survive comment stripping too — this is a distinct assertion from
+    /// <see cref="Build_SameSourceTwice_ProducesByteIdenticalOutput"/> in that it specifically exercises a
+    /// source containing comments, rather than relying on the fixture's default (comment-free) content.</summary>
+    [Fact]
+    public void Build_WithComments_SameSourceTwice_ProducesByteIdenticalOutput()
+    {
+        var source = LegalKitFixture.CreateSourceDir(
+            termsOwnerHtml: "<!-- ЮРИСТУ: A -->\n" + LegalKitFixture.DefaultTermsOwnerHtml + "\n<!-- РАЗРАБОТКЕ: B -->");
+        var out1 = Path.Combine(Path.GetTempPath(), "legalkit-out1-" + Guid.NewGuid().ToString("N"));
+        var out2 = Path.Combine(Path.GetTempPath(), "legalkit-out2-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            LegalSourceSet.Build(source, out1);
+            LegalSourceSet.Build(source, out2);
+
+            File.ReadAllBytes(Path.Combine(out1, "terms-owner.html"))
+                .Should().BeEquivalentTo(File.ReadAllBytes(Path.Combine(out2, "terms-owner.html")));
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(out1);
+            LegalKitFixture.Delete(out2);
+        }
+    }
+
     [Fact]
     public void Build_ResultLoadsSuccessfullyViaLoadStrict()
     {

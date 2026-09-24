@@ -4,12 +4,16 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
+using PhoneVerificationRefDto = ServiceBooking.API.DTOs.PhoneVerification.PhoneVerificationRefDto;
 
 namespace ServiceBooking.API.Controllers;
 
@@ -19,7 +23,10 @@ namespace ServiceBooking.API.Controllers;
 public class ProfileController(
     UserManager<AppUser> userManager, AppDbContext db, ImageUploadService imageUploadService, FileStorage storage,
     SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    LegalDocumentProvider legalProvider, ConsentLedger ledger, HealthNoteProtector healthNoteProtector)
+    LegalDocumentProvider legalProvider, ConsentLedger ledger, HealthNoteProtector healthNoteProtector,
+    GuestBookingLookup guestBookingLookup, IPhoneVerificationMethodRegistry phoneVerificationRegistry,
+    PhoneVerificationWriter phoneVerificationWriter, IOptions<PhoneVerificationOptions> phoneVerificationOptions,
+    ILogger<ProfileController> logger)
     : ControllerBase
 {
     [HttpGet]
@@ -171,6 +178,16 @@ public class ProfileController(
             healthNotesExport.Add(new ExportHealthNoteDto(companyNameById.GetValueOrDefault(note.CompanyId, ""), value, note.UpdatedAt));
         }
 
+        // ARCHITECTURE_CYCLE14.md §151.3, API_CONTRACT_CYCLE14.md §170.3: only the fact/method/date of
+        // verification for the CURRENT number — read straight from VerifiedPhone (source of truth) rather
+        // than trusting the mirror alone, since the mirror could in principle drift. The MAX-account
+        // identifier (even hashed) and any open session are deliberately excluded — neither is data the
+        // subject can meaningfully read back, and an open session lives minutes anyway.
+        var verifiedPhoneRow = canonicalPhone is null ? null
+            : await db.VerifiedPhones.AsNoTracking().FirstOrDefaultAsync(v => v.Phone == canonicalPhone);
+        var phoneVerification = new ExportPhoneVerificationDto(
+            verifiedPhoneRow is not null, verifiedPhoneRow?.Method.ToString(), verifiedPhoneRow?.VerifiedAtUtc);
+
         // ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49: "признаны результатом работы салона"
         // is removed — it is not a valid ground for refusal (ч. 8 ст. 14 152-ФЗ is exhaustive). Replaced
         // with routing to the actual operator of that data — see `operators` above.
@@ -184,7 +201,7 @@ public class ProfileController(
             "компания — контакты и адрес каждой такой компании перечислены в разделе «operators» этой " +
             "выгрузки. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
             "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.",
-            operators, notifications, optOut, healthNotesExport);
+            operators, notifications, optOut, healthNotesExport, phoneVerification);
 
         Response.Headers.ContentDisposition =
             $"attachment; filename=\"servicebooking-export-{DateOnly.FromDateTime(DateTime.UtcNow):yyyy-MM-dd}.json\"";
@@ -223,13 +240,15 @@ public class ProfileController(
     // PhoneNumber and UserName/NormalizedUserName in one write. Requires the current password,
     // same as changing the password, since it's effectively changing the login identifier.
     //
-    // Deferred (code review, cycle C): the new number is NOT verified — only the current password is
-    // checked, and PhoneNumberConfirmed is never consulted. Combined with Export/DeleteAccount
-    // matching guest bookings by canonical phone, that lets someone move their account onto a number
-    // a guest once booked with and read that guest's visit history. Accepted knowingly; the fix is
-    // an SMS confirmation of the new number, which waits on the messaging channel — see
-    // SPEC_DEFERRED_NOTIFICATIONS.md "Отложенное, связанное с этой темой".
+    // ⚠️ ARCHITECTURE_CYCLE14.md §148.5, API_CONTRACT_CYCLE14.md §169 (US-14-17) — LOMAYUSHCHEE
+    // (breaking) change of behavior, the ONE HTTP-visible breaking change of cycle 14: changing to a
+    // number that already has GUEST bookings on it now requires a verified MAX session for that number
+    // first. Every other change (no guest bookings on the new number, or the number not changing at
+    // all) works exactly as before — Р1. Formulation that MUST accompany any description of this
+    // result: закрыт путь через смену номера; путь через регистрацию нового аккаунта на чужой номер
+    // остаётся открытым осознанно (SPEC.md §6.4, блок V1 в CURRENT_STATE.md §9) — see §153.4/§140.3.
     [HttpPost("change-phone")]
+    [EnableRateLimiting("phone-change")]
     public async Task<ActionResult<ProfileDto>> ChangePhone([FromBody] ChangePhoneDto dto)
     {
         var user = await userManager.FindByIdAsync(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -244,8 +263,55 @@ public class ProfileController(
         if (!PhoneNormalizer.TryNormalizeRussian(dto.NewPhone, out var canonicalPhone))
             return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
 
-        if (user.PhoneNumber != canonicalPhone)
+        var oldPhone = user.PhoneNumber;
+        var phoneIsChanging = oldPhone != canonicalPhone;
+
+        // §148.5 steps 3-4: the gate participates ONLY when the number is actually changing AND the new
+        // number has guest bookings on it (GuestBookingLookup — §142.5's one indexed EXISTS).
+        PhoneVerificationSession? verificationSession = null;
+        if (phoneIsChanging && await guestBookingLookup.HasGuestBookingsAsync(canonicalPhone, HttpContext.RequestAborted))
         {
+            var adapter = phoneVerificationRegistry.Get(PhoneVerificationMethod.MaxBot);
+            var now = DateTime.UtcNow;
+
+            if (dto.Verification is not null)
+            {
+                var candidate = await db.PhoneVerificationSessions.FirstOrDefaultAsync(s => s.Id == dto.Verification.SessionId);
+                var tokenMatches = candidate is not null && !string.IsNullOrEmpty(dto.Verification.StatusToken) &&
+                    StatusTokenGenerator.Hash(dto.Verification.StatusToken) == candidate.StatusTokenHash;
+                if (PhoneVerificationSessionAcceptance.IsUsableForChangePhone(candidate, tokenMatches, user.Id, canonicalPhone, now))
+                {
+                    verificationSession = candidate;
+                }
+            }
+
+            var gateOutcome = GuestBookingGateDecision.Evaluate(
+                phoneIsChanging: true, newNumberHasGuestBookings: true,
+                validSessionPresented: verificationSession is not null, subsystemEnabled: adapter.Enabled);
+
+            if (gateOutcome != ChangePhoneGateOutcome.Allow)
+            {
+                // §148.5, R14: every attempt that hits the gate is logged — this is the postfactum
+                // detection for the residual enumeration-oracle risk Р3 accepts, not the gate itself.
+                logger.LogInformation(
+                    "phone-change gate blocked: userId={UserId} phone={MaskedPhone} reason={Reason}",
+                    user.Id, LogMasking.Phone(canonicalPhone), "GuestBookingsExist");
+
+                return Conflict(gateOutcome == ChangePhoneGateOutcome.SubsystemDisabled
+                    ? PhoneVerificationTexts.ChangePhoneSubsystemDisabled
+                    : PhoneVerificationTexts.ChangePhoneNeedsVerification);
+            }
+        }
+
+        if (phoneIsChanging)
+        {
+            // §148.5 step 6 (US-14-11): the whole change — UserName/PhoneNumber, dropping the OLD
+            // number's verification, and writing whatever THIS call proved about the NEW one — happens
+            // in ONE transaction (review finding: SetUserNameAsync used to save on its own, before the
+            // transaction below even opened, so a later failure in this block would leave the account's
+            // login identifier changed while the verification rows stayed on the old number).
+            await using var transaction = await db.Database.BeginTransactionAsync();
+
             user.PhoneNumber = canonicalPhone;
             var result = await userManager.SetUserNameAsync(user, canonicalPhone);
             if (!result.Succeeded)
@@ -255,6 +321,24 @@ public class ProfileController(
                     ? "Этот номер телефона уже используется другим аккаунтом"
                     : result.Errors.FirstOrDefault()?.Description ?? "Не удалось изменить номер телефона");
             }
+
+            if (oldPhone is not null)
+                await phoneVerificationWriter.RemoveForOldNumberAsync(oldPhone, user.Id, HttpContext.RequestAborted);
+
+            user.PhoneNumberConfirmed = false;
+            if (verificationSession is not null)
+            {
+                await AdvisoryLock.AcquireAsync(db, $"phone-verification:{verificationSession.ExternalAccountKey}");
+                await phoneVerificationWriter.WriteAsync(
+                    verificationSession, user, phoneVerificationOptions.Value.MaxPhonesPerExternalAccount, HttpContext.RequestAborted);
+                verificationSession.Status = PhoneVerificationStatus.Consumed;
+                // WriteAsync only flips PhoneNumberConfirmed back to true on an actual write — a race
+                // that exhausts the ceiling between the gate check above and here leaves it correctly
+                // false, exactly like §148.1 step 5's registration-side equivalent (Р1).
+            }
+
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
         }
 
         var roles = await userManager.GetRolesAsync(user);
@@ -339,6 +423,27 @@ public class ProfileController(
         // longer have credentials to see.
         var ownPushSubscriptions = await db.PushSubscriptions.Where(s => s.UserId == userId).ToListAsync();
         db.PushSubscriptions.RemoveRange(ownPushSubscriptions);
+
+        // Step 2d (ARCHITECTURE_CYCLE14.md §151.2, US-14-12): same reasoning as step 2c — the Cascade FK
+        // on VerifiedPhone.UserId/PhoneVerificationSession.UserId never actually fires (this account is
+        // tombstoned, not removed), so both are cleaned up explicitly, in the same transaction. This is
+        // what makes the MAX-account identifier (as HMAC) genuinely unrecoverable after deletion (Р4),
+        // frees this person's slot in the per-MAX-account ceiling (Q10), and guarantees a future
+        // registration on this same number starts unverified (Q9) — by removing the row, not a flag flip.
+        db.VerifiedPhones.RemoveRange(
+            await db.VerifiedPhones.Where(v => v.UserId == userId
+                || (canonicalPhone != null && v.Phone == canonicalPhone)).ToListAsync());
+        // Review finding: matching purely by CanonicalPhone (with no UserId check) used to also delete a
+        // COMPLETE STRANGER's still-live session on the same number — e.g. someone else mid-registration
+        // on the exact phone this account is being deleted from under, whose next poll would 404 without
+        // warning. Own sessions (any status) are always this account's to remove; a session that merely
+        // SHARES the phone is only swept up once it's already terminal — cleanup, not a race with a live
+        // caller.
+        db.PhoneVerificationSessions.RemoveRange(
+            await db.PhoneVerificationSessions.Where(s => s.UserId == userId
+                || (canonicalPhone != null && s.CanonicalPhone == canonicalPhone
+                    && s.Status != PhoneVerificationStatus.Pending && s.Status != PhoneVerificationStatus.Linked))
+                .ToListAsync());
 
         // Step 3: bookings are anonymized, never deleted — the salon's revenue/commission history for a
         // completed visit must stay intact (US-39 p.3). Matches both the client path and the guest path
@@ -606,9 +711,21 @@ public class ProfileController(
             ExpiresInDays: expiresInDays, IsExpiringSoon: isExpiringSoon, OptionCount: subscribedOptions.Count);
     }
 
-    private async Task<ProfileDto> MapToDtoAsync(AppUser u, IList<string> roles) =>
-        new(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, [.. roles],
-            await GetPlanInfoAsync(u.Id, roles));
+    private async Task<ProfileDto> MapToDtoAsync(AppUser u, IList<string> roles)
+    {
+        // ARCHITECTURE_CYCLE14.md §149.1: the boolean comes from the mirror (cheap, already loaded with
+        // the account — one indexed read either way, per profile request, not per row of a list); the
+        // date comes from VerifiedPhone itself, since the mirror carries no timestamp of its own.
+        DateTime? phoneVerifiedAtUtc = null;
+        if (u.PhoneNumberConfirmed && u.PhoneNumber is not null)
+            phoneVerifiedAtUtc = await db.VerifiedPhones.AsNoTracking()
+                .Where(v => v.Phone == u.PhoneNumber)
+                .Select(v => (DateTime?)v.VerifiedAtUtc)
+                .FirstOrDefaultAsync();
+
+        return new(u.Id, u.PhoneNumber ?? "", u.Email, u.FirstName, u.LastName, u.AvatarUrl, [.. roles],
+            await GetPlanInfoAsync(u.Id, roles), u.PhoneNumberConfirmed, phoneVerifiedAtUtc);
+    }
 
     private static ExportConsentDto ToExportConsentDto(ConsentState s) =>
         new(s.Id, s.DocumentKey, s.DocumentVersion, s.Purpose?.ToString(), s.Act.ToString(), s.Source.ToString(),
@@ -941,8 +1058,10 @@ public class ProfileController(
 
 // CommissionPercent removed (US-22): commission became per-company (CompanyMember.CommissionPercent)
 // in cycle A, so the account-level value here no longer means anything and the UI never showed it.
+// ARCHITECTURE_CYCLE14.md §149.1, API_CONTRACT_CYCLE14.md §170.1: PhoneVerified/PhoneVerifiedAtUtc are
+// ADDITIVE (US-14-14). PhoneVerifiedAtUtc is null whenever PhoneVerified is false.
 public record ProfileDto(string Id, string Phone, string? Email, string FirstName, string LastName, string? AvatarUrl,
-    List<string> Roles, ProfilePlanDto? Plan);
+    List<string> Roles, ProfilePlanDto? Plan, bool PhoneVerified, DateTime? PhoneVerifiedAtUtc);
 
 // §53.2 — only additive over the cycle-4 shape: every existing field keeps its old meaning (subscription
 // is bound to the account, not to a person, but that is invisible here), the six new fields below are
@@ -970,7 +1089,10 @@ public record RevokeConsentResponseDto(int Revoked, RevokeEffectsDto Effects);
 
 public record UpdateProfileDto(string FirstName, string LastName);
 public record ChangePasswordDto(string CurrentPassword, string NewPassword);
-public record ChangePhoneDto(string CurrentPassword, string NewPhone);
+// ARCHITECTURE_CYCLE14.md §148.5, API_CONTRACT_CYCLE14.md §169: Verification is ADDITIVE and OPTIONAL —
+// required ONLY when the new number already has guest bookings on it (checked server-side, never
+// assumed from the presence of this field).
+public record ChangePhoneDto(string CurrentPassword, string NewPhone, PhoneVerificationRefDto? Verification = null);
 public record DeleteAccountDto(string CurrentPassword);
 
 // US-38 export DTOs (API_CONTRACT.md §8) — deliberately their own shape, not a reuse of ProfileDto/
@@ -981,12 +1103,16 @@ public record DeleteAccountDto(string CurrentPassword);
 // field names exactly (cycle 3 used different names for the same two fields); four sections added
 // (T5-B11, §50.2): `Operators` (which companies hold data about this subject — the routing §50.2
 // replaces "результат работы салона" with), `Notifications`/`OptOut` (US-75), `HealthNotes` (US-77).
+// ARCHITECTURE_CYCLE14.md §151.3: PhoneVerification is the one section this cycle adds — additive,
+// appended last, same convention as T5-B11's own additions above it.
 public record ProfileExportDto(
     DateTime GeneratedAt, ExportProfileDto Profile, List<ExportConsentDto> Consents,
     List<ExportMembershipDto> Memberships, List<ExportBookingDto> Bookings, List<ExportReviewDto> Reviews,
     List<ExportNoteMetaDto> NotesAboutMe, List<ExportPhotoMetaDto> PhotosOfMe, string Explanation,
     List<ExportOperatorDto> Operators, List<ExportNotificationDto> Notifications, ExportOptOutDto OptOut,
-    List<ExportHealthNoteDto> HealthNotes);
+    List<ExportHealthNoteDto> HealthNotes, ExportPhoneVerificationDto PhoneVerification);
+
+public record ExportPhoneVerificationDto(bool PhoneVerified, string? Method, DateTime? VerifiedAtUtc);
 
 public record ExportOperatorDto(Guid CompanyId, string Name, string? Address, string? Phone, string? Email, List<string> WhatIsStored);
 public record ExportNotificationDto(DateTime? SentAt, string Type, string Status, string CompanyName, bool BodyAvailable);

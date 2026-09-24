@@ -137,4 +137,74 @@ public class StrayArtifactFileTests
             LegalKitFixture.Delete(dir);
         }
     }
+
+    /// <summary>Cycle 12 review finding 3.1: a source `.html` file that is neither a manifest entry, an
+    /// appendix, nor listed in `deferredDrafts` — the "someone added 14-*.html and forgot to wire it in"
+    /// scenario.</summary>
+    [Fact]
+    public void FindUnaccountedDraftFiles_FileWiredNowhere_IsReported()
+    {
+        var source = LegalKitFixture.CreateSourceDir();
+        File.WriteAllText(Path.Combine(source, "14-forgotten.html"), "<p>orphaned draft</p>");
+        try
+        {
+            var unaccounted = LegalSourceSet.FindUnaccountedDraftFiles(source);
+            unaccounted.Should().ContainSingle().Which.Should().Be("14-forgotten.html");
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+        }
+    }
+
+    [Fact]
+    public void FindUnaccountedDraftFiles_FileListedInDeferredDrafts_IsNotReported()
+    {
+        var source = LegalKitFixture.CreateSourceDir();
+        File.WriteAllText(Path.Combine(source, "13-payment-terms.html"), "<p>appendix 2 draft, not wired in yet</p>");
+        var manifestPath = Path.Combine(source, "legal.json");
+        using var manifestDoc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifestPath));
+        using var manifestStream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(manifestStream))
+        {
+            writer.WriteStartObject();
+            foreach (var property in manifestDoc.RootElement.EnumerateObject())
+                property.WriteTo(writer);
+            writer.WriteStartArray("deferredDrafts");
+            writer.WriteStartObject();
+            writer.WriteString("file", "13-payment-terms.html");
+            writer.WriteString("reason", "not launched yet");
+            writer.WriteEndObject();
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+        File.WriteAllBytes(manifestPath, manifestStream.ToArray());
+        try
+        {
+            LegalSourceSet.FindUnaccountedDraftFiles(source).Should().BeEmpty();
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+        }
+    }
+
+    [Fact]
+    public void Check_SourceHasFileWiredNowhere_FailsWithStructuralIntegrityCode()
+    {
+        var source = LegalKitFixture.CreateSourceDir();
+        File.WriteAllText(Path.Combine(source, "14-forgotten.html"), "<p>orphaned draft</p>");
+        var root = Path.Combine(Path.GetTempPath(), "legalkit-root-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            LegalSourceSet.Build(source, root);
+
+            CheckCommand.Run(CliArgs.Parse(["--source", source, "--root", root])).Should().Be(6);
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(root);
+        }
+    }
 }

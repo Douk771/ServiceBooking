@@ -1,11 +1,15 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
+using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
 
@@ -17,6 +21,10 @@ public class AuthController(
     TokenService tokenService,
     LegalDocumentProvider legalProvider,
     ConsentLedger ledger,
+    AppDbContext db,
+    IPhoneVerificationMethodRegistry phoneVerificationRegistry,
+    PhoneVerificationWriter phoneVerificationWriter,
+    IOptions<PhoneVerificationOptions> phoneVerificationOptions,
     ILogger<AuthController> logger) : ControllerBase
 {
     [HttpPost("register")]
@@ -57,6 +65,31 @@ public class AuthController(
         if (!PhoneNormalizer.TryNormalizeRussian(dto.Phone, out var canonicalPhone))
             return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
 
+        // ARCHITECTURE_CYCLE14.md §148.1 step 3, API_CONTRACT_CYCLE14.md §168: NEW, only when the
+        // optional field is present at all — an omitted field behaves exactly as before this cycle
+        // (US-14-07). Checked AFTER legal/phone (§148.1's own ordering: "порядок — часть контракта").
+        PhoneVerificationSession? verificationSession = null;
+        if (dto.PhoneVerification is not null)
+        {
+            var adapter = phoneVerificationRegistry.Get(PhoneVerificationMethod.MaxBot);
+            if (!adapter.Enabled)
+                return Conflict(PhoneVerificationTexts.SubsystemUnavailable);
+
+            var now = DateTime.UtcNow;
+            var candidate = await db.PhoneVerificationSessions
+                .FirstOrDefaultAsync(s => s.Id == dto.PhoneVerification.SessionId);
+
+            var statusTokenMatches = candidate is not null && !string.IsNullOrEmpty(dto.PhoneVerification.StatusToken) &&
+                StatusTokenGenerator.Hash(dto.PhoneVerification.StatusToken) == candidate.StatusTokenHash;
+
+            var valid = PhoneVerificationSessionAcceptance.IsUsableForRegistration(candidate, statusTokenMatches, canonicalPhone, now);
+
+            if (!valid)
+                return Conflict(PhoneVerificationTexts.RegisterSessionInvalid);
+
+            verificationSession = candidate;
+        }
+
         // Phone is the account identifier: it goes into UserName (which has Identity's unique index),
         // giving phone uniqueness for free. Email is optional.
         var user = new AppUser
@@ -88,10 +121,29 @@ public class AuthController(
             subject, LegalDocumentType.TermsClient.ToString(), termsDoc.Version, termsDoc.ContentHash,
             Purpose: null, ConsentAct.Accepted, ConsentSource.Registration, ipAddress, userAgent));
 
+        // ARCHITECTURE_CYCLE14.md §148.1 step 5: in the SAME transaction as the VerifiedPhone write, the
+        // ceiling is re-checked (it could have been exhausted by the same MAX account between the
+        // session being verified and this request arriving) and the mirror is set. Р1: a ceiling hit
+        // here does NOT fail registration — the account exists either way, just with phoneVerified:false.
+        var phoneVerified = false;
+        if (verificationSession is not null)
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            await AdvisoryLock.AcquireAsync(db, $"phone-verification:{verificationSession.ExternalAccountKey}");
+
+            var writeOutcome = await phoneVerificationWriter.WriteAsync(
+                verificationSession, user, phoneVerificationOptions.Value.MaxPhonesPerExternalAccount, HttpContext.RequestAborted);
+            verificationSession.Status = PhoneVerificationStatus.Consumed;
+            phoneVerified = writeOutcome == PhoneVerificationWriter.WriteOutcome.Written;
+
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+
         var roles = await userManager.GetRolesAsync(user);
         var token = tokenService.GenerateToken(user, roles, privacyDoc.Version, termsDoc.Version);
 
-        return Ok(new AuthResponseDto(token, user.Id, user.PhoneNumber!, user.Email, user.FirstName, user.LastName, roles));
+        return Ok(new AuthResponseDto(token, user.Id, user.PhoneNumber!, user.Email, user.FirstName, user.LastName, roles, phoneVerified));
     }
 
     [HttpPost("login")]
@@ -135,6 +187,8 @@ public class AuthController(
         var ownerTermsState = await ledger.CurrentAsync(subject, LegalDocumentType.TermsOwner.ToString(), purpose: null);
         var token = tokenService.GenerateToken(user, roles, privacyState?.DocumentVersion, termsState?.DocumentVersion, ownerTermsState?.DocumentVersion);
 
-        return Ok(new AuthResponseDto(token, user.Id, user.PhoneNumber!, user.Email, user.FirstName, user.LastName, roles));
+        // AuthResponseDto's own note: PhoneVerified here is simply the account's current mirror, not
+        // something login itself computes — same field, same meaning as everywhere else it appears.
+        return Ok(new AuthResponseDto(token, user.Id, user.PhoneNumber!, user.Email, user.FirstName, user.LastName, roles, user.PhoneNumberConfirmed));
     }
 }

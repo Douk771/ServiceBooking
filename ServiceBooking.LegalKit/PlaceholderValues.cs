@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace ServiceBooking.LegalKit;
 
 /// <summary>
-/// Reads and validates <c>legal.values.json</c> against the 13 required keys of
+/// Reads and validates <c>legal.values.json</c> against the 12 keys (10 required, 2 optional) of
 /// contracts/cycle11/legal-values.schema.json (ARCHITECTURE_CYCLE11.md §103.3). Deliberately hand-rolled
 /// rather than a generic ajv-in-.NET dependency: the rule set is small, fixed, and needs to produce the
 /// "чего нет и откуда брать" list ARCHITECTURE_CYCLE11.md §117.3 requires on every non-zero exit code,
@@ -12,28 +12,40 @@ namespace ServiceBooking.LegalKit;
 /// </summary>
 internal sealed class PlaceholderValues
 {
-    /// <summary>The 13 required keys, in the exact order legal-values.schema.json lists them —
+    /// <summary>The 10 required keys, in the exact order legal-values.schema.json lists them —
     /// preserved here so error/status output enumerates them in the same order a human reading the
     /// schema would expect.</summary>
     public static readonly IReadOnlyList<string> RequiredKeys =
     [
-        "НАИМЕНОВАНИЕ_ОПЕРАТОРА", "ИНН_ОПЕРАТОРА", "ОГРН_ОПЕРАТОРА", "ЮРИДИЧЕСКИЙ_АДРЕС",
+        "НАИМЕНОВАНИЕ_ОПЕРАТОРА", "ИНН_ОПЕРАТОРА", "ЮРИДИЧЕСКИЙ_АДРЕС",
         "ПОЧТОВЫЙ_АДРЕС", "ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ", "ТЕЛЕФОН_ОПЕРАТОРА", "ОТВЕТСТВЕННЫЙ_ЗА_ОБРАБОТКУ",
-        "ПОЧТА_ОТВЕТСТВЕННОГО", "НОМЕР_УВЕДОМЛЕНИЯ_РКН", "ДАТА_УВЕДОМЛЕНИЯ_РКН", "СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ",
+        "ПОЧТА_ОТВЕТСТВЕННОГО", "СРОК_ОТВЕТА_НА_ОБРАЩЕНИЕ",
         "НДС_ОГОВОРКА",
     ];
 
+    /// <summary>The 2 keys legal-values.schema.json allows but does not require — the Roskomnadzor
+    /// registry notice number/date (ARCHITECTURE_CYCLE11.md §103.3). Publishing the registration number
+    /// is not a legal requirement (it is a good-faith marker, not an obligation under 152-ФЗ), while the
+    /// notice-then-registration process has a ~30-day gap during which the number genuinely doesn't
+    /// exist yet. When one of these is absent, `legal publish` removes the whole containing element
+    /// rather than leaving a half-filled sentence — see <c>PublishCommand.SubstituteWithOptionalRemoval</c>.</summary>
+    public static readonly IReadOnlyList<string> OptionalKeys =
+    [
+        "НОМЕР_УВЕДОМЛЕНИЯ_РКН", "ДАТА_УВЕДОМЛЕНИЯ_РКН",
+    ];
+
+    /// <summary>All 12 keys legal-values.schema.json's `values` object accepts — required ∪ optional.</summary>
+    public static readonly IReadOnlyList<string> AllKnownKeys = [.. RequiredKeys, .. OptionalKeys];
+
     /// <summary>Extra shape checks contracts/cycle11/legal-values.schema.json imposes on top of "present
     /// and non-empty" — ARCHITECTURE_CYCLE11.md §111: "прав контракт, расхождение чинится кодом". Keyed
-    /// by the same 13 names as <see cref="RequiredKeys"/>; a key absent from this dictionary has no
+    /// by the same 12 names as <see cref="RequiredKeys"/>; a key absent from this dictionary has no
     /// pattern beyond non-empty.</summary>
     private static readonly IReadOnlyDictionary<string, (Regex Pattern, string Description)> PatternedKeys =
         new Dictionary<string, (Regex, string)>(StringComparer.Ordinal)
         {
             ["ИНН_ОПЕРАТОРА"] = (new Regex(@"^(?:[0-9]{10}|[0-9]{12})$"),
                 "10 цифр у юрлица или 12 у ИП/самозанятого"),
-            ["ОГРН_ОПЕРАТОРА"] = (new Regex(@"^(?:[0-9]{13}|[0-9]{15})$"),
-                "13 цифр (ОГРН) или 15 (ОГРНИП)"),
             ["ДАТА_УВЕДОМЛЕНИЯ_РКН"] = (new Regex(@"^[0-9]{2}\.[0-9]{2}\.[0-9]{4}$"),
                 "формат ДД.ММ.ГГГГ"),
         };
@@ -81,9 +93,9 @@ internal sealed class PlaceholderValues
 
             foreach (var property in valuesElement.EnumerateObject())
             {
-                if (!RequiredKeys.Contains(property.Name))
+                if (!AllKnownKeys.Contains(property.Name))
                 {
-                    problems.Add($"{property.Name}: неизвестный ключ, не входит в 13 обязательных реквизитов.");
+                    problems.Add($"{property.Name}: неизвестный ключ, не входит в 12 допустимых реквизитов.");
                     continue;
                 }
                 result[property.Name] = property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() ?? "" : "";
@@ -102,11 +114,24 @@ internal sealed class PlaceholderValues
                     continue;
                 }
 
-                if (PatternedKeys.TryGetValue(key, out var check) && !check.Pattern.IsMatch(value))
-                    problems.Add($"{key}: значение '{value}' не соответствует формату ({check.Description}).");
+                ValidateFormat(key, value, problems);
+            }
 
-                if (EmailKeys.Contains(key) && !LooksLikeEmail.IsMatch(value))
-                    problems.Add($"{key}: значение '{value}' не похоже на адрес электронной почты.");
+            // §103.3: НОМЕР_УВЕДОМЛЕНИЯ_РКН / ДАТА_УВЕДОМЛЕНИЯ_РКН are optional — the key may be absent
+            // entirely (the containing element is then dropped whole at publish time, see PublishCommand),
+            // but if the operator DID write the key, it has to be a real value, not a placeholder-empty
+            // string: an explicit empty string is a mistake to report, not a silent "treat as absent".
+            foreach (var key in OptionalKeys)
+            {
+                if (!result.TryGetValue(key, out var value))
+                    continue;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    problems.Add($"{key}: значение пустое. Необязательный ключ можно не указывать вовсе, но если он указан, пустая строка недопустима.");
+                    continue;
+                }
+
+                ValidateFormat(key, value, problems);
             }
 
             if (problems.Count > 0)
@@ -114,6 +139,18 @@ internal sealed class PlaceholderValues
 
             return new PlaceholderValues(result);
         }
+    }
+
+    /// <summary>Shape checks common to required and (present) optional keys — a non-empty value must
+    /// still match the shape the schema demands for that key, regardless of whether the key itself is
+    /// required.</summary>
+    private static void ValidateFormat(string key, string value, List<string> problems)
+    {
+        if (PatternedKeys.TryGetValue(key, out var check) && !check.Pattern.IsMatch(value))
+            problems.Add($"{key}: значение '{value}' не соответствует формату ({check.Description}).");
+
+        if (EmailKeys.Contains(key) && !LooksLikeEmail.IsMatch(value))
+            problems.Add($"{key}: значение '{value}' не похоже на адрес электронной почты.");
     }
 }
 

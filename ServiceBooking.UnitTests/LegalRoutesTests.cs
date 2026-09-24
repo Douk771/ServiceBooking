@@ -72,6 +72,73 @@ public class LegalRoutesTests
     }
 
     [Fact]
+    public void AnchorsPending_MatchContractFile()
+    {
+        using var contract = LoadContractFile();
+        var anchorsPending = contract.RootElement.GetProperty("anchorsPending");
+
+        foreach (var property in anchorsPending.EnumerateObject())
+        {
+            var expected = property.Value.EnumerateArray().Select(e => e.GetString()).ToList();
+            LegalRoutes.AnchorsPending[property.Name].Should().BeEquivalentTo(expected);
+        }
+    }
+
+    /// <summary>Cycle 12 review finding 2.1, half 1: every anchor an alias' target implies must be either
+    /// a live requirement (<see cref="LegalRoutes.Anchors"/>) or an acknowledged not-yet-there one
+    /// (<see cref="LegalRoutes.AnchorsPending"/>) — never neither (that would be the exact bug this
+    /// finding closes: forgetting to add the anchor check when wiring a new appendix in) and never both
+    /// (that would be a contradiction in the map itself).</summary>
+    [Fact]
+    public void EveryAliasAnchor_IsEitherLiveOrPending_NeverBothNeverNeither()
+    {
+        foreach (var (alias, target) in LegalRoutes.Aliases)
+        {
+            var parts = target.Split('#');
+            if (parts.Length < 2) continue; // no in-page anchor in this alias' target
+            var (route, anchor) = (parts[0], parts[1]);
+
+            var isLive = LegalRoutes.Anchors.TryGetValue(route, out var live) && live.Contains(anchor);
+            var isPending = LegalRoutes.AnchorsPending.TryGetValue(route, out var pending) && pending.Contains(anchor);
+
+            (isLive ^ isPending).Should().BeTrue(
+                $"alias '{alias}' points at {route}#{anchor}, which must be listed in exactly one of Anchors/AnchorsPending, not {(isLive && isPending ? "both" : "neither")}");
+        }
+    }
+
+    /// <summary>Cycle 12 review finding 2.1, half 2 — the self-expiring part: an anchor listed as
+    /// "pending" is asserted to genuinely be ABSENT from the committed artifact today. The moment
+    /// Appendix 2 is spliced into `terms-owner.html` and the `payment-terms` anchor shows up, THIS test
+    /// starts failing — forcing whoever wires the appendix in to move the entry from `anchorsPending`
+    /// into `anchors` instead of it being forgotten under a comment nobody re-reads.</summary>
+    [Fact]
+    public void AnchorsPending_AreNotYetInTheArtifact()
+    {
+        var root = FindRepoLegalRoot();
+        var provider = new LegalDocumentProvider(
+            Options.Create(new LegalOptions { Root = root, ReloadSeconds = 0 }),
+            new FakeWebHostEnvironment(),
+            NullLogger<LegalDocumentProvider>.Instance);
+        var snapshot = provider.LoadStrict();
+        var byRoute = LegalRoutes.Documents.ToDictionary(kv => kv.Value, kv => snapshot.Get(kv.Key));
+
+        foreach (var (route, anchors) in LegalRoutes.AnchorsPending)
+        {
+            var html = byRoute.GetValueOrDefault(route)?.ContentHtml ?? "";
+            foreach (var anchor in anchors)
+            {
+                var hasAnchor = html.Contains($"id=\"{anchor}\"", StringComparison.OrdinalIgnoreCase)
+                    || html.Contains($"id='{anchor}'", StringComparison.OrdinalIgnoreCase)
+                    || html.Contains($"name=\"{anchor}\"", StringComparison.OrdinalIgnoreCase)
+                    || html.Contains($"name='{anchor}'", StringComparison.OrdinalIgnoreCase);
+                hasAnchor.Should().BeFalse(
+                    $"{route}#{anchor} is listed in anchorsPending as NOT YET in the artifact — if this now fails, the appendix " +
+                    "has been wired in and this anchor belongs in LegalRoutes.Anchors/legal-routes.json's `anchors`, not `anchorsPending`");
+            }
+        }
+    }
+
+    [Fact]
     public void EveryDocumentType_HasARoute()
     {
         foreach (var type in Enum.GetValues<LegalDocumentType>())
