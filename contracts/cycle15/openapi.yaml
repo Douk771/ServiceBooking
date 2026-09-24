@@ -1,0 +1,648 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 15
+# (свои ссылки на Яндекс Карты и 2ГИС вместо автопостроенных, телефон первым и кликабельным,
+#  тариф прячется с витрины не удаляясь, клиент переносит свой визит сам).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл и правила — API_CONTRACT_CYCLE15.md (§280–§293),
+# решения — ARCHITECTURE_CYCLE15.md (§250–§272). При расхождении прав ЭТОТ файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle15/openapi.yaml --port 4015
+#             npm run types:api:cycle15   (openapi-typescript -> src/types/api-cycle15.generated.ts)
+#   QA        schemathesis run contracts/cycle15/openapi.yaml --base-url http://localhost:5000 --checks all
+#
+# Здесь описаны ТОЛЬКО эндпоинты, которые цикл 15 добавляет или меняет. Остальной API —
+# в API_DOCUMENTATION.md и контрактах циклов 3, 4, 6, 7, 8, 9, 10, 11, 13, 14.
+# НОВЫХ ЭНДПОИНТОВ ЦИКЛ НЕ ДОБАВЛЯЕТ ВОВСЕ: всё новое выражено полями существующих ответов и
+# правилами существующих ручек.
+#
+# У ИЗМЕНЁННЫХ ответов, где цикл добавляет поля к большому существующему DTO (CompanyDto,
+# BookingDto, AdminPlanDto), схема описывает ТОЛЬКО новые/значимые поля и стоит с
+# additionalProperties: true — это честно отражает «форма прежняя плюс вот это» и не заводит
+# вторую, расходящуюся копию всего DTO.
+
+info:
+  title: ServiceBooking API — цикл 15 (ссылки в карты, контакты, устаревший тариф, перенос клиентом)
+  version: "11.0.0"
+  description: |
+    Конвенции проекта, действующие без изменений:
+      * camelCase в JSON, enum — строками, DateTime — ISO-8601 UTC;
+      * тела ошибок 400/402/409/410/429/503 — ГОЛАЯ СТРОКА (text/plain), 401/403 — ПУСТОЕ тело,
+        404 — пустое тело там, где существование объекта не подтверждается;
+      * ProblemDetails не используется (кроме автовалидации [ApiController]);
+      * все новые поля ДОБАВОЧНЫЕ — цикл не удаляет и не переименовывает ничего;
+      * null у вычисляемого поля = «сервер не считал это для данного вызывающего», а не «нет значения».
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, которые схема закрепляет формой:
+
+    1. ССЫЛКИ В КАРТЫ ХРАНЯТСЯ, А НЕ СТРОЯТСЯ. Автопостроение по городу и адресу (цикл 13)
+       удалено. Пустое поле = переход не показывается вообще. Сервер сохраняет строку владельца
+       БАЙТ В БАЙТ: путь и query не разбираются и не нормализуются.
+
+    2. ВАЛИДАЦИЯ ССЫЛКИ — НА СЕРВЕРЕ И ТОЛЬКО ТАМ. https + принадлежность домена сервису поля.
+       `*.yandex.*` читается ограниченно (список TLD) — иначе yandex.evil.com прошёл бы проверку
+       и поле стало бы открытым редиректом на публичной странице салона.
+
+    3. ОТДЕЛЬНОГО ПОЛЯ СТАТУСА У ТАРИФА НЕТ. «Устаревший» = isActive:true + isPublic:false.
+       Контракт закрепляет, что isPublic/sortOrder — «применить, если прислали», и что форма
+       админки обязана слать то, что видит оператор, а не константы.
+
+    4. КЛИЕНТУ НЕ ДОСТАЮТСЯ ПОСЛАБЛЕНИЯ ПЕРСОНАЛА НИ ПРИ КАКОМ НАБОРЕ ПАРАМЕТРОВ.
+       Тело PATCH /bookings/{id}/reschedule не получает ни одного нового поля: полномочие
+       вычисляет сервер из базы. Окно переноса — настройка компании, проверяется на сервере
+       ПО ОБОИМ КОНЦАМ (и текущее время визита, и новое).
+
+    5. ЛОМАЮЩЕЕ ИЗМЕНЕНИЕ: посторонний вызывающий получает 404 вместо 403 на
+       PATCH /bookings/{id}/reschedule и на GET /bookings/slots?excludeBookingId=… —
+       код ответа не должен работать оракулом «существует ли запись с таким id».
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4015
+    description: prism mock
+
+tags:
+  - name: companies
+    description: Ссылки в карты и окно переноса как поля компании
+  - name: bookings
+    description: Перенос записи клиентом и сетка слотов для него
+  - name: admin-plans
+    description: Публичность тарифа перестаёт сбрасываться
+  - name: legal
+    description: Уведомление при записи — форма ответа не меняется, меняется содержимое
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/companies/{slug}:
+    get:
+      tags: [companies]
+      summary: Публичная карточка компании (анонимный доступ)
+      description: |
+        Форма ответа прежняя (CompanyDto), цикл 15 добавляет три поля. Публичная страница компании
+        НЕ получает ни одного нового запроса: ссылки в карты приходят здесь же.
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Компания найдена
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanyCycle15Fields" }
+        "404":
+          description: Компании нет (пустое тело)
+
+  /api/companies/{id}:
+    put:
+      tags: [companies]
+      summary: Сохранение настроек компании — ЕДИНСТВЕННЫЙ путь записи ссылок и окна переноса
+      description: |
+        Доступ: владелец компании или SuperAdmin (как сегодня), [RequiresOwnerTerms] как сегодня.
+        Ни POST /api/companies, ни PUT /api/admin/companies/{id} эти поля не принимают — путь
+        записи намеренно один (ARCHITECTURE_CYCLE15.md §253.4).
+
+        Три состояния каждого поля ссылки:
+          * поле отсутствует или null — значение не трогаем;
+          * "" (или пробелы)          — ОЧИЩАЕМ поле (обратимая настройка);
+          * непустая строка           — валидируем и сохраняем КАК ЕСТЬ, байт в байт.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCompanyCycle15Fields" }
+            examples:
+              bothLinks:
+                summary: Обе ссылки из адресной строки (реальные примеры 0-bis П2)
+                value:
+                  yandexMapsUrl: "https://yandex.ru/maps/org/syrovarnya/11766054863/?ll=83.795110%2C53.330510&z=17"
+                  twoGisUrl: "https://2gis.ru/barnaul/firm/70000001094251007"
+              clearTwoGis:
+                summary: Очистить поле 2ГИС, Яндекс не трогать
+                value:
+                  twoGisUrl: ""
+              window:
+                summary: Изменить окно переноса записи клиентом
+                value:
+                  clientRescheduleMinHours: 4
+      responses:
+        "200":
+          description: Сохранено; тело — полный CompanyDto с применёнными значениями
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanyCycle15Fields" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Не аутентифицирован (пустое тело)
+        "403":
+          description: Нет прав на эту компанию (пустое тело)
+        "404":
+          description: Компании нет (пустое тело)
+
+  /api/bookings/client:
+    get:
+      tags: [bookings]
+      summary: «Мои визиты» — список записей клиента
+      description: |
+        Форма прежняя (массив BookingDto), цикл 15 добавляет три ВЫЧИСЛЯЕМЫХ поля. Они считаются
+        ТОЛЬКО здесь; на /master, /{id} и в ответе POST /api/bookings приходят null — это значит
+        «сервер не считал», а не «нельзя».
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [upcoming, Pending, Confirmed, Cancelled, Completed, NoShow]
+      responses:
+        "200":
+          description: Список записей клиента
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BookingCycle15Fields" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Не аутентифицирован (пустое тело)
+
+  /api/bookings/slots:
+    get:
+      tags: [bookings]
+      summary: Сетка слотов; на ветке excludeBookingId теперь допускается клиент-владелец записи
+      description: |
+        Параметры и ответ НЕ меняются. Меняется правило доступа на ветке excludeBookingId:
+          * персонал, который может управлять записью — как сегодня;
+          * КЛИЕНТ — ВЛАДЕЛЕЦ ЭТОЙ ЗАПИСИ — 200 и ШТАТНАЯ сетка (график мастера, перерывы, шаг
+            сетки, без собственного текущего интервала);
+          * посторонний — 404 (было 403): код ответа не должен работать оракулом.
+
+        Для клиента manual и extendedHours ИГНОРИРУЮТСЯ сервером (он не персонал этой компании);
+        интерфейс клиента их не передаёт вовсе.
+      parameters:
+        - { name: companyId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: masterId, in: query, required: true, schema: { type: string } }
+        - { name: serviceId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: serviceIds, in: query, required: false, explode: true, schema: { type: array, items: { type: string, format: uuid } } }
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+        - name: manual
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: ПРОСЬБА, а не разрешение. Сервер чтит её только у персонала ЭТОЙ компании.
+        - name: extendedHours
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: Работает только вместе с manual и только у персонала. Клиенту недоступно.
+        - name: excludeBookingId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: Переносимая запись — её собственный интервал не блокирует сам себя.
+      responses:
+        "200":
+          description: Сетка слотов
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TimeSlot" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Не аутентифицирован (пустое тело)
+        "404":
+          description: |
+            Записи нет ИЛИ вызывающий не имеет к ней отношения. Пустое тело — эти два случая
+            намеренно неразличимы (ЛОМАЮЩЕЕ: раньше второй случай отвечал 403).
+
+  /api/bookings/{id}/reschedule:
+    patch:
+      tags: [bookings]
+      summary: Перенос записи — персоналом (как сегодня) или клиентом-владельцем (новое)
+      description: |
+        Маршрут, метод и ТЕЛО не меняются. Второй, «клиентской» ручки нет: полномочие вычисляет
+        сервер из базы, а не из запроса, поэтому клиент физически не может попросить послабление
+        персонала (любое свободное время без графика и сетки).
+
+        Полномочия:
+          * Staff (назначенный мастер, владелец компании записи, SuperAdmin) — правила КАК СЕГОДНЯ;
+          * ClientOwner (booking.clientId == вызывающий) — строгие клиентские правила;
+          * все остальные — 404, пустое тело.
+
+        Клиентские правила проверяются сервером в этом порядке:
+          1) запись существует и принадлежит вызывающему        -> 404
+          2) статус Pending или Confirmed                       -> 400
+          3) company.allowSelfBooking включена                  -> 403
+          4) тариф компании разрешает онлайн-запись             -> 402
+          5) до ТЕКУЩЕГО визита >= clientRescheduleMinHours     -> 400
+          6) до НОВОГО времени  >= clientRescheduleMinHours     -> 400
+          7) новая дата в пределах bookingHorizonDays           -> 400
+          8) новое время есть в ШТАТНОЙ сетке мастера           -> 409
+          9) не в прошлом и не через полночь                    -> 409
+         10) слот не занят чужой записью (под advisory-lock)    -> 409
+
+        Переносятся ТОЛЬКО дата и время; endTime пересчитывает сервер. Мастер, услуги и компания
+        не меняются. Гостевая запись (без clientId) клиентом не переносится — ответ 404.
+
+        Лимит: booking-reschedule, 30 запросов в час на пользователя.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RescheduleRequest" }
+      responses:
+        "204":
+          description: Перенесено. Тела нет.
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Не аутентифицирован (пустое тело)
+        "402":
+          description: Онлайн-запись не входит в тариф компании (голая строка)
+          content:
+            text/plain:
+              schema: { type: string }
+              example: "Online booking requires a paid subscription."
+        "403":
+          description: У компании выключена онлайн-запись (пустое тело)
+        "404":
+          description: |
+            Записи нет ИЛИ вызывающий не имеет к ней отношения. Пустое тело — эти два случая
+            намеренно неразличимы (ЛОМАЮЩЕЕ: раньше второй случай отвечал 403).
+        "409":
+          description: Время недоступно (вне графика, в прошлом или уже занято) — голая строка
+          content:
+            text/plain:
+              schema: { type: string }
+              example: "Time slot is no longer available"
+        "429":
+          $ref: "#/components/responses/PlainTextTooManyRequests"
+
+  /api/admin/plans/{id}:
+    put:
+      tags: [admin-plans]
+      summary: Сохранение тарифа — семантика полей прежняя, добавлен один 409
+      description: |
+        Доступ: SuperAdmin. СЕМАНТИКА ПОЛЕЙ НЕ МЕНЯЕТСЯ — контракт фиксирует её, потому что
+        дефект цикла был на фронте: форма слала isActive/isPublic/sortOrder константами при
+        каждом сохранении.
+
+          * isPublic, sortOrder — nullable: прислали -> применить, null/отсутствует -> оставить как есть;
+          * isActive           — не nullable, применяется всегда; деактивация тарифа с активными
+                                 подписчиками -> 409 (как сегодня); системный бесплатный тариф
+                                 деактивировать нельзя вовсе -> 409 (как сегодня);
+          * isSystemFree       — в теле ОТСУТСТВУЕТ, меняется отдельным маршрутом .../system-free.
+
+        НОВОЕ: снятие системного бесплатного тарифа с витрины (isPublic true -> false при
+        isSystemFree: true) -> 409. Только НА ПЕРЕХОДЕ: тариф, который уже скрыт (поставляемый
+        сид именно такой), сохраняется как раньше.
+
+        «Устаревший тариф» = isActive:true + isPublic:false. Отдельного поля статуса нет и не будет.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlanInputCycle15" }
+            examples:
+              hideFromStorefront:
+                summary: Сделать тариф устаревшим (скрыть с витрины, оставить назначаемым)
+                value:
+                  name: "Базовый"
+                  pricePerMonth: 990
+                  maxEmployees: 5
+                  maxCompanies: 1
+                  isActive: true
+                  isPublic: false
+                  sortOrder: 3
+      responses:
+        "200":
+          description: Сохранено; тело — AdminPlanDto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlanCycle15Fields" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Не аутентифицирован (пустое тело)
+        "403":
+          description: Не SuperAdmin (пустое тело)
+        "404":
+          description: Тарифа нет (пустое тело)
+        "409":
+          description: |
+            Голая строка. Возможные причины: деактивация тарифа с активными подписчиками;
+            деактивация системного бесплатного тарифа; НОВОЕ — снятие системного бесплатного
+            тарифа с витрины.
+          content:
+            text/plain:
+              schema: { type: string }
+              example: "Системный бесплатный тариф нельзя убрать с витрины."
+
+  /api/legal/texts/{key}:
+    get:
+      tags: [legal]
+      summary: Текст интерфейса; для BookingNotice меняется СОДЕРЖИМОЕ, не форма
+      description: |
+        Форма ответа не меняется. Для ключа BookingNotice меняется contentHtml (уходит мёртвое
+        «Подробнее», литерал «Название компании» заменяется разметкой ВРЕМЕНИ ПОКАЗА) и version
+        (поднимается; изменение редакционное — повторного согласия не требуется).
+
+        Разметка времени показа — ТРИ АТРИБУТА, единственное известное имя значения companyName:
+          <span data-legal-value="companyName"></span>        — сюда подставляется ЭКРАНИРОВАННОЕ значение
+          <span data-legal-when="companyName">…</span>        — остаётся, если значение известно
+          <span data-legal-unless="companyName">…</span>      — остаётся, если значение неизвестно
+
+        Фигурных скобок здесь нет и быть не должно: {{…}} — величины времени ПУБЛИКАЦИИ, любой
+        оставшийся такой токен блокирует публикацию документа.
+
+        Подстановку делает фронт ПРИ РЕНДЕРЕ, экранируя & < > " '. Подставленный текст в кеш
+        useLegalText не кладётся — иначе два салона подряд в одной сессии получили бы название
+        друг друга.
+      security: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+          example: BookingNotice
+      responses:
+        "200":
+          description: Текст найден (кешируется 5 минут — Cache-Control: public, max-age=300)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalUiText" }
+        "404":
+          description: Ключа нет (пустое тело)
+        "503":
+          description: Правовые документы временно недоступны (голая строка)
+          content:
+            text/plain:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    PlainTextBadRequest:
+      description: |
+        Нарушено правило. Тело — ГОЛАЯ СТРОКА для показа пользователю рядом с полем,
+        которое её вызвало.
+      content:
+        text/plain:
+          schema: { type: string }
+          examples:
+            scheme:
+              value: "Ссылка должна начинаться с https://"
+            yandexDomain:
+              value: "Ждём ссылку на Яндекс Карты — например, https://yandex.ru/maps/org/.../..."
+            twoGisDomain:
+              value: "Ждём ссылку на 2ГИС — например, https://2gis.ru/barnaul/firm/..."
+            tooLong:
+              value: "Ссылка слишком длинная — не больше 500 символов"
+            window:
+              value: "Окно переноса — от 0 до 168 часов"
+            rescheduleWindowPassed:
+              value: "Перенести запись можно не позже чем за 2 ч до визита"
+            rescheduleStatus:
+              value: "Перенести можно только предстоящую запись"
+            horizon:
+              value: "Записаться можно не дальше чем на 90 дней вперёд"
+    PlainTextTooManyRequests:
+      description: Превышен лимит именованной политики; тело — голая строка
+      content:
+        text/plain:
+          schema: { type: string }
+
+  schemas:
+    MapLinkYandex:
+      type: string
+      nullable: true
+      maxLength: 500
+      description: |
+        Ссылка на Яндекс Карты, которую владелец вставил из адресной строки. Сохраняется БАЙТ В
+        БАЙТ: путь и query не разбираются и не нормализуются. Только https. Хост: yandex.<tld>
+        или *.yandex.<tld>, где <tld> из закрытого списка (ru, com, com.tr, by, kz, uz, az,
+        com.ge, ee, lv, lt, md, fr, com.am, tm, tj, kg). null = поле не заполнено -> переход не
+        показывается вообще. "" в ЗАПРОСЕ = очистить поле.
+      example: "https://yandex.ru/maps/org/syrovarnya/11766054863/?ll=83.795110%2C53.330510&z=17"
+    MapLinkTwoGis:
+      type: string
+      nullable: true
+      maxLength: 500
+      description: |
+        То же для 2ГИС. Хост: 2gis.ru или *.2gis.ru. Сокращатели (clck.ru, go.2gis.com) не
+        принимаются: под сокращённой ссылкой может оказаться что угодно, а поле показывается
+        всем посетителям публичной страницы.
+      example: "https://2gis.ru/barnaul/firm/563478234628539/83.795014%2C53.330486?m=83.795954%2C53.330025%2F17.89"
+    ClientRescheduleMinHours:
+      type: integer
+      minimum: 0
+      maximum: 168
+      default: 2
+      description: |
+        За сколько часов до начала визита клиент ещё может перенести запись сам. Настройка
+        КОМПАНИИ, а не константа продукта. 0 = «до самого начала визита». Проверяется на сервере
+        по ОБОИМ концам правила (и текущее время визита, и новое). «Выключить перенос» — это не
+        это поле, а company.allowSelfBooking.
+
+    CompanyCycle15Fields:
+      type: object
+      additionalProperties: true
+      description: |
+        ТОЛЬКО поля, которые добавляет цикл 15. Остальная форма CompanyDto — прежняя
+        (см. контракты циклов 4, 6, 7, 10, 13), поэтому additionalProperties: true.
+      required: [id, name, slug, yandexMapsUrl, twoGisUrl, clientRescheduleMinHours]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        phone:
+          type: string
+          nullable: true
+          description: |
+            Существующее поле. Цикл меняет только его ПОКАЗ: первый пункт контактов на карточке
+            компании и ссылка tel: (цифры и +). Видимое написание номера не меняется.
+        yandexMapsUrl: { $ref: "#/components/schemas/MapLinkYandex" }
+        twoGisUrl: { $ref: "#/components/schemas/MapLinkTwoGis" }
+        clientRescheduleMinHours: { $ref: "#/components/schemas/ClientRescheduleMinHours" }
+
+    UpdateCompanyCycle15Fields:
+      type: object
+      additionalProperties: true
+      description: |
+        ТОЛЬКО поля, которые цикл 15 добавляет в UpdateCompanyDto. Остальные поля (name,
+        description, address, phone, email, allowSelfBooking, requirePrepayment,
+        showInPublicListing, cityId, timeZoneId, bookingHorizonDays) — как были.
+        Семантика ссылок: отсутствует/null = не трогать, "" = очистить, строка = сохранить как есть.
+      properties:
+        yandexMapsUrl:
+          allOf: [{ $ref: "#/components/schemas/MapLinkYandex" }]
+        twoGisUrl:
+          allOf: [{ $ref: "#/components/schemas/MapLinkTwoGis" }]
+        clientRescheduleMinHours:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 168
+          description: null/отсутствует = не трогать; вне [0,168] = 400.
+
+    BookingCycle15Fields:
+      type: object
+      additionalProperties: true
+      description: |
+        ТОЛЬКО поля, которые добавляет цикл 15 в BookingDto. Считаются ИСКЛЮЧИТЕЛЬНО на
+        GET /api/bookings/client; на остальных эндпоинтах приходят null («сервер не считал»).
+      required: [id, date, startTime, status]
+      properties:
+        id: { type: string, format: uuid }
+        date: { type: string, format: date }
+        startTime: { type: string, example: "14:00:00" }
+        status:
+          type: string
+          enum: [Pending, Confirmed, Completed, Cancelled, NoShow]
+        clientRescheduleAllowed:
+          type: boolean
+          nullable: true
+          description: |
+            Можно ли ПРЯМО СЕЙЧАС перенести эту запись клиентом. Считает сервер тем же набором
+            правил, который применит PATCH .../reschedule. Кнопка «Перенести» рисуется по этому
+            флагу, а НЕ по вычислению времени в вёрстке. Подсказка интерфейсу, а не разрешение:
+            сервер проверяет всё заново в момент PATCH.
+        clientRescheduleMinHours:
+          type: integer
+          nullable: true
+          description: Окно переноса компании этой записи — чтобы объяснить пользователю, почему кнопки нет.
+        companyBookingHorizonDays:
+          type: integer
+          nullable: true
+          description: |
+            Горизонт записи компании. Окно переноса рисует ровно столько дат; заменяет зашитые
+            в RescheduleModal 14 дней.
+
+    RescheduleRequest:
+      type: object
+      additionalProperties: false
+      required: [date, startTime]
+      description: |
+        БЕЗ ИЗМЕНЕНИЙ по сравнению с сегодняшним RescheduleDto. Ни одного нового поля —
+        additionalProperties: false здесь и есть гарантия того, что клиент не может попросить
+        послабление персонала (manual/extendedHours в этом теле не существует).
+      properties:
+        date: { type: string, format: date, example: "2026-10-02" }
+        startTime: { type: string, example: "14:00:00" }
+
+    TimeSlot:
+      type: object
+      additionalProperties: true
+      required: [start, end]
+      properties:
+        start: { type: string, example: "14:00:00" }
+        end: { type: string, example: "15:00:00" }
+
+    AdminPlanInputCycle15:
+      type: object
+      additionalProperties: true
+      description: |
+        Форма AdminPlanInput не меняется. Здесь описаны поля, вокруг которых крутится блок D, —
+        чтобы контракт зафиксировал их СЕМАНТИКУ. isSystemFree в теле отсутствует намеренно.
+      required: [name, pricePerMonth]
+      properties:
+        name: { type: string }
+        pricePerMonth: { type: number, format: double }
+        maxEmployees: { type: integer, nullable: true }
+        maxCompanies: { type: integer, nullable: true }
+        isActive:
+          type: boolean
+          default: true
+          description: |
+            Не nullable, применяется всегда. Форма админки обязана слать ТЕКУЩЕЕ значение тарифа,
+            а не константу true: сегодня сохранение деактивированного тарифа молча его активирует.
+        isPublic:
+          type: boolean
+          nullable: true
+          default: false
+          description: |
+            Прислали -> применить; null/отсутствует -> оставить как есть. Форма админки обязана
+            слать то, что видит оператор: сегодня она шлёт константу true, из-за чего любое
+            сохранение возвращает тариф на витрину.
+        sortOrder:
+          type: integer
+          nullable: true
+          description: |
+            Прислали -> применить; null/отсутствует -> оставить как есть. Сегодня форма шлёт
+            константу 0 и сбрасывает порядок карточек на /pricing.
+
+    AdminPlanCycle15Fields:
+      type: object
+      additionalProperties: true
+      description: ТОЛЬКО поля AdminPlanDto, которые нужны блоку D. Новых полей цикл не добавляет.
+      required: [id, name, isActive, isPublic, isSystemFree, sortOrder]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        isActive:
+          type: boolean
+          description: false = «Архивный»: назначить нельзя никому.
+        isPublic:
+          type: boolean
+          description: |
+            Читает РОВНО ОДНО место продукта — публичная витрина GET /api/pricing. Назначение
+            подписки в админке фильтрует по isActive, поэтому скрытый тариф остаётся видимым
+            администратору и продлеваемым.
+        isSystemFree:
+          type: boolean
+          description: Системный бесплатный тариф; убрать его с витрины нельзя (409).
+        sortOrder: { type: integer }
+
+    LegalUiText:
+      type: object
+      additionalProperties: false
+      required: [key, version, isDraft, contentHtml]
+      description: Форма прежняя. Для BookingNotice меняется содержимое contentHtml и version.
+      properties:
+        key: { type: string, example: BookingNotice }
+        version: { type: string, example: "2026-09-25" }
+        isDraft: { type: boolean }
+        contentHtml:
+          type: string
+          description: |
+            HTML документа. В «Короткой строке» BookingNotice появляется разметка времени показа
+            (data-legal-when / data-legal-value / data-legal-unless, имя значения companyName) и
+            исчезает мёртвый <span>Подробнее</span>.
+          example: |
+            <h2>Короткая строка (видна всегда)</h2>
+            <p>Записываясь, вы передаёте имя и номер телефона
+            <span data-legal-when="companyName">компании «<span data-legal-value="companyName"></span>»</span><span
+             data-legal-unless="companyName">компании, в которую вы записываетесь,</span>
+            и {{НАИМЕНОВАНИЕ_ОПЕРАТОРА}} — это нужно, чтобы запись состоялась.
+            <a href="/privacy">Как мы обращаемся с данными</a> · <a href="/terms">Условия</a></p>
+</content>
