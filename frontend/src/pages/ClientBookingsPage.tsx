@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button'
 import { StatusBadge } from '../components/ui/Badge'
 import { Icon } from '../components/ui/Icon'
 import { ReviewModal } from '../components/review/ReviewModal'
+import { RescheduleModal } from '../components/booking/RescheduleModal'
 import { getCancelErrorMessage } from '../utils/cancelError'
 import { formatBookingServiceNames } from '../utils/bookingServices'
 import type { Booking } from '../types'
@@ -68,6 +69,7 @@ export function ClientBookingsPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<FilterTab>('all')
   const [reviewBooking, setReviewBooking] = useState<Booking | null>(null)
+  const [rescheduleBooking, setRescheduleBooking] = useState<Booking | null>(null)
 
   const statusParam =
     tab === 'upcoming' ? 'upcoming' : tab === 'completed' ? 'Completed' : tab === 'cancelled' ? 'Cancelled' : undefined
@@ -187,6 +189,13 @@ export function ClientBookingsPage() {
 
                       {/* Action buttons */}
                       <div className="flex flex-col gap-2 shrink-0 items-end">
+                        {/* ARCHITECTURE_CYCLE15.md §286 — driven by the server-computed flag, not a
+                            local time calculation; absent/false renders no button at all. */}
+                        {b.clientRescheduleAllowed && (
+                          <Button size="sm" variant="secondary" onClick={() => setRescheduleBooking(b)}>
+                            Перенести
+                          </Button>
+                        )}
                         {canCancelBooking(b) && cancellingId !== b.id && (
                           <Button size="sm" variant="danger" onClick={() => setCancellingId(b.id)}>
                             Отменить
@@ -241,6 +250,18 @@ export function ClientBookingsPage() {
           companyId={reviewBooking.companyId}
           onClose={() => setReviewBooking(null)}
           onSuccess={() => setReviewBooking(null)}
+        />
+      )}
+
+      {rescheduleBooking && (
+        <RescheduleModal
+          booking={rescheduleBooking}
+          onClose={() => setRescheduleBooking(null)}
+          // §286 — replaces the modal's default 14-day grid with the actual company setting.
+          horizonDays={rescheduleBooking.companyBookingHorizonDays ?? 14}
+          allowManualOverride={false}
+          isClientOwner
+          onRescheduled={() => qc.invalidateQueries({ queryKey: ['client-bookings'] })}
         />
       )}
     </div>

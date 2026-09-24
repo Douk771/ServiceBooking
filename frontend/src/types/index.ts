@@ -488,6 +488,19 @@ export interface Booking {
    * value is a positive number.
    */
   historyEventCount?: number | null
+  /**
+   * API_CONTRACT_CYCLE15.md §286 — computed ONLY on `GET /bookings/client`; `null`/absent on every
+   * other endpoint that returns `BookingDto` means "server didn't compute it", not "not allowed".
+   * The "Перенести" button on the client's own bookings list is driven by this flag, never by a
+   * client-side time computation — it's a hint, not a permission: the server re-checks everything on
+   * the actual PATCH and can still answer 400/402/409 even when this was true a moment ago.
+   */
+  clientRescheduleAllowed?: boolean | null
+  /** API_CONTRACT_CYCLE15.md §286 — the company's reschedule window, to explain why the button is
+   *  absent ("перенести можно не позже чем за N ч до визита") without a separate company fetch. */
+  clientRescheduleMinHours?: number | null
+  /** API_CONTRACT_CYCLE15.md §286 — replaces the 14 days hardcoded into the reschedule date grid. */
+  companyBookingHorizonDays?: number | null
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'
