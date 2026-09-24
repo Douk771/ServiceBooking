@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { isLegalReadinessShape, LegalReadinessTab } from './LegalReadinessTab'
+import { isLegalReadinessShape } from './legalReadinessHelpers'
+import { LegalReadinessTab } from './LegalReadinessTab'
 import type { LegalReadiness } from '../../types'
 
 // A 503 that never went through AdminLegalController (reverse proxy/gateway health page, plain

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { STATUS_BADGE_CLASS } from './BillingPage'
+import { STATUS_BADGE_CLASS } from './billingPageHelpers'
 
 // N23: a Free/Expired subscription must not show the same green "success" badge as Active — the
 // bug was a hardcoded className that ignored `data.status` entirely.
