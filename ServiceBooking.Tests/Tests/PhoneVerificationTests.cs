@@ -14,6 +14,7 @@ using ServiceBooking.API.DTOs.PhoneVerification;
 using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
+using ServiceBooking.API.Services.PhoneVerification.Max;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;
@@ -205,6 +206,14 @@ public class PhoneVerificationTests(TestDatabaseFixture fixture) : ApiTestBase(f
         // fixed sentences (MaxBotTexts), never anything platform-generated for the user to type back.
         enabled.RecordingClient.SentMessages.Should().NotBeEmpty();
         enabled.RecordingClient.SentMessages.Should().OnlyContain(m => !m.Text.Contains(payload));
+
+        // Приветствие обязано приехать С КЛАВИАТУРОЙ. Вживую 24.09.2026 бот поздоровался и позвал
+        // нажать кнопку «Отправить контакт», которой не существовало: клиент отправлял только текст,
+        // вложения `inline_keyboard` в коде не было вовсе, и человек упирался в тупик. Текст без
+        // кнопки в этом сценарии — это несделанная работа, а не мелочь оформления.
+        enabled.RecordingClient.SentMessages
+            .Should().Contain(m => m.Text == MaxBotTexts.Greeting && m.RequestContact,
+                "приглашение поделиться контактом без самой кнопки никуда не ведёт");
 
         // US-14-01's last criterion: the completed session actually feeds registration and the account
         // comes out phoneVerified:true.

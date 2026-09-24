@@ -83,7 +83,7 @@ public sealed class MaxWebhookHandler(
                 : MaxBotTexts.PayloadExpiredOrUnknown;
         }
 
-        await ReplyAsync(update.ChatId, replyText, ct);
+        await ReplyAsync(update.ChatId, replyText, ct, requestContact: decision.Outcome != PhoneVerificationStateMachine.StepOutcome.Rejected);
     }
 
     /// <summary>
@@ -209,8 +209,17 @@ public sealed class MaxWebhookHandler(
         await transaction.CommitAsync(ct);
 
         if (replyText is not null)
-            await ReplyAsync(update.ChatId, replyText, ct);
+            await ReplyAsync(update.ChatId, replyText, ct, requestContact: RetryableWithAnotherContact(replyText));
     }
+
+    /// <summary>Отказ, который лечится повторной отправкой контакта — значит кнопку надо показать
+    /// снова, иначе человек упирается в тупик с текстом «попробуйте ещё раз» и без чего пробовать.
+    /// Терминальные случаи (успех, исчерпанный потолок) сюда не попадают намеренно.</summary>
+    private static bool RetryableWithAnotherContact(string replyText) =>
+        replyText == MaxBotTexts.SignatureMismatch ||
+        replyText == MaxBotTexts.ContactNotOwnedBySender ||
+        replyText == MaxBotTexts.NoPhoneInContact ||
+        replyText.StartsWith("Вы поделились номером", StringComparison.Ordinal);
 
     private static string ReplyTextFor(PhoneVerificationFailureReason? reason, IReadOnlyList<string> sentPhones, string canonicalPhone) => reason switch
     {
@@ -229,7 +238,11 @@ public sealed class MaxWebhookHandler(
     /// <summary>§146.2's own timeout budget — a reply that never arrives must not hold the webhook
     /// response open, and a failure here must never surface as anything but a log line (the caller has
     /// already committed the session's own state by the time this runs).</summary>
-    private async Task ReplyAsync(string? chatId, string text, CancellationToken ct)
+    /// <param name="requestContact">Показать кнопку «Отправить контакт» вместе с текстом. Нужна
+    /// везде, где от человека ждут следующего действия: приветствие, напоминание уже связанной
+    /// сессии и любой отказ, который лечится повторной отправкой контакта. НЕ нужна там, где
+    /// разговор окончен — успех, исчерпанный потолок, протухшая ссылка.</param>
+    private async Task ReplyAsync(string? chatId, string text, CancellationToken ct, bool requestContact = false)
     {
         if (string.IsNullOrEmpty(chatId))
         {
@@ -244,7 +257,7 @@ public sealed class MaxWebhookHandler(
         {
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(1, options.Value.Max.TimeoutSeconds)));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
-            await botClient.SendMessageAsync(chatId, text, linkedCts.Token);
+            await botClient.SendMessageAsync(chatId, text, requestContact, linkedCts.Token);
         }
         catch (Exception ex)
         {

@@ -9,6 +9,10 @@ namespace ServiceBooking.API.Services.PhoneVerification.Max;
 /// </summary>
 public static class MaxBotTexts
 {
+    /// <summary>Подпись на самой кнопке. Должна дословно совпадать с тем, как кнопка названа в
+    /// текстах ниже, иначе человек ищет глазами одно, а видит другое.</summary>
+    public const string ContactButtonLabel = "Отправить контакт";
+
     /// <summary>Sent on a successful <c>bot_started</c> — invites the person to share their own contact
     /// card via the platform's native "request_contact" affordance.</summary>
     public const string Greeting =

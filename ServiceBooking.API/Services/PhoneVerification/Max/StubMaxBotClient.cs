@@ -11,5 +11,5 @@ public sealed class StubMaxBotClient : IMaxBotClient
 {
     public Task<bool> SubscribeAsync(CancellationToken ct) => Task.FromResult(false);
 
-    public Task SendMessageAsync(string chatId, string text, CancellationToken ct) => Task.CompletedTask;
+    public Task SendMessageAsync(string chatId, string text, bool requestContact, CancellationToken ct) => Task.CompletedTask;
 }

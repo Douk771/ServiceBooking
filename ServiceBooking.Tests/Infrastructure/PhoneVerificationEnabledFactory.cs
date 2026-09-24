@@ -62,7 +62,7 @@ public sealed class PhoneVerificationEnabledFactory(string connectionString) : W
 /// tried to say back to the bot chat, without any of it leaving the process.</summary>
 public sealed class RecordingMaxBotClient : IMaxBotClient
 {
-    public ConcurrentBag<(string ChatId, string Text)> SentMessages { get; } = [];
+    public ConcurrentBag<(string ChatId, string Text, bool RequestContact)> SentMessages { get; } = [];
     public int SubscribeCallCount;
 
     public Task<bool> SubscribeAsync(CancellationToken ct)
@@ -71,9 +71,9 @@ public sealed class RecordingMaxBotClient : IMaxBotClient
         return Task.FromResult(true);
     }
 
-    public Task SendMessageAsync(string chatId, string text, CancellationToken ct)
+    public Task SendMessageAsync(string chatId, string text, bool requestContact, CancellationToken ct)
     {
-        SentMessages.Add((chatId, text));
+        SentMessages.Add((chatId, text, requestContact));
         return Task.CompletedTask;
     }
 }

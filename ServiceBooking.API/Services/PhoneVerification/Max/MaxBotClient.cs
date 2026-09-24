@@ -94,7 +94,7 @@ public sealed class MaxBotClient : IMaxBotClient, IDisposable
         }
     }
 
-    public async Task SendMessageAsync(string chatId, string text, CancellationToken ct)
+    public async Task SendMessageAsync(string chatId, string text, bool requestContact, CancellationToken ct)
     {
         var maxOptions = _options.Value.Max;
         if (string.IsNullOrWhiteSpace(maxOptions.BotToken)) return;
@@ -107,7 +107,32 @@ public sealed class MaxBotClient : IMaxBotClient, IDisposable
         try
         {
             using var client = CreateClient(maxOptions);
-            using var response = await client.PostAsJsonAsync($"messages?chat_id={Uri.EscapeDataString(chatId)}", new { text }, ct);
+            // Клавиатура у MAX едет вложением `inline_keyboard`, а не отдельным полем, как в Telegram:
+            // attachments[0].payload.buttons — это ДВУМЕРНЫЙ массив, строка клавиатуры на подмассив.
+            // Кнопка `request_contact` — единственный способ получить номер: по нажатию клиент MAX
+            // присылает боту вложение `contact` с подписанной vCard.
+            object body = requestContact
+                ? new
+                {
+                    text,
+                    attachments = new object[]
+                    {
+                        new
+                        {
+                            type = "inline_keyboard",
+                            payload = new
+                            {
+                                buttons = new object[][]
+                                {
+                                    [new { type = "request_contact", text = MaxBotTexts.ContactButtonLabel }],
+                                },
+                            },
+                        },
+                    },
+                }
+                : new { text };
+
+            using var response = await client.PostAsJsonAsync($"messages?chat_id={Uri.EscapeDataString(chatId)}", body, ct);
             if (!response.IsSuccessStatusCode)
                 _logger.LogWarning("max-bot: sendMessage returned {StatusCode}", (int)response.StatusCode);
         }
