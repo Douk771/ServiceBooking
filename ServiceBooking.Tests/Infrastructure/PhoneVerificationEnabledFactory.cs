@@ -28,7 +28,7 @@ public sealed class PhoneVerificationEnabledFactory(string connectionString) : W
 
     /// <summary>Fixed bot token — also the HMAC key <see cref="MaxContactSignature"/> signs
     /// <c>vcf_info</c> with, so a test can compute a VALID signature for a forged/legitimate contact.</summary>
-    public const string TestBotToken = "test-bot-token-for-qa-cycle-12-not-a-real-secret";
+    public const string TestBotToken = "test-bot-token-for-qa-cycle-14-not-a-real-secret";
 
     public const string TestWebhookToken = "0123456789abcdef0123456789abcdef";
 

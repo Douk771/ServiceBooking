@@ -6,7 +6,7 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 /// <summary>
 /// Pure predicates for "is this presented/observed session usable here" (ARCHITECTURE_CYCLE14.md §148.1
 /// step 3, §148.5, §148.3). Extracted out of <c>AuthController</c>/<c>ProfileController</c>/
-/// <c>MaxWebhookHandler</c> per cycle-12 review finding 13 — these conditions are exactly where the
+/// <c>MaxWebhookHandler</c> per cycle-14 review finding 13 — these conditions are exactly where the
 /// review's two blockers lived, and were previously inline `&amp;&amp;` chains with no unit coverage of
 /// their own. No DB, no clock read (the caller passes <c>nowUtc</c> in) — just the five/four/one-fact
 /// decision each endpoint actually makes.

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ServiceBooking.Infrastructure.Migrations
 {
     /// <summary>
-    /// Data-only migration, no model change (cycle-12 review, blocker 3). Before this cycle,
+    /// Data-only migration, no model change (cycle-14 review, blocker 3). Before this cycle,
     /// AppUser.PhoneNumberConfirmed was set to true for every staff account CompaniesController
     /// auto-created on the owner's behalf ("added by the owner → treated as a verified number") — a
     /// harmless internal note back when the flag had no visible meaning. Cycle 14 turned it into a

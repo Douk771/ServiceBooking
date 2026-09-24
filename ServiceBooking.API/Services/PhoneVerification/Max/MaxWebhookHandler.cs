@@ -156,7 +156,7 @@ public sealed class MaxWebhookHandler(
                     var user = session.UserId is null ? null : await db.Users.FirstOrDefaultAsync(u => u.Id == session.UserId, ct);
 
                     // Purpose=Profile covers TWO different scenarios that must not be treated alike
-                    // (review finding, blockers 1+2 of the cycle-12 review):
+                    // (review finding, blockers 1+2 of the cycle-14 review):
                     //  - US-14-16, "confirm the number I already have" — session.CanonicalPhone equals
                     //    the account's CURRENT PhoneNumber. Nobody is ever going to "present" this
                     //    session anywhere else, so it is written and consumed right here.

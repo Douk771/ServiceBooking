@@ -1,5 +1,5 @@
 import type { components as Cycle9Components } from './api-cycle9.generated'
-import type { components as Cycle12Components } from './api-cycle14.generated'
+import type { components as Cycle14Components } from './api-cycle14.generated'
 
 // ── Cycle 9 (ARCHITECTURE_CYCLE9.md §104, API_CONTRACT_CYCLE9.md §112): these two enums are read
 // straight off the generated schema instead of being retyped as string literals here, so a future
@@ -20,14 +20,14 @@ export type StaffPushSettings = Cycle9Components['schemas']['StaffPushSettingsDt
 // the generated schema (§118 п. 1 convention) so an append-only enum member (e.g. a future failure
 // reason, or a second method once calls/SMS land) shows up as a type error at every switch that needs
 // updating, instead of silently falling through to a default branch.
-export type PhoneVerificationMethod = Cycle12Components['schemas']['PhoneVerificationMethod']
-export type PhoneVerificationStatus = Cycle12Components['schemas']['PhoneVerificationStatus']
-export type PhoneVerificationFailureReason = Cycle12Components['schemas']['PhoneVerificationFailureReason']
-export type PhoneVerificationConfig = Cycle12Components['schemas']['PhoneVerificationConfig']
-export type PhoneVerificationSessionCreated = Cycle12Components['schemas']['PhoneVerificationSessionCreated']
-export type PhoneVerificationSessionStatus = Cycle12Components['schemas']['PhoneVerificationSessionStatus']
+export type PhoneVerificationMethod = Cycle14Components['schemas']['PhoneVerificationMethod']
+export type PhoneVerificationStatus = Cycle14Components['schemas']['PhoneVerificationStatus']
+export type PhoneVerificationFailureReason = Cycle14Components['schemas']['PhoneVerificationFailureReason']
+export type PhoneVerificationConfig = Cycle14Components['schemas']['PhoneVerificationConfig']
+export type PhoneVerificationSessionCreated = Cycle14Components['schemas']['PhoneVerificationSessionCreated']
+export type PhoneVerificationSessionStatus = Cycle14Components['schemas']['PhoneVerificationSessionStatus']
 /** Sent back to the server at registration / change-phone time to redeem a completed session. */
-export type PhoneVerificationRef = Cycle12Components['schemas']['PhoneVerificationRef']
+export type PhoneVerificationRef = Cycle14Components['schemas']['PhoneVerificationRef']
 
 export interface Company {
   id: string
