@@ -9,17 +9,7 @@ import type {
   AddressLookupResultDto,
   Company,
   CompanyAddressVerificationDto,
-  CompanyAddressVerificationResultDto,
 } from '../../types'
-
-// §237 — the server-composed copy for `verification.outcome`, shown next to the field after a save.
-// `Ok`/`Disabled` need no extra line here: `Ok` is covered by the "Подтверждён по карте …" status
-// derived from `addressVerification` once the parent refetches, and `Disabled` means the switch is
-// off, i.e. this whole block is never reached (`available` is false).
-const OUTCOME_MESSAGE: Partial<Record<CompanyAddressVerificationResultDto['outcome'], string>> = {
-  Empty: 'Карта не нашла такой адрес. Адрес сохранён, но не подтверждён.',
-  Unavailable: 'Карта временно недоступна. Адрес сохранён, но не подтверждён — можно повторить проверку позже.',
-}
 
 interface Props {
   companyId: string
@@ -192,13 +182,10 @@ export function AddressVerifyField({ companyId, initialAddress, cityId, addressV
         </div>
       )}
 
-      {/* §237 — what the save actually resulted in: for `Empty`/`Unavailable` this is the only place
-          the owner learns the address was saved but not confirmed, and why. `Ok` needs no extra line
-          (covered by the "Подтверждён по карте …" status above once the parent refetches); `Disabled`
-          can't happen here (`available` gates this whole block). */}
-      {saveVerification && OUTCOME_MESSAGE[saveVerification.outcome] && (
-        <p className="text-xs text-warning">{OUTCOME_MESSAGE[saveVerification.outcome]}</p>
-      )}
+      {/* §236/§237 — the server composes `warnings[].message`; this component doesn't invent a second
+          wording for `outcome: "Empty"`/`"Unavailable"` on top of it. For those outcomes the server
+          always populates `warnings` (`AddressWarnings.NotFound`/`Unavailable`), so this is the only
+          place the owner learns the address was saved but not confirmed, and why. */}
       {saveVerification && saveVerification.warnings.length > 0 && (
         <ul id={saveWarningsId} className="flex flex-col gap-1 text-xs text-warning">
           {saveVerification.warnings.map((w, i) => (

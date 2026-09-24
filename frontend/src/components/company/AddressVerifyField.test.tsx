@@ -195,7 +195,7 @@ describe('AddressVerifyField — ARCHITECTURE_CYCLE13.md §211/§220', () => {
     expect(await screen.findByText('Адрес найден в другом городе — проверьте часовой пояс.')).toBeInTheDocument()
   })
 
-  it('after a save with outcome Unavailable: shows the outcome message and offers a retry button even though the text is unchanged', async () => {
+  it('after a save with outcome Unavailable: shows the server-composed warning and offers a retry button even though the text is unchanged', async () => {
     confirmNotice.mockResolvedValue({ version: 'v1', acknowledgedAt: '2026-09-24T10:00:00Z' })
     saveAddress.mockResolvedValue({
       company: stubCompany(),
@@ -204,7 +204,10 @@ describe('AddressVerifyField — ARCHITECTURE_CYCLE13.md §211/§220', () => {
         status: 'Unverified',
         verifiedAt: null,
         precision: null,
-        warnings: [],
+        // §236/§237 — the server always populates `warnings` for `Empty`/`Unavailable` on save
+        // (`AddressWarnings.NotFound`/`Unavailable`); the component must render THIS text, not invent
+        // its own second wording for the same outcome.
+        warnings: [{ code: 'Unavailable', message: 'Не удалось проверить адрес, попробуйте позже.' }],
         attribution: '',
       },
     })
@@ -224,9 +227,7 @@ describe('AddressVerifyField — ARCHITECTURE_CYCLE13.md §211/§220', () => {
     await user.click(await screen.findByRole('button', { name: 'Понятно, сохранить адрес' }))
 
     await waitFor(() => expect(saveAddress).toHaveBeenCalled())
-    expect(
-      await screen.findByText('Карта временно недоступна. Адрес сохранён, но не подтверждён — можно повторить проверку позже.'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Не удалось проверить адрес, попробуйте позже.')).toBeInTheDocument()
     // The field's live value now equals `initialAddress` again (save reset `dirty`), yet a retry
     // affordance must still be present — this is the "no way to retry" gap the review flagged.
     expect(screen.getByRole('button', { name: 'Повторить проверку' })).toBeInTheDocument()
