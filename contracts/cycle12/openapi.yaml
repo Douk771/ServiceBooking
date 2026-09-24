@@ -431,7 +431,7 @@ paths:
         (решение Р6, SPEC §6.4). Лимит data-export 3/сутки — без изменений.
       responses:
         "200":
-          description: JSON-файл выгрузки (Content-Disposition: attachment).
+          description: "JSON-файл выгрузки (Content-Disposition: attachment)."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProfileExportPhoneVerificationSlice" }
