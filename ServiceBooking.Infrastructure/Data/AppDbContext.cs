@@ -102,6 +102,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(c => new { c.ShowInPublicListing, c.Name, c.Id })
                 .HasDatabaseName("IX_Companies_PublicListing_Default")
                 .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
+            // Cycle 13 (ARCHITECTURE_CYCLE13.md §202): the only "own data" column that needs a length
+            // cap — it's a normalized copy of the owner's own address text, same 300-char ceiling as the
+            // lookup/save DTOs enforce (API_CONTRACT_CYCLE13.md §233/§234). No index: nobody filters or
+            // sorts by it (§202's own remarks — Address itself keeps its existing partial indexes).
+            e.Property(c => c.AddressVerifiedInputKey).HasMaxLength(300);
         });
 
         builder.Entity<Service>(e =>
