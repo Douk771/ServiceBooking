@@ -79,6 +79,14 @@ public class PhoneVerificationController(
             return BadRequest(PhoneVerificationTexts.InvalidPhoneFormat);
         }
 
+        // §163's error table requires the same 409 both when the subsystem is switched off AND when the
+        // webhook isn't currently subscribed (enabled && !healthy) — a session started while the
+        // subscription is lost can never receive the update that would resolve it, and GetConfig's own
+        // `healthy` is exactly this same diagnostics read (review finding, blocker 4).
+        var adapterForHealthCheck = registry.Get(PhoneVerificationMethod.MaxBot);
+        if (adapterForHealthCheck.Enabled && !diagnostics.WebhookSubscribed)
+            return Conflict(PhoneVerificationTexts.SubsystemUnavailable);
+
         var purpose = user is null ? PhoneVerificationPurpose.Registration : PhoneVerificationPurpose.Profile;
         var result = await sessionService.StartAsync(canonicalPhone, user?.Id, purpose, ct);
 
@@ -192,7 +200,11 @@ public class PhoneVerificationController(
             _ => PhoneVerificationDisplayStatus.Rejected,
         };
 
-        var failureReason = expired ? PhoneVerificationFailureReason.PayloadExpired : session.FailureReason;
+        // §164: failureReason is documented as a code that accompanies status == Rejected — Expired is a
+        // synthesized display status (TTL passed, independent of what session.Status actually is), not
+        // Rejected, so it must not carry one (review finding, non-blocking 11). The human-readable
+        // `message` below is the contract-sanctioned way to explain an Expired session either way.
+        var failureReason = displayStatus == PhoneVerificationDisplayStatus.Rejected ? session.FailureReason : null;
 
         string? message = displayStatus switch
         {
@@ -203,8 +215,15 @@ public class PhoneVerificationController(
             _ => null,
         };
 
+        // Consumed also displays as Verified (see the class doc above) — its own verifiedAtUtc must ride
+        // along too, or a poll observed after redemption would show "Verified" with no date (review
+        // finding, non-blocking 11).
+        DateTime? verifiedAtUtc = session.Status is PhoneVerificationStatus.Verified or PhoneVerificationStatus.Consumed
+            ? session.CompletedAtUtc
+            : null;
+
         return new PhoneVerificationSessionStatusDto(
             session.Id, displayStatus, failureReason, message, PhoneDisplayMask.Mask(session.CanonicalPhone),
-            session.ExpiresAtUtc, session.Status == PhoneVerificationStatus.Verified ? session.CompletedAtUtc : null);
+            session.ExpiresAtUtc, verifiedAtUtc);
     }
 }
