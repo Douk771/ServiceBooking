@@ -2,8 +2,8 @@
   "documents": [
     {
       "type": "Privacy",
-      "version": "2026-09-22-draft",
-      "effectiveFrom": "2026-09-22",
+      "version": "2026-09-24-draft",
+      "effectiveFrom": "2026-09-24",
       "isDraft": true,
       "changeKind": "Material",
       "gate": "Global",
