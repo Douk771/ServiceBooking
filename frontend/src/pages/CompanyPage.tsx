@@ -11,6 +11,7 @@ import { Icon } from '../components/ui/Icon'
 import { Pagination } from '../components/ui/Pagination'
 import { BookingModal } from '../components/booking/BookingModal'
 import { CompanyPhotoGallery } from '../components/company/CompanyPhotoGallery'
+import { CompanyMapLinks } from '../components/company/CompanyMapLinks'
 import type { Service } from '../types'
 
 function ServiceCard({
@@ -119,7 +120,12 @@ export function CompanyPage() {
             performance), so no extra request; `null`/absent (server not yet on cycle 10) behaves as
             an empty gallery, same as an actually-empty one. */}
         <CompanyPhotoGallery photos={company.photos ?? []} companyName={company.name} />
-        <div className="px-6 pb-6 pt-7 flex items-start gap-5">
+        {/* ARCHITECTURE_CYCLE13.md §204 (R10): `relative z-10` is the fix for the original defect —
+            a positioned, non-zero-z-index row paints over an unpositioned sibling (the gallery)
+            regardless of source order. The logo itself needs no z-index of its own; it's already
+            inside this raised row. Carousel root gets no z-index at all (§204 p.3) — giving it one
+            would restart the exact z-index contest this line just ended. */}
+        <div className="px-6 pb-6 pt-7 flex items-start gap-5 relative z-10">
           {company.logoUrl ? (
             <img
               src={company.logoUrl}
@@ -138,10 +144,16 @@ export function CompanyPage() {
             )}
             <div className="flex gap-5 flex-wrap text-[13.5px] text-gold-dark">
               {company.address && (
-                <span className="flex items-center gap-1.5">
-                  <Icon name="map-pin" size={15} strokeWidth={1.6} />
-                  {company.address}
-                </span>
+                // ARCHITECTURE_CYCLE13.md §205 — address stays plain text with the pin; the map
+                // links go on their own line below it (flex-wrap on this column, not inline with the
+                // address) so they don't run together into one line on narrow screens.
+                <div className="flex flex-col gap-1 flex-wrap">
+                  <span className="flex items-center gap-1.5">
+                    <Icon name="map-pin" size={15} strokeWidth={1.6} />
+                    {company.address}
+                  </span>
+                  <CompanyMapLinks address={company.address} cityName={company.cityName} point={company.addressPoint} />
+                </div>
               )}
               {company.phone && (
                 <span className="flex items-center gap-1.5">

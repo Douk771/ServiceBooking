@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CompanyPhotoGallery } from './CompanyPhotoGallery'
@@ -17,31 +17,69 @@ function photo(overrides: Partial<CompanyPhoto> = {}): CompanyPhoto {
   }
 }
 
-describe('CompanyPhotoGallery — API_CONTRACT_CYCLE10.md §125/§129', () => {
+function photos(n: number): CompanyPhoto[] {
+  return Array.from({ length: n }, (_, i) =>
+    photo({ id: `p${i}`, position: i, isCover: i === 0, url: `/uploads/companies/p${i}.jpg`, thumbnailUrl: `/uploads/companies/p${i}-thumb.jpg` }),
+  )
+}
+
+function lightboxImg() {
+  return screen.getByRole('button', { name: 'Закрыть' }).parentElement!.querySelector('img')!
+}
+
+describe('CompanyPhotoGallery — ARCHITECTURE_CYCLE13.md §204/§211 (US-131, US-141…US-143)', () => {
   it('renders a plain placeholder, no technical text, when there are no photos', () => {
     render(<CompanyPhotoGallery photos={[]} companyName="Гвоздь" />)
     expect(screen.queryByText('Фото: компания')).not.toBeInTheDocument()
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
-  it('uses lazy loading and the company name as alt text on every thumbnail', () => {
-    render(
-      <CompanyPhotoGallery
-        photos={[photo({ id: 'p1', isCover: true }), photo({ id: 'p2', position: 1, isCover: false })]}
-        companyName="Гвоздь"
-      />,
-    )
-    const images = screen.getAllByRole('img')
-    expect(images).toHaveLength(2)
-    images.forEach((img) => {
-      expect(img).toHaveAttribute('loading', 'lazy')
-      expect(img).toHaveAttribute('alt', 'Гвоздь')
-    })
+  it('1 photo: exactly one <img>, no arrows, no indicators', () => {
+    render(<CompanyPhotoGallery photos={photos(1)} companyName="Гвоздь" />)
+    expect(screen.getAllByRole('img')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Предыдущее фото' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Следующее фото' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Показать фото/ })).not.toBeInTheDocument()
+  })
+
+  it.each([2, 3, 4])('%i photos: never renders a "+N" overlay tile (the mosaic is gone)', (n) => {
+    render(<CompanyPhotoGallery photos={photos(n)} companyName="Гвоздь" />)
+    expect(screen.queryByText(/^\+\d+$/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Предыдущее фото' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /^Показать фото/ })).toHaveLength(n)
+  })
+
+  it('10 photos: every single one is reachable by paging forward (replaces the old "+N" ceiling, US-143)', async () => {
+    const user = userEvent.setup()
+    const all = photos(10)
+    render(<CompanyPhotoGallery photos={all} companyName="Гвоздь" />)
+
+    const next = screen.getByRole('button', { name: 'Следующее фото' })
+    for (let i = 0; i < 9; i++) {
+      await user.click(next)
+    }
+    // The last photo (by display order — cover first, then position) is now the active/eager slide.
+    const activeImg = screen.getAllByRole('img').find((img) => img.getAttribute('loading') === 'eager')
+    expect(activeImg).toHaveAttribute('src', all[9].url)
+  })
+
+  it('clicking a slide opens the lightbox; clicking an arrow or an indicator does not', async () => {
+    const user = userEvent.setup()
+    render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
+
+    await user.click(screen.getByRole('button', { name: 'Следующее фото' }))
+    expect(screen.queryByRole('button', { name: 'Закрыть' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Показать фото 3' }))
+    expect(screen.queryByRole('button', { name: 'Закрыть' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Фото 1 из 3' }))
+    expect(screen.getByRole('button', { name: 'Закрыть' })).toBeInTheDocument()
   })
 
   it('opens a full-size lightbox on click and closes it on Escape', async () => {
     const user = userEvent.setup()
-    render(<CompanyPhotoGallery photos={[photo()]} companyName="Гвоздь" />)
+    render(<CompanyPhotoGallery photos={photos(1)} companyName="Гвоздь" />)
 
     await user.click(screen.getAllByRole('img')[0])
     expect(screen.getByRole('button', { name: 'Закрыть' })).toBeInTheDocument()
@@ -50,16 +88,62 @@ describe('CompanyPhotoGallery — API_CONTRACT_CYCLE10.md §125/§129', () => {
     expect(screen.queryByRole('button', { name: 'Закрыть' })).not.toBeInTheDocument()
   })
 
-  it('navigates to the next photo with the right arrow key', async () => {
+  it('navigates to the next photo in the lightbox with the right arrow key', async () => {
     const user = userEvent.setup()
-    const photos = [photo({ id: 'p1' }), photo({ id: 'p2', position: 1, isCover: false, url: '/uploads/companies/p2.jpg' })]
-    render(<CompanyPhotoGallery photos={photos} companyName="Гвоздь" />)
+    render(<CompanyPhotoGallery photos={photos(2)} companyName="Гвоздь" />)
 
-    await user.click(screen.getAllByRole('img')[0])
-    const lightboxImg = () => screen.getByRole('button', { name: 'Закрыть' }).parentElement!.querySelector('img')!
-    expect(lightboxImg()).toHaveAttribute('src', '/uploads/companies/p1.jpg')
+    await user.click(screen.getByRole('button', { name: 'Фото 1 из 2' }))
+    expect(lightboxImg()).toHaveAttribute('src', '/uploads/companies/p0.jpg')
 
     await user.keyboard('{ArrowRight}')
-    expect(lightboxImg()).toHaveAttribute('src', '/uploads/companies/p2.jpg')
+    expect(lightboxImg()).toHaveAttribute('src', '/uploads/companies/p1.jpg')
+  })
+
+  it('ArrowRight/ArrowLeft on the carousel root page slides and wrap at the ends', async () => {
+    const user = userEvent.setup()
+    render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
+    const root = screen.getByRole('group', { name: 'Фотографии Гвоздь' })
+    const active = () => screen.getAllByRole('img').find((img) => img.getAttribute('loading') === 'eager')!
+
+    root.focus()
+    expect(active()).toHaveAttribute('src', '/uploads/companies/p0.jpg')
+
+    // wraps from the first slide back to the last
+    await user.keyboard('{ArrowLeft}')
+    expect(active()).toHaveAttribute('src', '/uploads/companies/p2.jpg')
+
+    await user.keyboard('{ArrowRight}')
+    expect(active()).toHaveAttribute('src', '/uploads/companies/p0.jpg')
+  })
+
+  it('has no autoplay: the active slide never changes on its own, even after 10s of fake timers (П9)', () => {
+    vi.useFakeTimers()
+    try {
+      render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
+      const active = () => screen.getAllByRole('img').find((img) => img.getAttribute('loading') === 'eager')!
+      expect(active()).toHaveAttribute('src', '/uploads/companies/p0.jpg')
+      vi.advanceTimersByTime(10_000)
+      expect(active()).toHaveAttribute('src', '/uploads/companies/p0.jpg')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uses eager loading only for the active slide, lazy for its neighbours, and the company name as alt text', () => {
+    render(<CompanyPhotoGallery photos={photos(3)} companyName="Гвоздь" />)
+    const images = screen.getAllByRole('img')
+    expect(images).toHaveLength(3) // active + both (wrap-aware) neighbours, all within the preload window
+    const eager = images.filter((img) => img.getAttribute('loading') === 'eager')
+    const lazy = images.filter((img) => img.getAttribute('loading') === 'lazy')
+    expect(eager).toHaveLength(1)
+    expect(lazy).toHaveLength(2)
+    images.forEach((img) => expect(img).toHaveAttribute('alt', 'Гвоздь'))
+  })
+
+  it('slides carry a srcSet with the full-size image for larger viewports (R12)', () => {
+    render(<CompanyPhotoGallery photos={photos(1)} companyName="Гвоздь" />)
+    const img = screen.getAllByRole('img')[0]
+    expect(img.getAttribute('srcSet')).toContain('/uploads/companies/p0.jpg 1600w')
+    expect(img.getAttribute('srcSet')).toContain('/uploads/companies/p0-thumb.jpg 480w')
   })
 })
