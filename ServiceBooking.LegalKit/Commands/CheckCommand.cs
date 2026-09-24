@@ -18,6 +18,9 @@ namespace ServiceBooking.LegalKit.Commands;
 ///     The contract's exit-code table (§117.3) has no code reserved for this specific failure; it is
 ///     mapped onto exit 6 (the other "structural integrity of the source" failure) rather than inventing
 ///     an undocumented code — see the accompanying report for why.
+///  4. Cycle 12 review finding 3.1: every <c>*.html</c> file in `--source` is either a manifest entry, an
+///     appendix, or listed (with a reason) in `deferredDrafts` — otherwise a new draft that nobody wired
+///     in would silently ship nowhere. Also mapped onto exit 6.
 /// </summary>
 internal static class CheckCommand
 {
@@ -27,6 +30,7 @@ internal static class CheckCommand
         var root = args.GetOrDefault("root", BuildCommand.DefaultOut);
 
         var unknownForms = ScanSourceForUnknownPlaceholderForms(source);
+        var unaccountedFiles = LegalSourceSet.FindUnaccountedDraftFiles(source);
 
         List<string> differentFiles;
         var staging = Path.Combine(Path.GetTempPath(), "legalkit-check-" + Guid.NewGuid().ToString("N"));
@@ -77,6 +81,12 @@ internal static class CheckCommand
             {
                 Console.Error.WriteLine("Плейсхолдеры в нераспознанной форме (не входят в 14 известных имён):");
                 foreach (var (file, token) in unknownForms) Console.Error.WriteLine($"  - {file}: {token}");
+                brokenReported = true;
+            }
+            if (unaccountedFiles.Count > 0)
+            {
+                Console.Error.WriteLine("Файлы-черновики, не учтённые ни в манифесте, ни в appendices, ни в deferredDrafts:");
+                foreach (var file in unaccountedFiles) Console.Error.WriteLine($"  - {file}");
                 brokenReported = true;
             }
 
