@@ -63,5 +63,18 @@
     { "key": "PhotoConsent", "version": "2026-09-22-draft", "isDraft": true, "file": "10-photo-consent.html" },
     { "key": "HealthDataConsent", "version": "2026-09-22-draft", "isDraft": true, "file": "11-health-data-consent.html" },
     { "key": "GuardianConfirmation", "version": "2026-09-22-draft", "isDraft": true, "file": "12-guardian-confirmation.html" }
+  ],
+
+  "_appendicesComment": "Document `type` -> ordered list of appendix files spliced into that document's body at the <!-- APPENDIX-BODY-START --> marker, in list order (cycle 12 review finding 4.1: order used to be a prose rule — 'file 13 strictly after file 09' — enforced by nothing; it is now data). Appendix № 2 (13-payment-terms.html) is intentionally NOT listed here yet — see deferredDrafts below.",
+  "appendices": {
+    "TermsOwner": ["09-channel-offer.html"]
+  },
+
+  "_deferredDraftsComment": "Every *.html file in this directory that is neither a documents/uiTexts entry nor an appendices entry MUST be listed here with a reason, or `legal check` refuses (cycle 12 review finding 3.1). This is what stops a new draft file from being silently forgotten.",
+  "deferredDrafts": [
+    {
+      "file": "13-payment-terms.html",
+      "reason": "Приложение № 2 к Соглашению с компанией (Оплата, автопродление, возврат) написано заранее и не подлежит публикации до запуска оплаты картой: на дату написания в Сервисе нет ни эквайринга, ни автосписаний, ни автоматического формирования чеков. Не включается в appendices и не приклеивается к 03-terms-owner.html до даты запуска этой опции (см. комментарий в самом файле)."
+    }
   ]
 }

@@ -43,6 +43,7 @@ internal static class LegalKitFixture
                 new { key = "HealthDataConsent", version = "2026-09-22-draft", isDraft = true, file = "health.html" },
                 new { key = "GuardianConfirmation", version = "2026-09-22-draft", isDraft = true, file = "guardian.html" },
             },
+            appendices = new { TermsOwner = new[] { "09-channel-offer.html" } },
         };
 
         File.WriteAllText(Path.Combine(dir, "legal.json"), JsonSerializer.Serialize(manifest));
