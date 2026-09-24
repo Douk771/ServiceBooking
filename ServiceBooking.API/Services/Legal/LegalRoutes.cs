@@ -44,11 +44,23 @@ public static class LegalRoutes
     /// its source file (legal-drafts/13-payment-terms.html) is intentionally excluded from
     /// legal-drafts/legal.json and never spliced into the built terms-owner document until card payments
     /// ship, so the `payment-terms` anchor genuinely isn't present in today's artifact — that's the
-    /// designed state, not a defect. Add `"offer-channel", "payment-terms"` here once Appendix 2 is wired
-    /// into the manifest.</summary>
+    /// designed state, not a defect. It lives in <see cref="AnchorsPending"/> instead — see that field
+    /// for the self-expiring test that forces it to move here once Appendix 2 is wired in.</summary>
     public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> Anchors = new Dictionary<string, IReadOnlyList<string>>
     {
         ["/terms-owner"] = ["offer-channel"],
+    };
+
+    /// <summary>Cycle 12 review finding 2.1: anchors an alias points at that are known to NOT exist in
+    /// today's artifact yet, on purpose — kept out of <see cref="Anchors"/> so `legal links`/CI don't
+    /// false-alarm on them. <c>LegalRoutesTests</c> enforces both halves of the deal: every alias anchor
+    /// is either here or in <see cref="Anchors"/> (never neither, never both), AND every anchor listed
+    /// here is verified to be ABSENT from the committed artifact — the day Appendix 2 is spliced in and
+    /// the anchor appears, that second check starts failing and forces the entry to move up into
+    /// <see cref="Anchors"/> instead of being forgotten.</summary>
+    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> AnchorsPending = new Dictionary<string, IReadOnlyList<string>>
+    {
+        ["/terms-owner"] = ["payment-terms"],
     };
 
     public static string UrlFor(LegalDocumentType type) => Documents.GetValueOrDefault(type, "");
