@@ -1061,4 +1061,79 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateStaffPushSecrets(config, environmentName);
         act.Should().NotThrow();
     }
+
+    // ── ValidateAddressVerification: ARCHITECTURE_CYCLE13.md §206/§209.2 ──────────────────────────────
+
+    [Fact]
+    public void ValidateAddressVerification_DefaultLoggingProvider_DoesNotThrow_InProduction()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>());
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_UnrecognizedProvider_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:Provider"] = "2gis" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Provider*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_YandexInProduction_MissingApiKey_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:Provider"] = "yandex" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ApiKey*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_YandexInProduction_WithApiKey_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>
+        {
+            ["AddressVerification:Provider"] = "yandex",
+            ["AddressVerification:Yandex:ApiKey"] = "real-key",
+        });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public void ValidateAddressVerification_YandexInDeveloperEnvironment_MissingApiKey_DoesNotThrow(string environmentName)
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:Provider"] = "yandex" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, environmentName);
+        act.Should().NotThrow();
+    }
+
+    // §209.2/§218 R23: the licensed ceiling on caching a geocoder result is 720 hours (30 days) — this
+    // is checked in EVERY environment, unlike the Provider/ApiKey checks above, because it is a fact
+    // about the licence, not a Production-only safety net.
+    [Fact]
+    public void ValidateAddressVerification_CacheHours721_ThrowsEvenInDevelopment()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:CacheHours"] = "721" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*CacheHours*");
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_CacheHours720_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:CacheHours"] = "720" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateAddressVerification_NegativeCacheHours_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["AddressVerification:CacheHours"] = "-1" });
+        var act = () => DeploymentSafetyChecks.ValidateAddressVerification(config, "Development");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*CacheHours*");
+    }
 }

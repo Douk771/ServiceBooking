@@ -516,4 +516,46 @@ public static class DeploymentSafetyChecks
                 "app finishes starting — a transport with no adapter must fail loud at startup, not silently " +
                 "\"just not send\" the first time a message for it comes due (ARCHITECTURE_CYCLE9.md §104.2).");
     }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE13.md §206/§209.2 (LEGAL_REVIEW.md §16.2). Mirrors
+    /// <see cref="ValidateNotificationSecrets"/>'s shape (own section, own Provider switch, unrecognized
+    /// value ALWAYS fails startup) with one addition that is NOT environment-gated at all:
+    /// <c>AddressVerification:CacheHours</c> outside [0, 720] fails startup in EVERY environment,
+    /// including Development/Testing — 720 hours (30 days) is the standard Yandex Geocoder licence's own
+    /// ceiling on "temporary caching for performance" (LEGAL_REVIEW.md §16.2/§16.5), a legal fact about
+    /// the licence, not a tunable that is only risky in Production. Do not move this check inside an
+    /// <c>if (!isDeveloperEnvironment)</c> guard — a developer testing a higher cache value locally must
+    /// hit the same wall a Production deployment would, or the ceiling is not actually enforced anywhere
+    /// that catches a mistake before it ships.
+    /// </summary>
+    public static void ValidateAddressVerification(IConfiguration configuration, string environmentName)
+    {
+        var provider = configuration[$"{Geo.GeoOptions.SectionName}:Provider"] ?? "logging";
+
+        var cacheHours = configuration.GetValue($"{Geo.GeoOptions.SectionName}:CacheHours", 24);
+        if (cacheHours < 0 || cacheHours > 720)
+            throw new InvalidOperationException(
+                $"AddressVerification:CacheHours is {cacheHours}, outside the licensed 0–720 hour (30-day) " +
+                "range for temporary caching of geocoder results under the standard Yandex Geocoder licence " +
+                "(LEGAL_REVIEW.md §16.2/§16.5). This is a legal ceiling, not a performance knob — do not raise " +
+                "it above 720 without a different licence. Set ADDRESSVERIFICATION__CACHEHOURS to a value in [0, 720].");
+
+        if (string.Equals(provider, "logging", StringComparison.OrdinalIgnoreCase)) return;
+
+        if (!string.Equals(provider, "yandex", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"AddressVerification:Provider is '{provider}', which is neither 'logging' nor 'yandex'. " +
+                "Fix the configured value — see ARCHITECTURE_CYCLE13.md §206.");
+
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        var apiKey = configuration[$"{Geo.GeoOptions.SectionName}:Yandex:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException(
+                "AddressVerification:Provider is 'yandex' but AddressVerification:Yandex:ApiKey is missing. " +
+                "Set ADDRESSVERIFICATION__YANDEX__APIKEY in .env — see ARCHITECTURE_CYCLE13.md §206/§216 for " +
+                "the full pre-enable checklist (licence variant chosen, licence purchased, CacheHours ≤ 720, " +
+                "the matching privacy-policy paragraph published at the same moment).");
+    }
 }

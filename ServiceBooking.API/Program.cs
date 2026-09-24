@@ -132,6 +132,10 @@ DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
 // checked the same "fail loud outside a developer environment" way as ValidateNotificationSecrets above,
 // but gated on ITS OWN Provider value, independent of Notifications:Provider.
 DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+// ARCHITECTURE_CYCLE13.md §206/§209.2 — own secret (Yandex Geocoder API key), own provider switch, own
+// unconditional check (CacheHours ≤ 720 is a licence ceiling, checked in every environment, not just
+// outside Development — see the method's own doc comment).
+DeploymentSafetyChecks.ValidateAddressVerification(builder.Configuration, builder.Environment.EnvironmentName);
 
 builder.Services.AddControllers(options =>
         // Global, runs on every authenticated request (US-37, ARCHITECTURE.md §6.3) — a TypeFilter, so
@@ -490,6 +494,42 @@ builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.
         ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>()
         : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>());
 
+// ── Проверка адреса по карте (ARCHITECTURE_CYCLE13.md §206–§209, §215) ─────────────────────────────
+// Own section, own Provider switch, own secret — independent of the WhatsApp/MAX switch above, same
+// pattern the Web Push block just followed. "logging" (default, safe everywhere) never makes a network
+// call at all (LoggingAddressGeocoder) — that IS the intended production state until a licence is bought
+// (P2), not a placeholder.
+builder.Services.Configure<ServiceBooking.API.Services.Geo.GeoOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName));
+
+// The "yandex-geocoder" named client (§206): request/URL logging silenced at the category level, same
+// rung-1 defence as "green-api"/"web-push" — the query string carries `apikey`. Registered
+// unconditionally, not inside the switch below, for the same "changing Provider needs no different DI
+// graph" reason green-api's own client is registered unconditionally.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.LogicalHandler", LogLevel.None);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.ClientHandler", LogLevel.None);
+builder.Services.AddHttpClient("yandex-geocoder", client =>
+    {
+        var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
+            .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
+        client.Timeout = TimeSpan.FromSeconds(geoOptions.Yandex.TimeoutSeconds);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
+            .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
+        return ServiceBooking.API.Services.Geo.GeoHandlerFactory.Create(geoOptions.Yandex);
+    });
+
+builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>();
+builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>();
+var addressVerificationProvider = builder.Configuration["AddressVerification:Provider"];
+builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.IAddressGeocoder>(sp =>
+    string.Equals(addressVerificationProvider, "yandex", StringComparison.OrdinalIgnoreCase)
+        ? sp.GetRequiredService<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>()
+        : sp.GetRequiredService<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>());
+builder.Services.AddScoped<ServiceBooking.API.Services.Geo.AddressLookupService>();
+
 // ForwardedHeaders (US-42, ARCHITECTURE.md §9.1): the container only ever sees the docker bridge's
 // gateway address as RemoteIpAddress, never the browser's — nginx sits in front of it. The default
 // KnownNetworks/KnownProxies ship with loopback pre-trusted, which happens to be exactly the address
@@ -610,6 +650,23 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // address-verify: ARCHITECTURE_CYCLE13.md §210/§238 — the tenth named policy, "30/час на
+    // пользователя". Keyed by user id only, same shape as data-export/push-subscribe above: all three
+    // routes it guards require [Authorize], there is no anonymous case. Applied to all three
+    // CompanyAddressController routes — two can reach the paid geocoder, the third writes journal rows —
+    // and one budget covers all three on purpose (§210: "один и тот же бюджет одного и того же человека").
+    o.AddPolicy("address-verify", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:address-verify:PermitLimit", 30),
+            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:address-verify:WindowMinutes", 60)),
+            QueueLimit = 0
+        });
+    });
+
     // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
     // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
     // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -628,6 +685,7 @@ builder.Services.AddRateLimiter(o =>
             "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
             "notifications-webhook" => "Too many requests.",
             "push-subscribe" => "Слишком много подписок устройств. Повторите позже.",
+            "address-verify" => "Слишком много обращений к проверке адреса. Повторите позже.",
             _ => "Too many uploads. Try again in a minute."
         };
         await ctx.HttpContext.Response.WriteAsync(message, cancellationToken);
