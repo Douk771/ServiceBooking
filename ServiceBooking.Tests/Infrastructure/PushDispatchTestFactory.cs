@@ -29,8 +29,10 @@ namespace ServiceBooking.Tests.Infrastructure;
 /// the runner's <c>workScope</c> — see <see cref="RunStaffPushDispatchPassAsync"/> for why the advisory
 /// lock and <c>ScheduledTaskState</c> bookkeeping the runner ALSO does around that call are immaterial to
 /// those tests (nothing else runs the task concurrently in a single-pass test, and nothing asserts
-/// <c>ScheduledTaskState</c>). Tests that DO care about the runner's own repeated-tick/budget behavior
-/// (410/429/backoff) keep using the real timer, unchanged.
+/// <c>ScheduledTaskState</c>). Cycle 14, второй заход: 410/429 (PUSH-006/PUSH-007) тоже переведены сюда —
+/// «нет повтора после 410» доказывается ДВУМЯ явными проходами строже, чем подсчётом отправок за окно
+/// ожидания, где число тиков зависело от загрузки машины. На реальном таймере в этом классе больше не
+/// ждёт никто.
 /// </summary>
 public sealed class PushDispatchTestFactory(string connectionString, bool disableAutomaticTicking = false) : WebApplicationFactory<Program>
 {
