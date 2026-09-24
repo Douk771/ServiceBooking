@@ -340,6 +340,68 @@ public class LegalPublishTests
         }
     }
 
+    /// <summary>Docstring on <c>PublishCommand.BlockElementRegex</c> claims the removal only ever touches
+    /// the nearest &lt;li&gt;/&lt;p&gt; — a missing optional placeholder sitting in bare text (a &lt;div&gt;,
+    /// or no wrapping element at all) is therefore left untouched by removal and must still be caught by
+    /// the ordinary leftover scan, blocking publication rather than silently surviving unfilled.</summary>
+    [Fact]
+    public void Publish_MissingOptionalPlaceholder_OutsideLiOrP_IsNotRemoved_AndBlocksPublication()
+    {
+        var source = LegalKitFixture.CreateSourceDir(
+            privacyHtml: "<div>регистрационный номер {{НОМЕР_УВЕДОМЛЕНИЯ_РКН}}</div>");
+        var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
+        var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
+        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJsonWithoutRknKeys());
+        try
+        {
+            LegalSourceSet.Build(source, built);
+
+            var exitCode = PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-10-05", "--effective-from", "2026-10-05"]));
+
+            exitCode.Should().Be(5, "a missing optional placeholder outside <li>/<p> is not removed, so it must still block publication");
+            Directory.Exists(outDir).Should().BeFalse();
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(built);
+            LegalKitFixture.Delete(outDir);
+            File.Delete(valuesPath);
+        }
+    }
+
+    /// <summary>Review finding 5.1: a block dropped for a missing optional key must not silently take an
+    /// unrelated REQUIRED placeholder down with it — publish must refuse instead of guessing.</summary>
+    [Fact]
+    public void Publish_BlockRemovedForMissingOptionalKey_AlsoContainsARequiredPlaceholder_IsRejected()
+    {
+        var source = LegalKitFixture.CreateSourceDir(
+            privacyHtml: "<ul>\n<li>bullet before</li>\n" +
+                         "<li>ИНН {{ИНН_ОПЕРАТОРА}}; сведения внесены в реестр: {{НОМЕР_УВЕДОМЛЕНИЯ_РКН}}</li>\n" +
+                         "<li>bullet after</li>\n</ul>");
+        var built = Path.Combine(Path.GetTempPath(), "legalkit-built-" + Guid.NewGuid().ToString("N"));
+        var outDir = Path.Combine(Path.GetTempPath(), "legalkit-operator-" + Guid.NewGuid().ToString("N"));
+        var valuesPath = WriteValuesFile(LegalKitFixture.ValidValuesJsonWithoutRknKeys());
+        try
+        {
+            LegalSourceSet.Build(source, built);
+
+            var exitCode = PublishCommand.Run(CliArgs.Parse(
+                ["--source", built, "--out", outDir, "--values", valuesPath, "--version", "2026-10-05", "--effective-from", "2026-10-05"]));
+
+            exitCode.Should().Be(5, "removing the block would silently drop ИНН_ОПЕРАТОРА, a required requisite that has a value");
+            Directory.Exists(outDir).Should().BeFalse();
+        }
+        finally
+        {
+            LegalKitFixture.Delete(source);
+            LegalKitFixture.Delete(built);
+            LegalKitFixture.Delete(outDir);
+            File.Delete(valuesPath);
+        }
+    }
+
     [Fact]
     public void Publish_OnlyOneOfTwoRknValuesPresent_StillDropsTheWholeBulletRatherThanHalfSubstitutingIt()
     {
