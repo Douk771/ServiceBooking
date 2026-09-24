@@ -100,7 +100,7 @@ public class PhoneVerificationController(
 
         var session = result.Session!;
         var created = new PhoneVerificationSessionCreatedDto(
-            session.Id, result.StatusToken!, session.Method, result.DeepLink!,
+            session.Id, result.StatusToken!, session.Method, result.DeepLink!, result.WebLink,
             result.QrPng is null ? null : Convert.ToBase64String(result.QrPng),
             PhoneDisplayMask.Mask(canonicalPhone), session.ExpiresAtUtc,
             (int)Math.Round((session.ExpiresAtUtc - session.CreatedAtUtc).TotalSeconds));

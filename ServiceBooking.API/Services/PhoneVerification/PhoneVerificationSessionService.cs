@@ -29,7 +29,7 @@ public sealed class PhoneVerificationSessionService(
     }
 
     public sealed record StartResult(
-        StartOutcome Outcome, PhoneVerificationSession? Session, string? StatusToken, string? DeepLink, byte[]? QrPng);
+        StartOutcome Outcome, PhoneVerificationSession? Session, string? StatusToken, string? DeepLink, string? WebLink, byte[]? QrPng);
 
     public async Task<StartResult> StartAsync(string canonicalPhone, string? userId, PhoneVerificationPurpose purpose, CancellationToken ct)
     {
@@ -37,7 +37,7 @@ public sealed class PhoneVerificationSessionService(
         // all. A future second method picks among registry.Registered instead of this literal.
         var adapter = registry.Get(PhoneVerificationMethod.MaxBot);
         if (!adapter.Enabled)
-            return new StartResult(StartOutcome.SubsystemDisabled, null, null, null, null);
+            return new StartResult(StartOutcome.SubsystemDisabled, null, null, null, null, null);
 
         var now = DateTime.UtcNow;
         var openSessionsCount = await db.PhoneVerificationSessions.CountAsync(s =>
@@ -45,7 +45,7 @@ public sealed class PhoneVerificationSessionService(
             (s.Status == PhoneVerificationStatus.Pending || s.Status == PhoneVerificationStatus.Linked) &&
             s.ExpiresAtUtc > now, ct);
         if (openSessionsCount >= options.Value.MaxOpenSessionsPerPhone)
-            return new StartResult(StartOutcome.TooManyOpenSessions, null, null, null, null);
+            return new StartResult(StartOutcome.TooManyOpenSessions, null, null, null, null, null);
 
         var session = new PhoneVerificationSession
         {
@@ -70,7 +70,7 @@ public sealed class PhoneVerificationSessionService(
         db.PhoneVerificationSessions.Add(session);
         await db.SaveChangesAsync(ct);
 
-        return new StartResult(StartOutcome.Started, session, statusToken, challenge.DeepLink, challenge.QrPng);
+        return new StartResult(StartOutcome.Started, session, statusToken, challenge.DeepLink, challenge.WebLink, challenge.QrPng);
     }
 
     /// <summary>§164/§166's shared lookup: the pair {sessionId, statusToken} is the ONLY thing that

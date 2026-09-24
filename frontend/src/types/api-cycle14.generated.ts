@@ -321,9 +321,19 @@ export interface components {
              * Format: uri
              * @description https://max.ru/<bot>?start=<payload>; payload одноразовый, ≤128 символов (О6).
              *     На десктопе показывается ТЕКСТОМ рядом с QR — обязательное требование доступности.
-             * @example https://max.ru/ezbookbot?start=v1.Zm9vYmFyYmF6
+             *     Ведёт на страницу бота, где единственная кнопка открывает СХЕМУ ПРИЛОЖЕНИЯ max://…
+             *     — у кого приложение не установлено, дальше не пройдёт, для них webLink.
              */
             deepLink: string;
+            /**
+             * Format: uri
+             * @description https://web.max.ru/<bot>?start=<payload> — тот же payload для веб-клиента мессенджера.
+             *     Для тех, у кого MAX открыт в браузере: страница max.ru предлагает только max://-схему,
+             *     и в Safari без установленного приложения это ошибка «не удаётся открыть страницу».
+             *     null, если у способа подтверждения нет веб-дорожки.
+             * @example https://max.ru/ezbookbot?start=v1.Zm9vYmFyYmF6
+             */
+            webLink?: string | null;
             /**
              * @description Содержимое data:image/png;base64,… БЕЗ префикса. null допустим — тогда QR рисует клиент
              *     из deepLink. У изображения обязателен осмысленный текстовый эквивалент.

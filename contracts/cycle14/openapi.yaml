@@ -556,6 +556,18 @@ components:
           description: |
             https://max.ru/<bot>?start=<payload>; payload одноразовый, ≤128 символов (О6).
             На десктопе показывается ТЕКСТОМ рядом с QR — обязательное требование доступности.
+            Ведёт на страницу бота, где единственная кнопка открывает СХЕМУ ПРИЛОЖЕНИЯ max://…
+            — у кого приложение не установлено, дальше не пройдёт, для них webLink.
+        webLink:
+          type: string
+          format: uri
+          nullable: true
+          maxLength: 256
+          description: |
+            https://web.max.ru/<bot>?start=<payload> — тот же payload для веб-клиента мессенджера.
+            Для тех, у кого MAX открыт в браузере: страница max.ru предлагает только max://-схему,
+            и в Safari без установленного приложения это ошибка «не удаётся открыть страницу».
+            null, если у способа подтверждения нет веб-дорожки.
           example: "https://max.ru/ezbookbot?start=v1.Zm9vYmFyYmF6"
         qrPngBase64:
           type: string

@@ -98,6 +98,24 @@ export function VerifyPhoneDialog({ session, status, statusError, onClose, onRes
           </div>
         )}
 
+        {/* Кто пользуется MAX в браузере, а не в приложении: страница max.ru предлагает только
+            max://-схему, и в Safari без установленного MAX это ошибка вместо перехода к боту.
+            Найдено на первом живом проходе 24.09.2026. */}
+        {session.webLink && (
+          <p className="text-xs text-muted mb-4">
+            Пользуетесь MAX в браузере?{' '}
+            <a
+              href={session.webLink}
+              target="_blank"
+              rel="noreferrer"
+              className="text-ink underline underline-offset-2 hover:no-underline"
+            >
+              Откройте бота в веб-версии
+            </a>
+            .
+          </p>
+        )}
+
         {/* Always present, on both breakpoints — the accessible/copyable fallback (US-14-02). */}
         <div className="flex items-center gap-2 mb-5">
           <label htmlFor="verify-phone-deep-link" className="sr-only">

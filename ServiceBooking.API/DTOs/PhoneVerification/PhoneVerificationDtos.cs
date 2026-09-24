@@ -21,7 +21,7 @@ public record StartPhoneVerificationRequestDto(string? Phone);
 
 /// <summary>POST /phone-verification/sessions 201 response (§163).</summary>
 public record PhoneVerificationSessionCreatedDto(
-    Guid SessionId, string StatusToken, PhoneVerificationMethod Method, string DeepLink, string? QrPngBase64,
+    Guid SessionId, string StatusToken, PhoneVerificationMethod Method, string DeepLink, string? WebLink, string? QrPngBase64,
     string PhoneMasked, DateTime ExpiresAtUtc, int TtlSeconds);
 
 /// <summary>GET /phone-verification/sessions/{id} 200 response (§164).</summary>

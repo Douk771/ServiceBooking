@@ -11,7 +11,9 @@ namespace ServiceBooking.API.Services.PhoneVerification;
 /// raw secret itself is never returned to the caller a second time — <see cref="IPhoneVerificationMethodAdapter.StartAsync"/>'s
 /// caller (<c>PhoneVerificationSessionService</c>) only persists the hash.
 /// </summary>
-public sealed record VerificationChallenge(string PayloadHash, string DeepLink, byte[]? QrPng);
+/// <param name="WebLink">Ссылка на веб-клиент мессенджера для тех, у кого приложение не установлено;
+/// <c>null</c>, если у способа подтверждения такой дорожки нет.</param>
+public sealed record VerificationChallenge(string PayloadHash, string DeepLink, string? WebLink, byte[]? QrPng);
 
 /// <summary>
 /// Port under future verification methods (ARCHITECTURE_CYCLE14.md §144.2, Q2). Cycle 14 ships exactly

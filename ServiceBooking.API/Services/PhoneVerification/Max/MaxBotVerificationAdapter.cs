@@ -26,6 +26,13 @@ public sealed class MaxBotVerificationAdapter(IOptions<PhoneVerificationOptions>
         var payloadHash = PayloadGenerator.Hash(payload);
         var botUsername = options.Value.Max.BotUsername ?? string.Empty;
         var deepLink = $"https://max.ru/{botUsername}?start={payload}";
+        // Вторая ссылка — для тех, кто пользуется MAX в браузере, а не в приложении. Найдено при
+        // первом живом проходе 24.09.2026: страница https://max.ru/<бот> даёт единственную кнопку
+        // «Запустить бота», и ведёт она на СХЕМУ ПРИЛОЖЕНИЯ `max://…`. В Safari у человека без
+        // установленного MAX это просто ошибка «не удаётся открыть страницу», и дальше пройти нельзя.
+        // Веб-клиент тот же payload принимает: https://web.max.ru/<бот>?start=<payload> сохраняет и
+        // путь, и параметр. QR остаётся на max.ru намеренно — его сканируют телефоном, там приложение.
+        var webLink = $"https://web.max.ru/{botUsername}?start={payload}";
 
         byte[]? qrPng;
         try
@@ -39,7 +46,7 @@ public sealed class MaxBotVerificationAdapter(IOptions<PhoneVerificationOptions>
             qrPng = null;
         }
 
-        return Task.FromResult(new VerificationChallenge(payloadHash, deepLink, qrPng));
+        return Task.FromResult(new VerificationChallenge(payloadHash, deepLink, webLink, qrPng));
     }
 
     /// <summary>§166: cancelling before the person ever opened the bot has nothing to undo at the
