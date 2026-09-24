@@ -659,7 +659,7 @@ export interface LegalReadinessUiText {
   placeholders: LegalReadinessPlaceholderRef[]
 }
 
-export type LegalPlaceholderSource = 'ЕГРЮЛ' | 'после уведомления РКН' | 'решение заказчика' | 'из манифеста'
+export type LegalPlaceholderSource = 'из реквизитов оператора' | 'после уведомления РКН' | 'решение заказчика' | 'из манифеста'
 
 export interface LegalReadinessPlaceholderSummary {
   name: string
