@@ -143,6 +143,7 @@ builder.Services.AddControllers(options =>
         // pattern here.
         options.Filters.Add<ServiceBooking.API.Services.Legal.LegalConsentFilter>())
     .ConfigureApiBehaviorOptions(options =>
+    {
         // Cycle 6 contract finding: automatic model-state validation (missing/invalid query or body
         // fields, caught by [ApiController] before the action runs) used to answer with
         // application/problem+json (ValidationProblemDetails). Every OTHER 4xx a controller raises by
@@ -150,7 +151,20 @@ builder.Services.AddControllers(options =>
         // error reader only understands that form, so the machine-shaped body was silently swallowed
         // into "Проверьте введённые данные", the same failure mode as the US-60 blocker. See
         // ModelValidationErrorFormatter's doc comment for the full story.
-        options.InvalidModelStateResponseFactory = ServiceBooking.API.Services.ModelValidationErrorFormatter.BuildResponse)
+        options.InvalidModelStateResponseFactory = ServiceBooking.API.Services.ModelValidationErrorFormatter.BuildResponse;
+        // Cycle 13 contract check finding: [ApiController]'s ClientErrorResultFilter auto-converts
+        // every bare `return NotFound()`/`Conflict()`/etc. (any IClientErrorActionResult) into
+        // application/problem+json, same failure family as the model-validation case fixed above —
+        // except this path was never addressed, so all ~90 hand-written `NotFound()` calls across the
+        // controllers silently answered with a ProblemDetails body instead of the empty/bare body every
+        // contract (cycle 6 onward, including contracts/cycle13/openapi.yaml's NotFoundEmpty) documents
+        // and the frontend error reader expects. SuppressMapClientErrors turns this filter off entirely,
+        // so IClientErrorActionResult results (NotFoundResult, ConflictResult, UnauthorizedResult, ...)
+        // pass through exactly as the controller wrote them — empty body for NotFound()/Conflict(),
+        // whatever body a controller explicitly attaches otherwise. InvalidModelStateResponseFactory
+        // above is unaffected: it runs before an action even executes, so it never reaches this filter.
+        options.SuppressMapClientErrors = true;
+    })
     .AddJsonOptions(o =>
     {
         o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
