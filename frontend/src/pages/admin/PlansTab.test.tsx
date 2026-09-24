@@ -14,13 +14,14 @@ import type { PlanConfig } from '../../api/plans'
 
 const listPlans = vi.fn()
 const listOptions = vi.fn()
+const updatePlan = vi.fn()
 
 vi.mock('../../api/plans', () => ({
   plansApi: {
     list: (...args: unknown[]) => listPlans(...args),
     listOptions: (...args: unknown[]) => listOptions(...args),
     create: vi.fn(),
-    update: vi.fn(),
+    update: (...args: unknown[]) => updatePlan(...args),
     deactivate: vi.fn(),
     setSystemFree: vi.fn(),
   },
@@ -101,5 +102,38 @@ describe('PlansTab — surviving a pre-cycle-7 API response (US-110/US-111)', ()
 
     await waitFor(() => expect(screen.getByText('Basic')).toBeInTheDocument())
     expect(screen.getByRole('button', { name: /Редактировать/ })).toBeInTheDocument()
+  })
+})
+
+// ARCHITECTURE_CYCLE15.md §255.1 — formToPayload() used to send isActive/isPublic/sortOrder as
+// hardcoded constants on every save, which silently put any plan back on the storefront and reset
+// its display order. This test fails on the pre-fix code (it observed `isPublic: true` in the PUT
+// body no matter what the checkbox said).
+describe('PlansTab — §255.1 formToPayload no longer sends isActive/isPublic/sortOrder as constants', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listOptions.mockResolvedValue([])
+  })
+
+  it('unchecking "Показывать на витрине" and saving sends isPublic: false, preserves sortOrder', async () => {
+    listPlans.mockResolvedValue([preCycle7Plan({ highlights: [], options: [], isSystemFree: false, sortOrder: 3 })])
+    updatePlan.mockResolvedValue(preCycle7Plan({ isPublic: false, sortOrder: 3 }))
+
+    renderTab()
+
+    await waitFor(() => expect(screen.getByText('Basic')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: /Редактировать/ }))
+
+    const publicCheckbox = await screen.findByLabelText(/Показывать на витрине/)
+    expect(publicCheckbox).toBeChecked()
+    await userEvent.click(publicCheckbox)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => expect(updatePlan).toHaveBeenCalled())
+    const [, payload] = updatePlan.mock.calls[0]
+    expect(payload.isPublic).toBe(false)
+    expect(payload.isActive).toBe(true)
+    expect(payload.sortOrder).toBe(3)
   })
 })
