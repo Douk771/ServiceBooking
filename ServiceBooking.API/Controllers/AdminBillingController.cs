@@ -548,11 +548,13 @@ public class AdminBillingController(
 
     // Cycle 18 (API_CONTRACT_CYCLE18.md §369) — no phone number or its hash anywhere in here (the
     // trial-phone registry is never exposed by any DTO, admin included — §3 SPEC minimization).
-    // `null` when the account has never had a trial (TrialStartedAtUtc is null) — the object as a whole,
-    // not individual fields, since there is nothing yet to report.
-    private async Task<object?> BuildAdminTrialDtoAsync(BillingAccount account, AccountSubscription? sub, DateTime now)
+    // AdminAccountTrialDto.state is a closed enum [Never, Active, Expired] and `trial` itself is NOT
+    // nullable (contract fix, code-review finding #2) — an account that never had a trial gets
+    // { state: "Never" }, not a null object, so the frontend's grant-trial button (rendered only when
+    // state == "Never") is reachable for the one case it actually exists for.
+    private async Task<object> BuildAdminTrialDtoAsync(BillingAccount account, AccountSubscription? sub, DateTime now)
     {
-        if (account.TrialStartedAtUtc is null) return null;
+        if (account.TrialStartedAtUtc is null) return new { state = "Never" };
 
         var isCurrentlyUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now)
             && account.TrialEndsAtUtc.HasValue && account.TrialEndsAtUtc >= now;
