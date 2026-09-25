@@ -914,6 +914,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<int?>("CityId")
                         .HasColumnType("integer");
 
+                    b.Property<int>("ClientRescheduleMinHours")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(2);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -957,6 +962,14 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<bool>("TimeZoneIsManual")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("TwoGisUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("YandexMapsUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.HasKey("Id");
 

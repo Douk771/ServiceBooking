@@ -14,6 +14,7 @@ import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { getPlanErrorMessage } from '../../utils/planError'
+import { planStateLabel, type PlanStateTone } from './planState'
 import {
   MAX_HIGHLIGHTS,
   PUBLIC_MAX_HIGHLIGHTS,
@@ -44,6 +45,19 @@ const AVAILABILITY_LABELS: Record<OptionAvailability, string> = {
   Unavailable: 'Недоступна',
   Included: 'Включена',
   Extra: 'За доплату',
+}
+
+const PLAN_STATE_TONE_CLASSES: Record<PlanStateTone, string> = {
+  public: 'bg-success-bg text-success',
+  hidden: 'bg-warning-bg text-warning',
+  archived: 'bg-cream-deep text-muted',
+}
+
+function PlanStateBadge({ plan }: { plan: Pick<PlanConfig, 'isActive' | 'isPublic'> }) {
+  const { label, tone } = planStateLabel(plan)
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PLAN_STATE_TONE_CLASSES[tone]}`}>{label}</span>
+  )
 }
 
 function featureIcon(enabled: boolean) {
@@ -98,9 +112,9 @@ export function PlansTab() {
     notifyDaysBefore: parseInt(form.notifyDaysBefore) || 7,
     photoQuotaMb: form.photoQuotaMb.trim() === '' ? null : parseInt(form.photoQuotaMb),
     photoRetention: form.photoRetention,
-    isActive: true,
-    isPublic: true,
-    sortOrder: 0,
+    isActive: form.isActive,
+    isPublic: form.isPublic,
+    sortOrder: parseInt(form.sortOrder) || 0,
     highlights: form.highlights,
     options: optionRulesToPayload(form.optionRules),
   })
@@ -204,6 +218,9 @@ export function PlansTab() {
       photoRetention: plan.photoRetention ?? 'TwelveMonths',
       highlights: plan.highlights ?? [],
       optionRules: optionRulesToForm(plan.options ?? []),
+      isActive: plan.isActive,
+      isPublic: plan.isPublic,
+      sortOrder: String(plan.sortOrder ?? 0),
     })
     setEditingPlan(plan)
     setShowCreate(true)
@@ -326,6 +343,7 @@ export function PlansTab() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2 flex-wrap">
                         <h3 className="font-semibold text-ink text-lg">{plan.name}</h3>
+                        <PlanStateBadge plan={plan} />
                         {plan.isSystemFree && (
                           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-cream-deep text-gold-dark">
                             Системный бесплатный
@@ -619,6 +637,43 @@ export function PlansTab() {
               value={form.notifyDaysBefore}
               onChange={(e) => setForm((f) => ({ ...f, notifyDaysBefore: e.target.value }))}
             />
+
+            {/* ARCHITECTURE_CYCLE15.md §255.1/§255.2 — visible before save, not implied. isActive
+                has its own row (a plan that's off has isPublic greyed out — there's no "public
+                archived" state per §255.2), sortOrder controls card order on /pricing. */}
+            <div className="rounded-xl border border-line p-3 flex flex-col gap-2.5">
+              <p className="text-sm font-medium text-ink-soft">Состояние на витрине</p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.isActive}
+                  onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+                  className="w-4 h-4 accent-gold"
+                />
+                <span className="text-sm text-ink-soft">Активен (иначе — архивный, назначить нельзя никому)</span>
+              </label>
+              <label
+                className={`flex items-center gap-2 ${form.isActive ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={form.isPublic}
+                  disabled={!form.isActive}
+                  onChange={(e) => setForm((f) => ({ ...f, isPublic: e.target.checked }))}
+                  className="w-4 h-4 accent-gold"
+                />
+                <span className="text-sm text-ink-soft">
+                  Показывать на витрине /pricing (снятие не отключает ничего у текущих подписчиков)
+                </span>
+              </label>
+              <Input
+                label="Порядок на витрине (меньше — выше)"
+                type="number"
+                min={0}
+                value={form.sortOrder}
+                onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
+              />
+            </div>
 
             {(editingPlan ? updateMut.isError : createMut.isError) && (
               <p className="text-sm text-danger">

@@ -12,6 +12,7 @@ import { Pagination } from '../components/ui/Pagination'
 import { BookingModal } from '../components/booking/BookingModal'
 import { CompanyPhotoGallery } from '../components/company/CompanyPhotoGallery'
 import { CompanyMapLinks } from '../components/company/CompanyMapLinks'
+import { telHref, formatPhone } from '../utils/phone'
 import type { Service } from '../types'
 
 function ServiceCard({
@@ -142,24 +143,29 @@ export function CompanyPage() {
             {company.description && (
               <p className="text-[15px] leading-[1.55] text-ink-soft mb-3.5 max-w-[520px]">{company.description}</p>
             )}
-            <div className="flex gap-5 flex-wrap text-[13.5px] text-gold-dark">
+            {/* ARCHITECTURE_CYCLE15.md §254 — vertical list, one row per contact, all left-aligned
+                on one edge (items-start on the container, items-center within each row). Order:
+                phone → address + map links → email. Was `flex gap-5 flex-wrap`, which let the
+                two-line address column stretch its single-line neighbours to match its height. */}
+            <div className="flex flex-col items-start gap-2 text-[13.5px] text-gold-dark">
+              {company.phone && (
+                <a
+                  href={telHref(company.phone)}
+                  aria-label={`Позвонить ${formatPhone(company.phone)}`}
+                  className="min-h-[44px] inline-flex items-center gap-1.5 rounded-full -mx-1 px-1 hover:text-gold-darker hover:bg-cream-deep transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2"
+                >
+                  <Icon name="phone" size={15} strokeWidth={1.6} />
+                  {formatPhone(company.phone)}
+                </a>
+              )}
               {company.address && (
-                // ARCHITECTURE_CYCLE13.md §205 — address stays plain text with the pin; the map
-                // links go on their own line below it (flex-wrap on this column, not inline with the
-                // address) so they don't run together into one line on narrow screens.
                 <div className="flex flex-col gap-1 flex-wrap">
                   <span className="flex items-center gap-1.5">
                     <Icon name="map-pin" size={15} strokeWidth={1.6} />
                     {company.address}
                   </span>
-                  <CompanyMapLinks address={company.address} cityName={company.cityName} point={company.addressPoint} />
+                  <CompanyMapLinks yandexUrl={company.yandexMapsUrl} twoGisUrl={company.twoGisUrl} />
                 </div>
-              )}
-              {company.phone && (
-                <span className="flex items-center gap-1.5">
-                  <Icon name="phone" size={15} strokeWidth={1.6} />
-                  {company.phone}
-                </span>
               )}
               {company.email && (
                 <span className="flex items-center gap-1.5">

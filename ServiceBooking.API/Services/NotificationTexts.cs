@@ -21,6 +21,7 @@ public static class NotificationTexts
         NotificationType.BookingRescheduled => "Перенос записи",
         NotificationType.StaffBookingCreated => "Уведомление сотруднику: новая запись",
         NotificationType.StaffBookingCancelled => "Уведомление сотруднику: отмена записи",
+        NotificationType.StaffBookingRescheduled => "Уведомление сотруднику: перенос записи",
         _ => "Уведомление",
     };
 

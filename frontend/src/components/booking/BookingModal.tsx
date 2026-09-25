@@ -17,6 +17,7 @@ import { useLegalText } from '../../hooks/useLegalText'
 import { getBookingErrorMessage } from '../../utils/bookingError'
 import { isRussianPhone } from '../../utils/phone'
 import { findSection, splitLegalSections } from '../../utils/legalSections'
+import { applyLegalRuntimeValues } from '../../utils/legalRuntimeValues'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
 import { BookingCalendar } from './BookingCalendar'
 import type { Company, Service } from '../../types'
@@ -803,14 +804,23 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                     <>
                       <div
                         className="legal-content [&_a]:text-gold [&_a]:hover:text-gold-dark [&_p]:mb-0"
-                        dangerouslySetInnerHTML={{ __html: (bookingNoticeShort ?? bookingNoticeFull)!.html }}
+                        dangerouslySetInnerHTML={{
+                          // ARCHITECTURE_CYCLE15.md §256 — applied fresh on every render, never
+                          // baked into the cached legal text (`useLegalText`), so two different
+                          // companies in the same session never leak each other's name (R2).
+                          __html: applyLegalRuntimeValues((bookingNoticeShort ?? bookingNoticeFull)!.html, {
+                            companyName: company?.name ?? null,
+                          }),
+                        }}
                       />
                       {bookingNoticeFull && bookingNoticeShort && (
                         <details className="mt-1">
                           <summary className="cursor-pointer text-gold hover:text-gold-dark inline">Подробнее</summary>
                           <div
                             className="legal-content text-left mt-2 [&_p]:mb-2 [&_a]:text-gold [&_a]:hover:text-gold-dark"
-                            dangerouslySetInnerHTML={{ __html: bookingNoticeFull.html }}
+                            dangerouslySetInnerHTML={{
+                              __html: applyLegalRuntimeValues(bookingNoticeFull.html, { companyName: company?.name ?? null }),
+                            }}
                           />
                         </details>
                       )}

@@ -31,6 +31,13 @@ export interface PlanForm {
   /** optionId -> rule. An option absent here is Unavailable, matching the contract's "missing means
    *  Unavailable" rule for AdminPlanDto.options. */
   optionRules: Record<string, { availability: OptionAvailability; includedQuantity: string }>
+  // ARCHITECTURE_CYCLE15.md §255.1 — these three used to be sent as hardcoded constants
+  // (isActive: true, isPublic: true, sortOrder: 0) on every save, silently putting any plan back on
+  // the storefront, reactivating deactivated plans, and resetting card order on /pricing. Now they
+  // are real form fields, visible before the user clicks "Сохранить"/"Создать", not implied.
+  isActive: boolean
+  isPublic: boolean
+  sortOrder: string
 }
 
 export const defaultForm: PlanForm = {
@@ -49,6 +56,10 @@ export const defaultForm: PlanForm = {
   photoRetention: 'TwelveMonths',
   highlights: [],
   optionRules: {},
+  // §255.1 — today's default behaviour, but now visible in the form before "Создать" is pressed.
+  isActive: true,
+  isPublic: true,
+  sortOrder: '0',
 }
 
 export function optionRulesToForm(rules: PlanOptionRuleDto[]): PlanForm['optionRules'] {

@@ -13,4 +13,10 @@ public enum NotificationType
     BookingRescheduled,
     StaffBookingCreated,
     StaffBookingCancelled,
+
+    // ARCHITECTURE_CYCLE15.md §251 p.4/§257.6 — appended at the end (append-only enum, bit position in
+    // CompanyNotificationSettings.EnabledTypeMask). Queued only when a CLIENT reschedules their own
+    // booking (StaffPushScheduler.OnBookingRescheduledAsync) — staff rescheduling never queues this,
+    // same rule StaffBookingCreated already applies to the master's own action.
+    StaffBookingRescheduled,
 }

@@ -22,8 +22,8 @@
     },
     {
       "type": "TermsOwner",
-      "version": "2026-09-22-draft",
-      "effectiveFrom": "2026-09-22",
+      "version": "2026-09-25-draft",
+      "effectiveFrom": "2026-09-25",
       "isDraft": true,
       "changeKind": "Material",
       "gate": "OwnerScope",
@@ -57,7 +57,7 @@
     }
   ],
   "uiTexts": [
-    { "key": "BookingNotice", "version": "2026-09-22-draft", "isDraft": true, "file": "05-booking-notice.html" },
+    { "key": "BookingNotice", "version": "2026-09-25-draft", "isDraft": true, "file": "05-booking-notice.html" },
     { "key": "TemplateAdWarning", "version": "2026-09-22-draft", "isDraft": true, "file": "07-template-ad-warning.html" },
     { "key": "UnsubscribePage", "version": "2026-09-22-draft", "isDraft": true, "file": "08-unsubscribe-page.html" },
     { "key": "PhotoConsent", "version": "2026-09-22-draft", "isDraft": true, "file": "10-photo-consent.html" },
