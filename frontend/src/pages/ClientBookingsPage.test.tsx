@@ -86,3 +86,64 @@ describe('ClientBookingsPage — §286 reschedule button gating', () => {
     expect(screen.queryByRole('button', { name: 'Перенести' })).not.toBeInTheDocument()
   })
 })
+
+// ARCHITECTURE_CYCLE17.md §304.4/§305.2 (US-17-06, US-17-02, C15-5, C15-6.1) — no more local
+// differenceInHours-based gating; cancel button follows the server flag, and the reschedule
+// explanation text uses the company's actual clientRescheduleMinHours.
+describe('ClientBookingsPage — §304.4 cancel button gating (server-authoritative, C15-5)', () => {
+  it('shows "Отменить" when the server says clientCancelAllowed: true', async () => {
+    getClientBookings.mockResolvedValue([makeBooking({ clientCancelAllowed: true })])
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Отменить' })).toBeInTheDocument()
+  })
+
+  it('hides "Отменить" when clientCancelAllowed: false', async () => {
+    getClientBookings.mockResolvedValue([makeBooking({ clientCancelAllowed: false })])
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Стрижка')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'Отменить' })).not.toBeInTheDocument()
+  })
+
+  it('shows "Отменить" when the field is absent (old cache) — server decides on submit, §304.4', async () => {
+    getClientBookings.mockResolvedValue([makeBooking()])
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Отменить' })).toBeInTheDocument()
+  })
+
+  it('no local time arithmetic is used to gate the button (grep-verifiable via absence of date-fns differenceInHours import)', async () => {
+    // Regression for the removed `canCancelBooking`: a booking far in the past with
+    // clientCancelAllowed: true must still show the button, and one far in the future with
+    // clientCancelAllowed: false must still hide it — proving the decision is server-driven.
+    getClientBookings.mockResolvedValue([
+      makeBooking({ id: 'past', date: '2020-01-01', clientCancelAllowed: true }),
+    ])
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Отменить' })).toBeInTheDocument()
+  })
+})
+
+describe('ClientBookingsPage — §305.2 reschedule explanation text (US-17-02, C15-6.1)', () => {
+  it('shows the company-specific hint when reschedule is disallowed with a known window', async () => {
+    getClientBookings.mockResolvedValue([
+      makeBooking({ clientRescheduleAllowed: false, clientRescheduleMinHours: 24 }),
+    ])
+    renderPage()
+    expect(await screen.findByText('Перенести можно не позже чем за 24 ч до визита')).toBeInTheDocument()
+  })
+
+  it('shows "Перенести уже нельзя" when the window is 0', async () => {
+    getClientBookings.mockResolvedValue([
+      makeBooking({ clientRescheduleAllowed: false, clientRescheduleMinHours: 0 }),
+    ])
+    renderPage()
+    expect(await screen.findByText('Перенести уже нельзя')).toBeInTheDocument()
+  })
+
+  it('shows no hint when clientRescheduleMinHours is absent (old cache) — unchanged from before the cycle', async () => {
+    getClientBookings.mockResolvedValue([makeBooking({ clientRescheduleAllowed: false })])
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Стрижка')).toBeInTheDocument())
+    expect(screen.queryByText(/Перенести можно/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Перенести уже нельзя')).not.toBeInTheDocument()
+  })
+})

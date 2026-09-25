@@ -501,6 +501,14 @@ export interface Booking {
   clientRescheduleMinHours?: number | null
   /** API_CONTRACT_CYCLE15.md §286 — replaces the 14 days hardcoded into the reschedule date grid. */
   companyBookingHorizonDays?: number | null
+  /**
+   * API_CONTRACT_CYCLE17.md §323 — computed ONLY on `GET /bookings/client`, same nullability
+   * convention as `clientRescheduleAllowed`: `null`/absent means "server didn't compute it", and the
+   * "Отменить" button must still render and let the server answer (409 = too late, per §322.3), not
+   * be hidden by a client-side guess. NOT the same rule set as `clientRescheduleAllowed` — cancelling
+   * doesn't require `company.allowSelfBooking` or a plan's online-booking permission.
+   */
+  clientCancelAllowed?: boolean | null
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'
