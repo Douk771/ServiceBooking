@@ -54,23 +54,8 @@ public sealed class TrialLifecycleTask(
         var windowsClosed = await RunPhaseAsync("close-window", () => CloseExpiredWindowsAsync(now, ct), phaseFailures);
         var warned = await RunPhaseAsync("warn", () => WarnApproachingExpiryAsync(now, ct), phaseFailures);
 
-        var expired = 0;
-        var alreadyHandled = 0;
-        var failedAccounts = 0;
-        string? error = null;
-        try
-        {
-            (expired, alreadyHandled, failedAccounts, error) = await ExpireTrialsAsync(now, ct);
-        }
-        catch (OperationCanceledException)
-        {
-            throw; // time budget / host shutdown — not a phase failure, must still unwind.
-        }
-        catch (Exception ex)
-        {
-            phaseFailures.Add("expire");
-            logger.LogError(ex, "trial-lifecycle: phase expire failed outright");
-        }
+        var (expired, alreadyHandled, failedAccounts, error) = await RunPhaseAsync(
+            "expire", () => ExpireTrialsAsync(now, ct), phaseFailures, (0, 0, 0, (string?)null));
 
         // N6 (code review) — each phase counter is now a true "rows actually changed" count (see each
         // phase's own comment below for what it no longer over-counts).
@@ -81,6 +66,19 @@ public sealed class TrialLifecycleTask(
 
         var scanned = windowsOpened + windowsClosed + warned + expired + alreadyHandled + failedAccounts;
         var affected = windowsOpened + windowsClosed + warned + expired + alreadyHandled;
+
+        // Н1 (code review, cycle 18 3rd pass) — NOT applied as originally worded. The finding asked for
+        // failedAccounts > 0 to always set a non-null Error, matching DataRetentionTask. That directly
+        // contradicts an already-accepted, already-tested design decision from an EARLIER cycle-18 pass:
+        // Cycle18TrialLifecycleTests.cs's CY18L-19 (`FailedIteration_InExpirePhase_...`) asserts
+        // `outcome.Error.Should().BeNull(...)` specifically BECAUSE "a single poisoned account is
+        // isolated per-account (N4) — it must never surface as a phase-level Error" (that test's own
+        // wording). Setting Error here on any per-account failure would make one permanently-broken
+        // account (e.g. a row an admin corrupted by hand) page an operator every single hour forever,
+        // which is the false-alarm-fatigue failure mode N4's isolation was built to avoid in the first
+        // place — the opposite problem from the one Н1 is trying to fix. Left as a customer decision
+        // (see backend handoff report) rather than silently picking a side and breaking a test I do not
+        // own; `failed-accounts=N` still reaches the free-text `summary` exactly as before.
         var combinedError = phaseFailures.Count > 0
             ? $"{phaseFailures.Count} of 4 trial-lifecycle phase(s) failed outright: {string.Join(", ", phaseFailures)}" +
               (error is not null ? $" | {error}" : string.Empty)
@@ -107,7 +105,16 @@ public sealed class TrialLifecycleTask(
     /// <summary>N4 (code review) — isolates a phase throwing OUTRIGHT (as opposed to one account inside
     /// it failing, which each phase already isolates internally below) from aborting the phases after
     /// it. Mirrors <c>DataRetentionTask</c>'s per-rule try/catch at the phase granularity.</summary>
-    private async Task<int> RunPhaseAsync(string phaseName, Func<Task<int>> phase, List<string> phaseFailures)
+    private Task<int> RunPhaseAsync(string phaseName, Func<Task<int>> phase, List<string> phaseFailures) =>
+        RunPhaseAsync(phaseName, phase, phaseFailures, 0);
+
+    /// <summary>N7 (code review, cycle 18 3rd pass) — a single generic home for the "isolate a phase
+    /// throwing OUTRIGHT from aborting the phases after it" wrapper (mirrors <c>DataRetentionTask</c>'s
+    /// per-rule try/catch at the phase granularity), used both by the three <c>int</c>-returning phases
+    /// and by <see cref="ExpireTrialsAsync"/>'s tuple return — previously duplicated inline in
+    /// <see cref="ExecuteAsync"/> purely because its result type didn't fit the <c>int</c> overload.</summary>
+    private async Task<TResult> RunPhaseAsync<TResult>(
+        string phaseName, Func<Task<TResult>> phase, List<string> phaseFailures, TResult failureResult)
     {
         try
         {
@@ -121,7 +128,7 @@ public sealed class TrialLifecycleTask(
         {
             phaseFailures.Add(phaseName);
             logger.LogError(ex, "trial-lifecycle: phase {Phase} failed outright", phaseName);
-            return 0;
+            return failureResult;
         }
     }
 
@@ -207,11 +214,22 @@ public sealed class TrialLifecycleTask(
     private async Task<int> CloseExpiredWindowsAsync(DateTime now, CancellationToken ct)
     {
         var closed = 0;
+        // Б2 (code review, cycle 18 3rd pass) — a keyset cursor is required here too, same as phase 3/4:
+        // an account whose iteration THREW (caught below, DiscardFailedIterationChanges rolls the
+        // in-memory mutation back) still matches this WHERE on the next page, because
+        // TrialMailingClosureLoggedAtUtc was never actually committed for it. Relying on "the phase
+        // mutates the column it filters on" to progress the pages, as the old doc comment on
+        // WarnApproachingExpiryAsync assumed only phase 3 needed a cursor, silently breaks the moment
+        // >=BatchSize accounts in a row fail to save (e.g. a read-only DB failover) — the page never
+        // shrinks below BatchSize, so `break` never fires and the pass spins until the host's time
+        // budget runs out, starving every phase after this one every single hour.
+        var cursor = Guid.Empty;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
 
             var candidates = await db.BillingAccounts
+                .Where(a => a.Id > cursor)
                 .Where(a => a.TrialMailingWindowEndsAtUtc != null && a.TrialMailingWindowEndsAtUtc <= now)
                 .Where(a => a.TrialMailingClosureLoggedAtUtc == null)
                 .OrderBy(a => a.Id)
@@ -257,6 +275,7 @@ public sealed class TrialLifecycleTask(
                 }
             }
 
+            cursor = candidates[^1].Id;
             db.ChangeTracker.Clear();
 
             if (candidates.Count < BatchSize) break;
@@ -276,11 +295,14 @@ public sealed class TrialLifecycleTask(
             .Where(p => p.IsSystemTrial).Select(p => (Guid?)p.Id).FirstOrDefaultAsync(ct);
         if (systemTrialId is null) return 0; // no trial plan configured at all — nothing is "on trial"
 
-        // A keyset cursor is required here, unlike the other three phases: those each mutate the very
-        // column their own WHERE clause filters on, so a processed row naturally falls out of the next
-        // page. Here, a row that was just warned (or found to need no warning yet) still matches the
-        // outer "not expired yet" WHERE on the NEXT iteration too — without `a.Id > cursor`, a table
-        // with more than one batch's worth of live trials would re-select the same first page forever.
+        // A keyset cursor is required here for the same reason it now is in phases 2 and 4 (Б2, code
+        // review cycle 18 3rd pass): a row that was just warned (or found to need no warning yet) still
+        // matches the outer "not expired yet" WHERE on the NEXT iteration too — without `a.Id > cursor`,
+        // a table with more than one batch's worth of live trials would re-select the same first page
+        // forever. Phase 1 is the only one of the four that can still get away without one, because
+        // StartIfDueAsync's own guards make a re-matched row here rare enough that it isn't load-bearing
+        // for termination the way it is in phases 2-4 — but it takes one anyway (see its own comment),
+        // since a failed iteration there is exactly as capable of leaving the filtered column unmutated.
         var cursor = Guid.Empty;
         while (true)
         {
@@ -355,6 +377,13 @@ public sealed class TrialLifecycleTask(
         var failed = 0;
         string? error = null;
 
+        // Б2 (code review, cycle 18 3rd pass) — same keyset cursor as phases 2/3, for the same reason:
+        // an account whose iteration THREW never actually commits TrialExpiredHandledAtUtc, so it still
+        // matches this WHERE on the next page. Without `a.Id > cursor`, >=BatchSize consecutively
+        // failing accounts (e.g. a read-only DB failover — SELECT still works, UPDATE/INSERT doesn't)
+        // makes candidates.Count == BatchSize forever, `break` never fires, and this phase alone spins
+        // until the host's time budget runs out — silently starving trial expiry every single pass.
+        var cursor = Guid.Empty;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -362,6 +391,7 @@ public sealed class TrialLifecycleTask(
             // IX_BillingAccounts_TrialExpiry — "date has passed and no transition has happened yet",
             // deliberately not "date == today" so a missed pass still catches up (US-18-13).
             var candidates = await db.BillingAccounts
+                .Where(a => a.Id > cursor)
                 .Where(a => a.TrialEndsAtUtc != null && a.TrialEndsAtUtc < now && a.TrialExpiredHandledAtUtc == null)
                 .OrderBy(a => a.Id)
                 .Take(BatchSize)
@@ -399,63 +429,63 @@ public sealed class TrialLifecycleTask(
             {
                 try
                 {
-                if (!sub.TryGetValue(account.Id, out var accountSub) ||
-                    systemTrial is null || accountSub.PlanConfigId != systemTrial.Id)
-                {
-                    // No subscription row at all, or the account was already moved OFF the trial plan
-                    // by an admin/owner action before the trial's own end date materialized (e.g. a paid
-                    // plan assigned early) — this task must not overwrite a plan decision someone else
-                    // already made. Either way there is nothing left to transition; the account is still
-                    // marked handled so it stops being re-selected by this index every pass forever.
-                    account.TrialExpiredHandledAtUtc = now;
+                    if (!sub.TryGetValue(account.Id, out var accountSub) ||
+                        systemTrial is null || accountSub.PlanConfigId != systemTrial.Id)
+                    {
+                        // No subscription row at all, or the account was already moved OFF the trial plan
+                        // by an admin/owner action before the trial's own end date materialized (e.g. a
+                        // paid plan assigned early) — this task must not overwrite a plan decision someone
+                        // else already made. Either way there is nothing left to transition; the account
+                        // is still marked handled so it stops being re-selected by this index every pass.
+                        account.TrialExpiredHandledAtUtc = now;
+                        await db.SaveChangesAsync(ct);
+                        alreadyHandled++;
+                        continue;
+                    }
+
+                    var oldPlanConfigId = accountSub.PlanConfigId;
+                    var oldPaidUntil = accountSub.PaidUntil;
+                    var oldIsActive = accountSub.IsActive;
+
+                    // §337.3 — exactly this and nothing more: plan swap, PaidUntil/MailingUntilUtc
+                    // cleared, trial option rows dated out. No Remove/RemoveRange/ExecuteDelete anywhere
+                    // in this method, no company/employee/booking/photo/template touched, IsActive of
+                    // anything but this ONE subscription row left alone.
+                    accountSub.PlanConfigId = systemFree.Id;
+                    accountSub.PaidUntil = null;
+                    accountSub.IsActive = true;
+                    accountSub.MailingUntilUtc = null;
+                    accountSub.UpdatedAt = now;
+
+                    foreach (var option in trialOptions.Where(o => o.BillingAccountId == account.Id))
+                        option.EndsAtUtc = now;
+
+                    account.TrialExpiredHandledAtUtc = now; // Т3: 30-day notice lifetime counts from here
+
+                    db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
+                    {
+                        Id = Guid.NewGuid(),
+                        OwnerUserId = account.OwnerUserId,
+                        ChangedByUserId = TrialActors.System,
+                        ChangedAt = now,
+                        OldPlanConfigId = oldPlanConfigId,
+                        NewPlanConfigId = systemFree.Id,
+                        OldPaidUntil = oldPaidUntil,
+                        NewPaidUntil = null,
+                        OldIsActive = oldIsActive,
+                        NewIsActive = true,
+                        BillingAccountId = account.Id,
+                        ChangeKind = SubscriptionChangeKind.TrialExpired,
+                        Comment = $"Пробный период закончился {account.TrialEndsAtUtc:dd.MM.yyyy}, подписка переведена на бесплатный тариф",
+                    });
+                    // N-fix (code review) — SaveChangesAsync per ACCOUNT, not per batch: this is exactly
+                    // the journal write the task's own doc comment (top of file) flagged as a known gap
+                    // when reload was only applied to account/sub. A batched save let a LATER account's
+                    // failure trigger this account's reload-only recovery while this Added TrialExpired
+                    // log row, already in the same pending batch, still got persisted — asserting a plan
+                    // transition that, for this account, may never actually have committed.
                     await db.SaveChangesAsync(ct);
-                    alreadyHandled++;
-                    continue;
-                }
-
-                var oldPlanConfigId = accountSub.PlanConfigId;
-                var oldPaidUntil = accountSub.PaidUntil;
-                var oldIsActive = accountSub.IsActive;
-
-                // §337.3 — exactly this and nothing more: plan swap, PaidUntil/MailingUntilUtc cleared,
-                // trial option rows dated out. No Remove/RemoveRange/ExecuteDelete anywhere in this
-                // method, no company/employee/booking/photo/template touched, IsActive of anything but
-                // this ONE subscription row left alone.
-                accountSub.PlanConfigId = systemFree.Id;
-                accountSub.PaidUntil = null;
-                accountSub.IsActive = true;
-                accountSub.MailingUntilUtc = null;
-                accountSub.UpdatedAt = now;
-
-                foreach (var option in trialOptions.Where(o => o.BillingAccountId == account.Id))
-                    option.EndsAtUtc = now;
-
-                account.TrialExpiredHandledAtUtc = now; // Т3: the 30-day notice lifetime counts from here
-
-                db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
-                {
-                    Id = Guid.NewGuid(),
-                    OwnerUserId = account.OwnerUserId,
-                    ChangedByUserId = TrialActors.System,
-                    ChangedAt = now,
-                    OldPlanConfigId = oldPlanConfigId,
-                    NewPlanConfigId = systemFree.Id,
-                    OldPaidUntil = oldPaidUntil,
-                    NewPaidUntil = null,
-                    OldIsActive = oldIsActive,
-                    NewIsActive = true,
-                    BillingAccountId = account.Id,
-                    ChangeKind = SubscriptionChangeKind.TrialExpired,
-                    Comment = $"Пробный период закончился {account.TrialEndsAtUtc:dd.MM.yyyy}, подписка переведена на бесплатный тариф",
-                });
-                // N-fix (code review) — SaveChangesAsync per ACCOUNT, not per batch: this is exactly the
-                // journal write the task's own doc comment (top of file) flagged as a known gap when
-                // reload was only applied to account/sub. A batched save let a LATER account's failure
-                // trigger this account's reload-only recovery while this Added TrialExpired log row,
-                // already in the same pending batch, still got persisted — asserting a plan transition
-                // that, for this account, may never actually have committed.
-                await db.SaveChangesAsync(ct);
-                transitioned++;
+                    transitioned++;
                 }
                 catch (OperationCanceledException)
                 {
@@ -473,10 +503,23 @@ public sealed class TrialLifecycleTask(
                 }
             }
 
+            cursor = candidates[^1].Id;
             db.ChangeTracker.Clear();
 
             if (candidates.Count < BatchSize) break;
         }
+
+        // Н1/Б2 (code review, cycle 18 3rd pass) — deliberately narrower than "any per-account failure
+        // sets Error": CY18L-19 already asserts the opposite for a single poisoned account isolated
+        // among otherwise-successful ones (N4's whole point — an operator must not get paged every hour
+        // over one bad row). What genuinely needs to be visible is a pass that made NO PROGRESS AT ALL
+        // despite having work to do — e.g. a read-only DB failover where every account in the batch
+        // fails to save (CY18L-24) — because that is functionally indistinguishable from trial expiry
+        // having silently stopped altogether, which R5/US-18-11's fail-closed visibility requirement is
+        // exactly meant to catch.
+        if (error is null && failed > 0 && transitioned == 0 && alreadyHandled == 0)
+            error = $"trial-lifecycle: {failed} account(s) failed to expire and NONE succeeded this pass " +
+                     "— see logs for account IDs (fail-closed visibility, R5/US-18-11).";
 
         return (transitioned, alreadyHandled, failed, error);
     }
