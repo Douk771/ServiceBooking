@@ -8,6 +8,7 @@ import type { AdminChannelDto, AdminChannelSummary, PlatformSettings, Paged } fr
 const listChannels = vi.fn()
 const summary = vi.fn()
 const getSettings = vi.fn()
+const updateSettings = vi.fn()
 
 vi.mock('../../api/platformSettings', () => ({
   adminNotificationsApi: {
@@ -16,7 +17,7 @@ vi.mock('../../api/platformSettings', () => ({
     getSettings: (...args: unknown[]) => getSettings(...args),
     suspend: vi.fn(),
     resume: vi.fn(),
-    updateSettings: vi.fn(),
+    updateSettings: (...args: unknown[]) => updateSettings(...args),
   },
 }))
 
@@ -63,6 +64,9 @@ function platformSettings(): PlatformSettings {
     channelIdleDays: 3,
     pricingPublicEnabled: false,
     pricingPublicBlockedReason: null,
+    trialDurationDays: 14,
+    trialMailingWindowDays: 7,
+    trialWarningThresholdsDays: [7, 3, 1],
   }
 }
 
@@ -79,8 +83,52 @@ beforeEach(() => {
   listChannels.mockReset()
   summary.mockReset()
   getSettings.mockReset()
+  updateSettings.mockReset()
   summary.mockResolvedValue(emptySummary())
   getSettings.mockResolvedValue(platformSettings())
+})
+
+describe('NotificationsAdminTab — trial settings (API_CONTRACT_CYCLE18.md §367)', () => {
+  it('blocks saving and never calls the API when the mailing window is set longer than the trial duration', async () => {
+    const user = userEvent.setup()
+    listChannels.mockResolvedValue(channelsPage([]))
+    renderTab()
+
+    const durationInput = await screen.findByLabelText('Длительность (дней)')
+    const windowInput = screen.getByLabelText('Окно рассылок (дней)')
+
+    await user.clear(windowInput)
+    await user.type(windowInput, '20')
+    await user.clear(durationInput)
+    await user.type(durationInput, '14')
+
+    expect(await screen.findByText('Окно рассылок не может быть длиннее длительности пробного периода.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    expect(updateSettings).not.toHaveBeenCalled()
+    expect(screen.getAllByText('Окно рассылок не может быть длиннее длительности пробного периода.').length).toBeGreaterThan(0)
+  })
+
+  it('saves trial settings alongside the existing channel settings when valid', async () => {
+    const user = userEvent.setup()
+    listChannels.mockResolvedValue(channelsPage([]))
+    updateSettings.mockResolvedValue(platformSettings())
+    renderTab()
+
+    await screen.findByLabelText('Длительность (дней)')
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() =>
+      expect(updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trialDurationDays: 14,
+          trialMailingWindowDays: 7,
+          trialWarningThresholdsDays: [7, 3, 1],
+        }),
+      ),
+    )
+  })
 })
 
 describe('NotificationsAdminTab — transport in the channel list (§114.3)', () => {

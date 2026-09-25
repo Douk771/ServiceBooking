@@ -198,12 +198,32 @@ function PlatformSettingsCard() {
   // "on" while the server never applied it (API_CONTRACT_CYCLE11.md §119 п. 1).
   const [pricingPublicEnabled, setPricingPublicEnabled] = useState(false)
 
+  // Cycle 18 (API_CONTRACT_CYCLE18.md §367) — "настройки пробного периода" (Д17: not "настройки
+  // акции"). Editing these affects only NEW trials (Д19) — already-issued trials keep their own
+  // snapshot, this screen doesn't and can't touch that.
+  const [trialDurationDays, setTrialDurationDays] = useState('14')
+  const [trialMailingWindowDays, setTrialMailingWindowDays] = useState('7')
+  const [trialThresholds, setTrialThresholds] = useState('7,3,1')
+
   useEffect(() => {
     if (!data) return
     setPrice(data.channelPricePerMonth != null ? String(data.channelPricePerMonth) : '')
     setIdleDays(String(data.channelIdleDays))
     setPricingPublicEnabled(data.pricingPublicEnabled)
+    if (data.trialDurationDays != null) setTrialDurationDays(String(data.trialDurationDays))
+    if (data.trialMailingWindowDays != null) setTrialMailingWindowDays(String(data.trialMailingWindowDays))
+    if (data.trialWarningThresholdsDays != null) setTrialThresholds(data.trialWarningThresholdsDays.join(','))
   }, [data])
+
+  // Client-side courtesy check only (§367: "окно ≤ длительности") — the server is the real gate and
+  // also checks the thresholds against the wording promised by the current terms text (§367.1),
+  // which this screen has no way to know client-side.
+  const parsedTrialDuration = Number(trialDurationDays)
+  const parsedTrialMailingWindow = Number(trialMailingWindowDays)
+  const trialWindowExceedsDuration =
+    !Number.isNaN(parsedTrialDuration) &&
+    !Number.isNaN(parsedTrialMailingWindow) &&
+    parsedTrialMailingWindow > parsedTrialDuration
 
   const mut = useMutation({
     mutationFn: (nextPricingPublicEnabled: boolean) => {
@@ -215,11 +235,31 @@ function PlatformSettingsCard() {
       if (Number.isNaN(parsedIdleDays)) {
         throw new Error('Некорректный срок простоя — исправьте поле перед сохранением.')
       }
+      if (Number.isNaN(parsedTrialDuration) || parsedTrialDuration < 1) {
+        throw new Error('Некорректная длительность пробного периода — исправьте поле перед сохранением.')
+      }
+      if (Number.isNaN(parsedTrialMailingWindow) || parsedTrialMailingWindow < 1) {
+        throw new Error('Некорректное окно рассылок — исправьте поле перед сохранением.')
+      }
+      if (trialWindowExceedsDuration) {
+        throw new Error('Окно рассылок не может быть длиннее длительности пробного периода.')
+      }
+      const thresholds = trialThresholds
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s !== '')
+        .map(Number)
+      if (thresholds.length === 0 || thresholds.some((n) => Number.isNaN(n) || n < 1)) {
+        throw new Error('Некорректные пороги предупреждений — перечислите положительные числа через запятую.')
+      }
       return adminNotificationsApi.updateSettings({
         channelPricePerMonth: parsedPrice,
         channelIdleDays: parsedIdleDays,
         pricingPublicEnabled: nextPricingPublicEnabled,
         pricingPublicBlockedReason: data?.pricingPublicBlockedReason ?? null,
+        trialDurationDays: parsedTrialDuration,
+        trialMailingWindowDays: parsedTrialMailingWindow,
+        trialWarningThresholdsDays: thresholds,
       })
     },
     onSuccess: (res) => {
@@ -262,6 +302,51 @@ function PlatformSettingsCard() {
           value={idleDays}
           onChange={(e) => setIdleDays(e.target.value)}
         />
+      </div>
+
+      <div className="mt-5 pt-5 border-t border-line">
+        <h3 className="text-sm font-semibold text-ink mb-1">Настройки пробного периода</h3>
+        <p className="text-xs text-muted mb-4">
+          Действуют только на новые выдачи пробного периода — уже выданные не меняются задним числом.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div>
+            <Input
+              label="Длительность (дней)"
+              type="number"
+              min={1}
+              max={365}
+              value={trialDurationDays}
+              aria-describedby={trialWindowExceedsDuration ? 'trial-window-error' : undefined}
+              onChange={(e) => setTrialDurationDays(e.target.value)}
+            />
+          </div>
+          <div>
+            <Input
+              label="Окно рассылок (дней)"
+              type="number"
+              min={1}
+              max={365}
+              value={trialMailingWindowDays}
+              aria-describedby={trialWindowExceedsDuration ? 'trial-window-error' : undefined}
+              onChange={(e) => setTrialMailingWindowDays(e.target.value)}
+            />
+          </div>
+          <div>
+            <Input
+              label="Пороги предупреждений (дней, через запятую)"
+              value={trialThresholds}
+              onChange={(e) => setTrialThresholds(e.target.value)}
+            />
+          </div>
+        </div>
+        {trialWindowExceedsDuration && (
+          <p id="trial-window-error" className="text-xs text-danger mt-2">
+            Окно рассылок не может быть длиннее длительности пробного периода.
+          </p>
+        )}
+        {/* §367: пороги обязаны совпадать с числами, буквально названными в текущей редакции текста
+            условий активации — сервер отвечает 400 своим текстом, и он печатается дословно ниже. */}
       </div>
 
       <div className="mt-5 pt-5 border-t border-line flex items-start justify-between gap-4">
