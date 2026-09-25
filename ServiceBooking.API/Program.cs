@@ -947,6 +947,11 @@ builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Schedulin
 // TD-03-quater — the SEVENTH task, "subject-request-due-soon" (period 1 day): sends a GlitchTip signal
 // one working day before a subject request's DueAtUtc, for requests not yet Answered/Rejected.
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.SubjectRequestDueSoonTask>();
+// Cycle 18, B7 (ARCHITECTURE_CYCLE18.md §337.1) — the EIGHTH task, "trial-lifecycle" (period 1 hour):
+// self-heals missed mailing-window starts, closes ended windows, issues 7/3/1-day warnings from each
+// account's own snapshot, and materializes trial expiry onto the system Free plan (fail-closed if none
+// is configured).
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.TrialLifecycleTask>();
 
 // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
 // is registered individually (not discovered by reflection) so the list here IS the list of what runs —

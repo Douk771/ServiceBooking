@@ -28,29 +28,39 @@ public static class TrialMailingWindowStarter
         var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.Id == billingAccountId, ct);
         if (account is null) return;
 
+        await StartIfDueAsync(db, account, nowUtc, ct);
+    }
+
+    /// <summary>Shared core, also called by <c>TrialLifecycleTask</c>'s self-heal phase (§336.1 п.2) with
+    /// the account's REAL earliest channel authorization instant rather than "now" — so a missed hook is
+    /// backdated correctly instead of burning window days against the pass's own run time. Kept as one
+    /// method precisely so the two callers can never drift into two different arithmetic/journal
+    /// implementations of the same write.</summary>
+    public static async Task StartIfDueAsync(AppDbContext db, BillingAccount account, DateTime firstAuthorizedUtc, CancellationToken ct = default)
+    {
         // No trial ever granted, or the window already started once — never restart it (Д5).
         if (account.TrialStartedAtUtc is null) return;
         if (account.TrialChannelFirstAuthorizedAtUtc is not null) return;
         if (account.TrialEndsAtUtc is null || account.TrialMailingWindowDays is null) return;
 
-        account.TrialChannelFirstAuthorizedAtUtc = nowUtc;
+        account.TrialChannelFirstAuthorizedAtUtc = firstAuthorizedUtc;
         account.TrialMailingWindowEndsAtUtc = TrialWindow.WindowEnd(
-            nowUtc, account.TrialStartedAtUtc.Value, account.TrialEndsAtUtc.Value, account.TrialMailingWindowDays.Value);
+            firstAuthorizedUtc, account.TrialStartedAtUtc.Value, account.TrialEndsAtUtc.Value, account.TrialMailingWindowDays.Value);
 
-        var sub = await db.AccountSubscriptions.FirstOrDefaultAsync(s => s.BillingAccountId == billingAccountId, ct);
+        var sub = await db.AccountSubscriptions.FirstOrDefaultAsync(s => s.BillingAccountId == account.Id, ct);
         if (sub is not null)
             sub.MailingUntilUtc = account.TrialMailingWindowEndsAtUtc;
 
         // §336.3 — one journal row when the window opens, same actor convention as trial-lifecycle's
-        // own writes even though this particular row is written synchronously from the request/webhook
-        // path rather than from the background task.
+        // own writes even though this particular row can also be written synchronously from the
+        // request/webhook path rather than from the background task.
         db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
         {
             Id = Guid.NewGuid(),
             OwnerUserId = account.OwnerUserId,
             ChangedByUserId = TrialActors.System,
-            ChangedAt = nowUtc,
-            BillingAccountId = billingAccountId,
+            ChangedAt = firstAuthorizedUtc,
+            BillingAccountId = account.Id,
             ChangeKind = SubscriptionChangeKind.TrialMailingWindow,
             Comment = account.TrialMailingWindowEndsAtUtc is { } end
                 ? $"Окно бесплатных рассылок открыто, до {end:dd.MM.yyyy}"

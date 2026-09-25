@@ -97,11 +97,20 @@ public class TrialActivationService(
             .OrderByDescending(v => v.VerifiedAtUtc)
             .Select(v => v.Phone)
             .FirstOrDefaultAsync(ct);
-        // NOTE (backend report): the R7 "phone verification subsystem itself is down" case
-        // (refusal code PhoneVerificationUnavailable) is not distinguished from "not verified" here —
-        // this codebase has no existing signal for "the phone-verification adapter is unavailable" to
-        // read (PhoneVerificationOptions.Provider "stub" is the normal shipping default, not an outage
-        // marker). Left as an explicit gap for architect/code-reviewer rather than guessed at.
+        // NOTE (backend report, cycle 18 recheck): R7's PhoneVerificationUnavailable is deliberately
+        // NOT wired to IPhoneVerificationMethodAdapter.Enabled here. That flag is false under
+        // PhoneVerification:Provider = "stub" — the documented, currently-shipped default in every
+        // environment (§140.1's "невыпущенность") — and this codebase's own committed functional tests
+        // (Cycle18TrialPlanTests.ActivateTrial_WithoutVerifiedPhone_Returns409PhoneNotVerified) already
+        // require PhoneNotVerified, not PhoneVerificationUnavailable, for exactly that configuration:
+        // VerifiedPhones rows are established directly (bypassing the real MAX flow) and "stub" is
+        // treated as a normal operating mode, not an outage. Gating on Enabled would make
+        // PhoneVerificationUnavailable fire in EVERY environment that hasn't turned MAX on yet — the
+        // opposite failure from today's "unreachable", and one that contradicts an existing, passing
+        // test. There is no OTHER existing signal in this codebase for "the phone-verification adapter
+        // is unavailable" (a genuine runtime/outage condition, as opposed to the feature simply not
+        // being turned on) — left as an explicit, named gap for architect/code-reviewer rather than
+        // guessed at with a value that would just flip which of the two codes is unreachable.
         if (!canBypass && verifiedPhone is null)
             return Refuse("PhoneNotVerified", TrialLegalNotices.TrialRefusedPhoneNotVerified);
 

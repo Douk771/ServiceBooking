@@ -79,7 +79,7 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
                 DaysLeft: Math.Max(daysLeft, 0),
                 GrantSource: account.TrialGrantSource?.ToString(),
                 MailingWindow: BuildMailingWindow(account, sub, now),
-                Warning: null,
+                Warning: BuildActiveWarning(account, includes, daysLeft),
                 Includes: includes,
                 Limits: limits);
         }
@@ -191,6 +191,29 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
     /// mailing window simply doesn't mean anything yet (no trial has ever run, or it already ended
     /// without ever being on the trial plan) — distinct from "NotStarted", which means a trial IS
     /// running/available and its window specifically hasn't begun.</summary>
+    /// <summary>§337.1 phase 3 / §338.2 — the "N days left" banner. <c>TrialWarnedAtThresholdDays</c> is
+    /// written ONLY by <c>TrialLifecycleTask</c> (never by this reader, which does no threshold
+    /// arithmetic of its own): the crossing itself is the background task's job, this method just
+    /// renders whatever the account's own snapshot already says was crossed. Only 7/3/1 have canned
+    /// texts (§338.4 point 6 pins the admin setting to exactly those three numbers); an unrecognized
+    /// value on an old/foreign snapshot degrades to no banner rather than guessing at wording.</summary>
+    private static TrialWarningDto? BuildActiveWarning(BillingAccount account, IReadOnlyList<string> includes, int daysLeft)
+    {
+        var threshold = account.TrialWarnedAtThresholdDays;
+        if (threshold is null) return null;
+
+        var text = threshold switch
+        {
+            7 => string.Format(TrialLegalNotices.TrialEndingWarning7Days, account.TrialEndsAtUtc?.ToString("dd.MM.yyyy")),
+            3 => string.Format(TrialLegalNotices.TrialEndingWarning3Days, account.TrialEndsAtUtc?.ToString("dd.MM.yyyy")),
+            1 => string.Format(TrialLegalNotices.TrialEndingWarning1Day, account.TrialEndsAtUtc?.ToString("dd.MM.yyyy")),
+            _ => null,
+        };
+        if (text is null) return null;
+
+        return new TrialWarningDto("TrialExpiring", text, includes, Dismissible: true, VisibleUntilUtc: null);
+    }
+
     private static TrialMailingWindowDto NotApplicableMailingWindow() =>
         new("NotApplicable", null, null, null, string.Empty);
 
