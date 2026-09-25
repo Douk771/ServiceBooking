@@ -132,6 +132,10 @@ DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
 // checked the same "fail loud outside a developer environment" way as ValidateNotificationSecrets above,
 // but gated on ITS OWN Provider value, independent of Notifications:Provider.
 DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+// Cycle 18 code-review finding — the once-only trial check (Д6) must be enabled and its key usable
+// outside a developer environment, or Production silently starts with either "no protection at all"
+// or "every activation permanently 409s". Same "fail loud outside dev" convention as the checks above.
+DeploymentSafetyChecks.ValidateTrialSecrets(builder.Configuration, builder.Environment.EnvironmentName);
 // ARCHITECTURE_CYCLE13.md §206/§209.2 — own secret (Yandex Geocoder API key), own provider switch, own
 // unconditional check (CacheHours ≤ 720 is a licence ceiling, checked in every environment, not just
 // outside Development — see the method's own doc comment).

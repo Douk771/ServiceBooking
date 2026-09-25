@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.GreenApi;
 using ServiceBooking.API.Services.Notifications.WebPush;
@@ -658,6 +659,36 @@ public static class DeploymentSafetyChecks
                 ".env to a base64-encoded 32-byte key (openssl rand -base64 32) — see ARCHITECTURE_CYCLE14.md " +
                 "§142.3/§150.2. Rotating this key later does not lose any VERIFIED phone, only the per-MAX-" +
                 "account ceiling for accounts verified under the OLD key — see DEPLOY.md.");
+    }
+
+    /// <summary>
+    /// Code-review finding (cycle 18) — <see cref="TrialOptions.UniquenessCheckOptions.Enabled"/>'s own
+    /// doc comment already claims "DeploymentSafetyChecks refuses to start a Production instance with
+    /// this off", but nothing enforced it: a Production box could boot with the once-only check silently
+    /// disabled (Д6 says fail-CLOSED, not "run unchecked"), or with it enabled but pointed at a key that
+    /// <see cref="TrialPhoneKey.IsKeyUsable"/> would reject at grant time anyway — in which case every
+    /// single trial activation, forever, would 409 with TrialUniquenessCheckUnavailable and nobody would
+    /// know why until a real owner hit it. Outside a developer environment, both must be usable.
+    /// </summary>
+    public static void ValidateTrialSecrets(IConfiguration configuration, string environmentName)
+    {
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        var enabled = configuration.GetValue($"{TrialOptions.SectionName}:UniquenessCheck:Enabled", true);
+        if (!enabled)
+            throw new InvalidOperationException(
+                "Trial:UniquenessCheck:Enabled is false outside a developer environment. Д6 requires the " +
+                "once-only trial check to fail CLOSED, not run disabled — this flag may only be false in " +
+                "tests. Remove the override (or set it to true) before deploying.");
+
+        var phoneKeyHmac = configuration[$"{TrialOptions.SectionName}:PhoneKeyHmac"];
+        var phoneKeyId = configuration[$"{TrialOptions.SectionName}:PhoneKeyId"];
+        if (!TrialPhoneKey.IsKeyUsable(phoneKeyHmac) || string.IsNullOrWhiteSpace(phoneKeyId))
+            throw new InvalidOperationException(
+                "Trial:UniquenessCheck:Enabled is true but Trial:PhoneKeyHmac/Trial:PhoneKeyId is missing, " +
+                "not valid base64, or too short. With the check enabled and no usable key, EVERY trial " +
+                "activation will 409 TrialUniquenessCheckUnavailable. Set TRIAL_PHONE_KEY_HMAC and " +
+                "TRIAL_PHONE_KEY_ID in .env (openssl rand -base64 32 for the key).");
     }
 
     /// <summary>ARCHITECTURE_CYCLE14.md §144.2 (Q2) — mirrors <see cref="ValidateTransportRegistryCompleteness"/>
