@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -24,15 +25,27 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
         var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId, ct);
         if (account is null) return null;
 
-        var now = DateTime.UtcNow;
-        var plan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.IsSystemTrial, ct);
         var sub = await db.AccountSubscriptions.Include(s => s.PlanConfig)
             .FirstOrDefaultAsync(s => s.BillingAccountId == account.Id, ct);
+        var effectivePlan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
+        return await BuildAsync(account, sub, effectivePlan, ct);
+    }
+
+    /// <summary>Code-review finding (cycle 18 recheck) — OwnerSubscriptionService.BuildAsync already
+    /// loads the account's AccountSubscription and calls GetEffectivePlanForAccountAsync itself before
+    /// asking this reader for the §365 "same TrialStateDto" card; re-loading/re-resolving them here on
+    /// every GET /api/billing/subscription was ~5 avoidable round-trips on the owner's most-visited
+    /// screen. Callers that already have both may pass them in; <see cref="GetAsync"/> above still loads
+    /// them itself for its own direct GET /api/billing/trial call site.</summary>
+    public async Task<TrialStateDto?> BuildAsync(
+        BillingAccount account, AccountSubscription? sub, EffectivePlan effectivePlan, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var plan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.IsSystemTrial, ct);
         var subUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
         var onTrialNow = subUsable && plan is not null && sub!.PlanConfigId == plan.Id;
         var everHadTrial = account.TrialStartedAtUtc is not null;
 
-        var effectivePlan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
         var includes = OwnerSubscriptionService.BuildPlanIncludes(effectivePlan);
         var limits = new TrialLimitsDto(effectivePlan.AccountMaxCompanies, effectivePlan.AccountMaxEmployees, effectivePlan.PhotoQuotaMb);
 
@@ -90,7 +103,7 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
                 EndsAt: account.TrialEndsAtUtc,
                 DaysLeft: 0,
                 GrantSource: account.TrialGrantSource?.ToString(),
-                MailingWindow: NotApplicableMailingWindow(),
+                MailingWindow: BuildExpiredMailingWindow(account),
                 Warning: new TrialWarningDto(
                     "TrialExpired",
                     string.Format(TrialLegalNotices.TrialExpiredSwitchedToFree, account.TrialEndsAtUtc?.ToString("dd.MM.yyyy")),
@@ -180,6 +193,21 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
     /// running/available and its window specifically hasn't begun.</summary>
     private static TrialMailingWindowDto NotApplicableMailingWindow() =>
         new("NotApplicable", null, null, null, string.Empty);
+
+    /// <summary>Code-review finding (cycle 18 recheck) — a trial that already ended must not report
+    /// "NotApplicable" (§362.1: reserved for "mailings were never part of this trial's option matrix")
+    /// when the owner DID authorize a channel and the window simply closed; otherwise
+    /// <c>TrialMailingWindowClosed</c> (API_CONTRACT_CYCLE18.md §363) is unreachable in the Expired
+    /// state and the owner sees no explanation for mailings stopping (TrialCard.tsx hides an empty
+    /// text). "NotApplicable" is reserved for trials where the window never started at all.</summary>
+    private static TrialMailingWindowDto BuildExpiredMailingWindow(BillingAccount account)
+    {
+        if (account.TrialChannelFirstAuthorizedAtUtc is null) return NotApplicableMailingWindow();
+
+        var end = account.TrialMailingWindowEndsAtUtc;
+        return new TrialMailingWindowDto("Ended", account.TrialChannelFirstAuthorizedAtUtc, end, DaysLeft: 0,
+            Text: string.Format(TrialLegalNotices.TrialMailingWindowClosed, end?.ToString("dd.MM.yyyy"), account.TrialEndsAtUtc?.ToString("dd.MM.yyyy")));
+    }
 
     private static TrialMailingWindowDto BuildMailingWindow(BillingAccount account, AccountSubscription sub, DateTime now)
     {
