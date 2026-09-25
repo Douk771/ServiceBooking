@@ -782,8 +782,8 @@ export interface components {
             tag: string;
             /**
              * @description ОТНОСИТЕЛЬНЫЙ путь; service worker сам добавляет origin. Абсолютный URL открыл бы дорогу
-             *     к открытию произвольного адреса.
-             * @example /cabinet?tab=bookings&booking=3f1c2e44-0000-0000-0000-000000000000
+             *     к открытию произвольного адреса. Ведёт на экран записей мастера (маршрут `/my-bookings`).
+             * @example /my-bookings?booking=3f1c2e44-0000-0000-0000-000000000000
              */
             url: string;
         };

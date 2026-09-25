@@ -121,6 +121,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # ARCHITECTURE_CYCLE16.md §248.2 (TD-07). Six generated files, six contracts — regenerate all of
+      # them and fail if the regeneration doesn't match what's committed, so a contract edit that forgot
+      # to run `npm run types:api*` is caught here instead of surfacing as a silently broken screen.
+      - name: API types must match committed contracts (TD-07)
+        run: |
+          npm run types:api && npm run types:api9 \
+            && npm run types:api:cycle10 && npm run types:api:cycle11 \
+            && npm run types:api:cycle13 && npm run types:api:cycle14 \
+            && npm run types:api:cycle16
+          git diff --exit-code -- src/types \
+            || { echo "::error::src/types/*.generated.ts разошлись с contracts/**/openapi.yaml. Запустите npm run types:api* и закоммитьте результат (ARCHITECTURE_CYCLE16.md §248.2)"; exit 1; }
+
+      # ARCHITECTURE_CYCLE16.md §248.3 (TD-07/R3). Scope is deliberately four specs, not all eight —
+      # see contracts/redocly.yaml for why the other five stay out until a following cycle fixes their
+      # pre-existing drift.
+      - name: Lint API contracts (TD-07)
+        run: |
+          npx @redocly/cli lint --config ../contracts/redocly.yaml \
+            ../contracts/cycle8/servicebooking-invariant.openapi.yaml \
+            ../contracts/cycle13/openapi.yaml \
+            ../contracts/cycle14/openapi.yaml \
+            ../contracts/cycle16/openapi.yaml
+
+      # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
+      # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
+      # step doesn't flap on tooling the shipped bundle never includes.
+      - name: Audit production dependencies (TD-06)
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Lint
         run: npm run lint
 
