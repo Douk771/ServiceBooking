@@ -455,6 +455,16 @@ cd frontend && npm install && npm run dev
 Миграции применяются автоматически при старте API (`Database.MigrateAsync()`), вместе с ними
 сидятся роли и SuperAdmin-аккаунт из конфига.
 
+**Генерировать миграции — только через закреплённую версию `dotnet-ef`** (ARCHITECTURE_CYCLE17.md
+§308.2, C15-3): `dotnet tool restore && dotnet dotnet-ef migrations add <Имя> --project
+ServiceBooking.Infrastructure --startup-project ServiceBooking.API`. Версия закреплена в
+`.config/dotnet-tools.json` (`dotnet-ef 8.0.11`) — глобально установленный `dotnet-ef` более новой
+версии может сгенерировать другой `Up()`/`Designer.cs` для того же изменения модели и рассинхронизировать
+`AppDbContextModelSnapshot.cs` с уже применёнными миграциями. CI проверяет это двумя шагами (job
+`backend`, после `Build`): «Migrations snapshot drift» (пустой `Up()` пробной миграции — доказывает, что
+снапшот совпадает с текущей моделью) и «Designer snapshots are monotonic» (`deploy/ci/check-migration-snapshots.sh`
+— свойство, добавленное в модель, не должно пропадать из более позднего `Designer.cs` без `DropColumn`).
+
 ### Переменные окружения и секреты
 
 Полный список — `.env.production.example` (для прод-деплоя) и переменные `environment:` внутри

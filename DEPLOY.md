@@ -893,6 +893,14 @@ scp privacy-previous.html <пользователь>@<IP-или-домен-ма�
 `api_logs` (том переживает пересоздание контейнера, в нём и была видна настоящая причина в инциденте
 2026-09-23 — она никогда не появлялась в самом отчёте прогона до этого изменения).
 
+**Генерировать миграции — только закреплённой версией `dotnet-ef`** (ARCHITECTURE_CYCLE17.md §308.2,
+C15-3): `dotnet tool restore && dotnet dotnet-ef migrations add <Имя> --project
+ServiceBooking.Infrastructure --startup-project ServiceBooking.API`, версия — `.config/dotnet-tools.json`
+(`8.0.11`). Глобально установленный `dotnet-ef` новее этой версии может сгенерировать другой
+`Up()`/`Designer.cs` для того же изменения модели и рассинхронизировать
+`AppDbContextModelSnapshot.cs` с уже применёнными миграциями — CI ловит это (job `backend`, шаги
+«Migrations snapshot drift» и «Designer snapshots are monotonic»), но дешевле не создавать расхождение.
+
 **Шаг 10.3. Откат кода после применённой миграции.** Миграции применяются автоматически при
 старте API и `rollback.sh` их не откатывает — «откатить миграцию» не всегда вообще возможно без
 потери данных.

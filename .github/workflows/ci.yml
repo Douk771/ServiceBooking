@@ -93,6 +93,35 @@ jobs:
       - name: Check image pins
         run: bash deploy/ci/check-image-pins.sh
 
+      # ARCHITECTURE_CYCLE17.md §308.2, authoritative check: asks EF Core itself whether
+      # AppDbContextModelSnapshot.cs matches the current model by generating a throwaway migration —
+      # a non-empty Up() means the two have drifted (this is what caught C15-4). Requires only the
+      # design-time model, no live database connection.
+      - name: Migrations snapshot drift (US-17-11)
+        run: |
+          dotnet tool restore
+          dotnet dotnet-ef migrations add __DriftProbe --project ServiceBooking.Infrastructure \
+            --startup-project ServiceBooking.API --output-dir Migrations/__probe
+          probe_file=$(ls ServiceBooking.Infrastructure/Migrations/__probe/*__DriftProbe.cs)
+          python3 -c '
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"protected override void Up\(MigrationBuilder migrationBuilder\)\s*\{(.*?)\n\s*\}", text, re.S)
+body = m.group(1).strip() if m else None
+if body:
+    print("::error::AppDbContextModelSnapshot.cs has drifted from the current model — Up() is not empty. See ARCHITECTURE_CYCLE17.md §308.1.", file=sys.stderr)
+    print(text, file=sys.stderr)
+    sys.exit(1)
+' "$probe_file"
+          dotnet dotnet-ef migrations remove --project ServiceBooking.Infrastructure --startup-project ServiceBooking.API
+          rm -rf ServiceBooking.Infrastructure/Migrations/__probe
+
+      # ARCHITECTURE_CYCLE17.md §308.2, cheap check: catches ROUGHLY the C15-4 shape of bug (a
+      # Designer.cs losing properties a later one and today's snapshot both have) with a plain-text
+      # walk, no dotnet-ef invocation. Pinpoints which migration/entity/property regressed.
+      - name: Designer snapshots are monotonic (C15-4)
+        run: bash deploy/ci/check-migration-snapshots.sh
+
       # ARCHITECTURE_CYCLE11.md §105.2/§117.3: `legal check` builds legal-drafts/ into a temp dir and
       # compares it byte-for-byte against the committed ServiceBooking.API/App_Data/legal artifact, then
       # checks internal links/anchors, then scans the drafts for a placeholder written in a form the
