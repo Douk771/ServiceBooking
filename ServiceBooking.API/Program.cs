@@ -320,6 +320,26 @@ builder.Services.AddHttpClient<CaptchaService>();
 builder.Services.Configure<ServiceBooking.API.Controllers.SubjectRequestOptions>(
     builder.Configuration.GetSection(ServiceBooking.API.Controllers.SubjectRequestOptions.SectionName));
 
+// TD-03-quater (SPEC_CYCLE16_TECH_DEBT.md): the "new subject request" / "due soon" operator signal.
+// Reuses the SAME Sentry:Dsn as the Serilog→GlitchTip sink above — one secret, two delivery paths,
+// because that sink's own MinimumEventLevel = Error would swallow these informational signals.
+builder.Services.Configure<ServiceBooking.API.Services.Signals.GlitchTipSignalOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Signals.GlitchTipSignalOptions.SectionName));
+// Same environment/release the Serilog→Sentry sink stamps on every event (above) — bound separately
+// since there is no "Sentry:Environment" config key to bind from (code review, cycle 16).
+builder.Services.Configure<ServiceBooking.API.Services.Signals.GlitchTipSignalOptions>(o =>
+{
+    o.Environment = builder.Environment.EnvironmentName;
+    o.Release = builder.Configuration["Sentry:Release"];
+});
+builder.Services.AddHttpClient("glitchtip-signal");
+// Singleton, not Scoped: sent fire-and-forget from SubjectRequestsController outside the request scope
+// (code review, cycle 16), and the service itself is stateless (IHttpClientFactory/IOptions/ILogger are
+// all singleton-safe dependencies) — a Scoped registration would silently start throwing
+// ObjectDisposedException the day a scoped dependency is ever added to it.
+builder.Services.AddSingleton<ServiceBooking.API.Services.Signals.IGlitchTipSignalService,
+    ServiceBooking.API.Services.Signals.GlitchTipSignalService>();
+
 // Image uploads (US-19, US-25): FileStorage holds no per-request state (just the two configured roots),
 // so it's a singleton; ImageUploadService is scoped only because everything else in this layer is —
 // it has no state of its own either.
@@ -336,6 +356,9 @@ builder.Services.AddSingleton<LegalDocumentProvider>();
 builder.Services.AddScoped<ConsentLedger>();
 // T5-B6 (ARCHITECTURE_CYCLE5.md §48.1) — reuses Notifications:EncryptionKey, no new secret to provision.
 builder.Services.AddScoped<HealthNoteProtector>();
+// TD-03 (ARCHITECTURE_CYCLE16.md §245.4) — the single gate for "does this account get the
+// phone-matching branch of its own guest-recorded data". Scoped: wraps one AppDbContext query.
+builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectScopeResolver>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
@@ -897,6 +920,9 @@ builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Schedulin
 // own 8h no-response-drops-the-subscription window, О4). Registered unconditionally, same as every other
 // IScheduledTask — a no-op in practice while PhoneVerification:Provider = "stub" (its own doc comment).
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.MaxWebhookRenewTask>();
+// TD-03-quater — the SEVENTH task, "subject-request-due-soon" (period 1 day): sends a GlitchTip signal
+// one working day before a subject request's DueAtUtc, for requests not yet Answered/Rejected.
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.SubjectRequestDueSoonTask>();
 
 // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
 // is registered individually (not discovered by reflection) so the list here IS the list of what runs —

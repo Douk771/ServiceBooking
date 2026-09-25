@@ -121,14 +121,10 @@ public class ServicesController(AppDbContext db, ImageUploadService imageUploadS
         return Ok(new ServiceDto(service.Id, service.CompanyId, service.Name, service.Description, service.DurationMinutes, service.Price, service.ImageUrl));
     }
 
-    private async Task<bool> CanManageCompany(Guid companyId)
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId is null) return false;
-        if (User.IsInRole("SuperAdmin")) return true;
-
-        // Only the CompanyOwner may create/edit/delete services now (US-09, decision Q1) — a Master
-        // reads services (GET stays public) but no longer manages the catalog.
-        return await CompanyMembership.IsOwnerAsync(db, companyId, userId);
-    }
+    // TD-11 (ARCHITECTURE_CYCLE16.md §254): delegates to the single shared implementation.
+    // superAdminBypass stays true — this controller's existing behavior. Only the CompanyOwner may
+    // create/edit/delete services (US-09, decision Q1) — a Master reads services (GET stays public)
+    // but no longer manages the catalog; CompanyAccess.CanManageCompanyAsync enforces exactly that.
+    private Task<bool> CanManageCompany(Guid companyId) =>
+        CompanyAccess.CanManageCompanyAsync(db, User, companyId);
 }

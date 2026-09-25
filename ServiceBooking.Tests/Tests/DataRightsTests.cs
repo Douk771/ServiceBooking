@@ -267,6 +267,11 @@ public class DataRightsTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         // Step 2: the same phone registers a real account afterward.
         var user = await RegisterAsync(phone: phone);
+        // TD-03 (цикл 16): выгрузка сшивает гостевые сущности с аккаунтом только при ПОДТВЕРЖДЁННОМ
+        // номере. Предмет этого теста — согласованность export и delete-account на одних и тех же
+        // данных, а не гейт; без подтверждения он проверял бы закрытую дыру §9 V1. Поведение для
+        // подтверждённого номера обязано остаться дословно прежним — это и проверяется ниже.
+        await MarkPhoneVerifiedAsync(phone, user.UserId);
 
         // Step 3: export must show the pre-existing guest visit.
         var exported = await (await AuthedClient(user.Token).GetAsync("/api/profile/export"))

@@ -1,0 +1,672 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 16 (разбор технического долга).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ ИНТЕРФЕЙСА. Человекочитаемое объяснение смысла и правил —
+# API_CONTRACT_CYCLE16.md (§270–§284); решения и обоснования — ARCHITECTURE_CYCLE16.md (§240–§265).
+# Требования — SPEC_CYCLE16_TECH_DEBT.md. При расхождении прав ЭТОТ файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle16/openapi.yaml --port 4010
+#             npm run types:api:cycle16   # openapi-typescript → src/types/api-cycle16.generated.ts
+#   QA        schemathesis run contracts/cycle16/openapi.yaml --base-url http://localhost:5000/api --checks all
+#             npx @redocly/cli lint --config contracts/redocly.yaml contracts/cycle16/openapi.yaml
+#
+# Здесь описаны ТОЛЬКО маршруты, поведение или значения которых цикл 16 затрагивает. Остальной API —
+# в API_DOCUMENTATION.md и контрактах циклов 3–14 (openapi-cycle6.yaml, contracts/cycle7…cycle14).
+# НОВЫХ ЭНДПОИНТОВ ЦИКЛ 16 НЕ ДОБАВЛЯЕТ.
+
+info:
+  title: ServiceBooking API — цикл 16 (разбор технического долга)
+  version: "8.0.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase в JSON; enum — строками (имена членов C#, PascalCase);
+        DateTime — ISO-8601 UTC; DateOnly — YYYY-MM-DD; TimeOnly — HH:mm:ss;
+      * тела осознанных ошибок 400/409/429 — ГОЛАЯ СТРОКА (text/plain) по-русски;
+      * 401 и 403 — ПУСТОЕ тело; ProblemDetails не используется (кроме необработанных 500);
+      * 🔴 404 и 409 без явного тела — ПУСТОЕ тело у ВСЕХ маршрутов ВСЕХ циклов
+        (Program.cs:170, SuppressMapClientErrors = true). Это блок AV8 реестра: правило общее,
+        а не особенность цикла 13;
+      * 451 Unavailable For Legal Reasons — «требуется принять новую редакцию документов»;
+        GET /profile/export намеренно в allow-list этого гейта и там остаётся.
+
+    ЧТО ЦИКЛ МЕНЯЕТ В HTTP:
+      * НОВЫХ ЭНДПОИНТОВ — НОЛЬ. Новых миграций — ноль.
+      * GET /profile/export получает ОДНУ аддитивную секцию guestDataGate и новое ПОВЕДЕНИЕ:
+        при неподтверждённом номере ветка сопоставления гостевых сущностей по строке телефона
+        не применяется вовсе (TD-03, блок V1 реестра).
+      * POST /profile/delete-account: при неподтверждённом номере гостевые сущности не удаляются
+        и не анонимизируются. Форма ответа прежняя — 204.
+      * GET /bookings/{id}/history: имя удалённого клиента заменено надгробием (TD-05). Форма та же.
+      * GET /admin/scheduled-tasks: lastSummary сохраняется И ПРИ ОШИБКЕ, lastSucceeded честно
+        становится false (TD-04). Форма та же.
+      * POST /companies/{id}/mail: появляется валидация входа → 400 вместо молчаливой записи (TD-09).
+
+    🔴 ГЛАВНОЕ ОГРАНИЧЕНИЕ КОНТРАКТА (API_CONTRACT_CYCLE16.md §272): ни один ответ не должен
+    сообщать, СУЩЕСТВУЮТ ли гостевые данные на номере. Гейт сообщает только то, что правило
+    применено. Полей hiddenCount / hasHiddenData / guestPhoneMatched нет и быть не может; закрытый
+    гейт НЕ даёт 4xx.
+
+    🔴 ФОРМУЛИРОВКА РЕЗУЛЬТАТА TD-03: закрыт ДОСТУП, который давала регистрация на чужой номер;
+    сама регистрация на чужой номер по-прежнему возможна (решение Р1 не отменялось).
+
+servers:
+  - url: /api
+    description: Тот же base URL, что у axios-инстанса фронта (frontend/src/api/client.ts).
+
+tags:
+  - name: profile
+    description: Профиль, выгрузка данных, удаление аккаунта (TD-03, TD-05).
+  - name: bookings
+    description: Журнал изменений записи (TD-05).
+  - name: subject-requests
+    description: Обращение субъекта ПДн — штатный путь для пользователя без MAX (TD-03).
+  - name: admin
+    description: Наблюдаемость фоновых работ для оператора платформы (TD-04).
+  - name: mailing
+    description: Рассылка компании — валидация входа (TD-09).
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /profile:
+    get:
+      tags: [profile]
+      operationId: getProfileCycle16
+      summary: Профиль — цикл 16 его НЕ меняет (описан как источник признака гейта)
+      description: |
+        Единственный источник условия показа врезки про гейт TD-03 — поле phoneVerified.
+        🔴 Фронтенд НЕ ИМЕЕТ ПРАВА выводить врезку из того, что выгрузка вернулась пустой:
+        это сделало бы UI оракулом «на этом номере есть данные» (API_CONTRACT_CYCLE16.md §272).
+
+        phoneVerified — зеркало (AppUser.PhoneNumberConfirmed) и ПРИЗНАК ДЛЯ ПОКАЗА. Решение о
+        доступе сервер принимает по таблице VerifiedPhones (источник истины,
+        ARCHITECTURE_CYCLE16.md §243.1), а не по этому полю.
+      responses:
+        "200":
+          description: Профиль.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Аккаунт не найден. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /profile/export:
+    get:
+      tags: [profile]
+      operationId: exportProfileDataCycle16
+      summary: Выгрузка данных — аддитивная секция guestDataGate и полный гейт сшивания (TD-03)
+      description: |
+        Лимит data-export 3/сутки — без изменений. Маршрут в allow-list гейта 451 и остаётся в нём:
+        право на копию своих данных не может зависеть от принятия новой редакции документов.
+
+        ПОВЕДЕНИЕ (новое в цикле 16, блок V1 реестра):
+          * номер аккаунта ПОДТВЕРЖДЁН (есть строка VerifiedPhones для текущего номера) →
+            ответ ДОСЛОВНО ПРЕЖНИЙ, guestDataGate.applied = false;
+          * номер НЕ подтверждён → ветка сопоставления по строке телефона не применяется вовсе:
+            в ответе нет ни гостевых healthNotes, ни гостевых визитов, ни operators /
+            whatIsStoredByCompany, построенных по GuestPhone, ни optOut, ни phoneVerification
+            по неподтверждённому номеру. Отдаётся только то, что привязано к ClientId.
+
+        🔴 Закрытый гейт НЕ даёт 403 и НЕ даёт 409 — только 200 с guestDataGate.applied = true.
+        Иначе код ответа стал бы оракулом существования гостевых данных.
+
+        Заголовок ответа: Content-Disposition: attachment; filename="servicebooking-export-YYYY-MM-DD.json".
+      responses:
+        "200":
+          description: JSON-файл выгрузки.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProfileExportCycle16Slice" }
+              examples:
+                gateClosed:
+                  summary: Номер не подтверждён — гостевые сущности не сшиваются
+                  value:
+                    phoneVerification: { phoneVerified: false, method: null, verifiedAtUtc: null }
+                    guestDataGate:
+                      applied: true
+                      reason: PhoneNotVerified
+                      explanation: "Эти сведения доступны после подтверждения номера телефона. Если подтвердить номер невозможно, направьте обращение субъекта персональных данных — ответ даётся в установленный законом срок."
+                      subjectRequestPath: "/subject-request"
+                gateOpen:
+                  summary: Номер подтверждён — поведение дословно прежнее
+                  value:
+                    phoneVerification: { phoneVerified: true, method: MaxBot, verifiedAtUtc: "2026-09-24T10:00:00Z" }
+                    guestDataGate:
+                      applied: false
+                      reason: null
+                      explanation: null
+                      subjectRequestPath: "/subject-request"
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Аккаунт не найден. Тело пустое.
+        "429":
+          $ref: "#/components/responses/PlainTextTooManyRequests"
+
+  /profile/delete-account:
+    post:
+      tags: [profile]
+      operationId: deleteAccountCycle16
+      summary: Удаление аккаунта — гостевые сущности не трогаются при неподтверждённом номере (TD-03, TD-05)
+      description: |
+        POST, а не DELETE — существующая конвенция продукта (нужно тело с текущим паролем).
+        ФОРМА ЗАПРОСА И ОТВЕТА НЕ МЕНЯЕТСЯ.
+
+        ПОВЕДЕНИЕ (новое):
+          * номер НЕ подтверждён → НИ ОДНА сущность, сопоставленная только по GuestPhone, не
+            попадает ни в RemoveRange, ни в анонимизацию. Собственные данные аккаунта удаляются
+            как раньше;
+          * номер подтверждён → поведение дословно прежнее;
+          * TD-05: в той же транзакции имя клиента в журнале изменений записи
+            (BookingEvent.ActorNameSnapshot) заменяется надгробием «Удалённый пользователь».
+            ФИО сотрудников не затрагиваются.
+
+        🔴 Ответ по-прежнему 204 и НЕ сообщает, что что-то осталось нетронутым. Пользователь узнаёт
+        о правиле ДО нажатия кнопки — из врезки на экране удаления (API_CONTRACT_CYCLE16.md §276).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeleteAccountRequest" }
+      responses:
+        "204":
+          description: Аккаунт удалён (надгробие). Тело пустое.
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Аккаунт не найден. Тело пустое.
+        "409":
+          description: |
+            Существующий гейт владельца компании: «За вами числится компания…». Цикл 16 его не меняет
+            и НЕ добавляет сюда второго смысла.
+          content:
+            text/plain:
+              schema: { type: string }
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /profile/consents/revoke-preview:
+    get:
+      tags: [profile]
+      operationId: previewConsentRevokeCycle16
+      summary: Предпросмотр последствий отзыва согласия — счётчики гейтятся (TD-03)
+      description: |
+        Форма не меняется. Новое поведение: при неподтверждённом номере строки, найденные только по
+        GuestPhone (в частности заметки о здоровье), в счётчики НЕ ПОПАДАЮТ — сегодня этот маршрут
+        сообщает неподтверждённому аккаунту ЧИСЛО чужих заметок о здоровье.
+      parameters:
+        - name: purpose
+          in: query
+          required: false
+          description: Имя ConsentPurpose; отсутствие = весь документ.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Что будет затронуто отзывом.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RevokeEffects" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Нет токена. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /bookings/{id}/history:
+    get:
+      tags: [bookings]
+      operationId: getBookingHistoryCycle16
+      summary: Журнал изменений записи — надгробие вместо имени удалённого клиента (TD-05)
+      description: |
+        ФОРМА ОТВЕТА НЕ МЕНЯЕТСЯ, меняются значения.
+
+        Надгробие «Удалённый пользователь» (та же строка, которую продукт уже пишет в
+        Reviews.ReviewerName и в AppUser.FirstName/LastName) подставляется для actor.kind
+        Client и Guest, когда за актёром стоит удалённый аккаунт.
+
+        🔴 ФИО СОТРУДНИКОВ (Staff, SuperAdmin, System) НЕ ЗАТРАГИВАЮТСЯ — другой субъект и другой
+        срок хранения (блок D1 реестра, TD-18).
+
+        Подстановка работает на ЧТЕНИИ, поэтому закрывает и строки, накопленные до цикла, — без
+        переписывающей миграции (ломающие и необратимые миграции в цикле запрещены).
+
+        Доступ не меняется: персонал компании (Master/CompanyOwner) или SuperAdmin. Всем остальным,
+        ВКЛЮЧАЯ клиента этой записи, — 404 с пустым телом (осознанное решение цикла 10: код ответа
+        не должен работать оракулом существования записи).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Журнал изменений записи.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingHistory" }
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Запись не найдена ЛИБО вызывающий не персонал компании. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /subject-requests:
+    post:
+      tags: [subject-requests]
+      operationId: submitSubjectRequestCycle16
+      summary: Обращение субъекта ПДн — цикл 16 его НЕ меняет (компенсирующий путь TD-03)
+      description: |
+        АНОНИМНЫЙ. Описан в контракте цикла 16 потому, что для пользователя без MAX становится
+        ЕДИНСТВЕННЫМ путём реализации прав — значит его форма теперь часть контракта этого цикла.
+
+        🔴 Ответ ОДИНАКОВ независимо от того, известен ли номер системе (правило цикла 5, проверяется
+        тестом «байт в байт»). Ни одно тело, ни одна длина, ни один заголовок не должны зависеть от
+        наличия аккаунта или прошлых обращений. «Удобных» подсказок не добавлять.
+
+        Лимит — политика subject-request. Капча обязательна, когда включена.
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitSubjectRequest" }
+      responses:
+        "202":
+          description: Обращение принято.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubjectRequestAccepted" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "429":
+          $ref: "#/components/responses/PlainTextTooManyRequests"
+        "503":
+          description: Не удалось durable-записать обращение. text/plain.
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /admin/scheduled-tasks:
+    get:
+      tags: [admin]
+      operationId: getScheduledTasksCycle16
+      summary: Состояние фоновых работ — сводка теперь переживает ошибку правила (TD-04)
+      description: |
+        Только SuperAdmin. ФОРМА ОТВЕТА НЕ МЕНЯЕТСЯ.
+
+        Что меняется по существу для задачи data-retention:
+          * падение ОДНОГО правила больше не отменяет остальные;
+          * lastSummary СОХРАНЯЕТСЯ И ПРИ ОШИБКЕ (сегодня затирается в null — именно поэтому дефект
+            N9-6 было не видно);
+          * сводка явно перечисляет три ведра: ok / skipped (не настроено) / failed (с ИМЕНЕМ правила);
+          * lastSucceeded = false и непустой lastError, когда хотя бы одно правило упало, — «тихого
+            успеха» больше нет.
+
+        В сводке только числа, даты и имена правил — НИКАКИХ ПДн (ни телефонов, ни текстов, ни
+        идентификаторов субъектов). RETENTION_DRY_RUN=true по умолчанию не меняется.
+      responses:
+        "200":
+          description: Состояние всех зарегистрированных фоновых работ.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ScheduledTaskStatus" }
+              examples:
+                retentionPartialFailure:
+                  summary: Одно правило упало, остальные отработали
+                  value:
+                    - name: data-retention
+                      enabled: true
+                      periodMinutes: 1440
+                      lastStartedAtUtc: "2026-09-25T03:00:00Z"
+                      lastFinishedAtUtc: "2026-09-25T03:00:07Z"
+                      lastDurationMs: 7123
+                      lastSucceeded: false
+                      lastSummary: "retention[dry] ok=13 skipped=2 failed=1 | failed: booking-event"
+                      lastError: "InvalidOperationException: …"
+                      isOverdue: false
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  /companies/{id}/mail:
+    post:
+      tags: [mailing]
+      operationId: sendCompanyMailCycle16
+      summary: Рассылка компании — появляется валидация входа (TD-09)
+      description: |
+        Было: record SendMailDto(string Subject, string Message) без единого атрибута — пустая или
+        гигантская строка доходила до хранилища.
+        Стало: subject и message обязательны и ограничены по длине; нарушение → 400 ГОЛОЙ СТРОКОЙ
+        по-русски (InvalidModelStateResponseFactory уже приводит ошибки модели к этой форме;
+        ProblemDetails здесь не появляется).
+
+        Права: владелец компании или SuperAdmin — цикл 16 их НЕ меняет (TD-11 сводит реализацию в
+        одно место, сохраняя поведение).
+
+        ⚠️ Само поведение функции «Рассылка» (выглядит готовой, писем не шлёт — §9.27 реестра) цикл
+        16 НЕ чинит: это продуктовое решение заказчика, вынесенное открытым вопросом.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendMailRequest" }
+      responses:
+        "200":
+          description: Рассылка поставлена в очередь.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SendMailResult" }
+        "400":
+          $ref: "#/components/responses/PlainTextBadRequest"
+        "401":
+          description: Нет токена. Тело пустое.
+        "402":
+          description: Тарифный план не включает рассылку. text/plain.
+          content:
+            text/plain:
+              schema: { type: string }
+        "403":
+          description: Вызывающий не владелец компании и не SuperAdmin. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    PlainTextBadRequest:
+      description: Осознанная ошибка — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    PlainTextTooManyRequests:
+      description: Превышен лимит именованной политики. Голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+
+  schemas:
+
+    GuestDataGateReason:
+      type: string
+      description: |
+        Машиночитаемая причина применения гейта. Перечисление append-only. Русский текст собирает
+        СЕРВЕР и отдаёт в поле explanation — фронт формулировок не сочиняет (та же конвенция, что у
+        PhoneVerificationSessionStatus.message в цикле 14).
+      enum: [PhoneNotVerified]
+
+    GuestDataGate:
+      type: object
+      description: |
+        НОВОЕ В ЦИКЛЕ 16, АДДИТИВНО. Сообщает ТОЛЬКО факт применения правила.
+
+        🔴 Полей hiddenCount / hasHiddenData / guestPhoneMatched здесь нет и быть не может: ответ не
+        должен отвечать на вопрос «есть ли на этом номере гостевые данные»
+        (API_CONTRACT_CYCLE16.md §272). Тест приёмки: ответы для двух неподтверждённых аккаунтов —
+        одного с гостевыми данными на номере, другого без — совпадают по составу секций и по
+        значению этой секции.
+      required: [applied]
+      properties:
+        applied:
+          type: boolean
+          description: |
+            true — ветка сопоставления по строке телефона не применялась.
+            false — выгрузка полная, поведение дословно прежнее.
+        reason:
+          allOf: [{ $ref: "#/components/schemas/GuestDataGateReason" }]
+          nullable: true
+          description: null при applied = false.
+        explanation:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: |
+            Готовый русский текст, который показывают пользователю. Собирает сервер; берётся из
+            uiTexts правового комплекта (legal.json, ключ guestDataGateNotice), до появления текста
+            legal-counsel — нейтральный fallback. null при applied = false.
+        subjectRequestPath:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Путь штатного пути реализации прав для пользователя без MAX.
+          example: "/subject-request"
+
+    ProfileExportPhoneVerification:
+      type: object
+      description: Секция цикла 14; цикл 16 её форму не меняет.
+      required: [phoneVerified]
+      properties:
+        phoneVerified: { type: boolean }
+        method:
+          type: string
+          nullable: true
+          enum: [MaxBot]
+        verifiedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+
+    ProfileExportCycle16Slice:
+      type: object
+      description: |
+        Описан ТОЛЬКО тот срез выгрузки, который затрагивает цикл 16. Остальные секции (profile,
+        consent, memberships, bookings, reviews, notesAboutMe, photosAboutMe, operatorsNote,
+        operators, notifications, optOut, healthNotes) — контракты циклов 3, 5 и 14, их форма не
+        меняется; меняется только НАБОР строк в них при закрытом гейте.
+      required: [guestDataGate]
+      properties:
+        guestDataGate: { $ref: "#/components/schemas/GuestDataGate" }
+        phoneVerification: { $ref: "#/components/schemas/ProfileExportPhoneVerification" }
+      additionalProperties: true
+
+    Profile:
+      type: object
+      description: Форма цикла 14; цикл 16 её не меняет.
+      required: [id, phone, firstName, lastName, roles, phoneVerified]
+      properties:
+        id: { type: string }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        firstName: { type: string }
+        lastName: { type: string }
+        avatarUrl: { type: string, nullable: true }
+        roles:
+          type: array
+          items: { type: string }
+        plan:
+          type: object
+          nullable: true
+          description: Форма цикла 7; цикл 16 её не меняет.
+          additionalProperties: true
+        phoneVerified:
+          type: boolean
+          description: |
+            🔴 Единственный источник условия показа врезки про гейт TD-03 на фронтенде. Это
+            ПРИЗНАК ДЛЯ ПОКАЗА, а не гейт: решение о доступе сервер принимает по VerifiedPhones.
+        phoneVerifiedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+
+    DeleteAccountRequest:
+      type: object
+      description: Форма не меняется циклом 16.
+      required: [currentPassword]
+      properties:
+        currentPassword: { type: string }
+
+    RevokeEffects:
+      type: object
+      description: |
+        Форма цикла 5; цикл 16 её не меняет. Меняется НАБОР строк, попадающих в счётчики: при
+        неподтверждённом номере строки, найденные только по GuestPhone, не учитываются.
+      required: [photosDeleted, healthNotesDeleted, profileFieldsCleared, queuedNotificationsCancelled]
+      properties:
+        photosDeleted: { type: integer }
+        healthNotesDeleted: { type: integer }
+        profileFieldsCleared:
+          type: array
+          items: { type: string }
+        queuedNotificationsCancelled: { type: integer }
+
+    BookingEventActor:
+      type: object
+      description: |
+        Форма цикла 10; цикл 16 её не меняет. Меняются ЗНАЧЕНИЯ name/label для удалённого клиента.
+      required: [kind, label]
+      properties:
+        kind:
+          type: string
+          enum: [Client, Guest, Staff, SuperAdmin, System]
+        name:
+          type: string
+          nullable: true
+          description: |
+            Снимок имени актёра. Для удалённого аккаунта (kind Client или Guest) отдаётся надгробие
+            «Удалённый пользователь» — TD-05. Для kind Staff/SuperAdmin/System НЕ ЗАТРАГИВАЕТСЯ.
+          example: "Удалённый пользователь"
+        role:
+          type: string
+          nullable: true
+        label:
+          type: string
+          description: Готовая русская подпись актёра; собирает сервер.
+
+    BookingEvent:
+      type: object
+      description: Форма цикла 10; цикл 16 её не меняет.
+      required: [id, kind, occurredAtUtc, title, actor]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string }
+        occurredAtUtc: { type: string, format: date-time }
+        title: { type: string }
+        actor: { $ref: "#/components/schemas/BookingEventActor" }
+        reschedule:
+          type: object
+          nullable: true
+          additionalProperties: true
+        cancellationReason: { type: string, nullable: true }
+
+    BookingHistory:
+      type: object
+      required: [bookingId, precedesJournal, events]
+      properties:
+        bookingId: { type: string, format: uuid }
+        precedesJournal:
+          type: boolean
+          description: Запись старше журнала (нет события Created) — вычисляется, не хранится.
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/BookingEvent" }
+
+    SubmitSubjectRequest:
+      type: object
+      description: Форма цикла 5; цикл 16 её не меняет.
+      required: [kind, phone, contactValue, message]
+      properties:
+        kind:
+          type: string
+          description: Имя члена SubjectRequestKind, строкой.
+        phone:
+          type: string
+          maxLength: 32
+        contactValue:
+          type: string
+          maxLength: 200
+          description: Контакт для ответа.
+        message:
+          type: string
+          maxLength: 4000
+        captchaToken:
+          type: string
+          nullable: true
+          description: Обязателен, когда капча включена на стенде.
+
+    SubjectRequestAccepted:
+      type: object
+      required: [reference, responseDueByWorkingDays]
+      properties:
+        reference:
+          type: string
+          description: "Префикс `SR-` + шесть символов из безопасного алфавита (без 0/O/1/I/L); единственное, по чему субъект потом сошлётся на обращение. См. ServiceBooking.API/Services/SubjectRequestReference.cs."
+          example: "SR-K7M2QX"
+        responseDueByWorkingDays:
+          type: integer
+          description: SubjectRequests:ResponseWorkingDays, по умолчанию 10.
+          example: 10
+
+    ScheduledTaskStatus:
+      type: object
+      description: Форма не меняется циклом 16; меняются значения для data-retention (TD-04).
+      required: [name, enabled, periodMinutes, lastSucceeded, isOverdue]
+      properties:
+        name: { type: string, example: data-retention }
+        enabled: { type: boolean }
+        periodMinutes: { type: integer }
+        lastStartedAtUtc: { type: string, format: date-time, nullable: true }
+        lastFinishedAtUtc: { type: string, format: date-time, nullable: true }
+        lastDurationMs: { type: integer }
+        lastSucceeded:
+          type: boolean
+          description: |
+            TD-04: становится false, когда хотя бы одно правило уничтожения упало. Раньше такой
+            прогон выглядел успешным, потому что исключение обрывало ВЕСЬ проход.
+        lastSummary:
+          type: string
+          nullable: true
+          description: |
+            TD-04: СОХРАНЯЕТСЯ И ПРИ ОШИБКЕ (раньше затиралось в null). Перечисляет три ведра:
+            ok / skipped (не настроено) / failed с именем правила. Только числа, даты и имена
+            правил — никаких ПДн.
+        lastError: { type: string, nullable: true }
+        isOverdue: { type: boolean }
+
+    SendMailRequest:
+      type: object
+      description: TD-09 — поля получают обязательность и ограничение длины.
+      required: [subject, message]
+      properties:
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 200
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+
+    SendMailResult:
+      type: object
+      required: [recipientCount, message]
+      properties:
+        recipientCount: { type: integer }
+        message: { type: string, example: "Рассылка поставлена в очередь" }

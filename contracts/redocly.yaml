@@ -1,0 +1,54 @@
+# Конфигурация линта машиночитаемых контрактов — TD-07, ARCHITECTURE_CYCLE16.md §248.3.
+#
+# Зачем вообще: до цикла 16 в .github/workflows/ci.yml не было НИ регенерации типов фронта, НИ сверки
+# contracts/** — семь спек и шесть закоммиченных *.generated.ts не сверял никто. Этим классом дефекта
+# вкладка «Тарифы» была сломана с цикла 7 по цикл 15 (блоки T8-5, V6, L6 реестра).
+#
+# 🔴 ОБЪЁМ ВЫБРАН ЯВНО И СУЖЕН СОЗНАТЕЛЬНО (ответ на вопрос R3 спеки). Линтуются ЧЕТЫРЕ спеки:
+#     contracts/cycle8/servicebooking-invariant.openapi.yaml   — это и есть T8-5 дословно
+#     contracts/cycle13/openapi.yaml
+#     contracts/cycle14/openapi.yaml                           — описывает включённую в бою подсистему
+#     contracts/cycle16/openapi.yaml                           — свой контракт линтуется с рождения
+#
+#   НЕ ЛИНТУЮТСЯ (пять спек): openapi-cycle6.yaml в корне, contracts/cycle7, cycle9, cycle10, cycle11.
+#   Причина — не лень: включение всех сразу почти наверняка даёт красный CI на предсуществующих
+#   расхождениях, и первый же «срочный» PR шаг отключит. Их подключение — работа следующего цикла,
+#   ВМЕСТЕ с починкой найденного. Здесь это записано явно, чтобы следующий цикл не считал, что
+#   проверено всё.
+#
+# Запуск (джоб frontend в CI, после npm ci):
+#   npx @redocly/cli lint --config ../contracts/redocly.yaml \
+#     ../contracts/cycle8/servicebooking-invariant.openapi.yaml \
+#     ../contracts/cycle13/openapi.yaml \
+#     ../contracts/cycle14/openapi.yaml \
+#     ../contracts/cycle16/openapi.yaml
+
+extends:
+  - minimal
+
+rules:
+  # Структурная корректность — то, ради чего шаг и существует: битый $ref, дубль operationId или
+  # несуществующий параметр пути обязаны краснить CI, а не обнаруживаться фронтендом через семь циклов.
+  no-unresolved-refs: error
+  operation-operationId-unique: error
+  operation-parameters-unique: error
+  path-parameters-defined: error
+  no-identical-paths: error
+  no-ambiguous-paths: error
+  spec: error
+
+  # Читаемость контракта человеком. У этого проекта спека — рабочий документ для двух разработчиков,
+  # идущих параллельно по контракту, поэтому описания важнее формальной чистоты.
+  operation-operationId: error
+  operation-summary: error
+  tag-description: error
+  info-license: error
+
+  # Осознанно ВЫКЛЮЧЕНО — иначе шаг ругался бы на существующие и намеренные решения проекта:
+  #  * тела осознанных ошибок 400/409/429 — голая строка text/plain, а не JSON-объект;
+  #  * 401/403 — пустое тело без content;
+  #  * 404/409 без явного тела — пустое тело у всех маршрутов всех циклов
+  #    (Program.cs:170, SuppressMapClientErrors = true — блок AV8 реестра).
+  operation-4xx-response: off
+  no-invalid-media-type-examples: off
+  security-defined: off

@@ -324,14 +324,12 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Запрос без `Content-Type: application/json` (или с чужим типом). Отвечает не прикладной код, а привязка модели ASP.NET Core, поэтому тело — ProblemDetails, а не привычный text/plain. Поведение сквозное для всего API и существовало всегда; здесь оно записано, чтобы автосверка не считала его нарушением. */
+            /** @description Запрос без `Content-Type: application/json` (или с чужим типом). Отвечает не прикладной код, а привязка модели ASP.NET Core — Kestrel обрывает запрос до контроллера, тело фактически ПУСТОЕ (`Content-Length: 0`, заголовок `Content-Type` в ответе отсутствует вовсе — проверено `curl` напрямую, это не ProblemDetails). Поведение сквозное для всего API и существовало всегда; здесь оно записано, чтобы автосверка не считала его нарушением. */
             415: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/problem+json": Record<string, never>;
-                };
+                content?: never;
             };
         };
     };
@@ -414,6 +412,13 @@ export interface operations {
             };
             /** @description У вызывающего нет биллинг-аккаунта (тело пустое) */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Запрос без `Content-Type: application/json` (или с чужим типом). Тот же сквозной эффект привязки модели ASP.NET Core, что и у PATCH /api/bookings/{id}/cancel (см. там) — тело фактически ПУСТОЕ (`Content-Length: 0`, `Content-Type` в ответе отсутствует, не ProblemDetails — проверено `curl` напрямую). Записан здесь по той же причине: `requestBody` у этой ручки обязателен (`required: true`), значит привязка модели проверяет `Content-Type` до прикладного кода и на этом пути тоже. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

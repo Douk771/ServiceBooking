@@ -125,7 +125,7 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         // A new Material redaction is published — the token this user was issued still carries the OLD
         // accepted version.
         _factory.WriteManifest("v2-material-draft", isDraft: true, changeKind: "Material");
-        await Task.Delay(1200); // > Legal:ReloadSeconds (1s), so the provider's mtime cache expires
+        _factory.ReloadLegalNow();
 
         var client = Authed(user.Token);
 
@@ -157,7 +157,7 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         var user = await RegisterAsync();
 
         _factory.WriteManifest("v2-pricing-material-draft", isDraft: true, changeKind: "Material");
-        await Task.Delay(1200);
+        _factory.ReloadLegalNow();
 
         var client = Authed(user.Token);
 
@@ -176,7 +176,7 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         var user = await RegisterAsync();
 
         _factory.WriteManifest("v2-editorial-draft", isDraft: true, changeKind: "Editorial");
-        await Task.Delay(1200);
+        _factory.ReloadLegalNow();
 
         var client = Authed(user.Token);
         var response = await client.GetAsync("/api/companies/my");
@@ -195,7 +195,7 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         var user = await RegisterAsync();
 
         _factory.WriteManifest("v2-material-draft", isDraft: true, changeKind: "Material");
-        await Task.Delay(1200);
+        _factory.ReloadLegalNow();
 
         var oldClient = Authed(user.Token);
         (await oldClient.GetAsync("/api/companies/my")).StatusCode.Should().Be((HttpStatusCode)451);
@@ -233,7 +233,7 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
 
         var vettedVersion = "vetted-" + DateTime.UtcNow.Ticks;
         _factory.WriteManifest(vettedVersion, isDraft: false, changeKind: "Material");
-        await Task.Delay(1200);
+        _factory.ReloadLegalNow();
 
         var response = await Authed(user.Token).GetAsync("/api/companies/my");
         response.StatusCode.Should().Be((HttpStatusCode)451,
@@ -259,7 +259,7 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         // 316303319, 10 sequential local reruns, run 5/10 — replaying the class alone does not reproduce
         // it: the race needs the wall-clock compression the full parallel run produces). Waiting out the
         // throttle explicitly, like LEG-018 already does, removes the dependency on ambient timing.
-        await Task.Delay(1200);
+        _factory.ReloadLegalNow();
         var before = await (await Anon().GetAsync("/api/legal/documents/privacy")).Content
             .ReadFromJsonAsync<LegalDocumentDto>();
         before!.Version.Should().Be(v1);
@@ -267,7 +267,7 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
 
         var v2 = "swapped-" + DateTime.UtcNow.Ticks + "-draft";
         _factory.WriteManifest(v2, isDraft: true, changeKind: "Editorial", bodyMarker: "LIVE-SWAP-MARKER");
-        await Task.Delay(1200);
+        _factory.ReloadLegalNow();
 
         var after = await (await Anon().GetAsync("/api/legal/documents/privacy")).Content
             .ReadFromJsonAsync<LegalDocumentDto>();
@@ -281,24 +281,21 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         // ARCHITECTURE.md §4.3: a broken manifest on disk (here: isDraft:true without the required
         // "-draft" version suffix) must never take the site down — the last good snapshot keeps serving.
         var v1 = _factory.ResetToDefault();
-        // T8-P11a: LegalDocumentProvider.EnsureFresh throttles re-checks to once per Legal:ReloadSeconds
-        // (1s here), keyed off _lastCheckedUtc — NOT off which manifest version was last requested. This
-        // factory is one instance per test CLASS (shared across every [Fact] here), so if some other test
-        // in this class made its own request within the last second, that request already refreshed the
-        // throttle window; an immediate GetAsync right after ResetToDefault() above would then still be
-        // inside that window and serve whatever snapshot was cached before this test even started — not
-        // the fresh v1 written above. Under a stable/declaration-order run this coincidentally never
-        // happened (the previous test in the file, LEG-017, always ends its own Task.Delay(1200) first),
-        // but random test-case ordering (RandomTestCaseOrderer) can and did place a test here that hadn't
-        // waited, making this assumption visible. Wait out the throttle explicitly instead of relying on
-        // whichever test happened to run immediately before this one.
-        await Task.Delay(1200);
+        // T8-P11a: LegalDocumentProvider.EnsureFresh throttles re-checks to once per Legal:ReloadSeconds,
+        // keyed off _lastCheckedUtc — NOT off which manifest version was last requested. This factory is
+        // one instance per test CLASS (shared across every [Fact] here), so an immediate GetAsync right
+        // after ResetToDefault() above could still be inside some OTHER test's throttle window and serve
+        // a stale snapshot, not the fresh v1 just written. TD-02 (ARCHITECTURE_CYCLE16.md §250.2):
+        // ReloadLegalNow() forces the load deterministically (distinct mtime + LoadAtStartup()) instead
+        // of relying on wall-clock throttle timing or test execution order — this used to matter under
+        // RandomTestCaseOrderer, and now cannot matter at all.
+        _factory.ReloadLegalNow();
         // Force a successful load of v1 BEFORE corrupting the manifest — otherwise the provider would
         // never have had a good snapshot to fall back to in the first place.
         (await Anon().GetAsync("/api/legal/documents/privacy")).EnsureSuccessStatusCode();
 
         _factory.WriteManifest("no-suffix-here", isDraft: true, changeKind: "Material"); // invalid: isDraft without "-draft"
-        await Task.Delay(1200);
+        _factory.ReloadLegalNow();
 
         var response = await Anon().GetAsync("/api/legal/documents/privacy");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -315,7 +312,7 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         var user = await RegisterAsync();
 
         _factory.WriteManifest("v2-material-draft", isDraft: true, changeKind: "Material");
-        await Task.Delay(1200);
+        _factory.ReloadLegalNow();
 
         var client = Authed(user.Token);
         (await client.GetAsync("/api/companies/my")).StatusCode.Should().Be((HttpStatusCode)451);

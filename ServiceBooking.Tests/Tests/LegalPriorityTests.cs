@@ -286,6 +286,12 @@ public class LegalPriorityTests(TestDatabaseFixture fixture) : ApiTestBase(fixtu
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         var registeredClient = await RegisterAsync(phone: phone); // the guest becomes a registered client
+        // TD-03 (цикл 16): сшивание гостевых сущностей с аккаунтом работает только при ПОДТВЕРЖДЁННОМ
+        // номере. Этот тест про право субъекта на уничтожение своих данных, а не про гейт, поэтому
+        // номер подтверждается явно — иначе он проверял бы ровно ту дыру, которую цикл 16 закрыл
+        // (регистрация на чужой номер давала доступ к чужим сведениям о здоровье, §9 V1).
+        // Случай неподтверждённого номера покрыт в GuestDataGateCycle16Tests.
+        await MarkPhoneVerifiedAsync(phone, registeredClient.UserId);
         (await AuthedClient(registeredClient.Token).PostAsJsonAsync("/api/profile/delete-account", new { currentPassword = "Password123!" }))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
 
