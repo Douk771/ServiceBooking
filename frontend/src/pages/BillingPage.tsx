@@ -8,7 +8,12 @@ import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { formatMonthlyPrice } from '../utils/pricingFormat'
 import { getBillingErrorMessage } from '../utils/billingError'
+import { getTrialErrorMessage, isTrialTermsVersionMismatch } from '../utils/trialError'
 import { STATUS_BADGE_CLASS } from './billingPageHelpers'
+import { TrialCard } from '../components/billing/TrialCard'
+import { TrialBanner } from '../components/billing/TrialBanner'
+import { TrialExpiredNotice } from '../components/billing/TrialExpiredNotice'
+import { TrialActivationTerms } from '../components/billing/TrialActivationTerms'
 
 /**
  * Owner screen "Ваша подписка" (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41. One request
@@ -22,6 +27,7 @@ import { STATUS_BADGE_CLASS } from './billingPageHelpers'
 export function BillingPage() {
   const qc = useQueryClient()
   const [requestError, setRequestError] = useState('')
+  const [trialError, setTrialError] = useState('')
   const [desiredOptions, setDesiredOptions] = useState<Record<string, number> | null>(null)
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
@@ -54,6 +60,44 @@ export function BillingPage() {
       qc.invalidateQueries({ queryKey: ['owner-subscription'] })
     },
     onError: (err: unknown) => setRequestError(getBillingErrorMessage(err, 'Не удалось отправить заявку.')),
+  })
+
+  // §363 — activation returns the WHOLE OwnerSubscriptionDto; it replaces the cached query result
+  // directly rather than triggering a refetch, so the screen never shows a stale "Available" state
+  // for even one request (§371 п.4: "использовать ответ как новое состояние экрана").
+  const activateTrialMut = useMutation({
+    mutationFn: (termsVersion: string) => billingApi.activateTrial(termsVersion),
+    onSuccess: (next) => {
+      setTrialError('')
+      qc.setQueryData(['owner-subscription'], next)
+    },
+    onError: (err: unknown) => {
+      // §371 п.5 — a stale termsVersion (409 TrialTermsVersionMismatch) is not a plain retry: the
+      // terms text has moved on, so the fix is to re-fetch and show the CURRENT text, never to
+      // resend the same (now-stale) version.
+      if (isTrialTermsVersionMismatch(err)) {
+        qc.invalidateQueries({ queryKey: ['owner-subscription'] })
+        setTrialError('Условия обновились — прочитайте их заново.')
+        return
+      }
+      setTrialError(getTrialErrorMessage(err, 'Не удалось активировать пробный период.'))
+    },
+  })
+
+  const acknowledgeTermsMut = useMutation({
+    mutationFn: (termsVersion: string) => billingApi.acknowledgeTerms(termsVersion),
+    onSuccess: () => {
+      setTrialError('')
+      qc.invalidateQueries({ queryKey: ['owner-subscription'] })
+    },
+    onError: (err: unknown) => {
+      if (isTrialTermsVersionMismatch(err)) {
+        qc.invalidateQueries({ queryKey: ['owner-subscription'] })
+        setTrialError('Условия обновились — прочитайте их заново.')
+        return
+      }
+      setTrialError(getTrialErrorMessage(err, 'Не удалось подтвердить ознакомление с условиями.'))
+    },
   })
 
   if (isLoading) {
@@ -134,6 +178,40 @@ export function BillingPage() {
         <p className="text-sm text-ink-soft">Тариф и опции действуют на все ваши компании сразу.</p>
       </header>
 
+      {/* Cycle 18 — трial plan (API_CONTRACT_CYCLE18.md §371). `trial` is null only when it has
+          never been available/granted for this account at all. */}
+      {data.trial && data.trial.warning && (
+        data.trial.warning.dismissible === false ? (
+          <TrialExpiredNotice warning={data.trial.warning} />
+        ) : (
+          <TrialBanner warning={data.trial.warning} />
+        )
+      )}
+
+      {data.trial && (data.trial.state === 'Active' || data.trial.state === 'Expired') && <TrialCard trial={data.trial} />}
+
+      {data.trial && data.trial.state === 'Available' && data.trial.activationTerms && (
+        <TrialActivationTerms
+          activationTerms={data.trial.activationTerms}
+          onActivate={() => activateTrialMut.mutate(data.trial!.activationTerms!.version)}
+          activating={activateTrialMut.isPending}
+        />
+      )}
+
+      {data.trial &&
+        data.trial.state === 'Active' &&
+        data.trial.activationTerms?.acknowledgementRequired &&
+        !data.trial.warning /* the expired notice above already fully covers this account's screen */ && (
+          <TrialActivationTerms
+            activationTerms={data.trial.activationTerms}
+            acknowledgementOnly
+            onAcknowledge={() => acknowledgeTermsMut.mutate(data.trial!.activationTerms!.version)}
+            acknowledging={acknowledgeTermsMut.isPending}
+          />
+        )}
+
+      {trialError && <p className="text-sm text-danger mb-6">{trialError}</p>}
+
       {data.warning && (
         <Card className={`p-5 mb-6 border ${data.warning.kind === 'Expired' ? 'border-danger bg-danger-bg' : 'border-warning bg-[#FBF3E3]'}`}>
           <p className="text-sm font-semibold text-ink mb-1">{data.warning.text}</p>
@@ -144,6 +222,12 @@ export function BillingPage() {
               ))}
             </ul>
           )}
+        </Card>
+      )}
+
+      {data.usage.overLimitText && (
+        <Card className="p-5 mb-6 border border-warning bg-[#FBF3E3]">
+          <p className="text-sm font-semibold text-ink">{data.usage.overLimitText}</p>
         </Card>
       )}
 
@@ -265,14 +349,23 @@ export function BillingPage() {
           </ul>
 
           {isEditing && (
-            <div className="flex items-center gap-3">
-              <Button loading={requestMut.isPending} onClick={() => requestMut.mutate(desiredOptions!)}>
-                Отправить заявку
-              </Button>
-              <Button variant="ghost" onClick={() => setDesiredOptions(null)}>
-                Отменить
-              </Button>
-            </div>
+            <>
+              {/* О9 (§365, §371 п.13) — must be shown BEFORE confirming a request for a paid plan
+                  while a trial is active: activating this request forfeits the trial's remainder. */}
+              {data.trial?.planChangeNotice && (
+                <p className="text-sm font-semibold text-warning bg-[#FBF3E3] border border-warning rounded-xl px-3.5 py-2.5 mb-4">
+                  {data.trial.planChangeNotice}
+                </p>
+              )}
+              <div className="flex items-center gap-3">
+                <Button loading={requestMut.isPending} onClick={() => requestMut.mutate(desiredOptions!)}>
+                  Отправить заявку
+                </Button>
+                <Button variant="ghost" onClick={() => setDesiredOptions(null)}>
+                  Отменить
+                </Button>
+              </div>
+            </>
           )}
         </Card>
       )}
