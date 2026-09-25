@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -67,10 +68,21 @@ public class OwnerSubscriptionService(
         // limits, matching the contract's "0 when in range" convention exactly.
         var overLimitCompanies = plan.AccountMaxCompanies is { } companiesLimit ? Math.Max(0, usage.CompaniesUsed - companiesLimit) : 0;
         var overLimitEmployees = plan.AccountMaxEmployees is { } employeesLimit ? Math.Max(0, usage.SeatsUsed - employeesLimit) : 0;
-        var overLimitText = overLimitCompanies > 0 || overLimitEmployees > 0
-            ? string.Format(TrialLegalNotices.TrialOverFreeLimitsNotice,
-                plan.AccountMaxCompanies, plan.AccountMaxEmployees, usage.CompaniesUsed, usage.SeatsUsed)
-            : null;
+        // Code-review finding (cycle 18 recheck) — TrialOverFreeLimitsNotice's wording is hardcoded to
+        // "Бесплатный тариф допускает...", so it must always quote the SYSTEM FREE plan's own limits,
+        // never the account's current effective plan (which may be a paid plan an admin later shrank).
+        // It also must not render when either limit is unbounded (null) — string.Format would silently
+        // print an empty slot into legally-loaded text (Т4, §365).
+        string? overLimitText = null;
+        if (overLimitCompanies > 0 || overLimitEmployees > 0)
+        {
+            var freePlan = await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.IsSystemFree);
+            var freeCompaniesLimit = freePlan?.MaxCompanies ?? EffectivePlan.Free.AccountMaxCompanies;
+            var freeEmployeesLimit = freePlan?.MaxEmployees ?? EffectivePlan.Free.AccountMaxEmployees;
+            if (freeCompaniesLimit is not null && freeEmployeesLimit is not null)
+                overLimitText = string.Format(TrialLegalNotices.TrialOverFreeLimitsNotice,
+                    freeCompaniesLimit, freeEmployeesLimit, usage.CompaniesUsed, usage.SeatsUsed);
+        }
 
         var usageDto = new SubscriptionUsageDto(
             usage.CompaniesUsed, plan.AccountMaxCompanies, usage.SeatsUsed, plan.AccountMaxEmployees,
@@ -118,7 +130,10 @@ public class OwnerSubscriptionService(
 
         // §365 — the same TrialStateDto GET /api/billing/trial would answer for this owner, so this
         // screen's "Пробный период" card/plashka/button can never drift from what that endpoint says.
-        var trial = await trialStateReader.GetAsync(account.OwnerUserId);
+        // Code-review finding (cycle 18 recheck) — pass the account/sub/plan already loaded above
+        // instead of GetAsync (which would reload them and re-resolve the effective plan), removing
+        // ~5 avoidable round-trips from the owner's most-visited screen.
+        var trial = await trialStateReader.BuildAsync(account, sub, plan);
 
         return new OwnerSubscriptionDto(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
