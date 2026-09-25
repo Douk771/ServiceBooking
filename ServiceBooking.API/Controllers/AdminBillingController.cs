@@ -22,8 +22,71 @@ namespace ServiceBooking.API.Controllers;
 public class AdminBillingController(
     AppDbContext db, PricingCatalogCache pricingCatalogCache,
     SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    OwnerSubscriptionService ownerSubscriptionService, ILogger<AdminBillingController> logger) : ControllerBase
+    OwnerSubscriptionService ownerSubscriptionService, Services.Billing.TrialActivationService trialActivationService,
+    ILogger<AdminBillingController> logger) : ControllerBase
 {
+    // ── Cycle 18 (API_CONTRACT_CYCLE18.md §368) — superadmin trial grant/regrant ──────────────────
+
+    [HttpPost("billing-accounts/{accountId:guid}/trial")]
+    public async Task<IActionResult> GrantTrial(Guid accountId)
+    {
+        var account = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.Id == accountId);
+        if (account is null) return NotFound();
+
+        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var result = await trialActivationService.GrantAsync(new Services.Billing.TrialGrantRequest(
+            accountId, actorUserId, Core.Enums.TrialGrantSource.SuperAdmin, Services.Billing.TrialGrantMode.Normal,
+            Reason: null, AcknowledgedTermsVersion: null));
+
+        if (!result.Granted)
+            return Conflict(new DTOs.Billing.TrialRefusalDto(result.RefusalCode!, result.Message!));
+
+        var fresh = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
+        return Ok(await BuildAdminAccountDtoAsync(fresh));
+    }
+
+    [HttpPost("billing-accounts/{accountId:guid}/trial/regrant")]
+    public async Task<IActionResult> RegrantTrial(Guid accountId, [FromBody] Billing_RegrantTrialInput dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Reason) || dto.Reason.Trim().Length == 0)
+            return BadRequest("Причина обязательна.");
+        if (dto.Reason.Length > 500)
+            return BadRequest("Причина не может быть длиннее 500 символов.");
+
+        var account = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.Id == accountId);
+        if (account is null) return NotFound();
+
+        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var result = await trialActivationService.GrantAsync(new Services.Billing.TrialGrantRequest(
+            accountId, actorUserId, Core.Enums.TrialGrantSource.SuperAdminOverride, Services.Billing.TrialGrantMode.SuperAdminOverride,
+            Reason: dto.Reason, AcknowledgedTermsVersion: null));
+
+        if (!result.Granted)
+            return Conflict(new DTOs.Billing.TrialRefusalDto(result.RefusalCode!, result.Message!));
+
+        var fresh = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
+        return Ok(await BuildAdminAccountDtoAsync(fresh));
+    }
+
+    // Cycle 18 (API_CONTRACT_CYCLE18.md §376) — Т1: proving, months later, exactly which wording an
+    // owner was shown at activation. Never removed from TrialTermsRegistry, so this always resolves for
+    // any version that was ever CurrentVersion.
+    [HttpGet("trial-terms/{version}")]
+    public IActionResult GetTrialTerms(string version)
+    {
+        var template = Services.Billing.TrialTermsRegistry.TryGetTemplate(version);
+        if (template is null) return NotFound();
+        var sha256 = Services.Billing.TrialTermsRegistry.Sha256Of(version);
+        var promisedThresholds = Services.Billing.TrialTermsRegistry.PromisedThresholdsByVersion.GetValueOrDefault(version, []);
+        return Ok(new
+        {
+            version,
+            sha256,
+            isCurrent = version == Services.Billing.TrialTermsRegistry.CurrentVersion,
+            promisedWarningThresholdsDays = promisedThresholds,
+            template,
+        });
+    }
     // ── Options catalog (US-66) ───────────────────────────────────────────────────
 
     [HttpGet("options")]
@@ -199,8 +262,17 @@ public class AdminBillingController(
 
     [HttpGet("billing-accounts")]
     public async Task<IActionResult> GetBillingAccounts(
-        [FromQuery] string? search, [FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? trial,
+        [FromQuery] int? page, [FromQuery] int? pageSize)
     {
+        // Cycle 18 (API_CONTRACT_CYCLE18.md §369) — unlike `status` above (which quietly matches nothing
+        // on an unrecognized value, same as the pre-cycle-18 behaviour), `trial` is a NEW parameter with
+        // no legacy caller to stay silently compatible with, so an unrecognized value is a 400 rather
+        // than a filter that silently returns zero rows.
+        string[] validTrialValues = ["never", "active", "used"];
+        if (trial is not null && !validTrialValues.Contains(trial, StringComparer.OrdinalIgnoreCase))
+            return BadRequest("trial должен быть одним из: never, active, used.");
+
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         search = Pagination.SanitizeSearch(search);
         var now = DateTime.UtcNow;
@@ -241,6 +313,13 @@ public class AdminBillingController(
             status = x.sub == null || x.sub.PlanConfigId == null ? "Free"
                 : !x.sub.IsActive || (x.sub.PaidUntil.HasValue && x.sub.PaidUntil < now) ? "Expired"
                 : "Active",
+            // Cycle 18 (§369) — "Active" needs both a live trial GRANT and a still-usable subscription
+            // (an account whose trial was granted but has since expired/switched to Free has
+            // TrialStartedAtUtc set but is no longer usable — that's Expired, not Active).
+            trialState = x.a.TrialStartedAtUtc == null ? "Never"
+                : x.sub != null && x.sub.IsActive && (!x.sub.PaidUntil.HasValue || x.sub.PaidUntil >= now)
+                    && x.a.TrialEndsAtUtc.HasValue && x.a.TrialEndsAtUtc >= now ? "Active"
+                : "Expired",
         });
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -253,6 +332,13 @@ public class AdminBillingController(
             // An unrecognized status value matches nothing — same as the old in-memory
             // string.Equals(...) filter, which also never matched an unknown value.
             withStatus = withStatus.Where(x => x.status == (canonicalStatus ?? string.Empty));
+        }
+
+        if (trial is not null)
+        {
+            var canonicalTrial = validTrialValues.First(v => string.Equals(v, trial, StringComparison.OrdinalIgnoreCase));
+            var canonicalTrialState = canonicalTrial switch { "active" => "Active", "used" => "Expired", _ => "Never" };
+            withStatus = withStatus.Where(x => x.trialState == canonicalTrialState);
         }
 
         var total = await withStatus.CountAsync();
@@ -322,6 +408,8 @@ public class AdminBillingController(
                 numbersPaid = plan.PaidNotificationNumbers,
                 numbersRegistered = registeredCounts.GetValueOrDefault(a.Id, 0),
                 hasPendingRequest = a.RequestedAtUtc is not null,
+                trialState = x.trialState,
+                trialEndsAt = a.TrialEndsAtUtc,
             };
         }).ToList();
 
@@ -409,6 +497,7 @@ public class AdminBillingController(
             sub?.PlanConfig?.PricePerMonth ?? 0m);
 
         var subscriptionStatus = OwnerSubscriptionService.SubscriptionStatusFor(sub, now);
+        var trialDto = await BuildAdminTrialDtoAsync(account, sub, now);
 
         return new
         {
@@ -453,6 +542,71 @@ public class AdminBillingController(
                 assignedCompanies = c.Assignments.Count,
             }).ToList(),
             pendingRequest,
+            trial = trialDto,
+        };
+    }
+
+    // Cycle 18 (API_CONTRACT_CYCLE18.md §369) — no phone number or its hash anywhere in here (the
+    // trial-phone registry is never exposed by any DTO, admin included — §3 SPEC minimization).
+    // `null` when the account has never had a trial (TrialStartedAtUtc is null) — the object as a whole,
+    // not individual fields, since there is nothing yet to report.
+    private async Task<object?> BuildAdminTrialDtoAsync(BillingAccount account, AccountSubscription? sub, DateTime now)
+    {
+        if (account.TrialStartedAtUtc is null) return null;
+
+        var isCurrentlyUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now)
+            && account.TrialEndsAtUtc.HasValue && account.TrialEndsAtUtc >= now;
+        var state = isCurrentlyUsable ? "Active" : "Expired";
+
+        var grants = await db.TrialGrants.Where(g => g.BillingAccountId == account.Id)
+            .OrderByDescending(g => g.GrantedAtUtc).ToListAsync();
+        var grantedByIds = grants.Select(g => g.GrantedByUserId).Distinct().ToList();
+        var grantedByNames = await db.Users.Where(u => grantedByIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+
+        int? daysLeft = isCurrentlyUsable && account.TrialEndsAtUtc.HasValue
+            ? Math.Max((int)Math.Ceiling((account.TrialEndsAtUtc.Value - now).TotalDays), 0)
+            : null;
+
+        return new
+        {
+            state,
+            startedAt = account.TrialStartedAtUtc,
+            endsAt = account.TrialEndsAtUtc,
+            daysLeft,
+            durationDays = account.TrialDurationDays,
+            warningThresholdsDays = Services.Billing.TrialWindow.ParseThresholds(account.TrialWarningThresholdsDays),
+            grantSource = account.TrialGrantSource?.ToString(),
+            grantedByName = account.TrialGrantSource == Core.Enums.TrialGrantSource.OwnerSelfService
+                ? null : grantedByNames.GetValueOrDefault(account.TrialGrantedByUserId ?? string.Empty),
+            termsVersion = account.TrialTermsVersion,
+            termsShownAt = account.TrialGrantSource == Core.Enums.TrialGrantSource.OwnerSelfService
+                ? account.TrialStartedAtUtc : null,
+            termsAcknowledgedAt = account.TrialTermsAcknowledgedAtUtc,
+            mailingWindow = new
+            {
+                state = account.TrialChannelFirstAuthorizedAtUtc is null ? "NotStarted"
+                    : account.TrialMailingWindowEndsAtUtc is null || account.TrialMailingWindowEndsAtUtc <= now ? "Ended"
+                    : "Running",
+                startedAt = account.TrialChannelFirstAuthorizedAtUtc,
+                endsAt = account.TrialMailingWindowEndsAtUtc,
+                daysLeft = account.TrialMailingWindowEndsAtUtc is { } end && end > now
+                    ? (int?)Math.Ceiling((end - now).TotalDays) : null,
+            },
+            grants = grants.Select(g => new
+            {
+                grantedAt = g.GrantedAtUtc,
+                endsAt = g.EndsAtUtc,
+                source = g.Source.ToString(),
+                grantedByName = g.Source == Core.Enums.TrialGrantSource.OwnerSelfService
+                    ? "—" : grantedByNames.GetValueOrDefault(g.GrantedByUserId, g.GrantedByUserId),
+                reason = g.Reason,
+                termsVersion = g.TermsVersion,
+                termsSha256 = g.TermsTextSha256,
+                termsShownAt = g.TermsShownAtUtc,
+                termsAcknowledgedAt = g.TermsAcknowledgedAtUtc,
+                warningThresholdsDays = Services.Billing.TrialWindow.ParseThresholds(g.WarningThresholdsDays),
+            }).ToList(),
         };
     }
 
@@ -783,6 +937,8 @@ public record Billing_AdminOptionInput(
     decimal? PricePerMonth, string? UnitName, int? MaxQuantity, bool IsPublic = false, bool IsActive = true, int SortOrder = 0);
 
 public record Billing_AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
+
+public record Billing_RegrantTrialInput(string Reason);
 
 public record Billing_AssignSubscriptionInput(
     Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<Billing_AssignOptionInput> Options,
