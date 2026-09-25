@@ -48,6 +48,13 @@ public sealed class DataRetentionTask(
         var okCount = 0;
         var skippedCount = 0;
         var failed = new List<string>();
+        // Н6 (code review, cycle 18 3rd pass) — RetentionOutcome.RotationAffected was set by every rule
+        // that passes isRotationRemoval but never read by anything: the per-rule count only ever
+        // reached an operator buried inside that one rule's own Summary text. Aggregated here so the
+        // task-level summary (the thing GET /api/admin/scheduled-tasks actually surfaces) answers "how
+        // many of today's removals across ALL rules were a key-rotation forced removal, not an ordinary
+        // age-based one" without an operator having to parse every per-rule sub-string themselves.
+        var rotationAffected = 0;
 
         foreach (var rule in ruleList)
         {
@@ -60,6 +67,7 @@ public sealed class DataRetentionTask(
                 var outcome = await rule.ApplyAsync(ctx, ct);
                 scanned += outcome.Scanned;
                 affected += outcome.Affected;
+                rotationAffected += outcome.RotationAffected;
                 lines.Add(outcome.Summary);
                 if (outcome.Skipped) skippedCount++; else okCount++;
                 // §49.2: one line per rule, numbers and dates only — never phone numbers, message text or
@@ -79,6 +87,7 @@ public sealed class DataRetentionTask(
         }
 
         var summary = $"retention[{(dryRun ? "dry" : "live")}] ok={okCount} skipped={skippedCount} failed={failed.Count}" +
+            (rotationAffected > 0 ? $" rotation-total={rotationAffected}" : string.Empty) +
             (lines.Count > 0 ? " | " + string.Join(" | ", lines) : string.Empty) +
             (failed.Count > 0 ? " | failed: " + string.Join(", ", failed) : string.Empty);
 
