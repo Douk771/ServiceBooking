@@ -163,7 +163,12 @@ export interface components {
         SubscriptionRequestInput: {
             /** Format: uuid */
             planId?: string | null;
-            options?: {
+            /**
+             * @description Обязательное поле со стороны ASP.NET model-binding (C# DTO объявляет Options непустым
+             *     non-nullable List без значения по умолчанию) — отсутствие поля отклоняется общим 400
+             *     ДО контроллера. Пустой массив [] допустим, отсутствие поля — нет.
+             */
+            options: {
                 /** Format: uuid */
                 optionId: string;
                 /** Format: int32 */
@@ -283,6 +288,13 @@ export interface operations {
                     "text/plain": string;
                 };
             };
+            /** @description Не аутентифицирован (тело пустое) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Вызывающий не владелец записи и не персонал компании (тело пустое) */
             403: {
                 headers: {
@@ -312,13 +324,22 @@ export interface operations {
                     "text/plain": string;
                 };
             };
+            /** @description Запрос без `Content-Type: application/json` (или с чужим типом). Отвечает не прикладной код, а привязка модели ASP.NET Core, поэтому тело — ProblemDetails, а не привычный text/plain. Поведение сквозное для всего API и существовало всегда; здесь оно записано, чтобы автосверка не считала его нарушением. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": Record<string, never>;
+                };
+            };
         };
     };
     getClientBookings: {
         parameters: {
             query?: {
-                /** @description upcoming | Pending | Confirmed | Cancelled | Completed | NoShow */
-                status?: string;
+                /** @description upcoming | Pending | Confirmed | Cancelled | Completed | NoShow. Пустая строка (`?status=`) значит то же, что отсутствие параметра, — фильтр не применяется (`BookingFilters.TryParseClientStatus`, ветка `string.IsNullOrEmpty`). Правило существовало всегда, но в схеме описано не было, из-за чего автосверка считала штатный ответ 200 нарушением контракта. Числовые значения перечисления (`?status=3`) тоже принимаются — это давняя обратная совместимость `BookingFilters.TryParseClientStatus`. В enum они не вынесены намеренно: перечисление описывает рекомендованную форму, а не полный набор принимаемых строк. Неопределённые ординалы (`99`, `-1`) отклоняются с 400. */
+                status?: "" | "upcoming" | "Pending" | "Confirmed" | "Cancelled" | "Completed" | "NoShow";
             };
             header?: never;
             path?: never;

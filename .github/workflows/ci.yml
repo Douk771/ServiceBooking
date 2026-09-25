@@ -103,16 +103,9 @@ jobs:
           dotnet dotnet-ef migrations add __DriftProbe --project ServiceBooking.Infrastructure \
             --startup-project ServiceBooking.API --output-dir Migrations/__probe
           probe_file=$(ls ServiceBooking.Infrastructure/Migrations/__probe/*__DriftProbe.cs)
-          python3 -c '
-import re, sys
-text = open(sys.argv[1], encoding="utf-8").read()
-m = re.search(r"protected override void Up\(MigrationBuilder migrationBuilder\)\s*\{(.*?)\n\s*\}", text, re.S)
-body = m.group(1).strip() if m else None
-if body:
-    print("::error::AppDbContextModelSnapshot.cs has drifted from the current model — Up() is not empty. See ARCHITECTURE_CYCLE17.md §308.1.", file=sys.stderr)
-    print(text, file=sys.stderr)
-    sys.exit(1)
-' "$probe_file"
+          # Скрипт лежит файлом, а не инлайном: встроенный сюда python с первой колонки
+          # обрывает блочный скаляр YAML, и GitHub отказывается разбирать весь workflow.
+          python3 deploy/ci/check-drift-probe.py "$probe_file"
           dotnet dotnet-ef migrations remove --project ServiceBooking.Infrastructure --startup-project ServiceBooking.API
           rm -rf ServiceBooking.Infrastructure/Migrations/__probe
 
@@ -155,6 +148,27 @@ if body:
 
       - name: Type-check
         run: npx tsc --noEmit
+
+      # ARCHITECTURE_CYCLE17.md §310 п.4 / API_CONTRACT_CYCLE17.md §328 п.9 (долг C15-10).
+      # Генераты лежат в репозитории, поэтому расходятся со схемой молча: контракт правят,
+      # регенерацию забывают, и типы описывают вчерашний API. Именно это и случилось внутри
+      # цикла 17 — схему поправили дважды, генерат остался от первого коммита. Шаг
+      # перегенерирует и падает, если результат отличается от закоммиченного.
+      - name: Generated API types must match the contracts
+        run: |
+          npm run types:api:cycle15
+          npm run types:api:cycle17
+          git diff --exit-code -- src/types/api-cycle15.generated.ts src/types/api-cycle17.generated.ts
+
+      # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
+      # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя
+      # довезти до develop молча — в цикле 15 ровно так и вышло (юрист отчитался, файл остался).
+      - name: No placeholder legal copy
+        run: |
+          if grep -rn "ТРЕБУЕТСЯ ТЕКСТ ОТ LEGAL-COUNSEL" ../ServiceBooking.API/Services/; then
+            echo "::error::Заглушка правового текста дошла до CI — заменить на текст от legal-counsel"
+            exit 1
+          fi
 
       # ARCHITECTURE_CYCLE9.md §105.9 (R11) — the staff push service worker must never gain a `fetch`
       # listener or touch the Cache API: that is the mechanical guarantee that it cannot intercept a

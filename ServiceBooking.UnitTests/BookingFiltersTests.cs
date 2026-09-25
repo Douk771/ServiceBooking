@@ -70,16 +70,31 @@ public class BookingFiltersTests
     }
 
     [Theory]
-    [InlineData("3")]
-    [InlineData("0")]
+    [InlineData("3", BookingStatus.Completed)]
+    [InlineData("0", BookingStatus.Pending)]
+    public void TryParseClientStatus_DefinedNumericValue_StillWorks(string value, BookingStatus expected)
+    {
+        // Backward compatibility, stated by TryParseClientStatus itself: numeric enum values were
+        // always accepted and callers may rely on it. Cycle 17 broke this for a while by refusing all
+        // numeric input; the rejection it was after is the NEXT test's job, and Enum.IsDefined already
+        // did it.
+        var ok = BookingFilters.TryParseClientStatus(value, out var filter);
+
+        ok.Should().BeTrue();
+        filter.Kind.Should().Be(ClientStatusFilterKind.ByStatus);
+        filter.Status.Should().Be(expected);
+    }
+
+    [Theory]
     [InlineData("99")]
     [InlineData("-1")]
-    public void TryParseClientStatus_NumericValue_ReturnsFalse(string value)
+    [InlineData(" 99 ")]
+    public void TryParseClientStatus_UndefinedOrdinal_ReturnsFalse(string value)
     {
-        // Regression test (contracts/cycle17/openapi.yaml): `status` is documented as an enum of exact
-        // names only. Enum.TryParse<T>(string, ...) has a well-known gotcha where it accepts ANY integer
-        // literal as a "valid" enum value, even undefined ordinals (e.g. 99, -1) — which previously
-        // slipped past this check and produced a 200 with an empty result instead of the documented 400.
+        // Enum.TryParse<T>(string, ...) accepts ANY integer literal, including ordinals that match no
+        // member, which would give a 200 with an empty result instead of the documented 400. The
+        // `Enum.IsDefined` check is what closes this — including the padded form, since TryParse trims
+        // and a character-by-character digit guard would not.
         var ok = BookingFilters.TryParseClientStatus(value, out _);
 
         ok.Should().BeFalse();

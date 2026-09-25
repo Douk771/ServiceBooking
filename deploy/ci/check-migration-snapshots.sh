@@ -121,6 +121,28 @@ for entity, props in history.items():
 snapshot_entities = entities_and_properties(snapshot_file.read_text(encoding="utf-8"))
 
 failures: list[str] = []
+
+# Проверка новейшего Designer'а отдельно от прогона по истории.
+#
+# Прогон ниже строит историю только из файлов, где свойство ЕСТЬ, и молча пропускает свойство,
+# которого нет ни в одном Designer'е (ветка `if not run: continue`). Из-за этого мимо проходила
+# ровно та форма дефекта C15-3, ради которой скрипт и писался: миграция, сгенерированная по
+# испорченному снапшоту, не содержит новой колонки в своём же Designer'е. Проверено: удаление
+# Company.ClientRescheduleMinHours из Designer'а миграции, которая его добавила, давало OK.
+#
+# Инвариант, который это закрывает, простой: после последней миграции ничего не применялось,
+# поэтому её Designer обязан совпадать с сегодняшним AppDbContextModelSnapshot.cs.
+if designer_files:
+    newest_designer = designer_files[-1]
+    newest_entities = entities_and_properties(newest_designer.read_text(encoding="utf-8"))
+    for entity, final_props in snapshot_entities.items():
+        for prop in sorted(final_props - newest_entities.get(entity, set())):
+            failures.append(
+                f"entity '{entity}', property '{prop}': присутствует в AppDbContextModelSnapshot.cs, "
+                f"но отсутствует в новейшем снапшоте {newest_designer.name}. После последней миграции "
+                f"ничего не применялось, значит эти два файла обязаны совпадать — расхождение значит, "
+                f"что миграция сгенерирована по испорченному снапшоту (C15-3)"
+            )
 for entity, final_props in snapshot_entities.items():
     for prop in final_props:
         run = history.get(entity, {}).get(prop)

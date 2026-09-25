@@ -124,14 +124,11 @@ paths:
               example: "Cancellation reason must be 300 characters or fewer."
         '415':
           description: >-
-            Запрос без `Content-Type: application/json` (или с чужим типом). Отвечает не
-            прикладной код, а привязка модели ASP.NET Core, поэтому тело — ProblemDetails,
-            а не привычный text/plain. Поведение сквозное для всего API и существовало
-            всегда; здесь оно записано, чтобы автосверка не считала его нарушением.
-          content:
-            application/problem+json:
-              schema:
-                type: object
+            Запрос без `Content-Type: application/json` (или с чужим типом). Отвечает не прикладной
+            код, а привязка модели ASP.NET Core — Kestrel обрывает запрос до контроллера, тело
+            фактически ПУСТОЕ (`Content-Length: 0`, заголовок `Content-Type` в ответе отсутствует
+            вовсе — проверено `curl` напрямую, это не ProblemDetails). Поведение сквозное для всего
+            API и существовало всегда; здесь оно записано, чтобы автосверка не считала его нарушением.
         '401':
           description: Не аутентифицирован (тело пустое)
         '403':
@@ -169,6 +166,10 @@ paths:
             применяется (`BookingFilters.TryParseClientStatus`, ветка `string.IsNullOrEmpty`).
             Правило существовало всегда, но в схеме описано не было, из-за чего автосверка
             считала штатный ответ 200 нарушением контракта.
+            Числовые значения перечисления (`?status=3`) тоже принимаются — это давняя
+            обратная совместимость `BookingFilters.TryParseClientStatus`. В enum они не
+            вынесены намеренно: перечисление описывает рекомендованную форму, а не полный
+            набор принимаемых строк. Неопределённые ординалы (`99`, `-1`) отклоняются с 400.
           schema:
             type: string
             enum: ['', upcoming, Pending, Confirmed, Cancelled, Completed, NoShow]
@@ -225,6 +226,14 @@ paths:
           description: Не аутентифицирован (тело пустое)
         '404':
           description: У вызывающего нет биллинг-аккаунта (тело пустое)
+        '415':
+          description: >-
+            Запрос без `Content-Type: application/json` (или с чужим типом). Тот же сквозной эффект
+            привязки модели ASP.NET Core, что и у PATCH /api/bookings/{id}/cancel (см. там) — тело
+            фактически ПУСТОЕ (`Content-Length: 0`, `Content-Type` в ответе отсутствует, не
+            ProblemDetails — проверено `curl` напрямую). Записан здесь по той же причине:
+            `requestBody` у этой ручки обязателен (`required: true`), значит привязка модели проверяет
+            `Content-Type` до прикладного кода и на этом пути тоже.
 
   /api/billing/subscription:
     get:

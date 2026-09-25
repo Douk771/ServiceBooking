@@ -59,6 +59,25 @@ describe('applyLegalRuntimeValues — shared corpus (ARCHITECTURE_CYCLE17.md §3
       it(`substitutes form "${testCase.id}"`, () => {
         const result = applyLegalRuntimeValues(testCase.html, values)
         expect(result).not.toContain('data-legal-')
+        // Вторая половина того, что требует _howToUse.ts в самом корпусе. Без неё зелёной
+        // проходила бы регрессия, при которой разметка исчезает, а значение не появляется:
+        // «нет data-legal-» выполняется и для пустой строки.
+        //
+        // Значение ожидается не во всех кейсах: в `unless`-ветке при известном названии блок
+        // целиком удаляется, а `when`-блок может не содержать подстановки вовсе — там ждать
+        // значения неверно. Поэтому условие ровно то, при котором подстановка обязана быть
+        // видна: в разметке есть data-legal-value и она не внутри удаляемой ветки.
+        if (testCase.html.includes('data-legal-unless')) {
+          // Ветка «название неизвестно» при известном названии обязана исчезнуть целиком —
+          // пустая строка здесь правильный ответ, а не регрессия.
+          expect(result.trim()).toBe('')
+        } else if (testCase.html.includes('data-legal-value')) {
+          expect(result).toContain('Салон «Ландыш»')
+        } else {
+          // `when`-блок без подстановки внутри: значения ждать неоткуда, но текст блока
+          // обязан остаться — именно схлопывание в пустоту ловит этот ассерт.
+          expect(result.trim()).not.toBe('')
+        }
       })
     } else {
       it(`leaves form "${testCase.id}" untouched (not recognized by either side)`, () => {
