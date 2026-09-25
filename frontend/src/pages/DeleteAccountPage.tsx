@@ -5,6 +5,7 @@ import { AxiosError } from 'axios'
 import { profileApi } from '../api/profile'
 import { useAuthStore } from '../store/authStore'
 import { GuestDataGateNotice } from '../components/profile/GuestDataGateNotice'
+import { TrialRegistryDeletionNotice } from '../components/profile/TrialRegistryDeletionNotice'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -21,6 +22,9 @@ export function DeleteAccountPage() {
   const { logout } = useAuthStore()
   // Shared cache with ProfilePage's ['profile'] query (§276.1) — no second, gate-specific fetch.
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: profileApi.get })
+  // O8 (API_CONTRACT_CYCLE18.md §377) — must be shown BEFORE confirming the irreversible deletion,
+  // same as GuestDataGateNotice; this route is also in the 451 allow-list (§360.2).
+  const { data: deletionPreview } = useQuery({ queryKey: ['delete-account-preview'], queryFn: profileApi.deleteAccountPreview })
   const [password, setPassword] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [error, setError] = useState('')
@@ -72,6 +76,7 @@ export function DeleteAccountPage() {
         </div>
 
         {profile && <GuestDataGateNotice phoneVerified={profile.phoneVerified} />}
+        <TrialRegistryDeletionNotice text={deletionPreview?.trialRegistryNotice ?? null} />
 
         <Input label="Текущий пароль" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
 
