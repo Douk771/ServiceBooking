@@ -139,7 +139,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/companies/{slug}": {
+    "/companies/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -167,24 +167,12 @@ export interface paths {
          *
          *     Публичная страница компании НЕ получает ни одного нового запроса: и фотографии (цикл 10), и
          *     всё, из чего строятся переходы в карты, приезжают вместе с компанией.
+         *
+         *     Несмотря на имя параметра `id`, значение — `slug` компании (строка), НЕ GUID; сервер ищет по
+         *     полю `Slug`, без ограничения формата. Имя параметра унифицировано с PUT ниже только ради
+         *     одного пути в этой спеке (см. комментарий у path item) — поведение эндпоинта не изменилось.
          */
         get: operations["getCompanyBySlug"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/companies/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
         /**
          * Настройки компании (форма НЕ менялась; у правки address появилось следствие)
          * @description НЕ ИЗМЕНЁН в цикле 13 по форме запроса. Описан здесь ради ОДНОГО следствия, которое обязаны
@@ -767,7 +755,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                slug: string;
+                /** @description Slug компании (строка, НЕ GUID) — см. описание операции. */
+                id: string;
             };
             cookie?: never;
         };

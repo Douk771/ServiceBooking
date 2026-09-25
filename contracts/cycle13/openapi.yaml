@@ -43,6 +43,8 @@ openapi: 3.0.3
 info:
   title: ServiceBooking API — цикл 13 (адрес на картах, мягкая верификация, предупреждение о публичности адреса)
   version: "9.1.0"
+  license:
+    name: Proprietary
   description: |
     Конвенции проекта, действующие без изменений:
       * camelCase в JSON, enum — строками, DateTime — ISO-8601 UTC;
@@ -312,7 +314,15 @@ paths:
 
   # ─────────────────────── Добавочные поля в существующих ответах ───────────────────────
 
-  /companies/{slug}:
+  /companies/{id}:
+    # Один элемент path (`{id}`) на GET и PUT намеренно: структурно это один и тот же
+    # URL-шаблон `/companies/{id}`, и до слияния он был описан двумя ключами верхнего уровня
+    # (`/companies/{slug}` и `/companies/{id}`), которые OpenAPI/redocly считают идентичными
+    # шаблонами с разными именами параметра — TD-07, no-identical-paths/no-ambiguous-paths.
+    # На бэкенде это по-прежнему два разных маршрута ASP.NET Core, разведённых HTTP-методом и
+    # constraint'ом (`GetBySlug` — `[HttpGet("{slug}")]`, без ограничения на формат; `UpdateCompany` —
+    # `[HttpPut("{id:guid}")]`, только валидный GUID) — рантайм-неоднозначности нет и не было, это
+    # чисто ограничение синтаксиса OpenAPI paths, не изменение поведения API.
     get:
       tags: [company-address-readonly]
       operationId: getCompanyBySlug
@@ -337,11 +347,16 @@ paths:
 
         Публичная страница компании НЕ получает ни одного нового запроса: и фотографии (цикл 10), и
         всё, из чего строятся переходы в карты, приезжают вместе с компанией.
+
+        Несмотря на имя параметра `id`, значение — `slug` компании (строка), НЕ GUID; сервер ищет по
+        полю `Slug`, без ограничения формата. Имя параметра унифицировано с PUT ниже только ради
+        одного пути в этой спеке (см. комментарий у path item) — поведение эндпоинта не изменилось.
       security: []
       parameters:
-        - name: slug
+        - name: id
           in: path
           required: true
+          description: Slug компании (строка, НЕ GUID) — см. описание операции.
           schema: { type: string }
       responses:
         "200":
@@ -351,8 +366,6 @@ paths:
               schema: { $ref: '#/components/schemas/CompanyDtoAddressDelta' }
         "404":
           $ref: '#/components/responses/NotFoundEmpty'
-
-  /companies/{id}:
     put:
       tags: [company-address-readonly]
       operationId: updateCompany
