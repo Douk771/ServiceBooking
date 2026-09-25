@@ -21,6 +21,7 @@ public sealed class RateLimitTestFactory : WebApplicationFactory<Program>
     private readonly int? _authRegisterPermitLimit;
     private readonly int? _dataExportPermitLimit;
     private readonly int? _bookingCreateAnonymousPermitLimit;
+    private readonly int? _notificationsWebhookPermitLimit;
     private readonly string[]? _trustedNetworks;
     private readonly string _simulatedRealPeer;
     private readonly string _connectionString;
@@ -31,6 +32,7 @@ public sealed class RateLimitTestFactory : WebApplicationFactory<Program>
         int? authRegisterPermitLimit = null,
         int? dataExportPermitLimit = null,
         int? bookingCreateAnonymousPermitLimit = null,
+        int? notificationsWebhookPermitLimit = null,
         string[]? trustedNetworks = null,
         string simulatedRealPeer = "127.0.0.1")
     {
@@ -39,6 +41,7 @@ public sealed class RateLimitTestFactory : WebApplicationFactory<Program>
         _authRegisterPermitLimit = authRegisterPermitLimit;
         _dataExportPermitLimit = dataExportPermitLimit;
         _bookingCreateAnonymousPermitLimit = bookingCreateAnonymousPermitLimit;
+        _notificationsWebhookPermitLimit = notificationsWebhookPermitLimit;
         _trustedNetworks = trustedNetworks;
         _simulatedRealPeer = simulatedRealPeer;
     }
@@ -78,6 +81,8 @@ public sealed class RateLimitTestFactory : WebApplicationFactory<Program>
         }
         if (_bookingCreateAnonymousPermitLimit is { } bookingAnon)
             builder.UseSetting("RateLimits:booking-create:AnonymousPermitLimit", bookingAnon.ToString());
+        if (_notificationsWebhookPermitLimit is { } webhookLimit)
+            builder.UseSetting("RateLimits:notifications-webhook:PermitLimit", webhookLimit.ToString());
 
         for (var i = 0; i < (_trustedNetworks?.Length ?? 0); i++)
             builder.UseSetting($"ForwardedHeaders:TrustedNetworks:{i}", _trustedNetworks![i]);

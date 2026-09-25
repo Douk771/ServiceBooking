@@ -89,21 +89,35 @@ public class NotificationWebhookUnsubscribeTests(TestDatabaseFixture fixture) : 
     [Fact, TestCase("NTF-W005")]
     public async Task Webhook_RealRateLimitPolicy_TripsAfterQuota()
     {
-        // Priority scenario 1: exercises the ACTUAL "notifications-webhook" policy (600/min default,
-        // API_CONTRACT_CYCLE4.md §33) end to end — not a mock, not a unit test of the limiter in
-        // isolation. This is the exact class of bug the reviewer flagged: the endpoint referenced a
-        // rate-limit policy name that was never registered, so EVERY call 500'd instead of the intended
-        // 401 (wrong token) or 429 (over quota) — a policy-lookup exception, not a business-logic bug.
-        var client = AnonymousClient();
+        // Priority scenario 1: exercises the ACTUAL "notifications-webhook" policy end to end — not a
+        // mock, not a unit test of the limiter in isolation. This is the exact class of bug the reviewer
+        // flagged: the endpoint referenced a rate-limit policy name that was never registered, so EVERY
+        // call 500'd instead of the intended 401 (wrong token) or 429 (over quota) — a policy-lookup
+        // exception, not a business-logic bug. The test's job is proving the policy is registered and
+        // reachable, NOT reproducing its production quota (600/min, API_CONTRACT_CYCLE4.md §33) — see
+        // this cycle's fix below.
+        //
+        // Fixed (post-cycle-18 CI red, NTF-W005): the original version drove 601 REAL sequential requests
+        // against the production 600/min default to force a real clock-window trip. On a loaded CI
+        // runner (MaxParallelThreads=2, 62 tests added by cycle 18) those 601 calls took ~62 real
+        // seconds, long enough for the fixed 1-minute window to roll over mid-loop and reset the counter
+        // — every response came back a legitimate 401 and 429 never arrived, a false failure caused by
+        // machine speed, not product behavior. Using RateLimitTestFactory's existing
+        // notificationsWebhookPermitLimit override (same pattern RateLimitingTests already uses for
+        // auth-login/auth-register) shrinks the PERMIT COUNT instead of racing the WINDOW, so the same
+        // real policy trips deterministically in a handful of calls regardless of how fast the host is.
+        const int permitLimit = 5;
+        await using var factory = new RateLimitTestFactory(ConnectionString, notificationsWebhookPermitLimit: permitLimit);
+        var client = factory.CreateClient();
         HttpResponseMessage? last = null;
-        for (var i = 0; i < 601; i++)
+        for (var i = 0; i < permitLimit + 1; i++)
         {
             var content = new StringContent("{}", Encoding.UTF8, "application/json");
             last = await client.PostAsync("/api/notifications/provider-webhook/WRONG-TOKEN", content);
             if (last.StatusCode == (HttpStatusCode)429) break;
             last.StatusCode.Should().Be(HttpStatusCode.Unauthorized, $"call #{i + 1} must be a clean 401, never a 500 from a missing policy");
         }
-        last!.StatusCode.Should().Be((HttpStatusCode)429, "601 calls within a minute must eventually trip the real policy");
+        last!.StatusCode.Should().Be((HttpStatusCode)429, $"{permitLimit + 1} calls against a {permitLimit}/min policy must trip the real limiter");
     }
 
     // ── Unsubscribe ───────────────────────────────────────────────────────────────────────────────
