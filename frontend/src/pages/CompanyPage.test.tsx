@@ -245,4 +245,34 @@ describe('phone link — ARCHITECTURE_CYCLE15.md §254', () => {
     await screen.findByRole('heading', { name: makeCompany().name })
     expect(screen.queryByRole('link', { name: /Позвонить/ })).not.toBeInTheDocument()
   })
+
+  // ARCHITECTURE_CYCLE17.md §305.4 (US-17-05, C15-6.5): a phone with no digits produces
+  // `telHref === ''`, which must never end up as a literal `href=""` — that's a link to nowhere for
+  // mouse and screen reader alike.
+  it('never renders a <a href=""> for an unusable phone value', async () => {
+    getBySlug.mockResolvedValueOnce(makeCompany({ phone: 'n/a' }))
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+
+    await screen.findByRole('heading', { name: makeCompany().name })
+    expect(screen.queryByRole('link', { name: /Позвонить/ })).not.toBeInTheDocument()
+    const links = screen.queryAllByRole('link')
+    for (const link of links) expect(link.getAttribute('href')).not.toBe('')
+  })
+})
+
+// ARCHITECTURE_CYCLE17.md §305.5 (US-17-04, C15-6.6): map links no longer sit nested inside
+// `{company.address && (…)}` — they must be independent of whether the address was filled in.
+describe('CompanyMapLinks — §305.5, independent of the address field', () => {
+  it('shows a map link even when the company has no address', async () => {
+    getBySlug.mockResolvedValueOnce(
+      makeCompany({ address: undefined, yandexMapsUrl: 'https://yandex.ru/maps/org/x/1/' }),
+    )
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+
+    expect(await screen.findByRole('link', { name: /Открыть в Яндекс Картах/ })).toBeInTheDocument()
+  })
 })

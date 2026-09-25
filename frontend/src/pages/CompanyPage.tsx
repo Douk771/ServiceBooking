@@ -148,24 +148,31 @@ export function CompanyPage() {
                 phone → address + map links → email. Was `flex gap-5 flex-wrap`, which let the
                 two-line address column stretch its single-line neighbours to match its height. */}
             <div className="flex flex-col items-start gap-2 text-[13.5px] text-gold-dark">
-              {company.phone && (
-                <a
-                  href={telHref(company.phone)}
-                  aria-label={`Позвонить ${formatPhone(company.phone)}`}
-                  className="min-h-[44px] inline-flex items-center gap-1.5 rounded-full -mx-1 px-1 hover:text-gold-darker hover:bg-cream-deep transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2"
-                >
-                  <Icon name="phone" size={15} strokeWidth={1.6} />
-                  {formatPhone(company.phone)}
-                </a>
-              )}
-              {company.address && (
-                <div className="flex flex-col gap-1 flex-wrap">
-                  <span className="flex items-center gap-1.5">
-                    <Icon name="map-pin" size={15} strokeWidth={1.6} />
-                    {company.address}
+              {company.phone &&
+                // ARCHITECTURE_CYCLE17.md §305.4 (US-17-05, C15-6.5) — `href=""` renders as a link
+                // to nowhere for both mouse and screen reader; `telHref` can return '' for a phone
+                // that has no digits at all, so an empty `href` must fall through to `undefined`
+                // and the element becomes a plain <span>, not an unclickable <a>.
+                (telHref(company.phone) ? (
+                  <a
+                    href={telHref(company.phone)}
+                    aria-label={`Позвонить ${formatPhone(company.phone)}`}
+                    className="min-h-[44px] inline-flex items-center gap-1.5 rounded-full -mx-1 px-1 hover:text-gold-darker hover:bg-cream-deep transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-2"
+                  >
+                    <Icon name="phone" size={15} strokeWidth={1.6} />
+                    {formatPhone(company.phone)}
+                  </a>
+                ) : (
+                  <span className="min-h-[44px] inline-flex items-center gap-1.5 rounded-full -mx-1 px-1">
+                    <Icon name="phone" size={15} strokeWidth={1.6} />
+                    {formatPhone(company.phone)}
                   </span>
-                  <CompanyMapLinks yandexUrl={company.yandexMapsUrl} twoGisUrl={company.twoGisUrl} />
-                </div>
+                ))}
+              {company.address && (
+                <span className="flex items-center gap-1.5">
+                  <Icon name="map-pin" size={15} strokeWidth={1.6} />
+                  {company.address}
+                </span>
               )}
               {company.email && (
                 <span className="flex items-center gap-1.5">
@@ -173,6 +180,12 @@ export function CompanyPage() {
                   {company.email}
                 </span>
               )}
+              {/* ARCHITECTURE_CYCLE17.md §305.5 (US-17-04, C15-6.6) — a sibling of the address row,
+                  not nested inside `{company.address && …}`: the map links come from
+                  yandexMapsUrl/twoGisUrl, which the owner can set independently of the free-text
+                  address. `CompanyMapLinks` already returns null when both are empty, so "no space
+                  when both are empty" needs no extra condition here. */}
+              <CompanyMapLinks yandexUrl={company.yandexMapsUrl} twoGisUrl={company.twoGisUrl} />
             </div>
             {!company.allowSelfBooking && (
               <div className="mt-3.5 inline-flex items-center gap-1.5 bg-warning-bg text-warning text-xs px-3 py-1 rounded-full">
