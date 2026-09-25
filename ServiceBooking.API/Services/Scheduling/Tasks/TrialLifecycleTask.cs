@@ -429,14 +429,44 @@ public sealed class TrialLifecycleTask(
             {
                 try
                 {
-                    if (!sub.TryGetValue(account.Id, out var accountSub) ||
-                        systemTrial is null || accountSub.PlanConfigId != systemTrial.Id)
+                    if (!sub.TryGetValue(account.Id, out var accountSub) || systemTrial is null)
                     {
-                        // No subscription row at all, or the account was already moved OFF the trial plan
-                        // by an admin/owner action before the trial's own end date materialized (e.g. a
-                        // paid plan assigned early) — this task must not overwrite a plan decision someone
-                        // else already made. Either way there is nothing left to transition; the account
-                        // is still marked handled so it stops being re-selected by this index every pass.
+                        // No subscription row at all (or no trial plan configured this pass) — nothing to
+                        // transition. The account is still marked handled so it stops being re-selected by
+                        // this index every pass.
+                        account.TrialExpiredHandledAtUtc = now;
+                        await db.SaveChangesAsync(ct);
+                        alreadyHandled++;
+                        continue;
+                    }
+
+                    // Н11 (customer-approved middle path, code review cycle 18 3rd pass) — re-read THIS
+                    // ONE account's current PlanConfigId straight from the DB, right before mutating,
+                    // instead of trusting only the whole-batch snapshot (`sub`) loaded before this loop
+                    // started. Without this, an admin/owner decision made AFTER the batch was read but
+                    // BEFORE this account's own iteration ran (e.g. AssignSubscription putting the account
+                    // on a paid plan) would be silently overwritten back to Free here — the same class of
+                    // "admin's decision quietly lost" failure as Б1, and the same price: the owner loses a
+                    // plan someone just assigned them, with no journal trace.
+                    //
+                    // This is NOT a full fix — it narrows the race window from "however long the whole
+                    // batch takes to process" down to "between this SELECT and this account's own
+                    // SaveChangesAsync a few lines below", but a genuinely concurrent write landing in
+                    // THAT gap is still possible. Closing it completely needs the same advisory lock
+                    // TrialActivationService/AssignSubscription already take, acquired before BOTH the
+                    // re-read and the write — deliberately not done here this pass (see the handoff
+                    // report: restructuring per-account transactions/locking here risks the batch
+                    // optimization and the CY18L-19/24 coverage right before the final review).
+                    var currentPlanId = await db.AccountSubscriptions.AsNoTracking()
+                        .Where(s => s.BillingAccountId == account.Id)
+                        .Select(s => (Guid?)s.PlanConfigId)
+                        .FirstOrDefaultAsync(ct);
+                    if (currentPlanId != systemTrial.Id)
+                    {
+                        // The account was already moved OFF the trial plan by an admin/owner action —
+                        // either caught by the batch-wide snapshot above, or (this check's own reason to
+                        // exist) in the narrow window since. This task must not overwrite a plan decision
+                        // someone else already made; there is nothing left to transition.
                         account.TrialExpiredHandledAtUtc = now;
                         await db.SaveChangesAsync(ct);
                         alreadyHandled++;
