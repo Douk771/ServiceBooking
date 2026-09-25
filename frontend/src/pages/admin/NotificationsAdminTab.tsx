@@ -235,31 +235,61 @@ function PlatformSettingsCard() {
       if (Number.isNaN(parsedIdleDays)) {
         throw new Error('Некорректный срок простоя — исправьте поле перед сохранением.')
       }
-      if (Number.isNaN(parsedTrialDuration) || parsedTrialDuration < 1) {
-        throw new Error('Некорректная длительность пробного периода — исправьте поле перед сохранением.')
+      // Cycle 18 §367: all three trial fields are nullable on the wire, and null/absent means "leave
+      // unchanged" — same convention as isPublic/sortOrder on AdminPlanInput. Sending them unconditionally
+      // from local state (seeded from constants '14'/'7'/'7,3,1' before `data` loads, or stale once the
+      // server value has drifted from what this screen last read) would silently overwrite a value the
+      // admin never touched, and would block saving unrelated fields (price/idle days) behind trial
+      // validation errors that have nothing to do with what's being changed. So: only include a trial
+      // field in the request when its local value actually differs from the loaded server value, and
+      // only validate the ones being sent.
+      const trialDurationChanged = data?.trialDurationDays == null || trialDurationDays.trim() !== String(data.trialDurationDays)
+      const trialMailingWindowChanged =
+        data?.trialMailingWindowDays == null || trialMailingWindowDays.trim() !== String(data.trialMailingWindowDays)
+      const serverThresholdsText = data?.trialWarningThresholdsDays?.join(',') ?? null
+      const trialThresholdsChanged = serverThresholdsText == null || trialThresholds.trim() !== serverThresholdsText
+
+      let trialDurationDaysToSend: number | null = null
+      if (trialDurationChanged) {
+        if (Number.isNaN(parsedTrialDuration) || parsedTrialDuration < 1) {
+          throw new Error('Некорректная длительность пробного периода — исправьте поле перед сохранением.')
+        }
+        trialDurationDaysToSend = parsedTrialDuration
       }
-      if (Number.isNaN(parsedTrialMailingWindow) || parsedTrialMailingWindow < 1) {
-        throw new Error('Некорректное окно рассылок — исправьте поле перед сохранением.')
+
+      let trialMailingWindowDaysToSend: number | null = null
+      if (trialMailingWindowChanged) {
+        if (Number.isNaN(parsedTrialMailingWindow) || parsedTrialMailingWindow < 1) {
+          throw new Error('Некорректное окно рассылок — исправьте поле перед сохранением.')
+        }
+        trialMailingWindowDaysToSend = parsedTrialMailingWindow
       }
-      if (trialWindowExceedsDuration) {
+
+      if ((trialDurationChanged || trialMailingWindowChanged) && trialWindowExceedsDuration) {
         throw new Error('Окно рассылок не может быть длиннее длительности пробного периода.')
       }
-      const thresholds = trialThresholds
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s !== '')
-        .map(Number)
-      if (thresholds.length === 0 || thresholds.some((n) => Number.isNaN(n) || n < 1)) {
-        throw new Error('Некорректные пороги предупреждений — перечислите положительные числа через запятую.')
+
+      let trialWarningThresholdsDaysToSend: number[] | null = null
+      if (trialThresholdsChanged) {
+        const thresholds = trialThresholds
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s !== '')
+          .map(Number)
+        if (thresholds.length === 0 || thresholds.some((n) => Number.isNaN(n) || n < 1)) {
+          throw new Error('Некорректные пороги предупреждений — перечислите положительные числа через запятую.')
+        }
+        trialWarningThresholdsDaysToSend = thresholds
       }
+
       return adminNotificationsApi.updateSettings({
         channelPricePerMonth: parsedPrice,
         channelIdleDays: parsedIdleDays,
         pricingPublicEnabled: nextPricingPublicEnabled,
         pricingPublicBlockedReason: data?.pricingPublicBlockedReason ?? null,
-        trialDurationDays: parsedTrialDuration,
-        trialMailingWindowDays: parsedTrialMailingWindow,
-        trialWarningThresholdsDays: thresholds,
+        trialDurationDays: trialDurationDaysToSend,
+        trialMailingWindowDays: trialMailingWindowDaysToSend,
+        trialWarningThresholdsDays: trialWarningThresholdsDaysToSend,
       })
     },
     onSuccess: (res) => {

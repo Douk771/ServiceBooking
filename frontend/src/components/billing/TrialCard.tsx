@@ -43,6 +43,13 @@ export function TrialCard({ trial }: Props) {
       {/* §371: печатается дословно, сервер решил можно ли закрыть (dismissible на warning, а не здесь). */}
       <p className="text-sm text-ink-soft">{trial.message}</p>
 
+      {/* §371 п.1: mailingWindow.text — отдельный, обычно более короткий срок для рассылок клиентам,
+          печатается дословно наравне с trial.message. NotApplicable сервер отдаёт с пустым текстом
+          для состояний, где окно не имеет смысла (см. TrialStateReader) — тогда блок скрывается. */}
+      {trial.mailingWindow?.text && (
+        <p className="text-sm text-ink-soft mt-1">{trial.mailingWindow.text}</p>
+      )}
+
       {(trial.includes ?? []).length > 0 && (
         <ul className="mt-3 text-xs text-ink-soft list-disc list-inside grid gap-1">
           {(trial.includes ?? []).map((i) => (

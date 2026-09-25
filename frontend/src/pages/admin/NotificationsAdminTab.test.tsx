@@ -110,7 +110,7 @@ describe('NotificationsAdminTab — trial settings (API_CONTRACT_CYCLE18.md §36
     expect(screen.getAllByText('Окно рассылок не может быть длиннее длительности пробного периода.').length).toBeGreaterThan(0)
   })
 
-  it('saves trial settings alongside the existing channel settings when valid', async () => {
+  it('sends null for trial fields left untouched, so an unrelated save never overwrites them (§367: null = leave unchanged)', async () => {
     const user = userEvent.setup()
     listChannels.mockResolvedValue(channelsPage([]))
     updateSettings.mockResolvedValue(platformSettings())
@@ -122,9 +122,32 @@ describe('NotificationsAdminTab — trial settings (API_CONTRACT_CYCLE18.md §36
     await waitFor(() =>
       expect(updateSettings).toHaveBeenCalledWith(
         expect.objectContaining({
-          trialDurationDays: 14,
-          trialMailingWindowDays: 7,
-          trialWarningThresholdsDays: [7, 3, 1],
+          trialDurationDays: null,
+          trialMailingWindowDays: null,
+          trialWarningThresholdsDays: null,
+        }),
+      ),
+    )
+  })
+
+  it('sends only the trial field the admin actually edited, leaving the others null', async () => {
+    const user = userEvent.setup()
+    listChannels.mockResolvedValue(channelsPage([]))
+    updateSettings.mockResolvedValue(platformSettings())
+    renderTab()
+
+    const durationInput = await screen.findByLabelText('Длительность (дней)')
+    await user.clear(durationInput)
+    await user.type(durationInput, '21')
+
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() =>
+      expect(updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trialDurationDays: 21,
+          trialMailingWindowDays: null,
+          trialWarningThresholdsDays: null,
         }),
       ),
     )
