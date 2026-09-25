@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -315,13 +316,41 @@ public class Cycle18TrialPlanTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         await db.SaveChangesAsync();
     }
 
+    /// <summary>The shared class host stays on <c>PhoneVerification:Provider = "stub"</c> (the Testing
+    /// default, §0.5's "невыпущенность"), under which <c>MaxBotVerificationAdapter.Enabled</c> is false.
+    /// With no verified phone, that puts this case in R7's "cannot verify at all right now" branch —
+    /// PhoneVerificationUnavailable, not PhoneNotVerified — mirroring
+    /// <c>ChangePhoneGateOutcome.SubsystemDisabled</c>'s own condition
+    /// (<c>GuestBookingGateDecision.Evaluate</c>): the honest refusal fires only when verification is
+    /// actually needed AND unreachable, never merely because the subsystem happens to be off.</summary>
     [Fact, TestCase("CY18-C03")]
-    public async Task ActivateTrial_WithoutVerifiedPhone_Returns409PhoneNotVerified()
+    public async Task ActivateTrial_WithoutVerifiedPhone_SubsystemDisabled_Returns409PhoneVerificationUnavailable()
     {
         await CreateTrialPlanAsync();
         var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false); // phone never verified
 
         var response = await AuthedClient(owner.Token).PostAsJsonAsync("/api/billing/trial",
+            new { termsVersion = await CurrentTrialTermsVersionAsync() });
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var refusal = await response.Content.ReadFromJsonAsync<TrialRefusalDto>();
+        refusal!.Code.Should().Be("PhoneVerificationUnavailable");
+    }
+
+    /// <summary>Same unverified-owner setup as above, but against a secondary host with
+    /// <c>PhoneVerification:Provider = "max-bot"</c> (<see cref="PhoneVerificationEnabledFactory"/>,
+    /// same class database, same fixed JWT signing key from <c>TestHostSettings.Apply</c> so the token
+    /// minted by the shared host is still accepted). With the subsystem reachable, R7's branch 3 applies:
+    /// the ordinary PhoneNotVerified prompt, not the "subsystem unavailable" refusal.</summary>
+    [Fact, TestCase("CY18-C03b")]
+    public async Task ActivateTrial_WithoutVerifiedPhone_SubsystemEnabled_Returns409PhoneNotVerified()
+    {
+        await CreateTrialPlanAsync();
+        var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false); // phone never verified
+
+        using var enabled = new PhoneVerificationEnabledFactory(ConnectionString);
+        var client = enabled.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", owner.Token);
+        var response = await client.PostAsJsonAsync("/api/billing/trial",
             new { termsVersion = await CurrentTrialTermsVersionAsync() });
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var refusal = await response.Content.ReadFromJsonAsync<TrialRefusalDto>();
@@ -668,7 +697,8 @@ public class Cycle18TrialPlanTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         var dto = await response.Content.ReadFromJsonAsync<OwnerSubscriptionDto>();
         dto!.Trial.Should().NotBeNull("§365: поле должно быть непустым всегда, когда GET /api/billing/trial непусто (а он непуст всегда)");
         dto.Trial!.State.Should().Be("Unavailable");
-        dto.Trial!.RefusalCode.Should().Be("PhoneNotVerified", "владелец без подтверждённого телефона — самая частая причина отказа");
+        dto.Trial!.RefusalCode.Should().Be("PhoneVerificationUnavailable",
+            "стенд остаётся на Provider=stub (§0.5) — без подтверждённого номера и без работающей подсистемы это R7's честный отказ, а не PhoneNotVerified");
     }
 
     [Fact, TestCase("CY18-H03")]
