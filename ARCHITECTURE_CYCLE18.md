@@ -646,7 +646,20 @@ public static readonly IReadOnlyDictionary<string, int[]> ActivationTermsPromise
 
 Материализация — двумя независимыми путями, и это осознанная избыточность:
 
-1. **Хук в момент авторизации.** `ChannelStateTransition.Apply` перестаёт быть `void` и возвращает
+1. **Хук в момент авторизации.** 🔴 Реализовано НЕ так, как описано ниже, и это сделано намеренно
+   (N12/N13, ревью цикла 18): вместо `Apply`, возвращающего `bool becameConnected`, и трёх внешних
+   вызовов хука после перехода, хук вызывается **изнутри самого `Apply`**
+   (`ChannelStateTransition.cs`, ветка `if (targetState == ChannelState.Connected)`). Причина —
+   ровно тот риск, который абзац ниже сам называет: "три места, где можно забыть хук". Вызов изнутри
+   `Apply` делает забыть его структурно невозможным — не нужно поддерживать дисциплину "после каждого
+   вызова `Apply`, переводящего канал в `Connected`, не забудь ещё и позвать хук" ни в существующих
+   трёх местах, ни в любом будущем коде, который когда-либо вызовет `Apply`. Возврат `bool`
+   `becameConnected` в такой схеме не нужен вовсе — вызывающему не от чего его использовать. Практический
+   эффект тот же (хук срабатывает на всех трёх путях в `Connected`), доказательство то же самое (по
+   одному функциональному тесту на путь), но без варианта "четвёртый вызывающий `Apply` в будущем
+   молча не позовёт хук". Текст ниже (описание "трёх мест после перехода") оставлен как историческая
+   постановка задачи, а не как описание того, что реально в коде.
+   Изначальный план: `ChannelStateTransition.Apply` перестаёт быть `void` и возвращает
    `bool becameConnected` (аддитивно: существующие вызовы результат игнорируют и компилируются без
    правок). Три места, способные привести канал в `Connected` — `ChannelHealthTask` (~147), вебхук
    `NotificationsController` (~254), QR-путь `NotificationChannelsController` (~434) — после перехода
@@ -711,7 +724,11 @@ public static DateTime? WindowEnd(DateTime? firstAuthorizedUtc, DateTime trialSt
 
 ## §337. Истечение, переход на Free и предупреждения
 
-### §337.1 Шестая фоновая задача: `trial-lifecycle`
+### §337.1 Восьмая фоновая задача: `trial-lifecycle`
+
+(N12, ревью цикла 18: было "шестая" — устаревший счёт по состоянию на более раннюю дату этого же
+документа; фактический порядок регистрации в `Program.cs` — восьмая по счёту `IScheduledTask`, ровно
+как называет сам `Program.cs`.)
 
 `Services/Scheduling/Tasks/TrialLifecycleTask.cs`, `Name = "trial-lifecycle"`,
 `DefaultPeriod = TimeSpan.FromHours(1)`. Час, а не сутки: суточный проход у
@@ -1016,7 +1033,7 @@ ServiceBooking.API/
 ├── Services/Notifications/ChannelStateTransition.cs  Apply → bool becameConnected
 ├── Services/Retention/Rules/TrialPhoneRegistrationRule.cs  НОВОЕ  19-е правило (возраст + KeyId)
 ├── Services/Retention/{RetentionPeriods,RetentionPlan}.cs  +TrialPhoneRegistrationDays = 1095
-├── Services/Scheduling/Tasks/TrialLifecycleTask.cs НОВОЕ  шестая фоновая задача
+├── Services/Scheduling/Tasks/TrialLifecycleTask.cs НОВОЕ  восьмая фоновая задача
 ├── Services/SubscriptionResolver.cs               +ОДНО общее правило окна (без слова trial)
 ├── Services/DeploymentSafetyChecks.cs             +Trial:PhoneKeyHmac/PhoneKeyId, +проверка К2
 ├── Controllers/BillingController.cs               +GET/POST /billing/trial, +terms-acknowledgement
