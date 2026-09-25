@@ -20,6 +20,10 @@ export interface PricingPlanDto {
   includedEmployees: number | null
   sortOrder: number
   isFree: boolean
+  /** Cycle 18 (API_CONTRACT_CYCLE18.md §370) — "это тариф пробного периода", a separate axis from
+   *  `isFree`: the two can never both be true. Public route returns 404 while `pricing.public-enabled`
+   *  is off — a trial plan simply isn't visible on the public showcase until then (§370, expected). */
+  isTrial: boolean
 }
 
 export type PricingOptionKind = 'Quantity' | 'Toggle'

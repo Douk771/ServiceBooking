@@ -23,3 +23,19 @@ export function formatIncludedLimit(count: number | null, unitGenitiveSingular: 
   const form = mod10 === 1 && mod100 !== 11 ? unitGenitiveSingular : unitGenitivePlural
   return `до ${count} ${form}`
 }
+
+/**
+ * "N день/дня/дней" — the full one/few/many triple (unlike `formatIncludedLimit`'s two-form
+ * genitive, this is a bare count in nominative context, so 21 is "21 день" not "21 дня").
+ * Used by the cycle-18 trial UI (API_CONTRACT_CYCLE18.md §371 п.7) for `daysLeft` — the only place
+ * on the trial screens that isn't already a server-composed sentence.
+ */
+export function formatDaysLeft(days: number): string {
+  const mod10 = days % 10
+  const mod100 = days % 100
+  let word: string
+  if (mod10 === 1 && mod100 !== 11) word = 'день'
+  else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) word = 'дня'
+  else word = 'дней'
+  return `${days} ${word}`
+}
