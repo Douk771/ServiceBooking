@@ -91,6 +91,12 @@ services:
       - PhoneVerification__Max__PublicBaseUrl=${PHONEVERIFY_MAX_PUBLIC_BASE_URL:-}
       - PhoneVerification__Max__ApiUrl=${PHONEVERIFY_MAX_API_URL:-https://platform-api.max.ru}
       - PhoneVerification__ExternalKeyHmac=${PHONEVERIFY_EXTERNAL_KEY:-}
+      # Cycle 18 (ARCHITECTURE_CYCLE18.md §342-§343.1) — its OWN key, deliberately distinct from
+      # PHONEVERIFY_EXTERNAL_KEY/NOTIFICATIONS_ENCRYPTION_KEY above (К2). Empty default keeps
+      # Trial:UniquenessCheck failing closed (409 TrialUniquenessCheckUnavailable) rather than
+      # granting without the check — `docker-build` stays green without it set.
+      - Trial__PhoneKeyHmac=${TRIAL_PHONEKEY_HMAC:-}
+      - Trial__PhoneKeyId=${TRIAL_PHONEKEY_ID:-k1}
       # ARCHITECTURE_CYCLE13.md §206/§213/§216 — address verification kill switch. `logging` (default)
       # is the STANDARD state of prod after cycle 13, not an unfinished feature (§200 п.3): no network
       # call is ever made, the lookup endpoint answers 404, and CompanyDto.addressVerification.available
