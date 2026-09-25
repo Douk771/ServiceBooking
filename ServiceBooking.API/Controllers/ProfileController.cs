@@ -914,8 +914,12 @@ public class ProfileController(
             return BadRequest("Для отзыва согласия, записанного сотрудником компании, укажите companyId.");
 
         var phone = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.PhoneNumber).FirstOrDefaultAsync();
+        // Н2 (LEGAL_REVIEW_CYCLE16.md §3.4): прежняя строка обещала проверку подтверждения там, где
+        // проверялось только НАЛИЧИЕ номера. Теперь два случая вместо одного; формулировки — юриста,
+        // команда их не сочиняет. Ни одна не сообщает, существуют ли данные (§245.6 п. 1, правило
+        // «ответ не оракул»).
         if (string.IsNullOrEmpty(phone))
-            return BadRequest("У аккаунта нет подтверждённого номера телефона — отзывать нечего.");
+            return BadRequest("У учётной записи не указан номер телефона, поэтому отзывать нечего.");
 
         // TD-03 (ARCHITECTURE_CYCLE16.md §245.2 row 3 — a place the spec itself did not name, found
         // while reading the code). Before this gate, an unverified account could destroy a COMPLETE
@@ -935,7 +939,21 @@ public class ProfileController(
             logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/consents/revoke");
         }
 
-        var subject = ConsentSubject.ForPhoneInCompany(phone, dto.CompanyId.Value);
+        // 🔴 TD-03-ter (LEGAL_REVIEW_CYCLE16.md находка Н1). Запись в ConsentLedger гейтится ТОЖЕ, а не
+        // только удаления ниже. Отзыв чужого согласия — нарушение сам по себе (ч. 3 ст. 9 152-ФЗ), даже
+        // когда ни одна строка данных при этом не удалена: согласие субъекта оказывается помечено
+        // отозванным по воле постороннего. Ранняя версия цикла 16 оставила этот вызов открытым,
+        // рассудив, что он «не разрушительный», — это неверная посылка, и её ловит
+        // GuestDataGateCycle16Tests.RevokeSalonConsent_UnconfirmedPhone_CannotRevokeAStranger_SConsent.
+        // Свойство обязано держаться ЭТОЙ проверкой, а не порядком строк выше (ранний BadRequest на
+        // отсутствующем телефоне спасал лишь случайно и сломался бы при первой перестановке).
+        if (guestMatchPhone is null)  // SUBJECT-PHONE-GATE: gated — TD-03-ter, ARCHITECTURE_CYCLE16.md §245.4
+            return BadRequest(
+                "Это согласие записано на номер телефона, а не на учётную запись. Отозвать его отсюда " +
+                "можно после подтверждения номера; если подтвердить номер невозможно, направьте отзыв " +
+                "через форму обращения.");
+
+        var subject = ConsentSubject.ForPhoneInCompany(guestMatchPhone, dto.CompanyId.Value);
         var revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
 
         var photosDeleted = 0;

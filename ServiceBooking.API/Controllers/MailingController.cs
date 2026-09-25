@@ -72,10 +72,15 @@ public class MailingController(AppDbContext db, SubscriptionResolver subscriptio
 // or unbounded Subject/Message can no longer reach storage. Model-state failures are already converted
 // to a bare 400 text/plain string by InvalidModelStateResponseFactory (Program.cs) — this does not
 // introduce ProblemDetails and does not change the success response shape.
+// ⚠️ Атрибуты висят на ПАРАМЕТРАХ первичного конструктора, а не на свойствах. Вариант с
+// [property: ...] здесь не работает и не «работает хуже», а роняет запрос в 500:
+// ModelMetadata.ThrowIfRecordTypeHasValidationOnProperties бросает InvalidOperationException
+// («validation metadata must be associated with the constructor parameter»). Поймано прогоном
+// MailingTests — восемь падений, все 500 на POST /api/companies/{id}/mail.
 public record SendMailDto(
-    [property: Required(ErrorMessage = "Тема письма обязательна")]
-    [property: StringLength(200, ErrorMessage = "Тема письма не может быть длиннее 200 символов")]
+    [Required(ErrorMessage = "Тема письма обязательна")]
+    [StringLength(200, ErrorMessage = "Тема письма не может быть длиннее 200 символов")]
     string Subject,
-    [property: Required(ErrorMessage = "Текст письма обязателен")]
-    [property: StringLength(10000, ErrorMessage = "Текст письма не может быть длиннее 10000 символов")]
+    [Required(ErrorMessage = "Текст письма обязателен")]
+    [StringLength(10000, ErrorMessage = "Текст письма не может быть длиннее 10000 символов")]
     string Message);

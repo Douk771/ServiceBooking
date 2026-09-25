@@ -52,9 +52,12 @@ public class SubjectRequestsController(
                 return BadRequest("Проверка на робота не пройдена.");
         }
 
-        var responseDueByWorkingDays = options.Value.ResponseWorkingDays;
         var nowUtc = DateTime.UtcNow;
-        var dueAtUtc = WorkingDays.Add(nowUtc, responseDueByWorkingDays);
+        // TD-03-bis (LEGAL_REVIEW_CYCLE16.md §2.4, требование О5): срок зависит от ВИДА обращения, а не
+        // один на все пять. До цикла 16 здесь стоял единый ResponseWorkingDays = 10, что для уточнения и
+        // удаления позже нормы. Становится критичным вместе с TD-03: после гейта эта форма — единственный
+        // путь для субъекта без подтверждённого номера.
+        var (dueAtUtc, responseDueByWorkingDays) = SubjectRequestDeadline.For(kind, nowUtc, options.Value);
 
         // Reference uniqueness by retry, not a DB constraint check-then-insert race guard — a collision
         // among 6 random characters from a 31-symbol alphabet is astronomically rare (31^6 ≈ 887M), this

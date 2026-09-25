@@ -25,6 +25,16 @@ namespace ServiceBooking.Tests.Tests;
 /// draft/published state can be flipped without touching the shared "Api" collection's fixed manifest,
 /// on which every other pricing/billing test depends for a stable, always-published TermsOwner.
 /// </summary>
+// ⚠️ TD-02 (цикл 16) К ЭТОМУ ФАЙЛУ НЕ ПРИМЕНЁН — сознательно, решение по итогам прогона.
+// Семь ожиданий Task.Delay(2500) ниже заменялись на детерминированный _factory.ReloadLegalNow(),
+// и замена ВСКРЫЛА пре-существующее расхождение, которое ожидание маскировало: посеянный SuperAdmin
+// несёт версию TermsOwner из ДЕФОЛТНОГО манифеста, а тесты подменяют манифест по ходу. Пока снимок
+// обновлялся с задержкой, RequiresOwnerTermsAttribute работал на старом снимке и расхождения не
+// видел; со свежим снимком он честно отдаёт 451 там, где тест ждёт 200 или 409, причём НЕСТАБИЛЬНО —
+// от одного до трёх тестов класса за прогон, в зависимости от порядка.
+// Чинить надо посев тестового хоста (TestHostSettings), а не эти тесты; это отдельная работа, цикл 16
+// её не брал. Остаток TD-02 — семь вызовов здесь; одиннадцать в LegalConsentVersionChangeTests сняты
+// и работают. Записано в §9 как остаток T8-1.
 public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncLifetime
 {
     private readonly TestDatabaseFixture _fixture;
@@ -164,7 +174,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
         // gate and returns 200, not 409. Pin the precondition explicitly rather than assume run order.
         await SetPublicationEnabledDirectlyAsync(false);
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: true, termsOwnerVersion: "owner-1-draft");
-        _factory.ReloadLegalNow();
+        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
         var token = await LoginAsSuperAdminAsync();
 
         var response = await Authed(token).PutAsJsonAsync("/api/admin/platform-settings",
@@ -186,7 +196,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public async Task PutPlatformSettings_EnablePricingWithPublishedOffer_Returns200AndCatalogBecomesVisible()
     {
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: false);
-        _factory.ReloadLegalNow();
+        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
         var token = await LoginAsSuperAdminAsync();
         await CreatePublicPlanAsync();
 
@@ -207,7 +217,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public async Task GetPublicPricing_SwitchOnAtDbLevelButOfferDraft_Returns404NotOk()
     {
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: true, termsOwnerVersion: "owner-1-draft");
-        _factory.ReloadLegalNow();
+        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
         await CreatePublicPlanAsync();
         await SetPublicationEnabledDirectlyAsync(true); // simulates a dump restore / manual DB edit
 
@@ -224,7 +234,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public async Task AdminPricingPreview_WhatsAppOption_HiddenWhileTermsOwnerDraft_VisibleOncePublished()
     {
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: true, termsOwnerVersion: "owner-1-draft");
-        _factory.ReloadLegalNow();
+        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
         var token = await LoginAsSuperAdminAsync();
         var optionName = await MakeWhatsAppOptionPubliclySellableAsync();
 
@@ -233,7 +243,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
             "US-11-11/Q11: an option gated on TermsOwner must not be offered for sale while that document is a draft");
 
         _factory.WriteManifest("v2-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: false);
-        _factory.ReloadLegalNow();
+        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
         token = await AcceptCurrentLegalAsync(token);
 
         var publishedPreview = await Authed(token).GetFromJsonAsync<PublicPricingDto>("/api/admin/pricing/preview");
@@ -247,7 +257,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public async Task GetLegalReadiness_ReflectsCurrentDraftState_AndFlipsWhenOfferIsPublished()
     {
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: true, termsOwnerVersion: "owner-1-draft");
-        _factory.ReloadLegalNow();
+        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
         var token = await LoginAsSuperAdminAsync();
 
         var draft = await Authed(token).GetFromJsonAsync<LegalReadinessDto>("/api/admin/legal/readiness");
@@ -256,7 +266,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
         draft.Blockers.Should().Contain(b => b.Kind == "DraftDocuments");
 
         _factory.WriteManifest("v2-published", isDraft: false, changeKind: "Material", termsOwnerIsDraft: false);
-        _factory.ReloadLegalNow();
+        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
         token = await AcceptCurrentLegalAsync(token);
 
         var afterPublish = await Authed(token).GetFromJsonAsync<LegalReadinessDto>("/api/admin/legal/readiness");

@@ -86,6 +86,39 @@ public abstract class ApiTestBase : IClassFixture<TestDatabaseFixture>
         return (await response.Content.ReadFromJsonAsync<AuthResponseDto>())!;
     }
 
+    /// <summary>
+    /// TD-03 (ARCHITECTURE_CYCLE16.md §245): помечает номер аккаунта подтверждённым, вставляя строку в
+    /// <c>VerifiedPhones</c> — источник истины гейта. Нужен тестам, которые проверяют СШИВАНИЕ гостевых
+    /// сущностей с аккаунтом: с цикла 16 оно работает только при подтверждённом номере.
+    ///
+    /// ⚠️ Это НЕ ослабление проверок. Критерий приёмки TD-03 гласит: для аккаунта с подтверждённым
+    /// номером поведение остаётся дословно прежним — именно это такие тесты и должны проверять. Случай
+    /// НЕподтверждённого номера покрыт отдельно в <c>GuestDataGateCycle16Tests</c>.
+    ///
+    /// Пишем строку напрямую, а не гоняем сценарий подтверждения через бота MAX: тому нужна отдельная
+    /// фабрика (<c>PhoneVerificationEnabledFactory</c>) и обмен вебхуками, что к предмету этих тестов
+    /// отношения не имеет. Канонизация номера повторяет ту, что применяет продукт.
+    /// </summary>
+    protected async Task MarkPhoneVerifiedAsync(string phone, string? userId = null)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var canonicalPhone = phone.TrimStart('+').Replace(" ", "");
+
+        if (!await db.VerifiedPhones.AnyAsync(v => v.Phone == canonicalPhone))
+        {
+            db.VerifiedPhones.Add(new VerifiedPhone
+            {
+                Id = Guid.NewGuid(),
+                Phone = canonicalPhone,
+                Method = PhoneVerificationMethod.MaxBot,
+                VerifiedAtUtc = DateTime.UtcNow,
+                UserId = userId,
+            });
+            await db.SaveChangesAsync();
+        }
+    }
+
     protected async Task<HttpResponseMessage> RegisterRawAsync(
         string phone, string password, string firstName = "Test", string lastName = "User",
         string? email = null, bool acceptedLegal = true)
