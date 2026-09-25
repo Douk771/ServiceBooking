@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -31,7 +32,8 @@ public sealed record TrialGrantResult(bool Granted, string? RefusalCode, string?
 /// (§4.27 🔒/§6 конвенций).
 /// </summary>
 public class TrialActivationService(
-    AppDbContext db, PlatformSettings platformSettings, IOptions<TrialOptions> trialOptions)
+    AppDbContext db, PlatformSettings platformSettings, IOptions<TrialOptions> trialOptions,
+    IPhoneVerificationMethodRegistry phoneVerificationRegistry)
 {
     public async Task<TrialGrantResult> GrantAsync(TrialGrantRequest request, CancellationToken ct = default)
     {
@@ -97,22 +99,21 @@ public class TrialActivationService(
             .OrderByDescending(v => v.VerifiedAtUtc)
             .Select(v => v.Phone)
             .FirstOrDefaultAsync(ct);
-        // NOTE (backend report, cycle 18 recheck): R7's PhoneVerificationUnavailable is deliberately
-        // NOT wired to IPhoneVerificationMethodAdapter.Enabled here. That flag is false under
-        // PhoneVerification:Provider = "stub" — the documented, currently-shipped default in every
-        // environment (§140.1's "невыпущенность") — and this codebase's own committed functional tests
-        // (Cycle18TrialPlanTests.ActivateTrial_WithoutVerifiedPhone_Returns409PhoneNotVerified) already
-        // require PhoneNotVerified, not PhoneVerificationUnavailable, for exactly that configuration:
-        // VerifiedPhones rows are established directly (bypassing the real MAX flow) and "stub" is
-        // treated as a normal operating mode, not an outage. Gating on Enabled would make
-        // PhoneVerificationUnavailable fire in EVERY environment that hasn't turned MAX on yet — the
-        // opposite failure from today's "unreachable", and one that contradicts an existing, passing
-        // test. There is no OTHER existing signal in this codebase for "the phone-verification adapter
-        // is unavailable" (a genuine runtime/outage condition, as opposed to the feature simply not
-        // being turned on) — left as an explicit, named gap for architect/code-reviewer rather than
-        // guessed at with a value that would just flip which of the two codes is unreachable.
+        // R7/§9 — PhoneVerificationUnavailable follows the same shape as ChangePhoneSubsystemDisabled
+        // (GuestBookingGateDecision, ProfileController): the gate only asks the subsystem's state when
+        // verification is actually required. A verified phone already satisfies §5/§6 regardless of
+        // whether the subsystem happens to be enabled right now — it exists to CONFIRM a number, not to
+        // re-attest one that's already confirmed. Only when there's no verified phone AND the subsystem
+        // is switched off is the honest "cannot verify right now" refusal correct; with the subsystem
+        // enabled, an unverified owner still gets the ordinary PhoneNotVerified prompt.
         if (!canBypass && verifiedPhone is null)
+        {
+            var maxAdapter = phoneVerificationRegistry.Get(PhoneVerificationMethod.MaxBot);
+            if (!maxAdapter.Enabled)
+                return Refuse("PhoneVerificationUnavailable", TrialLegalNotices.TrialRefusedPhoneVerificationUnavailable);
+
             return Refuse("PhoneNotVerified", TrialLegalNotices.TrialRefusedPhoneNotVerified);
+        }
 
         // §7 — fail-closed uniqueness check (Д6/К1). Never bypassable — bypassing it means granting
         // without the check, which Д6 forbids outright.

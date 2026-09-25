@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -18,7 +19,9 @@ namespace ServiceBooking.API.Services.Billing;
 /// <c>trial-lifecycle</c> background task (§337) maintain — this reader does no arithmetic of its own
 /// beyond the pure helpers in <see cref="TrialWindow"/>.
 /// </summary>
-public class TrialStateReader(AppDbContext db, SubscriptionResolver subscriptionResolver, PlatformSettings platformSettings)
+public class TrialStateReader(
+    AppDbContext db, SubscriptionResolver subscriptionResolver, PlatformSettings platformSettings,
+    IPhoneVerificationMethodRegistry phoneVerificationRegistry)
 {
     public async Task<TrialStateDto?> GetAsync(string ownerUserId, CancellationToken ct = default)
     {
@@ -136,8 +139,20 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
                 .AnyAsync(v => v.UserId == account.OwnerUserId, ct);
             if (!verifiedPhone)
             {
-                refusalCode = "PhoneNotVerified";
-                message = TrialLegalNotices.TrialRefusedPhoneNotVerified;
+                // Mirrors TrialActivationService.GrantAsync's R7 gate exactly (ChangePhoneGateOutcome's
+                // own shape): a verified phone would have satisfied this check regardless of the
+                // subsystem's state, so the subsystem is only asked about when there ISN'T one.
+                var maxAdapter = phoneVerificationRegistry.Get(PhoneVerificationMethod.MaxBot);
+                if (!maxAdapter.Enabled)
+                {
+                    refusalCode = "PhoneVerificationUnavailable";
+                    message = TrialLegalNotices.TrialRefusedPhoneVerificationUnavailable;
+                }
+                else
+                {
+                    refusalCode = "PhoneNotVerified";
+                    message = TrialLegalNotices.TrialRefusedPhoneNotVerified;
+                }
             }
             else
             {
