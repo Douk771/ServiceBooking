@@ -33,7 +33,12 @@ public sealed class TrialPhoneRegistrationRule(AppDbContext db, IOptions<TrialOp
         // outright and defeat Д6 for every phone that was ever registered. Absent a known-good current
         // key, this rule falls back to the age-only cutoff and leaves К3's key-rotation clause inert
         // until the platform actually has a key to compare against.
-        var currentKeyId = trialOptions.Value.PhoneKeyId;
+        // N1 (code review) — string.IsNullOrWhiteSpace, matching every other consumer of this same
+        // setting (TrialActivationService.GrantAsync, DeploymentSafetyChecks.ValidateTrialSecrets). A
+        // bare `!= null` reads Trial:PhoneKeyId = "" as "configured", which would then treat every row's
+        // KeyId as stale and mass-delete the whole uniqueness registry via the К3 clause below — the
+        // exact opposite of the "no known-good key → leave К3 inert" fallback this comment documents.
+        var currentKeyId = string.IsNullOrWhiteSpace(trialOptions.Value.PhoneKeyId) ? null : trialOptions.Value.PhoneKeyId;
 
         IQueryable<Core.Entities.TrialPhoneRegistration> Query(Guid cursor) => db.TrialPhoneRegistrations
             .Where(r => r.Id > cursor &&
@@ -44,6 +49,10 @@ public sealed class TrialPhoneRegistrationRule(AppDbContext db, IOptions<TrialOp
             Name, Query, r => r.Id,
             mutate: r => db.TrialPhoneRegistrations.Remove(r),
             ctx, db, ct,
-            dateOf: r => r.RegisteredAtUtc);
+            dateOf: r => r.RegisteredAtUtc,
+            // §343.2 п.2 / §351 п.18 — a row can match both clauses (old AND rotated); "removed for
+            // rotation" is reported whenever the key-rotation clause is what makes it stale, regardless
+            // of whether the age cutoff also would have caught it independently.
+            isRotationRemoval: r => currentKeyId != null && r.KeyId != currentKeyId);
     }
 }
