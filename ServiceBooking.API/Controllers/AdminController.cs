@@ -674,6 +674,15 @@ public class AdminController(
                 return Conflict("Ровно один тариф должен быть системным бесплатным — создайте или подготовьте тариф с ценой 0, прежде чем снимать этот флаг.");
         }
 
+        // Code-review finding — symmetric to SetSystemTrial's own check (`plan.IsSystemFree` there):
+        // a trial plan can never also become the system free plan. Checked here explicitly rather than
+        // relying only on ValidateSystemFreeAsync's own-price/other-system-free checks, because on an
+        // otherwise-empty database (no system free plan seeded yet) those checks pass fine even for a
+        // trial plan — which would silently produce one row with BOTH flags set, exactly what the two
+        // flags together are supposed to make impossible.
+        if (dto.IsSystemFree && plan.IsSystemTrial)
+            return Conflict("Этот тариф уже пробный период — тариф не может быть одновременно системным бесплатным.");
+
         var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree, plan.PricePerMonth, existingPlanId: id);
         if (systemFreeError is not null) return systemFreeError;
 
