@@ -43,7 +43,19 @@ public static class TrialMailingWindowStarter
         if (account.TrialChannelFirstAuthorizedAtUtc is not null) return;
         if (account.TrialEndsAtUtc is null || account.TrialMailingWindowDays is null) return;
 
-        account.TrialChannelFirstAuthorizedAtUtc = firstAuthorizedUtc;
+        // Б... (code review, cycle 18 4th pass) — clamp the STORED/reported authorization instant to the
+        // CURRENT trial's own start, the same clamp TrialWindow.WindowEnd already applies internally when
+        // computing the window's end date. Without this, a regrant with a channel that was already
+        // connected from a PRIOR trial would stamp both the owner-facing mailingWindow.startedAt and this
+        // journal row's ChangedAt with the old, pre-regrant date — the window's own END date was already
+        // correct (WindowEnd clamps `start` before adding windowDays), but the owner would be told
+        // mailings "have been running since" a date up to a whole prior trial ago, and the append-only
+        // journal (Д18/Т1, ordered by ChangedAt) would sort this "window opened" row BEFORE the prior
+        // trial's own "window closed" row — backwards, in evidence meant to be read in order.
+        var clampedAuthorizedUtc = firstAuthorizedUtc > account.TrialStartedAtUtc.Value
+            ? firstAuthorizedUtc : account.TrialStartedAtUtc.Value;
+
+        account.TrialChannelFirstAuthorizedAtUtc = clampedAuthorizedUtc;
         account.TrialMailingWindowEndsAtUtc = TrialWindow.WindowEnd(
             firstAuthorizedUtc, account.TrialStartedAtUtc.Value, account.TrialEndsAtUtc.Value, account.TrialMailingWindowDays.Value);
 
@@ -68,7 +80,7 @@ public static class TrialMailingWindowStarter
             Id = Guid.NewGuid(),
             OwnerUserId = account.OwnerUserId,
             ChangedByUserId = TrialActors.System,
-            ChangedAt = firstAuthorizedUtc,
+            ChangedAt = clampedAuthorizedUtc,
             BillingAccountId = account.Id,
             ChangeKind = SubscriptionChangeKind.TrialMailingWindow,
             Comment = account.TrialMailingWindowEndsAtUtc is { } end
