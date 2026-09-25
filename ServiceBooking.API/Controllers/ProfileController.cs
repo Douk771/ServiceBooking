@@ -388,6 +388,20 @@ public class ProfileController(
     // person wrote about OTHER clients — company data, explicitly protected by US-39 p.3 / risk R4.
     // Every personal-data field on the row is scrubbed instead; DeletedAtUtc is what makes that
     // "scrubbed on purpose" rather than indistinguishable from corruption.
+    // Cycle 18 (API_CONTRACT_CYCLE18.md §377, О8) — shown BEFORE the destructive POST below, so a
+    // subject who was ever granted a trial learns that the trial-registry entry survives account
+    // deletion. Allow-listed in LegalConsentFilter alongside POST delete-account itself (§360.2):
+    // the right to leave the service cannot be gated behind accepting a new legal-document revision.
+    [HttpGet("delete-account/preview")]
+    public async Task<ActionResult<AccountDeletionPreviewDto>> DeleteAccountPreview()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var everHadTrial = await db.BillingAccounts
+            .AnyAsync(a => a.OwnerUserId == userId && a.TrialStartedAtUtc != null);
+        return Ok(new AccountDeletionPreviewDto(
+            everHadTrial ? Services.Billing.TrialLegalNotices.TrialRegistryNoticeOnAccountDeletion : null));
+    }
+
     [HttpPost("delete-account")]
     public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountDto dto)
     {
@@ -1203,6 +1217,10 @@ public record ChangePasswordDto(string CurrentPassword, string NewPassword);
 // assumed from the presence of this field).
 public record ChangePhoneDto(string CurrentPassword, string NewPhone, PhoneVerificationRefDto? Verification = null);
 public record DeleteAccountDto(string CurrentPassword);
+
+/// <summary>Cycle 18 (§377) — object, not a bare string, on purpose: future cycles are expected to add
+/// more pre-deletion notices of the same kind, and adding a field here is not a breaking change.</summary>
+public record AccountDeletionPreviewDto(string? TrialRegistryNotice);
 
 // US-38 export DTOs (API_CONTRACT.md §8) — deliberately their own shape, not a reuse of ProfileDto/
 // BookingDto/etc.: the export is a legal artifact with its own contract (no ids of other people's

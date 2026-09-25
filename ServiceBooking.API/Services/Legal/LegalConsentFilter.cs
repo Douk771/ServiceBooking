@@ -116,6 +116,10 @@ public class LegalConsentFilter(LegalDocumentProvider provider) : IAsyncAuthoriz
         if (HttpMethods.IsPost(method) && path.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsGet(method) && string.Equals(path, "/api/profile", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsPost(method) && string.Equals(path, "/api/profile/delete-account", StringComparison.OrdinalIgnoreCase)) return true;
+        // Cycle 18 §360.2/§377 — the ONLY new cycle-18 route in the allow-list: the deletion-preview
+        // screen must work for a subject who has not accepted a new legal-document revision, exactly
+        // like the POST it precedes.
+        if (HttpMethods.IsGet(method) && string.Equals(path, "/api/profile/delete-account/preview", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsGet(method) && string.Equals(path, "/api/profile/export", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsGet(method) && string.Equals(path, "/api/profile/consents", StringComparison.OrdinalIgnoreCase)) return true;
         if (HttpMethods.IsPost(method) && string.Equals(path, "/api/profile/consents", StringComparison.OrdinalIgnoreCase)) return true;

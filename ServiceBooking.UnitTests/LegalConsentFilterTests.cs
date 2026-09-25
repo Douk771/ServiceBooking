@@ -198,6 +198,32 @@ public class LegalConsentFilterTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task OnAuthorizationAsync_DeleteAccountPreview_IsAllowListed()
+    {
+        // Cycle 18 (API_CONTRACT_CYCLE18.md §360.2/§377) — the ONE new cycle-18 route in the allow-list:
+        // the deletion-preview screen must stay reachable under a pending Material change, exactly like
+        // the POST it precedes, or the right to leave the service ends up gated behind accepting terms.
+        var context = CreateContext("GET", "/api/profile/delete-account/preview");
+
+        await CreateFilter().OnAuthorizationAsync(context);
+
+        context.Result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task OnAuthorizationAsync_OtherCycle18Routes_AreNotAllowListed()
+    {
+        // Only §377 is allow-listed (§360.2) — everything else cycle 18 adds stays gated like any
+        // other new route, including the sibling POST that actually grants/uses the trial.
+        var context = CreateContext("POST", "/api/billing/trial");
+
+        await CreateFilter().OnAuthorizationAsync(context);
+
+        context.Result.Should().BeOfType<Microsoft.AspNetCore.Mvc.ContentResult>()
+            .Which.StatusCode.Should().Be(StatusCodes.Status451UnavailableForLegalReasons);
+    }
+
     private sealed class FakeWebHostEnvironment : IWebHostEnvironment
     {
         public string ApplicationName { get; set; } = "ServiceBooking.UnitTests";
