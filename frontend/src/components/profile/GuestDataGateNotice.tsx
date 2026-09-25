@@ -45,7 +45,7 @@ export function GuestDataGateNotice({ phoneVerified, className }: Props) {
         ) : (
           <p>{FALLBACK_TEXT}</p>
         )}
-        <Link to="/subject-request" className="font-semibold underline hover:no-underline w-fit">
+        <Link to="/data-request" className="font-semibold underline hover:no-underline w-fit">
           Оставить обращение
         </Link>
       </div>

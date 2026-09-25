@@ -64,4 +64,35 @@ public class WorkingDaysTests
         var act = () => WorkingDays.Add(Monday, -1);
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    // Code review, cycle 16: SubjectRequestDueSoonTask matched candidates as "today + 1 working day ==
+    // due date". Add is NOT injective going forward — these three tests are exactly the regression that
+    // slipped through the 1399-green-test bar because no unit test isolated the matching logic itself.
+    [Fact]
+    public void PreviousWorkingDay_OfAMonday_IsTheFridayBefore()
+    {
+        // 2026-09-21 is a Monday -> previous working day is Friday 2026-09-18.
+        WorkingDays.PreviousWorkingDay(Monday).Should().Be(new DateTime(2026, 9, 18, 10, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public void PreviousWorkingDay_IsAFunctionOfTheTargetDateOnly_NotInjectiveInReverse()
+    {
+        // The bug this guards: WorkingDays.Add(x, 1) maps Friday, Saturday AND Sunday all to the same
+        // Monday, so "today+1 working day == due date" alone matches three different "today"s for one
+        // Monday due date. PreviousWorkingDay inverts correctly: exactly one calendar day (Friday) maps
+        // to a given Monday, and it is never itself a Saturday or Sunday.
+        var monday = new DateTime(2026, 9, 21);
+        WorkingDays.PreviousWorkingDay(monday).DayOfWeek.Should().Be(DayOfWeek.Friday);
+        WorkingDays.PreviousWorkingDay(monday).DayOfWeek.Should().NotBe(DayOfWeek.Saturday);
+        WorkingDays.PreviousWorkingDay(monday).DayOfWeek.Should().NotBe(DayOfWeek.Sunday);
+    }
+
+    [Fact]
+    public void PreviousWorkingDay_OfATuesday_IsTheMondayBefore()
+    {
+        var tuesday = new DateTime(2026, 9, 22);
+        WorkingDays.PreviousWorkingDay(tuesday).DayOfWeek.Should().Be(DayOfWeek.Monday);
+        WorkingDays.PreviousWorkingDay(tuesday).Date.Should().Be(new DateTime(2026, 9, 21));
+    }
 }
