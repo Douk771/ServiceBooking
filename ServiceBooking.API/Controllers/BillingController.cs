@@ -19,8 +19,7 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class BillingController(
     AppDbContext db, OwnerSubscriptionService ownerSubscriptionService,
-    TrialStateReader trialStateReader, TrialActivationService trialActivationService,
-    BillingAccountProvisioner billingAccountProvisioner) : ControllerBase
+    TrialStateReader trialStateReader, TrialActivationService trialActivationService) : ControllerBase
 {
     // ── Cycle 18 (API_CONTRACT_CYCLE18.md §362-§363.1) ────────────────────────────────────────────
     [HttpGet("trial")]
@@ -39,9 +38,16 @@ public class BillingController(
         if (string.IsNullOrWhiteSpace(dto.TermsVersion))
             return Conflict(new TrialRefusalDto("TrialTermsVersionMismatch", TrialLegalNotices.TrialTermsVersionMismatchNotice));
 
-        var accountId = await billingAccountProvisioner.EnsureAccountAsync(userId);
+        // §363: "нет биллинг-аккаунта и он не создаётся (пользователь не владелец)" — 404. A
+        // BillingAccount only exists once the user has provisioned one elsewhere (e.g. creating a
+        // company); this endpoint must never be the thing that provisions one, or any authenticated
+        // non-owner could burn their phone number in the once-only trial registry (Д16, 3-year retention,
+        // not deletable) without ever becoming an owner.
+        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
+        if (accountId is null) return NotFound();
+
         var result = await trialActivationService.GrantAsync(new TrialGrantRequest(
-            accountId, userId, Core.Enums.TrialGrantSource.OwnerSelfService, TrialGrantMode.Normal, Reason: null,
+            accountId.Value, userId, Core.Enums.TrialGrantSource.OwnerSelfService, TrialGrantMode.Normal, Reason: null,
             AcknowledgedTermsVersion: dto.TermsVersion));
 
         if (!result.Granted)
@@ -57,7 +63,14 @@ public class BillingController(
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var result = await trialActivationService.AcknowledgeTermsAsync(userId, dto.TermsVersion);
         if (!result.Granted)
-            return Conflict(new TrialRefusalDto(result.RefusalCode!, result.Message!));
+        {
+            return result.RefusalCode switch
+            {
+                "TrialTermsVersionRequired" => BadRequest(result.Message),
+                "TrialNotFound" => NotFound(),
+                _ => Conflict(new TrialRefusalDto(result.RefusalCode!, result.Message!)),
+            };
+        }
 
         var state = await trialStateReader.GetAsync(userId);
         return state is null ? NotFound() : Ok(state);

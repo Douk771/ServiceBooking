@@ -22,8 +22,8 @@ public sealed record TrialGrantResult(bool Granted, string? RefusalCode, string?
 
 /// <summary>
 /// Cycle 18 (ARCHITECTURE_CYCLE18.md §335) — the ONE place a trial is ever granted. Both the owner's
-/// own button (<c>BillingController</c>) and a superadmin's action (<c>AdminBillingController</c>, not
-/// yet wired in this slice — see the backend report) are meant to call this service so the two paths
+/// own button (<c>BillingController</c>) and a superadmin's action
+/// (<c>AdminBillingController.GrantTrial</c>/<c>RegrantTrial</c>) call this service so the two paths
 /// can never diverge on which checks apply (Д1).
 ///
 /// Order of checks is part of the contract (§335.2): form first, then platform state, then the
@@ -135,6 +135,7 @@ public class TrialActivationService(
         }
         var oldPlanConfigId = sub.PlanConfigId;
         var oldPaidUntil = sub.PaidUntil;
+        var oldIsActive = sub.IsActive;
         sub.PlanConfigId = plan.Id;
         sub.IsActive = true;
         sub.PaidUntil = endsAt;
@@ -204,7 +205,7 @@ public class TrialActivationService(
             NewPlanConfigId = plan.Id,
             OldPaidUntil = oldPaidUntil,
             NewPaidUntil = endsAt,
-            OldIsActive = sub.IsActive,
+            OldIsActive = oldIsActive,
             NewIsActive = true,
             Comment = comment,
             BillingAccountId = account.Id,
@@ -218,10 +219,23 @@ public class TrialActivationService(
         }
         catch (DbUpdateException)
         {
-            // The race this index exists for (§334.1): two concurrent activations, or a regrant racing
-            // the account's very first grant. The loser gets the same honest refusal a sequential
-            // second request would have gotten.
+            // The race this index exists for (§334.1). Two distinct unique indexes can trip here, and
+            // they mean different things to the caller: the account's OWN "one trial ever" index (a
+            // concurrent activation/regrant of the SAME account — the loser gets the same honest
+            // refusal a sequential second request would have) versus the cross-account phone-registry
+            // index (this account lost a race to a DIFFERENT account that just claimed the same phone
+            // number). The latter must answer with §8's phone-privacy refusal — no date, no hint that
+            // another account exists — not with "you already used it".
             await transaction.RollbackAsync(ct);
+            // Which index actually tripped: reload this account fresh (its own attempt is rolled back)
+            // and ask whether IT now has a trial on record — if so, the account's own "one trial ever"
+            // index is what raced (a concurrent activation/regrant of the SAME account), regardless of
+            // the phone registry's state.
+            var ownAccountAlreadyGranted = await db.BillingAccounts.AsNoTracking()
+                .Where(a => a.Id == account.Id).Select(a => a.TrialStartedAtUtc).FirstOrDefaultAsync(ct) is not null;
+            if (!ownAccountAlreadyGranted && phoneKeyHash is not null &&
+                await db.TrialPhoneRegistrations.AsNoTracking().AnyAsync(r => r.PhoneKeyHash == phoneKeyHash, ct))
+                return Refuse("TrialPhoneAlreadyUsed", TrialLegalNotices.TrialRefusedPhoneAlreadyUsed);
             return Refuse("TrialAlreadyUsed",
                 string.Format(TrialLegalNotices.TrialRefusedAlreadyUsedByAccount, DateTime.UtcNow.ToString("dd.MM.yyyy")));
         }
@@ -233,11 +247,21 @@ public class TrialActivationService(
     /// call after the first successful one is a no-op, not an error and not a re-stamp.</summary>
     public async Task<TrialGrantResult> AcknowledgeTermsAsync(string ownerUserId, string termsVersion, CancellationToken ct = default)
     {
+        // §363.1: empty termsVersion is a 400 (malformed request), never the 409 JSON refusal shape —
+        // that's reserved for "the version you showed isn't current".
+        if (string.IsNullOrWhiteSpace(termsVersion))
+            return new TrialGrantResult(false, "TrialTermsVersionRequired", "Не указана версия условий.");
+
         if (termsVersion != TrialTermsRegistry.CurrentVersion)
             return new TrialGrantResult(false, "TrialTermsVersionMismatch", TrialLegalNotices.TrialTermsVersionMismatchNotice);
 
         var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId, ct);
-        if (account is null) return new TrialGrantResult(false, "TrialNotOffered", TrialLegalNotices.TrialRefusedPlanUnavailable);
+        // §363.1: 404 (empty body) — "у аккаунта нет ни одной выдачи триала, подтверждать нечего". No
+        // billing account at all, or a billing account that has never had a trial granted, are both
+        // that case — this must not silently stamp AcknowledgedAtUtc on an account with nothing to
+        // acknowledge.
+        if (account is null || account.TrialStartedAtUtc is null)
+            return new TrialGrantResult(false, "TrialNotFound", null);
 
         var now = DateTime.UtcNow;
         if (account.TrialTermsAcknowledgedAtUtc is null)
