@@ -241,9 +241,28 @@ public class TrialActivationService(
         // channel actually has paid notification numbers, not just a channel the plan lets them connect.
         // PaidUntilUtc is left null here — until the mailing window actually starts (Д5, no channel
         // authorized yet) there is nothing to send with, and Н5 wires the eventual window end in here.
+        // Б... (code review, cycle 18 4th pass) — the actual GlitchTip network call is deferred until
+        // AFTER the transaction commits (see below); this only decides WHETHER one is owed and with what
+        // text, so nothing here holds the advisory lock/DB transaction open waiting on an external
+        // service (up to its own 10s timeout) before the grant itself can be committed.
+        string? misconfigurationSignal = null;
+
         var whatsappOption = await db.SubscriptionOptions
             .FirstOrDefaultAsync(o => o.Code == SubscriptionResolver.WhatsAppOptionCode, ct);
-        if (whatsappOption is not null)
+        if (whatsappOption is null)
+        {
+            // Symmetric with the Н2 gap below: the option CODE itself isn't in the catalog at all (not
+            // just missing/non-Included on this plan) — just as invisible a misconfiguration as the one
+            // Н2 was written to surface, so it gets the same log + signal treatment.
+            logger.LogError(
+                "trial-lifecycle: subscription option {OptionCode} does not exist in the catalog at all " +
+                "— account {AccountId} granted a trial with no paid notification numbers materialized",
+                SubscriptionResolver.WhatsAppOptionCode, account.Id);
+            misconfigurationSignal =
+                $"Опция {SubscriptionResolver.WhatsAppOptionCode} отсутствует в каталоге целиком " +
+                $"— у аккаунта {account.Id} рассылки не будут работать несмотря на активный триал.";
+        }
+        else
         {
             var rule = await db.PlanOptionRules
                 .FirstOrDefaultAsync(r => r.PlanConfigId == plan.Id && r.OptionId == whatsappOption.Id, ct);
@@ -297,9 +316,9 @@ public class TrialActivationService(
                     "trial-lifecycle: trial plan {PlanId} has no Included PlanOptionRule for {OptionCode} " +
                     "— account {AccountId} granted a trial with no paid notification numbers materialized",
                     plan.Id, SubscriptionResolver.WhatsAppOptionCode, account.Id);
-                await signals.SendAsync(
+                misconfigurationSignal =
                     $"Пробный тариф {plan.Id} не даёт правило Included на {SubscriptionResolver.WhatsAppOptionCode} " +
-                    $"— у аккаунта {account.Id} рассылки не будут работать несмотря на активный триал.", ct);
+                    $"— у аккаунта {account.Id} рассылки не будут работать несмотря на активный триал.";
             }
         }
 
@@ -307,6 +326,16 @@ public class TrialActivationService(
         {
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
+
+            // Б... (code review, cycle 18 4th pass) — deliberately AFTER CommitAsync succeeds: this
+            // service holds the per-account advisory lock (AcquireAsync above) for the lifetime of the
+            // transaction, and GlitchTip's client has its own 10s timeout. Sending from inside the
+            // transaction (as this used to) would keep that lock held for up to 10s whenever GlitchTip is
+            // unreachable, AND could alert about a grant that then failed to commit at all. SendAsync
+            // itself never throws (fixed 10s timeout, swallows its own errors) so it's safe to await
+            // unconditionally once the grant is durably committed.
+            if (misconfigurationSignal is not null)
+                await signals.SendAsync(misconfigurationSignal, ct);
         }
         catch (DbUpdateException)
         {
