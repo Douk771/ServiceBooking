@@ -1,11 +1,21 @@
 import { describe, it, expect } from 'vitest'
-import { AxiosError } from 'axios'
+import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios'
 import { getAdminBillingErrorMessage, isLimitOverflowConflict } from './adminBillingError'
 
+// Код под тестом читает у ответа только status и data, поэтому остальные поля AxiosResponse
+// заполнены пустышками, а не приведены через `as any`: приведение глушило проверку типа целиком,
+// и подмена формы ответа в axios прошла бы здесь незамеченной.
 function axiosErrorWith(status: number, data: unknown): AxiosError {
+  const response: AxiosResponse = {
+    status,
+    data,
+    statusText: '',
+    headers: {},
+    config: { headers: new AxiosHeaders() },
+  }
   return {
     isAxiosError: true,
-    response: { status, data } as any,
+    response,
   } as AxiosError
 }
 

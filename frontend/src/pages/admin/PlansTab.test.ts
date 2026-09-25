@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { optionRulesToForm, optionRulesToPayload, MAX_HIGHLIGHTS, PUBLIC_MAX_HIGHLIGHTS, MAX_HIGHLIGHT_LENGTH } from './PlansTab'
+import { optionRulesToForm, optionRulesToPayload, MAX_HIGHLIGHTS, PUBLIC_MAX_HIGHLIGHTS, MAX_HIGHLIGHT_LENGTH } from './planForm'
 
 describe('optionRulesToForm', () => {
   it('maps each rule by optionId, converting includedQuantity to a string for the input', () => {

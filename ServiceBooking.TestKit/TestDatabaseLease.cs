@@ -342,9 +342,21 @@ public sealed class TestDatabaseLease
         await DropUncheckedAsync(connection, databaseName, cancellationToken);
     }
 
+    /// <summary>Потолок ожидания одного DROP DATABASE — см. комментарий в
+    /// <see cref="DropUncheckedAsync"/> о том, почему умолчание Npgsql (30 s) для этой операции мало.</summary>
+    public const int DropCommandTimeoutSeconds = 120;
+
     private static async Task DropUncheckedAsync(NpgsqlConnection connection, string databaseName, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
+        // WITH (FORCE) шлёт SIGTERM чужим бэкендам и ЖДЁТ, пока они умрут. На загруженной машине
+        // (CI: 2 ядра, P классов разом) бэкенд может умирать дольше, чем Npgsql'ов CommandTimeout по
+        // умолчанию — 30 s, — и тогда падает не DROP, а чтение из сокета: "Timeout during reading
+        // attempt". Это teardown целой базы, а не запрос в тесте; 30 s здесь — случайное число,
+        // унаследованное от умолчания. Явные 120 s соразмерны операции.
+        await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection)
+        {
+            CommandTimeout = DropCommandTimeoutSeconds,
+        };
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }

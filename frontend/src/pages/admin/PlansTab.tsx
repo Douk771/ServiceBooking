@@ -5,7 +5,6 @@ import {
   type PlanConfig,
   type PhotoRetention,
   type OptionAvailability,
-  type PlanOptionRuleDto,
   type AdminPlanInput,
   type AdminOptionDto,
 } from '../../api/plans'
@@ -16,6 +15,15 @@ import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { getPlanErrorMessage } from '../../utils/planError'
 import { planStateLabel, type PlanStateTone } from './planState'
+import {
+  MAX_HIGHLIGHTS,
+  PUBLIC_MAX_HIGHLIGHTS,
+  MAX_HIGHLIGHT_LENGTH,
+  defaultForm,
+  optionRulesToForm,
+  optionRulesToPayload,
+  type PlanForm,
+} from './planForm'
 
 const RETENTION_LABELS: Record<PhotoRetention, string> = {
   SixMonths: '6 месяцев',
@@ -33,67 +41,10 @@ function retentionLabel(retention: PhotoRetention | undefined | null): string {
   return RETENTION_LABELS[retention] ?? UNKNOWN_RETENTION_LABEL
 }
 
-// AdminPlanDto.highlights allows up to 10 entries on write (contract + PricingCatalogBuilder.MaxHighlights).
-// The PUBLIC pricing page only ever shows the first 5 (PricingPlanDto.highlights maxItems, and
-// PricingCatalogBuilder.PublicMaxHighlights) — that's a display cap, not a write cap, so the editor
-// must not block entering a 6th..10th bullet; it just needs to say plainly which ones are shown.
-export const MAX_HIGHLIGHTS = 10
-export const PUBLIC_MAX_HIGHLIGHTS = 5
-export const MAX_HIGHLIGHT_LENGTH = 120
-
 const AVAILABILITY_LABELS: Record<OptionAvailability, string> = {
   Unavailable: 'Недоступна',
   Included: 'Включена',
   Extra: 'За доплату',
-}
-
-interface PlanForm {
-  name: string
-  pricePerMonth: string
-  maxEmployees: string
-  maxCompanies: string
-  allowOnlineBooking: boolean
-  allowMailing: boolean
-  allowAnalytics: boolean
-  allowPublicListing: boolean
-  allowOnlinePayment: boolean
-  description: string
-  notifyDaysBefore: string
-  photoQuotaMb: string
-  photoRetention: PhotoRetention
-  highlights: string[]
-  /** optionId -> rule. An option absent here is Unavailable, matching the contract's "missing means
-   *  Unavailable" rule for AdminPlanDto.options. */
-  optionRules: Record<string, { availability: OptionAvailability; includedQuantity: string }>
-  // ARCHITECTURE_CYCLE15.md §255.1 — these three used to be sent as hardcoded constants
-  // (isActive: true, isPublic: true, sortOrder: 0) on every save, silently putting any plan back on
-  // the storefront, reactivating deactivated plans, and resetting card order on /pricing. Now they
-  // are real form fields, visible before the user clicks "Сохранить"/"Создать", not implied.
-  isActive: boolean
-  isPublic: boolean
-  sortOrder: string
-}
-
-const defaultForm: PlanForm = {
-  name: '',
-  pricePerMonth: '0',
-  maxEmployees: '',
-  maxCompanies: '',
-  allowOnlineBooking: true,
-  allowMailing: false,
-  allowAnalytics: false,
-  allowPublicListing: true,
-  allowOnlinePayment: false,
-  description: '',
-  notifyDaysBefore: '7',
-  photoQuotaMb: '1024',
-  photoRetention: 'TwelveMonths',
-  highlights: [],
-  optionRules: {},
-  // §255.1 — today's default behaviour, but now visible in the form before "Создать" is pressed.
-  isActive: true,
-  isPublic: true,
-  sortOrder: '0',
 }
 
 const PLAN_STATE_TONE_CLASSES: Record<PlanStateTone, string> = {
@@ -125,29 +76,6 @@ function FeatureBadge({ label, enabled }: { label: string; enabled: boolean }) {
   )
 }
 
-export function optionRulesToForm(rules: PlanOptionRuleDto[]): PlanForm['optionRules'] {
-  const map: PlanForm['optionRules'] = {}
-  for (const r of rules) {
-    map[r.optionId] = {
-      availability: r.availability,
-      includedQuantity: r.includedQuantity != null ? String(r.includedQuantity) : '',
-    }
-  }
-  return map
-}
-
-export function optionRulesToPayload(rules: PlanForm['optionRules']): PlanOptionRuleDto[] {
-  return Object.entries(rules)
-    .filter(([, rule]) => rule.availability !== 'Unavailable')
-    .map(([optionId, rule]) => ({
-      optionId,
-      availability: rule.availability,
-      includedQuantity:
-        rule.availability === 'Included' && rule.includedQuantity.trim() !== ''
-          ? parseInt(rule.includedQuantity)
-          : null,
-    }))
-}
 
 export function PlansTab() {
   const qc = useQueryClient()
