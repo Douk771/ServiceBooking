@@ -748,6 +748,13 @@ public class AdminBillingController(
                 row.RequestedQuantity = null;
                 row.RequestedAtUtc = null;
                 row.RequestedByUserId = null;
+                // B1 (code review, cycle 18 3rd pass) — an admin write always produces an ordinary
+                // (non-trial) row, per the invariant documented on AccountSubscriptionOption.GrantedByTrial.
+                // Without this, a row a trial materialized (GrantedByTrial = true) that gets bought out
+                // here keeps the flag, and a later emergency re-grant (TrialActivationService.GrantAsync)
+                // would mistake this PAID row for its own leftover and silently overwrite its
+                // Quantity/PaidUntilUtc back down.
+                row.GrantedByTrial = false;
             }
         }
         // Options present before but omitted now (or decreased — decreases are not modeled per-unit,
