@@ -164,7 +164,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
         // gate and returns 200, not 409. Pin the precondition explicitly rather than assume run order.
         await SetPublicationEnabledDirectlyAsync(false);
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: true, termsOwnerVersion: "owner-1-draft");
-        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
+        _factory.ReloadLegalNow();
         var token = await LoginAsSuperAdminAsync();
 
         var response = await Authed(token).PutAsJsonAsync("/api/admin/platform-settings",
@@ -186,7 +186,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public async Task PutPlatformSettings_EnablePricingWithPublishedOffer_Returns200AndCatalogBecomesVisible()
     {
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: false);
-        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
+        _factory.ReloadLegalNow();
         var token = await LoginAsSuperAdminAsync();
         await CreatePublicPlanAsync();
 
@@ -207,7 +207,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public async Task GetPublicPricing_SwitchOnAtDbLevelButOfferDraft_Returns404NotOk()
     {
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: true, termsOwnerVersion: "owner-1-draft");
-        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
+        _factory.ReloadLegalNow();
         await CreatePublicPlanAsync();
         await SetPublicationEnabledDirectlyAsync(true); // simulates a dump restore / manual DB edit
 
@@ -224,7 +224,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public async Task AdminPricingPreview_WhatsAppOption_HiddenWhileTermsOwnerDraft_VisibleOncePublished()
     {
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: true, termsOwnerVersion: "owner-1-draft");
-        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
+        _factory.ReloadLegalNow();
         var token = await LoginAsSuperAdminAsync();
         var optionName = await MakeWhatsAppOptionPubliclySellableAsync();
 
@@ -233,7 +233,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
             "US-11-11/Q11: an option gated on TermsOwner must not be offered for sale while that document is a draft");
 
         _factory.WriteManifest("v2-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: false);
-        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
+        _factory.ReloadLegalNow();
         token = await AcceptCurrentLegalAsync(token);
 
         var publishedPreview = await Authed(token).GetFromJsonAsync<PublicPricingDto>("/api/admin/pricing/preview");
@@ -247,7 +247,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
     public async Task GetLegalReadiness_ReflectsCurrentDraftState_AndFlipsWhenOfferIsPublished()
     {
         _factory.WriteManifest("v1-draft", isDraft: true, changeKind: "Material", termsOwnerIsDraft: true, termsOwnerVersion: "owner-1-draft");
-        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
+        _factory.ReloadLegalNow();
         var token = await LoginAsSuperAdminAsync();
 
         var draft = await Authed(token).GetFromJsonAsync<LegalReadinessDto>("/api/admin/legal/readiness");
@@ -256,7 +256,7 @@ public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncL
         draft.Blockers.Should().Contain(b => b.Kind == "DraftDocuments");
 
         _factory.WriteManifest("v2-published", isDraft: false, changeKind: "Material", termsOwnerIsDraft: false);
-        await Task.Delay(2500); // > Legal:ReloadSeconds (1s); wider margin than LegalConsentVersionChangeTests's 1200 — this file's hosts are freshly booted per test (not reused), so boot jitter under load eats into the margin
+        _factory.ReloadLegalNow();
         token = await AcceptCurrentLegalAsync(token);
 
         var afterPublish = await Authed(token).GetFromJsonAsync<LegalReadinessDto>("/api/admin/legal/readiness");
