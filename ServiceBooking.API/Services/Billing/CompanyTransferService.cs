@@ -210,14 +210,24 @@ public class CompanyTransferService(
         if (assignment is not null)
         {
             db.ChannelCompanyAssignments.Remove(assignment);
-            var pending = await db.OutboundNotifications
-                .Where(n => n.CompanyId == companyId && n.Status == NotificationStatus.Pending)
-                .ToListAsync();
-            foreach (var row in pending)
-            {
-                row.Status = NotificationStatus.Cancelled;
-                row.Reason = NotificationReason.BookingOrAssignmentCancelled;
-            }
+        }
+
+        // TD-10 (ARCHITECTURE_CYCLE16.md §253): drop the company's undelivered notification queue on
+        // every transfer, not only when it happened to have a channel assignment. Before this fix, a
+        // company transferred while its ChannelCompanyAssignment row was absent (e.g. never assigned,
+        // or already removed by something else) kept its Pending OutboundNotifications sitting in the
+        // queue for the number that now belongs to a different company/account — the exact leak TD-10
+        // names. Already-sent rows and the log itself are untouched; existing Cancelled reason reused.
+        var pending = await db.OutboundNotifications
+            .Where(n => n.CompanyId == companyId && n.Status == NotificationStatus.Pending)
+            .ToListAsync();
+        foreach (var row in pending)
+        {
+            row.Status = NotificationStatus.Cancelled;
+            row.Reason = NotificationReason.BookingOrAssignmentCancelled;
+        }
+        if (assignment is not null || pending.Count > 0)
+        {
             await db.SaveChangesAsync();
         }
 

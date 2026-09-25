@@ -3,7 +3,17 @@ namespace ServiceBooking.API.Services.Scheduling;
 /// <summary>Result of one run of a scheduled task, in the numbers the runner logs and persists
 /// (US-21 p.6): how many rows were looked at, how many were acted on, how many bytes were freed, and a
 /// human-readable one-line summary for <see cref="ServiceBooking.Core.Entities.ScheduledTaskState.LastSummary"/>.</summary>
-public readonly record struct ScheduledTaskOutcome(int Scanned, int Affected, long BytesFreed, string Summary);
+public readonly record struct ScheduledTaskOutcome(int Scanned, int Affected, long BytesFreed, string Summary)
+{
+    /// <summary>TD-04 (ARCHITECTURE_CYCLE16.md §246.3): non-null means this run ended with an error, but
+    /// unlike throwing, <see cref="Summary"/> is still meaningful and must be persisted alongside it —
+    /// that is the whole point (N9-6: today an exception makes <c>ScheduledTaskRunner</c> lose the
+    /// summary of whatever DID succeed before the failure). Additive <c>init</c> property: every
+    /// existing task's call site (<c>StaffPushDispatchTask</c>, <c>PhotoRetentionCleanupTask</c>,
+    /// <c>NotificationDispatchTask</c>, <c>ChannelHealthTask</c>) compiles unchanged and defaults to
+    /// <c>null</c> (no error), i.e. today's behavior.</summary>
+    public string? Error { get; init; }
+}
 
 /// <summary>
 /// Contract for one periodic background task (US-21 p.1). Adding a new task is exactly this: a new class

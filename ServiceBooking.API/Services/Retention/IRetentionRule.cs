@@ -37,4 +37,11 @@ public readonly record struct RetentionContext(DateTime NowUtc, RetentionPeriods
 /// two separate fields anyway, not collapsed into one: a future rule with a genuine two-step
 /// select-then-filter shape (none exists today) would then have a place to report the distinction
 /// without a breaking change to this struct.</summary>
-public readonly record struct RetentionOutcome(string Name, int Scanned, int Affected, string Summary);
+public readonly record struct RetentionOutcome(string Name, int Scanned, int Affected, string Summary)
+{
+    /// <summary>TD-04 (ARCHITECTURE_CYCLE16.md §246.3): true when this rule is not configured (its
+    /// retention period is 0) and deliberately did nothing this pass. Additive <c>init</c> property on
+    /// top of the existing positional constructor — every rule's existing call site compiles unchanged
+    /// and defaults to <c>false</c> (not skipped), which is exactly the pre-cycle-16 behavior.</summary>
+    public bool Skipped { get; init; }
+}
