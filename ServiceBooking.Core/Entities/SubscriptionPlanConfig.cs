@@ -49,7 +49,7 @@ public class SubscriptionPlanConfig
     public bool IsSystemFree { get; set; }
 
     // Cycle 18 (ARCHITECTURE_CYCLE18.md §332.1, US-18-01/US-18-02): the second system tariff —
-    // "pробный период" (trial). Exactly one row may have this set (partial unique index below);
+    // "пробный период" (trial). Exactly one row may have this set (partial unique index below);
     // PricePerMonth must be 0; can be neither deleted nor deactivated while it has live subscribers;
     // can never coincide with IsSystemFree on the same row. Changed ONLY by
     // PUT /api/admin/plans/{id}/system-trial — this field is deliberately absent from AdminPlanInput,
