@@ -62,14 +62,16 @@ def dropped_column_names(text: str) -> set[str]:
 
 # Historical baseline (documented, not silently swallowed): migrations before this one were produced by
 # repeated cross-branch/cycle merges before this monotonicity convention existed, and their Designer.cs
-# snapshots genuinely show properties (cycle 21-23 migrations) and even a whole entity for one migration
-# (PhoneVerificationSession/VerifiedPhone vanish for exactly 20260924065320_AddCompanyAddressVerification,
-# then reappear in 20260924074741) vanishing and reappearing — a known, already-applied-to-prod artifact
+# snapshots genuinely show properties (the 20260921-20260922 migration cluster) and even whole entities
+# for a single migration (PhoneVerificationSession/VerifiedPhone vanish for exactly
+# 20260924065320_AddCompanyAddressVerification, then reappear in 20260924074741) vanishing and
+# reappearing — a known, already-applied-to-prod artifact
 # of that merge history, not a live drift bug worth re-litigating now (doing so would mean hand-auditing
 # dozens of already-shipped migrations for zero safety benefit, since the DB already reflects
 # AppDbContextModelSnapshot.cs's current, correct state; the PhoneVerification entities are also
 # explicitly out of this cycle's scope per ARCHITECTURE_CYCLE17.md §300.1 Р6/§316 Р-17-1). Recorded as
-# technical debt C17-8 in CURRENT_STATE.md rather than fixed here. This baseline starts right AFTER the
+# technical debt C17-8 in CURRENT_STATE.md §9 (block "C17 — долг, зафиксированный циклом 17") rather
+# than fixed here — that entry carries the by-name list of every gap and the rule below. This baseline starts right AFTER the
 # migration this cycle's own C15-4 fix touches (074741, ARCHITECTURE_CYCLE17.md §308.1) — the authoritative
 # `dotnet-ef migrations add __DriftProbe` step already proves that specific fix is correct; this script's
 # job from here on is to keep the FUTURE chain (074741 -> ... -> today's snapshot) from regressing again,
