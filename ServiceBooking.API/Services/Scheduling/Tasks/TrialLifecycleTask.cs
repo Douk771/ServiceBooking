@@ -88,6 +88,22 @@ public sealed class TrialLifecycleTask(
         return new ScheduledTaskOutcome(scanned, affected, 0, summary) { Error = combinedError };
     }
 
+    /// <summary>N-fix (code review) — discards every entity this ONE failed iteration touched (Added or
+    /// Modified), without disturbing already-saved entities from earlier iterations of the same batch or
+    /// not-yet-visited entities queued for later ones. Safe precisely because each phase below now calls
+    /// <see cref="Microsoft.EntityFrameworkCore.DbContext.SaveChangesAsync(CancellationToken)"/> once per
+    /// ACCOUNT rather than once per batch: by the time an iteration's try block starts, the tracker holds
+    /// only Unchanged entries (everything from prior successful iterations was already committed), so any
+    /// non-Unchanged entry found here can only have been produced by the iteration that just failed.
+    /// Replaces the narrower "reload just account/sub" fix, which left a same-iteration Added
+    /// <see cref="SubscriptionChangeLog"/> row (this project's append-only, evidentiary journal — Д18/Т1)
+    /// still queued for the next successful save, asserting a transition that never actually happened.</summary>
+    private static void DiscardFailedIterationChanges(AppDbContext db)
+    {
+        foreach (var entry in db.ChangeTracker.Entries().Where(e => e.State != EntityState.Unchanged).ToList())
+            entry.State = EntityState.Detached;
+    }
+
     /// <summary>N4 (code review) — isolates a phase throwing OUTRIGHT (as opposed to one account inside
     /// it failing, which each phase already isolates internally below) from aborting the phases after
     /// it. Mirrors <c>DataRetentionTask</c>'s per-rule try/catch at the phase granularity.</summary>
@@ -147,6 +163,13 @@ public sealed class TrialLifecycleTask(
                     // (TrialMailingWindowStarter.StartIfDueAsync) — dated at the REAL earliest
                     // authorization, never at "now this pass happens to run".
                     await TrialMailingWindowStarter.StartIfDueAsync(db, account, earliest.Value, ct);
+                    // N-fix (code review) — SaveChangesAsync per ACCOUNT, not per batch: this phase can
+                    // add a SubscriptionChangeLog row (StartIfDueAsync) as a side effect. Append-only
+                    // journal (Д18/Т1 evidentiary role) — a batched save would let a later account's
+                    // failure roll back the account/sub reload below while this Added log row, already
+                    // in the batch's SaveChanges call, still got persisted, leaving the journal asserting
+                    // a transition that never actually completed.
+                    await db.SaveChangesAsync(ct);
                     // N6 (code review) — only counted if the write actually happened: StartIfDueAsync's
                     // own guards (TrialEndsAtUtc/TrialMailingWindowDays missing) can leave it a no-op even
                     // though the outer query matched.
@@ -159,16 +182,17 @@ public sealed class TrialLifecycleTask(
                 catch (Exception ex)
                 {
                     // N4 (code review) — one poisoned account never stops the rest of the batch (or the
-                    // rest of the pass). Reload discards any partial change EF may have already tracked
-                    // on this entity before the exception, so a later SaveChangesAsync in this same batch
-                    // never half-commits it.
+                    // rest of the pass). SaveChangesAsync now runs per account (see above), so a failed
+                    // iteration never reached a commit: nothing — not even the SubscriptionChangeLog row
+                    // StartIfDueAsync may have queued — was persisted for it. DiscardFailedIterationChanges
+                    // just forgets that in-memory tracking so it never rides along on a later account's
+                    // save in this same batch.
                     logger.LogError(ex, "trial-lifecycle: self-heal-window-start failed for account {AccountId}", account.Id);
-                    await db.Entry(account).ReloadAsync(ct);
+                    DiscardFailedIterationChanges(db);
                 }
             }
 
             cursor = candidates[^1].Id;
-            await db.SaveChangesAsync(ct);
             db.ChangeTracker.Clear();
 
             if (candidates.Count < BatchSize) break;
@@ -210,6 +234,12 @@ public sealed class TrialLifecycleTask(
                         ChangeKind = SubscriptionChangeKind.TrialMailingWindow,
                         Comment = "Окно бесплатных рассылок закрыто",
                     });
+                    // N-fix (code review) — SaveChangesAsync per ACCOUNT, not per batch: this phase adds a
+                    // SubscriptionChangeLog row every iteration. A batched save let a LATER account's
+                    // failure trigger the account-only reload (below) while this Added log row, already
+                    // in the same pending batch, still got persisted — the append-only journal (Д18/Т1)
+                    // would then assert a closure that, for this account, may never have committed.
+                    await db.SaveChangesAsync(ct);
                     closed++;
                 }
                 catch (OperationCanceledException)
@@ -219,12 +249,14 @@ public sealed class TrialLifecycleTask(
                 catch (Exception ex)
                 {
                     // N4 (code review) — isolate a single account's failure from the rest of the batch.
+                    // SaveChangesAsync now runs per account (see above), so a failed iteration never
+                    // reached a commit; this just forgets the in-memory tracking so it can't ride along on
+                    // a later account's save.
                     logger.LogError(ex, "trial-lifecycle: close-window failed for account {AccountId}", account.Id);
-                    await db.Entry(account).ReloadAsync(ct);
+                    DiscardFailedIterationChanges(db);
                 }
             }
 
-            await db.SaveChangesAsync(ct);
             db.ChangeTracker.Clear();
 
             if (candidates.Count < BatchSize) break;
@@ -279,6 +311,10 @@ public sealed class TrialLifecycleTask(
                     if (applicable is not null)
                     {
                         account.TrialWarnedAtThresholdDays = applicable;
+                        // N-fix (code review) — per-account save, matching the other three phases, so a
+                        // failed account's DiscardFailedIterationChanges below can never coincide with an
+                        // already-pending, not-yet-committed mutation from this same iteration.
+                        await db.SaveChangesAsync(ct);
                         warned++;
                     }
                 }
@@ -290,12 +326,11 @@ public sealed class TrialLifecycleTask(
                 {
                     // N4 (code review) — isolate a single account's failure from the rest of the batch.
                     logger.LogError(ex, "trial-lifecycle: warn failed for account {AccountId}", account.Id);
-                    await db.Entry(account).ReloadAsync(ct);
+                    DiscardFailedIterationChanges(db);
                 }
             }
 
             cursor = candidates[^1].Id;
-            await db.SaveChangesAsync(ct);
             db.ChangeTracker.Clear();
 
             if (candidates.Count < BatchSize) break;
@@ -373,6 +408,7 @@ public sealed class TrialLifecycleTask(
                     // already made. Either way there is nothing left to transition; the account is still
                     // marked handled so it stops being re-selected by this index every pass forever.
                     account.TrialExpiredHandledAtUtc = now;
+                    await db.SaveChangesAsync(ct);
                     alreadyHandled++;
                     continue;
                 }
@@ -412,6 +448,13 @@ public sealed class TrialLifecycleTask(
                     ChangeKind = SubscriptionChangeKind.TrialExpired,
                     Comment = $"Пробный период закончился {account.TrialEndsAtUtc:dd.MM.yyyy}, подписка переведена на бесплатный тариф",
                 });
+                // N-fix (code review) — SaveChangesAsync per ACCOUNT, not per batch: this is exactly the
+                // journal write the task's own doc comment (top of file) flagged as a known gap when
+                // reload was only applied to account/sub. A batched save let a LATER account's failure
+                // trigger this account's reload-only recovery while this Added TrialExpired log row,
+                // already in the same pending batch, still got persisted — asserting a plan transition
+                // that, for this account, may never actually have committed.
+                await db.SaveChangesAsync(ct);
                 transitioned++;
                 }
                 catch (OperationCanceledException)
@@ -421,18 +464,15 @@ public sealed class TrialLifecycleTask(
                 catch (Exception ex)
                 {
                     // N4 (code review) — one poisoned account never stops the rest of the batch (or the
-                    // pass). Reload discards whatever this iteration already mutated on the account/sub
-                    // entities before the exception, so the eventual SaveChangesAsync for this batch never
-                    // half-commits a broken transition.
+                    // pass). SaveChangesAsync now runs per account (see above), so a failed iteration never
+                    // reached a commit — not the plan swap, not the option EndsAtUtc dating, not the
+                    // TrialExpired journal row. DiscardFailedIterationChanges forgets all of it at once.
                     failed++;
                     logger.LogError(ex, "trial-lifecycle: expire failed for account {AccountId}", account.Id);
-                    await db.Entry(account).ReloadAsync(ct);
-                    if (sub.TryGetValue(account.Id, out var accountSubOnFailure))
-                        await db.Entry(accountSubOnFailure).ReloadAsync(ct);
+                    DiscardFailedIterationChanges(db);
                 }
             }
 
-            await db.SaveChangesAsync(ct);
             db.ChangeTracker.Clear();
 
             if (candidates.Count < BatchSize) break;
