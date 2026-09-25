@@ -15,4 +15,9 @@ public enum SubscriptionChangeKind
     Payment = 3,
     CompanyTransferred = 4,
     Migration = 5,
+
+    // Cycle 18 (ARCHITECTURE_CYCLE18.md §332.6, §337.1). Append-only, like everything above.
+    TrialGranted = 6,        // activation — by the owner, by a superadmin, or an emergency regrant
+    TrialExpired = 7,        // the materialized transition trial → system Free
+    TrialMailingWindow = 8,  // the mailing window opened or closed (details in Comment)
 }

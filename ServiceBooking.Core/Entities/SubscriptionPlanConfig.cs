@@ -43,7 +43,16 @@ public class SubscriptionPlanConfig
     public int SortOrder { get; set; }
     // The single system free tariff (П4/§64 п.5): exactly one row may have this set (partial unique
     // index in AppDbContext), its PricePerMonth must be 0, and it can be neither deleted nor
-    // deactivated. Enforced by the admin write endpoint, not implemented in this slice — see the
-    // backend report for cycle 07.
+    // deactivated. Enforcement lives in AdminController — ValidateSystemFreeAsync/SetSystemFree plus
+    // the partial unique index below — not "not implemented in this slice" (that was true through
+    // cycle 6 only; corrected cycle 18, ARCHITECTURE_CYCLE18.md §332.1, CURRENT_STATE.md §0.2 п.6).
     public bool IsSystemFree { get; set; }
+
+    // Cycle 18 (ARCHITECTURE_CYCLE18.md §332.1, US-18-01/US-18-02): the second system tariff —
+    // "pробный период" (trial). Exactly one row may have this set (partial unique index below);
+    // PricePerMonth must be 0; can be neither deleted nor deactivated while it has live subscribers;
+    // can never coincide with IsSystemFree on the same row. Changed ONLY by
+    // PUT /api/admin/plans/{id}/system-trial — this field is deliberately absent from AdminPlanInput,
+    // same convention as IsSystemFree.
+    public bool IsSystemTrial { get; set; }
 }

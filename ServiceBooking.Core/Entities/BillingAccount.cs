@@ -1,3 +1,5 @@
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.Core.Entities;
 
 /// <summary>
@@ -55,5 +57,32 @@ public class BillingAccount
     // just the thing to show once on the owner's own screen).
     public string? LastRejectionReason { get; set; }
     public DateTime? LastRejectedAtUtc { get; set; }
+
+    // ── Cycle 18: trial (US-18-04, US-18-07, US-18-14, Т1, Д19) — ARCHITECTURE_CYCLE18.md §332.3 ──
+    // Usage marker. Never cleared by expiry, a plan change, or a downgrade back to Free (§337.3) — it
+    // disappears only with the account itself. Once-only-ness is NOT enforced by these columns; that
+    // is TrialPhoneRegistration's job (a registry that outlives the account, §332.5).
+    public DateTime? TrialStartedAtUtc { get; set; }
+    public DateTime? TrialEndsAtUtc { get; set; }          // promised date, snapshot (US-18-07)
+    public int? TrialDurationDays { get; set; }            // snapshot of the setting at grant time
+    public int? TrialMailingWindowDays { get; set; }       // snapshot of the setting at grant time
+    // Д19: promised warning thresholds, snapshot ("7,3,1"). A later admin setting change does NOT
+    // rewrite this — the activation terms named these exact numbers to this specific person.
+    public string? TrialWarningThresholdsDays { get; set; }   // string(32)
+    // Т1: which edition of the activation terms was shown, and when the owner acknowledged it. The
+    // full evidentiary record lives on TrialGrant (§332.4); this is just state for the screens.
+    public string? TrialTermsVersion { get; set; }            // string(32)
+    public DateTime? TrialTermsAcknowledgedAtUtc { get; set; } // set-once, never overwritten
+    public TrialGrantSource? TrialGrantSource { get; set; }
+    public string? TrialGrantedByUserId { get; set; }
+    // Start of the mailing window: the first-ever channel transition to Connected/Authorized on this
+    // account. Set once; disconnecting/replacing/re-linking a channel does NOT restart it (Д5).
+    public DateTime? TrialChannelFirstAuthorizedAtUtc { get; set; }
+    public DateTime? TrialMailingWindowEndsAtUtc { get; set; }  // = min(start + M, TrialEndsAtUtc)
+    // Background-pass idempotency by STATE, not by calendar day (US-18-13).
+    // Т3: the 30-day lifetime of the "transition happened" message is counted from this moment.
+    public DateTime? TrialExpiredHandledAtUtc { get; set; }
+    public int? TrialWarnedAtThresholdDays { get; set; }        // closest threshold already crossed
+    public DateTime? TrialMailingClosureLoggedAtUtc { get; set; }
 }
 
