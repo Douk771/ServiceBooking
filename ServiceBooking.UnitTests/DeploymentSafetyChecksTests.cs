@@ -1466,7 +1466,7 @@ public class DeploymentSafetyChecksTests
     public void ValidateTrialSecrets_Production_PhoneKeyIdTooLong_Throws()
     {
         var values = ValidTrialSecrets();
-        values["Trial:PhoneKeyId"] = "2026-09-rotation-x"; // 19 chars — over the string(16) column
+        values["Trial:PhoneKeyId"] = "2026-09-rotation-x"; // 18 chars — over the string(16) column
         var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
         act.Should().Throw<InvalidOperationException>().WithMessage("*PhoneKeyId*");
     }
