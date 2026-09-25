@@ -9,6 +9,7 @@ import {
   type AdminSubscribedOption,
   type AdminSubscriptionRequest,
   type SubscriptionStatus,
+  type TrialAccountFilter,
 } from '../../api/adminBilling'
 import { plansApi } from '../../api/plans'
 import { Card } from '../../components/ui/Card'
@@ -18,6 +19,7 @@ import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
 import { getAdminBillingErrorMessage as getBillingErrorMessage, isLimitOverflowConflict } from '../../utils/adminBillingError'
+import { getTrialErrorMessage } from '../../utils/trialError'
 import {
   STATUS_BADGE_CLASS,
   formatRub,
@@ -303,6 +305,137 @@ function RejectRequestModal({ request, onClose }: { request: AdminSubscriptionRe
 
 // ── Account detail ────────────────────────────────────────────────────────────
 
+function TrialSection({ accountId, account }: { accountId: string; account: AdminBillingAccount }) {
+  const qc = useQueryClient()
+  const [regrantReason, setRegrantReason] = useState('')
+  const [showRegrant, setShowRegrant] = useState(false)
+  const trial = account.trial
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['admin-billing-account', accountId] })
+    qc.invalidateQueries({ queryKey: ['admin-billing-account-history', accountId] })
+    qc.invalidateQueries({ queryKey: ['admin-billing-accounts'] })
+  }
+
+  // §368 — same checks as the owner's own self-service activation, no bypass.
+  const grantMut = useMutation({
+    mutationFn: () => adminBillingApi.grantTrial(accountId),
+    onSuccess: invalidate,
+  })
+
+  // §368 — separate route, mandatory non-empty reason (Д1-бис): the emergency bypass must not be
+  // reachable via a stray field on the ordinary grant call above.
+  const regrantMut = useMutation({
+    mutationFn: () => adminBillingApi.regrantTrial(accountId, regrantReason),
+    onSuccess: () => {
+      setShowRegrant(false)
+      setRegrantReason('')
+      invalidate()
+    },
+  })
+
+  if (!trial) return null
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-soft mb-1.5">Пробный период</p>
+      <div className="rounded-xl border border-line px-3 py-2.5 text-sm">
+        {trial.state === 'Never' ? (
+          <p className="text-ink-soft">Не предоставлялся.</p>
+        ) : (
+          <>
+            <p className="text-ink-soft">
+              {trial.state === 'Active' ? 'Идёт' : 'Завершился'} · с {fmtDate(trial.startedAt)} до {fmtDate(trial.endsAt)}
+              {typeof trial.daysLeft === 'number' && trial.state === 'Active' && ` · осталось дней: ${trial.daysLeft}`}
+            </p>
+            <p className="text-xs text-muted mt-0.5">
+              Выдал: {trial.grantedByName ?? 'сам владелец'} · версия условий: {trial.termsVersion ?? '—'} · показаны:{' '}
+              {fmtDateTime(trial.termsShownAt)} · подтверждены: {fmtDateTime(trial.termsAcknowledgedAt)}
+            </p>
+          </>
+        )}
+
+        {(trial.grants ?? []).length > 0 && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {(trial.grants ?? []).map((g, i) => (
+              <div key={i} className="text-xs bg-cream-deep rounded-lg px-2.5 py-1.5">
+                <div className="flex items-center justify-between text-muted flex-wrap gap-1">
+                  <span>{fmtDateTime(g.grantedAt)}</span>
+                  <span>{g.source === 'SuperAdminOverride' ? 'аварийная повторная выдача' : g.source === 'SuperAdmin' ? 'суперадмин' : 'сам владелец'}</span>
+                </div>
+                <div className="text-ink-soft mt-0.5">
+                  до {fmtDate(g.endsAt)} · условия версии {g.termsVersion}
+                  {g.grantedByName && <> · выдал {g.grantedByName}</>}
+                </div>
+                {g.reason && <div className="text-muted italic mt-0.5">«{g.reason}»</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2 mt-2">
+        {trial.state === 'Never' && (
+          <Button size="sm" variant="secondary" loading={grantMut.isPending} onClick={() => grantMut.mutate()}>
+            Выдать пробный период
+          </Button>
+        )}
+        {grantMut.isError && (
+          <p className="text-xs text-danger">{getTrialErrorMessage(grantMut.error, 'Не удалось выдать пробный период.')}</p>
+        )}
+
+        {!showRegrant ? (
+          <button type="button" className="text-xs text-muted underline self-start" onClick={() => setShowRegrant(true)}>
+            Выдать повторно (аварийно)
+          </button>
+        ) : (
+          <div className="rounded-xl border border-warning bg-[#FBF3E3] p-3 flex flex-col gap-2">
+            {/* §368 (п. 6.16.6.1 Соглашения) — повторная выдача допустима только как исправление
+                собственной ошибки платформы, а не как индивидуальная уступка. */}
+            <p className="text-xs text-ink-soft">
+              Допустимо только как исправление собственной ошибки платформы (сбой, ошибочная выдача,
+              необоснованный отказ) — не как уступка конкретному абоненту.
+            </p>
+            <textarea
+              value={regrantReason}
+              onChange={(e) => setRegrantReason(e.target.value)}
+              rows={2}
+              maxLength={500}
+              placeholder="Например: пробный период не сработал из-за сбоя 12.09, исправляем свою ошибку"
+              className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none bg-white"
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="danger"
+                loading={regrantMut.isPending}
+                disabled={regrantReason.trim().length === 0}
+                onClick={() => regrantMut.mutate()}
+              >
+                Выдать повторно
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setShowRegrant(false)
+                  setRegrantReason('')
+                  regrantMut.reset()
+                }}
+              >
+                Отмена
+              </Button>
+            </div>
+            {regrantMut.isError && (
+              <p className="text-xs text-danger">{getTrialErrorMessage(regrantMut.error, 'Не удалось выдать пробный период повторно.')}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () => void }) {
   const { data: account, isLoading } = useQuery({
     queryKey: ['admin-billing-account', accountId],
@@ -419,6 +552,8 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
             </div>
           </div>
 
+          <TrialSection accountId={accountId} account={account} />
+
           <div>
             <p className="text-sm font-medium text-ink-soft mb-1.5">История изменений подписки</p>
             <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
@@ -462,6 +597,20 @@ const STATUS_OPTIONS: { value: SubscriptionStatus | ''; label: string }[] = [
   { value: 'Expired', label: 'Истекла' },
 ]
 
+// §369 — новый необязательный параметр ?trial=; нераспознанное значение не матчит ничего (как у ?status=).
+const TRIAL_OPTIONS: { value: TrialAccountFilter | ''; label: string }[] = [
+  { value: '', label: 'Пробный период: все' },
+  { value: 'never', label: 'Не брали' },
+  { value: 'active', label: 'Идёт сейчас' },
+  { value: 'used', label: 'Уже использован' },
+]
+
+const TRIAL_STATE_LABEL: Record<'Never' | 'Active' | 'Expired', string> = {
+  Never: '',
+  Active: 'триал',
+  Expired: 'триал завершён',
+}
+
 function AccountRow({ item, onOpen }: { item: AdminBillingAccountListItem; onOpen: () => void }) {
   return (
     <Card className="p-4 flex items-center justify-between gap-4 flex-wrap cursor-pointer hover:border-line-strong" onClick={onOpen}>
@@ -474,6 +623,16 @@ function AccountRow({ item, onOpen }: { item: AdminBillingAccountListItem; onOpe
           </span>
           {item.hasPendingRequest && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-info-bg text-info">заявка</span>
+          )}
+          {item.trialState && item.trialState !== 'Never' && (
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                item.trialState === 'Active' ? 'bg-[#EAF4EC] text-[#2F7A45]' : 'bg-cream-deep text-muted'
+              }`}
+            >
+              {TRIAL_STATE_LABEL[item.trialState]}
+              {item.trialEndsAt && ` · до ${fmtDate(item.trialEndsAt)}`}
+            </span>
           )}
         </div>
         <p className="text-xs text-muted mt-0.5">
@@ -492,12 +651,20 @@ function AccountRow({ item, onOpen }: { item: AdminBillingAccountListItem; onOpe
 function AccountsListSection() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<SubscriptionStatus | ''>('')
+  const [trial, setTrial] = useState<TrialAccountFilter | ''>('')
   const [page, setPage] = useState(1)
   const [openAccountId, setOpenAccountId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-billing-accounts', search, status, page],
-    queryFn: () => adminBillingApi.listAccounts({ search: search || undefined, status: status || undefined, page, pageSize: 20 }),
+    queryKey: ['admin-billing-accounts', search, status, trial, page],
+    queryFn: () =>
+      adminBillingApi.listAccounts({
+        search: search || undefined,
+        status: status || undefined,
+        trial: trial || undefined,
+        page,
+        pageSize: 20,
+      }),
   })
 
   const handleSearch = (v: string) => {
@@ -521,6 +688,20 @@ function AccountsListSection() {
           className="rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
         >
           {STATUS_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={trial}
+          onChange={(e) => {
+            setTrial(e.target.value as TrialAccountFilter | '')
+            setPage(1)
+          }}
+          className="rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
+        >
+          {TRIAL_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
