@@ -20,6 +20,14 @@ export interface PricingPlanDto {
   includedEmployees: number | null
   sortOrder: number
   isFree: boolean
+  /** Cycle 18 (API_CONTRACT_CYCLE18.md §370) — "это тариф пробного периода", a separate axis from
+   *  `isFree`: the two can never both be true. Public route returns 404 while `pricing.public-enabled`
+   *  is off — a trial plan simply isn't visible on the public showcase until then (§370, expected).
+   *
+   *  Optional per the generated wire contract (`PublicPlanDtoTrialPatch.isTrial?`) rather than a
+   *  guaranteed boolean — kept optional here too so the badge simply doesn't render if a caller ever
+   *  hits a response shape without it. `PlanCard` already treats it as falsy-safe (`plan.isTrial &&`). */
+  isTrial?: boolean
 }
 
 export type PricingOptionKind = 'Quantity' | 'Toggle'

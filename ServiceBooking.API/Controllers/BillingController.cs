@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services;
@@ -16,8 +17,65 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/billing")]
 [Authorize]
-public class BillingController(AppDbContext db, OwnerSubscriptionService ownerSubscriptionService) : ControllerBase
+public class BillingController(
+    AppDbContext db, OwnerSubscriptionService ownerSubscriptionService,
+    TrialStateReader trialStateReader, TrialActivationService trialActivationService) : ControllerBase
 {
+    // ── Cycle 18 (API_CONTRACT_CYCLE18.md §362-§363.1) ────────────────────────────────────────────
+    [HttpGet("trial")]
+    public async Task<ActionResult<TrialStateDto>> GetTrial()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var dto = await trialStateReader.GetAsync(userId);
+        return dto is null ? NotFound() : Ok(dto);
+    }
+
+    [HttpPost("trial")]
+    [EnableRateLimiting("trial-activate")]
+    public async Task<ActionResult<OwnerSubscriptionDto>> ActivateTrial([FromBody] TrialActivationRequestDto dto)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        if (string.IsNullOrWhiteSpace(dto.TermsVersion))
+            return Conflict(new TrialRefusalDto("TrialTermsVersionMismatch", TrialLegalNotices.TrialTermsVersionMismatchNotice));
+
+        // §363: "нет биллинг-аккаунта и он не создаётся (пользователь не владелец)" — 404. A
+        // BillingAccount only exists once the user has provisioned one elsewhere (e.g. creating a
+        // company); this endpoint must never be the thing that provisions one, or any authenticated
+        // non-owner could burn their phone number in the once-only trial registry (Д16, 3-year retention,
+        // not deletable) without ever becoming an owner.
+        var accountId = await BillingAccountProvisioner.FindAccountIdAsync(db, userId);
+        if (accountId is null) return NotFound();
+
+        var result = await trialActivationService.GrantAsync(new TrialGrantRequest(
+            accountId.Value, userId, Core.Enums.TrialGrantSource.OwnerSelfService, TrialGrantMode.Normal, Reason: null,
+            AcknowledgedTermsVersion: dto.TermsVersion));
+
+        if (!result.Granted)
+            return Conflict(new TrialRefusalDto(result.RefusalCode!, result.Message!));
+
+        var subscriptionDto = await ownerSubscriptionService.GetAsync(userId);
+        return Ok(subscriptionDto);
+    }
+
+    [HttpPost("trial/terms-acknowledgement")]
+    public async Task<ActionResult<TrialStateDto>> AcknowledgeTrialTerms([FromBody] TrialActivationRequestDto dto)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var result = await trialActivationService.AcknowledgeTermsAsync(userId, dto.TermsVersion);
+        if (!result.Granted)
+        {
+            return result.RefusalCode switch
+            {
+                "TrialTermsVersionRequired" => BadRequest(result.Message),
+                "TrialNotFound" => NotFound(),
+                _ => Conflict(new TrialRefusalDto(result.RefusalCode!, result.Message!)),
+            };
+        }
+
+        var state = await trialStateReader.GetAsync(userId);
+        return state is null ? NotFound() : Ok(state);
+    }
+
     [HttpGet("subscription")]
     public async Task<ActionResult<OwnerSubscriptionDto>> GetSubscription()
     {

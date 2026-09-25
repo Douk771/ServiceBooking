@@ -17,6 +17,17 @@ describe('plansApi.setSystemFree', () => {
   })
 })
 
+describe('plansApi.setSystemTrial', () => {
+  it('PUTs to the dedicated system-trial route (API_CONTRACT_CYCLE18.md §366), not the ordinary plan-edit route', async () => {
+    const body = { id: 'p1', isSystemTrial: true }
+    vi.mocked(api.put).mockResolvedValueOnce({ data: body })
+
+    await plansApi.setSystemTrial('p1', true)
+
+    expect(api.put).toHaveBeenCalledWith('/admin/plans/p1/system-trial', { isSystemTrial: true })
+  })
+})
+
 describe('plansApi.list', () => {
   // Cycle 7 wrapped this response in a { plans } envelope to match the contract
   // (contracts/cycle7/openapi.yaml — required: [plans]) but the client kept asking for a bare array,

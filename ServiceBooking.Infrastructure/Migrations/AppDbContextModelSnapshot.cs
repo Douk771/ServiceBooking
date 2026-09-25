@@ -170,6 +170,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("MailingUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("OwnerUserId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -213,6 +216,9 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<DateTime?>("EndsAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("GrantedByTrial")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("OptionId")
                         .HasColumnType("uuid");
@@ -365,6 +371,50 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid?>("RequestedPlanId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("TrialChannelFirstAuthorizedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("TrialDurationDays")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("TrialEndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("TrialExpiredHandledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("TrialGrantSource")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TrialGrantedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("TrialMailingClosureLoggedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("TrialMailingWindowDays")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("TrialMailingWindowEndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("TrialStartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("TrialTermsAcknowledgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TrialTermsVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("TrialWarnedAtThresholdDays")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TrialWarningThresholdsDays")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -374,6 +424,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("RequestedPlanId");
+
+                    b.HasIndex("TrialEndsAtUtc")
+                        .HasDatabaseName("IX_BillingAccounts_TrialExpiry")
+                        .HasFilter("\"TrialEndsAtUtc\" IS NOT NULL AND \"TrialExpiredHandledAtUtc\" IS NULL");
 
                     b.ToTable("BillingAccounts");
                 });
@@ -2295,6 +2349,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<bool>("IsSystemFree")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsSystemTrial")
+                        .HasColumnType("boolean");
+
                     b.Property<int?>("MaxCompanies")
                         .HasColumnType("integer");
 
@@ -2326,7 +2383,111 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsSystemFree\" = true");
 
+                    b.HasIndex("IsSystemTrial")
+                        .IsUnique()
+                        .HasFilter("\"IsSystemTrial\" = true");
+
                     b.ToTable("SubscriptionPlanConfigs");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.TrialGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BillingAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DurationDays")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("EndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("GrantedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GrantedByUserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("MailingWindowDays")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("PlanConfigId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("TermsAcknowledgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("TermsShownAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TermsTextSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("TermsVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("WarningThresholdsDays")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BillingAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_TrialGrants_OnePerAccount")
+                        .HasFilter("\"Source\" <> 2");
+
+                    b.HasIndex("GrantedAtUtc");
+
+                    b.ToTable("TrialGrants");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.TrialPhoneRegistration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("KeyId")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("PhoneKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("RegisteredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("KeyId");
+
+                    b.HasIndex("PhoneKeyHash")
+                        .IsUnique()
+                        .HasDatabaseName("UX_TrialPhoneRegistrations_Key");
+
+                    b.HasIndex("RegisteredAtUtc");
+
+                    b.ToTable("TrialPhoneRegistrations");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.VerifiedPhone", b =>
@@ -3105,6 +3266,17 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("BillingAccount");
 
                     b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.TrialGrant", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.BillingAccount", "BillingAccount")
+                        .WithMany()
+                        .HasForeignKey("BillingAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BillingAccount");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.VerifiedPhone", b =>

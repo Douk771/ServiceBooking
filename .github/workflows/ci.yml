@@ -164,7 +164,8 @@ jobs:
             ../contracts/cycle8/servicebooking-invariant.openapi.yaml \
             ../contracts/cycle13/openapi.yaml \
             ../contracts/cycle14/openapi.yaml \
-            ../contracts/cycle16/openapi.yaml
+            ../contracts/cycle16/openapi.yaml \
+            ../contracts/cycle18/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -188,8 +189,10 @@ jobs:
           npm run types:api:cycle15
           npm run types:api:cycle16
           npm run types:api:cycle17
+          npm run types:api:cycle18
           git diff --exit-code -- src/types/api-cycle15.generated.ts \
-            src/types/api-cycle16.generated.ts src/types/api-cycle17.generated.ts
+            src/types/api-cycle16.generated.ts src/types/api-cycle17.generated.ts \
+            src/types/api-cycle18.generated.ts
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя

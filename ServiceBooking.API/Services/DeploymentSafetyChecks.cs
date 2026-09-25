@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.GreenApi;
 using ServiceBooking.API.Services.Notifications.WebPush;
@@ -658,6 +659,68 @@ public static class DeploymentSafetyChecks
                 ".env to a base64-encoded 32-byte key (openssl rand -base64 32) — see ARCHITECTURE_CYCLE14.md " +
                 "§142.3/§150.2. Rotating this key later does not lose any VERIFIED phone, only the per-MAX-" +
                 "account ceiling for accounts verified under the OLD key — see DEPLOY.md.");
+    }
+
+    /// <summary>
+    /// Code-review finding (cycle 18) — <see cref="TrialOptions.UniquenessCheckOptions.Enabled"/>'s own
+    /// doc comment already claims "DeploymentSafetyChecks refuses to start a Production instance with
+    /// this off", but nothing enforced it: a Production box could boot with the once-only check silently
+    /// disabled (Д6 says fail-CLOSED, not "run unchecked"), or with it enabled but pointed at a key that
+    /// <see cref="TrialPhoneKey.IsKeyUsable"/> would reject at grant time anyway — in which case every
+    /// single trial activation, forever, would 409 with TrialUniquenessCheckUnavailable and nobody would
+    /// know why until a real owner hit it. Outside a developer environment, both must be usable.
+    /// </summary>
+    public static void ValidateTrialSecrets(IConfiguration configuration, string environmentName)
+    {
+        if (IsDeveloperEnvironment(environmentName)) return;
+
+        var enabled = configuration.GetValue($"{TrialOptions.SectionName}:UniquenessCheck:Enabled", true);
+        if (!enabled)
+            throw new InvalidOperationException(
+                "Trial:UniquenessCheck:Enabled is false outside a developer environment. Д6 requires the " +
+                "once-only trial check to fail CLOSED, not run disabled — this flag may only be false in " +
+                "tests. Remove the override (or set it to true) before deploying.");
+
+        var phoneKeyHmac = configuration[$"{TrialOptions.SectionName}:PhoneKeyHmac"];
+        var phoneKeyId = configuration[$"{TrialOptions.SectionName}:PhoneKeyId"];
+        if (!TrialPhoneKey.IsKeyUsable(phoneKeyHmac) || string.IsNullOrWhiteSpace(phoneKeyId))
+            throw new InvalidOperationException(
+                "Trial:UniquenessCheck:Enabled is true but Trial:PhoneKeyHmac/Trial:PhoneKeyId is missing, " +
+                "not valid base64, or too short. With the check enabled and no usable key, EVERY trial " +
+                "activation will 409 TrialUniquenessCheckUnavailable. Set TRIAL_PHONEKEY_HMAC and " +
+                "TRIAL_PHONEKEY_ID in .env (openssl rand -base64 32 for the key).");
+
+        // N11 (code review) — TrialPhoneRegistration.KeyId is string(16) at the DB (§343.1). Nothing
+        // upstream truncates or validates Trial:PhoneKeyId's length before it is written there, so a
+        // rotation label longer than 16 characters (e.g. "2026-09-rotation") would pass every check
+        // above and then fail EVERY SINGLE trial activation on the insert — the exact "nobody notices
+        // until a real owner hits it" failure mode this method exists to catch at boot instead.
+        if (phoneKeyId!.Length > 16)
+            throw new InvalidOperationException(
+                $"Trial:PhoneKeyId is {phoneKeyId.Length} characters long; the TrialPhoneRegistrations." +
+                "KeyId column is string(16). A longer id would pass every other check here and then fail " +
+                "every trial activation's insert. Use a shorter key id (<=16 chars).");
+
+        // К2 (ARCHITECTURE_CYCLE18.md §343.1) — mechanical check that Trial:PhoneKeyHmac is not the SAME
+        // key as PhoneVerification:ExternalKeyHmac or Notifications:EncryptionKey. Sharing a key across
+        // subsystems built for incompatible processing purposes would make the trial registry and the
+        // external-account registry linkable (ч. 5 ст. 5 152-ФЗ) — must be made mechanically impossible,
+        // not just documented in .env.production.example.
+        var externalKeyHmac = configuration[$"{PhoneVerificationOptions.SectionName}:ExternalKeyHmac"];
+        if (TrialPhoneKey.KeysCollide(phoneKeyHmac, externalKeyHmac))
+            throw new InvalidOperationException(
+                "Trial:PhoneKeyHmac is identical to PhoneVerification:ExternalKeyHmac. К2 (ARCHITECTURE_CYCLE18.md " +
+                "§343.1) requires these to be distinct keys — sharing one key across both subsystems makes the " +
+                "trial phone registry and the external-account registry linkable. Generate a separate key for " +
+                "TRIAL_PHONEKEY_HMAC (openssl rand -base64 32).");
+
+        var notificationsEncryptionKey = configuration["Notifications:EncryptionKey"];
+        if (TrialPhoneKey.KeysCollide(phoneKeyHmac, notificationsEncryptionKey))
+            throw new InvalidOperationException(
+                "Trial:PhoneKeyHmac is identical to Notifications:EncryptionKey. К2 (ARCHITECTURE_CYCLE18.md " +
+                "§343.1) requires these to be distinct keys — sharing one key across both subsystems makes the " +
+                "trial phone registry and the notifications registry linkable. Generate a separate key for " +
+                "TRIAL_PHONEKEY_HMAC (openssl rand -base64 32).");
     }
 
     /// <summary>ARCHITECTURE_CYCLE14.md §144.2 (Q2) — mirrors <see cref="ValidateTransportRegistryCompleteness"/>

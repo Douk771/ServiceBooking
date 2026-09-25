@@ -277,4 +277,53 @@ public class SubscriptionResolverRulesTests
 
         plan.AccountMaxEmployees.Should().Be(EffectivePlan.Free.AccountMaxEmployees + 2);
     }
+
+    // ── Cycle 18 (ARCHITECTURE_CYCLE18.md §333.2) — AccountSubscription.MailingUntilUtc ────────────
+    [Fact]
+    public void Resolve_MailingUntilUtcNull_MailingRidesTheSubscriptionsOwnPeriod()
+    {
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), MailingUntilUtc = null, PlanConfig = FullPlan() };
+
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
+
+        plan.AllowMailing.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Resolve_MailingUntilUtcInThePast_DisablesMailingButKeepsRestOfPlan()
+    {
+        var config = FullPlan();
+        config.AllowNotificationChannel = true;
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), MailingUntilUtc = Now.AddDays(-1), PlanConfig = config };
+
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
+
+        plan.AllowMailing.Should().BeFalse();
+        plan.AllowNotificationChannel.Should().BeFalse();
+        // Nothing else about the plan is touched — this is a narrow, additive rule (§333.2).
+        plan.AllowOnlineBooking.Should().BeTrue();
+        plan.AllowAnalytics.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Resolve_MailingUntilUtcInTheFuture_StillAllowsMailing()
+    {
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(30), MailingUntilUtc = Now.AddDays(1), PlanConfig = FullPlan() };
+
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
+
+        plan.AllowMailing.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Resolve_SubscriptionNotUsable_MailingUntilUtcIsIrrelevant()
+    {
+        // N12-style guard: an option/window can never outlive the subscription itself. Even a
+        // MailingUntilUtc far in the future must not resurrect mailing on an expired subscription.
+        var sub = new AccountSubscription { IsActive = true, PaidUntil = Now.AddDays(-1), MailingUntilUtc = Now.AddDays(30), PlanConfig = FullPlan() };
+
+        var plan = SubscriptionResolver.Resolve(sub, 0, 0, Now);
+
+        plan.Should().Be(EffectivePlan.Free);
+    }
 }

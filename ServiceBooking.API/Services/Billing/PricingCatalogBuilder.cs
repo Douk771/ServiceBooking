@@ -105,7 +105,8 @@ public static class PricingCatalogBuilder
         IncludedCompanies: plan.MaxCompanies,
         IncludedEmployees: plan.MaxEmployees,
         SortOrder: plan.SortOrder,
-        IsFree: plan.IsSystemFree);
+        IsFree: plan.IsSystemFree,
+        IsTrial: plan.IsSystemTrial);
 
     private static PublicOptionDto ToOptionDto(SubscriptionOption option) => new(
         Id: option.Id,

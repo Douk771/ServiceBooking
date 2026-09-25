@@ -20,6 +20,14 @@ public class AccountSubscription
 
     public Guid? PlanConfigId { get; set; }
     public DateTime? PaidUntil { get; set; }
+
+    // Cycle 18 (ARCHITECTURE_CYCLE18.md §332.2, §333.2). Mailing capabilities of THIS subscription are
+    // not good past this date — null means "through the end of the subscription itself", exactly the
+    // semantics AccountSubscriptionOption.PaidUntilUtc already has (N12). Deliberately not named
+    // TrialMailingUntil: this is a subscription property, not a trial marker, and SubscriptionResolver
+    // applies it with one rule for any plan. The trial is its first consumer, not its only one.
+    public DateTime? MailingUntilUtc { get; set; }
+
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

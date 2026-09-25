@@ -15,7 +15,7 @@ namespace ServiceBooking.Tests.Tests;
 /// <summary>
 /// QA cycle 17, Block B (US-17-06, C15-5, §313 CY17-B-01..08) — the client-owner CANCEL window now
 /// lives on the server, not just in the client's UI (ARCHITECTURE_CYCLE17.md §304,
-/// API_CONTRACT_CYCLE17.md §322/§323). Written against SPEC.md / ARCHITECTURE_CYCLE17.md §313's table,
+/// API_CONTRACT_CYCLE17.md §322/§323). Written against SPEC_CYCLE17_C15_TECHDEBT.md / ARCHITECTURE_CYCLE17.md §313's table,
 /// not against the implementation — the backend implementer deliberately left these for QA. Direct
 /// DB writes below are ARRANGE-only (moving the booking's time close to "now"), mirroring the pattern
 /// already used by Cycle15ClientRescheduleTests for the identical problem on reschedule.

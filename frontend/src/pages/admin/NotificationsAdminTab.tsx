@@ -198,12 +198,43 @@ function PlatformSettingsCard() {
   // "on" while the server never applied it (API_CONTRACT_CYCLE11.md §119 п. 1).
   const [pricingPublicEnabled, setPricingPublicEnabled] = useState(false)
 
+  // Cycle 18 (API_CONTRACT_CYCLE18.md §367) — "настройки пробного периода" (Д17: not "настройки
+  // акции"). Editing these affects only NEW trials (Д19) — already-issued trials keep their own
+  // snapshot, this screen doesn't and can't touch that.
+  const [trialDurationDays, setTrialDurationDays] = useState('14')
+  const [trialMailingWindowDays, setTrialMailingWindowDays] = useState('7')
+  const [trialThresholds, setTrialThresholds] = useState('7,3,1')
+  // Cycle 18 review (finding #9): "changed" must be tracked from user input (onChange), not inferred
+  // by diffing local state against the server value. `GetTrialDurationDaysAsync` can legitimately
+  // return `null` for a corrupted/out-of-range stored value (PlatformSettings.cs) — comparing against
+  // that would make every save "change" the field the admin never touched, silently overwriting it
+  // and re-coupling this save to trial validation it has nothing to do with.
+  const [trialDurationTouched, setTrialDurationTouched] = useState(false)
+  const [trialMailingWindowTouched, setTrialMailingWindowTouched] = useState(false)
+  const [trialThresholdsTouched, setTrialThresholdsTouched] = useState(false)
+
   useEffect(() => {
     if (!data) return
     setPrice(data.channelPricePerMonth != null ? String(data.channelPricePerMonth) : '')
     setIdleDays(String(data.channelIdleDays))
     setPricingPublicEnabled(data.pricingPublicEnabled)
+    if (data.trialDurationDays != null) setTrialDurationDays(String(data.trialDurationDays))
+    if (data.trialMailingWindowDays != null) setTrialMailingWindowDays(String(data.trialMailingWindowDays))
+    if (data.trialWarningThresholdsDays != null) setTrialThresholds(data.trialWarningThresholdsDays.join(','))
+    setTrialDurationTouched(false)
+    setTrialMailingWindowTouched(false)
+    setTrialThresholdsTouched(false)
   }, [data])
+
+  // Client-side courtesy check only (§367: "окно ≤ длительности") — the server is the real gate and
+  // also checks the thresholds against the wording promised by the current terms text (§367.1),
+  // which this screen has no way to know client-side.
+  const parsedTrialDuration = Number(trialDurationDays)
+  const parsedTrialMailingWindow = Number(trialMailingWindowDays)
+  const trialWindowExceedsDuration =
+    !Number.isNaN(parsedTrialDuration) &&
+    !Number.isNaN(parsedTrialMailingWindow) &&
+    parsedTrialMailingWindow > parsedTrialDuration
 
   const mut = useMutation({
     mutationFn: (nextPricingPublicEnabled: boolean) => {
@@ -215,11 +246,59 @@ function PlatformSettingsCard() {
       if (Number.isNaN(parsedIdleDays)) {
         throw new Error('Некорректный срок простоя — исправьте поле перед сохранением.')
       }
+      // Cycle 18 §367: all three trial fields are nullable on the wire, and null/absent means "leave
+      // unchanged" — same convention as isPublic/sortOrder on AdminPlanInput. Sending them unconditionally
+      // would silently overwrite a value the admin never touched, and would block saving unrelated
+      // fields (price/idle days) behind trial validation errors that have nothing to do with what's
+      // being changed. So: only include a trial field in the request when the admin actually edited it
+      // (tracked via onChange, not by diffing against the server value — the server value can be `null`
+      // for reasons unrelated to "unchanged", e.g. a corrupted stored duration; diffing against that
+      // would misfire as "changed" for a field nobody touched).
+      const trialDurationChanged = trialDurationTouched
+      const trialMailingWindowChanged = trialMailingWindowTouched
+      const trialThresholdsChanged = trialThresholdsTouched
+
+      let trialDurationDaysToSend: number | null = null
+      if (trialDurationChanged) {
+        if (Number.isNaN(parsedTrialDuration) || parsedTrialDuration < 1) {
+          throw new Error('Некорректная длительность пробного периода — исправьте поле перед сохранением.')
+        }
+        trialDurationDaysToSend = parsedTrialDuration
+      }
+
+      let trialMailingWindowDaysToSend: number | null = null
+      if (trialMailingWindowChanged) {
+        if (Number.isNaN(parsedTrialMailingWindow) || parsedTrialMailingWindow < 1) {
+          throw new Error('Некорректное окно рассылок — исправьте поле перед сохранением.')
+        }
+        trialMailingWindowDaysToSend = parsedTrialMailingWindow
+      }
+
+      if ((trialDurationChanged || trialMailingWindowChanged) && trialWindowExceedsDuration) {
+        throw new Error('Окно рассылок не может быть длиннее длительности пробного периода.')
+      }
+
+      let trialWarningThresholdsDaysToSend: number[] | null = null
+      if (trialThresholdsChanged) {
+        const thresholds = trialThresholds
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s !== '')
+          .map(Number)
+        if (thresholds.length === 0 || thresholds.some((n) => Number.isNaN(n) || n < 1)) {
+          throw new Error('Некорректные пороги предупреждений — перечислите положительные числа через запятую.')
+        }
+        trialWarningThresholdsDaysToSend = thresholds
+      }
+
       return adminNotificationsApi.updateSettings({
         channelPricePerMonth: parsedPrice,
         channelIdleDays: parsedIdleDays,
         pricingPublicEnabled: nextPricingPublicEnabled,
         pricingPublicBlockedReason: data?.pricingPublicBlockedReason ?? null,
+        trialDurationDays: trialDurationDaysToSend,
+        trialMailingWindowDays: trialMailingWindowDaysToSend,
+        trialWarningThresholdsDays: trialWarningThresholdsDaysToSend,
       })
     },
     onSuccess: (res) => {
@@ -262,6 +341,60 @@ function PlatformSettingsCard() {
           value={idleDays}
           onChange={(e) => setIdleDays(e.target.value)}
         />
+      </div>
+
+      <div className="mt-5 pt-5 border-t border-line">
+        <h3 className="text-sm font-semibold text-ink mb-1">Настройки пробного периода</h3>
+        <p className="text-xs text-muted mb-4">
+          Действуют только на новые выдачи пробного периода — уже выданные не меняются задним числом.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-4">
+          <div>
+            <Input
+              label="Длительность (дней)"
+              type="number"
+              min={1}
+              max={365}
+              value={trialDurationDays}
+              aria-describedby={trialWindowExceedsDuration ? 'trial-window-error' : undefined}
+              onChange={(e) => {
+                setTrialDurationDays(e.target.value)
+                setTrialDurationTouched(true)
+              }}
+            />
+          </div>
+          <div>
+            <Input
+              label="Окно рассылок (дней)"
+              type="number"
+              min={1}
+              max={365}
+              value={trialMailingWindowDays}
+              aria-describedby={trialWindowExceedsDuration ? 'trial-window-error' : undefined}
+              onChange={(e) => {
+                setTrialMailingWindowDays(e.target.value)
+                setTrialMailingWindowTouched(true)
+              }}
+            />
+          </div>
+          <div>
+            <Input
+              label="Пороги предупреждений (дней, через запятую)"
+              value={trialThresholds}
+              onChange={(e) => {
+                setTrialThresholds(e.target.value)
+                setTrialThresholdsTouched(true)
+              }}
+            />
+          </div>
+        </div>
+        {trialWindowExceedsDuration && (
+          <p id="trial-window-error" className="text-xs text-danger mt-2">
+            Окно рассылок не может быть длиннее длительности пробного периода.
+          </p>
+        )}
+        {/* §367: пороги обязаны совпадать с числами, буквально названными в текущей редакции текста
+            условий активации — сервер отвечает 400 своим текстом, и он печатается дословно ниже. */}
       </div>
 
       <div className="mt-5 pt-5 border-t border-line flex items-start justify-between gap-4">

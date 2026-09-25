@@ -32,6 +32,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<BookingEvent> BookingEvents => Set<BookingEvent>();
     public DbSet<CompanyPhoto> CompanyPhotos => Set<CompanyPhoto>();
     public DbSet<ScheduledTaskState> ScheduledTaskStates => Set<ScheduledTaskState>();
+    // Cycle 18 (ARCHITECTURE_CYCLE18.md §332.4, §332.5).
+    public DbSet<TrialGrant> TrialGrants => Set<TrialGrant>();
+    public DbSet<TrialPhoneRegistration> TrialPhoneRegistrations => Set<TrialPhoneRegistration>();
 
     // Cycle 5 — consent journal (ARCHITECTURE_CYCLE5.md §44.2), replaces cycle 3's UserConsent.
     public DbSet<ConsentRecord> ConsentRecords => Set<ConsentRecord>();
@@ -198,6 +201,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // entity's own remarks for why this isn't a separate SubscriptionRequest table.
             e.HasOne(a => a.RequestedPlan).WithMany().HasForeignKey(a => a.RequestedPlanId).OnDelete(DeleteBehavior.SetNull);
             e.Property(a => a.RequestedComment).HasMaxLength(500);
+            // Cycle 18 (§332.3).
+            e.Property(a => a.TrialWarningThresholdsDays).HasMaxLength(32);
+            e.Property(a => a.TrialTermsVersion).HasMaxLength(32);
+            // §337.1 — the only query the trial-lifecycle background task runs against BillingAccounts.
+            e.HasIndex(a => a.TrialEndsAtUtc).HasDatabaseName("IX_BillingAccounts_TrialExpiry")
+                .HasFilter("\"TrialEndsAtUtc\" IS NOT NULL AND \"TrialExpiredHandledAtUtc\" IS NULL");
         });
 
         // Cycle 5, stage 5 (§43.3, US-66) — per-plan option availability matrix.
@@ -628,6 +637,37 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<SubscriptionPlanConfig>(e =>
         {
             e.HasIndex(p => p.IsSystemFree).IsUnique().HasFilter("\"IsSystemFree\" = true");
+            // Cycle 18 (§332.1): at most one system-trial plan row, ever.
+            e.HasIndex(p => p.IsSystemTrial).IsUnique().HasFilter("\"IsSystemTrial\" = true");
+        });
+
+        // Cycle 18 (ARCHITECTURE_CYCLE18.md §332.4).
+        builder.Entity<TrialGrant>(e =>
+        {
+            e.HasOne(g => g.BillingAccount).WithMany().HasForeignKey(g => g.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(g => g.WarningThresholdsDays).HasMaxLength(32).IsRequired();
+            e.Property(g => g.Reason).HasMaxLength(500);
+            e.Property(g => g.TermsVersion).HasMaxLength(32).IsRequired();
+            e.Property(g => g.TermsTextSha256).HasMaxLength(64).IsRequired();
+            // 🔴 This IS the once-only guarantee (US-18-04): at most one non-emergency grant per
+            // billing account, at the database level. The service-level check exists for a readable
+            // error message, not for the guarantee itself; this index is what serializes the race of a
+            // double-click. Source == SuperAdminOverride (value 2) is deliberately excluded — an
+            // emergency regrant may happen more than once, and each stays in history.
+            e.HasIndex(g => g.BillingAccountId).IsUnique()
+                .HasDatabaseName("UX_TrialGrants_OnePerAccount")
+                .HasFilter("\"Source\" <> 2");
+            e.HasIndex(g => g.GrantedAtUtc);
+        });
+
+        // Cycle 18 (ARCHITECTURE_CYCLE18.md §332.5). No FK on purpose — see the entity's own remarks.
+        builder.Entity<TrialPhoneRegistration>(e =>
+        {
+            e.Property(r => r.PhoneKeyHash).HasMaxLength(64).IsRequired();
+            e.Property(r => r.KeyId).HasMaxLength(16).IsRequired();
+            e.HasIndex(r => r.PhoneKeyHash).IsUnique().HasDatabaseName("UX_TrialPhoneRegistrations_Key");
+            e.HasIndex(r => r.RegisteredAtUtc);
+            e.HasIndex(r => r.KeyId);
         });
 
         // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3): option catalog for the pricing screen.

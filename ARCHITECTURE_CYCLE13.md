@@ -1,7 +1,7 @@
 # ARCHITECTURE — цикл 13 ServiceBooking: логотип поверх фотографий, карусель галереи, адрес в Яндекс.Картах и 2ГИС
 
 **Редакция 2 от 2026-09-24. Ветка цикла: `cycle/13-photo-logo-order-yandex-2gis` (подготовлена devops-инженером).
-Разделы §200–§220.** Документы цикла: `SPEC.md` (ред. 2), этот файл, `API_CONTRACT_CYCLE13.md`
+Разделы §200–§220.** Документы цикла: `SPEC_CYCLE13_PHOTO_LOGO_MAPS.md` (ред. 2, до архивирования — корневой `SPEC.md`), этот файл, `API_CONTRACT_CYCLE13.md`
 (§230–§242), `contracts/cycle13/openapi.yaml` (машиночитаемый контракт — источник истины по **форме**).
 
 > **Что изменилось в редакции 2 и почему.** Правовое заключение `LEGAL_REVIEW.md` §16 (ред. 5) было
@@ -36,7 +36,7 @@
 
 **Это расширение существующей системы, а не новый проект.** Стек, структура папок, конвенции и
 принятые решения берутся из `CURRENT_STATE.md` и меняются только там, где без этого не обойтись
-(§201). Читано перед проектированием: `SPEC.md` целиком, `CURRENT_STATE.md` §1, §2, §3, §4.20 блок C,
+(§201). Читано перед проектированием: `SPEC_CYCLE13_PHOTO_LOGO_MAPS.md` целиком, `CURRENT_STATE.md` §1, §2, §3, §4.20 блок C,
 §4.21, §5, §6, §8, `API_CONTRACT_CYCLE10.md` §129, код `CompanyPage.tsx`, `CompanyPhotoGallery.tsx`,
 `CompanyPhotoGallery.test.tsx`, `CompanyManagePage.tsx`, `api/companies.ts`, `types/index.ts`,
 `Company.cs`, `CompanyDto.cs`, `CompaniesController.Create/Update`, `Program.cs` (лимиты, провайдеры,

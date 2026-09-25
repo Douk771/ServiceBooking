@@ -22,7 +22,12 @@ public record OwnerSubscriptionDto(
     // N10, US-70 — set once when an admin rejects the owner's last request, cleared on the next
     // submission or approval (BillingAccount.LastRejectionReason's own remarks). Additive, defaults to
     // null so this doesn't become a breaking positional-argument change for existing callers.
-    RejectedRequestDto? LastRejectedRequest = null);
+    RejectedRequestDto? LastRejectedRequest = null,
+    // Cycle 18, API_CONTRACT_CYCLE18.md §365 — null ONLY when this account never had a trial and isn't
+    // eligible for one. Non-null whenever GET /api/billing/trial itself would answer non-null, so the
+    // owner cabinet's "Пробный период" card, the always-visible date (Т2), the un-closable expiry
+    // notice (Т3) and the activation button all have a field to read.
+    TrialStateDto? Trial = null);
 
 public record RejectedRequestDto(string Reason, DateTime RejectedAtUtc);
 
@@ -38,7 +43,10 @@ public record SubscribedOptionDto(
 public record SubscriptionUsageDto(
     int CompaniesUsed, int? CompaniesLimit, int EmployeesUsed, int? EmployeesLimit,
     string EmployeesText, string CompaniesText,
-    int NumbersPaid, int NumbersRegistered, string NumbersText);
+    int NumbersPaid, int NumbersRegistered, string NumbersText,
+    // Cycle 18, API_CONTRACT_CYCLE18.md §365 (Д3, "деградация = заморозка") — 0/0/null when within
+    // limits. Defaulted so this stays additive for any other positional caller of this record.
+    int OverLimitCompanies = 0, int OverLimitEmployees = 0, string? OverLimitText = null);
 
 public record CoveredCompanyDto(Guid CompanyId, string CompanyName, int EmployeeCount, bool HasNumber);
 

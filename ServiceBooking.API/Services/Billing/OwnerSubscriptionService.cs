@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -11,7 +12,8 @@ namespace ServiceBooking.API.Services.Billing;
 /// /billing/subscription/request) — the owner's own "Ваша подписка" screen and their option/plan
 /// request. Every text is assembled here (§41 п. 8) — the frontend prints strings as-is.</summary>
 public class OwnerSubscriptionService(
-    AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader)
+    AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
+    TrialStateReader trialStateReader)
 {
     public async Task<BillingAccount?> FindAccountForOwnerAsync(string ownerUserId) =>
         await db.BillingAccounts.Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
@@ -60,10 +62,27 @@ public class OwnerSubscriptionService(
             .CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
         var numbersText = BuildNumbersText(plan.PaidNotificationNumbers, numbersRegistered);
 
+        // Cycle 18, API_CONTRACT_CYCLE18.md §365 (Д3) — "деградация = заморозка": going over a limit
+        // (e.g. a trial ending and the account falling back to the Free plan's tighter limits) never
+        // deletes or disables anything already created; it only blocks adding MORE. 0/null when within
+        // limits, matching the contract's "0 when in range" convention exactly.
+        //
+        // Code-review finding (cycle 18 recheck) — this whole block only means something when the
+        // account's EFFECTIVE plan really is the base Free tariff (trial/subscription ended, no paid
+        // plan in force). It must NOT fire just because usage exceeds some OTHER limit — e.g. a paid
+        // plan an admin later shrank below current usage is a real state, but it isn't "fell back to
+        // Free" and TrialOverFreeLimitsNotice's fixed wording ("Бесплатный тариф допускает...") would
+        // misdescribe it. `isOnFreePlan` mirrors SubscriptionResolver.Resolve's own "usable subscription
+        // with an active, non-Free plan config" test, so it never drifts from the resolver's notion of
+        // "fell back to Free".
+        var isOnFreePlan = IsOnFreePlan(sub, now);
+        var (overLimitCompanies, overLimitEmployees, overLimitText) = BuildOverLimit(plan, isOnFreePlan, usage);
+
         var usageDto = new SubscriptionUsageDto(
             usage.CompaniesUsed, plan.AccountMaxCompanies, usage.SeatsUsed, plan.AccountMaxEmployees,
             EmployeesTextFor(usage.SeatsUsed, plan.AccountMaxEmployees), CompaniesTextFor(usage.CompaniesUsed, plan.AccountMaxCompanies),
-            plan.PaidNotificationNumbers, numbersRegistered, numbersText);
+            plan.PaidNotificationNumbers, numbersRegistered, numbersText,
+            overLimitCompanies, overLimitEmployees, overLimitText);
 
         var coveredCompanies = companies.Select(c => new CoveredCompanyDto(
             c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedCompanyIds.Contains(c.Id))).ToList();
@@ -103,10 +122,17 @@ public class OwnerSubscriptionService(
             ? new RejectedRequestDto(account.LastRejectionReason, account.LastRejectedAtUtc.Value)
             : null;
 
+        // §365 — the same TrialStateDto GET /api/billing/trial would answer for this owner, so this
+        // screen's "Пробный период" card/plashka/button can never drift from what that endpoint says.
+        // Code-review finding (cycle 18 recheck) — pass the account/sub/plan already loaded above
+        // instead of GetAsync (which would reload them and re-resolve the effective plan), removing
+        // ~5 avoidable round-trips from the owner's most-visited screen.
+        var trial = await trialStateReader.BuildAsync(account, sub, plan);
+
         return new OwnerSubscriptionDto(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
             usageDto, coveredCompanies, warning, availableOptions, pendingRequest, CanRequestChanges: true,
-            LastRejectedRequest: lastRejectedRequest);
+            LastRejectedRequest: lastRejectedRequest, Trial: trial);
     }
 
     public static string SubscriptionStatusFor(AccountSubscription? sub, DateTime now)
@@ -115,6 +141,59 @@ public class OwnerSubscriptionService(
         if (!sub.IsActive) return "Expired";
         if (sub.PaidUntil.HasValue && sub.PaidUntil < now) return "Expired";
         return "Active";
+    }
+
+    /// <summary>
+    /// Cycle 18 code-review finding (API_CONTRACT_CYCLE18.md §365, Т4): is the account's EFFECTIVE
+    /// plan right now the base system Free tariff? Mirrors SubscriptionResolver.Resolve's own
+    /// "usable subscription with an active plan config" test exactly (the resolver's `basePlan`
+    /// branch) plus one more case Resolve doesn't need to name explicitly: an account can also be
+    /// directly, currently subscribed to the system Free plan config itself (not just fall back to
+    /// Free for lack of any subscription). Used to gate <see cref="BuildOverLimit"/> — a paid plan an
+    /// admin later shrank below current usage is a real over-limit state, but it is NOT "fell back to
+    /// Free", and must not be reported as if it were.
+    /// </summary>
+    public static bool IsOnFreePlan(AccountSubscription? sub, DateTime now)
+    {
+        var subUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
+        return !subUsable || sub!.PlanConfig is not { IsActive: true } || sub.PlanConfig.IsSystemFree;
+    }
+
+    /// <summary>
+    /// Cycle 18 code-review finding — the three "over the Free plan's limits" fields
+    /// (SubscriptionUsageDto.overLimitCompanies/overLimitEmployees/overLimitText, §365 Д3 "деградация =
+    /// заморозка") must only ever describe "this account fell back to Free and is over ITS limits",
+    /// never "usage exceeds whatever the current effective plan happens to allow" — those are different
+    /// claims, and TrialLegalNotices.TrialOverFreeLimitsNotice's wording is hardcoded to the former
+    /// ("Бесплатный тариф допускает..."). <paramref name="plan"/> must already be the resolved
+    /// effective plan (SubscriptionResolver.Resolve/GetEffectivePlanForAccountAsync) — when
+    /// <paramref name="isOnFreePlan"/> is true that resolution has already folded
+    /// BillingAccount.GrandfatheredEmployeeBonus into the base Free config's limits (§54.4/§44.3 п.8),
+    /// so this method never needs to look at the system Free config row directly. Returns
+    /// (0, 0, null) whenever <paramref name="isOnFreePlan"/> is false, matching the contract's "0/null
+    /// when not applicable" convention (§365).
+    /// </summary>
+    public static (int OverLimitCompanies, int OverLimitEmployees, string? OverLimitText) BuildOverLimit(
+        EffectivePlan plan, bool isOnFreePlan, AccountUsage usage)
+    {
+        if (!isOnFreePlan) return (0, 0, null);
+
+        var overLimitCompanies = plan.AccountMaxCompanies is { } companiesLimit
+            ? Math.Max(0, usage.CompaniesUsed - companiesLimit) : 0;
+        var overLimitEmployees = plan.AccountMaxEmployees is { } employeesLimit
+            ? Math.Max(0, usage.SeatsUsed - employeesLimit) : 0;
+
+        // Must not render when either limit is unbounded (null) — string.Format would silently print
+        // an empty slot into legally-loaded text (Т4, §365).
+        string? overLimitText = null;
+        if ((overLimitCompanies > 0 || overLimitEmployees > 0) &&
+            plan.AccountMaxCompanies is { } freeCompaniesLimit && plan.AccountMaxEmployees is { } freeEmployeesLimit)
+        {
+            overLimitText = string.Format(TrialLegalNotices.TrialOverFreeLimitsNotice,
+                freeCompaniesLimit, freeEmployeesLimit, usage.CompaniesUsed, usage.SeatsUsed);
+        }
+
+        return (overLimitCompanies, overLimitEmployees, overLimitText);
     }
 
     /// <summary>Also used by <c>AdminBillingController</c>'s billing-account DTOs (merge-review
@@ -129,7 +208,10 @@ public class OwnerSubscriptionService(
         _ => paidUntil.HasValue ? $"Оплачено до {paidUntil:dd.MM.yyyy}" : "Активна",
     };
 
-    private static List<string> BuildPlanIncludes(EffectivePlan plan)
+    /// <summary>Internal, not private: cycle 18's TrialStateReader reuses this exact rendering for
+    /// TrialStateDto.includes (§362) so the trial preview's feature list can never drift from the
+    /// wording the owner sees on the subscribed-plan screen.</summary>
+    internal static List<string> BuildPlanIncludes(EffectivePlan plan)
     {
         var list = new List<string>();
         if (plan.AllowOnlineBooking) list.Add("Онлайн-запись");

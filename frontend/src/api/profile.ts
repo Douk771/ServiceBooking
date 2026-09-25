@@ -69,4 +69,14 @@ export const profileApi = {
   exportData: () => api.get('/profile/export', { responseType: 'blob' }).then((r) => r.data as Blob),
   /** POST /api/profile/delete-account — US-39. 204 on success. */
   deleteAccount: (currentPassword: string) => api.post('/profile/delete-account', { currentPassword }),
+  /** GET /api/profile/delete-account/preview (API_CONTRACT_CYCLE18.md §377, О8) — what the owner
+   *  must learn BEFORE confirming an irreversible deletion. In the allow-list of the 451 legal-consent
+   *  gate (§360.2), same as the delete-account route itself. `trialRegistryNotice` is non-null only
+   *  for an owner who was ever granted a trial. */
+  deleteAccountPreview: (): Promise<AccountDeletionPreviewDto> =>
+    api.get<AccountDeletionPreviewDto>('/profile/delete-account/preview').then((r) => r.data),
+}
+
+export interface AccountDeletionPreviewDto {
+  trialRegistryNotice: string | null
 }

@@ -19,7 +19,10 @@ public record PublicPlanDto(
     int? IncludedCompanies,
     int? IncludedEmployees,
     int SortOrder,
-    bool IsFree);
+    bool IsFree,
+    // API_CONTRACT_CYCLE18.md §370 — the public "Пробный период" badge (PlanCard.tsx). Additive,
+    // defaulted so any other positional PublicPlanDto(...) construction keeps compiling.
+    bool IsTrial = false);
 
 public record PublicOptionDto(
     Guid Id,

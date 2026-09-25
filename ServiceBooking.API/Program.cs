@@ -132,6 +132,10 @@ DeploymentSafetyChecks.ValidateRetentionPeriods(builder.Configuration);
 // checked the same "fail loud outside a developer environment" way as ValidateNotificationSecrets above,
 // but gated on ITS OWN Provider value, independent of Notifications:Provider.
 DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+// Cycle 18 code-review finding — the once-only trial check (Д6) must be enabled and its key usable
+// outside a developer environment, or Production silently starts with either "no protection at all"
+// or "every activation permanently 409s". Same "fail loud outside dev" convention as the checks above.
+DeploymentSafetyChecks.ValidateTrialSecrets(builder.Configuration, builder.Environment.EnvironmentName);
 // ARCHITECTURE_CYCLE13.md §206/§209.2 — own secret (Yandex Geocoder API key), own provider switch, own
 // unconditional check (CacheHours ≤ 720 is a licence ceiling, checked in every environment, not just
 // outside Development — see the method's own doc comment).
@@ -308,6 +312,11 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Billing.AccountUsageReade
 builder.Services.AddScoped<ServiceBooking.API.Services.Billing.CompanyOwnerWriter>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Billing.CompanyTransferService>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Billing.OwnerSubscriptionService>();
+// Cycle 18 (ARCHITECTURE_CYCLE18.md §345.2, B4).
+builder.Services.Configure<ServiceBooking.API.Services.Billing.TrialOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Billing.TrialOptions.SectionName));
+builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialActivationService>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialStateReader>();
 // Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
 // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
 // this developer's file this cycle.
@@ -797,6 +806,21 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
+    // trial-activate: POST /api/billing/trial — 5/сутки на пользователя (ARCHITECTURE_CYCLE18.md §342).
+    // Без него кнопка активации становится бесплатным способом перебирать отказы (перебор редакций
+    // condition, статуса телефона и т.д.).
+    o.AddPolicy("trial-activate", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:TrialActivatePerDay", 5),
+            Window = TimeSpan.FromHours(24),
+            QueueLimit = 0
+        });
+    });
+
     // phone-verify-webhook: MAX's own webhook — same shape as notifications-webhook above (600/min per IP).
     o.AddPolicy("phone-verify-webhook", ctx => IpWindowPolicy(ctx, "phone-verify-webhook", defaultPermitLimit: 600, defaultWindowMinutes: 1));
 
@@ -923,6 +947,11 @@ builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Schedulin
 // TD-03-quater — the SEVENTH task, "subject-request-due-soon" (period 1 day): sends a GlitchTip signal
 // one working day before a subject request's DueAtUtc, for requests not yet Answered/Rejected.
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.SubjectRequestDueSoonTask>();
+// Cycle 18, B7 (ARCHITECTURE_CYCLE18.md §337.1) — the EIGHTH task, "trial-lifecycle" (period 1 hour):
+// self-heals missed mailing-window starts, closes ended windows, issues 7/3/1-day warnings from each
+// account's own snapshot, and materializes trial expiry onto the system Free plan (fail-closed if none
+// is configured).
+builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.TrialLifecycleTask>();
 
 // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.1): the fourth task, "data-retention". Every IRetentionRule below
 // is registered individually (not discovered by reflection) so the list here IS the list of what runs —
@@ -971,6 +1000,11 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.PhoneVerificationSessionRule>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.VerifiedPhoneOrphanRule>();
+// Cycle 18, B8 (ARCHITECTURE_CYCLE18.md §343) — the 19th rule: TrialPhoneRegistration is NOT
+// anonymized data (Д14), so it needs its own destruction date like everything else here, 3 years from
+// the date of grant (Д16) plus destruction on HMAC key rotation (К3).
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.TrialPhoneRegistrationRule>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
 builder.Services.AddHostedService<ScheduledTaskRunner>();

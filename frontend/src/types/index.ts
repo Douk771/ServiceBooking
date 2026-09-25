@@ -384,6 +384,14 @@ export interface PlatformSettings {
   channelIdleDays: number
   pricingPublicEnabled: boolean
   pricingPublicBlockedReason: PricingPublicBlockedReason | null
+  /** Cycle 18 (API_CONTRACT_CYCLE18.md §367) — settings for the "Пробный период" system plan.
+   *  Editing them only affects trials granted AFTER the change (Д19): already-issued trials keep
+   *  their own snapshot on the billing account and never move because the setting moved. On PUT all
+   *  three are nullable — null/absent means "leave unchanged", same as `isPublic`/`sortOrder` on
+   *  AdminPlanInput, so an older caller that doesn't know about these fields can't reset them. */
+  trialDurationDays: number | null
+  trialMailingWindowDays: number | null
+  trialWarningThresholdsDays: number[] | null
 }
 
 // Body of PUT /api/admin/platform-settings → 409 (API_CONTRACT_CYCLE11.md §114.2).

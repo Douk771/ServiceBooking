@@ -36,4 +36,12 @@ public class AccountSubscriptionOption
     public int? RequestedQuantity { get; set; }
     public DateTime? RequestedAtUtc { get; set; }
     public string? RequestedByUserId { get; set; }
+
+    // Cycle 18 (ARCHITECTURE_CYCLE18.md §333.3/§337.1) — true only for the row TrialActivationService
+    // itself materialized (currently always notifications.whatsapp). This is what lets
+    // TrialLifecycleTask's expiry phase (B1) tell "a row the trial created, safe to date out on expiry"
+    // apart from an admin-assigned PAID option row that happens to share the same OptionId/BillingAccountId
+    // and must survive a trial→Free transition untouched. Never set by AdminBillingController.AssignSubscription
+    // — an admin write always produces an ordinary (false) row, even for the same option code.
+    public bool GrantedByTrial { get; set; }
 }
