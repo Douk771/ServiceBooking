@@ -974,18 +974,25 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
     // code. A backlog of 101+ rows that a buggy/missing cursor would either infinite-loop on or silently
     // truncate at the first page is the only way to prove it end-to-end.
 
-    private async Task<Guid> CreateBareBillingAccountAsync(Guid trialPlanId, DateTime trialStartedAtUtc, DateTime trialEndsAtUtc, int windowDays)
+    /// <summary>Н-fix (QA recheck, this pass): single home for building a bare trial billing account
+    /// directly through the DbContext (no HTTP flow, no phone verification) — previously duplicated
+    /// almost line-for-line as <c>CreateBareBillingAccountWithFixedIdAsync</c>, whose only real
+    /// differences were a caller-supplied <see cref="BillingAccount.Id"/> (needed by CY18L-19/24/26 to pin
+    /// deterministic sort order) and the cosmetic owner display name. <paramref name="id"/> defaults to
+    /// <c>null</c>, meaning "let EF assign a random Guid", matching every caller that doesn't care about
+    /// ordering.</summary>
+    private async Task<Guid> CreateBareBillingAccountAsync(Guid trialPlanId, DateTime trialStartedAtUtc, DateTime trialEndsAtUtc, int windowDays, Guid? id = null)
     {
         using var scope = Factory.Services.CreateScope();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         var phone = UniquePhone();
-        var user = new AppUser { FirstName = "Batch", LastName = "Owner", UserName = phone, PhoneNumber = phone };
+        var user = new AppUser { FirstName = id.HasValue ? "Fixed" : "Batch", LastName = "Owner", UserName = phone, PhoneNumber = phone };
         var created = await userManager.CreateAsync(user, "Password123!");
         created.Succeeded.Should().BeTrue(string.Join(", ", created.Errors.Select(e => e.Description)));
 
-        var account = new BillingAccount { Id = Guid.NewGuid(), OwnerUserId = user.Id,
+        var account = new BillingAccount { Id = id ?? Guid.NewGuid(), OwnerUserId = user.Id,
             TrialStartedAtUtc = trialStartedAtUtc, TrialEndsAtUtc = trialEndsAtUtc, TrialDurationDays = (int)(trialEndsAtUtc - trialStartedAtUtc).TotalDays,
             TrialMailingWindowDays = windowDays, TrialWarningThresholdsDays = "7,3,1" };
         db.BillingAccounts.Add(account);
@@ -1079,33 +1086,6 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
     // to sort strictly after every other account in this test, including the poisoned one, deterministically
     // forcing the exact "processed AFTER the poisoned account in the same batch" case this test was always
     // meant to prove.
-    private async Task<Guid> CreateBareBillingAccountWithFixedIdAsync(Guid id, Guid trialPlanId, DateTime trialEndsAtUtc)
-    {
-        using var scope = Factory.Services.CreateScope();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        var phone = UniquePhone();
-        var user = new AppUser { FirstName = "Fixed", LastName = "Owner", UserName = phone, PhoneNumber = phone };
-        var created = await userManager.CreateAsync(user, "Password123!");
-        created.Succeeded.Should().BeTrue(string.Join(", ", created.Errors.Select(e => e.Description)));
-
-        var account = new BillingAccount
-        {
-            Id = id, OwnerUserId = user.Id,
-            TrialStartedAtUtc = trialEndsAtUtc.AddDays(-14), TrialEndsAtUtc = trialEndsAtUtc,
-            TrialDurationDays = 14, TrialMailingWindowDays = 7, TrialWarningThresholdsDays = "7,3,1",
-        };
-        db.BillingAccounts.Add(account);
-        db.AccountSubscriptions.Add(new AccountSubscription
-        {
-            Id = Guid.NewGuid(), OwnerUserId = user.Id, BillingAccountId = account.Id, PlanConfigId = trialPlanId,
-            IsActive = true, PaidUntil = trialEndsAtUtc, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
-        });
-        await db.SaveChangesAsync();
-        return account.Id;
-    }
-
     [Fact, TestCase("CY18L-19")]
     public async Task FailedIteration_InExpirePhase_LeavesNoFalseJournalRow_AndDoesNotBlockTheRestOfTheBatch()
     {
@@ -1132,8 +1112,8 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
 
         // Н4: pinned to the maximum Guid so it is guaranteed to sort AFTER accountB (and every other
         // account here) in ExpireTrialsAsync's own OrderBy(a => a.Id) — see this test's own doc comment.
-        var accountD = await CreateBareBillingAccountWithFixedIdAsync(
-            Guid.Parse("ffffffff-ffff-ffff-ffff-fffffffffffe"), trialPlanId, now.AddDays(-1));
+        var accountD = await CreateBareBillingAccountAsync(
+            trialPlanId, now.AddDays(-15), now.AddDays(-1), 7, Guid.Parse("ffffffff-ffff-ffff-ffff-fffffffffffe"));
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -1282,19 +1262,38 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
     // (Н1, same review round). Same race recipe as CY18L-19, scaled from one poisoned account to the whole
     // backlog (105 > BatchSize=100, forcing two pages) so a broken keyset cursor (one that only advances
     // when an iteration SUCCEEDS) would never terminate.
+    //
+    // Н-fix (QA recheck, this pass): the warm-up flush below is a genuine arrange step (a known
+    // precondition — this class' shared database may carry an expired-but-unhandled leftover from an
+    // earlier test, e.g. CY18L-07 deliberately leaves one behind while IsSystemFree is temporarily unset),
+    // not a way of hiding a bug — but it used to be un-asserted, and the final check used to demand that
+    // NOT ONE account in the ENTIRE shared database progressed this pass, not just our own 105. Both are
+    // hardened now: the flush's own outcome and the resulting empty candidate set are asserted explicitly,
+    // and the final check requires the failure COUNT embedded in the error text to be exactly our 105 —
+    // so a later test in this class that legitimately leaves one unrelated account pending can no longer
+    // make this test fail for a reason that has nothing to do with its own 105 poisoned accounts.
     [Fact, TestCase("CY18L-24")]
     public async Task ExpirePhase_OneHundredAndFiveAccountsFailDeterministically_PassStillCompletes_AndErrorIsVisible()
     {
         var trialPlanId = await CreateTrialPlanAsync();
+        var now = DateTime.UtcNow;
 
-        // Flush any expired-but-unhandled leftover from an EARLIER test sharing this class' own database
-        // (e.g. CY18L-07 deliberately leaves one behind while IsSystemFree is temporarily unset) — without
-        // this, the "NONE succeeded this pass" condition below could spuriously flip depending on
-        // execution order/leftover state that has nothing to do with THIS test's own 105 accounts.
-        await RunTrialLifecycleTaskAsync();
+        // Flush any expired-but-unhandled leftover from an EARLIER test sharing this class' own database.
+        var warmup = await RunTrialLifecycleTaskAsync();
+        warmup.Error.Should().BeNull(
+            "the warm-up flush itself must complete cleanly — if IT surfaces an error, the precondition " +
+            "check right below would be meaningless (we couldn't tell a genuinely un-flushable leftover " +
+            "from our own 105 poisoned accounts failing for the wrong reason)");
+
+        var stillPendingBeforeSeed = await DbAsync(d => d.BillingAccounts
+            .CountAsync(a => a.TrialEndsAtUtc != null && a.TrialEndsAtUtc < now && a.TrialExpiredHandledAtUtc == null));
+        stillPendingBeforeSeed.Should().Be(0,
+            "precondition for the isolation check at the end of this test: the whole shared database must " +
+            "carry ZERO expire-candidates before we seed our own 105 — otherwise a pre-existing leftover " +
+            "account elsewhere in the class would be enough by itself to satisfy `outcome.Error` below " +
+            "without proving anything about OUR 105");
 
         const int count = 105; // > BatchSize (100) — forces two pages, both entirely poisoned
-        var now = DateTime.UtcNow;
         var accountIds = new List<Guid>();
         for (var i = 0; i < count; i++)
             accountIds.Add(await CreateBareBillingAccountAsync(trialPlanId, now.AddDays(-15), now.AddDays(-1), 7));
@@ -1341,7 +1340,12 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
         outcome.Error.Should().NotBeNullOrEmpty(
             "Н1 (this round's review finding): a batch where every single account fails to save must surface " +
             "as a genuine ScheduledTaskOutcome.Error, not just a 'failed-accounts=105' count buried inside a " +
-            "summary string that otherwise reads as an unremarkable success");
+            "summary string that otherwise reads as an unremarkable success")
+            .And.Contain(count.ToString(),
+                "hardening (QA recheck, this pass): the error text must carry OUR OWN 105-account failure " +
+                "count specifically — a bare non-empty check would also pass if some unrelated future test " +
+                "added to this class left a single stray account failing elsewhere, which would misreport " +
+                "as if THIS test's own isolation had broken");
     }
 
     // ── Scenario 26 (Н11, this pass) — the expire phase's per-account plan-decision race is NARROWED,
@@ -1362,21 +1366,32 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
         var paidPlanId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
         var now = DateTime.UtcNow;
 
-        // Both accounts are pinned to Guids near the maximum possible value (same technique as CY18L-19's
-        // accountD, DIFFERENT fixed values so nothing collides within this class' own shared database) —
-        // NOT because ordering "probably" works out, but because this class' shared database can already
-        // hold well over BatchSize=100 leftover accounts from EARLIER tests (e.g. CY18L-24's own 105), and
-        // a page boundary landing between two ordinarily-random Guids would silently defeat this test:
-        // accountY and accountX must be adjacent and in the SAME page, with Y processed immediately before
-        // X, regardless of how much unrelated leftover data already exists. accountY sorts strictly before
-        // accountX (its own SaveChangesAsync is the timing hook that fires the concurrent write for
-        // accountX, landing strictly AFTER the page's own `sub` dictionary was already loaded — both
-        // accounts are read together at the top of that SAME page — but strictly BEFORE accountX's own
-        // iteration, later in the same page, runs its fresh per-account re-read).
-        var accountY = await CreateBareBillingAccountWithFixedIdAsync(
-            Guid.Parse("fffffffe-ffff-ffff-ffff-fffffffffffe"), trialPlanId, now.AddDays(-1));
-        var accountX = await CreateBareBillingAccountWithFixedIdAsync(
-            Guid.Parse("ffffffff-ffff-ffff-ffff-fffffffffffd"), trialPlanId, now.AddDays(-1));
+        // Н-fix (QA recheck, this pass): pinning accountY/accountX to Guids near the maximum possible
+        // value only guarantees their RELATIVE order (Y immediately before X) — it does NOT by itself
+        // guarantee they land on the SAME page. ExpireTrialsAsync pages by `OrderBy(a => a.Id).Take(100)`;
+        // if the number of expire-candidates strictly BEFORE accountY (this class' shared database can
+        // already carry well over BatchSize=100 leftover accounts from earlier tests, e.g. CY18L-24's own
+        // 105) happens to be an exact multiple of BatchSize, the page boundary falls precisely between Y
+        // and X — Y finishes page 1, X starts page 2, `sub` is reloaded fresh for X's own page and the
+        // race this test exists to prove would pass even against the UNFIXED code, proving nothing. So we
+        // flush every pre-existing expire-candidate down to zero first: with only Y and X left as
+        // candidates (2 < BatchSize), they are deterministically both on page 1, adjacent, regardless of
+        // how much unrelated leftover data any other test in this class has produced.
+        var warmup = await RunTrialLifecycleTaskAsync();
+        warmup.Error.Should().BeNull(
+            "the warm-up flush itself must complete cleanly, or the zero-candidates precondition below " +
+            "would be meaningless");
+        var stillPendingBeforeSeed = await DbAsync(d => d.BillingAccounts
+            .CountAsync(a => a.TrialEndsAtUtc != null && a.TrialEndsAtUtc < now && a.TrialExpiredHandledAtUtc == null));
+        stillPendingBeforeSeed.Should().Be(0,
+            "precondition for this test to prove anything: zero expire-candidates must exist anywhere in " +
+            "the shared database before accountY/accountX are seeded, so nothing else can land between them " +
+            "on the page boundary");
+
+        var accountY = await CreateBareBillingAccountAsync(
+            trialPlanId, now.AddDays(-15), now.AddDays(-1), 7, Guid.Parse("fffffffe-ffff-ffff-ffff-fffffffffffe"));
+        var accountX = await CreateBareBillingAccountAsync(
+            trialPlanId, now.AddDays(-15), now.AddDays(-1), 7, Guid.Parse("ffffffff-ffff-ffff-ffff-fffffffffffd"));
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
