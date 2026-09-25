@@ -205,6 +205,14 @@ export function BillingPage() {
           <p className="text-sm text-ink-soft mb-4">
             Ожидаемый итог: {formatMonthlyPrice(data.pendingRequest.estimatedMonthlyPrice)}
           </p>
+          {/* API_CONTRACT_CYCLE17.md §325.1 (US-17-08, C15-7) — server-composed text, shown verbatim,
+              both right after submitting a request (the mutation invalidates and refetches this same
+              query) and on every later open of this screen, since it lives on `pendingRequest`. */}
+          {data.pendingRequest.irreversibilityNotice && (
+            <p className="text-sm font-semibold text-warning bg-[#FBF3E3] border border-warning rounded-xl px-3.5 py-2.5 mb-4">
+              {data.pendingRequest.irreversibilityNotice}
+            </p>
+          )}
           <Button variant="secondary" size="sm" loading={cancelMut.isPending} onClick={() => cancelMut.mutate()}>
             Отозвать заявку
           </Button>

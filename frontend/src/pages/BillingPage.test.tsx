@@ -86,3 +86,34 @@ describe('BillingPage — lastRejectedRequest', () => {
     expect(screen.queryByText('Заявка отклонена')).not.toBeInTheDocument()
   })
 })
+
+// API_CONTRACT_CYCLE17.md §325.1 (US-17-08, C15-7) — irreversibility notice on a pending request for
+// a withdrawn-from-sale plan. Server composes the text; front only prints it.
+describe('BillingPage — pendingRequest.irreversibilityNotice (§325.1)', () => {
+  it('shows the server-composed notice when present on the pending request', async () => {
+    getSubscription.mockResolvedValueOnce(
+      makeSubscription({
+        pendingRequest: {
+          estimatedMonthlyPrice: 1500,
+          options: [],
+          irreversibilityNotice: 'Вернуться на этот тариф после смены будет невозможно.',
+        } as OwnerSubscriptionDto['pendingRequest'],
+      }),
+    )
+    renderWithProviders(<BillingPage />)
+
+    expect(await screen.findByText('Вернуться на этот тариф после смены будет невозможно.')).toBeInTheDocument()
+  })
+
+  it('shows nothing extra when irreversibilityNotice is null (public plan)', async () => {
+    getSubscription.mockResolvedValueOnce(
+      makeSubscription({
+        pendingRequest: { estimatedMonthlyPrice: 1500, options: [], irreversibilityNotice: null } as OwnerSubscriptionDto['pendingRequest'],
+      }),
+    )
+    renderWithProviders(<BillingPage />)
+
+    await screen.findByText('Заявка на рассмотрении')
+    expect(screen.queryByText(/невозможно/)).not.toBeInTheDocument()
+  })
+})
