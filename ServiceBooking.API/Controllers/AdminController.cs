@@ -1270,7 +1270,8 @@ public class AdminController(
             p.NotificationBodyDays, p.NotificationMetadataDays, p.TemplateHistoryDays,
             p.InactiveAccountDays, p.BookingPersonalizationDays, p.ClientNoteDays, p.ClientNotePhotoDays,
             p.ClientHealthNoteDays, p.ConsentRecordDays, p.ChannelStateEventDays, p.PaymentLogDays,
-            p.MailLogDays, p.AppLogDays, dryRun));
+            p.MailLogDays, p.AppLogDays, dryRun,
+            p.PhoneVerificationSessionDays, p.VerifiedPhoneOrphanDays, p.TrialPhoneRegistrationDays));
     }
 }
 
@@ -1364,11 +1365,16 @@ public record AdminChannelDto(
 
 // T5-B8/B9 (ARCHITECTURE_CYCLE5.md §49.5) — the actual configured retention values, for publication in
 // the platform's privacy policy and for the lawyer's own periodic check (US-73 п. 7, US-80 п. 5).
+// PhoneVerificationSessionDays/VerifiedPhoneOrphanDays (cycle 14) and TrialPhoneRegistrationDays
+// (cycle 18, §343.2) appended additively — §49.5's own rule ("сроки не переписываются руками")
+// applied retroactively to the two cycle-14 periods that were never wired into this DTO (code review,
+// cycle 18 late delta): closing that gap here, since this endpoint is the one place it's checked.
 public record RetentionPolicyDto(
     int NotificationBodyDays, int NotificationMetadataDays, int TemplateHistoryDays,
     int InactiveAccountDays, int BookingPersonalizationDays, int ClientNoteDays, int ClientNotePhotoDays,
     int ClientHealthNoteDays, int ConsentRecordDays, int ChannelStateEventDays, int PaymentLogDays,
-    int MailLogDays, int AppLogDays, bool DryRun);
+    int MailLogDays, int AppLogDays, bool DryRun,
+    int PhoneVerificationSessionDays = 0, int VerifiedPhoneOrphanDays = 0, int TrialPhoneRegistrationDays = 0);
 
 public record AdminChannelSummaryDto(
     int Connected, int Connecting, int Disconnected, int Blocked,
