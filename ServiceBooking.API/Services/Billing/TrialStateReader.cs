@@ -90,7 +90,7 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
                 EndsAt: account.TrialEndsAtUtc,
                 DaysLeft: 0,
                 GrantSource: account.TrialGrantSource?.ToString(),
-                MailingWindow: null,
+                MailingWindow: NotApplicableMailingWindow(),
                 Warning: new TrialWarningDto(
                     "TrialExpired",
                     string.Format(TrialLegalNotices.TrialExpiredSwitchedToFree, account.TrialEndsAtUtc?.ToString("dd.MM.yyyy")),
@@ -136,6 +136,7 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
         var available = refusalCode is null;
         var endsAtPreview = available ? now.AddDays(durationDays!.Value) : (DateTime?)null;
         TrialActivationTermsDto? availableTerms = null;
+        TrialMailingWindowDto mailingWindow = NotApplicableMailingWindow();
         if (available)
         {
             var text = TrialTermsRegistry.RenderCurrent(plan!.Name, durationDays!.Value, endsAtPreview!.Value, windowDays!.Value);
@@ -143,6 +144,11 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
                 TrialTermsRegistry.CurrentVersion, TrialTermsRegistry.Sha256Of(TrialTermsRegistry.CurrentVersion) ?? string.Empty,
                 text, AcknowledgementRequired: false, ShownAt: null, AcknowledgedAt: null);
             message = text;
+            // §362 example — even before activation, the preview already shows the mailing window is
+            // NotStarted and explains it starts counting from first channel authorization, so the owner
+            // isn't surprised that mailings run on a shorter clock than the trial itself.
+            mailingWindow = new TrialMailingWindowDto("NotStarted", null, null, DaysLeft: null,
+                Text: string.Format(TrialLegalNotices.TrialMailingWindowNotStarted, windowDays!.Value, endsAtPreview!.Value.ToString("dd.MM.yyyy")));
         }
 
         return new TrialStateDto(
@@ -161,11 +167,19 @@ public class TrialStateReader(AppDbContext db, SubscriptionResolver subscription
             EndsAt: null,
             DaysLeft: null,
             GrantSource: null,
-            MailingWindow: null,
+            MailingWindow: mailingWindow,
             Warning: null,
             Includes: includes,
             Limits: limits);
     }
+
+    /// <summary>§362 — MailingWindow is in the schema's `required`/non-nullable set: every TrialStateDto
+    /// response must carry an object, never null. "NotApplicable" is the value for states where a
+    /// mailing window simply doesn't mean anything yet (no trial has ever run, or it already ended
+    /// without ever being on the trial plan) — distinct from "NotStarted", which means a trial IS
+    /// running/available and its window specifically hasn't begun.</summary>
+    private static TrialMailingWindowDto NotApplicableMailingWindow() =>
+        new("NotApplicable", null, null, null, string.Empty);
 
     private static TrialMailingWindowDto BuildMailingWindow(BillingAccount account, AccountSubscription sub, DateTime now)
     {

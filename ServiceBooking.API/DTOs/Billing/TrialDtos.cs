@@ -24,7 +24,7 @@ public record TrialStateDto(
     DateTime? EndsAt,
     int? DaysLeft,
     string? GrantSource,
-    TrialMailingWindowDto? MailingWindow,
+    TrialMailingWindowDto MailingWindow,
     TrialWarningDto? Warning,
     IReadOnlyList<string> Includes,
     TrialLimitsDto? Limits);
