@@ -695,7 +695,7 @@ npm run types:api:cycle18 && git diff --exit-code -- src/types/api-cycle18.gener
       `termsVersion`/`termsSha256` в `grants[0]`.
 * [ ] `warning.code == "TrialExpired"` приходит с `dismissible: false` и `visibleUntilUtc` не раньше
       чем через 30 суток после перехода (**Т3**).
-* [ ] `API_DOCUMENTATION.md` дополнен **восемью** новыми маршрутами (иначе внешний потребитель
+* [ ] `API_DOCUMENTATION.md` дополнен **девятью** новыми маршрутами (цифра исправлена при закрытии цикла: после дополняющего правового прохода Д14–Д21 добавился `GET /api/admin/trial-terms/{version}`, а счётчик в этом пункте не пересчитали) (иначе внешний потребитель
       узнаёт о них из кода).
 
 ---
