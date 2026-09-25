@@ -637,6 +637,20 @@ public class AdminBillingController(
         {
             plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanId.Value);
             if (plan is null) return NotFound("Тариф не найден.");
+
+            // Б... (code review, cycle 18 4th pass) — the trial plan is materialized ONLY through
+            // TrialActivationService.GrantAsync (owner self-service and superadmin grant/regrant), never
+            // through this general-purpose assignment route: those paths are the only ones carrying the
+            // one-trial-per-account/one-phone-per-trial checks (§335.2), the mailing-window reset (Б3,
+            // cycle 18 3rd pass), and set TrialExpiredHandledAtUtc = null on every fresh grant. Assigning
+            // the trial plan here would produce an account sitting on the trial plan with a STALE
+            // TrialExpiredHandledAtUtc (or none of the Trial* snapshot columns at all) — TrialLifecycleTask's
+            // expiry phase (§337.1 п.4) filters on TrialExpiredHandledAtUtc == null, so such an account would
+            // never expire, not this hour, not ever.
+            if (plan.IsSystemTrial)
+                return Conflict(new DTOs.Billing.TrialRefusalDto(
+                    "TrialPlanNotAssignableHere",
+                    "Пробный тариф нельзя назначить через это действие — используйте выдачу/повторную выдачу пробного периода."));
         }
 
         var optionIds = optionLines.Select(o => o.OptionId).ToList();
