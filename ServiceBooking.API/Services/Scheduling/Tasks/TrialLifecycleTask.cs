@@ -45,6 +45,17 @@ public sealed class TrialLifecycleTask(
 
     private const int BatchSize = 100;
 
+    /// <summary>Б3 (code review, cycle 18 4th pass, customer decision) — a failure COUNT this high must
+    /// surface as an <see cref="ScheduledTaskOutcome.Error"/> regardless of how many OTHER accounts in
+    /// the same pass progressed fine. Without this, an account already moved off the trial plan by an
+    /// admin (counted as `alreadyHandled`, not `failed`) sitting in the same pass as a mass write failure
+    /// (e.g. 500 accounts failing to save) would suppress Error entirely, because the pre-existing
+    /// "NO progress at all" gate below only looks at `transitioned == 0 &amp;&amp; alreadyHandled == 0` —
+    /// leaving the failure visible only inside the free-text `summary`, exactly the invisibility Н1 was
+    /// meant to fix in the first place. 10 is picked as "clearly not one bad row (N4's false-alarm-fatigue
+    /// concern), but nowhere near noise" — not derived from any SLO, a customer-approved round number.</summary>
+    private const int MassFailureThreshold = 10;
+
     public async Task<ScheduledTaskOutcome> ExecuteAsync(CancellationToken ct)
     {
         var now = clock.UtcNow;
@@ -67,18 +78,18 @@ public sealed class TrialLifecycleTask(
         var scanned = windowsOpened + windowsClosed + warned + expired + alreadyHandled + failedAccounts;
         var affected = windowsOpened + windowsClosed + warned + expired + alreadyHandled;
 
-        // Н1 (code review, cycle 18 3rd pass) — NOT applied as originally worded. The finding asked for
-        // failedAccounts > 0 to always set a non-null Error, matching DataRetentionTask. That directly
-        // contradicts an already-accepted, already-tested design decision from an EARLIER cycle-18 pass:
-        // Cycle18TrialLifecycleTests.cs's CY18L-19 (`FailedIteration_InExpirePhase_...`) asserts
+        // Н1 (code review, cycle 18 3rd/4th pass) — NOT applied as originally worded. The finding asked
+        // for failedAccounts > 0 to always set a non-null Error, matching DataRetentionTask. That would
+        // have contradicted CY18L-19 (`FailedIteration_InExpirePhase_...`), which asserts
         // `outcome.Error.Should().BeNull(...)` specifically BECAUSE "a single poisoned account is
-        // isolated per-account (N4) — it must never surface as a phase-level Error" (that test's own
-        // wording). Setting Error here on any per-account failure would make one permanently-broken
-        // account (e.g. a row an admin corrupted by hand) page an operator every single hour forever,
-        // which is the false-alarm-fatigue failure mode N4's isolation was built to avoid in the first
-        // place — the opposite problem from the one Н1 is trying to fix. Left as a customer decision
-        // (see backend handoff report) rather than silently picking a side and breaking a test I do not
-        // own; `failed-accounts=N` still reaches the free-text `summary` exactly as before.
+        // isolated per-account (N4) — it must never surface as a phase-level Error" — one
+        // permanently-broken account (e.g. a row an admin corrupted by hand) must not page an operator
+        // every single hour forever. Instead, ExpireTrialsAsync below (see its own doc comment near the
+        // end of the method) sets a non-null Error in the narrower cases that are actually
+        // indistinguishable from expiry having silently stopped: either NO account in the pass made
+        // progress at all, or the failure count crosses <see cref="MassFailureThreshold"/> regardless of
+        // how much else progressed. `failed-accounts=N` also still reaches the free-text `summary`
+        // unconditionally, exactly as before.
         var combinedError = phaseFailures.Count > 0
             ? $"{phaseFailures.Count} of 4 trial-lifecycle phase(s) failed outright: {string.Join(", ", phaseFailures)}" +
               (error is not null ? $" | {error}" : string.Empty)
@@ -457,6 +468,14 @@ public sealed class TrialLifecycleTask(
                     // re-read and the write — deliberately not done here this pass (see the handoff
                     // report: restructuring per-account transactions/locking here risks the batch
                     // optimization and the CY18L-19/24 coverage right before the final review).
+                    //
+                    // N-fix (code review, cycle 18 4th pass) — the price of THIS decision, not just the
+                    // alternative's: this extra roundtrip runs once per candidate account, every pass,
+                    // whether or not a race actually happened — roughly doubling the number of DB
+                    // roundtrips this phase makes on a large backlog (one extra SELECT per account on top
+                    // of the per-account SaveChangesAsync already required by N4). Accepted because
+                    // correctness of an admin's just-made plan decision outweighs the extra load, and the
+                    // batch's own paging already bounds how much of the backlog is in flight at once.
                     var currentPlanId = await db.AccountSubscriptions.AsNoTracking()
                         .Where(s => s.BillingAccountId == account.Id)
                         .Select(s => (Guid?)s.PlanConfigId)
@@ -547,8 +566,14 @@ public sealed class TrialLifecycleTask(
         // fails to save (CY18L-24) — because that is functionally indistinguishable from trial expiry
         // having silently stopped altogether, which R5/US-18-11's fail-closed visibility requirement is
         // exactly meant to catch.
-        if (error is null && failed > 0 && transitioned == 0 && alreadyHandled == 0)
-            error = $"trial-lifecycle: {failed} account(s) failed to expire and NONE succeeded this pass " +
+        // Б3 (code review, cycle 18 4th pass, customer decision) — Error is set when EITHER: (a) the
+        // pass made no progress at all (the original narrow condition — indistinguishable from expiry
+        // having silently stopped), OR (b) failed >= MassFailureThreshold, independent of how much else
+        // progressed — a mass failure (e.g. hundreds of accounts failing to save) must stay visible even
+        // when a handful of unrelated accounts in the same pass happened to be `alreadyHandled` (already
+        // moved off the trial plan by an admin) or `transitioned` fine.
+        if (error is null && failed > 0 && (transitioned == 0 && alreadyHandled == 0 || failed >= MassFailureThreshold))
+            error = $"trial-lifecycle: {failed} account(s) failed to expire this pass " +
                      "— see logs for account IDs (fail-closed visibility, R5/US-18-11).";
 
         return (transitioned, alreadyHandled, failed, error);
