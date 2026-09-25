@@ -13,10 +13,10 @@ namespace ServiceBooking.API.Services.Billing;
 /// <see cref="TrialStateDto"/> for GET /api/billing/trial. The frontend does not compute availability
 /// itself (US-18-12): every field here is server output.
 ///
-/// Deliberate simplification against the full architecture (named explicitly in the backend report):
-/// <c>mailingWindow</c> and <c>warning</c> are populated from what is already on the account today
-/// (they degrade to "NotApplicable"/null) rather than from the channel-authorization hook (§336.1) or
-/// the trial-lifecycle background task (§337), neither of which this slice implements yet.
+/// <c>mailingWindow</c> and <c>warning</c> are populated straight from the account columns the
+/// channel-authorization hook (§336.1, <see cref="TrialMailingWindowStarter"/>) and the
+/// <c>trial-lifecycle</c> background task (§337) maintain — this reader does no arithmetic of its own
+/// beyond the pure helpers in <see cref="TrialWindow"/>.
 /// </summary>
 public class TrialStateReader(AppDbContext db, SubscriptionResolver subscriptionResolver, PlatformSettings platformSettings)
 {

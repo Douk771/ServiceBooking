@@ -706,6 +706,16 @@ public class AdminBillingController(
         var oldIsActive = sub.IsActive;
         var oldOptionsSummary = await BuildOptionsSummaryAsync(accountId);
 
+        // §336.3 — moving an account OFF the trial plan early must not leave a stale MailingUntilUtc
+        // behind: without this reset, the trial's mailing window would keep silencing PAID mailings on
+        // the new plan too (SPEC §4.4). The Trial* markers on the account itself are untouched (§337.3).
+        if (oldPlanId is { } previousPlanId && dto.PlanId != previousPlanId)
+        {
+            var wasTrialPlan = await db.SubscriptionPlanConfigs
+                .AnyAsync(p => p.Id == previousPlanId && p.IsSystemTrial);
+            if (wasTrialPlan) sub.MailingUntilUtc = null;
+        }
+
         sub.PlanConfigId = dto.PlanId;
         sub.IsActive = dto.IsActive;
         sub.PaidUntil = ToUtc(dto.PaidUntil);
@@ -831,7 +841,9 @@ public class AdminBillingController(
         {
             id = l.Id,
             changedAt = l.ChangedAt,
-            changedByName = changedByNames.GetValueOrDefault(l.ChangedByUserId, l.ChangedByUserId),
+            changedByName = l.ChangedByUserId == Services.Billing.TrialActors.System
+                ? "Система"
+                : changedByNames.GetValueOrDefault(l.ChangedByUserId, l.ChangedByUserId),
             changeKind = l.ChangeKind.ToString(),
             companyId = l.CompanyId,
             oldPlanName = l.OldPlanConfigId.HasValue ? planNames.GetValueOrDefault(l.OldPlanConfigId.Value, "—") : null,

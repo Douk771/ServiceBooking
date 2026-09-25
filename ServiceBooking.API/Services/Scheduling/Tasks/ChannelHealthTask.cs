@@ -144,7 +144,7 @@ public sealed class ChannelHealthTask(
                 }
                 else
                 {
-                    ChannelStateTransition.Apply(db, channel, mapping.State, reason, null, now);
+                    await ChannelStateTransition.Apply(db, channel, mapping.State, reason, null, now);
                     transitioned++;
                 }
             }
@@ -316,7 +316,7 @@ public sealed class ChannelHealthTask(
             // Connecting, so Connect() would 409 on every retry). The instance itself is an accepted,
             // unavoidable loss in this specific crash window; what's NOT acceptable is a channel row that
             // can never be un-stuck through the product.
-            ChannelStateTransition.Apply(
+            await ChannelStateTransition.Apply(
                 db, channel, targetState, reason, "instance id was never recorded (process crash after provider create)", now);
             await db.SaveChangesAsync(ct);
             return;
@@ -345,7 +345,7 @@ public sealed class ChannelHealthTask(
         channel.ProviderInstanceId = null;
         channel.ProviderSecretCiphertext = null;
         channel.ProviderSecretKeyId = null;
-        ChannelStateTransition.Apply(db, channel, targetState, reason, null, now);
+        await ChannelStateTransition.Apply(db, channel, targetState, reason, null, now);
         await db.SaveChangesAsync(ct);
 
         // §30.4 step 2, part one: best effort, failure ignored — the DELETE call below does not depend

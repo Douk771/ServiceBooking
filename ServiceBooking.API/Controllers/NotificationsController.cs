@@ -244,18 +244,9 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
 
         if (mapping.State != channel.State && mapping.Reason is { } reason)
         {
-            db.ChannelStateEvents.Add(new ChannelStateEvent
-            {
-                Id = Guid.NewGuid(), ChannelId = channel.Id,
-                FromState = channel.State, ToState = mapping.State, Reason = reason, OccurredAtUtc = callback.OccurredAtUtc,
-            });
-            channel.State = mapping.State;
-            channel.LastStateReason = reason;
-            if (mapping.State == ChannelState.Connected)
-            {
-                channel.ConnectedAtUtc ??= callback.OccurredAtUtc;
-                channel.ConsecutiveSendFailures = 0; // I8: same reset NotificationChannelsController's QR path and ChannelStateTransition.Apply do
-            }
+            // Shared with NotificationChannelsController's QR path and the scheduled tasks (§336 risk
+            // A1) so the trial mailing-window-start hook on Connected lives in exactly one place.
+            await ChannelStateTransition.Apply(db, channel, mapping.State, reason, null, callback.OccurredAtUtc);
 
             // B8 / SPEC US-56 п. 6, US-63 п. 1: a ban must not wait for the N-day idle grace period —
             // §30.4 database-first step only (orphan the id, blank the channel's own credentials); the

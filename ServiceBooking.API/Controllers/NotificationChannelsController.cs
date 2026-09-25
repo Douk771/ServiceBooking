@@ -431,22 +431,14 @@ public class NotificationChannelsController(
 
         if (snapshot.Authorized)
         {
-            channel.State = ChannelState.Connected;
-            channel.LastStateReason = ChannelStateReason.Authorized;
-            channel.ConnectedAtUtc = DateTime.UtcNow;
-            channel.ConsecutiveSendFailures = 0; // I8: a fresh QR reconnect must not inherit the old disconnect-threshold count
             // The provider only learns which number scanned the QR at this moment, so this is the one
             // place the channel can find out its own number; null means the lookup failed, not "no number".
             if (snapshot.PhoneNumber is not null)
                 channel.PhoneNumber = snapshot.PhoneNumber;
-            db.ChannelStateEvents.Add(new ChannelStateEvent
-            {
-                Id = Guid.NewGuid(),
-                ChannelId = channel.Id,
-                FromState = ChannelState.Connecting,
-                ToState = ChannelState.Connected,
-                Reason = ChannelStateReason.Authorized,
-            });
+            // Shared with NotificationsController's webhook path and the scheduled tasks (§336 risk
+            // A1) so the trial mailing-window-start hook lives in exactly one place.
+            await ChannelStateTransition.Apply(
+                db, channel, ChannelState.Connected, ChannelStateReason.Authorized, null, DateTime.UtcNow);
             await db.SaveChangesAsync();
             cache.Remove(cacheKey);
 

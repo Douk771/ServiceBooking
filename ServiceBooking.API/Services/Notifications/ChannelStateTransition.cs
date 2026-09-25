@@ -1,3 +1,4 @@
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -14,10 +15,12 @@ namespace ServiceBooking.API.Services.Notifications;
 public static class ChannelStateTransition
 {
     /// <summary>No-op when <paramref name="targetState"/> already equals the channel's current state —
-    /// callers can call this unconditionally without first checking whether anything actually changed.</summary>
-    public static void Apply(
+    /// callers can call this unconditionally without first checking whether anything actually changed.
+    /// Async because becoming <see cref="ChannelState.Connected"/> may need to start the trial mailing
+    /// window (§336, risk A1) — see <see cref="TrialMailingWindowStarter"/>.</summary>
+    public static async Task Apply(
         AppDbContext db, NotificationChannel channel, ChannelState targetState, ChannelStateReason reason,
-        string? detail, DateTime nowUtc)
+        string? detail, DateTime nowUtc, CancellationToken ct = default)
     {
         if (channel.State == targetState) return;
 
@@ -44,6 +47,7 @@ public static class ChannelStateTransition
         {
             channel.ConnectedAtUtc ??= nowUtc;
             channel.ConsecutiveSendFailures = 0;
+            await TrialMailingWindowStarter.OnChannelBecameConnectedAsync(db, channel, nowUtc, ct);
         }
     }
 

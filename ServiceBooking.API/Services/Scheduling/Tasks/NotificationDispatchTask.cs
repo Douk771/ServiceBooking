@@ -377,7 +377,7 @@ public sealed class NotificationDispatchTask(
                 channel.ProviderInstanceId = null;
                 channel.ProviderSecretCiphertext = null;
                 channel.ProviderSecretKeyId = null;
-                ChannelStateTransition.Apply(scopedDb, channel, ChannelState.NeedsReconnect,
+                await ChannelStateTransition.Apply(scopedDb, channel, ChannelState.NeedsReconnect,
                     ChannelStateReason.SecretUnavailable, "channel secret unavailable", scopedClock.UtcNow);
                 await scopedDb.SaveChangesAsync(runnerCt);
 
@@ -432,7 +432,7 @@ public sealed class NotificationDispatchTask(
 
                     channel.ConsecutiveSendFailures++;
                     if (channel.ConsecutiveSendFailures >= options.Value.ConsecutiveFailureThreshold)
-                        ChannelStateTransition.Apply(scopedDb, channel, ChannelState.Disconnected,
+                        await ChannelStateTransition.Apply(scopedDb, channel, ChannelState.Disconnected,
                             ChannelStateReason.ConsecutiveSendFailuresExceeded, transientFailure.Detail, scopedClock.UtcNow);
                     break;
 
@@ -449,7 +449,7 @@ public sealed class NotificationDispatchTask(
                     // Row stays Pending (US-28 p.9) — the problem is the channel, so the message may
                     // still go out once it's reconnected. This channel's group stops immediately: every
                     // remaining row would fail identically for the same reason (§26.4).
-                    ChannelStateTransition.Apply(scopedDb, channel, ChannelState.Disconnected,
+                    await ChannelStateTransition.Apply(scopedDb, channel, ChannelState.Disconnected,
                         ChannelStateReason.ProviderReportsUnauthorized, invalid.Detail, scopedClock.UtcNow);
                     await scopedDb.SaveChangesAsync(runnerCt);
                     return (sentCount, failedCount);
