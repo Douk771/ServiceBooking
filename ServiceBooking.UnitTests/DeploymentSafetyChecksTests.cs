@@ -1450,4 +1450,24 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
         act.Should().NotThrow();
     }
+
+    // N11 (code review, cycle 18 late delta) — TrialPhoneRegistrations.KeyId is string(16); a longer
+    // Trial:PhoneKeyId would pass every other check above and then fail every trial activation's insert.
+    [Fact]
+    public void ValidateTrialSecrets_Production_PhoneKeyIdExactly16Chars_DoesNotThrow()
+    {
+        var values = ValidTrialSecrets();
+        values["Trial:PhoneKeyId"] = new string('a', 16);
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateTrialSecrets_Production_PhoneKeyIdTooLong_Throws()
+    {
+        var values = ValidTrialSecrets();
+        values["Trial:PhoneKeyId"] = "2026-09-rotation-x"; // 19 chars — over the string(16) column
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PhoneKeyId*");
+    }
 }

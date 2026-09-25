@@ -690,6 +690,17 @@ public static class DeploymentSafetyChecks
                 "activation will 409 TrialUniquenessCheckUnavailable. Set TRIAL_PHONEKEY_HMAC and " +
                 "TRIAL_PHONEKEY_ID in .env (openssl rand -base64 32 for the key).");
 
+        // N11 (code review) — TrialPhoneRegistration.KeyId is string(16) at the DB (§343.1). Nothing
+        // upstream truncates or validates Trial:PhoneKeyId's length before it is written there, so a
+        // rotation label longer than 16 characters (e.g. "2026-09-rotation") would pass every check
+        // above and then fail EVERY SINGLE trial activation on the insert — the exact "nobody notices
+        // until a real owner hits it" failure mode this method exists to catch at boot instead.
+        if (phoneKeyId!.Length > 16)
+            throw new InvalidOperationException(
+                $"Trial:PhoneKeyId is {phoneKeyId.Length} characters long; the TrialPhoneRegistrations." +
+                "KeyId column is string(16). A longer id would pass every other check here and then fail " +
+                "every trial activation's insert. Use a shorter key id (<=16 chars).");
+
         // К2 (ARCHITECTURE_CYCLE18.md §343.1) — mechanical check that Trial:PhoneKeyHmac is not the SAME
         // key as PhoneVerification:ExternalKeyHmac or Notifications:EncryptionKey. Sharing a key across
         // subsystems built for incompatible processing purposes would make the trial registry and the
