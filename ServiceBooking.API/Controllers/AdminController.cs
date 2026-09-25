@@ -494,8 +494,9 @@ public class AdminController(
         var plans = await db.SubscriptionPlanConfigs.OrderBy(p => p.PricePerMonth).ToListAsync();
         var subscriberCounts = await GetActiveSubscriberCountsAsync(plans.Select(p => p.Id));
         var rules = await db.PlanOptionRules.Where(r => plans.Select(p => p.Id).Contains(r.PlanConfigId)).ToListAsync();
+        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
         return Ok(new AdminPlansListDto(plans.Select(p =>
-            MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id), rules.Where(r => r.PlanConfigId == p.Id).ToList())).ToList()));
+            MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id), rules.Where(r => r.PlanConfigId == p.Id).ToList(), totalOptionsInCatalog)).ToList()));
     }
 
     // contracts/cycle7/openapi.yaml AdminPlanInput (BREAKING fix, cycle-07 backend report): the previous shape
@@ -549,7 +550,8 @@ public class AdminController(
         // GetActiveSubscriberCountsAsync does for the list/update endpoints.
         // Contract (API_CONTRACT_CYCLE7.md) documents 201 Created for a successful create, not 200.
         var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync();
-        return StatusCode(StatusCodes.Status201Created, MapAdminPlanDto(plan, subscribedAccounts: 0, rules));
+        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
+        return StatusCode(StatusCodes.Status201Created, MapAdminPlanDto(plan, subscribedAccounts: 0, rules, totalOptionsInCatalog));
     }
 
     [HttpPut("plans/{id:guid}")]
@@ -629,7 +631,8 @@ public class AdminController(
         pricingCatalogCache.Invalidate();
         var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
         var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules));
+        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
+        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog));
     }
 
     /// <summary>
@@ -648,7 +651,7 @@ public class AdminController(
         {
             var unchangedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
             var unchangedRules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-            return Ok(MapAdminPlanDto(plan, unchangedAccounts, unchangedRules));
+            return Ok(MapAdminPlanDto(plan, unchangedAccounts, unchangedRules, await db.SubscriptionOptions.CountAsync()));
         }
 
         if (!dto.IsSystemFree && plan.IsSystemFree)
@@ -686,7 +689,52 @@ public class AdminController(
         pricingCatalogCache.Invalidate();
         var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
         var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules));
+        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, await db.SubscriptionOptions.CountAsync()));
+    }
+
+    /// <summary>
+    /// Cycle 18 (API_CONTRACT_CYCLE18.md §366) — the trial-plan flag, following exactly the same
+    /// separate-endpoint pattern as <see cref="SetSystemFree"/> above and for the same reason: keeping
+    /// it out of <see cref="AdminPlanInput"/> means an ordinary field edit can never accidentally flip
+    /// it, and the partial unique index on IsSystemTrial (AppDbContext) is still the real guard against
+    /// a race, this endpoint's own check is just the friendly 409.
+    /// </summary>
+    [HttpPut("plans/{id:guid}/system-trial")]
+    public async Task<IActionResult> SetSystemTrial(Guid id, [FromBody] SetSystemTrialInput dto)
+    {
+        var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
+        if (plan is null) return NotFound();
+
+        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
+        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
+        var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
+
+        // Idempotent — same value is a no-op 200 (§366).
+        if (plan.IsSystemTrial == dto.IsSystemTrial)
+            return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog));
+
+        if (dto.IsSystemTrial)
+        {
+            if (plan.PricePerMonth != 0)
+                return BadRequest("Триал не оплачивается — цена тарифа должна быть равна 0.");
+            if (plan.IsSystemFree)
+                return Conflict("Этот тариф уже системный бесплатный — тариф не может быть одновременно триалом.");
+            var anotherTrialExists = await db.SubscriptionPlanConfigs.AnyAsync(p => p.Id != id && p.IsSystemTrial);
+            if (anotherTrialExists)
+                return Conflict("Другой тариф уже помечен как пробный период.");
+        }
+
+        plan.IsSystemTrial = dto.IsSystemTrial;
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict("Другой тариф уже помечен как пробный период.");
+        }
+        pricingCatalogCache.Invalidate();
+        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog));
     }
 
     [HttpDelete("plans/{id:guid}")]
@@ -701,6 +749,12 @@ public class AdminController(
         // future free-tier account onto the hardcoded EffectivePlan.Free fallback instead of this row.
         if (plan.IsSystemFree)
             return Conflict("The system free plan cannot be deleted.");
+
+        // Cycle 18 (API_CONTRACT_CYCLE18.md §366) — same reasoning as the system-free guard above: the
+        // trial plan is the one row TrialActivationService looks up by IsSystemTrial, and removing it
+        // would turn "trial is offered" into a silent TrialNotOffered for every future activation.
+        if (plan.IsSystemTrial)
+            return Conflict("Тариф пробного периода нельзя удалить.");
 
         // Deactivating a plan that still has active subscribers would silently strip their features on
         // their very next request (SubscriptionResolver.Resolve treats PlanConfig.IsActive == false as
@@ -732,14 +786,21 @@ public class AdminController(
     // PlanOptionRule matrix for this plan (cycle-07 backend report fixes the earlier always-`[]` gap);
     // an option with no row is Unavailable by the schema's own documented default, so it's simply
     // omitted here rather than materialized as an explicit Unavailable row.
-    internal static AdminPlanDto MapAdminPlanDto(SubscriptionPlanConfig plan, int subscribedAccounts, List<PlanOptionRule> rules) => new(
-        plan.Id, plan.Name, plan.Description, SplitHighlights(plan.Highlights), plan.PricePerMonth, "RUB",
-        plan.MaxEmployees, plan.MaxCompanies, plan.AllowOnlineBooking, plan.AllowMailing, plan.AllowAnalytics,
-        plan.AllowPublicListing, plan.AllowOnlinePayment, plan.PhotoQuotaMb, plan.PhotoRetention,
-        plan.NotifyDaysBefore, plan.IsPublic, plan.IsActive, plan.IsSystemFree, plan.SortOrder,
-        Options: rules.Where(r => r.Availability != OptionAvailability.Unavailable)
-            .Select(r => new AdminPlanOptionRuleDto(r.OptionId, r.Availability.ToString(), r.IncludedQuantity)).ToList(),
-        subscribedAccounts);
+    internal static AdminPlanDto MapAdminPlanDto(SubscriptionPlanConfig plan, int subscribedAccounts, List<PlanOptionRule> rules, int? totalOptionsInCatalog = null)
+    {
+        var configured = rules.Count(r => r.Availability != OptionAvailability.Unavailable);
+        var total = totalOptionsInCatalog ?? configured;
+        return new(
+            plan.Id, plan.Name, plan.Description, SplitHighlights(plan.Highlights), plan.PricePerMonth, "RUB",
+            plan.MaxEmployees, plan.MaxCompanies, plan.AllowOnlineBooking, plan.AllowMailing, plan.AllowAnalytics,
+            plan.AllowPublicListing, plan.AllowOnlinePayment, plan.PhotoQuotaMb, plan.PhotoRetention,
+            plan.NotifyDaysBefore, plan.IsPublic, plan.IsActive, plan.IsSystemFree, plan.SortOrder,
+            Options: rules.Where(r => r.Availability != OptionAvailability.Unavailable)
+                .Select(r => new AdminPlanOptionRuleDto(r.OptionId, r.Availability.ToString(), r.IncludedQuantity)).ToList(),
+            subscribedAccounts,
+            IsSystemTrial: plan.IsSystemTrial,
+            OptionCoverage: new AdminPlanOptionCoverageDto(configured, total, $"В тариф включено {configured} из {total} опций каталога"));
+    }
 
     // N25 — shares its cap with PricingCatalogBuilder.MaxHighlights so the admin editor and the public
     // storefront agree on how many bullets survive.
@@ -1000,7 +1061,12 @@ public class AdminController(
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         var pricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync();
         var blockedReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
-        return Ok(new AdminPlatformSettingsDto(price, idleDays, pricingPublicEnabled, blockedReason));
+        var trialDurationDays = await platformSettings.GetTrialDurationDaysAsync();
+        var trialMailingWindowDays = await platformSettings.GetTrialMailingWindowDaysAsync();
+        var trialWarningThresholdsDays = (await platformSettings.GetTrialWarningThresholdsDaysAsync()).ToList();
+        return Ok(new AdminPlatformSettingsDto(
+            price, idleDays, pricingPublicEnabled, blockedReason,
+            trialDurationDays, trialMailingWindowDays, trialWarningThresholdsDays));
     }
 
     [HttpPut("platform-settings")]
@@ -1010,6 +1076,35 @@ public class AdminController(
     {
         if (dto.ChannelIdleDays is < 0 or > 60) return BadRequest("channelIdleDays must be between 0 and 60");
         if (dto.ChannelPricePerMonth is < 0) return BadRequest("channelPricePerMonth must not be negative");
+
+        // Cycle 18 (§367): trialDurationDays/trialMailingWindowDays out of 1..365, or the window bigger
+        // than the duration, or the thresholds not 1..5 distinct positive values not exceeding the
+        // duration, or the thresholds disagreeing with what the CURRENT activation-terms edition
+        // literally promises (§367.1 — "текст называет числа буквально") are all 400, not silently
+        // clamped or ignored.
+        if (dto.TrialDurationDays is { } trialDurationDays && trialDurationDays is < 1 or > 365)
+            return BadRequest("trialDurationDays должен быть от 1 до 365.");
+        if (dto.TrialMailingWindowDays is { } trialMailingWindowDaysInput)
+        {
+            if (trialMailingWindowDaysInput is < 1 or > 365)
+                return BadRequest("trialMailingWindowDays должен быть от 1 до 365.");
+            var effectiveDuration = dto.TrialDurationDays ?? await platformSettings.GetTrialDurationDaysAsync();
+            if (effectiveDuration is { } d && trialMailingWindowDaysInput > d)
+                return BadRequest("trialMailingWindowDays не может быть больше trialDurationDays.");
+        }
+        if (dto.TrialWarningThresholdsDays is { } thresholdsInput)
+        {
+            if (thresholdsInput.Count is 0 or > 5 || thresholdsInput.Any(t => t <= 0) || thresholdsInput.Distinct().Count() != thresholdsInput.Count)
+                return BadRequest("trialWarningThresholdsDays должен содержать от 1 до 5 различных положительных значений.");
+            var effectiveDuration = dto.TrialDurationDays ?? await platformSettings.GetTrialDurationDaysAsync();
+            if (effectiveDuration is { } d && thresholdsInput.Any(t => t > d))
+                return BadRequest("trialWarningThresholdsDays не может превышать trialDurationDays.");
+            var promised = Services.Billing.TrialTermsRegistry.CurrentPromisedThresholds;
+            if (!thresholdsInput.OrderByDescending(t => t).SequenceEqual(promised.OrderByDescending(t => t)))
+                return BadRequest(
+                    $"Текущая редакция текста активации обещает пороги {string.Join(", ", promised)}; " +
+                    "другие значения возможны только с новой редакцией текста от legal-counsel.");
+        }
 
         var oldPrice = await platformSettings.GetChannelPricePerMonthAsync();
         var oldIdleDays = await platformSettings.GetChannelIdleDaysAsync();
@@ -1074,11 +1169,48 @@ public class AdminController(
                 dto.PricingPublicEnabled ? "enabled" : "disabled", userId);
         }
 
+        // Cycle 18 (§367): null/absent means "не менять" — only a present value ever gets written.
+        bool trialDurationChanged = false, trialWindowChanged = false, trialThresholdsChanged = false;
+        if (dto.TrialDurationDays.HasValue)
+        {
+            var oldTrialDuration = await platformSettings.GetTrialDurationDaysAsync();
+            trialDurationChanged = oldTrialDuration != dto.TrialDurationDays;
+            if (trialDurationChanged)
+                await PlatformSettingsWriter.WriteAsync(
+                    db, Services.Notifications.PlatformSettings.TrialDurationDaysKey,
+                    oldTrialDuration?.ToString(CultureInfo.InvariantCulture),
+                    dto.TrialDurationDays.Value.ToString(CultureInfo.InvariantCulture), userId);
+        }
+        if (dto.TrialMailingWindowDays.HasValue)
+        {
+            var oldTrialWindow = await platformSettings.GetTrialMailingWindowDaysAsync();
+            trialWindowChanged = oldTrialWindow != dto.TrialMailingWindowDays;
+            if (trialWindowChanged)
+                await PlatformSettingsWriter.WriteAsync(
+                    db, Services.Notifications.PlatformSettings.TrialMailingWindowDaysKey,
+                    oldTrialWindow?.ToString(CultureInfo.InvariantCulture),
+                    dto.TrialMailingWindowDays.Value.ToString(CultureInfo.InvariantCulture), userId);
+        }
+        if (dto.TrialWarningThresholdsDays is { } newThresholds)
+        {
+            var oldThresholds = await platformSettings.GetTrialWarningThresholdsDaysAsync();
+            var oldThresholdsRaw = string.Join(",", oldThresholds);
+            var newThresholdsRaw = string.Join(",", newThresholds);
+            trialThresholdsChanged = oldThresholdsRaw != newThresholdsRaw;
+            if (trialThresholdsChanged)
+                await PlatformSettingsWriter.WriteAsync(
+                    db, Services.Notifications.PlatformSettings.TrialWarningThresholdsDaysKey,
+                    oldThresholdsRaw, newThresholdsRaw, userId);
+        }
+
         await db.SaveChangesAsync();
 
         if (priceChanged) platformSettings.InvalidateCache(PlatformSettingsWriter.PriceKey);
         if (idleDaysChanged) platformSettings.InvalidateCache(PlatformSettingsWriter.IdleDaysKey);
         if (pricingPublicEnabledChanged) pricingCatalogCache.Invalidate();
+        if (trialDurationChanged) platformSettings.InvalidateCache(Services.Notifications.PlatformSettings.TrialDurationDaysKey);
+        if (trialWindowChanged) platformSettings.InvalidateCache(Services.Notifications.PlatformSettings.TrialMailingWindowDaysKey);
+        if (trialThresholdsChanged) platformSettings.InvalidateCache(Services.Notifications.PlatformSettings.TrialWarningThresholdsDaysKey);
 
         // Reviewer note: echoing `dto` back here would leak client-supplied fields the server never
         // validated or stored as-is (e.g. `pricingPublicBlockedReason`, which GET always recomputes from
@@ -1088,8 +1220,12 @@ public class AdminController(
         var freshPrice = await platformSettings.GetChannelPricePerMonthAsync();
         var freshIdleDays = await platformSettings.GetChannelIdleDaysAsync();
         var freshBlockedReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
+        var freshTrialDuration = await platformSettings.GetTrialDurationDaysAsync();
+        var freshTrialWindow = await platformSettings.GetTrialMailingWindowDaysAsync();
+        var freshTrialThresholds = (await platformSettings.GetTrialWarningThresholdsDaysAsync()).ToList();
         return Ok(new AdminPlatformSettingsDto(
-            freshPrice, freshIdleDays, dto.PricingPublicEnabled, freshBlockedReason));
+            freshPrice, freshIdleDays, dto.PricingPublicEnabled, freshBlockedReason,
+            freshTrialDuration, freshTrialWindow, freshTrialThresholds));
     }
 
     // Plain-text 410 body per contracts/cycle7/openapi.yaml's `text/plain: {schema: {type: string}}` response —
@@ -1178,7 +1314,14 @@ public record AdminPlanDto(
     int? MaxEmployees, int? MaxCompanies, bool AllowOnlineBooking, bool AllowMailing, bool AllowAnalytics,
     bool AllowPublicListing, bool AllowOnlinePayment, int? PhotoQuotaMb, PhotoRetention PhotoRetention,
     int NotifyDaysBefore, bool IsPublic, bool IsActive, bool IsSystemFree, int SortOrder,
-    List<AdminPlanOptionRuleDto> Options, int SubscribedAccounts);
+    List<AdminPlanOptionRuleDto> Options, int SubscribedAccounts,
+    bool IsSystemTrial = false, AdminPlanOptionCoverageDto? OptionCoverage = null);
+
+// Cycle 18 (API_CONTRACT_CYCLE18.md §366) — "отсутствие строки PlanOptionRule = Unavailable" is
+// fail-closed behaviour, not a defect, but a superadmin must be able to SEE it on the plan's own card.
+public record AdminPlanOptionCoverageDto(int Configured, int Total, string Text);
+
+public record SetSystemTrialInput(bool IsSystemTrial);
 
 public record AdminPlansListDto(List<AdminPlanDto> Plans);
 
@@ -1230,7 +1373,11 @@ public record AdminChannelSuspendDto(string? Comment);
 // means no obstacle to turning the switch on; a non-null value is one of "OfferIsDraft"/"LegalUnavailable"
 // and the request body never needs to set it (round-tripped by GetPlatformSettings/UpdatePlatformSettings
 // sharing this one DTO, its value on write is ignored).
-public record AdminPlatformSettingsDto(decimal? ChannelPricePerMonth, int ChannelIdleDays, bool PricingPublicEnabled, string? PricingPublicBlockedReason = null);
+// Cycle 18 (API_CONTRACT_CYCLE18.md §367) — three trailing trial fields, all nullable on input (PUT):
+// null/absent = "не менять" (§367), same convention as AdminPlanInput.IsPublic/SortOrder above.
+public record AdminPlatformSettingsDto(
+    decimal? ChannelPricePerMonth, int ChannelIdleDays, bool PricingPublicEnabled, string? PricingPublicBlockedReason = null,
+    int? TrialDurationDays = null, int? TrialMailingWindowDays = null, List<int>? TrialWarningThresholdsDays = null);
 
 // ARCHITECTURE_CYCLE11.md §114.2 — 409 body for PUT /api/admin/platform-settings when
 // pricingPublicEnabled: true is rejected because the channel offer isn't published.
