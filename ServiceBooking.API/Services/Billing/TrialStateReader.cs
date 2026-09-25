@@ -201,21 +201,23 @@ public class TrialStateReader(
             Limits: limits);
     }
 
-    /// <summary>§362 — MailingWindow is in the schema's `required`/non-nullable set: every TrialStateDto
-    /// response must carry an object, never null. "NotApplicable" is the value for states where a
-    /// mailing window simply doesn't mean anything yet (no trial has ever run, or it already ended
-    /// without ever being on the trial plan) — distinct from "NotStarted", which means a trial IS
-    /// running/available and its window specifically hasn't begun.</summary>
     /// <summary>§337.1 phase 3 / §338.2 — the "N days left" banner. <c>TrialWarnedAtThresholdDays</c> is
     /// written ONLY by <c>TrialLifecycleTask</c> (never by this reader, which does no threshold
     /// arithmetic of its own): the crossing itself is the background task's job, this method just
     /// renders whatever the account's own snapshot already says was crossed. Only 7/3/1 have canned
     /// texts (§338.4 point 6 pins the admin setting to exactly those three numbers); an unrecognized
-    /// value on an old/foreign snapshot degrades to no banner rather than guessing at wording.</summary>
+    /// value on an old/foreign snapshot degrades to no banner rather than guessing at wording.
+    ///
+    /// N7 (code review) — <paramref name="daysLeft"/> must gate the banner too, not just pick its
+    /// wording: an account whose <c>TrialEndsAtUtc</c> was pushed back AFTER a threshold was crossed
+    /// (an admin extension, a regrant) must not keep showing "осталось 7 дней" once there genuinely are
+    /// more than 7 days left again — the snapshot only records "was warned", it says nothing about
+    /// whether that warning is still true right now.</summary>
     private static TrialWarningDto? BuildActiveWarning(BillingAccount account, IReadOnlyList<string> includes, int daysLeft)
     {
         var threshold = account.TrialWarnedAtThresholdDays;
         if (threshold is null) return null;
+        if (daysLeft > threshold) return null;
 
         var text = threshold switch
         {
@@ -229,6 +231,11 @@ public class TrialStateReader(
         return new TrialWarningDto("TrialExpiring", text, includes, Dismissible: true, VisibleUntilUtc: null);
     }
 
+    /// <summary>§362 — MailingWindow is in the schema's `required`/non-nullable set: every TrialStateDto
+    /// response must carry an object, never null. "NotApplicable" is the value for states where a
+    /// mailing window simply doesn't mean anything yet (no trial has ever run, or it already ended
+    /// without ever being on the trial plan) — distinct from "NotStarted", which means a trial IS
+    /// running/available and its window specifically hasn't begun.</summary>
     private static TrialMailingWindowDto NotApplicableMailingWindow() =>
         new("NotApplicable", null, null, null, string.Empty);
 
