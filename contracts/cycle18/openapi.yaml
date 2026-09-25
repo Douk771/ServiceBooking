@@ -1,0 +1,1428 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 18
+# (системный тариф «Триал»: максимум возможностей бесплатно, один раз, на две недели,
+#  с собственным более коротким окном у рассылок).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл и правила — API_CONTRACT_CYCLE18.md (§360–§379),
+# решения — ARCHITECTURE_CYCLE18.md (§330–§356), требования — SPEC.md цикла 18 (включая Д14–Д21)
+# и LEGAL_REVIEW_CYCLE18.md (§4 тексты, §5 условия Т1–Т5). При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle18/openapi.yaml --port 4018
+#             npm run types:api:cycle18   (openapi-typescript -> src/types/api-cycle18.generated.ts)
+#   QA        schemathesis run contracts/cycle18/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle18/openapi.yaml
+#             npm run types:api:cycle18 && git diff --exit-code src/types/api-cycle18.generated.ts
+#
+# Здесь описаны ТОЛЬКО маршруты, которые цикл 18 добавляет или меняет. Остальной API —
+# в API_DOCUMENTATION.md и контрактах циклов 3–17 (openapi-cycle6.yaml, contracts/cycle7…cycle17).
+#
+# У изменённых ответов, где цикл ДОБАВЛЯЕТ поля к большому существующему DTO
+# (OwnerSubscriptionDto, AdminPlanDto, AdminPlatformSettingsDto, AdminBillingAccountDto,
+# PublicPlanDto), схема описывает ТОЛЬКО новые и значимые поля и стоит с
+# additionalProperties: true — это честно отражает «форма прежняя плюс вот это» и не заводит
+# вторую, расходящуюся копию всего DTO.
+#
+# ПРАВКИ ДОПОЛНЯЮЩЕГО ПРОХОДА (решения Д14–Д21 SPEC, условия Т1–Т5 правового разбора):
+#   * у POST /api/billing/trial появилось ТЕЛО — одно поле termsVersion (Т1);
+#   * TrialAntifraudUnavailable ПЕРЕИМЕНОВАН в TrialUniquenessCheckUnavailable (Д17);
+#   * добавлены POST /api/billing/trial/terms-acknowledgement, GET /api/admin/trial-terms/{version},
+#     GET /api/profile/delete-account/preview;
+#   * warning получил dismissible и visibleUntilUtc (Т3: ≥30 дней, закрыть нельзя);
+#   * TrialStateDto получил activationTerms, planChangeNotice, warningThresholdsDays.
+
+info:
+  title: ServiceBooking API — цикл 18 (системный тариф «Триал»)
+  version: "13.1.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase в JSON; enum — строками (имена членов C#, PascalCase);
+        DateTime — ISO-8601 UTC;
+      * тела осознанных ошибок 400/402/409/429 — ГОЛАЯ СТРОКА (text/plain) по-русски;
+      * 401 и 403 — ПУСТОЕ тело; ProblemDetails не используется;
+      * 404 без явного тела — ПУСТОЕ тело (Program.cs, SuppressMapClientErrors = true);
+      * 451 Unavailable For Legal Reasons — «требуется принять новую редакцию документов»;
+        маршруты цикла 18 в allow-list этого гейта НЕ добавлены, КРОМЕ
+        GET /api/profile/delete-account/preview (там уже лежит POST /api/profile/delete-account:
+        отказ от сервиса не может быть заблокирован требованием принять условия сервиса);
+      * все новые поля ДОБАВОЧНЫЕ — цикл не удаляет и не переименовывает ничего у существующих
+        маршрутов;
+      * текст, который видит человек, собирает СЕРВЕР; фронт печатает его как есть. Тексты цикла
+        живут в ServiceBooking.API/Services/Billing/TrialLegalNotices.cs — ОТДЕЛЬНЫЙ файл, а не
+        регион в LegalNotices.cs (решение Д20).
+
+    ЕДИНСТВЕННОЕ НАМЕРЕННОЕ ИСКЛЮЧЕНИЕ ИЗ «4xx — СТРОКА»:
+      отказ в активации триала — это JSON { code, message } (TrialRefusalDto), потому что
+      US-18-06 требует ОДНОВРЕМЕННО машиночитаемый код и готовый русский текст. Разбирать
+      русскую строку подстрокой — тот самый дефект, который цикл 17 чинил в другом месте.
+      Precedent: PricingPublicationBlockedDto (409 JSON) цикла 11.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, КОТОРЫЕ СХЕМА ЗАКРЕПЛЯЕТ ФОРМОЙ:
+
+    1. КЛИЕНТ НЕ МОЖЕТ ПОПРОСИТЬ ДРУГОЙ СРОК ИЛИ СОСТАВ. Единственное поле в теле
+       POST /api/billing/trial — termsVersion, и оно не просит, а ПОДТВЕРЖДАЕТ, какую редакцию
+       условий клиент показал человеку. Любое значение, кроме текущей версии, → 409
+       TrialTermsVersionMismatch. У админских выдач тела нет вовсе.
+
+    2. ДОСТУПНОСТЬ ТРИАЛА РЕШАЕТ СЕРВЕР. TrialStateDto.state — закрытое множество из четырёх
+       значений плюс готовый текст. Фронт НЕ вычисляет «использован ли триал», «истёк ли»,
+       «идёт ли окно рассылок», «сколько осталось» и «можно ли закрыть сообщение».
+
+    3. АВАРИЙНАЯ ПОВТОРНАЯ ВЫДАЧА — ОТДЕЛЬНЫЙ МАРШРУТ С ОБЯЗАТЕЛЬНОЙ ПРИЧИНОЙ, а не флаг в теле
+       обычной выдачи (Д1-бис SPEC): аварийный выход не должен быть достижим случайным полем.
+       Правовая рамка причины — исправление СВОЕЙ ошибки, а не уступка (п. 6.16.6.1 Соглашения).
+
+    4. ФЛАГ «ЭТО ТРИАЛ» МЕНЯЕТСЯ ТОЛЬКО СВОИМ МАРШРУТОМ. В AdminPlanInput поля isSystemTrial
+       НЕТ — ровно та же защита, что у isSystemFree с цикла 7.
+
+    5. ОТВЕТ — НЕ ОРАКУЛ. Отказ TrialPhoneAlreadyUsed не содержит ни даты, ни имени, ни признака
+       существования другого аккаунта на этом номере.
+
+    6. НОМЕР ИЗ РЕЕСТРА ПРЕДОСТАВЛЕННЫХ ПРОБНЫХ ПЕРИОДОВ НЕ ОТДАЁТСЯ НИКОМУ. Ни владельцу, ни
+       суперадмину: в схеме нет ни одного поля с номером или его производным значением.
+
+    7. ФАКТ ПОКАЗА УСЛОВИЙ ФИКСИРУЕТСЯ ВМЕСТЕ С ВЕРСИЕЙ ТЕКСТА (условие Т1 правового разбора,
+       решение Д18). Правомерность схемы «предупреждаем только в кабинете, без почты и SMS»
+       держится на том, что владелец при активации был проинформирован о дате окончания и
+       последствиях. Поэтому активация требует termsVersion, журнал выдачи хранит версию и хеш
+       текста, архивные редакции доступны по GET /api/admin/trial-terms/{version} и НИКОГДА не
+       удаляются, а сообщение о СОСТОЯВШЕМСЯ переходе живёт не менее 30 дней и не закрывается.
+
+    8. СЛОВА «АКЦИЯ», «АНТИФРОД», «ЗЛОУПОТРЕБЛЕНИЕ» ЗАПРЕЩЕНЫ (решение Д17) в пользовательских
+       текстах, названиях целей обработки, кодах ошибок и журналах. В схеме их нет: код отказа —
+       TrialUniquenessCheckUnavailable, цель обработки — «проверка однократности пробного
+       периода», подписи — «настройки пробного периода».
+
+    9. СОГЛАСИЯ НА ПРОВЕРКУ ОДНОКРАТНОСТИ НЕ СПРАШИВАЕМ (решение Д15): основание — п. 7 ч. 1
+       ст. 6 152-ФЗ. Поля согласия в схеме нет и появляться не должно.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4018
+    description: prism mock по этой схеме (фронт до появления бэкенда)
+
+tags:
+  - name: billing-owner
+    description: Свой пробный период в кабинете владельца — можно ли получить, что сейчас, условия и их фиксация.
+  - name: admin-plans
+    description: "Каталог тарифов: второй системный флаг «это триал» и подсказка по составу опций."
+  - name: admin-billing
+    description: Выдача триала аккаунту суперадмином, аварийная перевыдача, карточка и список.
+  - name: admin-settings
+    description: Настройки пробного периода из админки — длительность, окно рассылок, пороги предупреждений.
+  - name: admin-legal
+    description: Архивные редакции текста условий пробного периода — чем доказывается факт информирования.
+  - name: pricing
+    description: Публичная витрина и админский предпросмотр — карточка Триала.
+  - name: profile
+    description: Экран удаления учётной записи — предупреждение о реестре до необратимого действия.
+
+paths:
+
+  /api/billing/trial:
+    get:
+      tags: [billing-owner]
+      operationId: getOwnerTrialState
+      summary: Состояние пробного периода для текущего владельца
+      description: |
+        Единственный источник ответа на вопросы «можно ли получить триал», «почему нельзя»,
+        «сколько осталось», «что с окном рассылок» и «какую редакцию условий показывать».
+        Фронт эти вопросы сам не считает.
+        🔴 trial-объект НЕ становится null после истечения: при state = Expired он приходит целиком,
+        иначе сообщение о состоявшемся переходе исчезло бы с экрана и условие Т3 было бы нарушено.
+        404 — у пользователя нет биллинг-аккаунта (и он не владелец).
+      responses:
+        "200":
+          description: Состояние пробного периода.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialStateDto"
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Биллинг-аккаунта нет. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+    post:
+      tags: [billing-owner]
+      operationId: activateOwnerTrial
+      summary: Активировать пробный период (владелец, кнопкой)
+      description: |
+        Тело состоит из ОДНОГО поля termsVersion — версии текста условий, который клиент показал
+        человеку ДО нажатия кнопки. Попросить другой срок, состав или лимиты им нельзя: других полей
+        нет, а единственное допустимое значение — текущая версия с сервера. Устаревшая, неизвестная
+        или пустая версия → 409 TrialTermsVersionMismatch: зафиксировать «владелец был
+        проинформирован» в этом случае невозможно, а без фиксации вся правовая квалификация
+        окончания срока рассыпается (условие Т1). Это fail-closed того же рода, что
+        TrialUniquenessCheckUnavailable.
+        Сервер пишет в журнал выдачи версию, СВОЙ хеш текста этой версии (не присланный клиентом),
+        момент показа, момент подтверждения и снапшоты длительности, окна рассылок и порогов.
+        Идемпотентности «молча ок» нет — повторный вызов отвечает 409
+        (TrialAlreadyActive/TrialAlreadyUsed). Гонку двух активаций ловят частичный уникальный
+        индекс TrialGrants и advisory-lock на биллинг-аккаунт: вторая подписка и вторая строка
+        журнала не появляются.
+        Rate limit: политика trial-activate (5 в сутки на пользователя).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrialActivationInput"
+      responses:
+        "200":
+          description: |
+            Триал активирован. Возвращается ЦЕЛИКОМ экран «Ваша подписка» — иначе фронту пришлось бы
+            делать второй запрос и на мгновение показывать несогласованный экран.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnerSubscriptionDtoTrialPatch"
+        "400":
+          description: Тела нет либо termsVersion пустой. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Биллинг-аккаунта нет. Тело пустое.
+        "409":
+          description: Отказ с машиночитаемым кодом и готовым русским текстом.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialRefusalDto"
+        "429":
+          description: Слишком много попыток активации. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /api/billing/trial/terms-acknowledgement:
+    post:
+      tags: [billing-owner]
+      operationId: acknowledgeTrialTerms
+      summary: Подтвердить ознакомление с условиями пробного периода
+      description: |
+        Нужен ровно для одного случая: триал выдал СУПЕРАДМИН, владелец при этом ничего не нажимал и
+        условий не видел. Пока подтверждения нет, activationTerms.acknowledgementRequired = true, и
+        кабинет показывает условия блоком, который нельзя закрыть.
+        🔴 Отметка подтверждения ставится ОДИН РАЗ и никогда не перезаписывается: повторный вызов
+        отвечает 200 и НЕ двигает acknowledgedAt — иначе журнал перестал бы отвечать на вопрос
+        «когда человек впервые узнал», ради которого он и ведётся.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrialTermsAcknowledgementInput"
+      responses:
+        "200":
+          description: Подтверждение записано либо уже было записано раньше (идемпотентно).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialStateDto"
+        "400":
+          description: termsVersion пустой. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: У аккаунта нет ни одной выдачи триала — подтверждать нечего. Тело пустое.
+        "409":
+          description: Присланная версия не является текущей — TrialTermsVersionMismatch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialRefusalDto"
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /api/billing/subscription:
+    get:
+      tags: [billing-owner]
+      operationId: getOwnerSubscriptionWithTrial
+      summary: Экран «Ваша подписка» — добавочные поля цикла 18
+      description: |
+        Существующий маршрут цикла 7. Цикл 18 добавляет поле trial и три поля «над лимитом» внутри
+        usage. Остальная форма НЕ МЕНЯЕТСЯ (additionalProperties: true) — вторая копия большого DTO
+        здесь заводиться не должна. Аккаунт НЕ на триале обязан получать те же строки статусов и
+        предупреждений, что до цикла (регрессия сверяется точным сравнением, не Contains).
+        Экран заявки на платный тариф при действующем триале обязан показать trial.planChangeNotice
+        ДО подтверждения (исполнение п. 6.16.10 Соглашения) — отдельного маршрута под этот текст нет
+        намеренно: он приходит тем же ответом, который уже рисует экран.
+      responses:
+        "200":
+          description: Подписка владельца.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnerSubscriptionDtoTrialPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Биллинг-аккаунта нет. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /api/admin/plans/{id}/system-trial:
+    put:
+      tags: [admin-plans]
+      operationId: setPlanSystemTrial
+      summary: Пометить тариф как пробный период (или снять пометку)
+      description: |
+        Маршрут-близнец PUT /api/admin/plans/{id}/system-free. Отдельно от обычного PUT намеренно:
+        в AdminPlanInput поля isSystemTrial нет, чтобы правка полей тарифа не переставила системный
+        флаг случайно. Ровно одна строка каталога может быть триалом — гарантия у частичного
+        уникального индекса, 409 в контроллере существует ради понятного текста.
+        Повторный вызов с тем же значением — 200 без изменений.
+      parameters:
+        - $ref: "#/components/parameters/PlanId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetSystemTrialInput"
+      responses:
+        "200":
+          description: Тариф после изменения флага.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPlanDtoTrialPatch"
+        "400":
+          description: Цена тарифа не 0 — триал не оплачивается. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Тарифа нет. Тело пустое.
+        "409":
+          description: |
+            Триалом уже помечен другой тариф; либо этот тариф — системный бесплатный; либо гонка
+            двух запросов (нарушение частичного уникального индекса). Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/admin/plans:
+    get:
+      tags: [admin-plans]
+      operationId: getAdminPlansWithTrial
+      summary: Каталог тарифов — добавочные поля цикла 18
+      description: |
+        Существующий маршрут цикла 7 (конверт { plans: [...] }). Цикл 18 добавляет isSystemTrial и
+        optionCoverage. optionCoverage нужен потому, что ОТСУТСТВИЕ строки PlanOptionRule означает
+        Unavailable (fail-closed): «максимальный тариф» требует явно проставленных правил на каждую
+        опцию, а опция, добавленная в каталог позже, в триал сама не попадёт. Суперадмин обязан
+        видеть это на экране, а не узнавать от владельца.
+      responses:
+        "200":
+          description: Каталог тарифов.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  plans:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AdminPlanDtoTrialPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  /api/admin/platform-settings:
+    get:
+      tags: [admin-settings]
+      operationId: getPlatformSettingsWithTrial
+      summary: Настройки платформы — добавочные настройки пробного периода
+      description: |
+        Существующий маршрут циклов 4/7/11. Цикл 18 добавляет три настройки пробного периода. Они
+        живут в таблице PlatformSettings с журналом изменений, а НЕ в appsettings и НЕ полем на
+        тарифе. NotifyDaysBefore тарифа для порогов триала не используется — это другая сущность
+        (напоминание об окончании ОПЛАЧЕННОГО периода).
+      responses:
+        "200":
+          description: Настройки платформы.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPlatformSettingsDtoTrialPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+    put:
+      tags: [admin-settings]
+      operationId: updatePlatformSettingsWithTrial
+      summary: Изменить настройки платформы, включая параметры пробного периода
+      description: |
+        Три новых поля NULLABLE, и это не косметика: отсутствие/null означает «не менять».
+        Позиционный record-DTO без этого правила приводил бы к тому, что существующий фронт,
+        не знающий о новых полях, сбрасывал бы длительность при каждом сохранении цены канала.
+
+        РЕШЕНИЕ Д19. Правка действует ТОЛЬКО НА НОВЫЕ ТРИАЛЫ: обещанные длительность, окно рассылок
+        и пороги предупреждений лежат снапшотом на биллинг-аккаунте и в строке журнала выдачи
+        (US-18-07). Ни accountId, ни «применить к действующим» в теле нет и быть не должно.
+
+        Вторая, более жёсткая проверка у порогов: текст условий активации называет числа «7, 3 и 1»
+        БУКВАЛЬНО, подстановки под них в редакции нет. Поэтому каждая редакция объявляет, какие
+        пороги она обещает, и PUT отвергает несовпадение (400) с объяснением: другие значения
+        возможны только вместе с новой редакцией текста от legal-counsel. Это не запрет менять
+        пороги — это требование менять их вместе с текстом, который их обещает.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminPlatformSettingsDtoTrialPatch"
+      responses:
+        "200":
+          description: Настройки после изменения.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPlatformSettingsDtoTrialPatch"
+        "400":
+          description: |
+            Негодное значение: длительность вне 1..365; окно рассылок вне 1..365 или больше
+            длительности; пороги — не 1..5 различных положительных значений, либо порог больше
+            длительности, либо набор порогов не совпадает с обещанием текущей редакции текста
+            условий. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "409":
+          description: |
+            Существующая причина цикла 11 — включение публичных цен при черновой оферте.
+            Форма тела не меняется.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  reason:
+                    type: string
+                  message:
+                    type: string
+
+  /api/admin/trial-terms/{version}:
+    get:
+      tags: [admin-legal]
+      operationId: getTrialActivationTermsVersion
+      summary: Архивная редакция текста условий пробного периода по версии
+      description: |
+        Чем доказывается условие Т1. Через полгода после спора платформе придётся не утверждать, а
+        ПОКАЗЫВАТЬ: вот строка выдачи с версией и хешем, вот текст этой версии, хеш совпадает —
+        значит человеку было сообщено именно это, включая дату окончания, судьбу данных и отсутствие
+        второго канала уведомлений.
+        template — редакция С ПОДСТАНОВКАМИ {0}–{3}, а не готовая строка: подставленные значения
+        лежат в той же строке журнала выдачи и в снапшотах на аккаунте, поэтому показанный текст
+        восстанавливается однозначно. sha256 считается ОТ ШАБЛОНА — иначе хеш зависел бы от даты и
+        перестал отвечать на вопрос «эта ли редакция».
+        🔴 Выпущенные редакции НЕ УДАЛЯЮТСЯ НИКОГДА, даже после замены на новую: иначе хеш в журнале
+        выдачи не с чем сверить. Инвариант закреплён юнит-тестом (ARCHITECTURE_CYCLE18.md §338.4).
+      parameters:
+        - name: version
+          in: path
+          required: true
+          description: Версия редакции в формате yyyy-MM-dd.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Редакция текста условий.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialTermsDto"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Такой версии не существует. Тело пустое.
+
+  /api/admin/billing-accounts:
+    get:
+      tags: [admin-billing]
+      operationId: getAdminBillingAccountsWithTrial
+      summary: Список биллинг-аккаунтов — фильтр по триалу и две колонки
+      description: |
+        Существующий маршрут цикла 7 (конверт PagedResult). Цикл 18 добавляет необязательный
+        фильтр ?trial= и два поля в элементе. Нераспознанное значение фильтра не матчит ничего —
+        та же конвенция, что у существующего ?status=. Фильтрация, поиск и пагинация остаются
+        целиком в SQL: страница в память не поднимается.
+      parameters:
+        - name: trial
+          in: query
+          required: false
+          description: Отбор по состоянию пробного периода.
+          schema:
+            $ref: "#/components/schemas/TrialAccountFilter"
+        - name: search
+          in: query
+          required: false
+          description: Существующий поиск (email, телефон, имя, название компании).
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Существующий фильтр статуса подписки (Free/Active/Expired).
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          description: Существующая пагинация.
+          schema:
+            type: integer
+        - name: pageSize
+          in: query
+          required: false
+          description: Существующая пагинация.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Страница биллинг-аккаунтов.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AdminBillingAccountListItemTrialPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  /api/admin/billing-accounts/{accountId}:
+    get:
+      tags: [admin-billing]
+      operationId: getAdminBillingAccountWithTrial
+      summary: Карточка биллинг-аккаунта — блок «Пробный период»
+      description: |
+        Существующий маршрут цикла 7. Цикл 18 добавляет объект trial: брал ли, когда, до какой даты,
+        кто выдал, состояние окна рассылок, КАКУЮ РЕДАКЦИЮ УСЛОВИЙ ВИДЕЛ ВЛАДЕЛЕЦ и список выдач с
+        причинами аварийных перевыдач (US-18-14, Т1).
+        🔴 Ни номера телефона, ни его производного значения здесь нет и быть не должно.
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Карточка аккаунта.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBillingAccountDtoTrialPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Аккаунта нет. Тело пустое.
+
+  /api/admin/billing-accounts/{accountId}/trial:
+    post:
+      tags: [admin-billing]
+      operationId: grantTrialAsSuperAdmin
+      summary: Выдать пробный период аккаунту (суперадмин)
+      description: |
+        Тела запроса нет. Проверки — ТЕ ЖЕ, что у владельца: одна проверка одноразовости, один ключ
+        проверки однократности, одна запись в журнал. Разные проверки на двух путях активации — это и
+        есть дыра, через которую триал берут второй раз (Д1 SPEC). Отметку одноразовости этот
+        маршрут НЕ обходит никогда.
+        🔴 Т1 на этом пути закрывается иначе, и это названо честно: владелец условий в момент выдачи
+        не видел, поэтому строка журнала получает termsVersion, но termsShownAt = null и
+        termsAcknowledgedAt = null, а у владельца activationTerms.acknowledgementRequired = true до
+        вызова POST /api/billing/trial/terms-acknowledgement. Момент, когда владелец фактически
+        узнал условия, оказывается в журнале ОТДЕЛЬНЫМ полем, а не смешивается с моментом выдачи.
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Карточка аккаунта после выдачи.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBillingAccountDtoTrialPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Аккаунта нет. Тело пустое.
+        "409":
+          description: |
+            Отказ с машиночитаемым кодом и готовым текстом. TrialTermsVersionMismatch здесь
+            невозможен — тела у запроса нет.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialRefusalDto"
+
+  /api/admin/billing-accounts/{accountId}/trial/regrant:
+    post:
+      tags: [admin-billing]
+      operationId: regrantTrialAsSuperAdmin
+      summary: Выдать пробный период повторно, в обход отметки (аварийно)
+      description: |
+        Отдельный маршрут, а не флаг в теле обычной выдачи (Д1-бис SPEC): аварийный выход не должен
+        быть достижим случайным полем. Причина ОБЯЗАТЕЛЬНА (пустая строка — 400) и попадает в журнал
+        вместе с автором, адресатом, временем и версией текста условий; запись видна в истории
+        аккаунта.
+        Обходятся: TrialAlreadyUsed, TrialPhoneAlreadyUsed, PhoneNotVerified,
+        PhoneVerificationUnavailable. НЕ обходятся: TrialNotOffered, TrialAlreadyActive,
+        AlreadyOnPaidPlan, TrialUniquenessCheckUnavailable — «обойти fail-closed» означало бы выдать
+        триал без проверки, что решение Д6 запрещает прямым текстом.
+        ⚠️ Правовая рамка причины (п. 6.16.6.1 Соглашения): повторная выдача допустима ТОЛЬКО как
+        исправление собственной ошибки платформы, а не как индивидуальная уступка — иначе это
+        предпочтение одному абоненту перед другими (п. 6.13.11.1, п. 2 ст. 426 ГК РФ). Код
+        обеспечивает обязательность причины; содержательная рамка — подсказка рядом с полем ввода.
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrialRegrantInput"
+      responses:
+        "200":
+          description: Карточка аккаунта после повторной выдачи.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBillingAccountDtoTrialPatch"
+        "400":
+          description: Причина пустая, из одних пробелов или длиннее 500 символов. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Аккаунта нет. Тело пустое.
+        "409":
+          description: Один из четырёх необходимых отказов (см. description маршрута).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialRefusalDto"
+
+  /api/admin/billing-accounts/{accountId}/subscription-history:
+    get:
+      tags: [admin-billing]
+      operationId: getSubscriptionHistoryWithTrial
+      summary: История изменений подписки — три новых вида события
+      description: |
+        Существующий маршрут цикла 7, форма элемента НЕ меняется. Цикл 18 добавляет значения
+        changeKind: TrialGranted, TrialExpired, TrialMailingWindow. Активация, истечение и переход
+        на бесплатный тариф видны как ОТДЕЛЬНЫЕ события. У системных записей changedByName —
+        «Система», а не технический идентификатор. В comment записи TrialGranted попадает и версия
+        текста условий.
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: История изменений подписки.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                      properties:
+                        changedAt:
+                          type: string
+                          format: date-time
+                        changedByName:
+                          type: string
+                        changeKind:
+                          $ref: "#/components/schemas/SubscriptionChangeKind"
+                        comment:
+                          type: string
+                          nullable: true
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Аккаунта нет. Тело пустое.
+
+  /api/profile/delete-account/preview:
+    get:
+      tags: [profile]
+      operationId: getAccountDeletionPreview
+      summary: Что нужно знать до подтверждения удаления учётной записи
+      description: |
+        Исполнение п. 5.6.7.7 Политики и условия правомерности хранения реестра дольше жизни
+        аккаунта (требование О8): субъект узнаёт правило ДО необратимого действия — тем же приёмом,
+        которым цикл 16 сделал правомерным «немой» 204.
+        В allow-list гейта 451, как и сам POST /api/profile/delete-account: отказ от сервиса не
+        может быть заблокирован требованием принять условия сервиса.
+        Про оракула думать не нужно: ответ говорит о СВОЁМ прошлом вызывающего. Номера и его
+        производного значения в ответе нет.
+        Форма — объект, а не строка, НАМЕРЕННО: на этом экране в следующих циклах появятся другие
+        предупреждения того же жанра, и добавление поля не будет ломающим изменением.
+      responses:
+        "200":
+          description: Предупреждения для экрана удаления учётной записи.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountDeletionPreviewDto"
+        "401":
+          description: Нет токена. Тело пустое.
+
+  /api/pricing:
+    get:
+      tags: [pricing]
+      operationId: getPublicPricingWithTrial
+      summary: Публичная витрина тарифов — карточка Триала
+      description: |
+        Существующий анонимный маршрут цикла 7 (ETag, Cache-Control: public, max-age=60).
+        Цикл 18 добавляет одно поле isTrial у карточки тарифа.
+        🔴 404 с пустым телом, пока выключен рубильник pricing.public-enabled ИЛИ оферта
+        isDraft: true — Триала публично не видно, и это ОЖИДАЕМОЕ состояние, а не дефект. Цикл
+        правовой гейт не обходит.
+        ⚠️ Операционное правило витрины (ч. 7 ст. 5 ФЗ «О рекламе»): в highlights карточки триала
+        обязаны стоять четыре сведения — продолжительность, однократность, отдельный короткий срок
+        рассылок, переход на бесплатный тариф без удаления данных. Смысл текста код проверить не
+        может, поэтому требование живёт подсказкой на экране правки тарифа.
+      responses:
+        "200":
+          description: Публичный прайс.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicPricingDtoTrialPatch"
+        "304":
+          description: Не изменилось (If-None-Match совпал). Тело пустое.
+        "404":
+          description: |
+            Витрина выключена, оферта черновая либо снимок правовых документов недоступен —
+            три случая, которые вызывающий НЕ должен различать. Тело пустое.
+
+  /api/admin/pricing/preview:
+    get:
+      tags: [pricing]
+      operationId: getAdminPricingPreviewWithTrial
+      summary: Админский предпросмотр витрины — Триал виден всегда
+      description: |
+        Существующий маршрут цикла 7 (SuperAdmin, Cache-Control: no-store). Игнорирует рубильник
+        публикации и правовой гейт: это ЕДИНСТВЕННЫЙ способ проверить карточку Триала до публикации
+        оферты (US-18-12). Форма — та же, что у /api/pricing, плюс isTrial.
+      responses:
+        "200":
+          description: Предпросмотр прайса.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicPricingDtoTrialPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+components:
+
+  parameters:
+    PlanId:
+      name: id
+      in: path
+      required: true
+      description: Идентификатор тарифа.
+      schema:
+        type: string
+        format: uuid
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      description: Идентификатор биллинг-аккаунта.
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+
+    TrialState:
+      type: string
+      description: |
+        Available — можно активировать сейчас; Unavailable — нельзя, refusalCode объясняет почему;
+        Active — триал идёт; Expired — триал был и закончился. Закрытое множество: фронт ветвится
+        по нему, а не по русскому тексту.
+      enum: [Available, Unavailable, Active, Expired]
+
+    TrialRefusalCode:
+      type: string
+      description: |
+        Машиночитаемая причина отказа. Порядок проверок на сервере фиксирован (сначала форма
+        запроса, потом состояние платформы, потом своё прошлое, потом чужое) — это часть контракта,
+        иначе код ответа становится оракулом.
+        🔴 TrialPhoneAlreadyUsed относится к ЧУЖИМ данным: его текст не содержит ни даты, ни имени,
+        ни признака существования другого аккаунта на этом номере.
+        🔴 TrialUniquenessCheckUnavailable — это ПЕРЕИМЕНОВАННЫЙ TrialAntifraudUnavailable первой
+        редакции контракта: решение Д17 запрещает слова «акция», «антифрод», «злоупотребление» в
+        пользовательских текстах, названиях целей обработки, кодах ошибок и журналах. Правило
+        срабатывает и на добросовестном человеке, который просто зарегистрировался заново.
+        🔴 TrialTermsVersionMismatch — проверяется ПЕРВЫМ и означает «клиент показал не текущую
+        редакцию условий»: зафиксировать факт информирования невозможно, значит выдавать нельзя.
+      enum:
+        - TrialTermsVersionMismatch
+        - TrialNotOffered
+        - TrialAlreadyActive
+        - AlreadyOnPaidPlan
+        - TrialAlreadyUsed
+        - PhoneVerificationUnavailable
+        - PhoneNotVerified
+        - TrialUniquenessCheckUnavailable
+        - TrialPhoneAlreadyUsed
+
+    TrialMailingWindowState:
+      type: string
+      description: |
+        NotStarted — ни один канал ещё не авторизован, таймер не запущен (это НЕ «бесконечное
+        окно»: потолком всегда остаётся конец триала); Running — идёт; EndingSoon — до конца окна
+        меньше настроенного порога; Ended — закрылось, сам триал продолжается; NotApplicable —
+        рассылки не входят в состав триала на текущей матрице опций.
+      enum: [NotStarted, Running, EndingSoon, Ended, NotApplicable]
+
+    TrialGrantSource:
+      type: string
+      description: |
+        Кто выдал. SuperAdminOverride — аварийная повторная выдача в обход отметки, у неё всегда
+        есть непустая причина, и она допустима только как исправление ошибки платформы.
+      enum: [OwnerSelfService, SuperAdmin, SuperAdminOverride]
+
+    TrialAccountFilter:
+      type: string
+      description: never — триал не брали; active — идёт сейчас; used — брали и он закончился.
+      enum: [never, active, used]
+
+    SubscriptionChangeKind:
+      type: string
+      description: |
+        Существующее перечисление цикла 7 плюс три новых члена цикла 18. Персистентное и
+        append-only — значения не переставляются.
+      enum:
+        - Legacy
+        - Plan
+        - Options
+        - Payment
+        - CompanyTransferred
+        - Migration
+        - TrialGranted
+        - TrialExpired
+        - TrialMailingWindow
+
+    TrialActivationInput:
+      type: object
+      additionalProperties: false
+      required: [termsVersion]
+      description: |
+        Единственное поле тела активации. Оно НЕ просит условий — оно подтверждает, какую редакцию
+        текста условий клиент показал человеку до нажатия кнопки (условие Т1). Любое значение, кроме
+        текущей версии с сервера, → 409 TrialTermsVersionMismatch.
+      properties:
+        termsVersion:
+          type: string
+          minLength: 1
+          description: Значение activationTerms.version из GET /api/billing/trial.
+
+    TrialTermsAcknowledgementInput:
+      type: object
+      additionalProperties: false
+      required: [termsVersion]
+      properties:
+        termsVersion:
+          type: string
+          minLength: 1
+
+    TrialRefusalDto:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      description: |
+        Единственное намеренное исключение из конвенции «4xx — голая строка»: нужен и код (фронт
+        ветвится), и готовый русский текст (фронт печатает дословно). Текст — финальная
+        формулировка legal-counsel из Services/Billing/TrialLegalNotices.cs; фронт его не сочиняет,
+        не сокращает и не дополняет.
+      properties:
+        code:
+          $ref: "#/components/schemas/TrialRefusalCode"
+        message:
+          type: string
+          description: Готовый русский текст отказа. Печатается дословно.
+
+    TrialWarningDto:
+      type: object
+      additionalProperties: false
+      required: [code, text, affected, dismissible]
+      description: |
+        Расширяет существующий SubscriptionWarningDto цикла 17 двумя полями. affected собирается из
+        РЕАЛЬНЫХ флагов тарифа аккаунта, а не общим списком (N24), и рендерится НЕПОСРЕДСТВЕННО под
+        текстом: тексты юриста ссылаются на него словами «перечисленные ниже», и вынос списка в
+        другое место делает ссылку ложной.
+      properties:
+        code:
+          type: string
+          enum: [TrialExpiring, TrialExpired, TrialMailingEndingSoon, TrialMailingEnded, TrialOverLimit]
+        text:
+          type: string
+        affected:
+          type: array
+          items:
+            type: string
+        dismissible:
+          type: boolean
+          description: |
+            Решает СЕРВЕР, а не фронт. У TrialExpired — всегда false: это единственное сообщение,
+            которое доходит до владельца, не заходившего в кабинет во время триала, и оно обязано не
+            исчезать после первого просмотра (условие Т3, п. 6.16.11 Соглашения). Фронт у такого
+            предупреждения не рисует кнопку «закрыть» и не пишет признак «показано» ни в
+            localStorage, ни в состоянии сессии.
+        visibleUntilUtc:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            До какого момента сервер обязуется отдавать это предупреждение. У TrialExpired — не
+            раньше, чем через 30 календарных дней после состоявшегося перехода. Порог 30 дней —
+            константа кода, а НЕ настройка админки: он несёт правовую нагрузку.
+
+    TrialMailingWindowDto:
+      type: object
+      additionalProperties: false
+      required: [state, text]
+      description: |
+        Окно бесплатных рассылок внутри триала. Дата окончания = min(старт + M дней, конец триала)
+        и фиксируется в момент старта окна; отключение, замена или привязка второго канала её НЕ
+        пересчитывают.
+      properties:
+        state:
+          $ref: "#/components/schemas/TrialMailingWindowState"
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Момент первой авторизации канала аккаунта. null — окно не запущено.
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        daysLeft:
+          type: integer
+          nullable: true
+        text:
+          type: string
+          description: Готовый текст для экрана. Печатается дословно.
+
+    TrialActivationTermsDto:
+      type: object
+      additionalProperties: false
+      required: [version, sha256, text, acknowledgementRequired]
+      description: |
+        Условия пробного периода, которые обязаны быть показаны ДО активации, вместе с версией и
+        хешем редакции (условие Т1). Это не «аудит на всякий случай», а доказательство исполнения
+        обязанности: правомерность схемы «уведомляем только в кабинете» держится на том, что
+        владелец был проинформирован о дате окончания и последствиях.
+        Текст содержит в том числе честную оговорку, что другого канала оповещения у платформы нет
+        (условие Т5) — вычёркивать её или прятать так, чтобы она не была видна до нажатия кнопки,
+        нельзя.
+      properties:
+        version:
+          type: string
+          description: Версия редакции текста, формат yyyy-MM-dd.
+        sha256:
+          type: string
+          description: |
+            Хеш шаблона редакции (lowercase hex). Нужен, чтобы «показали версию X» проверялось, а не
+            утверждалось. Сервер записывает СВОЙ хеш, а не присланный клиентом.
+        text:
+          type: string
+          description: Готовый русский текст с подставленными сроками и датами. Печатается ДОСЛОВНО.
+        acknowledgementRequired:
+          type: boolean
+          description: |
+            true, только если триал уже выдан СУПЕРАДМИНОМ, а владелец условия ещё не подтверждал.
+            Пока true, фронт показывает текст блоком, который нельзя закрыть, и вызывает
+            POST /api/billing/trial/terms-acknowledgement.
+        shownAt:
+          type: string
+          format: date-time
+          nullable: true
+        acknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set-once. Повторное подтверждение это значение НЕ двигает.
+
+    TrialTermsDto:
+      type: object
+      additionalProperties: false
+      required: [version, sha256, isCurrent, template]
+      description: Архивная редакция текста условий (GET /api/admin/trial-terms/{version}).
+      properties:
+        version:
+          type: string
+        sha256:
+          type: string
+        isCurrent:
+          type: boolean
+        promisedWarningThresholdsDays:
+          type: array
+          description: |
+            Пороги предупреждений, которые эта редакция обещает БУКВАЛЬНО в тексте. PUT
+            /api/admin/platform-settings отвергает набор порогов, не совпадающий с этим (400):
+            иначе уже показанный текст стал бы недостоверным для новых выдач.
+          items:
+            type: integer
+        template:
+          type: string
+          description: Редакция с подстановками {0}–{3}, без подставленных значений.
+
+    TrialLimitsDto:
+      type: object
+      additionalProperties: false
+      description: |
+        Лимиты тарифа-триала, как они настроены суперадмином. null = «без ограничения» (технически
+        возможно, но по умолчанию НЕ ставится — Д8: бесплатный тариф с бесконечными лимитами это
+        приглашение завести за две недели сотни публичных карточек компаний).
+      properties:
+        companies:
+          type: integer
+          nullable: true
+        employees:
+          type: integer
+          nullable: true
+        photoQuotaMb:
+          type: integer
+          nullable: true
+
+    TrialStateDto:
+      type: object
+      additionalProperties: false
+      required: [state, message, mailingWindow]
+      description: |
+        Полное состояние пробного периода для ОДНОГО владельца. Всё, что фронт мог бы посчитать
+        сам, посчитано здесь: доступность, остаток дней, состояние окна рассылок, предупреждение,
+        состав возможностей, текст условий и то, можно ли закрыть сообщение.
+      properties:
+        state:
+          $ref: "#/components/schemas/TrialState"
+        refusalCode:
+          allOf:
+            - $ref: "#/components/schemas/TrialRefusalCode"
+          nullable: true
+          description: Заполнен при state = Unavailable и при state = Expired (TrialAlreadyUsed).
+        message:
+          type: string
+          description: |
+            Готовый русский текст: при state = Available это ДОСЛОВНО текст условий, тот же, что в
+            activationTerms.text (один серверный текст, а не два — разойтись им нечем; условие Т5).
+            В остальных состояниях — причина отказа либо состояние действующего триала.
+        activationTerms:
+          allOf:
+            - $ref: "#/components/schemas/TrialActivationTermsDto"
+          nullable: true
+          description: null только тогда, когда триал недоступен и никогда не выдавался.
+        planChangeNotice:
+          type: string
+          nullable: true
+          description: |
+            Текст TrialRemainderForfeitedOnPlanChange: непустой, пока state = Active, и null во всех
+            остальных состояниях. Показывается ДО подтверждения заявки на платный тариф —
+            исполнение п. 6.16.10 Соглашения (требование О9).
+        planId:
+          type: string
+          format: uuid
+          nullable: true
+        planName:
+          type: string
+          nullable: true
+        durationDays:
+          type: integer
+          nullable: true
+          description: Для действующего триала — снапшот на момент выдачи, а не текущая настройка.
+        mailingWindowDays:
+          type: integer
+          nullable: true
+          description: Тоже снапшот у действующего триала.
+        warningThresholdsDays:
+          type: array
+          nullable: true
+          description: |
+            Какие пороги предупреждений обещаны ЭТОМУ владельцу: у Available — текущая настройка, у
+            Active/Expired — СНАПШОТ момента выдачи (решение Д19). Правка порогов в админке уже
+            выданный триал не трогает, иначе текст условий стал бы недостоверным.
+          items:
+            type: integer
+        endsAtPreview:
+          type: string
+          format: date-time
+          nullable: true
+          description: До какой даты триал действовал бы, если активировать сейчас.
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            Обещанная дата окончания, снапшот. Условие Т2: фронт обязан показывать её ПОСТОЯННО — в
+            карточке «Пробный период», у которой нет кнопки «закрыть», а не только в закрываемой
+            плашке-напоминании.
+        daysLeft:
+          type: integer
+          nullable: true
+        grantSource:
+          allOf:
+            - $ref: "#/components/schemas/TrialGrantSource"
+          nullable: true
+        mailingWindow:
+          $ref: "#/components/schemas/TrialMailingWindowDto"
+        warning:
+          allOf:
+            - $ref: "#/components/schemas/TrialWarningDto"
+          nullable: true
+        includes:
+          type: array
+          description: Состав возможностей триала, собранный сервером из флагов тарифа.
+          items:
+            type: string
+        limits:
+          $ref: "#/components/schemas/TrialLimitsDto"
+
+    SubscriptionUsageTrialPatch:
+      type: object
+      additionalProperties: true
+      description: |
+        Существующий SubscriptionUsageDto цикла 7 плюс три поля «над лимитом». Это и есть
+        «деградация = заморозка» на языке владельца: ничего не удалено и не отключено, но добавить
+        новое нельзя, пока аккаунт над лимитом (Д3). Утверждение «ничего не удалено и не отключено»
+        обязано оставаться правдой — оно несёт правовую нагрузку (условие Т4).
+      properties:
+        overLimitCompanies:
+          type: integer
+          description: На сколько компаний аккаунт превышает лимит. 0 — в пределах.
+        overLimitEmployees:
+          type: integer
+        overLimitText:
+          type: string
+          nullable: true
+          description: Готовый текст (TrialOverFreeLimitsNotice). null — аккаунт в пределах лимитов.
+
+    OwnerSubscriptionDtoTrialPatch:
+      type: object
+      additionalProperties: true
+      description: |
+        Существующий OwnerSubscriptionDto цикла 7/17 ПЛЮС поля цикла 18. Описаны только новые —
+        additionalProperties: true честно отражает «форма прежняя плюс вот это». Вторую копию
+        большого DTO здесь заводить нельзя: она разойдётся с настоящей.
+      properties:
+        trial:
+          allOf:
+            - $ref: "#/components/schemas/TrialStateDto"
+          nullable: true
+          description: |
+            null ТОЛЬКО если триала у аккаунта никогда не было и он недоступен. Если триал когда-либо
+            выдавался, объект приходит целиком — иначе сообщение о состоявшемся переходе исчезло бы
+            с экрана раньше 30 дней (условие Т3).
+        usage:
+          $ref: "#/components/schemas/SubscriptionUsageTrialPatch"
+
+    SetSystemTrialInput:
+      type: object
+      additionalProperties: false
+      required: [isSystemTrial]
+      properties:
+        isSystemTrial:
+          type: boolean
+
+    TrialRegrantInput:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      description: |
+        Причина аварийной повторной выдачи. Обязательна и непуста: она и есть механизм доказывания,
+        что повторная выдача была исправлением ошибки платформы, а не индивидуальной уступкой
+        (п. 6.16.6.1 Соглашения).
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    PlanOptionCoverageDto:
+      type: object
+      additionalProperties: false
+      required: [configured, total, text]
+      description: |
+        Сколько опций каталога явно включено в тариф. Существует потому, что отсутствие строки
+        PlanOptionRule = Unavailable (fail-closed), и опция, добавленная в каталог позже, в триал
+        сама не попадёт.
+      properties:
+        configured:
+          type: integer
+        total:
+          type: integer
+        text:
+          type: string
+
+    AdminPlanDtoTrialPatch:
+      type: object
+      additionalProperties: true
+      description: Существующий AdminPlanDto цикла 7 плюс два поля цикла 18.
+      properties:
+        isSystemTrial:
+          type: boolean
+          description: |
+            Ровно одна строка каталога может быть true. Взаимно исключается с isSystemFree.
+            В AdminPlanInput этого поля НЕТ — меняется только PUT /api/admin/plans/{id}/system-trial.
+        optionCoverage:
+          $ref: "#/components/schemas/PlanOptionCoverageDto"
+
+    AdminPlatformSettingsDtoTrialPatch:
+      type: object
+      additionalProperties: true
+      description: |
+        Существующий AdminPlatformSettingsDto плюс три настройки пробного периода. На записи все три
+        NULLABLE: отсутствие/null = «не менять». Правка действует только на НОВЫЕ триалы (Д19).
+      properties:
+        trialDurationDays:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 365
+          description: По умолчанию 14.
+        trialMailingWindowDays:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 365
+          description: По умолчанию 7. Не может превышать trialDurationDays — иначе 400.
+        trialWarningThresholdsDays:
+          type: array
+          nullable: true
+          minItems: 1
+          maxItems: 5
+          description: |
+            По умолчанию [7, 3, 1]. Значения различны, положительны и не превышают длительности.
+            Дополнительно обязаны совпадать с promisedWarningThresholdsDays текущей редакции текста
+            условий — иначе 400: текст называет числа буквально, и разойтись с ним нельзя.
+            Подменять их полем тарифа notifyDaysBefore запрещено — это другая сущность.
+          items:
+            type: integer
+            minimum: 1
+            maximum: 365
+
+    AdminTrialGrantDto:
+      type: object
+      additionalProperties: false
+      required: [grantedAt, endsAt, source, termsVersion]
+      description: |
+        Одна выдача из append-only журнала. Отвечает на вопрос «брал ли, когда, кто выдал, почему
+        повторно и КАКУЮ РЕДАКЦИЮ УСЛОВИЙ ВИДЕЛ ВЛАДЕЛЕЦ» (US-18-14, условие Т1).
+      properties:
+        grantedAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+        source:
+          $ref: "#/components/schemas/TrialGrantSource"
+        grantedByName:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+          description: Непустая только у SuperAdminOverride.
+        termsVersion:
+          type: string
+          description: Версия редакции текста условий, действовавшая на момент выдачи.
+        termsSha256:
+          type: string
+          nullable: true
+          description: |
+            Хеш шаблона показанной редакции. То, чем «версия» перестаёт быть словом: по нему и по
+            GET /api/admin/trial-terms/{version} восстанавливается точный текст, показанный
+            конкретному человеку конкретного числа.
+        termsShownAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: null у выдачи суперадмином до подтверждения владельцем.
+        termsAcknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+        warningThresholdsDays:
+          type: array
+          nullable: true
+          description: Снапшот обещанных порогов на момент выдачи (Д19).
+          items:
+            type: integer
+
+    AdminAccountTrialDto:
+      type: object
+      additionalProperties: false
+      required: [state, grants]
+      description: |
+        Блок «Пробный период» в карточке аккаунта (US-18-14).
+        🔴 Ни номера телефона, ни его производного значения из реестра предоставленных пробных
+        периодов здесь НЕТ и появляться не должно (п. 5.6.7.5 Политики).
+      properties:
+        state:
+          type: string
+          enum: [Never, Active, Expired]
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        daysLeft:
+          type: integer
+          nullable: true
+        durationDays:
+          type: integer
+          nullable: true
+        warningThresholdsDays:
+          type: array
+          nullable: true
+          items:
+            type: integer
+        grantSource:
+          allOf:
+            - $ref: "#/components/schemas/TrialGrantSource"
+          nullable: true
+        grantedByName:
+          type: string
+          nullable: true
+        termsVersion:
+          type: string
+          nullable: true
+        termsShownAt:
+          type: string
+          format: date-time
+          nullable: true
+        termsAcknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+        mailingWindow:
+          allOf:
+            - $ref: "#/components/schemas/TrialMailingWindowDto"
+          nullable: true
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminTrialGrantDto"
+
+    AdminBillingAccountDtoTrialPatch:
+      type: object
+      additionalProperties: true
+      description: Существующая карточка биллинг-аккаунта цикла 7 плюс блок trial.
+      properties:
+        trial:
+          $ref: "#/components/schemas/AdminAccountTrialDto"
+
+    AdminBillingAccountListItemTrialPatch:
+      type: object
+      additionalProperties: true
+      description: Существующий элемент списка аккаунтов плюс два поля цикла 18.
+      properties:
+        trialState:
+          type: string
+          enum: [Never, Active, Expired]
+        trialEndsAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    AccountDeletionPreviewDto:
+      type: object
+      additionalProperties: true
+      description: |
+        Что человек обязан узнать ДО подтверждения удаления учётной записи. Складывается с
+        существующим предупреждением цикла 16 о гостевых сущностях по номеру, а не конкурирует с ним.
+      properties:
+        trialRegistryNotice:
+          type: string
+          nullable: true
+          description: |
+            Текст TrialRegistryNoticeOnAccountDeletion. Непустой ТОЛЬКО у владельца, которому
+            пробный период предоставлялся, иначе null. Говорит прямо: отметка переживёт удаление,
+            хранится 3 года с даты предоставления, сам номер в ней не хранится, новая учётная запись
+            на этот же номер пробного периода не получит.
+
+    PublicPlanDtoTrialPatch:
+      type: object
+      additionalProperties: true
+      description: |
+        Существующий PublicPlanDto цикла 7 плюс isTrial. isFree (это системный бесплатный тариф) и
+        isTrial (это пробный период) — разные оси и одновременно true быть не могут.
+      properties:
+        isTrial:
+          type: boolean
+
+    PublicPricingDtoTrialPatch:
+      type: object
+      additionalProperties: true
+      description: Существующий PublicPricingDto цикла 7; изменена только форма элемента plans.
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicPlanDtoTrialPatch"
