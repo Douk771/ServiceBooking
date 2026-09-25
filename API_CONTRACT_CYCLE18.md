@@ -291,7 +291,7 @@ npm run types:api:cycle18 && git diff --exit-code -- src/types/api-cycle18.gener
 | 2 | `TrialAlreadyActive` | триал уже идёт | `TrialAlreadyActiveNotice` ⚠️ | нет |
 | 3 | `AlreadyOnPaidPlan` | есть действующая платная подписка (Д9) | `TrialRefusedActivePaidSubscription` | нет |
 | 4 | `TrialAlreadyUsed` | триал уже использован; текст называет **дату** (это своё прошлое) | `TrialRefusedAlreadyUsedByAccount` | да |
-| 5 | `PhoneVerificationUnavailable` | подсистема подтверждения номера выключена (R7) | `TrialRefusedPhoneVerificationUnavailable` | да |
+| 5 | `PhoneVerificationUnavailable` | номер владельца не подтверждён, И подсистема подтверждения номера выключена (R7) — если номер уже подтверждён, состояние подсистемы не проверяется вовсе | `TrialRefusedPhoneVerificationUnavailable` | да |
 | 6 | `PhoneNotVerified` | номер владельца не подтверждён; текст ведёт на подтверждение | `TrialRefusedPhoneNotVerified` | да |
 | 7 | `TrialUniquenessCheckUnavailable` | проверка однократности недоступна (нет ключа) — fail-closed | `TrialRefusedUniquenessCheckUnavailable` | **нет** |
 | 8 | `TrialPhoneAlreadyUsed` | номер есть в реестре; текст **без даты, имени и признака существования другого аккаунта** | `TrialRefusedPhoneAlreadyUsed` | да |
