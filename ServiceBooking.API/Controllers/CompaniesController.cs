@@ -931,14 +931,10 @@ public class CompaniesController(
         });
     }
 
-    private async Task<bool> CanManageCompany(Guid companyId)
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId is null) return false;
-        if (User.IsInRole("SuperAdmin")) return true;
-
-        return await CompanyMembership.IsOwnerAsync(db, companyId, userId);
-    }
+    // TD-11 (ARCHITECTURE_CYCLE16.md §254): delegates to the single shared implementation.
+    // superAdminBypass stays true — this controller's existing behavior.
+    private Task<bool> CanManageCompany(Guid companyId) =>
+        CompanyAccess.CanManageCompanyAsync(db, User, companyId);
 
     // SuperAdmin can assign any role; CompanyOwner can assign Master or CompanyOwner only.
     private Task<bool> CanAssignRole(string role)
