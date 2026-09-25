@@ -227,17 +227,27 @@ public class TrialActivationService(
             // number). The latter must answer with §8's phone-privacy refusal — no date, no hint that
             // another account exists — not with "you already used it".
             await transaction.RollbackAsync(ct);
+            // Code-review finding (cycle 18 recheck) — RollbackAsync only undoes the DATABASE transaction;
+            // the change tracker still holds the Added TrialGrant/SubscriptionChangeLog/AccountSubscription
+            // and the Modified account from the failed attempt above. Nothing in THIS method's remaining
+            // code writes again, but leaving them tracked is a live trap for any future write added to the
+            // same request scope (it would silently commit the very grant that was just refused). Clearing
+            // here costs nothing and removes the trap regardless of what callers do later.
+            db.ChangeTracker.Clear();
             // Which index actually tripped: reload this account fresh (its own attempt is rolled back)
             // and ask whether IT now has a trial on record — if so, the account's own "one trial ever"
             // index is what raced (a concurrent activation/regrant of the SAME account), regardless of
             // the phone registry's state.
-            var ownAccountAlreadyGranted = await db.BillingAccounts.AsNoTracking()
-                .Where(a => a.Id == account.Id).Select(a => a.TrialStartedAtUtc).FirstOrDefaultAsync(ct) is not null;
-            if (!ownAccountAlreadyGranted && phoneKeyHash is not null &&
+            var ownAccount = await db.BillingAccounts.AsNoTracking()
+                .Where(a => a.Id == account.Id).Select(a => new { a.TrialStartedAtUtc }).FirstOrDefaultAsync(ct);
+            if (ownAccount?.TrialStartedAtUtc is null && phoneKeyHash is not null &&
                 await db.TrialPhoneRegistrations.AsNoTracking().AnyAsync(r => r.PhoneKeyHash == phoneKeyHash, ct))
                 return Refuse("TrialPhoneAlreadyUsed", TrialLegalNotices.TrialRefusedPhoneAlreadyUsed);
+            // Same honest refusal the sequential path (§4, line ~92) gives — quote the WINNER's real
+            // TrialStartedAtUtc, not "now", so the date in the message is never fabricated.
             return Refuse("TrialAlreadyUsed",
-                string.Format(TrialLegalNotices.TrialRefusedAlreadyUsedByAccount, DateTime.UtcNow.ToString("dd.MM.yyyy")));
+                string.Format(TrialLegalNotices.TrialRefusedAlreadyUsedByAccount,
+                    ownAccount?.TrialStartedAtUtc?.ToString("dd.MM.yyyy") ?? "ранее"));
         }
 
         return new TrialGrantResult(true, null, "Пробный период активирован.");
