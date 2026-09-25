@@ -1,0 +1,102 @@
+{
+  "_doc": "ARCHITECTURE_CYCLE17.md §306.2 / API_CONTRACT_CYCLE17.md §327 — межъязыковой контракт о формах разметки data-legal-*. Источник истины, который читают ОБЕ реализации: сборочный сканер ServiceBooking.LegalKit/RuntimeValueScanner.cs (C#) и подставляльщик frontend/src/utils/legalRuntimeValues.ts (TS).",
+  "_invariant": "Для каждого элемента cases: scannerSees === true  =>  frontSubstitutes === true. Форма, которую сканер видит (и потому считает проверенной), обязана быть подставлена фронтом; иначе юрист получает зелёную сборку и навсегда пустые кавычки на экране — дефект C15-1. Обратное тоже запрещено: фронт не должен подставлять то, чего сканер не видит, иначе перестанут ловиться опечатки в именах величин. Единственное документированное исключение вынесено из cases в unknownNameCase — см. ниже.",
+  "_howToUse": {
+    "ts": "frontend/src/utils/legalRuntimeValues.test.ts — для каждого кейса с frontSubstitutes:true после applyLegalRuntimeValues(html, { companyName: '…' }) в строке нет подстроки 'data-legal-' и есть экранированное значение; для false строка не изменилась.",
+    "csharp": "ServiceBooking.UnitTests/LegalKit/RuntimeValueFormsCorpusTests.cs — тот же файл: RuntimeValueScanner находит имя ровно в тех кейсах, где scannerSees:true. Корень репозитория ищется подъёмом по каталогам до ServiceBooking.sln (приём из CommittedLegalArtifactTests.cs:43-54)."
+  },
+  "_addingCases": "Новую форму разметки, встреченную в legal-drafts/*.html, добавлять СЮДА, а не в один из двух тестов. Кейс, добавленный только с одной стороны, — это и есть расхождение, которое файл призван исключить.",
+  "valueName": "companyName",
+  "cases": [
+    {
+      "id": "canonical",
+      "comment": "Каноническая форма, рекомендованная комментарием ЮРИСТУ: в 05-booking-notice.html",
+      "html": "<span data-legal-value=\"companyName\"></span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "double-space-and-trailing-space",
+      "comment": "Дословный пример из CURRENT_STATE.md §9 C15-1 — сегодня фронт его НЕ подставляет",
+      "html": "<span  data-legal-value=\"companyName\" ></span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "extra-attribute-before",
+      "html": "<span class=\"legal-value\" data-legal-value=\"companyName\"></span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "extra-attribute-after",
+      "html": "<span data-legal-value=\"companyName\" id=\"company\"></span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "newlines-inside-tag",
+      "html": "<span\n  data-legal-value=\"companyName\"\n></span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "spaces-around-equals",
+      "html": "<span data-legal-value = \"companyName\"></span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "whitespace-between-tags",
+      "comment": "«Пустое» содержимое с пробелом внутри — визуально пустой спан",
+      "html": "<span data-legal-value=\"companyName\"> </span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "when-canonical",
+      "html": "<span data-legal-when=\"companyName\">салона «<span data-legal-value=\"companyName\"></span>»</span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "when-extra-attribute",
+      "html": "<span class=\"y\" data-legal-when=\"companyName\">текст</span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "unless-spaced",
+      "html": "<span  data-legal-unless=\"companyName\" >салона</span>",
+      "name": "companyName",
+      "scannerSees": true,
+      "frontSubstitutes": true
+    },
+    {
+      "id": "single-quotes",
+      "comment": "Одинарные кавычки не видит НИ сканер, ни фронт — расхождения нет, форма остаётся неподдержанной сознательно и одинаково с обеих сторон",
+      "html": "<span data-legal-value='companyName'></span>",
+      "name": null,
+      "scannerSees": false,
+      "frontSubstitutes": false
+    }
+  ],
+  "unknownNameCase": {
+    "_why": "Единственное документированное исключение из инварианта, поэтому вынесено из cases: имя вне известного набора сканер ВИДИТ (сборка падает с понятным сообщением — §256.5 цикла 15), а фронт намеренно оставляет разметку нетронутой и не ломается. Молчания здесь нет: ошибку ловит сборка, а не экран.",
+    "id": "unknown-name",
+    "html": "<span data-legal-value=\"companyNmae\"></span>",
+    "name": "companyNmae",
+    "scannerSees": true,
+    "buildMustFail": true,
+    "frontLeavesMarkupIntact": true
+  }
+}

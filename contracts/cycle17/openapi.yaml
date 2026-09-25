@@ -1,0 +1,435 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 17
+# (закрытие техдолга C15: правило отмены визита живёт на сервере, два уведомления по снятому
+#  с продажи тарифу, подстановка правовых величин, сборка перестаёт расходиться с собой).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл и правила — API_CONTRACT_CYCLE17.md (§320–§329),
+# решения — ARCHITECTURE_CYCLE17.md (§300–§318). При расхождении прав ЭТОТ файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle17/openapi.yaml --port 4017
+#             npm run types:api:cycle17   (openapi-typescript -> src/types/api-cycle17.generated.ts)
+#   QA        schemathesis run contracts/cycle17/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npm run types:api:cycle17 && git diff --exit-code src/types/api-cycle17.generated.ts
+#
+# Здесь описаны ТОЛЬКО ручки, которые цикл 17 меняет. Остальной API — в API_DOCUMENTATION.md и
+# контрактах циклов 3, 4, 6, 7, 8, 9, 10, 11, 13, 14, 15.
+# НОВЫХ ЭНДПОИНТОВ ЦИКЛ НЕ ДОБАВЛЯЕТ ВОВСЕ и НИ ОДНОЙ МИГРАЦИИ НЕ СОДЕРЖИТ.
+#
+# У изменённых ответов, где цикл добавляет поле к большому существующему DTO (BookingDto,
+# SubscriptionRequestDto, OwnerSubscriptionDto), схема описывает ТОЛЬКО новые и значимые поля и стоит
+# с additionalProperties: true — это честно отражает «форма прежняя плюс вот это» и не заводит вторую,
+# расходящуюся копию всего DTO.
+
+info:
+  title: ServiceBooking API — цикл 17 (окно отмены на сервере, уведомления по снятому тарифу)
+  version: "12.0.0"
+  description: |
+    Конвенции проекта, действующие без изменений:
+      * camelCase в JSON, enum — строками, DateTime — ISO-8601 UTC;
+      * тела ошибок 400/402/409/410/429/503 — ГОЛАЯ СТРОКА (text/plain), 401/403 — ПУСТОЕ тело,
+        404 — пустое тело там, где существование объекта не подтверждается;
+      * ProblemDetails не используется (кроме автовалидации [ApiController]);
+      * все новые поля ДОБАВОЧНЫЕ — цикл не удаляет и не переименовывает ничего;
+      * null у вычисляемого поля = «сервер не считал это для данного вызывающего», а не «нельзя»;
+      * текст, который видит пользователь, составляет СЕРВЕР; фронт печатает его как есть.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, которые схема закрепляет формой:
+
+    1. ПРАВИЛО ОТМЕНЫ — СЕРВЕРНОЕ И АВТОРИТЕТНОЕ. Клиент-владелец записи не может отменить визит
+       внутри окна компании даже прямым вызовом API. Окно — то же поле Company.clientRescheduleMinHours,
+       что и у переноса (решение заказчика), отдельной настройки НЕТ.
+
+    2. ОТКАЗ ПО ВРЕМЕНИ — ЭТО 409, А НЕ 400. 400 у этой ручки занят валидацией ввода (причина > 300
+       символов). Один код на «неверный ввод» и «поздно» заставил бы фронт разбирать русский текст
+       подстрокой — ровно тот дефект, который цикл закрывает в другом месте (C15-1).
+
+    3. ПЕРСОНАЛ ОКНОМ НЕ ОГРАНИЧЕН. Полномочие вычисляет сервер из базы; тело запроса не получает
+       ни одного нового поля — клиент физически не может попросить послаблений персонала.
+
+    4. ФЛАГ — ПОДСКАЗКА, А НЕ ПРАВО. BookingDto.clientCancelAllowed существует, чтобы не показывать
+       кнопку, которая не сработает. Сервер перепроверяет правило на самом PATCH.
+
+    5. ПРЕДУПРЕЖДЕНИЕ О НЕОБРАТИМОСТИ СНЯТОГО ТАРИФА — ТЕКСТ ОТ ЮРИСТА, СОБРАННЫЙ СЕРВЕРОМ.
+       Фронт печатает строку как есть и не сочиняет собственной формулировки даже временно.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4017
+    description: prism mock
+
+tags:
+  - name: bookings
+    description: Отмена визита клиентом — правило переезжает из вёрстки на сервер
+  - name: billing-owner
+    description: Два уведомления по снятому с продажи тарифу
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/bookings/{id}/cancel:
+    patch:
+      tags: [bookings]
+      operationId: cancelBooking
+      summary: Отмена визита (форма запроса не меняется, добавляется 409)
+      description: |
+        API_CONTRACT_CYCLE17.md §322.
+
+        Полномочие вычисляет сервер из базы, в этом порядке:
+          1) персонал (назначенный мастер, владелец компании, суперадмин) — окно НЕ применяется;
+          2) клиент-владелец записи (booking.clientId == вызывающий) — окно применяется;
+          3) все прочие — 403 с пустым телом (семантика этой ручки НЕ менялась: здесь 403, а не 404,
+             в отличие от PATCH /bookings/{id}/reschedule — осознанная асимметрия, долг C17-2).
+
+        Правило окна для клиента-владельца:
+          minHours      = Company.clientRescheduleMinHours, приведённое к [0..168], иначе 2
+          visitStartUtc = начало визита в часовом поясе компании, приведённое к UTC
+          отказ (409),  если nowUtc > visitStartUtc − minHours часов
+
+        Уже начавшийся или прошедший визит клиент отменить не может (персонал — может, как и раньше).
+        Миграции данных нет: правило вычисляется в момент вызова.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        description: Причина отмены (её увидит салон) либо null. Максимум 300 символов.
+        content:
+          application/json:
+            schema:
+              type: string
+              nullable: true
+              maxLength: 300
+            examples:
+              withReason:
+                value: "Заболел"
+              withoutReason:
+                value: null
+      responses:
+        '204':
+          description: Визит отменён
+        '400':
+          description: Причина длиннее 300 символов (валидация ввода, поведение не менялось)
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Cancellation reason must be 300 characters or fewer."
+        '403':
+          description: Вызывающий не владелец записи и не персонал компании (тело пустое)
+        '404':
+          description: Записи с таким id нет (тело пустое)
+        '409':
+          description: |
+            ЦИКЛ 17, НОВОЕ. Клиент-владелец пытается отменить визит внутри окна компании
+            (включая уже начавшийся или прошедший визит). Статус записи НЕ изменён.
+            Тело — готовая русская строка с подставленным фактическим значением окна;
+            фронт показывает её дословно.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Отменить запись можно не позже чем за 24 ч до визита. Чтобы отменить, свяжитесь с салоном."
+
+  /api/bookings/client:
+    get:
+      tags: [bookings]
+      operationId: getClientBookings
+      summary: Визиты клиента (форма прежняя, цикл 17 добавляет одно вычисляемое поле)
+      description: |
+        API_CONTRACT_CYCLE17.md §323. Единственное место, где считается clientCancelAllowed.
+        Ноль новых запросов к БД: Company уже включена в выборку, окно и время начала визита в UTC
+        уже вычисляются здесь же для clientRescheduleAllowed (цикл 15).
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: upcoming | Pending | Confirmed | Cancelled | Completed | NoShow
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список визитов клиента
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BookingDto'
+        '400':
+          description: Неизвестный фильтр статуса
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Не аутентифицирован (тело пустое)
+
+  /api/billing/subscription/request:
+    post:
+      tags: [billing-owner]
+      operationId: submitSubscriptionRequest
+      summary: Заявка на смену тарифа/опций (ответ получает предупреждение о необратимости)
+      description: |
+        API_CONTRACT_CYCLE17.md §325.1. Запрос не меняется. В ответе появляется необязательное поле
+        irreversibilityNotice — непустое только когда:
+          * у аккаунта есть активная подписка на тариф;
+          * этот текущий тариф снят с продажи (isActive: true, isPublic: false);
+          * заявка просит СМЕНУ тарифа (planId передан и отличается от текущего).
+        Текст пишет legal-counsel (пп. 6.13.15–6.13.16 03-terms-owner.html, П2.8.6 13-payment-terms.html).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionRequestInput'
+      responses:
+        '200':
+          description: Заявка сохранена (повторная отправка ПЕРЕЗАПИСЫВАЕТ предыдущую — поведение цикла 7)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionRequestDto'
+        '400':
+          description: Комментарий длиннее 500 символов, неизвестная опция/тариф, количество < 1
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          description: Не аутентифицирован (тело пустое)
+        '404':
+          description: У вызывающего нет биллинг-аккаунта (тело пустое)
+
+  /api/billing/subscription:
+    get:
+      tags: [billing-owner]
+      operationId: getOwnerSubscription
+      summary: Экран «Ваша подписка» (форма не меняется, меняется текст напоминания)
+      description: |
+        API_CONTRACT_CYCLE17.md §325.2. Форма ответа прежняя. Цикл 17 меняет СОДЕРЖИМОЕ warning.text
+        при warning.kind == "Expiring": если текущий тариф снят с продажи (isPublic: false), к строке
+        добавляется предупреждение о необратимости (формулировка — legal-counsel). При публичном
+        тарифе строка обязана совпадать с сегодняшней ПОСИМВОЛЬНО. Ветка kind == "Expired" не меняется.
+        Поле pendingRequest.irreversibilityNotice — то же, что в §325.1.
+      responses:
+        '200':
+          description: Подписка владельца
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerSubscriptionDto'
+        '401':
+          description: Не аутентифицирован (тело пустое)
+        '404':
+          description: У вызывающего нет биллинг-аккаунта (тело пустое)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    BookingDto:
+      type: object
+      additionalProperties: true
+      description: |
+        Форма прежняя (см. контракты циклов 6/10/15 и API_DOCUMENTATION.md). Здесь перечислены
+        только поля, значимые для цикла 17. Новое в цикле 17 — ровно одно: clientCancelAllowed.
+      required: [id, companyId, date, startTime, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+          example: "14:00:00"
+        status:
+          type: string
+          enum: [Pending, Confirmed, Cancelled, Completed, NoShow]
+        clientRescheduleAllowed:
+          type: boolean
+          nullable: true
+          description: |
+            ЦИКЛ 15, не меняется. Считается только на GET /api/bookings/client.
+            Требует статуса Pending/Confirmed, company.allowSelfBooking, тарифного разрешения
+            онлайн-записи И окна переноса.
+        clientRescheduleMinHours:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 168
+          nullable: true
+          description: |
+            ЦИКЛ 15, не меняется. Окно компании в часах. С цикла 17 это же значение управляет окном
+            ОТМЕНЫ. Фронт обязан читать N отсюда и нигде не хранить своей константы.
+        companyBookingHorizonDays:
+          type: integer
+          format: int32
+          nullable: true
+          description: ЦИКЛ 15, не меняется.
+        clientCancelAllowed:
+          type: boolean
+          nullable: true
+          description: |
+            ЦИКЛ 17, НОВОЕ. Считается ТОЛЬКО на GET /api/bookings/client; на
+            GET /api/bookings/master, GET /api/bookings/{id} и в ответе POST /api/bookings — всегда null
+            («сервер не считал это для данного вызывающего», не «нельзя»).
+
+            true  <=> статус Pending/Confirmed И nowUtc <= visitStartUtc − clientRescheduleMinHours.
+
+            НЕ равно clientRescheduleAllowed: отмена не требует ни company.allowSelfBooking, ни
+            тарифного разрешения онлайн-записи. Подсказка для интерфейса, а не выданное право —
+            сервер перепроверяет правило на PATCH /api/bookings/{id}/cancel.
+
+    SubscriptionRequestInput:
+      type: object
+      additionalProperties: false
+      properties:
+        planId:
+          type: string
+          format: uuid
+          nullable: true
+        options:
+          type: array
+          items:
+            type: object
+            required: [optionId, quantity]
+            properties:
+              optionId:
+                type: string
+                format: uuid
+              quantity:
+                type: integer
+                format: int32
+                minimum: 1
+        comment:
+          type: string
+          nullable: true
+          maxLength: 500
+
+    SubscriptionRequestDto:
+      type: object
+      additionalProperties: true
+      description: |
+        Форма прежняя (контракт цикла 7). Новое в цикле 17 — ровно одно поле: irreversibilityNotice.
+        ⚠️ Это же поле добавляется в contracts/cycle7/openapi.yaml, потому что типы экрана биллинга
+        фронт берёт из types/api-cycle7.generated.ts.
+      required: [id, status, createdAt, estimatedMonthlyPrice, items]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [Pending]
+        createdAt:
+          type: string
+          format: date-time
+        desiredPlanId:
+          type: string
+          format: uuid
+          nullable: true
+        desiredPlanName:
+          type: string
+          nullable: true
+        estimatedMonthlyPrice:
+          type: number
+          format: double
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              optionId:
+                type: string
+                format: uuid
+              name:
+                type: string
+              quantity:
+                type: integer
+                format: int32
+        comment:
+          type: string
+          nullable: true
+        irreversibilityNotice:
+          type: string
+          nullable: true
+          description: |
+            ЦИКЛ 17, НОВОЕ. Готовая строка простого текста БЕЗ разметки, составленная сервером по
+            формулировке legal-counsel. Непусто только при смене СНЯТОГО С ПРОДАЖИ тарифа
+            (isActive: true, isPublic: false) на другой; во всех остальных случаях null.
+            Фронт показывает её и в ответе на отправку заявки, и при последующих открытиях экрана
+            (поле приходит и внутри GET /api/billing/subscription -> pendingRequest).
+
+    SubscriptionWarningDto:
+      type: object
+      additionalProperties: true
+      required: [kind, text, affected]
+      properties:
+        kind:
+          type: string
+          enum: [Expiring, Expired]
+        text:
+          type: string
+          description: |
+            ЦИКЛ 17 меняет СОДЕРЖИМОЕ (не форму) при kind == "Expiring":
+              * тариф публичный  -> строка посимвольно как до цикла:
+                «Подписка истекает через {N} дн. — продлите её, чтобы не потерять возможности тарифа.»
+              * тариф снят с продажи (isPublic: false) -> та же строка ПЛЮС предупреждение
+                «вернуться на этот тариф будет нельзя» (формулировка — legal-counsel, п. 6.8.5).
+            kind == "Expired" не меняется вовсе.
+        affected:
+          type: array
+          items:
+            type: string
+
+    OwnerSubscriptionDto:
+      type: object
+      additionalProperties: true
+      description: |
+        Форма прежняя (контракт цикла 7). Здесь перечислены только поля, значимые для цикла 17.
+      required: [currency, status, statusText]
+      properties:
+        currency:
+          type: string
+          example: RUB
+        status:
+          type: string
+          enum: [Free, Active, Expired]
+        statusText:
+          type: string
+        paidUntil:
+          type: string
+          format: date-time
+          nullable: true
+        expiresInDays:
+          type: integer
+          format: int32
+          nullable: true
+        isExpiringSoon:
+          type: boolean
+          description: Считается по plan.notifyDaysBefore — механизм цикла 7, цикл 17 его не меняет.
+        warning:
+          allOf:
+            - $ref: '#/components/schemas/SubscriptionWarningDto'
+          nullable: true
+        pendingRequest:
+          allOf:
+            - $ref: '#/components/schemas/SubscriptionRequestDto'
+          nullable: true
