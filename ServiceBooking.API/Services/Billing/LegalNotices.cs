@@ -5,11 +5,16 @@ namespace ServiceBooking.API.Services.Billing;
 /// (п. 6.13.15.3 <c>legal-drafts/03-terms-owner.html</c>). Deliberately isolated in ONE file so the
 /// moment real wording lands, exactly this file changes — no controller/service edit needed.
 ///
-/// <b>THIS IS NOT SHIPPABLE COPY.</b> Per §307.1/§317: "Заготовка-заглушка в коде не допускается: пока
-/// текста нет, задача не считается закрытой" — US-17-08/US-17-09 stay OPEN until legal-counsel's actual
-/// wording replaces the two constants below. The values here are intentionally obviously-a-placeholder
-/// (not plausible Russian legal prose) so nobody mistakes a green build for "text is final", and so a
-/// character-for-character diff of the whole file makes the eventual substitution a one-line review.
+/// <b>Wording below is legal-counsel's final text (cycle 17); it is what the owner actually sees.</b>
+/// Do NOT reword, shorten or "fix the style" without legal-counsel: both strings exist to discharge a
+/// contractual duty (п. 6.13.15.3 <c>03-terms-owner.html</c>, п. П2.8.6 <c>13-payment-terms.html</c>),
+/// and a notice that stops saying "вернуться будет нельзя" turns that clause into a trap. Plain text,
+/// no markup, no clause numbers — the front end prints them as-is.
+///
+/// Third obligatory place, dormant today: п. П2.8.6 requires the same warning at the moment the owner
+/// switches OFF auto-renewal on a withdrawn plan. Auto-renewal is not offered yet (п. 6.13.14 — four
+/// preconditions unmet), so there is nothing to hook into; when card auto-renewal ships, that screen
+/// takes its text from this file too (call legal-counsel for it) rather than inventing its own.
 /// </summary>
 internal static class LegalNotices
 {
@@ -17,14 +22,17 @@ internal static class LegalNotices
     /// SubscriptionRequestDto.IrreversibilityNotice, shown on a plan-change request against a
     /// snapshot-off-sale current plan. Single line, no markup (§317 п.1).</summary>
     public const string PendingPlanChangeIrreversibilityNotice =
-        "[ТРЕБУЕТСЯ ТЕКСТ ОТ LEGAL-COUNSEL — US-17-08, ARCHITECTURE_CYCLE17.md §317 п.1: " +
-        "предупреждение о необратимости смены снятого с продажи тарифа]";
+        "Ваш нынешний тариф снят с продажи: пока заявка не исполнена, тариф не меняется, " +
+        "но после перехода на другой тариф вернуться на нынешний будет нельзя — ни сразу, ни позже.";
 
     /// <summary>ARCHITECTURE_CYCLE17.md §307.2, API_CONTRACT_CYCLE17.md §325.2 (US-17-09) — appended to
-    /// the existing "Expiring soon" warning.Text when the current plan is snapshot off sale. Whether
-    /// this AUGMENTS or REPLACES the base sentence is legal-counsel's call (§317 п.2) — appending is
-    /// this scaffold's working assumption, easy to change to a full replacement in BuildWarning.</summary>
+    /// the existing "Expiring soon" warning.Text when the current plan is snapshot off sale.
+    /// legal-counsel's call on §317 п.2: <b>AUGMENT, not replace.</b> The base sentence ("продлите её…")
+    /// is the one true thing the owner must act on and п. 6.13.15.1 keeps renewal on a withdrawn plan
+    /// available — replacing it would read as "renewal is pointless", which is the opposite of the
+    /// contract. Appending also keeps the public-plan string byte-identical, which §307.2 requires.
+    /// Joined with a single space by BuildWarning, so this constant starts with a letter, not a space.</summary>
     public const string SubscriptionExpiringOnWithdrawnPlanSuffix =
-        "[ТРЕБУЕТСЯ ТЕКСТ ОТ LEGAL-COUNSEL — US-17-09, ARCHITECTURE_CYCLE17.md §317 п.2: " +
-        "упоминание «вернуться на этот тариф будет нельзя» в напоминании об окончании периода]";
+        "Ваш тариф снят с продажи: если оплаченный период закончится и подписка перейдёт " +
+        "на бесплатный тариф, вернуться на прежний будет нельзя.";
 }

@@ -218,6 +218,22 @@ export function ClientBookingsPage() {
                             Отменить
                           </Button>
                         )}
+                        {/* Цикл 17, находка legal-counsel: у переноса объяснение выше есть, а у
+                            отмены кнопка просто исчезала — молчание там, где клиент вправе знать,
+                            что делать. Отказ от договора об оказании услуг возможен в любое время
+                            (ст. 32 ЗоЗПП), и закрытая кнопка это право не отменяет: она ограничивает
+                            интерфейс, а не договор. Поэтому текст обязан назвать живой способ
+                            отменить, иначе ограничение читается как запрет. Условия — те же, что у
+                            переноса: `undefined` (старый кеш) ведёт себя как до цикла. */}
+                        {b.clientCancelAllowed === false &&
+                          b.clientRescheduleMinHours != null &&
+                          (b.status === 'Pending' || b.status === 'Confirmed') && (
+                            <p className="text-[12px] text-muted text-right max-w-[160px]">
+                              {b.clientRescheduleMinHours === 0
+                                ? 'Отменить в приложении уже нельзя — свяжитесь с салоном'
+                                : `Отменить в приложении можно не позже чем за ${b.clientRescheduleMinHours} ч до визита — чтобы отменить, свяжитесь с салоном`}
+                            </p>
+                          )}
                         {b.status === 'Completed' && canReviewSet.has(b.id) && (
                           <Button size="sm" variant="secondary" onClick={() => setReviewBooking(b)}>
                             <Icon name="star" size={12} className="text-gold-dark" />
