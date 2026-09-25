@@ -29,11 +29,16 @@ public static class RetentionRuleRunner
         RetentionContext ctx,
         DbContext db,
         CancellationToken ct,
-        Func<T, DateTime>? dateOf = null) where T : class
+        Func<T, DateTime>? dateOf = null,
+        // §343.2 п.2 / §351 п.18 — classifies a row being removed BECAUSE of a key-rotation clause
+        // (true) vs. the rule's ordinary age cutoff (false/null). Optional: rules with no rotation
+        // concept at all simply never pass it, and RotationAffected stays 0.
+        Func<T, bool>? isRotationRemoval = null) where T : class
     {
         var cursor = Guid.Empty;
         var scanned = 0;
         var affected = 0;
+        var rotationAffected = 0;
         DateTime? oldest = null;
 
         while (true)
@@ -52,6 +57,8 @@ public static class RetentionRuleRunner
                     if (oldest is null || date < oldest) oldest = date;
                 }
             }
+            if (isRotationRemoval is not null)
+                rotationAffected += batch.Count(isRotationRemoval);
             foreach (var item in batch) mutate(item);
 
             if (!ctx.DryRun)
@@ -73,9 +80,10 @@ public static class RetentionRuleRunner
             if (batch.Count < ctx.BatchSize) break; // last (partial) page
         }
 
+        var rotationSuffix = isRotationRemoval is not null ? $" rotation={rotationAffected}" : string.Empty;
         var summary = oldest is null
-            ? $"retention[{(ctx.DryRun ? "dry" : "live")}] {ruleName}: scanned={scanned} affected={affected}"
-            : $"retention[{(ctx.DryRun ? "dry" : "live")}] {ruleName}: scanned={scanned} affected={affected} oldest={oldest:yyyy-MM-dd}";
-        return new RetentionOutcome(ruleName, scanned, affected, summary);
+            ? $"retention[{(ctx.DryRun ? "dry" : "live")}] {ruleName}: scanned={scanned} affected={affected}{rotationSuffix}"
+            : $"retention[{(ctx.DryRun ? "dry" : "live")}] {ruleName}: scanned={scanned} affected={affected}{rotationSuffix} oldest={oldest:yyyy-MM-dd}";
+        return new RetentionOutcome(ruleName, scanned, affected, summary) { RotationAffected = rotationAffected };
     }
 }

@@ -44,4 +44,10 @@ public readonly record struct RetentionOutcome(string Name, int Scanned, int Aff
     /// top of the existing positional constructor — every rule's existing call site compiles unchanged
     /// and defaults to <c>false</c> (not skipped), which is exactly the pre-cycle-16 behavior.</summary>
     public bool Skipped { get; init; }
+
+    /// <summary>§343.2 п.2 / §351 п.18 — of <see cref="Affected"/>, how many were removed specifically
+    /// because their key-rotation clause fired (not the ordinary age cutoff), so key rotation stays
+    /// visible in the task summary as its own number rather than being folded silently into the total.
+    /// Zero for every rule that has no rotation clause at all (the default, no call site changes needed).</summary>
+    public int RotationAffected { get; init; }
 }
