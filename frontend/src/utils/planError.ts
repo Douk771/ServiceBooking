@@ -19,12 +19,19 @@ export function getPlanErrorMessage(error: unknown, fallback = 'Не удало�
 
   switch (status) {
     case 409: {
-      // The count is the only variable part of the server text (API_CONTRACT.md §15.2); anchoring on
-      // "active" keeps this from picking up an unrelated number if another 409 ever appears here.
+      // The count is the only variable part of the "active subscribers" 409 (API_CONTRACT.md §15.2);
+      // anchoring on "active" keeps this from picking up an unrelated number.
       const match = serverMsg.match(/(\d+)\s+active/)
-      return match
-        ? `На этом тарифе есть активные подписчики (${match[1]}). Сначала переведите их на другой тариф.`
-        : 'На этом тарифе есть активные подписчики. Сначала переведите их на другой тариф.'
+      if (match)
+        return `На этом тарифе есть активные подписчики (${match[1]}). Сначала переведите их на другой тариф.`
+      // API_CONTRACT_CYCLE15.md §288/§291 п. 5 — this endpoint has more than one 409 now («Системный
+      // бесплатный тариф нельзя убрать с витрины.» and the system-free guards), and reporting every one of
+      // them as «есть активные подписчики» sends the admin looking for subscribers that don't exist.
+      // The server's own sentence is already user-facing Russian text — show it verbatim.
+      return (
+        serverMsg ||
+        'На этом тарифе есть активные подписчики. Сначала переведите их на другой тариф.'
+      )
     }
     case 404:
       // Two distinct 404s exist here — "Owner not found" and "Plan not found" — and telling the admin

@@ -40,7 +40,7 @@ jobs:
       # TestParallelism.cs prints the value it used so the drift is visible in the CI log, not silent.
       SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS: "2"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Optional correlation (ARCHITECTURE_CYCLE8.md §74.1): sets SERVICEBOOKING_TEST_RUN_KEY so this
       # run's database/container names show up tagged with this CI run's id in logs. Not required for
@@ -60,11 +60,11 @@ jobs:
           job_hash="$(printf '%s' "$GITHUB_JOB" | cksum | cut -d' ' -f1)"
           printf 'SERVICEBOOKING_TEST_RUN_KEY=%08x\n' "$(( (GITHUB_RUN_ID ^ job_hash) % 4294967296 ))" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
@@ -110,9 +110,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -170,7 +170,7 @@ jobs:
         # Ветки, с которых вообще деплоят (см. модель веток в DEPLOY.md). deploy/deploy.sh
         # скачивает этот артефакт по имени, так что ветка без него ломает локальный деплой.
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/release-candidate' || github.ref == 'refs/heads/develop'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: frontend-dist-${{ github.sha }}
           path: frontend/dist
@@ -190,7 +190,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build API image
         run: docker build -f ServiceBooking.API/Dockerfile -t servicebooking-api:ci .

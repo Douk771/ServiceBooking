@@ -112,6 +112,16 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // lookup/save DTOs enforce (API_CONTRACT_CYCLE13.md §233/§234). No index: nobody filters or
             // sorts by it (§202's own remarks — Address itself keeps its existing partial indexes).
             e.Property(c => c.AddressVerifiedInputKey).HasMaxLength(300);
+            // ARCHITECTURE_CYCLE15.md §252 — owner-pasted map links, stored byte-for-byte. 500 gives a
+            // 3x margin over the ~150-char real links in 0-bis П2 while still being a boundary the
+            // server rejects at, rather than silently truncating (MapLinkValidation.MaxLength).
+            e.Property(c => c.YandexMapsUrl).HasMaxLength(500);
+            e.Property(c => c.TwoGisUrl).HasMaxLength(500);
+            // §252 — NOT NULL DEFAULT 2 at the DB level: "not set" has no meaning for this rule, it
+            // must apply to every company. ClientRescheduleWindow.Default duplicates the literal (this
+            // project can't reference the API assembly from Infrastructure) — same convention Company.cs
+            // already uses for BookingHorizonDays/TimeZoneId's own literals.
+            e.Property(c => c.ClientRescheduleMinHours).HasDefaultValue(2);
         });
 
         builder.Entity<Service>(e =>

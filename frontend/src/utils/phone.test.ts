@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatPhone, maskPhoneInput, toCanonicalPhone, isRussianPhone, looksRussian } from './phone'
+import { formatPhone, maskPhoneInput, toCanonicalPhone, isRussianPhone, looksRussian, telHref } from './phone'
 
 describe('formatPhone', () => {
   it('formats an 11-digit Russian number starting with 7', () => {
@@ -40,6 +40,31 @@ describe('formatPhone', () => {
 
   it('returns an empty string when the input has no digits at all', () => {
     expect(formatPhone('n/a')).toBe('')
+  })
+})
+
+// ARCHITECTURE_CYCLE15.md §254 — the contacts block's clickable phone link.
+describe('telHref', () => {
+  it('turns a formatted display phone into a bare tel: URI', () => {
+    expect(telHref('+7 (900) 000-00-00')).toBe('tel:+79000000000')
+  })
+
+  it('keeps a canonical digits-only number as-is with a tel: prefix', () => {
+    expect(telHref('79990000000')).toBe('tel:79990000000')
+  })
+
+  it('preserves a leading + when present', () => {
+    expect(telHref('+79990000000')).toBe('tel:+79990000000')
+  })
+
+  it('returns an empty string for empty/null/undefined', () => {
+    expect(telHref('')).toBe('')
+    expect(telHref(null)).toBe('')
+    expect(telHref(undefined)).toBe('')
+  })
+
+  it('returns an empty string when there are no digits at all', () => {
+    expect(telHref('n/a')).toBe('')
   })
 })
 

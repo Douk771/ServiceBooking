@@ -6,7 +6,9 @@ import { AuthedImage } from '../ui/AuthedImage'
 import { PhotoViewerModal } from './PhotoViewerModal'
 
 /** Builds the accessible `alt` text, e.g. "Фото работы, 12 марта, стрижка" (US-18 п. 5). */
-export function photoAlt(note: Pick<ClientNote, 'createdAt' | 'bookingDate' | 'bookingServiceName'>): string {
+// Не экспортируется: используется только разметкой ниже. Экспорт из файла с компонентом лишал
+// его горячей подмены (react-refresh/only-export-components), ничего при этом не давая.
+function photoAlt(note: Pick<ClientNote, 'createdAt' | 'bookingDate' | 'bookingServiceName'>): string {
   const dateSource = note.bookingDate ?? note.createdAt
   let dateLabel = ''
   try {

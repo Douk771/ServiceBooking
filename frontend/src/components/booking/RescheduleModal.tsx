@@ -7,12 +7,34 @@ import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
 import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { getBookingErrorMessage } from '../../utils/bookingError'
+import { getClientRescheduleErrorMessage } from '../../utils/clientRescheduleError'
 import { formatBookingServiceNames } from '../../utils/bookingServices'
 import type { Booking } from '../../types'
 
 interface Props {
   booking: Booking
   onClose: () => void
+  /**
+   * ARCHITECTURE_CYCLE15.md §286 — how many days ahead the date grid offers. Staff (default) keeps
+   * the existing 14-day window; the client-owner path (`ClientBookingsPage`) passes
+   * `booking.companyBookingHorizonDays` so the grid never offers a date the server would 400 on
+   * (§287.2 п. 7).
+   */
+  horizonDays?: number
+  /**
+   * ARCHITECTURE_CYCLE15.md §287.2 п. 8 — the client-owner reschedule rule only ever resolves the
+   * SAME staff grid a client could book into themselves (`ScheduleFallback.None`); "outside working
+   * hours"/"ignore the schedule entirely" is a staff-only escape hatch (`manual`/`extendedHours`
+   * query params), and the endpoint doesn't accept it from a client at all. Hiding the toggle here
+   * keeps the client UI from offering a choice the server will always 409/ignore.
+   */
+  allowManualOverride?: boolean
+  /** Called after a successful PATCH, in addition to the standard `master-bookings` invalidation —
+   *  `ClientBookingsPage` uses this to invalidate `client-bookings` instead. */
+  onRescheduled?: () => void
+  /** True when this modal is the client-owner path (§287.1/§287.2) — selects the error message
+   *  source (server-composed §287.2 text vs. the staff path's fixed copy). */
+  isClientOwner?: boolean
 }
 
 function timeToMinutes(t: string): number {
@@ -20,7 +42,14 @@ function timeToMinutes(t: string): number {
   return h * 60 + m
 }
 
-export function RescheduleModal({ booking, onClose }: Props) {
+export function RescheduleModal({
+  booking,
+  onClose,
+  horizonDays = 14,
+  allowManualOverride = true,
+  onRescheduled,
+  isClientOwner = false,
+}: Props) {
   const qc = useQueryClient()
 
   // US-67: after multi-service visits, every service of the booking counts toward duration —
@@ -40,7 +69,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
   // Today is only offered as a reschedule target if the server still has at least one slot left
   // for it — mirrors `BookingModal`'s "slots today" check, now via the same endpoint.
   const { data: slotsToday = [] } = useQuery({
-    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, todayStr, 'manual', showExtendedHours, booking.id],
+    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, todayStr, !isClientOwner, showExtendedHours, booking.id],
     queryFn: () =>
       bookingsApi.getSlots(
         booking.companyId,
@@ -48,7 +77,9 @@ export function RescheduleModal({ booking, onClose }: Props) {
         booking.serviceId,
         extraServiceIds,
         todayStr,
-        true,
+        // §290 — `manual`/`extendedHours` are a STAFF request the server only honours for staff of
+        // this company; the client interface doesn't send them at all.
+        !isClientOwner,
         showExtendedHours,
         booking.id,
       ),
@@ -58,7 +89,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
 
   const days = [
     ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
-    ...Array.from({ length: 14 }, (_, i) => {
+    ...Array.from({ length: horizonDays }, (_, i) => {
       const d = addDays(now, i + 1)
       return {
         value: format(d, 'yyyy-MM-dd'),
@@ -72,7 +103,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
     isLoading: slotsLoading,
     error: slotsError,
   } = useQuery({
-    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, selectedDate, 'manual', showExtendedHours, booking.id],
+    queryKey: ['slots', booking.companyId, booking.masterId, booking.serviceId, extraServiceIds, selectedDate, !isClientOwner, showExtendedHours, booking.id],
     queryFn: () =>
       bookingsApi.getSlots(
         booking.companyId,
@@ -80,7 +111,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
         booking.serviceId,
         extraServiceIds,
         selectedDate,
-        true,
+        !isClientOwner,
         showExtendedHours,
         booking.id,
       ),
@@ -94,6 +125,7 @@ export function RescheduleModal({ booking, onClose }: Props) {
     mutationFn: () => bookingsApi.reschedule(booking.id, selectedDate, selectedTime),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['master-bookings'] })
+      onRescheduled?.()
       onClose()
     },
   })
@@ -106,8 +138,16 @@ export function RescheduleModal({ booking, onClose }: Props) {
         <div className="p-6 pb-[22px] border-b border-line flex items-center justify-between">
           <div>
             <h2 className="font-serif text-[19px] font-medium text-ink mb-0.5">Перенести запись</h2>
+            {/* API_CONTRACT_CYCLE15.md §291 п. 7 — the client already knows their own name; what they
+                need here is WHOSE visit is being moved (salon · master · service). Staff keeps the
+                client's name, which is the useful identifier on their side. */}
             <p className="text-[13px] text-ink-soft">
-              {booking.clientName} · {formatBookingServiceNames(booking)}
+              {(isClientOwner
+                ? [booking.companyName, booking.masterName, formatBookingServiceNames(booking)]
+                : [booking.clientName, formatBookingServiceNames(booking)]
+              )
+                .filter(Boolean)
+                .join(' · ')}
             </p>
           </div>
           <button onClick={onClose} className="text-muted hover:text-ink shrink-0">
@@ -142,16 +182,18 @@ export function RescheduleModal({ booking, onClose }: Props) {
             <>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[14.5px] font-semibold text-[#4A4038]">Новое время</h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowExtendedHours((v) => !v)
-                    setSelectedTime('')
-                  }}
-                  className="text-[12.5px] font-medium text-gold-dark hover:underline"
-                >
-                  {showExtendedHours ? 'Скрыть остальные часы' : 'Показать остальные часы'}
-                </button>
+                {allowManualOverride && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowExtendedHours((v) => !v)
+                      setSelectedTime('')
+                    }}
+                    className="text-[12.5px] font-medium text-gold-dark hover:underline"
+                  >
+                    {showExtendedHours ? 'Скрыть остальные часы' : 'Показать остальные часы'}
+                  </button>
+                )}
               </div>
               {showExtendedHours && (
                 <p className="text-[12px] text-ink-soft -mt-1.5 mb-3">
@@ -206,7 +248,11 @@ export function RescheduleModal({ booking, onClose }: Props) {
           </Button>
 
           {mutation.isError && (
-            <p className="text-sm text-danger text-center mt-3">Время уже занято. Выберите другое.</p>
+            // §287.2 — client-owner reschedules use the server's own composed text (hour/day limits
+            // vary per company); staff keeps its existing fixed "slot taken" copy.
+            <p className="text-sm text-danger text-center mt-3">
+              {isClientOwner ? getClientRescheduleErrorMessage(mutation.error) : 'Время уже занято. Выберите другое.'}
+            </p>
           )}
         </div>
       </div>

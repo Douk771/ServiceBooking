@@ -20,6 +20,8 @@ public static class DefaultTemplates
             "{Мастер}, новая запись: {Услуга}, {Дата} в {Время}, клиент {КлиентИмя}.",
         NotificationType.StaffBookingCancelled =>
             "{Мастер}, запись {Услуга} {Дата} в {Время} отменена.",
+        NotificationType.StaffBookingRescheduled =>
+            "{Мастер}, запись {Услуга} перенесена клиентом на {НоваяДата} в {НовоеВремя}.",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
     };
 

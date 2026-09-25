@@ -200,25 +200,49 @@ describe('CompanyPage — ARCHITECTURE_CYCLE13.md §204 (logo-over-gallery layer
   })
 })
 
-describe('CompanyMapLinks — ARCHITECTURE_CYCLE13.md §205, wired into the address block', () => {
-  it('shows both map links next to the address when one is set', async () => {
-    getBySlug.mockResolvedValueOnce(makeCompany({ address: 'Ленина, 5', cityName: 'Барнаул' }))
+describe('CompanyMapLinks — ARCHITECTURE_CYCLE15.md §253/§285, wired into the address block', () => {
+  it('shows a map link next to the address when the owner filled it in', async () => {
+    getBySlug.mockResolvedValueOnce(
+      makeCompany({ address: 'Ленина, 5', cityName: 'Барнаул', yandexMapsUrl: 'https://yandex.ru/maps/org/x/1/' }),
+    )
     getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
 
     renderWithProviders(<CompanyPage />)
 
     expect(await screen.findByText('Ленина, 5')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Открыть в Яндекс Картах/ })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Открыть в 2ГИС/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Открыть в 2ГИС/ })).not.toBeInTheDocument()
   })
 
-  it('shows no map links when the company has no address', async () => {
-    getBySlug.mockResolvedValueOnce(makeCompany({ address: undefined }))
+  it('shows no map links when neither link is filled in, even with an address', async () => {
+    getBySlug.mockResolvedValueOnce(makeCompany({ address: 'Ленина, 5', yandexMapsUrl: null, twoGisUrl: null }))
     getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
 
     renderWithProviders(<CompanyPage />)
 
     await screen.findByRole('heading', { name: makeCompany().name })
     expect(screen.queryByRole('link', { name: /Открыть в/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('phone link — ARCHITECTURE_CYCLE15.md §254', () => {
+  it('renders the phone as a clickable tel: link, first in the contacts list', async () => {
+    getBySlug.mockResolvedValueOnce(makeCompany({ phone: '79991234567', address: 'Ленина, 5' }))
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+
+    const phoneLink = await screen.findByRole('link', { name: /Позвонить \+7/ })
+    expect(phoneLink).toHaveAttribute('href', 'tel:79991234567')
+  })
+
+  it('renders no phone row when the company has none', async () => {
+    getBySlug.mockResolvedValueOnce(makeCompany({ phone: undefined }))
+    getForCompany.mockResolvedValueOnce({ items: [], page: 1, pageSize: 20, total: 0, hasNext: false })
+
+    renderWithProviders(<CompanyPage />)
+
+    await screen.findByRole('heading', { name: makeCompany().name })
+    expect(screen.queryByRole('link', { name: /Позвонить/ })).not.toBeInTheDocument()
   })
 })

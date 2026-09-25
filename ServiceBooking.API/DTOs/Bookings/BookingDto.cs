@@ -56,7 +56,16 @@ public record BookingDto(
     // SuperAdmin — computed in one grouping query per page/call, never N+1 (ReminderStatusesForAsync's
     // pattern). Always null on GET /api/bookings/client and the Create response: not filtered on the
     // frontend, simply never computed there (П8). null means "server didn't count", not "zero events".
-    int? HistoryEventCount = null
+    int? HistoryEventCount = null,
+    // ARCHITECTURE_CYCLE15.md §257.8/§286, API_CONTRACT_CYCLE15.md §286 — computed ONLY on
+    // GET /api/bookings/client; null everywhere else ("server didn't compute this for this caller", the
+    // project-wide convention, not "not allowed"). ClientRescheduleAllowed mirrors the exact rule set
+    // PATCH .../reschedule applies for a ClientOwner caller (status, AllowSelfBooking, plan online-
+    // booking gate, reschedule window) — a hint for the UI, re-checked by the server on the PATCH
+    // itself, never trusted as a standing permission.
+    bool? ClientRescheduleAllowed = null,
+    int? ClientRescheduleMinHours = null,
+    int? CompanyBookingHorizonDays = null
 );
 
 // US-67 (API_CONTRACT_CYCLE6.md §43.2): one line per service in the visit, in visit order.

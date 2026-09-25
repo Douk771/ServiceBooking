@@ -797,6 +797,23 @@ builder.Services.AddRateLimiter(o =>
     // phone-verify-webhook: MAX's own webhook — same shape as notifications-webhook above (600/min per IP).
     o.AddPolicy("phone-verify-webhook", ctx => IpWindowPolicy(ctx, "phone-verify-webhook", defaultPermitLimit: 600, defaultWindowMinutes: 1));
 
+    // booking-reschedule: PATCH /api/bookings/{id}/reschedule — 30/час на пользователя
+    // (ARCHITECTURE_CYCLE15.md §257.7). Without it a caller with no authority learns nothing more from
+    // repeating the request (404 either way), but the 404 itself is cheap enough that unbounded retries
+    // are free — this caps the id-guessing budget the same way phone-change caps OTP-guessing.
+    // Applies to BOTH branches: staff moving their own bookings is human-paced too, 30/hour is ample.
+    o.AddPolicy("booking-reschedule", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:booking-reschedule:PermitLimit", 30),
+            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:booking-reschedule:WindowMinutes", 60)),
+            QueueLimit = 0
+        });
+    });
+
     // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
     // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
     // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -819,6 +836,7 @@ builder.Services.AddRateLimiter(o =>
             "phone-verify-start" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyStartAttempts,
             "phone-change" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyChangePhoneAttempts,
             "phone-verify-webhook" => "Too many requests.",
+            "booking-reschedule" => "Слишком много попыток переноса записи. Повторите позже.",
             _ => "Too many uploads. Try again in a minute."
         };
         // WriteAsync alone never sets Content-Type (unlike controller-level BadRequest(string)/Conflict(string),

@@ -163,6 +163,7 @@ public class DefaultTemplatesTests
     [InlineData(NotificationType.BookingRescheduled)]
     [InlineData(NotificationType.StaffBookingCreated)]
     [InlineData(NotificationType.StaffBookingCancelled)]
+    [InlineData(NotificationType.StaffBookingRescheduled)]
     public void For_EveryType_ReturnsNonEmptyValidTemplate(NotificationType type)
     {
         var body = DefaultTemplates.For(type);

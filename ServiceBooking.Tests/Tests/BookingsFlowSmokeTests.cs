@@ -839,13 +839,18 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
     // companyId/masterId pair match) that close the 403-vs-400 oracle.
 
     [Fact, TestCase("BK-068")]
-    public async Task GetSlots_ExcludeBookingId_ByUnrelatedCaller_ReturnsForbidden_EvenWithWrongCompanyAndMaster()
+    public async Task GetSlots_ExcludeBookingId_ByUnrelatedCaller_ReturnsNotFound_EvenWithWrongCompanyAndMaster()
     {
         // The oracle this closes: if the pair-match ran before CanManage, a caller without any right to
         // manage the booking could distinguish "this booking belongs to company X / master Y" (400) from
-        // "it doesn't" (403) by observing which status they get back, while holding nothing but a public
-        // booking id. Passing deliberately WRONG companyId/masterId here and still getting 403 (not 400)
-        // proves CanManage is evaluated first, regardless of what the caller supplies.
+        // "it doesn't" by observing which status they get back, while holding nothing but a public
+        // booking id. Passing deliberately WRONG companyId/masterId here and still getting the
+        // permission answer (not 400) proves CanManage is evaluated first, regardless of what the
+        // caller supplies.
+        //
+        // Cycle 15 (ARCHITECTURE_CYCLE15.md §257.5, §290) changed that answer from 403 to 404 with an
+        // EMPTY body, deliberately: 403 still told a stranger the booking EXISTS. BK-069 covers the
+        // unknown-id case and now returns the same empty 404, so the two are indistinguishable.
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var master = await AddMasterAsync(owner.Token, company.Id);
         var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 60);
@@ -862,7 +867,8 @@ public class BookingsFlowSmokeTests(TestDatabaseFixture fixture) : ApiTestBase(f
             $"/api/bookings/slots?companyId={Guid.NewGuid()}&masterId=some-other-master&serviceId={service.Id}" +
             $"&date={date:yyyy-MM-dd}&excludeBookingId={booking!.Id}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
     }
 
     [Fact, TestCase("BK-069")]
