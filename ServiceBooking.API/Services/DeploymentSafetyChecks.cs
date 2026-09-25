@@ -687,8 +687,29 @@ public static class DeploymentSafetyChecks
             throw new InvalidOperationException(
                 "Trial:UniquenessCheck:Enabled is true but Trial:PhoneKeyHmac/Trial:PhoneKeyId is missing, " +
                 "not valid base64, or too short. With the check enabled and no usable key, EVERY trial " +
-                "activation will 409 TrialUniquenessCheckUnavailable. Set TRIAL_PHONE_KEY_HMAC and " +
-                "TRIAL_PHONE_KEY_ID in .env (openssl rand -base64 32 for the key).");
+                "activation will 409 TrialUniquenessCheckUnavailable. Set TRIAL_PHONEKEY_HMAC and " +
+                "TRIAL_PHONEKEY_ID in .env (openssl rand -base64 32 for the key).");
+
+        // К2 (ARCHITECTURE_CYCLE18.md §343.1) — mechanical check that Trial:PhoneKeyHmac is not the SAME
+        // key as PhoneVerification:ExternalKeyHmac or Notifications:EncryptionKey. Sharing a key across
+        // subsystems built for incompatible processing purposes would make the trial registry and the
+        // external-account registry linkable (ч. 5 ст. 5 152-ФЗ) — must be made mechanically impossible,
+        // not just documented in .env.production.example.
+        var externalKeyHmac = configuration[$"{PhoneVerificationOptions.SectionName}:ExternalKeyHmac"];
+        if (TrialPhoneKey.KeysCollide(phoneKeyHmac, externalKeyHmac))
+            throw new InvalidOperationException(
+                "Trial:PhoneKeyHmac is identical to PhoneVerification:ExternalKeyHmac. К2 (ARCHITECTURE_CYCLE18.md " +
+                "§343.1) requires these to be distinct keys — sharing one key across both subsystems makes the " +
+                "trial phone registry and the external-account registry linkable. Generate a separate key for " +
+                "TRIAL_PHONEKEY_HMAC (openssl rand -base64 32).");
+
+        var notificationsEncryptionKey = configuration["Notifications:EncryptionKey"];
+        if (TrialPhoneKey.KeysCollide(phoneKeyHmac, notificationsEncryptionKey))
+            throw new InvalidOperationException(
+                "Trial:PhoneKeyHmac is identical to Notifications:EncryptionKey. К2 (ARCHITECTURE_CYCLE18.md " +
+                "§343.1) requires these to be distinct keys — sharing one key across both subsystems makes the " +
+                "trial phone registry and the notifications registry linkable. Generate a separate key for " +
+                "TRIAL_PHONEKEY_HMAC (openssl rand -base64 32).");
     }
 
     /// <summary>ARCHITECTURE_CYCLE14.md §144.2 (Q2) — mirrors <see cref="ValidateTransportRegistryCompleteness"/>

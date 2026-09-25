@@ -1352,4 +1352,102 @@ public class DeploymentSafetyChecksTests
         var act = () => DeploymentSafetyChecks.ValidateVerificationMethodRegistry([]);
         act.Should().Throw<InvalidOperationException>().WithMessage("*MaxBot*");
     }
+
+    // ── ValidateTrialSecrets (ARCHITECTURE_CYCLE18.md §343.1) ───────────────────────────────────────
+
+    private static Dictionary<string, string?> ValidTrialSecrets() => new()
+    {
+        ["Trial:UniquenessCheck:Enabled"] = "true",
+        ["Trial:PhoneKeyHmac"] = Convert.ToBase64String(new byte[32]),
+        ["Trial:PhoneKeyId"] = "2026-09",
+    };
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Testing")]
+    public void ValidateTrialSecrets_DeveloperEnvironment_DoesNotThrow(string environmentName)
+    {
+        var config = BuildConfig(new Dictionary<string, string?>());
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(config, environmentName);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateTrialSecrets_Production_ValidConfig_DoesNotThrow()
+    {
+        var config = BuildConfig(ValidTrialSecrets());
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(config, "Production");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateTrialSecrets_Production_UniquenessCheckDisabled_Throws()
+    {
+        var values = ValidTrialSecrets();
+        values["Trial:UniquenessCheck:Enabled"] = "false";
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*UniquenessCheck*");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-base64!!!")]
+    public void ValidateTrialSecrets_Production_InvalidPhoneKeyHmac_Throws(string? phoneKeyHmac)
+    {
+        var values = ValidTrialSecrets();
+        values["Trial:PhoneKeyHmac"] = phoneKeyHmac;
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PhoneKeyHmac*");
+    }
+
+    [Fact]
+    public void ValidateTrialSecrets_Production_PhoneKeyHmacTooShort_Throws()
+    {
+        var values = ValidTrialSecrets();
+        values["Trial:PhoneKeyHmac"] = Convert.ToBase64String(new byte[16]); // 16, not 32 bytes
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PhoneKeyHmac*");
+    }
+
+    [Fact]
+    public void ValidateTrialSecrets_Production_MissingPhoneKeyId_Throws()
+    {
+        var values = ValidTrialSecrets();
+        values["Trial:PhoneKeyId"] = null;
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PhoneKeyId*");
+    }
+
+    [Fact]
+    public void ValidateTrialSecrets_Production_SameKeyAsPhoneVerificationExternalKey_Throws()
+    {
+        var sharedKey = Convert.ToBase64String(new byte[32]);
+        var values = ValidTrialSecrets();
+        values["Trial:PhoneKeyHmac"] = sharedKey;
+        values["PhoneVerification:ExternalKeyHmac"] = sharedKey;
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ExternalKeyHmac*");
+    }
+
+    [Fact]
+    public void ValidateTrialSecrets_Production_SameKeyAsNotificationsEncryptionKey_Throws()
+    {
+        var sharedKey = Convert.ToBase64String(Enumerable.Repeat((byte)7, 32).ToArray());
+        var values = ValidTrialSecrets();
+        values["Trial:PhoneKeyHmac"] = sharedKey;
+        values["Notifications:EncryptionKey"] = sharedKey;
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Notifications:EncryptionKey*");
+    }
+
+    [Fact]
+    public void ValidateTrialSecrets_Production_DifferentExternalKey_DoesNotThrow()
+    {
+        var values = ValidTrialSecrets();
+        values["PhoneVerification:ExternalKeyHmac"] = Convert.ToBase64String(Enumerable.Repeat((byte)9, 32).ToArray());
+        values["Notifications:EncryptionKey"] = Convert.ToBase64String(Enumerable.Repeat((byte)5, 32).ToArray());
+        var act = () => DeploymentSafetyChecks.ValidateTrialSecrets(BuildConfig(values), "Production");
+        act.Should().NotThrow();
+    }
 }
