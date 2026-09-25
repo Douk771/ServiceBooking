@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.PhoneVerification;
+using ServiceBooking.API.Services.Signals;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -33,7 +34,8 @@ public sealed record TrialGrantResult(bool Granted, string? RefusalCode, string?
 /// </summary>
 public class TrialActivationService(
     AppDbContext db, PlatformSettings platformSettings, IOptions<TrialOptions> trialOptions,
-    IPhoneVerificationMethodRegistry phoneVerificationRegistry)
+    IPhoneVerificationMethodRegistry phoneVerificationRegistry,
+    IGlitchTipSignalService signals, ILogger<TrialActivationService> logger)
 {
     public async Task<TrialGrantResult> GrantAsync(TrialGrantRequest request, CancellationToken ct = default)
     {
@@ -166,6 +168,17 @@ public class TrialActivationService(
         account.TrialExpiredHandledAtUtc = null;
         account.TrialWarnedAtThresholdDays = null;
         account.TrialMailingClosureLoggedAtUtc = null;
+        // Б3 (customer decision, cycle 18 3rd pass) — every GrantAsync call is a fresh grant of the
+        // trial itself, not a "channel reconnected inside the same trial" event (that's Д5's territory,
+        // enforced separately by TrialMailingWindowStarter's own guard). Reset the mailing-window
+        // columns here so a re-grant (ordinary or SuperAdminOverride) always gets a clean window that
+        // opens on the FIRST authorization of this new trial, exactly like a first-time grant. Without
+        // this, a re-grant after an earlier trial's window already closed leaves
+        // TrialChannelFirstAuthorizedAtUtc non-null forever (StartIfDueAsync's guard at
+        // TrialMailingWindowStarter.cs:43 then never opens a window again) while the owner is shown the
+        // terms text promising mailings that can now never start.
+        account.TrialChannelFirstAuthorizedAtUtc = null;
+        account.TrialMailingWindowEndsAtUtc = null;
 
         var termsHash = TrialTermsRegistry.Sha256Of(TrialTermsRegistry.CurrentVersion) ?? string.Empty;
         db.TrialGrants.Add(new TrialGrant
@@ -272,6 +285,21 @@ public class TrialActivationService(
                     existingOption.ActivatedAtUtc = now;
                     existingOption.ActivatedByUserId = request.ActorUserId;
                 }
+            }
+            else
+            {
+                // Н2 (code review, cycle 18 3rd pass) — no PlanOptionRule for notifications.whatsapp on
+                // the trial plan, or an Extra one: fail-closed per §333.3/§0.2 п.4, no row created, so the
+                // owner gets a "mailings included" terms text and a mailing-window countdown while every
+                // mailing attempt silently hits NotOnPaidPlan in NotificationGate. That misconfiguration
+                // must be visible to an operator, not just consistent with the contract on paper.
+                logger.LogError(
+                    "trial-lifecycle: trial plan {PlanId} has no Included PlanOptionRule for {OptionCode} " +
+                    "— account {AccountId} granted a trial with no paid notification numbers materialized",
+                    plan.Id, SubscriptionResolver.WhatsAppOptionCode, account.Id);
+                await signals.SendAsync(
+                    $"Пробный тариф {plan.Id} не даёт правило Included на {SubscriptionResolver.WhatsAppOptionCode} " +
+                    $"— у аккаунта {account.Id} рассылки не будут работать несмотря на активный триал.", ct);
             }
         }
 
