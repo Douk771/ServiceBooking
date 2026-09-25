@@ -45,7 +45,15 @@ public class TrialStateReader(
     {
         var now = DateTime.UtcNow;
         var plan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.IsSystemTrial, ct);
-        var subUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
+        // Б... (code review, cycle 18 4th pass) — gates off the SAME source Н8 already made
+        // EndsAt/DaysLeft/PlanChangeNotice/activationTerms track: account.TrialEndsAtUtc, falling back to
+        // sub.PaidUntil only when there is no trial-specific date at all (a genuinely paid, non-trial
+        // subscription). Before this, the gate alone still used sub.PaidUntil directly — if an admin
+        // moved PaidUntil into the past without touching TrialEndsAtUtc, this gate would flip the card to
+        // "Expired" while the account is still, in every other field and in TrialLifecycleTask's own
+        // eyes, on the trial plan and not yet due to expire.
+        var effectiveTrialEnd = account.TrialEndsAtUtc ?? sub?.PaidUntil;
+        var subUsable = sub is not null && sub.IsActive && (!effectiveTrialEnd.HasValue || effectiveTrialEnd >= now);
         var onTrialNow = subUsable && plan is not null && sub!.PlanConfigId == plan.Id;
         var everHadTrial = account.TrialStartedAtUtc is not null;
 
@@ -89,7 +97,7 @@ public class TrialStateReader(
                 EndsAt: trialEndsAt,
                 DaysLeft: Math.Max(daysLeft, 0),
                 GrantSource: account.TrialGrantSource?.ToString(),
-                MailingWindow: BuildMailingWindow(account, sub!, now),
+                MailingWindow: BuildMailingWindow(account, trialEndsAt, now),
                 Warning: BuildActiveWarning(account, includes, daysLeft),
                 Includes: includes,
                 Limits: limits);
@@ -262,26 +270,32 @@ public class TrialStateReader(
             Text: string.Format(TrialLegalNotices.TrialMailingWindowClosed, end?.ToString("dd.MM.yyyy"), account.TrialEndsAtUtc?.ToString("dd.MM.yyyy")));
     }
 
-    private static TrialMailingWindowDto BuildMailingWindow(BillingAccount account, AccountSubscription sub, DateTime now)
+    /// <summary>Б... (code review, cycle 18 4th pass) — <paramref name="trialEndsAt"/> is the SAME
+    /// account.TrialEndsAtUtc-with-fallback value Н8 already computes once in <see cref="BuildAsync"/>
+    /// for EndsAt/DaysLeft/PlanChangeNotice/activationTerms, threaded through here instead of this method
+    /// separately reading sub.PaidUntil. Before this fix, the three texts below (§362 "trial end date")
+    /// could quote a DIFFERENT date than the rest of the very same response when an admin moved PaidUntil
+    /// without touching TrialEndsAtUtc — exactly the divergence Н8 was meant to close everywhere.</summary>
+    private static TrialMailingWindowDto BuildMailingWindow(BillingAccount account, DateTime trialEndsAt, DateTime now)
     {
         if (account.TrialChannelFirstAuthorizedAtUtc is null)
         {
             return new TrialMailingWindowDto("NotStarted", null, null,
                 DaysLeft: null,
-                Text: string.Format(TrialLegalNotices.TrialMailingWindowNotStarted, account.TrialMailingWindowDays, sub.PaidUntil?.ToString("dd.MM.yyyy")));
+                Text: string.Format(TrialLegalNotices.TrialMailingWindowNotStarted, account.TrialMailingWindowDays, trialEndsAt.ToString("dd.MM.yyyy")));
         }
 
         var end = account.TrialMailingWindowEndsAtUtc;
         if (end is null || end <= now)
         {
             return new TrialMailingWindowDto("Ended", account.TrialChannelFirstAuthorizedAtUtc, end, DaysLeft: 0,
-                Text: string.Format(TrialLegalNotices.TrialMailingWindowClosed, end?.ToString("dd.MM.yyyy"), sub.PaidUntil?.ToString("dd.MM.yyyy")));
+                Text: string.Format(TrialLegalNotices.TrialMailingWindowClosed, end?.ToString("dd.MM.yyyy"), trialEndsAt.ToString("dd.MM.yyyy")));
         }
 
         var daysLeft = (int)Math.Ceiling((end.Value - now).TotalDays);
         var state = daysLeft <= 3 ? "EndingSoon" : "Running";
         var text = daysLeft <= 3
-            ? string.Format(TrialLegalNotices.TrialMailingWindowEndingSoon, end.Value.ToString("dd.MM.yyyy"), sub.PaidUntil?.ToString("dd.MM.yyyy"))
+            ? string.Format(TrialLegalNotices.TrialMailingWindowEndingSoon, end.Value.ToString("dd.MM.yyyy"), trialEndsAt.ToString("dd.MM.yyyy"))
             : $"Рассылки клиентам работают до {end.Value:dd.MM.yyyy}.";
         return new TrialMailingWindowDto(state, account.TrialChannelFirstAuthorizedAtUtc, end, daysLeft, text);
     }
