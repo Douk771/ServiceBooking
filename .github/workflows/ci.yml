@@ -337,6 +337,8 @@ jobs:
             -e SuperAdmin__Password="Ci$(openssl rand -hex 8)Aa1" \
             -e Storage__PrivateRoot=/app/private-uploads \
             -e ForwardedHeaders__TrustedNetworks__0=172.16.0.0/12 \
+            -e Trial__PhoneKeyHmac="$(openssl rand -base64 32)" \
+            -e Trial__PhoneKeyId=ci-smoke \
             servicebooking-api:ci
 
       - name: Smoke test (health, register, avatar upload — exercises SkiaSharp for real)
