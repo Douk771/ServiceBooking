@@ -69,14 +69,20 @@ public class BookingFiltersTests
         filter.Status.Should().Be(BookingStatus.Cancelled);
     }
 
-    [Fact]
-    public void TryParseClientStatus_NumericEnumValue_ReturnsByStatus()
+    [Theory]
+    [InlineData("3")]
+    [InlineData("0")]
+    [InlineData("99")]
+    [InlineData("-1")]
+    public void TryParseClientStatus_NumericValue_ReturnsFalse(string value)
     {
-        var ok = BookingFilters.TryParseClientStatus("3", out var filter);
+        // Regression test (contracts/cycle17/openapi.yaml): `status` is documented as an enum of exact
+        // names only. Enum.TryParse<T>(string, ...) has a well-known gotcha where it accepts ANY integer
+        // literal as a "valid" enum value, even undefined ordinals (e.g. 99, -1) — which previously
+        // slipped past this check and produced a 200 with an empty result instead of the documented 400.
+        var ok = BookingFilters.TryParseClientStatus(value, out _);
 
-        ok.Should().BeTrue();
-        filter.Kind.Should().Be(ClientStatusFilterKind.ByStatus);
-        filter.Status.Should().Be((BookingStatus)3);
+        ok.Should().BeFalse();
     }
 
     [Fact]
