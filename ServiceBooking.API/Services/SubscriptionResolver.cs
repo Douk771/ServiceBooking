@@ -119,7 +119,18 @@ public class SubscriptionResolver(AppDbContext db)
                 AccountMaxCompanies = plan.AccountMaxCompanies is { } maxC ? maxC + extraCompanies : null,
             };
 
-        return paidNotificationNumbers <= 0 ? plan : plan with { PaidNotificationNumbers = paidNotificationNumbers };
+        plan = paidNotificationNumbers <= 0 ? plan : plan with { PaidNotificationNumbers = paidNotificationNumbers };
+
+        // Cycle 18 (ARCHITECTURE_CYCLE18.md §333.2). Mailing capabilities of a subscription may have
+        // their OWN, shorter deadline — exactly like a purchased option (N12: "an option can't outlive
+        // the subscription"). This rule is general for any plan; the trial is its first consumer, but
+        // the resolver knows nothing about trials (R8 SPEC) — grep -n "IsSystemTrial" against this file
+        // must stay empty.
+        var mailingUsable = usable && (sub!.MailingUntilUtc is null || sub.MailingUntilUtc >= nowUtc);
+        if (!mailingUsable)
+            plan = plan with { AllowMailing = false, AllowNotificationChannel = false };
+
+        return plan;
     }
 
     /// <summary>Resolves the effective plan for a company by looking up its billing account.</summary>

@@ -20,6 +20,14 @@ public sealed class PlatformSettings(AppDbContext db, IMemoryCache cache)
     // widened to 2000 chars specifically because this list didn't fit in the old 200 (§44.7).
     public const string AdMarkersKey = "notifications.template.ad-markers";
 
+    // Cycle 18 (ARCHITECTURE_CYCLE18.md §339.1). Act ONLY on new trials — an already-granted trial
+    // reads its own snapshot (BillingAccount.Trial*/TrialGrant), never these live values (Д19).
+    public const string TrialDurationDaysKey = "trial.duration-days";
+    public const string TrialMailingWindowDaysKey = "trial.mailing-window-days";
+    public const string TrialWarningThresholdsDaysKey = "trial.warning-thresholds-days";
+    public const int DefaultTrialDurationDays = 14;
+    public const int DefaultTrialMailingWindowDays = 7;
+
     /// <summary>US-62 p.6, §30.3 default — used whenever the key is absent, which is the ordinary case
     /// (the key exists only once a superadmin has ever changed it away from the default).</summary>
     public const int DefaultChannelIdleDays = 3;
@@ -81,4 +89,31 @@ public sealed class PlatformSettings(AppDbContext db, IMemoryCache cache)
     /// (from the API response, which reads straight from the DB write) that the read side hadn't caught
     /// up yet. Called once per changed key, right after <see cref="PlatformSettingsWriter.WriteAsync"/>.</summary>
     public void InvalidateCache(string key) => cache.Remove($"platform-setting:{key}");
+
+    /// <summary>Cycle 18 (§339.1). A corrupt/missing duration is treated as a hard refusal
+    /// (<c>TrialNotOffered</c>) by the caller, NOT silently defaulted — an activation must never grant
+    /// an unclear number of days. Returns null on a missing/invalid value so the caller can tell the
+    /// two cases apart from a merely-absent-but-fine default.</summary>
+    public async Task<int?> GetTrialDurationDaysAsync(CancellationToken ct = default)
+    {
+        var raw = await GetRawAsync(TrialDurationDaysKey, ct);
+        if (raw is null) return DefaultTrialDurationDays;
+        return int.TryParse(raw, out var days) && days is >= 1 and <= 365 ? days : null;
+    }
+
+    public async Task<int?> GetTrialMailingWindowDaysAsync(CancellationToken ct = default)
+    {
+        var raw = await GetRawAsync(TrialMailingWindowDaysKey, ct);
+        if (raw is null) return DefaultTrialMailingWindowDays;
+        return int.TryParse(raw, out var days) && days is >= 1 and <= 365 ? days : null;
+    }
+
+    /// <summary>Degrades to <see cref="ServiceBooking.API.Services.Billing.TrialWindow.DefaultWarningThresholds"/>
+    /// on a corrupt value — a display-only degradation (§339.1: "для thresholds — деградация показа"),
+    /// unlike the duration/window getters above which fail closed.</summary>
+    public async Task<IReadOnlyList<int>> GetTrialWarningThresholdsDaysAsync(CancellationToken ct = default)
+    {
+        var raw = await GetRawAsync(TrialWarningThresholdsDaysKey, ct);
+        return ServiceBooking.API.Services.Billing.TrialWindow.ParseThresholds(raw);
+    }
 }

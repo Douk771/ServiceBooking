@@ -129,7 +129,10 @@ public class OwnerSubscriptionService(
         _ => paidUntil.HasValue ? $"Оплачено до {paidUntil:dd.MM.yyyy}" : "Активна",
     };
 
-    private static List<string> BuildPlanIncludes(EffectivePlan plan)
+    /// <summary>Internal, not private: cycle 18's TrialStateReader reuses this exact rendering for
+    /// TrialStateDto.includes (§362) so the trial preview's feature list can never drift from the
+    /// wording the owner sees on the subscribed-plan screen.</summary>
+    internal static List<string> BuildPlanIncludes(EffectivePlan plan)
     {
         var list = new List<string>();
         if (plan.AllowOnlineBooking) list.Add("Онлайн-запись");

@@ -308,6 +308,11 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Billing.AccountUsageReade
 builder.Services.AddScoped<ServiceBooking.API.Services.Billing.CompanyOwnerWriter>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Billing.CompanyTransferService>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Billing.OwnerSubscriptionService>();
+// Cycle 18 (ARCHITECTURE_CYCLE18.md §345.2, B4).
+builder.Services.Configure<ServiceBooking.API.Services.Billing.TrialOptions>(
+    builder.Configuration.GetSection(ServiceBooking.API.Services.Billing.TrialOptions.SectionName));
+builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialActivationService>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialStateReader>();
 // Cycle 4 (ARCHITECTURE_CYCLE4.md §25.3, T4-B7): the other backend developer's queueing service, called
 // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
 // this developer's file this cycle.
@@ -793,6 +798,21 @@ builder.Services.AddRateLimiter(o =>
         {
             PermitLimit = config.GetValue("RateLimits:phone-change:PermitLimit", 5),
             Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:phone-change:WindowMinutes", 60)),
+            QueueLimit = 0
+        });
+    });
+
+    // trial-activate: POST /api/billing/trial — 5/сутки на пользователя (ARCHITECTURE_CYCLE18.md §342).
+    // Без него кнопка активации становится бесплатным способом перебирать отказы (перебор редакций
+    // condition, статуса телефона и т.д.).
+    o.AddPolicy("trial-activate", ctx =>
+    {
+        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = config.GetValue("RateLimits:TrialActivatePerDay", 5),
+            Window = TimeSpan.FromHours(24),
             QueueLimit = 0
         });
     });
