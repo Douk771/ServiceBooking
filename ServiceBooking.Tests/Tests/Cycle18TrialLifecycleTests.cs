@@ -1066,10 +1066,50 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
     // elsewhere) deleting the subscription out from under the task. EF Core always checks the affected-row
     // count on UPDATE regardless of whether a concurrency token is configured — zero rows affected because
     // the row is gone throws a genuine <see cref="DbUpdateConcurrencyException"/>, not a mocked one.
+    //
+    // Н4 (QA recheck, this pass): the original version of this test only ever checked accounts A and C —
+    // both created through the ordinary owner-registration flow, whose <c>BillingAccount.Id</c> is an
+    // ordinary random <see cref="Guid"/>. <c>ExpireTrialsAsync</c> processes candidates
+    // <c>OrderBy(a => a.Id)</c>, so roughly one run in three, the poisoned account B would randomly land
+    // LAST in that order — meaning nothing in the batch was EVER processed after it, and a broken
+    // cross-iteration isolation (leftover tracked entities from B's failed iteration bleeding into the
+    // next account's own SaveChangesAsync) would have gone completely undetected on those runs. accountD
+    // below is seeded directly with an Id pinned to the maximum possible <see cref="Guid"/> value —
+    // <see cref="Guid.NewGuid"/> cannot practically ever produce it — so it is *guaranteed*, on every run,
+    // to sort strictly after every other account in this test, including the poisoned one, deterministically
+    // forcing the exact "processed AFTER the poisoned account in the same batch" case this test was always
+    // meant to prove.
+    private async Task<Guid> CreateBareBillingAccountWithFixedIdAsync(Guid id, Guid trialPlanId, DateTime trialEndsAtUtc)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var phone = UniquePhone();
+        var user = new AppUser { FirstName = "Fixed", LastName = "Owner", UserName = phone, PhoneNumber = phone };
+        var created = await userManager.CreateAsync(user, "Password123!");
+        created.Succeeded.Should().BeTrue(string.Join(", ", created.Errors.Select(e => e.Description)));
+
+        var account = new BillingAccount
+        {
+            Id = id, OwnerUserId = user.Id,
+            TrialStartedAtUtc = trialEndsAtUtc.AddDays(-14), TrialEndsAtUtc = trialEndsAtUtc,
+            TrialDurationDays = 14, TrialMailingWindowDays = 7, TrialWarningThresholdsDays = "7,3,1",
+        };
+        db.BillingAccounts.Add(account);
+        db.AccountSubscriptions.Add(new AccountSubscription
+        {
+            Id = Guid.NewGuid(), OwnerUserId = user.Id, BillingAccountId = account.Id, PlanConfigId = trialPlanId,
+            IsActive = true, PaidUntil = trialEndsAtUtc, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+        return account.Id;
+    }
+
     [Fact, TestCase("CY18L-19")]
     public async Task FailedIteration_InExpirePhase_LeavesNoFalseJournalRow_AndDoesNotBlockTheRestOfTheBatch()
     {
-        await CreateTrialPlanAsync();
+        var trialPlanId = await CreateTrialPlanAsync();
         var now = DateTime.UtcNow;
 
         var (ownerA, accountA) = await CreateOwnerWithVerifiedPhoneAsync();
@@ -1089,6 +1129,11 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
                 sub.PaidUntil = now.AddDays(-1);
             });
         }
+
+        // Н4: pinned to the maximum Guid so it is guaranteed to sort AFTER accountB (and every other
+        // account here) in ExpireTrialsAsync's own OrderBy(a => a.Id) — see this test's own doc comment.
+        var accountD = await CreateBareBillingAccountWithFixedIdAsync(
+            Guid.Parse("ffffffff-ffff-ffff-ffff-fffffffffffe"), trialPlanId, now.AddDays(-1));
 
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -1126,9 +1171,11 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
             "Д18/Т1: the append-only journal must NEVER assert a transition that never actually committed — " +
             "a false row here would be worse than the missed account itself");
 
-        // Accounts A and C: unaffected by B's poisoned iteration, transitioned normally in the SAME pass.
+        // Accounts A, C and D: unaffected by B's poisoned iteration, transitioned normally in the SAME
+        // pass. Н4: accountD is the one GUARANTEED to be processed strictly AFTER accountB (see this
+        // test's own doc comment) — its own correctness is the actual proof this test set out to give.
         var freePlanId = await DbAsync(d => d.SubscriptionPlanConfigs.Where(p => p.IsSystemFree).Select(p => p.Id).FirstAsync());
-        foreach (var accountId in new[] { accountA, accountC })
+        foreach (var accountId in new[] { accountA, accountC, accountD })
         {
             var account = await DbAsync(d => d.BillingAccounts.AsNoTracking().FirstAsync(a => a.Id == accountId));
             account.TrialExpiredHandledAtUtc.Should().NotBeNull($"account {accountId} was never poisoned and must transition normally");
@@ -1138,6 +1185,248 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
                 .CountAsync(l => l.BillingAccountId == accountId && l.ChangeKind == SubscriptionChangeKind.TrialExpired));
             logRows.Should().Be(1, $"account {accountId}'s own journal entry must be written exactly once, undisturbed by B's failure");
         }
+    }
+
+    // ── Scenario 23 (Б1 regression, this pass) — an emergency re-grant must never overwrite a row an
+    // admin already bought out for real money, even though that row was originally materialized by an
+    // EARLIER trial. Full documented-route lifecycle: activate → expire (row dated out, not deleted) →
+    // admin buys the SAME option out via AssignSubscription (GrantedByTrial flips to false, B1's own admin
+    // -side fix) → emergency regrant (TrialActivationService.GrantAsync's own B1 fix must leave a
+    // non-trial row untouched) → SECOND trial expires too, and the paid row must still survive that.
+    [Fact, TestCase("CY18L-23")]
+    public async Task Regrant_AfterAdminBoughtOutAFormerlyTrialGrantedRow_NeverOverwritesItAndItSurvivesASecondExpiryToo()
+    {
+        var trialPlanId = await CreateTrialPlanAsync();
+        await EnsureWhatsAppIncludedOnTrialPlanAsync(trialPlanId);
+        var (owner, accountId) = await CreateOwnerWithVerifiedPhoneAsync();
+        (await ActivateTrialAsync(owner.Token)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var optionId = await DbAsync(db => GetOrCreateWhatsAppOptionIdAsync(db));
+        var trialGrantedRowId = await DbAsync(db => db.AccountSubscriptionOptions
+            .Where(o => o.BillingAccountId == accountId && o.OptionId == optionId).Select(o => o.Id).FirstAsync());
+        var freshlyMaterialized = await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.Id == trialGrantedRowId));
+        // Same coverage as the developer's own (now-removed) CY18-B2-01: a plain first-time activation with
+        // NO pre-existing row must materialize one with the plan rule's own IncludedQuantity (1, per
+        // EnsureWhatsAppIncludedOnTrialPlanAsync), not just "some row" — CY18L-15/16/21 never exercise this
+        // no-pre-existing-row case, they all seed one up front.
+        freshlyMaterialized.GrantedByTrial.Should().BeTrue("§333.3: activation must have materialized this row itself");
+        freshlyMaterialized.Quantity.Should().Be(1, "Quantity = PlanOptionRule.IncludedQuantity, from a plain first-time activation");
+        freshlyMaterialized.EndsAtUtc.Should().BeNull();
+
+        // First trial expires — §337.3/B1 dates the row out, it is never deleted.
+        await RunInDbAsync(async db =>
+        {
+            var account = await db.BillingAccounts.FirstAsync(a => a.Id == accountId);
+            account.TrialEndsAtUtc = DateTime.UtcNow.AddDays(-1);
+            var sub = await db.AccountSubscriptions.FirstAsync(s => s.BillingAccountId == accountId);
+            sub.PaidUntil = DateTime.UtcNow.AddDays(-1);
+        });
+        (await RunTrialLifecycleTaskAsync()).Error.Should().BeNull();
+        (await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.Id == trialGrantedRowId)))
+            .EndsAtUtc.Should().NotBeNull("the first trial's own expiry must have dated this SAME row out");
+
+        // Superadmin buys the SAME option out for real money, far in the future — AssignSubscription's own
+        // B1 fix (AdminBillingController.cs) must flip GrantedByTrial to false on this write.
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+        var farFuture = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(11));
+        var assign = await adminClient.PutAsJsonAsync($"/api/admin/billing-accounts/{accountId}/subscription", new
+        {
+            planId = (Guid?)null, isActive = true, paidUntil = (DateOnly?)null,
+            options = new[] { new { optionId, quantity = 5, paidUntil = farFuture } },
+        });
+        assign.StatusCode.Should().Be(HttpStatusCode.OK, await assign.Content.ReadAsStringAsync());
+
+        var boughtOut = await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.Id == trialGrantedRowId));
+        boughtOut.GrantedByTrial.Should().BeFalse("AdminBillingController's own B1 fix: an admin write always produces an ordinary row");
+        boughtOut.Quantity.Should().Be(5);
+        boughtOut.EndsAtUtc.Should().BeNull();
+        // AdminBillingController.ToUtc anchors a DateOnly PaidUntil at TimeOnly.MaxValue (end of day), not midnight.
+        var farFutureUtc = farFuture.ToDateTime(TimeOnly.MaxValue);
+        boughtOut.PaidUntilUtc.Should().BeCloseTo(farFutureUtc, TimeSpan.FromMinutes(2));
+
+        // Superadmin's emergency re-grant — the exact regression this scenario targets: the trial's OWN
+        // GrantAsync must never mistake this now-paid, non-trial row for its own leftover.
+        var regrant = await adminClient.PostAsJsonAsync(
+            $"/api/admin/billing-accounts/{accountId}/trial/regrant", new { reason = "QA CY18L-23 regression check" });
+        regrant.StatusCode.Should().Be(HttpStatusCode.OK, await regrant.Content.ReadAsStringAsync());
+
+        var afterRegrant = await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.Id == trialGrantedRowId));
+        afterRegrant.GrantedByTrial.Should().BeFalse("regrant must never claim an admin-paid row as its own");
+        afterRegrant.Quantity.Should().Be(5, "Б1 regression: the admin's own paid quantity must survive the emergency regrant untouched");
+        afterRegrant.PaidUntilUtc.Should().BeCloseTo(farFutureUtc, TimeSpan.FromMinutes(2),
+            "Б1 regression: the admin's own far-future paid-until date must survive the emergency regrant untouched");
+        afterRegrant.EndsAtUtc.Should().BeNull("Б1 regression: the paid row must not be dated out by the regrant either");
+
+        // The SECOND trial (from the regrant) expires too — the paid row must survive THAT as well, since
+        // GrantedByTrial == false excludes it from ExpireTrialsAsync's own dating-out filter.
+        await RunInDbAsync(async db =>
+        {
+            var account = await db.BillingAccounts.FirstAsync(a => a.Id == accountId);
+            account.TrialEndsAtUtc = DateTime.UtcNow.AddDays(-1);
+            var sub = await db.AccountSubscriptions.FirstAsync(s => s.BillingAccountId == accountId);
+            sub.PaidUntil = DateTime.UtcNow.AddDays(-1);
+        });
+        (await RunTrialLifecycleTaskAsync()).Error.Should().BeNull();
+
+        var afterSecondExpiry = await DbAsync(db => db.AccountSubscriptionOptions.AsNoTracking().FirstAsync(o => o.Id == trialGrantedRowId));
+        afterSecondExpiry.EndsAtUtc.Should().BeNull(
+            "Б1 regression, the headline check: the paid row must survive the SECOND trial's own expiry too — " +
+            "before the fix, this row would silently lose its Quantity/PaidUntilUtc AND then be dated out here");
+        afterSecondExpiry.Quantity.Should().Be(5);
+    }
+
+    // ── Scenario 24 (Б2 regression, this pass) — a batch where EVERY account fails deterministically must
+    // still complete a single pass (never spin re-selecting the same poisoned page forever), and the
+    // failure must be visible on ScheduledTaskOutcome.Error, not just a number buried in the summary text
+    // (Н1, same review round). Same race recipe as CY18L-19, scaled from one poisoned account to the whole
+    // backlog (105 > BatchSize=100, forcing two pages) so a broken keyset cursor (one that only advances
+    // when an iteration SUCCEEDS) would never terminate.
+    [Fact, TestCase("CY18L-24")]
+    public async Task ExpirePhase_OneHundredAndFiveAccountsFailDeterministically_PassStillCompletes_AndErrorIsVisible()
+    {
+        var trialPlanId = await CreateTrialPlanAsync();
+
+        // Flush any expired-but-unhandled leftover from an EARLIER test sharing this class' own database
+        // (e.g. CY18L-07 deliberately leaves one behind while IsSystemFree is temporarily unset) — without
+        // this, the "NONE succeeded this pass" condition below could spuriously flip depending on
+        // execution order/leftover state that has nothing to do with THIS test's own 105 accounts.
+        await RunTrialLifecycleTaskAsync();
+
+        const int count = 105; // > BatchSize (100) — forces two pages, both entirely poisoned
+        var now = DateTime.UtcNow;
+        var accountIds = new List<Guid>();
+        for (var i = 0; i < count; i++)
+            accountIds.Add(await CreateBareBillingAccountAsync(trialPlanId, now.AddDays(-15), now.AddDays(-1), 7));
+        var poisoned = new HashSet<Guid>(accountIds);
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.SavingChanges += (_, _) =>
+        {
+            var expiring = db.ChangeTracker.Entries<SubscriptionChangeLog>()
+                .Where(e => e.State == EntityState.Added && e.Entity.ChangeKind == SubscriptionChangeKind.TrialExpired &&
+                            e.Entity.BillingAccountId is { } id && poisoned.Contains(id))
+                .Select(e => e.Entity.BillingAccountId!.Value)
+                .ToList();
+            foreach (var accountId in expiring)
+            {
+                // Same recipe as CY18L-19, fired for EVERY account in this batch: a genuinely concurrent
+                // actor, via its OWN connection/DbContext, deletes this account's subscription row an
+                // instant before this SAME row's UPDATE (already queued in `db`'s change tracker) is sent.
+                using var raceScope = Factory.Services.CreateScope();
+                var raceDb = raceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+                raceDb.Database.ExecuteSqlRaw("DELETE FROM \"AccountSubscriptions\" WHERE \"BillingAccountId\" = {0}", accountId);
+            }
+        };
+
+        var task = scope.ServiceProvider.GetServices<IScheduledTask>().Single(t => t.Name == "trial-lifecycle");
+        var runTask = task.ExecuteAsync(CancellationToken.None);
+        var completed = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(90)));
+
+        completed.Should().Be(runTask,
+            "Б2: a missing/broken keyset cursor would re-select the SAME poisoned page forever (candidates.Count " +
+            "would never drop below BatchSize) — the pass must actually FINISH, not spin until some external " +
+            "time budget cuts it off");
+        var outcome = await runTask;
+
+        var stillPending = await DbAsync(d => d.BillingAccounts
+            .CountAsync(a => accountIds.Contains(a.Id) && a.TrialExpiredHandledAtUtc == null));
+        stillPending.Should().Be(count,
+            "every one of the 105 accounts genuinely failed its own save and must never be falsely marked handled");
+        var falseLogRows = await DbAsync(d => d.SubscriptionChangeLogs
+            .CountAsync(l => accountIds.Contains(l.BillingAccountId ?? Guid.Empty) && l.ChangeKind == SubscriptionChangeKind.TrialExpired));
+        falseLogRows.Should().Be(0, "Д18/Т1: none of these 105 genuinely failed iterations may leave a journal row behind");
+
+        outcome.Error.Should().NotBeNullOrEmpty(
+            "Н1 (this round's review finding): a batch where every single account fails to save must surface " +
+            "as a genuine ScheduledTaskOutcome.Error, not just a 'failed-accounts=105' count buried inside a " +
+            "summary string that otherwise reads as an unremarkable success");
+    }
+
+    // ── Scenario 26 (Н11, this pass) — the expire phase's per-account plan-decision race is NARROWED,
+    // not eliminated: this test proves the narrower window the fix actually delivers, it does not (and
+    // must not be read to) claim the race is gone. Before the fix, ExpireTrialsAsync trusted only the
+    // whole-BATCH snapshot of AccountSubscriptions loaded once before the loop — an admin/owner action
+    // landing ANYWHERE between that snapshot and this particular account's own iteration (however long
+    // the rest of the batch took) got silently overwritten back to Free. The fix re-reads THIS ONE
+    // account's current PlanConfigId directly, right before mutating — shrinking the window down to
+    // "between that re-read and this account's own SaveChangesAsync a few lines later". Reproduced here
+    // with the SAME real-race recipe as CY18L-19/24 (a genuine concurrent UPDATE via a separate
+    // connection, not a mock), timed to land AFTER the batch snapshot was taken but BEFORE the target
+    // account's own re-read — exactly the gap the fix actually closes.
+    [Fact, TestCase("CY18L-26")]
+    public async Task ExpirePhase_ConcurrentPlanChange_AfterBatchSnapshot_BeforeThisAccountsOwnReRead_IsNotOverwritten()
+    {
+        var trialPlanId = await CreateTrialPlanAsync();
+        var paidPlanId = await CreateTestPlanConfigAsync(allowOnlineBooking: true);
+        var now = DateTime.UtcNow;
+
+        // Both accounts are pinned to Guids near the maximum possible value (same technique as CY18L-19's
+        // accountD, DIFFERENT fixed values so nothing collides within this class' own shared database) —
+        // NOT because ordering "probably" works out, but because this class' shared database can already
+        // hold well over BatchSize=100 leftover accounts from EARLIER tests (e.g. CY18L-24's own 105), and
+        // a page boundary landing between two ordinarily-random Guids would silently defeat this test:
+        // accountY and accountX must be adjacent and in the SAME page, with Y processed immediately before
+        // X, regardless of how much unrelated leftover data already exists. accountY sorts strictly before
+        // accountX (its own SaveChangesAsync is the timing hook that fires the concurrent write for
+        // accountX, landing strictly AFTER the page's own `sub` dictionary was already loaded — both
+        // accounts are read together at the top of that SAME page — but strictly BEFORE accountX's own
+        // iteration, later in the same page, runs its fresh per-account re-read).
+        var accountY = await CreateBareBillingAccountWithFixedIdAsync(
+            Guid.Parse("fffffffe-ffff-ffff-ffff-fffffffffffe"), trialPlanId, now.AddDays(-1));
+        var accountX = await CreateBareBillingAccountWithFixedIdAsync(
+            Guid.Parse("ffffffff-ffff-ffff-ffff-fffffffffffd"), trialPlanId, now.AddDays(-1));
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var fired = false;
+        db.SavingChanges += (_, _) =>
+        {
+            if (fired) return;
+            var isAccountYExpiring = db.ChangeTracker.Entries<SubscriptionChangeLog>().Any(e =>
+                e.State == EntityState.Added && e.Entity.BillingAccountId == accountY &&
+                e.Entity.ChangeKind == SubscriptionChangeKind.TrialExpired);
+            if (!isAccountYExpiring) return;
+            fired = true;
+            // The "admin/owner action" this scenario narrates: a real concurrent write, via its OWN
+            // connection/DbContext, moving accountX onto a paid plan — landing while accountY (processed
+            // earlier in the SAME page) is being saved, i.e. strictly before accountX's own iteration
+            // (later in the same page) runs its fresh per-account re-read.
+            using var raceScope = Factory.Services.CreateScope();
+            var raceDb = raceScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            raceDb.Database.ExecuteSqlRaw(
+                "UPDATE \"AccountSubscriptions\" SET \"PlanConfigId\" = {0} WHERE \"BillingAccountId\" = {1}", paidPlanId, accountX);
+        };
+
+        var task = scope.ServiceProvider.GetServices<IScheduledTask>().Single(t => t.Name == "trial-lifecycle");
+        var outcome = await task.ExecuteAsync(CancellationToken.None);
+
+        fired.Should().BeTrue("the race must actually have fired (via accountY's own save) for this test to prove anything");
+        outcome.Error.Should().BeNull("neither account genuinely failed here — accountX is a normal 'already on another plan, nothing to do' case");
+
+        // accountX: the admin's concurrent plan decision must survive — never silently overwritten back to
+        // Free, even though the BATCH-WIDE snapshot (loaded before either account's iteration ran) still
+        // said "on trial" for it.
+        var subXAfter = await DbAsync(d => d.AccountSubscriptions.AsNoTracking().FirstAsync(s => s.BillingAccountId == accountX));
+        subXAfter.PlanConfigId.Should().Be(paidPlanId,
+            "Н11: the concurrent plan change (landing after the batch snapshot, before THIS account's own re-read) must survive");
+        var accountXAfter = await DbAsync(d => d.BillingAccounts.AsNoTracking().FirstAsync(a => a.Id == accountX));
+        accountXAfter.TrialExpiredHandledAtUtc.Should().NotBeNull(
+            "Н11: still marked handled so it stops being re-selected by this index every pass, even though nothing was transitioned");
+        var accountXLogRows = await DbAsync(d => d.SubscriptionChangeLogs
+            .CountAsync(l => l.BillingAccountId == accountX && l.ChangeKind == SubscriptionChangeKind.TrialExpired));
+        accountXLogRows.Should().Be(0,
+            "Н11: no transition actually happened for accountX — the journal must not carry a false TrialExpired row for it");
+
+        // accountY: unaffected by the race staged around it, transitioned normally in the SAME pass — the
+        // sanity check that the race actually targeted the right moment rather than corrupting Y itself.
+        var subYAfter = await DbAsync(d => d.AccountSubscriptions.AsNoTracking().FirstAsync(s => s.BillingAccountId == accountY));
+        var freePlanId = await DbAsync(d => d.SubscriptionPlanConfigs.Where(p => p.IsSystemFree).Select(p => p.Id).FirstAsync());
+        subYAfter.PlanConfigId.Should().Be(freePlanId);
+        var accountYLogRows = await DbAsync(d => d.SubscriptionChangeLogs
+            .CountAsync(l => l.BillingAccountId == accountY && l.ChangeKind == SubscriptionChangeKind.TrialExpired));
+        accountYLogRows.Should().Be(1, "accountY's own journal entry, undisturbed by the race staged around accountX");
     }
 }
 
@@ -1451,5 +1740,158 @@ public class Cycle18TrialMailingDeliveryTests(TestDatabaseFixture fixture) : Cyc
             "§336.3: once the mailing window's own funding has ended, the gate must block again — the row " +
             "must never reach Pending, let alone an actual send");
         queued.Reason.Should().Be(NotificationReason.NotOnPaidPlan);
+    }
+
+    // ── Scenario 25 (Б3 regression, this pass) — the customer's own decision: an emergency re-grant is a
+    // FRESH grant of the trial itself, so the mailing window must be able to open again from scratch, and
+    // the whole chain (window open → option row funded → real send) must work end to end exactly like a
+    // first-time grant, not leave the option row funded through a stale/past date left behind by the FIRST
+    // trial's own window (the exact §333.3/gateway bug Б3 flagged). Also covers Н10 (same review round):
+    // the close-window phase must not invent a second, false "window closed" journal row for a window that
+    // has not opened a second time yet.
+    [Fact, TestCase("CY18L-25")]
+    public async Task Regrant_AfterFirstTrialWindowClosedAndExpired_ReAuthorizingTheChannel_OpensAFreshWindow_AndMessageActuallyReachesSendAsync()
+    {
+        var trialPlanId = await CreateTrialPlanAsync(durationDays: 14, mailingWindowDays: 7);
+        await EnsureWhatsAppIncludedOnTrialPlanAsync(trialPlanId);
+        var (owner, company) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        await MarkPhoneVerifiedAsync(owner.Phone, owner.UserId);
+        var accountId = await DbAsync(db => db.BillingAccounts.Where(a => a.OwnerUserId == owner.UserId).Select(a => a.Id).FirstAsync());
+        (await ActivateTrialAsync(owner.Token)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var optionId = await DbAsync(db => GetOrCreateWhatsAppOptionIdAsync(db));
+
+        await SeedConnectedTrialChannelAsync(owner.UserId, accountId, company.Id);
+        (await ReloadAccountAsync(accountId)).TrialChannelFirstAuthorizedAtUtc.Should().NotBeNull(
+            "the first trial's own window must actually have opened for this test to prove anything");
+
+        // Backdate the WHOLE first trial (window and trial end alike) into the past — the real precondition
+        // for an emergency regrant (§2/§3's own checks in TrialActivationService.GrantAsync refuse
+        // regranting an account still usably ON the trial plan; nothing bypasses those two checks).
+        var now = DateTime.UtcNow;
+        await RunInDbAsync(async db =>
+        {
+            var account = await db.BillingAccounts.FirstAsync(a => a.Id == accountId);
+            account.TrialStartedAtUtc = now.AddDays(-20);
+            account.TrialChannelFirstAuthorizedAtUtc = now.AddDays(-19);
+            account.TrialMailingWindowEndsAtUtc = now.AddDays(-12);
+            account.TrialEndsAtUtc = now.AddDays(-6);
+            var sub = await db.AccountSubscriptions.FirstAsync(s => s.BillingAccountId == accountId);
+            sub.PaidUntil = now.AddDays(-6);
+        });
+
+        (await RunTrialLifecycleTaskAsync()).Error.Should().BeNull();
+
+        var afterFirstExpiry = await ReloadAccountAsync(accountId);
+        afterFirstExpiry.TrialExpiredHandledAtUtc.Should().NotBeNull("the first trial must actually have expired for this test to prove anything");
+        afterFirstExpiry.TrialMailingClosureLoggedAtUtc.Should().NotBeNull("the mailing window's own closure (phase 2) must also have run");
+
+        var mailingWindowLogRowsBeforeRegrant = await DbAsync(db => db.SubscriptionChangeLogs
+            .CountAsync(l => l.BillingAccountId == accountId && l.ChangeKind == SubscriptionChangeKind.TrialMailingWindow));
+        mailingWindowLogRowsBeforeRegrant.Should().Be(2, "exactly one 'opened' and one 'closed' row from the first trial");
+
+        // ── Emergency re-grant (Б3, customer decision) ───────────────────────────────────────────────
+        var admin = await LoginAsSuperAdminAsync();
+        var regrant = await AuthedClient(admin.Token).PostAsJsonAsync(
+            $"/api/admin/billing-accounts/{accountId}/trial/regrant", new { reason = "QA CY18L-25 regression check" });
+        regrant.StatusCode.Should().Be(HttpStatusCode.OK, await regrant.Content.ReadAsStringAsync());
+
+        var afterRegrant = await ReloadAccountAsync(accountId);
+        afterRegrant.TrialChannelFirstAuthorizedAtUtc.Should().BeNull(
+            "Б3: a re-grant is a fresh grant of the trial itself — the old channel's stamp must not survive to block a new window");
+        afterRegrant.TrialMailingWindowEndsAtUtc.Should().BeNull();
+        afterRegrant.TrialMailingClosureLoggedAtUtc.Should().BeNull();
+
+        var optionAfterRegrant = await DbAsync(db => db.AccountSubscriptionOptions
+            .AsNoTracking().FirstAsync(o => o.BillingAccountId == accountId && o.OptionId == optionId));
+        optionAfterRegrant.EndsAtUtc.Should().BeNull("regrant must revive the trial's own option row (B1's GrantedByTrial branch)");
+        optionAfterRegrant.PaidUntilUtc.Should().BeNull(
+            "Б3, the exact bug this scenario targets: no window has opened for the SECOND trial yet — the " +
+            "revived row must not be left funded through the FIRST trial's stale/past PaidUntilUtc");
+
+        // ── Н10: the close-window phase must not invent a false SECOND "closed" row for a window that has
+        // not opened again yet. The channel row from the FIRST trial is still sitting Connected in the DB
+        // with its original ConnectedAtUtc — left as is, phase 1's OWN self-heal would immediately open a
+        // brand-new (and CORRECT) window on the very next pass, which would prove something else entirely.
+        // Disconnecting it here isolates Н10's actual claim: a window that genuinely has not reopened yet
+        // must not be falsely logged as "closed" — simulating the real gap between a regrant and the owner
+        // actually reconnecting a channel for the SECOND trial. ────────────────────────────────────────────
+        await RunInDbAsync(async db =>
+        {
+            await db.NotificationChannels.Where(c => c.BillingAccountId == accountId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.State, ChannelState.Disconnected)
+                    .SetProperty(c => c.ConnectedAtUtc, (DateTime?)null));
+        });
+
+        (await RunTrialLifecycleTaskAsync()).Error.Should().BeNull();
+        (await ReloadAccountAsync(accountId)).TrialMailingClosureLoggedAtUtc.Should().BeNull(
+            "Н10: a window that has not opened a second time must never be logged as 'closed' either");
+        var mailingWindowLogRowsAfterSpuriousPass = await DbAsync(db => db.SubscriptionChangeLogs
+            .CountAsync(l => l.BillingAccountId == accountId && l.ChangeKind == SubscriptionChangeKind.TrialMailingWindow));
+        mailingWindowLogRowsAfterSpuriousPass.Should().Be(2,
+            "Н10: still exactly the FIRST trial's own opened+closed pair — no phantom third row from a pass " +
+            "that ran before the SECOND trial's channel was ever re-authorized");
+
+        // ── Re-authorize the SAME channel for the SECOND trial — the window must open completely FRESH ──
+        await RunInDbAsync(async db =>
+        {
+            await db.NotificationChannels.Where(c => c.BillingAccountId == accountId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.State, ChannelState.Connected)
+                    .SetProperty(c => c.ConnectedAtUtc, DateTime.UtcNow));
+            var account = await db.BillingAccounts.FirstAsync(a => a.Id == accountId);
+            await TrialMailingWindowStarter.StartIfDueAsync(db, account, DateTime.UtcNow, CancellationToken.None);
+        });
+
+        var afterReauthorization = await ReloadAccountAsync(accountId);
+        afterReauthorization.TrialChannelFirstAuthorizedAtUtc.Should().NotBeNull();
+        afterReauthorization.TrialMailingWindowEndsAtUtc.Should().NotBeNull();
+        afterReauthorization.TrialMailingWindowEndsAtUtc!.Value.Should().BeAfter(DateTime.UtcNow,
+            "Б3: the SECOND trial's window must be a genuinely FRESH one, not the stale/past date the first trial's window left behind");
+
+        var mailingWindowLogRowsAfterReopen = await DbAsync(db => db.SubscriptionChangeLogs
+            .CountAsync(l => l.BillingAccountId == accountId && l.ChangeKind == SubscriptionChangeKind.TrialMailingWindow));
+        mailingWindowLogRowsAfterReopen.Should().Be(3, "the second trial's own fresh 'opened' row, on top of the first trial's opened+closed pair");
+
+        var optionAfterReopen = await DbAsync(db => db.AccountSubscriptionOptions
+            .AsNoTracking().FirstAsync(o => o.BillingAccountId == accountId && o.OptionId == optionId));
+        optionAfterReopen.PaidUntilUtc.Should().BeCloseTo(afterReauthorization.TrialMailingWindowEndsAtUtc!.Value, TimeSpan.FromMinutes(2),
+            "the revived option row must now be funded through the FRESH window end, not a stale past date");
+
+        // ── The headline check, same proof CY18L-21 already gives the first trial: the message actually
+        // reaches a real send for the SECOND trial too, not just a materialized/funded row. ───────────────
+        var master = await AddMasterAsync(owner.Token, company.Id);
+        var service = await CreateServiceAsync(owner.Token, company.Id, durationMinutes: 30);
+        var date = NextWeekday();
+        await SetWorkingDayAsync(owner.Token, master.UserId, company.Id, date);
+
+        var clientUser = await RegisterAsync();
+        await GrantProviderDeliveryConsentAsync(clientUser.Token);
+        var booking = await AuthedClient(clientUser.Token).PostAsJsonAsync("/api/bookings",
+            new ServiceBooking.API.DTOs.Bookings.CreateBookingDto(
+                company.Id, service.Id, master.UserId, date, new TimeOnly(9, 0), null, "Walk-in", clientUser.Phone, null, null));
+        booking.StatusCode.Should().Be(HttpStatusCode.Created, await booking.Content.ReadAsStringAsync());
+        var bookingId = (await booking.Content.ReadJsonAsync<ServiceBooking.API.DTOs.Bookings.BookingDto>())!.Id;
+
+        var queued = await DbAsync(db => db.OutboundNotifications
+            .FirstAsync(n => n.BookingId == bookingId && n.Type == NotificationType.BookingConfirmed));
+        queued.Status.Should().Be(NotificationStatus.Pending,
+            "Б3: after a re-authorized SECOND trial, the gate must let a NEW booking confirmation through again from minute one");
+
+        var canonicalClientPhone = clientUser.Phone.TrimStart('+').Replace(" ", "");
+        await using var dispatchFactory = new TrialDispatchFactory(ConnectionString);
+        _ = dispatchFactory.Services; // boot eagerly
+
+        await WaitForAsync(async () =>
+        {
+            await using var scope = dispatchFactory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var row = await db.OutboundNotifications.AsNoTracking().FirstAsync(n => n.Id == queued.Id);
+            return row.Status == NotificationStatus.Sent;
+        }, timeoutSeconds: 20);
+
+        dispatchFactory.Transport.Calls.Should().Contain(c => c.CanonicalPhone == canonicalClientPhone,
+            "the second trial's re-opened window must let the message reach the REAL transport, not just sit " +
+            "Pending — the exact gap between §333.3's revived option row and an actual send that Б3 targets");
     }
 }
