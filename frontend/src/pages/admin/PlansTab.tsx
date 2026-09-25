@@ -179,6 +179,14 @@ export function PlansTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
   })
 
+  // Same isolation as system-free above (API_CONTRACT_CYCLE18.md §366) — PUT
+  // /admin/plans/{id}/system-trial, kept out of AdminPlanInput on purpose.
+  const systemTrialMut = useMutation({
+    mutationFn: ({ id, isSystemTrial }: { id: string; isSystemTrial: boolean }) =>
+      plansApi.setSystemTrial(id, isSystemTrial),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
+  })
+
   // react-query keeps a mutation's error until the next mutate, so without an explicit reset the
   // modal reopens showing the previous attempt's failure — potentially from the other mutation, and
   // about a different plan.
@@ -349,6 +357,11 @@ export function PlansTab() {
                             Системный бесплатный
                           </span>
                         )}
+                        {plan.isSystemTrial && (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gold text-ink">
+                            Пробный период
+                          </span>
+                        )}
                         <span className="text-sm font-medium text-gold-dark">
                           {plan.pricePerMonth > 0 ? `${plan.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : 'Бесплатно'}
                         </span>
@@ -381,6 +394,12 @@ export function PlansTab() {
                         Фото клиентов: {plan.photoQuotaMb != null ? `до ${plan.photoQuotaMb} МБ` : 'без ограничения'} ·{' '}
                         хранятся {retentionLabel(plan.photoRetention)}
                       </p>
+                      {/* §366 — отсутствие строки PlanOptionRule = Unavailable (fail-closed): опция,
+                          добавленная в каталог позже, в тариф сама не попадает, и суперадмин обязан
+                          это видеть, а не только у триала. */}
+                      {plan.optionCoverage && (
+                        <p className="text-xs text-muted mt-0.5">{plan.optionCoverage.text}</p>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                       <div className="flex gap-2">
@@ -406,6 +425,26 @@ export function PlansTab() {
                           Сделать системным бесплатным
                         </Button>
                       )}
+                      {!plan.isSystemTrial && plan.pricePerMonth === 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          loading={systemTrialMut.isPending && systemTrialMut.variables?.id === plan.id}
+                          onClick={() => systemTrialMut.mutate({ id: plan.id, isSystemTrial: true })}
+                        >
+                          Сделать тарифом пробного периода
+                        </Button>
+                      )}
+                      {plan.isSystemTrial && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          loading={systemTrialMut.isPending && systemTrialMut.variables?.id === plan.id}
+                          onClick={() => systemTrialMut.mutate({ id: plan.id, isSystemTrial: false })}
+                        >
+                          Снять флаг пробного периода
+                        </Button>
+                      )}
                       {deactivateMut.isError && deactivateMut.variables === plan.id && (
                         <p className="text-xs text-danger text-right max-w-[220px]">
                           {getPlanErrorMessage(deactivateMut.error)}
@@ -414,6 +453,11 @@ export function PlansTab() {
                       {systemFreeMut.isError && systemFreeMut.variables?.id === plan.id && (
                         <p className="text-xs text-danger text-right max-w-[220px]">
                           {getPlanErrorMessage(systemFreeMut.error, 'Не удалось изменить системный бесплатный тариф.')}
+                        </p>
+                      )}
+                      {systemTrialMut.isError && systemTrialMut.variables?.id === plan.id && (
+                        <p className="text-xs text-danger text-right max-w-[220px]">
+                          {getPlanErrorMessage(systemTrialMut.error, 'Не удалось изменить флаг пробного периода.')}
                         </p>
                       )}
                     </div>
@@ -571,6 +615,16 @@ export function PlansTab() {
                 На витрине показываются только первые {PUBLIC_MAX_HIGHLIGHTS} — остальные хранятся, но посетители их не
                 увидят.
               </p>
+              {/* §370, operational rule (LEGAL_REVIEW_CYCLE18.md §2.3, ч.7 ст.5 ФЗ «О рекламе») —
+                  code cannot validate free-text meaning, so this is a reminder for the admin editing
+                  the trial plan's showcase copy, not a form validation. */}
+              {editingPlan?.isSystemTrial && (
+                <p className="text-xs text-warning bg-[#FBF3E3] border border-warning rounded-lg px-3 py-2 mb-2">
+                  Для тарифа пробного периода в пунктах обязаны быть указаны: продолжительность,
+                  однократное предоставление одному абоненту, отдельный (более короткий) срок бесплатных рассылок и
+                  переход на бесплатный тариф без удаления данных по окончании.
+                </p>
+              )}
               <div className="flex flex-col gap-2">
                 {form.highlights.map((h, i) => (
                   <div key={i} className="flex flex-col gap-0.5">
