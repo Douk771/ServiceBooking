@@ -29,6 +29,15 @@ interface Props {
    * keeps the client UI from offering a choice the server will always 409/ignore.
    */
   allowManualOverride?: boolean
+  /**
+   * ARCHITECTURE_CYCLE17.md §305.1/§310 (US-17-01, C15-6.2) — hours before the visit the company
+   * requires for a client self-reschedule (`Company.clientRescheduleMinHours`). Staff (default `0`)
+   * keeps today's behaviour byte for byte — the grid only ever filters against "now" the same as
+   * before this cycle. The client-owner path passes `booking.clientRescheduleMinHours`. This is a
+   * hint only: the server re-validates on the actual PATCH (§257.4 cycle 15) regardless of what the
+   * grid offered.
+   */
+  minHours?: number
   /** Called after a successful PATCH, in addition to the standard `master-bookings` invalidation —
    *  `ClientBookingsPage` uses this to invalidate `client-bookings` instead. */
   onRescheduled?: () => void
@@ -37,15 +46,11 @@ interface Props {
   isClientOwner?: boolean
 }
 
-function timeToMinutes(t: string): number {
-  const [h, m] = t.slice(0, 5).split(':').map(Number)
-  return h * 60 + m
-}
-
 export function RescheduleModal({
   booking,
   onClose,
   horizonDays = 14,
+  minHours = 0,
   allowManualOverride = true,
   onRescheduled,
   isClientOwner = false,
@@ -58,7 +63,9 @@ export function RescheduleModal({
 
   const now = new Date()
   const todayStr = format(now, 'yyyy-MM-dd')
-  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  // §305.1 — the ONE boundary applied to both the day grid and the slot grid, replacing the old
+  // "later than the current minute" check (which is what this reduces to when minHours = 0).
+  const earliestAllowed = new Date(now.getTime() + minHours * 3600_000)
 
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
@@ -85,8 +92,11 @@ export function RescheduleModal({
       ),
     staleTime: 0,
   })
-  const hasAvailableSlotToday = slotsToday.some((s) => timeToMinutes(s.start) > nowMinutes)
+  const hasAvailableSlotToday = slotsToday.some((s) => new Date(`${todayStr}T${s.start}`) > earliestAllowed)
 
+  // §305.1 — a day is offered only if it has at least one moment later than earliestAllowed (its
+  // end-of-day, for the horizon loop below — the actual slot grid still narrows further once a day
+  // is picked). At minHours = 0 this keeps every future day, same as before this cycle.
   const days = [
     ...(hasAvailableSlotToday ? [{ value: todayStr, label: 'Сегодня' }] : []),
     ...Array.from({ length: horizonDays }, (_, i) => {
@@ -95,7 +105,7 @@ export function RescheduleModal({
         value: format(d, 'yyyy-MM-dd'),
         label: isTomorrow(d) ? 'Завтра' : format(d, 'd MMM, EEE', { locale: ru }),
       }
-    }),
+    }).filter((d) => new Date(`${d.value}T23:59:59`) > earliestAllowed),
   ]
 
   const {
@@ -119,7 +129,7 @@ export function RescheduleModal({
     staleTime: 0,
     retry: false,
   })
-  const slots = (rawSlots ?? []).filter((s) => selectedDate !== todayStr || timeToMinutes(s.start) > nowMinutes)
+  const slots = (rawSlots ?? []).filter((s) => new Date(`${selectedDate}T${s.start}`) > earliestAllowed)
 
   const mutation = useMutation({
     mutationFn: () => bookingsApi.reschedule(booking.id, selectedDate, selectedTime),

@@ -5,6 +5,8 @@ namespace ServiceBooking.API.Services.Bookings;
 /// staff) may still reschedule it", by the same convention as <see cref="ServiceBooking.API.Services.BookingHorizon"/>.
 /// Pure, no EF types. Used at exactly two points: CompaniesController.Update (saving the setting) and
 /// BookingsController.Reschedule's client-only path (checking BOTH ends of the window, §257.4).
+/// ARCHITECTURE_CYCLE17.md §304.1 — and cancel: the same Company.ClientRescheduleMinHours also gates
+/// the client-owner's cancel path (BookingsController.Cancel), deliberately without a separate field.
 /// </summary>
 public static class ClientRescheduleWindow
 {
@@ -51,4 +53,9 @@ public static class ClientRescheduleWindow
         var cutoff = TimeSpan.FromHours(minHours);
         return nowUtc <= currentVisitStartUtc - cutoff && nowUtc <= newVisitStartUtc - cutoff;
     }
+
+    /// <summary>ARCHITECTURE_CYCLE17.md §304.1 — client CANCEL: one end of the window, not two (there
+    /// is no "new" visit to also check, unlike reschedule). True = still allowed to cancel.</summary>
+    public static bool CanClientCancel(DateTime nowUtc, DateTime visitStartUtc, int minHours)
+        => nowUtc <= visitStartUtc - TimeSpan.FromHours(minHours);
 }

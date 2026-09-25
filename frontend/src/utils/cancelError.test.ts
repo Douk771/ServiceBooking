@@ -30,6 +30,20 @@ describe('getCancelErrorMessage', () => {
     expect(getCancelErrorMessage(axiosErrorWith(404, undefined))).toBe('Запись не найдена — возможно, её уже отменили.')
   })
 
+  it('409 with server-composed sentence → shown verbatim (ARCHITECTURE_CYCLE17.md §304.2)', () => {
+    expect(
+      getCancelErrorMessage(
+        axiosErrorWith(409, 'Отменить запись можно не позже чем за 24 ч до визита. Чтобы отменить, свяжитесь с салоном.'),
+      ),
+    ).toBe('Отменить запись можно не позже чем за 24 ч до визита. Чтобы отменить, свяжитесь с салоном.')
+  })
+
+  it('409 with no body → fallback message', () => {
+    expect(getCancelErrorMessage(axiosErrorWith(409, undefined))).toBe(
+      'Отменить запись уже нельзя — свяжитесь с салоном.',
+    )
+  })
+
   it('unrecognized status → generic fallback', () => {
     expect(getCancelErrorMessage(axiosErrorWith(500, undefined))).toBe('Не удалось отменить запись. Попробуйте снова.')
   })

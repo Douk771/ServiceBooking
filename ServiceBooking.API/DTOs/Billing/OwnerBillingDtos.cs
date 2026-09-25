@@ -55,7 +55,15 @@ public record RequestedOptionInputDto(Guid OptionId, int Quantity);
 
 public record SubscriptionRequestDto(
     Guid Id, string Status, DateTime CreatedAt, Guid? DesiredPlanId, string? DesiredPlanName,
-    decimal EstimatedMonthlyPrice, IReadOnlyList<SubscriptionRequestItemDto> Items, string? Comment);
+    decimal EstimatedMonthlyPrice, IReadOnlyList<SubscriptionRequestItemDto> Items, string? Comment,
+    // ARCHITECTURE_CYCLE17.md §307.1, API_CONTRACT_CYCLE17.md §325.1 (US-17-08, C15-7) — additive,
+    // appended at the end so every existing positional SubscriptionRequestDto(...) call keeps
+    // compiling unchanged (same convention as LastRejectedRequest, §7 cycle 7). Non-null only when
+    // ALL THREE hold: the account has an active subscription, its current plan is IsPublic == false
+    // (snapshot off sale), and this request asks for a PLAN CHANGE (not options-only). Text is
+    // composed server-side by legal-counsel's wording (п. 6.13.15.3 03-terms-owner.html) — the
+    // frontend prints it as-is, never sourcing its own placeholder.
+    string? IrreversibilityNotice = null);
 
 public record SubscriptionRequestItemDto(Guid OptionId, string Name, int Quantity);
 

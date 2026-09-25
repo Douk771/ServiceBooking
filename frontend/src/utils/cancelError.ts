@@ -22,6 +22,11 @@ export function getCancelErrorMessage(error: unknown): string {
       return 'Недостаточно прав для отмены этой записи.'
     case 404:
       return 'Запись не найдена — возможно, её уже отменили.'
+    // ARCHITECTURE_CYCLE17.md §304.2 / API_CONTRACT_CYCLE17.md §322.3: 409 = "too late to cancel"
+    // (client-owner inside the company's window). Server composes the sentence with the actual
+    // hour count, so it's shown verbatim rather than re-derived on the front (§320 convention).
+    case 409:
+      return serverMsg || 'Отменить запись уже нельзя — свяжитесь с салоном.'
     default:
       return 'Не удалось отменить запись. Попробуйте снова.'
   }

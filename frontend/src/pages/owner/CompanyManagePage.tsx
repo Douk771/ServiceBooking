@@ -875,30 +875,61 @@ export function SettingsTab({ companyId }: { companyId: string }) {
           </div>
           <div className="flex flex-col gap-1">
             <Input
-              label="За сколько часов до визита клиент может сам перенести запись"
+              // ARCHITECTURE_CYCLE17.md §305.3 (US-17-03, C15-6.3): label now says what the field
+              // actually governs after §304 — it's the SAME window that gates client cancellation,
+              // not just reschedule.
+              label="За сколько часов клиент может перенести или отменить запись"
               type="number"
               min={0}
               max={168}
               placeholder="2"
+              aria-invalid={mapLinksError?.field === 'clientRescheduleMinHours' || undefined}
+              aria-describedby={
+                mapLinksError?.field === 'clientRescheduleMinHours' ? 'clientRescheduleMinHours-error' : undefined
+              }
               {...register('clientRescheduleMinHours')}
             />
-            <p className="text-xs text-muted">Пусто — 2 часа по умолчанию. 0 — можно перенести вплоть до начала визита.</p>
+            {/* §305.3 — the old copy ("Пусто — 2 часа по умолчанию") described a behaviour the API
+                never had (PUT already treats an omitted field as "leave the saved value alone",
+                §283 cycle 15); this text now matches that behaviour instead of the field's default. */}
+            <p className="text-xs text-muted">
+              Пусто — оставить текущее значение. 0 — можно перенести и отменить вплоть до начала визита. У новой
+              компании по умолчанию 2 часа.
+            </p>
             {mapLinksError?.field === 'clientRescheduleMinHours' && (
-              <p className="text-xs text-danger">{mapLinksError.text}</p>
+              <p id="clientRescheduleMinHours-error" className="text-xs text-danger">
+                {mapLinksError.text}
+              </p>
             )}
           </div>
           <div className="flex flex-col gap-1">
             <Input
               label="Ссылка на Яндекс Картах"
               placeholder="https://yandex.ru/maps/org/..."
+              aria-invalid={mapLinksError?.field === 'yandexMapsUrl' || undefined}
+              aria-describedby={mapLinksError?.field === 'yandexMapsUrl' ? 'yandexMapsUrl-error' : undefined}
               {...register('yandexMapsUrl')}
             />
             <p className="text-xs text-muted">Вставьте ссылку на карточку компании — она сохранится как есть, без изменений</p>
-            {mapLinksError?.field === 'yandexMapsUrl' && <p className="text-xs text-danger">{mapLinksError.text}</p>}
+            {mapLinksError?.field === 'yandexMapsUrl' && (
+              <p id="yandexMapsUrl-error" className="text-xs text-danger">
+                {mapLinksError.text}
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-1">
-            <Input label="Ссылка на 2ГИС" placeholder="https://2gis.ru/..." {...register('twoGisUrl')} />
-            {mapLinksError?.field === 'twoGisUrl' && <p className="text-xs text-danger">{mapLinksError.text}</p>}
+            <Input
+              label="Ссылка на 2ГИС"
+              placeholder="https://2gis.ru/..."
+              aria-invalid={mapLinksError?.field === 'twoGisUrl' || undefined}
+              aria-describedby={mapLinksError?.field === 'twoGisUrl' ? 'twoGisUrl-error' : undefined}
+              {...register('twoGisUrl')}
+            />
+            {mapLinksError?.field === 'twoGisUrl' && (
+              <p id="twoGisUrl-error" className="text-xs text-danger">
+                {mapLinksError.text}
+              </p>
+            )}
           </div>
           <div>
             <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">

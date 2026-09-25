@@ -30,9 +30,15 @@ public static class BookingFilters
         }
 
         // Case-insensitive on purpose (closes the US-07 defect where `cancelled`/`completed` in lower
-        // case were silently ignored); numeric enum values ("3") keep working exactly as before, since
-        // Enum.TryParse's numeric path never cared about casing to begin with.
-        if (Enum.TryParse<BookingStatus>(status, ignoreCase: true, out var parsed))
+        // case were silently ignored). Numeric enum values ("3") keep working exactly as before — that
+        // was an explicit backward-compatibility guarantee of this method and callers may rely on it.
+        //
+        // Cycle 17 briefly added a guard here that refused all-numeric input, to stop Enum.TryParse's
+        // known gotcha of parsing ANY integer literal ("99", "-1") into an undefined enum value. The
+        // guard was removed: the `Enum.IsDefined` check below ALREADY rejects exactly those ordinals,
+        // so the guard's only real effect was breaking the documented numeric values. It also missed
+        // " 3 " (TryParse trims, All(IsDigit) does not), so it did not even close its own class.
+        if (Enum.TryParse<BookingStatus>(status, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed))
         {
             filter = new ClientStatusFilter(ClientStatusFilterKind.ByStatus, parsed);
             return true;

@@ -69,14 +69,35 @@ public class BookingFiltersTests
         filter.Status.Should().Be(BookingStatus.Cancelled);
     }
 
-    [Fact]
-    public void TryParseClientStatus_NumericEnumValue_ReturnsByStatus()
+    [Theory]
+    [InlineData("3", BookingStatus.Completed)]
+    [InlineData("0", BookingStatus.Pending)]
+    public void TryParseClientStatus_DefinedNumericValue_StillWorks(string value, BookingStatus expected)
     {
-        var ok = BookingFilters.TryParseClientStatus("3", out var filter);
+        // Backward compatibility, stated by TryParseClientStatus itself: numeric enum values were
+        // always accepted and callers may rely on it. Cycle 17 broke this for a while by refusing all
+        // numeric input; the rejection it was after is the NEXT test's job, and Enum.IsDefined already
+        // did it.
+        var ok = BookingFilters.TryParseClientStatus(value, out var filter);
 
         ok.Should().BeTrue();
         filter.Kind.Should().Be(ClientStatusFilterKind.ByStatus);
-        filter.Status.Should().Be((BookingStatus)3);
+        filter.Status.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("99")]
+    [InlineData("-1")]
+    [InlineData(" 99 ")]
+    public void TryParseClientStatus_UndefinedOrdinal_ReturnsFalse(string value)
+    {
+        // Enum.TryParse<T>(string, ...) accepts ANY integer literal, including ordinals that match no
+        // member, which would give a 200 with an empty result instead of the documented 400. The
+        // `Enum.IsDefined` check is what closes this — including the padded form, since TryParse trims
+        // and a character-by-character digit guard would not.
+        var ok = BookingFilters.TryParseClientStatus(value, out _);
+
+        ok.Should().BeFalse();
     }
 
     [Fact]

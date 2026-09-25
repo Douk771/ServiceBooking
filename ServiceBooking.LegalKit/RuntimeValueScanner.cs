@@ -27,6 +27,12 @@ internal static partial class RuntimeValueScanner
     [GeneratedRegex(@"data-legal-(value|when|unless)\s*=\s*""([^""]*)""")]
     private static partial Regex AttributeRegex();
 
+    /// <summary>Test-only probe (ARCHITECTURE_CYCLE17.md §306.2 corpus tests, `InternalsVisibleTo`
+    /// above): true iff <paramref name="html"/> contains at least one <c>data-legal-value|when|unless</c>
+    /// attribute the scanner's own regex recognizes — independent of whether its name is known. This is
+    /// the scanner-side half of the shared corpus's "scannerSees" flag.</summary>
+    internal static bool HasAnyAttributeMatch(string html) => AttributeRegex().IsMatch(html);
+
     /// <summary>
     /// Every <c>data-legal-value|when|unless="…"</c> attribute in <paramref name="html"/> whose name
     /// isn't an exact match of one of <see cref="KnownNames"/> — catches a typo like

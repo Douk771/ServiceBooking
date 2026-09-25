@@ -12,8 +12,8 @@
     },
     {
       "type": "TermsClient",
-      "version": "2026-09-22-draft",
-      "effectiveFrom": "2026-09-22",
+      "version": "2026-09-25-draft",
+      "effectiveFrom": "2026-09-25",
       "isDraft": true,
       "changeKind": "Material",
       "gate": "Global",

@@ -888,6 +888,22 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<string>("Address")
                         .HasColumnType("text");
 
+                    b.Property<double?>("AddressLatitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("AddressLongitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<int?>("AddressPrecision")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("AddressVerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AddressVerifiedInputKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.Property<bool>("AllowSelfBooking")
                         .HasColumnType("boolean");
 

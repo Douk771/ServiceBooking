@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format, parseISO, differenceInHours } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { bookingsApi } from '../api/bookings'
 import { reviewsApi } from '../api/reviews'
@@ -22,12 +22,6 @@ const TABS: { key: FilterTab; label: string }[] = [
   { key: 'completed', label: 'Завершённые' },
   { key: 'cancelled', label: 'Отменённые' },
 ]
-
-function canCancelBooking(b: Booking): boolean {
-  if (b.status !== 'Pending' && b.status !== 'Confirmed') return false
-  const bookingDateTime = parseISO(`${b.date}T${b.startTime}`)
-  return differenceInHours(bookingDateTime, new Date()) > 2
-}
 
 interface ClientCancelFormProps {
   bookingId: string
@@ -99,7 +93,14 @@ export function ClientBookingsPage() {
       setCancellingId(null)
       qc.invalidateQueries({ queryKey: ['client-bookings'] })
     },
-    onError: (err) => setCancelError(getCancelErrorMessage(err)),
+    onError: (err) => {
+      setCancelError(getCancelErrorMessage(err))
+      // API_CONTRACT_CYCLE17.md §322.4 п.4 — a 409 means the server's window rule disagreed with
+      // our local `clientCancelAllowed` flag (stale cache/clock skew); refetch so the flag (and any
+      // other list state) is authoritative again.
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 409) qc.invalidateQueries({ queryKey: ['client-bookings'] })
+    },
   })
 
   // Group by month
@@ -196,11 +197,43 @@ export function ClientBookingsPage() {
                             Перенести
                           </Button>
                         )}
-                        {canCancelBooking(b) && cancellingId !== b.id && (
+                        {/* US-17-02 (§305.2/§324) — explain why there's no reschedule button, with
+                            THIS company's actual rule, instead of leaving silence. Only shown when
+                            the server told us the concrete reason (both fields present); an absent
+                            field (old cache) behaves exactly as before this cycle — no button, no text. */}
+                        {b.clientRescheduleAllowed === false &&
+                          b.clientRescheduleMinHours != null &&
+                          (b.status === 'Pending' || b.status === 'Confirmed') && (
+                            <p className="text-[12px] text-muted text-right max-w-[160px]">
+                              {b.clientRescheduleMinHours === 0
+                                ? 'Перенести уже нельзя'
+                                : `Перенести можно не позже чем за ${b.clientRescheduleMinHours} ч до визита`}
+                            </p>
+                          )}
+                        {/* API_CONTRACT_CYCLE17.md §322.4 — driven by the server-computed flag, same
+                            convention as clientRescheduleAllowed above; `undefined` (old cache/other
+                            endpoint) still renders the button and lets the server decide on submit. */}
+                        {b.clientCancelAllowed !== false && cancellingId !== b.id && (
                           <Button size="sm" variant="danger" onClick={() => setCancellingId(b.id)}>
                             Отменить
                           </Button>
                         )}
+                        {/* Цикл 17, находка legal-counsel: у переноса объяснение выше есть, а у
+                            отмены кнопка просто исчезала — молчание там, где клиент вправе знать,
+                            что делать. Отказ от договора об оказании услуг возможен в любое время
+                            (ст. 32 ЗоЗПП), и закрытая кнопка это право не отменяет: она ограничивает
+                            интерфейс, а не договор. Поэтому текст обязан назвать живой способ
+                            отменить, иначе ограничение читается как запрет. Условия — те же, что у
+                            переноса: `undefined` (старый кеш) ведёт себя как до цикла. */}
+                        {b.clientCancelAllowed === false &&
+                          b.clientRescheduleMinHours != null &&
+                          (b.status === 'Pending' || b.status === 'Confirmed') && (
+                            <p className="text-[12px] text-muted text-right max-w-[160px]">
+                              {b.clientRescheduleMinHours === 0
+                                ? 'Отменить в приложении уже нельзя — свяжитесь с салоном'
+                                : `Отменить в приложении можно не позже чем за ${b.clientRescheduleMinHours} ч до визита — чтобы отменить, свяжитесь с салоном`}
+                            </p>
+                          )}
                         {b.status === 'Completed' && canReviewSet.has(b.id) && (
                           <Button size="sm" variant="secondary" onClick={() => setReviewBooking(b)}>
                             <Icon name="star" size={12} className="text-gold-dark" />
@@ -259,6 +292,9 @@ export function ClientBookingsPage() {
           onClose={() => setRescheduleBooking(null)}
           // §286 — replaces the modal's default 14-day grid with the actual company setting.
           horizonDays={rescheduleBooking.companyBookingHorizonDays ?? 14}
+          // US-17-01 (§305.1/§324) — don't offer days/slots inside the company's window; the server
+          // re-validates regardless (§257.4 cycle 15), this only avoids proposing a doomed slot.
+          minHours={rescheduleBooking.clientRescheduleMinHours ?? 0}
           allowManualOverride={false}
           isClientOwner
           onRescheduled={() => qc.invalidateQueries({ queryKey: ['client-bookings'] })}

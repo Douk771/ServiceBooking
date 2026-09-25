@@ -830,6 +830,15 @@ export interface components {
             estimatedMonthlyPrice: number;
             items: components["schemas"]["SubscriptionRequestItemDto"][];
             comment?: string | null;
+            /**
+             * @description ARCHITECTURE_CYCLE17.md §307.1 / API_CONTRACT_CYCLE17.md §325.1 (US-17-08, C15-7). Server-
+             *     composed text (legal-counsel), non-null ONLY when all three hold: the account has an
+             *     active subscription; the CURRENT plan is isPublic: false (withdrawn from sale); the
+             *     request asks to CHANGE plan (requestedPlanId set and different from the current one).
+             *     Front prints it verbatim, never composes its own wording. Also present inside
+             *     `pendingRequest` on `GET /api/billing/subscription` (OwnerSubscriptionDto), same field.
+             */
+            irreversibilityNotice?: string | null;
         };
         SubscriptionRequestItemDto: {
             /** Format: uuid */

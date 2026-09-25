@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Booking } from '../../types'
@@ -36,11 +36,11 @@ const booking: Booking = {
   createdAt: '2026-09-01T00:00:00Z',
 }
 
-function renderModal() {
+function renderModal(minHours?: number) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
-      <RescheduleModal booking={booking} onClose={() => {}} />
+      <RescheduleModal booking={booking} onClose={() => {}} minHours={minHours} />
     </QueryClientProvider>,
   )
 }
@@ -89,5 +89,48 @@ describe('RescheduleModal — F7: reads the time grid from the server, not a han
     dateButtons[0].click()
 
     expect(await screen.findByText('14:00')).toBeInTheDocument()
+  })
+})
+
+describe('RescheduleModal — US-17-01 (ARCHITECTURE_CYCLE17.md §305.1): one boundary for days and slots', () => {
+  beforeEach(() => {
+    // Fixed "now" so tomorrow-at-10:00 is a known, deterministic distance away.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-10-01T12:00:00'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('filters out a tomorrow slot inside a 24h window (minHours=24)', async () => {
+    getSlots.mockResolvedValue([{ start: '10:00:00', end: '10:30:00' }]) // tomorrow 10:00 < now+24h
+    renderModal(24)
+
+    const dateButtons = await screen.findAllByRole('button', { name: /завтра/i })
+    dateButtons[0].click()
+
+    expect(await screen.findByText('Нет доступных слотов на этот день')).toBeInTheDocument()
+    expect(screen.queryByText('10:00')).not.toBeInTheDocument()
+  })
+
+  it('keeps a slot past the 24h boundary (minHours=24)', async () => {
+    getSlots.mockResolvedValue([{ start: '13:00:00', end: '13:30:00' }]) // tomorrow 13:00 > now+24h
+    renderModal(24)
+
+    const dateButtons = await screen.findAllByRole('button', { name: /завтра/i })
+    dateButtons[0].click()
+
+    expect(await screen.findByText('13:00')).toBeInTheDocument()
+  })
+
+  it('minHours=0 (default) behaves as before this cycle — no extra filtering beyond "now"', async () => {
+    getSlots.mockResolvedValue([{ start: '00:01:00', end: '00:31:00' }])
+    renderModal(0)
+
+    const dateButtons = await screen.findAllByRole('button', { name: /завтра/i })
+    dateButtons[0].click()
+
+    expect(await screen.findByText('00:01')).toBeInTheDocument()
   })
 })

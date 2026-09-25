@@ -80,7 +80,11 @@ public class OwnerSubscriptionService(
         // — a paid plan's name/price next to a Free feature list — is deliberate, not accidental, but
         // it must never go unexplained: the warning below names the actual subscribed plan explicitly
         // so "Профи, 4990 ₽/мес" next to "Онлайн-запись: нет" doesn't read as a bug on screen.
-        var warning = BuildWarning(status, isExpiringSoon, expiresInDays, sub);
+        // ARCHITECTURE_CYCLE17.md §307.1/§307.2 (US-17-08/09, C15-7) — "снят с продажи" = IsActive &&
+        // !IsPublic (§255.2/§255.3 cycle 15). Computed once, shared by the "Expiring soon" warning
+        // below and by BuildPendingRequestDto further down.
+        var currentPlanWithdrawn = sub?.PlanConfig is { IsActive: true, IsPublic: false };
+        var warning = BuildWarning(status, isExpiringSoon, expiresInDays, sub, currentPlanWithdrawn);
 
         // B10: an already-subscribed Quantity option must stay listed here too — otherwise the owner
         // can never ask to buy MORE of something they already have (e.g. one more WhatsApp number).
@@ -91,7 +95,9 @@ public class OwnerSubscriptionService(
             .Select(o => ToAvailableOptionDto(o, planRules))
             .ToList(); // Unavailable options ARE shown too (§70 п.2) — no filter beyond IsActive/priced above.
 
-        var pendingRequest = BuildPendingRequestDto(account, allOptions.Concat(subscribedOptions.Select(o => o.Option)).DistinctBy(o => o.Id).ToList(), planDto.PricePerMonth);
+        var pendingRequest = BuildPendingRequestDto(
+            account, allOptions.Concat(subscribedOptions.Select(o => o.Option)).DistinctBy(o => o.Id).ToList(),
+            planDto.PricePerMonth, currentPlanWithdrawn, sub?.PlanConfigId);
 
         var lastRejectedRequest = account.LastRejectionReason is not null && account.LastRejectedAtUtc.HasValue
             ? new RejectedRequestDto(account.LastRejectionReason, account.LastRejectedAtUtc.Value)
@@ -199,7 +205,8 @@ public class OwnerSubscriptionService(
             availability.ToString(), text, CanRequest: availability != OptionAvailability.Unavailable);
     }
 
-    private static SubscriptionWarningDto? BuildWarning(string status, bool isExpiringSoon, int? expiresInDays, AccountSubscription? sub)
+    private static SubscriptionWarningDto? BuildWarning(
+        string status, bool isExpiringSoon, int? expiresInDays, AccountSubscription? sub, bool currentPlanWithdrawn)
     {
         if (status == "Expired")
         {
@@ -226,15 +233,33 @@ public class OwnerSubscriptionService(
         }
 
         if (isExpiringSoon && expiresInDays is >= 0)
-            return new SubscriptionWarningDto("Expiring", $"Подписка истекает через {expiresInDays} дн. — продлите её, чтобы не потерять возможности тарифа.",
-                []);
+        {
+            // ARCHITECTURE_CYCLE17.md §307.2, API_CONTRACT_CYCLE17.md §325.2 (US-17-09, п. 6.8.5) —
+            // when publicly listed, the string is byte-for-byte what it was before this cycle
+            // (regression asserted by exact string comparison, not Contains). When the current plan is
+            // snapshot off sale, legal-counsel's irreversibility line is appended.
+            //
+            // ⚠️ §307.1 — this is the SECOND obligatory place this warning must appear (п. 6.13.15
+            // 03-terms-owner.html): the self-service plan-change screen in the owner cabinet, which
+            // does not exist yet. When it's built, its text comes from this same source.
+            var baseText = $"Подписка истекает через {expiresInDays} дн. — продлите её, чтобы не потерять возможности тарифа.";
+            var text = currentPlanWithdrawn
+                ? baseText + " " + LegalNotices.SubscriptionExpiringOnWithdrawnPlanSuffix
+                : baseText;
+            return new SubscriptionWarningDto("Expiring", text, []);
+        }
 
         return null;
     }
 
     // ── Requests (§49, US-70) ────────────────────────────────────────────────────
 
-    public SubscriptionRequestDto? BuildPendingRequestDto(BillingAccount account, List<SubscriptionOption> knownOptions, decimal currentPlanPrice)
+    // ARCHITECTURE_CYCLE17.md §307.1 — `currentPlanWithdrawn` defaults false so
+    // AdminBillingController.cs's own call site (a different audience, admin's own DTO shape) keeps
+    // compiling and behaving exactly as before without also needing this notice computed there.
+    public SubscriptionRequestDto? BuildPendingRequestDto(
+        BillingAccount account, List<SubscriptionOption> knownOptions, decimal currentPlanPrice,
+        bool currentPlanWithdrawn = false, Guid? currentPlanId = null)
     {
         if (account.RequestedAtUtc is null) return null;
 
@@ -254,11 +279,20 @@ public class OwnerSubscriptionService(
             return (option?.PricePerMonth ?? 0m) * l.Quantity;
         });
 
+        // ARCHITECTURE_CYCLE17.md §307.1 — all three conditions at once: an active subscription exists
+        // (`currentPlanWithdrawn` is already false without one, computed by the caller from `sub`),
+        // its plan is snapshot off sale, AND this request asks for a PLAN CHANGE specifically (options-
+        // only requests, or a request for the SAME plan the account is already on, get null).
+        var requestsPlanChange = account.RequestedPlanId is not null && account.RequestedPlanId != currentPlanId;
+        var irreversibilityNotice = currentPlanWithdrawn && requestsPlanChange
+            ? LegalNotices.PendingPlanChangeIrreversibilityNotice
+            : null;
+
         return new SubscriptionRequestDto(
             // Deterministic pseudo-id derived from the account (there's no separate request row to key
             // off — see the entity's own remarks); stable for the lifetime of one pending request.
             account.Id, "Pending", account.RequestedAtUtc.Value, account.RequestedPlanId, account.RequestedPlan?.Name,
-            estimated, items, account.RequestedComment);
+            estimated, items, account.RequestedComment, irreversibilityNotice);
     }
 
     public static List<RequestedOptionLine> DeserializeOptionLines(string? json) =>
