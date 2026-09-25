@@ -110,4 +110,12 @@ public sealed class RetentionPeriods
     /// attached to a LIVE account is never touched by this rule regardless of age — see
     /// <see cref="Rules.VerifiedPhoneOrphanRule"/>'s own doc comment for why. Default 365.</summary>
     public int VerifiedPhoneOrphanDays { get; set; } = 365;
+
+    /// <summary>Cycle 18, B8/К3 (ARCHITECTURE_CYCLE18.md §343, Д14/Д16). Age of a
+    /// <see cref="Core.Entities.TrialPhoneRegistration"/> row since <c>RegisteredAtUtc</c> — the date of
+    /// GRANT, never the account's deletion or the trial's own end date. Default 1095 (3 years),
+    /// matching the exact figure already promised in п. 5.6.7 Политики конфиденциальности and п. 6.16.7
+    /// Соглашения — this is not a "reasonable default", it is the number those documents already commit
+    /// to; shortening it in configuration would make the product's own texts false.</summary>
+    public int TrialPhoneRegistrationDays { get; set; } = 1095;
 }

@@ -995,6 +995,11 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.PhoneVerificationSessionRule>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.VerifiedPhoneOrphanRule>();
+// Cycle 18, B8 (ARCHITECTURE_CYCLE18.md §343) — the 19th rule: TrialPhoneRegistration is NOT
+// anonymized data (Д14), so it needs its own destruction date like everything else here, 3 years from
+// the date of grant (Д16) plus destruction on HMAC key rotation (К3).
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.TrialPhoneRegistrationRule>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
 builder.Services.AddHostedService<ScheduledTaskRunner>();

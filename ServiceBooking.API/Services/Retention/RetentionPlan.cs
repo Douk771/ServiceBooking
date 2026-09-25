@@ -19,7 +19,8 @@ public readonly record struct RetentionCutoffs(
     DateTime PushSubscription,
     DateTime StaffPushNotification,
     DateTime PhoneVerificationSession,
-    DateTime VerifiedPhoneOrphan);
+    DateTime VerifiedPhoneOrphan,
+    DateTime TrialPhoneRegistration);
 
 /// <summary>
 /// Pure cutoff arithmetic (ARCHITECTURE_CYCLE5.md §49.4) — every rule's "how old is old enough" question
@@ -47,5 +48,6 @@ public static class RetentionPlan
         PushSubscription: nowUtc.AddDays(-periods.PushSubscriptionDays),
         StaffPushNotification: nowUtc.AddDays(-periods.StaffPushNotificationDays),
         PhoneVerificationSession: nowUtc.AddDays(-periods.PhoneVerificationSessionDays),
-        VerifiedPhoneOrphan: nowUtc.AddDays(-periods.VerifiedPhoneOrphanDays));
+        VerifiedPhoneOrphan: nowUtc.AddDays(-periods.VerifiedPhoneOrphanDays),
+        TrialPhoneRegistration: nowUtc.AddDays(-periods.TrialPhoneRegistrationDays));
 }
