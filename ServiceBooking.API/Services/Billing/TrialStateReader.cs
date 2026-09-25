@@ -54,12 +54,20 @@ public class TrialStateReader(
 
         if (onTrialNow)
         {
-            var daysLeft = (int)Math.Ceiling((sub!.PaidUntil!.Value - now).TotalDays);
+            // Н8 (code review, cycle 18 3rd pass) — daysLeft/EndsAt gate off account.TrialEndsAtUtc, the
+            // SAME column TrialLifecycleTask's expiry phase (§337.1 п.4) actually filters on, not
+            // sub.PaidUntil. The two are set together by TrialActivationService.GrantAsync and normally
+            // agree, but AdminBillingController.AssignSubscription can move PaidUntil on its own (an
+            // admin extending/shortening the subscription row directly) without touching TrialEndsAtUtc
+            // — if they diverge, the banner shown here must still track what will actually happen to the
+            // account, not a date the background task doesn't look at.
+            var trialEndsAt = account.TrialEndsAtUtc ?? sub!.PaidUntil!.Value;
+            var daysLeft = (int)Math.Ceiling((trialEndsAt - now).TotalDays);
             var termsDto = new TrialActivationTermsDto(
                 account.TrialTermsVersion ?? TrialTermsRegistry.CurrentVersion,
                 TrialTermsRegistry.Sha256Of(account.TrialTermsVersion ?? TrialTermsRegistry.CurrentVersion) ?? string.Empty,
                 account.TrialTermsVersion == TrialTermsRegistry.CurrentVersion
-                    ? TrialTermsRegistry.RenderCurrent(plan!.Name, account.TrialDurationDays ?? 0, sub.PaidUntil.Value, account.TrialMailingWindowDays ?? 0)
+                    ? TrialTermsRegistry.RenderCurrent(plan!.Name, account.TrialDurationDays ?? 0, trialEndsAt, account.TrialMailingWindowDays ?? 0)
                     : TrialTermsRegistry.TryGetTemplate(account.TrialTermsVersion ?? string.Empty) ?? string.Empty,
                 AcknowledgementRequired: account.TrialTermsAcknowledgedAtUtc is null,
                 ShownAt: account.TrialTermsAcknowledgedAtUtc is null ? null : account.TrialStartedAtUtc,
@@ -72,16 +80,16 @@ public class TrialStateReader(
                 DurationDays: account.TrialDurationDays,
                 MailingWindowDays: account.TrialMailingWindowDays,
                 WarningThresholdsDays: TrialWindow.ParseThresholds(account.TrialWarningThresholdsDays),
-                EndsAtPreview: sub.PaidUntil,
+                EndsAtPreview: trialEndsAt,
                 RefusalCode: null,
                 Message: termsDto.Text,
                 ActivationTerms: termsDto,
-                PlanChangeNotice: string.Format(TrialLegalNotices.TrialRemainderForfeitedOnPlanChange, sub.PaidUntil.Value.ToString("dd.MM.yyyy")),
+                PlanChangeNotice: string.Format(TrialLegalNotices.TrialRemainderForfeitedOnPlanChange, trialEndsAt.ToString("dd.MM.yyyy")),
                 StartedAt: account.TrialStartedAtUtc,
-                EndsAt: sub.PaidUntil,
+                EndsAt: trialEndsAt,
                 DaysLeft: Math.Max(daysLeft, 0),
                 GrantSource: account.TrialGrantSource?.ToString(),
-                MailingWindow: BuildMailingWindow(account, sub, now),
+                MailingWindow: BuildMailingWindow(account, sub!, now),
                 Warning: BuildActiveWarning(account, includes, daysLeft),
                 Includes: includes,
                 Limits: limits);
