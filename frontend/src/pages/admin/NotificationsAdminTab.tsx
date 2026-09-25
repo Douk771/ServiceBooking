@@ -204,6 +204,14 @@ function PlatformSettingsCard() {
   const [trialDurationDays, setTrialDurationDays] = useState('14')
   const [trialMailingWindowDays, setTrialMailingWindowDays] = useState('7')
   const [trialThresholds, setTrialThresholds] = useState('7,3,1')
+  // Cycle 18 review (finding #9): "changed" must be tracked from user input (onChange), not inferred
+  // by diffing local state against the server value. `GetTrialDurationDaysAsync` can legitimately
+  // return `null` for a corrupted/out-of-range stored value (PlatformSettings.cs) — comparing against
+  // that would make every save "change" the field the admin never touched, silently overwriting it
+  // and re-coupling this save to trial validation it has nothing to do with.
+  const [trialDurationTouched, setTrialDurationTouched] = useState(false)
+  const [trialMailingWindowTouched, setTrialMailingWindowTouched] = useState(false)
+  const [trialThresholdsTouched, setTrialThresholdsTouched] = useState(false)
 
   useEffect(() => {
     if (!data) return
@@ -213,6 +221,9 @@ function PlatformSettingsCard() {
     if (data.trialDurationDays != null) setTrialDurationDays(String(data.trialDurationDays))
     if (data.trialMailingWindowDays != null) setTrialMailingWindowDays(String(data.trialMailingWindowDays))
     if (data.trialWarningThresholdsDays != null) setTrialThresholds(data.trialWarningThresholdsDays.join(','))
+    setTrialDurationTouched(false)
+    setTrialMailingWindowTouched(false)
+    setTrialThresholdsTouched(false)
   }, [data])
 
   // Client-side courtesy check only (§367: "окно ≤ длительности") — the server is the real gate and
@@ -237,17 +248,15 @@ function PlatformSettingsCard() {
       }
       // Cycle 18 §367: all three trial fields are nullable on the wire, and null/absent means "leave
       // unchanged" — same convention as isPublic/sortOrder on AdminPlanInput. Sending them unconditionally
-      // from local state (seeded from constants '14'/'7'/'7,3,1' before `data` loads, or stale once the
-      // server value has drifted from what this screen last read) would silently overwrite a value the
-      // admin never touched, and would block saving unrelated fields (price/idle days) behind trial
-      // validation errors that have nothing to do with what's being changed. So: only include a trial
-      // field in the request when its local value actually differs from the loaded server value, and
-      // only validate the ones being sent.
-      const trialDurationChanged = data?.trialDurationDays == null || trialDurationDays.trim() !== String(data.trialDurationDays)
-      const trialMailingWindowChanged =
-        data?.trialMailingWindowDays == null || trialMailingWindowDays.trim() !== String(data.trialMailingWindowDays)
-      const serverThresholdsText = data?.trialWarningThresholdsDays?.join(',') ?? null
-      const trialThresholdsChanged = serverThresholdsText == null || trialThresholds.trim() !== serverThresholdsText
+      // would silently overwrite a value the admin never touched, and would block saving unrelated
+      // fields (price/idle days) behind trial validation errors that have nothing to do with what's
+      // being changed. So: only include a trial field in the request when the admin actually edited it
+      // (tracked via onChange, not by diffing against the server value — the server value can be `null`
+      // for reasons unrelated to "unchanged", e.g. a corrupted stored duration; diffing against that
+      // would misfire as "changed" for a field nobody touched).
+      const trialDurationChanged = trialDurationTouched
+      const trialMailingWindowChanged = trialMailingWindowTouched
+      const trialThresholdsChanged = trialThresholdsTouched
 
       let trialDurationDaysToSend: number | null = null
       if (trialDurationChanged) {
@@ -348,7 +357,10 @@ function PlatformSettingsCard() {
               max={365}
               value={trialDurationDays}
               aria-describedby={trialWindowExceedsDuration ? 'trial-window-error' : undefined}
-              onChange={(e) => setTrialDurationDays(e.target.value)}
+              onChange={(e) => {
+                setTrialDurationDays(e.target.value)
+                setTrialDurationTouched(true)
+              }}
             />
           </div>
           <div>
@@ -359,14 +371,20 @@ function PlatformSettingsCard() {
               max={365}
               value={trialMailingWindowDays}
               aria-describedby={trialWindowExceedsDuration ? 'trial-window-error' : undefined}
-              onChange={(e) => setTrialMailingWindowDays(e.target.value)}
+              onChange={(e) => {
+                setTrialMailingWindowDays(e.target.value)
+                setTrialMailingWindowTouched(true)
+              }}
             />
           </div>
           <div>
             <Input
               label="Пороги предупреждений (дней, через запятую)"
               value={trialThresholds}
-              onChange={(e) => setTrialThresholds(e.target.value)}
+              onChange={(e) => {
+                setTrialThresholds(e.target.value)
+                setTrialThresholdsTouched(true)
+              }}
             />
           </div>
         </div>
