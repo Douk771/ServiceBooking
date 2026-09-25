@@ -222,6 +222,59 @@ public class TrialActivationService(
             ChangeKind = SubscriptionChangeKind.TrialGranted,
         });
 
+        // §333.3/§336.1 п.6 — closes R3 ("included on the plan" != "counted as paid" in
+        // SubscriptionResolver, which only ever reads AccountSubscriptionOptions.Quantity). Materializes
+        // (or revives, EndsAtUtc = null) the notifications.whatsapp row so a trial owner who connects a
+        // channel actually has paid notification numbers, not just a channel the plan lets them connect.
+        // PaidUntilUtc is left null here — until the mailing window actually starts (Д5, no channel
+        // authorized yet) there is nothing to send with, and Н5 wires the eventual window end in here.
+        var whatsappOption = await db.SubscriptionOptions
+            .FirstOrDefaultAsync(o => o.Code == SubscriptionResolver.WhatsAppOptionCode, ct);
+        if (whatsappOption is not null)
+        {
+            var rule = await db.PlanOptionRules
+                .FirstOrDefaultAsync(r => r.PlanConfigId == plan.Id && r.OptionId == whatsappOption.Id, ct);
+            // Extra or no rule at all → fail-closed, no row created (§333.3, §0.2 п.4): the trial plan's
+            // matrix must say Included for this to mean anything.
+            if (rule is { Availability: OptionAvailability.Included })
+            {
+                var existingOption = await db.AccountSubscriptionOptions
+                    .FirstOrDefaultAsync(o => o.BillingAccountId == account.Id && o.OptionId == whatsappOption.Id, ct);
+                if (existingOption is null)
+                {
+                    db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
+                    {
+                        Id = Guid.NewGuid(),
+                        BillingAccountId = account.Id,
+                        OptionId = whatsappOption.Id,
+                        Quantity = rule.IncludedQuantity ?? 1,
+                        PaidUntilUtc = account.TrialMailingWindowEndsAtUtc,
+                        ActivatedAtUtc = now,
+                        ActivatedByUserId = request.ActorUserId,
+                        GrantedByTrial = true,
+                    });
+                }
+                // B1 (code review, cycle 18 late delta) — a row that already exists for this option and
+                // is NOT one the trial itself created (GrantedByTrial == false, e.g. an admin's paid
+                // AssignSubscription grant whose own paid period has since lapsed) is left completely
+                // untouched here. The (BillingAccountId, OptionId) unique index means there is no way to
+                // hold both an admin grant and a trial grant as separate rows for the same option — and
+                // overwriting the admin's row would (a) silently discard whatever quantity/date it
+                // carried and (b) make it indistinguishable from a trial row, so TrialLifecycleTask's
+                // expiry phase would later date out a grant the trial never created. Only a row this
+                // service itself materialized before (GrantedByTrial == true, e.g. a second trial after
+                // an earlier one already ran its course and dated this same row out) is revived.
+                else if (existingOption.GrantedByTrial)
+                {
+                    existingOption.Quantity = rule.IncludedQuantity ?? 1;
+                    existingOption.EndsAtUtc = null;
+                    existingOption.PaidUntilUtc = account.TrialMailingWindowEndsAtUtc;
+                    existingOption.ActivatedAtUtc = now;
+                    existingOption.ActivatedByUserId = request.ActorUserId;
+                }
+            }
+        }
+
         try
         {
             await db.SaveChangesAsync(ct);

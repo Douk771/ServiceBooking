@@ -51,6 +51,15 @@ public static class TrialMailingWindowStarter
         if (sub is not null)
             sub.MailingUntilUtc = account.TrialMailingWindowEndsAtUtc;
 
+        // §336.3 — the option row itself (§333.3's materialization) carries its own PaidUntilUtc, the
+        // mechanism IsOptionCurrentlyPaid already reads (§333.2); this keeps it in sync with the window
+        // now that it actually has an end date instead of the null it was created with.
+        var trialOptions = await db.AccountSubscriptionOptions
+            .Where(o => o.BillingAccountId == account.Id && o.GrantedByTrial && o.EndsAtUtc == null)
+            .ToListAsync(ct);
+        foreach (var option in trialOptions)
+            option.PaidUntilUtc = account.TrialMailingWindowEndsAtUtc;
+
         // §336.3 — one journal row when the window opens, same actor convention as trial-lifecycle's
         // own writes even though this particular row can also be written synchronously from the
         // request/webhook path rather than from the background task.

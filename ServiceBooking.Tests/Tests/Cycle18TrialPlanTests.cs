@@ -6,6 +6,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -754,5 +757,107 @@ public class Cycle18TrialPlanTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         trial.ValueKind.Should().NotBe(System.Text.Json.JsonValueKind.Null,
             "code-review finding #2: trial НЕ nullable — админский grant-триал-кнопкой экран рендерится только при state==\"Never\"");
         trial.GetProperty("state").GetString().Should().Be("Never");
+    }
+
+    // ── Backend late-delta recheck (Б2/Б1, code review) ─────────────────────────────────────────
+    // §333.3's materialization and §337.1 phase 4's GrantedByTrial narrowing are two halves of the same
+    // fix (the review explicitly required them "одним куском") — covered together here rather than
+    // split across files, since QA's Cycle18TrialLifecycleTests.cs predates this fix entirely.
+
+    [Fact, TestCase("CY18-B2-01")]
+    public async Task ActivateTrial_WithIncludedWhatsAppRule_MaterializesAccountSubscriptionOption()
+    {
+        var trialId = await CreateTrialPlanAsync();
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+
+        var whatsappOptionId = await DbAsync(db => db.SubscriptionOptions
+            .Where(o => o.Code == SubscriptionResolver.WhatsAppOptionCode).Select(o => o.Id).FirstAsync());
+
+        // Trial plan's own matrix must say Included for §333.3 to materialize anything.
+        var setRule = await adminClient.PutAsJsonAsync($"/api/admin/plans/{trialId}", new
+        {
+            name = "Trial Plan (QA)", pricePerMonth = 0m, maxEmployees = 25, maxCompanies = 5, isActive = true,
+            options = new[] { new { optionId = whatsappOptionId, availability = "Included", includedQuantity = 3 } },
+        });
+        setRule.StatusCode.Should().Be(HttpStatusCode.OK, await setRule.Content.ReadAsStringAsync());
+
+        var (ownerLike, accountId) = await CreateOwnerWithVerifiedPhoneAsync();
+        var activate = await AuthedClient(ownerLike.Token).PostAsJsonAsync("/api/billing/trial",
+            new { termsVersion = await CurrentTrialTermsVersionAsync() });
+        activate.StatusCode.Should().Be(HttpStatusCode.OK, await activate.Content.ReadAsStringAsync());
+
+        var option = await DbAsync(db => db.AccountSubscriptionOptions
+            .Where(o => o.BillingAccountId == accountId && o.OptionId == whatsappOptionId).SingleOrDefaultAsync());
+        option.Should().NotBeNull("§333.3: R3 требует материализованную строку опции, иначе рассылки на триале физически не идут");
+        option!.Quantity.Should().Be(3, "Quantity = PlanOptionRule.IncludedQuantity");
+        option.GrantedByTrial.Should().BeTrue();
+        option.EndsAtUtc.Should().BeNull();
+    }
+
+    [Fact, TestCase("CY18-B1-01")]
+    public async Task ActivateTrial_AccountHadStaleAdminPaidWhatsAppOption_LeavesItUntouched_AndSurvivesLifecycleExpiry()
+    {
+        var trialId = await CreateTrialPlanAsync();
+        var admin = await LoginAsSuperAdminAsync();
+        var adminClient = AuthedClient(admin.Token);
+
+        var whatsappOptionId = await DbAsync(db => db.SubscriptionOptions
+            .Where(o => o.Code == SubscriptionResolver.WhatsAppOptionCode).Select(o => o.Id).FirstAsync());
+        await adminClient.PutAsJsonAsync($"/api/admin/plans/{trialId}", new
+        {
+            name = "Trial Plan (QA)", pricePerMonth = 0m, maxEmployees = 25, maxCompanies = 5, isActive = true,
+            options = new[] { new { optionId = whatsappOptionId, availability = "Included", includedQuantity = 1 } },
+        });
+
+        var (ownerLike, accountId) = await CreateOwnerWithVerifiedPhoneAsync();
+
+        // Simulates the finding's exact precondition: an admin-assigned PAID whatsapp option row,
+        // EndsAtUtc == null, from a paid subscription whose own paid period has since lapsed — created
+        // directly against the DB rather than through AssignSubscription (whose own "не в прошлом"
+        // validation would reject the already-lapsed PaidUntil this scenario needs).
+        var adminOptionId = Guid.NewGuid();
+        await DbAsync(async db =>
+        {
+            db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
+            {
+                Id = adminOptionId, BillingAccountId = accountId, OptionId = whatsappOptionId,
+                Quantity = 7, PaidUntilUtc = null, EndsAtUtc = null,
+                ActivatedAtUtc = DateTime.UtcNow.AddDays(-100), ActivatedByUserId = admin.UserId,
+                GrantedByTrial = false,
+            });
+            await db.SaveChangesAsync();
+            return true;
+        });
+
+        var activate = await AuthedClient(ownerLike.Token).PostAsJsonAsync("/api/billing/trial",
+            new { termsVersion = await CurrentTrialTermsVersionAsync() });
+        activate.StatusCode.Should().Be(HttpStatusCode.OK, await activate.Content.ReadAsStringAsync());
+
+        var afterActivation = await DbAsync(db => db.AccountSubscriptionOptions.SingleAsync(o => o.Id == adminOptionId));
+        afterActivation.Quantity.Should().Be(7, "B1: строка не от триала — активация триала не имеет права её трогать");
+        afterActivation.GrantedByTrial.Should().BeFalse();
+        afterActivation.EndsAtUtc.Should().BeNull();
+
+        // Force the trial past its own end date and run the background task's expiry phase directly.
+        await DbAsync(async db =>
+        {
+            var account = await db.BillingAccounts.SingleAsync(a => a.Id == accountId);
+            account.TrialEndsAtUtc = DateTime.UtcNow.AddDays(-1);
+            await db.SaveChangesAsync();
+            return true;
+        });
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var task = scope.ServiceProvider.GetServices<IScheduledTask>().Single(t => t.Name == "trial-lifecycle");
+            await task.ExecuteAsync(CancellationToken.None);
+        }
+
+        var afterExpiry = await DbAsync(db => db.AccountSubscriptionOptions.SingleAsync(o => o.Id == adminOptionId));
+        afterExpiry.EndsAtUtc.Should().BeNull(
+            "B1: сама находка — до фикса ЛЮБАЯ строка с EndsAtUtc == null на аккаунте (в т.ч. не от триала) " +
+            "гасилась фазой 4 безвозвратно; GrantedByTrial должен сузить выборку до строк самого триала");
+        afterExpiry.Quantity.Should().Be(7);
     }
 }

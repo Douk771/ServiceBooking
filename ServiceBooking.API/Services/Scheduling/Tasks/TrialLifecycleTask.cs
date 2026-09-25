@@ -9,7 +9,7 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Services.Scheduling.Tasks;
 
 /// <summary>
-/// Cycle 18, B7 (ARCHITECTURE_CYCLE18.md §337.1) — the sixth <see cref="IScheduledTask"/>,
+/// Cycle 18, B7 (ARCHITECTURE_CYCLE18.md §337.1) — the EIGHTH <see cref="IScheduledTask"/>,
 /// <c>trial-lifecycle</c>. Runs hourly, not daily: unlike <c>SubjectRequestDueSoonTask</c>'s
 /// day-granularity idempotency (a missed pass there means a permanently skipped signal, an accepted
 /// trade-off named in that task's own doc comment), a trial's warnings and expiry transition must
@@ -24,10 +24,15 @@ namespace ServiceBooking.API.Services.Scheduling.Tasks;
 /// 4. Expiry — the materialized transition to the system Free plan (§337.3: no irreversible
 ///    consequence of any kind).
 ///
-/// A failure on one account never aborts the pass for the rest (same TD-04 convention as
-/// <c>DataRetentionTask</c>); phase 4's fail-closed case (no system Free plan configured) is reported
-/// through <see cref="ScheduledTaskOutcome.Error"/> AND a GlitchTip signal, exactly like R5/US-18-11
-/// requires — this task must never invent "some other free-ish plan" to keep going.
+/// A failure on one account never aborts the pass for the rest, nor for any later phase (same TD-04
+/// convention as <c>DataRetentionTask</c>, applied here at BOTH the phase granularity and, within each
+/// phase's batch loop, at the per-account granularity — code review, cycle 18 late delta: a version of
+/// this task with no try/catch anywhere let one poisoned account in phase 4's first batch, every single
+/// hour, throw out of <c>ExecuteAsync</c> before phases already queued never even ran and stop every
+/// account after it in the batch from ever being processed). Phase 4's fail-closed case (no system Free
+/// plan configured) is reported through <see cref="ScheduledTaskOutcome.Error"/> AND a GlitchTip signal,
+/// exactly like R5/US-18-11 requires — this task must never invent "some other free-ish plan" to keep
+/// going.
 /// </summary>
 public sealed class TrialLifecycleTask(
     AppDbContext db,
@@ -43,19 +48,65 @@ public sealed class TrialLifecycleTask(
     public async Task<ScheduledTaskOutcome> ExecuteAsync(CancellationToken ct)
     {
         var now = clock.UtcNow;
+        var phaseFailures = new List<string>();
 
-        var windowsOpened = await SelfHealMissedWindowStartsAsync(now, ct);
-        var windowsClosed = await CloseExpiredWindowsAsync(now, ct);
-        var warned = await WarnApproachingExpiryAsync(now, ct);
-        var (expired, failed, error) = await ExpireTrialsAsync(now, ct);
+        var windowsOpened = await RunPhaseAsync("self-heal-window-start", () => SelfHealMissedWindowStartsAsync(now, ct), phaseFailures);
+        var windowsClosed = await RunPhaseAsync("close-window", () => CloseExpiredWindowsAsync(now, ct), phaseFailures);
+        var warned = await RunPhaseAsync("warn", () => WarnApproachingExpiryAsync(now, ct), phaseFailures);
 
+        var expired = 0;
+        var alreadyHandled = 0;
+        var failedAccounts = 0;
+        string? error = null;
+        try
+        {
+            (expired, alreadyHandled, failedAccounts, error) = await ExpireTrialsAsync(now, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // time budget / host shutdown — not a phase failure, must still unwind.
+        }
+        catch (Exception ex)
+        {
+            phaseFailures.Add("expire");
+            logger.LogError(ex, "trial-lifecycle: phase expire failed outright");
+        }
+
+        // N6 (code review) — each phase counter is now a true "rows actually changed" count (see each
+        // phase's own comment below for what it no longer over-counts).
         var summary = $"trial-lifecycle: windows-opened={windowsOpened} windows-closed={windowsClosed} " +
-                      $"warned={warned} expired={expired} failed={failed}";
+                      $"warned={warned} expired={expired} already-handled={alreadyHandled} failed-accounts={failedAccounts}" +
+                      (phaseFailures.Count > 0 ? $" failed-phases={string.Join(",", phaseFailures)}" : string.Empty);
         logger.LogInformation("{Summary}", summary);
 
-        var scanned = windowsOpened + windowsClosed + warned + expired + failed;
-        var affected = windowsOpened + windowsClosed + warned + expired;
-        return new ScheduledTaskOutcome(scanned, affected, 0, summary) { Error = error };
+        var scanned = windowsOpened + windowsClosed + warned + expired + alreadyHandled + failedAccounts;
+        var affected = windowsOpened + windowsClosed + warned + expired + alreadyHandled;
+        var combinedError = phaseFailures.Count > 0
+            ? $"{phaseFailures.Count} of 4 trial-lifecycle phase(s) failed outright: {string.Join(", ", phaseFailures)}" +
+              (error is not null ? $" | {error}" : string.Empty)
+            : error;
+        return new ScheduledTaskOutcome(scanned, affected, 0, summary) { Error = combinedError };
+    }
+
+    /// <summary>N4 (code review) — isolates a phase throwing OUTRIGHT (as opposed to one account inside
+    /// it failing, which each phase already isolates internally below) from aborting the phases after
+    /// it. Mirrors <c>DataRetentionTask</c>'s per-rule try/catch at the phase granularity.</summary>
+    private async Task<int> RunPhaseAsync(string phaseName, Func<Task<int>> phase, List<string> phaseFailures)
+    {
+        try
+        {
+            return await phase();
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // time budget / host shutdown — must still unwind, not a phase failure.
+        }
+        catch (Exception ex)
+        {
+            phaseFailures.Add(phaseName);
+            logger.LogError(ex, "trial-lifecycle: phase {Phase} failed outright", phaseName);
+            return 0;
+        }
     }
 
     /// <summary>Phase 1, §336.1 п.2 — "самолечение". Picks up accounts where the hook in
@@ -85,16 +136,35 @@ public sealed class TrialLifecycleTask(
 
             foreach (var account in candidates)
             {
-                var earliest = await db.NotificationChannels
-                    .Where(c => c.BillingAccountId == account.Id && c.ConnectedAtUtc != null)
-                    .MinAsync(c => c.ConnectedAtUtc, ct);
-                if (earliest is null) continue; // race: the channel's ConnectedAtUtc was cleared since the query above
+                try
+                {
+                    var earliest = await db.NotificationChannels
+                        .Where(c => c.BillingAccountId == account.Id && c.ConnectedAtUtc != null)
+                        .MinAsync(c => c.ConnectedAtUtc, ct);
+                    if (earliest is null) continue; // race: the channel's ConnectedAtUtc was cleared since the query above
 
-                // Reuse the exact same arithmetic/journal write the request-time hook uses
-                // (TrialMailingWindowStarter.StartIfDueAsync) — dated at the REAL earliest
-                // authorization, never at "now this pass happens to run".
-                await TrialMailingWindowStarter.StartIfDueAsync(db, account, earliest.Value, ct);
-                opened++;
+                    // Reuse the exact same arithmetic/journal write the request-time hook uses
+                    // (TrialMailingWindowStarter.StartIfDueAsync) — dated at the REAL earliest
+                    // authorization, never at "now this pass happens to run".
+                    await TrialMailingWindowStarter.StartIfDueAsync(db, account, earliest.Value, ct);
+                    // N6 (code review) — only counted if the write actually happened: StartIfDueAsync's
+                    // own guards (TrialEndsAtUtc/TrialMailingWindowDays missing) can leave it a no-op even
+                    // though the outer query matched.
+                    if (account.TrialChannelFirstAuthorizedAtUtc is not null) opened++;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // N4 (code review) — one poisoned account never stops the rest of the batch (or the
+                    // rest of the pass). Reload discards any partial change EF may have already tracked
+                    // on this entity before the exception, so a later SaveChangesAsync in this same batch
+                    // never half-commits it.
+                    logger.LogError(ex, "trial-lifecycle: self-heal-window-start failed for account {AccountId}", account.Id);
+                    await db.Entry(account).ReloadAsync(ct);
+                }
             }
 
             cursor = candidates[^1].Id;
@@ -127,18 +197,31 @@ public sealed class TrialLifecycleTask(
 
             foreach (var account in candidates)
             {
-                account.TrialMailingClosureLoggedAtUtc = now;
-                db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
+                try
                 {
-                    Id = Guid.NewGuid(),
-                    OwnerUserId = account.OwnerUserId,
-                    ChangedByUserId = TrialActors.System,
-                    ChangedAt = now,
-                    BillingAccountId = account.Id,
-                    ChangeKind = SubscriptionChangeKind.TrialMailingWindow,
-                    Comment = "Окно бесплатных рассылок закрыто",
-                });
-                closed++;
+                    account.TrialMailingClosureLoggedAtUtc = now;
+                    db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
+                    {
+                        Id = Guid.NewGuid(),
+                        OwnerUserId = account.OwnerUserId,
+                        ChangedByUserId = TrialActors.System,
+                        ChangedAt = now,
+                        BillingAccountId = account.Id,
+                        ChangeKind = SubscriptionChangeKind.TrialMailingWindow,
+                        Comment = "Окно бесплатных рассылок закрыто",
+                    });
+                    closed++;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // N4 (code review) — isolate a single account's failure from the rest of the batch.
+                    logger.LogError(ex, "trial-lifecycle: close-window failed for account {AccountId}", account.Id);
+                    await db.Entry(account).ReloadAsync(ct);
+                }
             }
 
             await db.SaveChangesAsync(ct);
@@ -188,13 +271,26 @@ public sealed class TrialLifecycleTask(
 
             foreach (var account in candidates)
             {
-                var thresholds = TrialWindow.ParseThresholds(account.TrialWarningThresholdsDays);
-                var daysLeft = (int)Math.Ceiling((account.TrialEndsAtUtc!.Value - now).TotalDays);
-                var applicable = TrialWindow.ApplicableThreshold(thresholds, account.TrialWarnedAtThresholdDays, daysLeft);
-                if (applicable is not null)
+                try
                 {
-                    account.TrialWarnedAtThresholdDays = applicable;
-                    warned++;
+                    var thresholds = TrialWindow.ParseThresholds(account.TrialWarningThresholdsDays);
+                    var daysLeft = (int)Math.Ceiling((account.TrialEndsAtUtc!.Value - now).TotalDays);
+                    var applicable = TrialWindow.ApplicableThreshold(thresholds, account.TrialWarnedAtThresholdDays, daysLeft);
+                    if (applicable is not null)
+                    {
+                        account.TrialWarnedAtThresholdDays = applicable;
+                        warned++;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // N4 (code review) — isolate a single account's failure from the rest of the batch.
+                    logger.LogError(ex, "trial-lifecycle: warn failed for account {AccountId}", account.Id);
+                    await db.Entry(account).ReloadAsync(ct);
                 }
             }
 
@@ -213,9 +309,14 @@ public sealed class TrialLifecycleTask(
     /// and reported both in <see cref="ScheduledTaskOutcome.Error"/> and via
     /// <see cref="IGlitchTipSignalService"/> so an operator notices instead of trials silently piling up
     /// unresolved.</summary>
-    private async Task<(int Expired, int Failed, string? Error)> ExpireTrialsAsync(DateTime now, CancellationToken ct)
+    private async Task<(int Transitioned, int AlreadyHandled, int Failed, string? Error)> ExpireTrialsAsync(DateTime now, CancellationToken ct)
     {
-        var expired = 0;
+        // N6 (code review) — "transitioned" (actually moved to Free) and "already handled" (nothing left
+        // to transition, only marked so this index stops re-selecting it) used to be folded into one
+        // `expired` counter; kept apart so the task's own summary — the only thing a superadmin sees per
+        // §337.1 — doesn't overstate how many trials genuinely ended this pass.
+        var transitioned = 0;
+        var alreadyHandled = 0;
         var failed = 0;
         string? error = null;
 
@@ -250,12 +351,19 @@ public sealed class TrialLifecycleTask(
             var sub = await db.AccountSubscriptions
                 .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value))
                 .ToDictionaryAsync(s => s.BillingAccountId!.Value, ct);
+            // B1 (code review, cycle 18 late delta) — GrantedByTrial narrows this to rows the trial
+            // ITSELF materialized (§333.3). Without it, a paid notifications.whatsapp row an admin
+            // assigned before the account ever went on trial (same OptionId, EndsAtUtc == null) would be
+            // dated out here too and never revived automatically — an irreversible side effect of the
+            // trial→Free transition, which §337.3 forbids outright.
             var trialOptions = await db.AccountSubscriptionOptions
-                .Where(o => accountIds.Contains(o.BillingAccountId) && o.EndsAtUtc == null)
+                .Where(o => accountIds.Contains(o.BillingAccountId) && o.EndsAtUtc == null && o.GrantedByTrial)
                 .ToListAsync(ct);
 
             foreach (var account in candidates)
             {
+                try
+                {
                 if (!sub.TryGetValue(account.Id, out var accountSub) ||
                     systemTrial is null || accountSub.PlanConfigId != systemTrial.Id)
                 {
@@ -265,7 +373,7 @@ public sealed class TrialLifecycleTask(
                     // already made. Either way there is nothing left to transition; the account is still
                     // marked handled so it stops being re-selected by this index every pass forever.
                     account.TrialExpiredHandledAtUtc = now;
-                    expired++;
+                    alreadyHandled++;
                     continue;
                 }
 
@@ -304,7 +412,24 @@ public sealed class TrialLifecycleTask(
                     ChangeKind = SubscriptionChangeKind.TrialExpired,
                     Comment = $"Пробный период закончился {account.TrialEndsAtUtc:dd.MM.yyyy}, подписка переведена на бесплатный тариф",
                 });
-                expired++;
+                transitioned++;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // N4 (code review) — one poisoned account never stops the rest of the batch (or the
+                    // pass). Reload discards whatever this iteration already mutated on the account/sub
+                    // entities before the exception, so the eventual SaveChangesAsync for this batch never
+                    // half-commits a broken transition.
+                    failed++;
+                    logger.LogError(ex, "trial-lifecycle: expire failed for account {AccountId}", account.Id);
+                    await db.Entry(account).ReloadAsync(ct);
+                    if (sub.TryGetValue(account.Id, out var accountSubOnFailure))
+                        await db.Entry(accountSubOnFailure).ReloadAsync(ct);
+                }
             }
 
             await db.SaveChangesAsync(ct);
@@ -313,6 +438,6 @@ public sealed class TrialLifecycleTask(
             if (candidates.Count < BatchSize) break;
         }
 
-        return (expired, failed, error);
+        return (transitioned, alreadyHandled, failed, error);
     }
 }
