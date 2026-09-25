@@ -133,6 +133,20 @@ export interface Company {
    * product's default configuration; map links then search by text instead of centring on a point.
    */
   addressPoint?: GeoPointDto | null
+  /**
+   * API_CONTRACT_CYCLE15.md §282 — a URL the owner pasted themselves, saved and returned byte for
+   * byte (never built or rewritten by the server). `null`/absent = not filled in → the interface
+   * must not show a "go to service" link at all, not an empty one. Sent to any caller, including
+   * anonymous — public info about the salon, no rights computed on it.
+   */
+  yandexMapsUrl?: string | null
+  twoGisUrl?: string | null
+  /**
+   * API_CONTRACT_CYCLE15.md §282 — hours before a visit a client can still self-reschedule it.
+   * Always a number (server default 2), 0 = "up to the start of the visit". A company setting, not
+   * a product constant.
+   */
+  clientRescheduleMinHours?: number
 }
 
 /** API_CONTRACT_CYCLE10.md §125 */
@@ -474,6 +488,19 @@ export interface Booking {
    * value is a positive number.
    */
   historyEventCount?: number | null
+  /**
+   * API_CONTRACT_CYCLE15.md §286 — computed ONLY on `GET /bookings/client`; `null`/absent on every
+   * other endpoint that returns `BookingDto` means "server didn't compute it", not "not allowed".
+   * The "Перенести" button on the client's own bookings list is driven by this flag, never by a
+   * client-side time computation — it's a hint, not a permission: the server re-checks everything on
+   * the actual PATCH and can still answer 400/402/409 even when this was true a moment ago.
+   */
+  clientRescheduleAllowed?: boolean | null
+  /** API_CONTRACT_CYCLE15.md §286 — the company's reschedule window, to explain why the button is
+   *  absent ("перенести можно не позже чем за N ч до визита") without a separate company fetch. */
+  clientRescheduleMinHours?: number | null
+  /** API_CONTRACT_CYCLE15.md §286 — replaces the 14 days hardcoded into the reschedule date grid. */
+  companyBookingHorizonDays?: number | null
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'
@@ -532,6 +559,11 @@ export type LegalTextKey =
   | 'GuardianConfirmation'
   /** §220.1 — 7th key, cycle 13: public-address-notice warning shown next to the address field. */
   | 'PublicAddressNotice'
+  /** API_CONTRACT_CYCLE16.md §276.3 — 8th key, cycle 16: `GuestDataGateNotice` shown on `/profile`
+   *  and `/profile/delete` when `profile.phoneVerified === false` (§245.6 п.2/3). Until legal-counsel
+   *  publishes the key server-side, `GuestDataGateNotice.tsx` renders a neutral fallback instead of
+   *  leaving the screen empty. */
+  | 'GuestDataGateNotice'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
 export type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =

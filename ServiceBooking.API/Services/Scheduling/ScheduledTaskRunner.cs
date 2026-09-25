@@ -108,8 +108,12 @@ public sealed class ScheduledTaskRunner(
             var workTask = workScope.ServiceProvider.GetServices<IScheduledTask>().First(t => t.Name == task.Name);
 
             var outcome = await workTask.ExecuteAsync(cts.Token);
-            succeeded = true;
+            // TD-04 (ARCHITECTURE_CYCLE16.md §246.3): a task can now report a partial failure without
+            // throwing — outcome.Summary is trusted either way, so LastSummary is no longer wiped out
+            // by an isolated failure inside the task (N9-6).
+            succeeded = outcome.Error is null;
             summary = outcome.Summary;
+            error = outcome.Error;
             logger.LogInformation(
                 "Scheduled task {Task} finished: scanned {Scanned}, affected {Affected}, freed {Bytes} bytes",
                 task.Name, outcome.Scanned, outcome.Affected, outcome.BytesFreed);

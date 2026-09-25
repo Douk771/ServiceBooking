@@ -184,7 +184,7 @@ public sealed class NotificationScheduler(
         }
 
         var optedOut = recipientPhone is not null &&
-            await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == recipientPhone, ct);
+            await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == recipientPhone, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — dispatch-time check against the notification's own recipient phone (already resolved upstream), not an account reading another subject's data (ARCHITECTURE_CYCLE16.md §245.3)
 
         return new SchedulingContext(company, plan, channels, settings, names, master,
             recipientPhone, recipientName, optedOut, recipientUserId);

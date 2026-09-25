@@ -191,13 +191,10 @@ public class CompanyAddressController(
     /// deliberately not a shared method: every controller in this codebase keeps its own private
     /// wrapper around <see cref="CompanyMembership"/> (project convention, see that class's own doc
     /// comment), only the membership predicate itself is shared.</summary>
-    private async Task<bool> CanManageCompanyAsync(Guid companyId)
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId is null) return false;
-        if (User.IsInRole("SuperAdmin")) return true;
-        return await CompanyMembership.IsOwnerAsync(db, companyId, userId);
-    }
+    // TD-11 (ARCHITECTURE_CYCLE16.md §254): delegates to the single shared implementation.
+    // superAdminBypass stays true — this controller's existing behavior.
+    private Task<bool> CanManageCompanyAsync(Guid companyId) =>
+        CompanyAccess.CanManageCompanyAsync(db, User, companyId);
 
     // Takes `geoOptions` explicitly (review finding — cycle 13 review, blocking #1): §209.2/P3's
     // coordinate switch has to reach every place a GeocodeCandidate becomes an AddressCandidateDto, and

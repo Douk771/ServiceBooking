@@ -582,6 +582,13 @@ public class AdminController(
         // highlight bullet (JoinHighlights(null) => null) and every PlanOptionRule (ApplyOptionRulesAsync
         // treating a missing `options` as "remove all rules") on every ordinary field edit.
         if (dto.Highlights is not null) plan.Highlights = JoinHighlights(dto.Highlights);
+        // ARCHITECTURE_CYCLE15.md §255.4/API_CONTRACT_CYCLE15.md §288 — checked ONLY on the transition
+        // (plan.IsPublic true -> dto.IsPublic false), never unconditionally: the shipped system free
+        // plan actually ships with IsPublic == false (20260922154148_FixSeedBillingCatalogCapabilityKeys),
+        // so an unconditional guard would block every save of it, including ones that don't touch
+        // isPublic at all.
+        if (plan.IsSystemFree && plan.IsPublic && dto.IsPublic == false)
+            return Conflict("Системный бесплатный тариф нельзя убрать с витрины.");
         if (dto.IsPublic.HasValue) plan.IsPublic = dto.IsPublic.Value;
         if (dto.SortOrder.HasValue) plan.SortOrder = dto.SortOrder.Value;
         if (dto.Options is not null)

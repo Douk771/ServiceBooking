@@ -4,6 +4,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Icon } from '../../components/ui/Icon'
 import type { LegalBlockerKind, LegalReadiness } from '../../types'
+import { isLegalReadinessShape } from './legalReadinessHelpers'
 
 // API_CONTRACT_CYCLE11.md §116, §119 п. 2 — read-only, SuperAdmin. Diagnostic, not content:
 // no client-side caching beyond react-query's default, and the disclaimer is always shown as a
@@ -17,16 +18,6 @@ const BLOCKER_LABEL: Record<LegalBlockerKind, string> = {
   MissingAnchors: 'Потерян якорь, на который ссылается редирект',
   ArtifactDrift: 'Артефакт разошёлся с исходниками (legal-drafts)',
   LegalUnavailable: 'Снимок правовых документов не загружен',
-}
-
-// A 503 that reaches here from something other than the controller itself (reverse proxy/gateway
-// health-check page, HTML error body, etc.) must not be cast blindly — an untyped truthy string
-// would otherwise crash `LegalReadinessReport` on `data.placeholders.reduce`. Only trust the body
-// when it actually has the report's shape.
-export function isLegalReadinessShape(value: unknown): value is LegalReadiness {
-  if (!value || typeof value !== 'object') return false
-  const v = value as Partial<LegalReadiness>
-  return Array.isArray(v.blockers) && Array.isArray(v.placeholders) && typeof v.ready === 'boolean'
 }
 
 export function LegalReadinessTab() {

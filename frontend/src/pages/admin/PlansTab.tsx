@@ -5,7 +5,6 @@ import {
   type PlanConfig,
   type PhotoRetention,
   type OptionAvailability,
-  type PlanOptionRuleDto,
   type AdminPlanInput,
   type AdminOptionDto,
 } from '../../api/plans'
@@ -15,6 +14,16 @@ import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { getPlanErrorMessage } from '../../utils/planError'
+import { planStateLabel, type PlanStateTone } from './planState'
+import {
+  MAX_HIGHLIGHTS,
+  PUBLIC_MAX_HIGHLIGHTS,
+  MAX_HIGHLIGHT_LENGTH,
+  defaultForm,
+  optionRulesToForm,
+  optionRulesToPayload,
+  type PlanForm,
+} from './planForm'
 
 const RETENTION_LABELS: Record<PhotoRetention, string> = {
   SixMonths: '6 месяцев',
@@ -32,56 +41,23 @@ function retentionLabel(retention: PhotoRetention | undefined | null): string {
   return RETENTION_LABELS[retention] ?? UNKNOWN_RETENTION_LABEL
 }
 
-// AdminPlanDto.highlights allows up to 10 entries on write (contract + PricingCatalogBuilder.MaxHighlights).
-// The PUBLIC pricing page only ever shows the first 5 (PricingPlanDto.highlights maxItems, and
-// PricingCatalogBuilder.PublicMaxHighlights) — that's a display cap, not a write cap, so the editor
-// must not block entering a 6th..10th bullet; it just needs to say plainly which ones are shown.
-export const MAX_HIGHLIGHTS = 10
-export const PUBLIC_MAX_HIGHLIGHTS = 5
-export const MAX_HIGHLIGHT_LENGTH = 120
-
 const AVAILABILITY_LABELS: Record<OptionAvailability, string> = {
   Unavailable: 'Недоступна',
   Included: 'Включена',
   Extra: 'За доплату',
 }
 
-interface PlanForm {
-  name: string
-  pricePerMonth: string
-  maxEmployees: string
-  maxCompanies: string
-  allowOnlineBooking: boolean
-  allowMailing: boolean
-  allowAnalytics: boolean
-  allowPublicListing: boolean
-  allowOnlinePayment: boolean
-  description: string
-  notifyDaysBefore: string
-  photoQuotaMb: string
-  photoRetention: PhotoRetention
-  highlights: string[]
-  /** optionId -> rule. An option absent here is Unavailable, matching the contract's "missing means
-   *  Unavailable" rule for AdminPlanDto.options. */
-  optionRules: Record<string, { availability: OptionAvailability; includedQuantity: string }>
+const PLAN_STATE_TONE_CLASSES: Record<PlanStateTone, string> = {
+  public: 'bg-success-bg text-success',
+  hidden: 'bg-warning-bg text-warning',
+  archived: 'bg-cream-deep text-muted',
 }
 
-const defaultForm: PlanForm = {
-  name: '',
-  pricePerMonth: '0',
-  maxEmployees: '',
-  maxCompanies: '',
-  allowOnlineBooking: true,
-  allowMailing: false,
-  allowAnalytics: false,
-  allowPublicListing: true,
-  allowOnlinePayment: false,
-  description: '',
-  notifyDaysBefore: '7',
-  photoQuotaMb: '1024',
-  photoRetention: 'TwelveMonths',
-  highlights: [],
-  optionRules: {},
+function PlanStateBadge({ plan }: { plan: Pick<PlanConfig, 'isActive' | 'isPublic'> }) {
+  const { label, tone } = planStateLabel(plan)
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PLAN_STATE_TONE_CLASSES[tone]}`}>{label}</span>
+  )
 }
 
 function featureIcon(enabled: boolean) {
@@ -100,29 +76,6 @@ function FeatureBadge({ label, enabled }: { label: string; enabled: boolean }) {
   )
 }
 
-export function optionRulesToForm(rules: PlanOptionRuleDto[]): PlanForm['optionRules'] {
-  const map: PlanForm['optionRules'] = {}
-  for (const r of rules) {
-    map[r.optionId] = {
-      availability: r.availability,
-      includedQuantity: r.includedQuantity != null ? String(r.includedQuantity) : '',
-    }
-  }
-  return map
-}
-
-export function optionRulesToPayload(rules: PlanForm['optionRules']): PlanOptionRuleDto[] {
-  return Object.entries(rules)
-    .filter(([, rule]) => rule.availability !== 'Unavailable')
-    .map(([optionId, rule]) => ({
-      optionId,
-      availability: rule.availability,
-      includedQuantity:
-        rule.availability === 'Included' && rule.includedQuantity.trim() !== ''
-          ? parseInt(rule.includedQuantity)
-          : null,
-    }))
-}
 
 export function PlansTab() {
   const qc = useQueryClient()
@@ -159,9 +112,9 @@ export function PlansTab() {
     notifyDaysBefore: parseInt(form.notifyDaysBefore) || 7,
     photoQuotaMb: form.photoQuotaMb.trim() === '' ? null : parseInt(form.photoQuotaMb),
     photoRetention: form.photoRetention,
-    isActive: true,
-    isPublic: true,
-    sortOrder: 0,
+    isActive: form.isActive,
+    isPublic: form.isPublic,
+    sortOrder: parseInt(form.sortOrder) || 0,
     highlights: form.highlights,
     options: optionRulesToPayload(form.optionRules),
   })
@@ -265,6 +218,9 @@ export function PlansTab() {
       photoRetention: plan.photoRetention ?? 'TwelveMonths',
       highlights: plan.highlights ?? [],
       optionRules: optionRulesToForm(plan.options ?? []),
+      isActive: plan.isActive,
+      isPublic: plan.isPublic,
+      sortOrder: String(plan.sortOrder ?? 0),
     })
     setEditingPlan(plan)
     setShowCreate(true)
@@ -387,6 +343,7 @@ export function PlansTab() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2 flex-wrap">
                         <h3 className="font-semibold text-ink text-lg">{plan.name}</h3>
+                        <PlanStateBadge plan={plan} />
                         {plan.isSystemFree && (
                           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-cream-deep text-gold-dark">
                             Системный бесплатный
@@ -680,6 +637,43 @@ export function PlansTab() {
               value={form.notifyDaysBefore}
               onChange={(e) => setForm((f) => ({ ...f, notifyDaysBefore: e.target.value }))}
             />
+
+            {/* ARCHITECTURE_CYCLE15.md §255.1/§255.2 — visible before save, not implied. isActive
+                has its own row (a plan that's off has isPublic greyed out — there's no "public
+                archived" state per §255.2), sortOrder controls card order on /pricing. */}
+            <div className="rounded-xl border border-line p-3 flex flex-col gap-2.5">
+              <p className="text-sm font-medium text-ink-soft">Состояние на витрине</p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.isActive}
+                  onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+                  className="w-4 h-4 accent-gold"
+                />
+                <span className="text-sm text-ink-soft">Активен (иначе — архивный, назначить нельзя никому)</span>
+              </label>
+              <label
+                className={`flex items-center gap-2 ${form.isActive ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={form.isPublic}
+                  disabled={!form.isActive}
+                  onChange={(e) => setForm((f) => ({ ...f, isPublic: e.target.checked }))}
+                  className="w-4 h-4 accent-gold"
+                />
+                <span className="text-sm text-ink-soft">
+                  Показывать на витрине /pricing (снятие не отключает ничего у текущих подписчиков)
+                </span>
+              </label>
+              <Input
+                label="Порядок на витрине (меньше — выше)"
+                type="number"
+                min={0}
+                value={form.sortOrder}
+                onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))}
+              />
+            </div>
 
             {(editingPlan ? updateMut.isError : createMut.isError) && (
               <p className="text-sm text-danger">

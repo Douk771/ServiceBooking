@@ -8,6 +8,7 @@ import { profileApi, type ProfilePlanDto, type ProfileDto } from '../api/profile
 import { notificationsApi } from '../api/notifications'
 import { useAuthStore } from '../store/authStore'
 import { useExportData } from '../hooks/useExportData'
+import { GuestDataGateNotice } from '../components/profile/GuestDataGateNotice'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -307,8 +308,8 @@ export function ProfilePage() {
     },
   })
 
-  // ── Data export (US-38) ──────────────────────────────────────────────────
-  const { exportMut, exportError } = useExportData()
+  // ── Data export (US-38, guestDataGate — API_CONTRACT_CYCLE16.md §273/§276) ─
+  const { exportMut, exportError, gateNotice } = useExportData()
 
   if (isLoading) {
     return (
@@ -519,10 +520,14 @@ export function ProfilePage() {
           она отдельный оператор этих данных. В файле вы найдёте перечень таких компаний с их контактами: запрос об
           этих данных направляйте напрямую им.
         </p>
+        {profile && <GuestDataGateNotice phoneVerified={profile.phoneVerified} className="mb-4" />}
         {exportError && <p className="text-sm text-danger mb-3">{exportError}</p>}
         <Button variant="secondary" loading={exportMut.isPending} onClick={() => exportMut.mutate()}>
           Скачать мои данные
         </Button>
+        {/* §276.2 — after a successful export, if the file itself says the gate applied, repeat its
+            own `explanation` text rather than leave the user wondering why the file looks thin. */}
+        {gateNotice && <p className="text-sm text-ink-soft mt-3">{gateNotice}</p>}
       </Card>
 
       {/* Account deletion (US-39) */}

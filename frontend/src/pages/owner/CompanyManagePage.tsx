@@ -19,6 +19,7 @@ import { NotificationTemplatesTab } from './NotificationTemplatesTab'
 import { NotificationLogTab } from './NotificationLogTab'
 import { getAddMemberErrorMessage } from '../../utils/memberError'
 import { getCompanyManageErrorMessage, getLogoErrorMessage } from '../../utils/companyManageError'
+import { mapLinksFieldError } from '../../utils/mapLinksFieldError'
 import { getProvidesServicesErrorMessage } from '../../utils/providesServicesError'
 import { parseBookingHorizonInput } from '../../utils/bookingHorizon'
 import { getUploadErrorMessage } from '../../utils/uploadError'
@@ -715,6 +716,10 @@ export function SettingsTab({ companyId }: { companyId: string }) {
           requirePrepayment: company.requirePrepayment ?? false,
           showInPublicListing: company.showInPublicListing ?? true,
           bookingHorizonDays: company.bookingHorizonDays || '',
+          yandexMapsUrl: company.yandexMapsUrl ?? '',
+          twoGisUrl: company.twoGisUrl ?? '',
+          clientRescheduleMinHours:
+            company.clientRescheduleMinHours != null ? String(company.clientRescheduleMinHours) : '',
         }
       : undefined,
     // `values` resyncs the form whenever the `['my-companies']` cache updates — which now also
@@ -731,15 +736,33 @@ export function SettingsTab({ companyId }: { companyId: string }) {
   const isDirty = Object.keys(dirtyFields).length > 0
 
   const [settingsError, setSettingsError] = useState('')
+  // ARCHITECTURE_CYCLE15.md §283 — the server's own sentence, routed to whichever of the three new
+  // fields caused it, shown right next to that field (not just as a generic banner).
+  const [mapLinksError, setMapLinksError] = useState<{ field: 'yandexMapsUrl' | 'twoGisUrl' | 'clientRescheduleMinHours'; text: string } | null>(
+    null,
+  )
 
   const updateMut = useMutation({
     mutationFn: (d: Record<string, unknown>) => companiesApi.update(companyId, d),
     onSuccess: () => {
       setSettingsError('')
+      setMapLinksError(null)
       qc.invalidateQueries({ queryKey: ['my-companies'] })
     },
-    onError: (err: unknown) =>
-      setSettingsError(getCompanyManageErrorMessage(err, 'Не удалось сохранить настройки компании.')),
+    onError: (err: unknown) => {
+      const rawText =
+        (err as { response?: { status?: number; data?: unknown } })?.response?.status === 400
+          ? String((err as { response?: { data?: unknown } })?.response?.data ?? '')
+          : null
+      const field = mapLinksFieldError(rawText)
+      if (field && rawText) {
+        setMapLinksError({ field, text: rawText })
+        setSettingsError('')
+      } else {
+        setMapLinksError(null)
+        setSettingsError(getCompanyManageErrorMessage(err, 'Не удалось сохранить настройки компании.'))
+      }
+    },
   })
 
   const [logoError, setLogoError] = useState('')
@@ -802,7 +825,15 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               setSettingsError(horizon.error)
               return
             }
-            updateMut.mutate({ ...d, bookingHorizonDays: horizon.value })
+            // §283 — clientRescheduleMinHours: empty field means "don't touch" (not "reset to
+            // default"), so it's omitted rather than sent as 0/null when the owner cleared it.
+            const rawHours = String(d.clientRescheduleMinHours ?? '').trim()
+            const clientRescheduleMinHours = rawHours === '' ? undefined : parseInt(rawHours, 10)
+            updateMut.mutate({
+              ...d,
+              bookingHorizonDays: horizon.value,
+              clientRescheduleMinHours,
+            })
           })}
           className="flex flex-col gap-4"
         >
@@ -841,6 +872,33 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               {...register('bookingHorizonDays')}
             />
             <p className="text-xs text-muted">Пусто или 0 — 90 дней по умолчанию</p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Input
+              label="За сколько часов до визита клиент может сам перенести запись"
+              type="number"
+              min={0}
+              max={168}
+              placeholder="2"
+              {...register('clientRescheduleMinHours')}
+            />
+            <p className="text-xs text-muted">Пусто — 2 часа по умолчанию. 0 — можно перенести вплоть до начала визита.</p>
+            {mapLinksError?.field === 'clientRescheduleMinHours' && (
+              <p className="text-xs text-danger">{mapLinksError.text}</p>
+            )}
+          </div>
+          <div className="flex flex-col gap-1">
+            <Input
+              label="Ссылка на Яндекс Картах"
+              placeholder="https://yandex.ru/maps/org/..."
+              {...register('yandexMapsUrl')}
+            />
+            <p className="text-xs text-muted">Вставьте ссылку на карточку компании — она сохранится как есть, без изменений</p>
+            {mapLinksError?.field === 'yandexMapsUrl' && <p className="text-xs text-danger">{mapLinksError.text}</p>}
+          </div>
+          <div className="flex flex-col gap-1">
+            <Input label="Ссылка на 2ГИС" placeholder="https://2gis.ru/..." {...register('twoGisUrl')} />
+            {mapLinksError?.field === 'twoGisUrl' && <p className="text-xs text-danger">{mapLinksError.text}</p>}
           </div>
           <div>
             <label className="flex items-center gap-3 cursor-pointer has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">

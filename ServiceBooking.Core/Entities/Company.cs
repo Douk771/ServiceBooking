@@ -86,4 +86,19 @@ public class Company
     // fully-functional state of the product (P3), not a degraded one.
     public double? AddressLatitude { get; set; }
     public double? AddressLongitude { get; set; }
+
+    // ARCHITECTURE_CYCLE15.md §252 — links the owner pasted in themselves, byte-for-byte (path/query/
+    // fragment are never parsed or rewritten). Null = field not filled in → the storefront shows no
+    // link at all for that service (0-bis П1); this is NOT auto-built from Address/CityId/AddressPoint
+    // any more (cycle 13's US-132/133 generator is removed). Validated ONLY by
+    // ServiceBooking.API.Services.Companies.MapLinkValidation, the single place in the product that
+    // decides whether a link is acceptable.
+    public string? YandexMapsUrl { get; set; }
+    public string? TwoGisUrl { get; set; }
+
+    // ARCHITECTURE_CYCLE15.md §252/§252.3 — how many hours before the visit a CLIENT (not staff) may
+    // still reschedule it themselves via PATCH /api/bookings/{id}/reschedule. Always the already-
+    // normalized value (ServiceBooking.API.Services.Bookings.ClientRescheduleWindow.Normalize) — never
+    // raw user input. NOT a way to turn client self-reschedule off entirely; that's AllowSelfBooking.
+    public int ClientRescheduleMinHours { get; set; } = 2;
 }

@@ -25,6 +25,16 @@ namespace ServiceBooking.Tests.Tests;
 /// draft/published state can be flipped without touching the shared "Api" collection's fixed manifest,
 /// on which every other pricing/billing test depends for a stable, always-published TermsOwner.
 /// </summary>
+// ⚠️ TD-02 (цикл 16) К ЭТОМУ ФАЙЛУ НЕ ПРИМЕНЁН — сознательно, решение по итогам прогона.
+// Семь ожиданий Task.Delay(2500) ниже заменялись на детерминированный _factory.ReloadLegalNow(),
+// и замена ВСКРЫЛА пре-существующее расхождение, которое ожидание маскировало: посеянный SuperAdmin
+// несёт версию TermsOwner из ДЕФОЛТНОГО манифеста, а тесты подменяют манифест по ходу. Пока снимок
+// обновлялся с задержкой, RequiresOwnerTermsAttribute работал на старом снимке и расхождения не
+// видел; со свежим снимком он честно отдаёт 451 там, где тест ждёт 200 или 409, причём НЕСТАБИЛЬНО —
+// от одного до трёх тестов класса за прогон, в зависимости от порядка.
+// Чинить надо посев тестового хоста (TestHostSettings), а не эти тесты; это отдельная работа, цикл 16
+// её не брал. Остаток TD-02 — семь вызовов здесь; одиннадцать в LegalConsentVersionChangeTests сняты
+// и работают. Записано в §9 как остаток T8-1.
 public class LegalPricingGateTests : IClassFixture<TestDatabaseFixture>, IAsyncLifetime
 {
     private readonly TestDatabaseFixture _fixture;

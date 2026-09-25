@@ -8,6 +8,7 @@ using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -80,15 +81,19 @@ public class BookingsController(
             // company — none of that should make an existing booking un-reschedulable. Duration is
             // therefore taken from the booking's own stored BookingServices/Service, never re-resolved
             // and re-validated against the service/master catalog the way a NEW booking's serviceId is.
-            if (userId is null) return Forbid();
+            if (userId is null) return NotFound();
             var booking = await db.Bookings.Include(b => b.BookingServices).Include(b => b.Service)
                 .FirstOrDefaultAsync(b => b.Id == excludeBookingId);
-            if (booking is null) return NotFound("Booking not found");
-            // Order matters. CanManage first, the pair-match second: the other way round, the
-            // difference between 403 and 400 answers "does this booking belong to company X and
-            // master Y" for anyone holding a booking id they may not manage — both ids are public,
-            // so the pair is brute-forceable. This way a caller without rights learns only that.
-            if (!await CanManageBookingAsync(booking, userId)) return Forbid();
+            // §257.5/§290 (BREAKING № 1): a bare 404 with an EMPTY body — identical to the
+            // "not yours" answer below. A body here ("Booking not found") would make the two cases
+            // distinguishable again and turn the endpoint back into an existence oracle.
+            if (booking is null) return NotFound();
+            // ARCHITECTURE_CYCLE15.md §257.5/§290 (BREAKING № 1): a caller who is neither staff of this
+            // booking nor its own client gets a bare 404, same as a booking that doesn't exist —
+            // otherwise this endpoint would confirm "this booking id belongs to someone" to anyone who
+            // holds it. Order matters, same reasoning as before: authority first, the pair-match second.
+            var isOwnBooking = booking.ClientId == userId;
+            if (!isOwnBooking && !await CanManageBookingAsync(booking, userId)) return NotFound();
             if (booking.CompanyId != companyId || booking.MasterId != masterId)
                 return BadRequest("excludeBookingId does not match companyId/masterId");
 
@@ -627,12 +632,33 @@ public class BookingsController(
         };
 
         var bookings = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime).ToListAsync();
+
+        // ARCHITECTURE_CYCLE15.md §257.8/§286 — one batched plan lookup for the whole page, not one
+        // query per booking (Company is already Include()d above, so this is the only extra round trip,
+        // and it's per-caller-page, not per-booking — §286's "zero extra requests per booking" promise).
+        var plansByCompany = await subscriptionResolver.GetEffectivePlansAsync(bookings.Select(b => b.CompanyId));
+        var nowForWindowUtc = DateTime.UtcNow;
+
         return Ok(bookings.Select(b =>
         {
             var name = b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Guest";
-            // П8/API_CONTRACT_CYCLE10.md §123: always null on the client's own endpoint — not filtered
-            // on the frontend, simply never computed here.
-            return MapToDto(b, b.Service, b.Master, name, reminderStatus: null, historyEventCount: null);
+            var company = b.Company;
+            var minHours = ClientRescheduleWindow.Normalize(company.ClientRescheduleMinHours);
+            var plan = plansByCompany.GetValueOrDefault(b.CompanyId);
+            var currentVisitStartUtc = NotificationTiming.ComputeVisitStartUtc(b.Date, b.StartTime, company.TimeZoneId);
+            // §286 — a hint, not a re-check of the target time (there isn't one yet): only the CURRENT
+            // visit's end of the window and the other server-side gates are evaluated here.
+            var rescheduleAllowed =
+                (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed) &&
+                company.AllowSelfBooking &&
+                (plan?.AllowOnlineBooking ?? false) &&
+                nowForWindowUtc <= currentVisitStartUtc - TimeSpan.FromHours(minHours);
+
+            // П8/API_CONTRACT_CYCLE10.md §123: reminderStatus/historyEventCount always null on the
+            // client's own endpoint — not filtered on the frontend, simply never computed here.
+            return MapToDto(b, b.Service, b.Master, name, reminderStatus: null, historyEventCount: null,
+                clientRescheduleAllowed: rescheduleAllowed, clientRescheduleMinHours: minHours,
+                companyBookingHorizonDays: BookingHorizon.Normalize(company.BookingHorizonDays));
         }));
     }
 
@@ -740,16 +766,27 @@ public class BookingsController(
 
     [HttpPatch("{id:guid}/reschedule")]
     [Authorize]
+    [EnableRateLimiting("booking-reschedule")]
     public async Task<IActionResult> Reschedule(Guid id, [FromBody] RescheduleDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var booking = await db.Bookings.Include(b => b.Service).Include(b => b.BookingServices)
+            .Include(b => b.Company)
             .FirstOrDefaultAsync(b => b.Id == id);
         if (booking is null) return NotFound();
-        if (!await CanManageBookingAsync(booking, userId)) return Forbid();
 
-        if (booking.Status == BookingStatus.Cancelled || booking.Status == BookingStatus.Completed)
-            return BadRequest("Cannot reschedule a cancelled or completed booking");
+        // ARCHITECTURE_CYCLE15.md §257.1/§287.1 — one route, the caller's authority is computed from the
+        // database, never from the request body (RescheduleDto gets no new fields this cycle — a client
+        // physically cannot ask for staff's relaxed rules). Staff is checked first: a master who is ALSO
+        // the booking's own client (shouldn't normally happen, but the DB doesn't forbid it) still gets
+        // staff's relaxed rules, not the stricter client ones.
+        var authority = await CanManageBookingAsync(booking, userId)
+            ? RescheduleAuthority.Staff
+            : booking.ClientId == userId ? RescheduleAuthority.ClientOwner : RescheduleAuthority.None;
+
+        // §257.5/§287.3 (BREAKING № 1): a bare 404 for anyone else, same body as "booking doesn't
+        // exist" — this endpoint must not confirm someone else's booking id is real.
+        if (authority == RescheduleAuthority.None) return NotFound();
 
         // US-67 (ARCHITECTURE_CYCLE6.md §47.2): duration comes from the sum of the visit's
         // BookingService rows, not booking.Service.DurationMinutes — a pre-cycle booking has exactly
@@ -763,16 +800,53 @@ public class BookingsController(
             : booking.Service.DurationMinutes;
         var slotEnd = dto.StartTime.AddMinutes(totalDurationMinutes);
 
-        // This endpoint is staff-only (CanManageBookingAsync above lets in only the assigned master,
-        // the company's owner, or SuperAdmin — a client can never reach here, they only have Cancel).
-        // By decision Q7 that means the SAME relaxed rule as a staff manual booking in Create: any free
-        // time, no working-hours/breaks/grid check.
-        //
-        // Deliberately NOT validated against WorkingHours, and DO NOT "fix" that. The old reason —
-        // "the reschedule grid is generated client-side and knows nothing of the master's schedule" —
-        // stopped being true when F7 moved that grid onto GET /api/bookings/slots. The reason now is
-        // the requirement itself: staff may book any time that suits them, schedule or no schedule
-        // (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1, Q7). Validating here would take that away.
+        if (authority == RescheduleAuthority.Staff)
+        {
+            // Same as before this cycle: any status other than Cancelled/Completed; any free time, no
+            // working-hours/breaks/grid check (Q7).
+            if (booking.Status == BookingStatus.Cancelled || booking.Status == BookingStatus.Completed)
+                return BadRequest("Cannot reschedule a cancelled or completed booking");
+        }
+        else
+        {
+            // §257.2/§287.2 — the client's own, strictly narrower rule set. Checked in the documented
+            // order so the FIRST violated rule is the one the caller learns about.
+            if (booking.Status != BookingStatus.Pending && booking.Status != BookingStatus.Confirmed)
+                return BadRequest("Перенести можно только предстоящую запись");
+
+            var company = booking.Company;
+            if (!company.AllowSelfBooking) return Forbid();
+
+            var plan = await subscriptionResolver.GetEffectivePlanAsync(booking.CompanyId);
+            if (!plan.AllowOnlineBooking) return StatusCode(402, "Online booking requires a paid subscription.");
+
+            var minHours = ClientRescheduleWindow.Normalize(company.ClientRescheduleMinHours);
+            var nowUtc = DateTime.UtcNow;
+            var currentVisitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, company.TimeZoneId);
+            var newVisitStartUtc = NotificationTiming.ComputeVisitStartUtc(dto.Date, dto.StartTime, company.TimeZoneId);
+            if (!ClientRescheduleWindow.IsWithinWindow(nowUtc, currentVisitStartUtc, newVisitStartUtc, minHours))
+                return BadRequest($"Перенести запись можно не позже чем за {minHours} ч до визита");
+
+            var horizonDays = BookingHorizon.Normalize(company.BookingHorizonDays);
+            if (!BookingHorizon.IsWithin(dto.Date, DateOnly.FromDateTime(nowUtc), horizonDays))
+                return BadRequest($"Записаться можно не дальше чем на {horizonDays} дней вперёд");
+
+            // §257.3/§287.2 п.8 — exactly the same grid GET /api/bookings/slots would compute for this
+            // client (ScheduleFallback.None, own interval excluded). manual/extendedHours don't exist on
+            // this path at all.
+            var slots = await slotService.GetAvailableSlotsAsync(
+                booking.CompanyId, booking.MasterId, totalDurationMinutes, dto.Date,
+                ScheduleFallback.None, excludeBookingId: booking.Id);
+            if (!slots.Any(s => s.Start == dto.StartTime))
+                return Conflict("Time slot is no longer available");
+        }
+
+        // Deliberately NOT validated against WorkingHours for staff, and DO NOT "fix" that. The old
+        // reason — "the reschedule grid is generated client-side and knows nothing of the master's
+        // schedule" — stopped being true when F7 moved that grid onto GET /api/bookings/slots. The
+        // reason now is the requirement itself: staff may book any time that suits them, schedule or no
+        // schedule (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1, Q7). Validating here would take that away.
+        // Applies to both branches (§257.2 п.9/§287.2 п.9): not in the past, not wrapping past midnight.
         if (!IsBookableMoment(dto.Date, dto.StartTime, totalDurationMinutes))
             return Conflict("Time slot is no longer available");
 
@@ -812,6 +886,17 @@ public class BookingsController(
         try
         {
             await notificationScheduler.OnBookingRescheduledAsync(booking, HttpContext.RequestAborted);
+
+            // ARCHITECTURE_CYCLE15.md §257.6/§287.5 — only when the CLIENT made the move: staff moving
+            // their own booking must not push themselves a notification about their own action (same
+            // rule StaffPushScheduler.OnBookingCreatedAsync already applies to creation).
+            if (authority == RescheduleAuthority.ClientOwner)
+            {
+                var serviceNames = booking.BookingServices is { Count: > 0 }
+                    ? booking.BookingServices.OrderBy(bs => bs.Position).Select(bs => bs.NameSnapshot).ToList()
+                    : [booking.Service.Name];
+                await staffPushScheduler.OnBookingRescheduledAsync(booking, serviceNames, userId, HttpContext.RequestAborted);
+            }
         }
         catch (Exception ex)
         {
@@ -823,6 +908,9 @@ public class BookingsController(
 
         return NoContent();
     }
+
+    // ARCHITECTURE_CYCLE15.md §257.1 — who is allowed to reschedule, computed strictly server-side.
+    private enum RescheduleAuthority { None, Staff, ClientOwner }
 
     [HttpPatch("{id:guid}/cancel")]
     [Authorize]
@@ -896,7 +984,8 @@ public class BookingsController(
     }
 
     private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName,
-        ReminderStatusDto? reminderStatus = null, int? historyEventCount = null)
+        ReminderStatusDto? reminderStatus = null, int? historyEventCount = null,
+        bool? clientRescheduleAllowed = null, int? clientRescheduleMinHours = null, int? companyBookingHorizonDays = null)
     {
         // US-67 (API_CONTRACT_CYCLE6.md §43.2): `services` is built from BookingServices when loaded
         // (every path except the in-memory object returned by Create, which sets it explicitly before
@@ -916,7 +1005,8 @@ public class BookingsController(
             b.Notes, b.CreatedAt,
             b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus,
             totalDurationMinutes, items,
-            b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount);
+            b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount,
+            clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays);
     }
 
     // API_CONTRACT_CYCLE4.md §30.3. Picks the highest-Generation Reminder row for a booking (§23.5: a
@@ -997,18 +1087,42 @@ public class BookingsController(
         // (decision П3), so this is computed, not stored.
         var precedesJournal = events.All(e => e.Kind != BookingEventKind.Created);
 
-        var eventDtos = events.Select(e => new BookingEventDto(
-            e.Id, e.Kind, e.OccurredAtUtc,
-            BookingEventTexts.Title(e.Kind),
-            new BookingEventActorDto(
-                e.ActorKind, e.ActorNameSnapshot, e.ActorRoleSnapshot,
-                BookingEventTexts.ActorLabel(e.Kind, e.ActorKind, e.ActorNameSnapshot, e.ActorRoleSnapshot)),
-            e.Kind == BookingEventKind.Rescheduled && e.PreviousDate is not null && e.PreviousStartTime is not null
-                && e.NewDate is not null && e.NewStartTime is not null
-                ? new BookingRescheduleDto(e.PreviousDate.Value, e.PreviousStartTime.Value, e.NewDate.Value, e.NewStartTime.Value)
-                : null,
-            e.Kind == BookingEventKind.Cancelled ? e.CancellationReason : null
-        )).ToList();
+        // TD-05 read side (ARCHITECTURE_CYCLE16.md §247.3, no migration/backfill — §240.3). Catches
+        // every row already accumulated BEFORE this cycle too, not only future deletions: one extra
+        // indexed query per call (ids ≤ number of events on one booking), no separate phone-matching
+        // logic here — that would be a sixth TD-03 place (§245.2/§247.2).
+        const string deletedActorTombstone = "Удалённый пользователь";
+        var actorIds = events.Where(e => e.ActorUserId != null).Select(e => e.ActorUserId!).Distinct().ToList();
+        var deletedActorIds = actorIds.Count == 0 ? []
+            : await db.Users.AsNoTracking()
+                .Where(u => actorIds.Contains(u.Id) && u.DeletedAtUtc != null)
+                .Select(u => u.Id).ToListAsync();
+        var deletedActorIdSet = deletedActorIds.ToHashSet();
+
+        var eventDtos = events.Select(e =>
+        {
+            // §247.3, exactly: ActorKind == Client && ActorUserId ∈ deletedActorIds. Guest events have
+            // no ActorUserId to look up (that's §247.5's named residual risk, closed on the WRITE side
+            // instead — see DeleteAccount). Staff/SuperAdmin/System are a different subject and a
+            // different retention schedule (D1/TD-18), untouched here.
+            var isDeletedClient = e.ActorKind == BookingActorKind.Client
+                && e.ActorUserId is not null && deletedActorIdSet.Contains(e.ActorUserId);
+            var actorName = isDeletedClient ? deletedActorTombstone : e.ActorNameSnapshot;
+            var actorLabel = isDeletedClient
+                ? deletedActorTombstone
+                : BookingEventTexts.ActorLabel(e.Kind, e.ActorKind, e.ActorNameSnapshot, e.ActorRoleSnapshot);
+
+            return new BookingEventDto(
+                e.Id, e.Kind, e.OccurredAtUtc,
+                BookingEventTexts.Title(e.Kind),
+                new BookingEventActorDto(e.ActorKind, actorName, e.ActorRoleSnapshot, actorLabel),
+                e.Kind == BookingEventKind.Rescheduled && e.PreviousDate is not null && e.PreviousStartTime is not null
+                    && e.NewDate is not null && e.NewStartTime is not null
+                    ? new BookingRescheduleDto(e.PreviousDate.Value, e.PreviousStartTime.Value, e.NewDate.Value, e.NewStartTime.Value)
+                    : null,
+                e.Kind == BookingEventKind.Cancelled ? e.CancellationReason : null
+            );
+        }).ToList();
 
         return Ok(new BookingHistoryDto(id, precedesJournal, eventDtos));
     }

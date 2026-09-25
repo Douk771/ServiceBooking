@@ -45,7 +45,7 @@ public sealed class PhoneVerificationWriter(AppDbContext db)
             return WriteOutcome.LimitReached;
 
         var now = DateTime.UtcNow;
-        var existing = await db.VerifiedPhones.FirstOrDefaultAsync(v => v.Phone == session.CanonicalPhone, ct);
+        var existing = await db.VerifiedPhones.FirstOrDefaultAsync(v => v.Phone == session.CanonicalPhone, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — this IS the writer that populates VerifiedPhones, TD-03's source of truth, not a reader of it (ARCHITECTURE_CYCLE16.md §245.3)
         if (existing is null)
         {
             db.VerifiedPhones.Add(new VerifiedPhone
@@ -84,7 +84,7 @@ public sealed class PhoneVerificationWriter(AppDbContext db)
     public async Task RemoveForOldNumberAsync(string oldCanonicalPhone, string userId, CancellationToken ct)
     {
         var rows = await db.VerifiedPhones
-            .Where(v => v.Phone == oldCanonicalPhone && v.UserId == userId)
+            .Where(v => v.Phone == oldCanonicalPhone && v.UserId == userId)  // SUBJECT-PHONE-GATE: not-account-scoped — this IS the writer maintaining VerifiedPhones itself, scoped to its own UserId (ARCHITECTURE_CYCLE16.md §245.3)
             .ToListAsync(ct);
         db.VerifiedPhones.RemoveRange(rows);
     }

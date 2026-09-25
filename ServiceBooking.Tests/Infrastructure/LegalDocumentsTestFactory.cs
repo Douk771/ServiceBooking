@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using ServiceBooking.API.Services.Legal;
 
 namespace ServiceBooking.Tests.Infrastructure;
 
@@ -34,6 +36,7 @@ namespace ServiceBooking.Tests.Infrastructure;
 public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
 {
     private readonly string _connectionString;
+    private long _reloadTick;
 
     public string LegalRoot { get; }
 
@@ -126,6 +129,32 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
         // filesystems; the provider's cache key is purely mtime-based (LegalDocumentProvider.TryReload),
         // so back-to-back rewrites in the same test need a nudge to guarantee a new mtime is observed.
         File.SetLastWriteTimeUtc(Path.Combine(LegalRoot, "legal.json"), DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// TD-02 (ARCHITECTURE_CYCLE16.md §250.2). Replaces "write the manifest, then <c>Task.Delay</c> the
+    /// reload window" with a deterministic call into the exact same
+    /// <see cref="LegalDocumentProvider.LoadAtStartup"/> the fail-fast startup path already uses to force
+    /// a reload outside the cache window. Call this immediately after
+    /// <c>WriteManifest(...)</c>/<c>ResetToDefault()</c> instead of sleeping.
+    ///
+    /// Step 1 is mandatory, not decorative: <c>LegalDocumentProvider.TryReload</c> compares
+    /// <c>max(mtime)</c> of the manifest/content files to what it saw last time and silently no-ops if
+    /// it is unchanged — on a filesystem with coarse mtime granularity, two writes issued back-to-back
+    /// (as a test doing <c>WriteManifest</c> then immediately <c>ReloadLegalNow</c> does) could otherwise
+    /// land on the identical timestamp and this call would appear to succeed while actually reloading
+    /// nothing, making the test pass for the wrong reason. Forcing a strictly increasing, one-second-
+    /// separated timestamp on every call removes that race deterministically instead of relying on wall-
+    /// clock granularity.
+    /// </summary>
+    public void ReloadLegalNow()
+    {
+        var stamp = DateTime.UtcNow.AddSeconds(++_reloadTick);
+        foreach (var file in Directory.GetFiles(LegalRoot))
+            File.SetLastWriteTimeUtc(file, stamp);
+
+        using var scope = Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<LegalDocumentProvider>().LoadAtStartup();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)

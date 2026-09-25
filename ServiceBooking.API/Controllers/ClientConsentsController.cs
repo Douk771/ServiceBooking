@@ -66,7 +66,7 @@ public class ClientConsentsController(
         // client key in the first place, per MastersController's own validation).
         var hasBookingHere = userId is not null
             ? await db.Bookings.AnyAsync(b => b.CompanyId == companyId && b.ClientId == userId)
-            : await db.Bookings.AnyAsync(b => b.CompanyId == companyId && b.ClientId == null && b.GuestPhone == phone);
+            : await db.Bookings.AnyAsync(b => b.CompanyId == companyId && b.ClientId == null && b.GuestPhone == phone);  // SUBJECT-PHONE-GATE: staff-scoped — company staff resolving a client WITHIN their own company by a key staff itself supplied; not an account-scoped "my own data" query (ARCHITECTURE_CYCLE16.md §245.3)
         if (!hasBookingHere) return null;
 
         return new ResolvedClient(userId, phone);
@@ -257,7 +257,7 @@ public class ClientConsentsController(
     private Task<ClientHealthNote?> FindHealthNoteRowAsync(Guid companyId, ResolvedClient resolved) =>
         resolved.UserId is not null
             ? db.ClientHealthNotes.FirstOrDefaultAsync(n => n.CompanyId == companyId && n.ClientId == resolved.UserId)
-            : db.ClientHealthNotes.FirstOrDefaultAsync(n => n.CompanyId == companyId && n.GuestPhone == resolved.Phone);
+            : db.ClientHealthNotes.FirstOrDefaultAsync(n => n.CompanyId == companyId && n.GuestPhone == resolved.Phone);  // SUBJECT-PHONE-GATE: staff-scoped — company staff resolving THEIR OWN company's client, key already validated by ResolveClientAsync (ARCHITECTURE_CYCLE16.md §245.3)
 
     /// <summary>Consent for THIS field is satisfied by either the salon-scoped HealthDataConsent form
     /// (recorded here, by a staff member, phone+company-keyed) OR the account holder's own

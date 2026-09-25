@@ -489,12 +489,13 @@ public class CompanyNotificationsController(
     private static bool TryParseCustomizableType(string raw, out NotificationType type) =>
         Enum.TryParse(raw, ignoreCase: false, out type) && DefaultTemplates.CustomizableTypes.Contains(type);
 
-    private async Task<bool> CanManageCompanyAsync(Guid companyId)
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId is null) return false;
-        return await CompanyMembership.IsOwnerAsync(db, companyId, userId);
-    }
+    // TD-11 (ARCHITECTURE_CYCLE16.md §254): delegates to the single shared implementation.
+    // superAdminBypass: false — this controller's existing behavior is that SuperAdmin does NOT
+    // automatically manage a company's notification settings; that is preserved deliberately, not an
+    // oversight (naive unification here would have widened SuperAdmin's access, which cycle 16's NFT
+    // §7.1 forbids).
+    private Task<bool> CanManageCompanyAsync(Guid companyId) =>
+        CompanyAccess.CanManageCompanyAsync(db, User, companyId, superAdminBypass: false);
 
     private async Task<bool> IsStaffAsync(Guid companyId)
     {

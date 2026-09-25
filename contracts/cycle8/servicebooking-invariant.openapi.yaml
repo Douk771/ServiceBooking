@@ -27,6 +27,8 @@ openapi: 3.1.0
 info:
   title: ServiceBooking API — инвариант цикла 8
   version: "8.0.0-invariant"
+  license:
+    name: Proprietary
   summary: Подмножество API, которое цикл 8 обязан сохранить без изменений
   description: |
     Снято с ветки `develop`, HEAD `7b382d8`. Семь операций, отобранных по признаку

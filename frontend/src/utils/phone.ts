@@ -25,6 +25,23 @@ export function formatPhone(canonical: string | null | undefined): string {
 }
 
 /**
+ * ARCHITECTURE_CYCLE15.md §254 — builds a `tel:` URI from whatever canonical/free-form phone the
+ * company card has. Keeps only digits and a leading `+`, so `+7 (900) 000-00-00` → `tel:+79000000000`.
+ * Lives here, not as a second phone module, per §254 ("there already is one").
+ *
+ * Empty/missing input → empty string, mirroring {@link formatPhone}, so callers can build
+ * `href={telHref(phone) || undefined}` without a separate `if`.
+ */
+export function telHref(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const trimmed = raw.trim()
+  const hasLeadingPlus = trimmed.startsWith('+')
+  const digits = trimmed.replace(/\D/g, '')
+  if (!digits) return ''
+  return `tel:${hasLeadingPlus ? '+' : ''}${digits}`
+}
+
+/**
  * US-61 (ARCHITECTURE_CYCLE6.md §48.1): only the Russian number space is accepted for *new* input —
  * 11 digits with a leading `7`. This is the frontend mirror of the server-side predicate
  * `PhoneNormalizer.IsRussian`; it exists only to give instant feedback in the form, the server check

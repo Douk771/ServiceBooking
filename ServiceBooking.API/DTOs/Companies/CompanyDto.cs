@@ -96,7 +96,18 @@ public record CompanyDto(
     // null = no point, or the point exists but may not be exposed under the current licence
     // (AddressVerification:StoreResults=false — the shipped default). Filled ONLY on
     // GET /api/companies/{slug}, same "one endpoint, zero extra requests" rule as Photos above.
-    GeoPointDto? AddressPoint = null
+    GeoPointDto? AddressPoint = null,
+    // ARCHITECTURE_CYCLE15.md §252/§282, API_CONTRACT_CYCLE15.md §282 — additive, appended at the end
+    // with defaults (§115 convention). Public on EVERY caller including anonymous: these are the
+    // owner's own storefront-facing settings, not computed per-viewer. null = field not filled in ->
+    // the frontend shows no link for that service at all (0-bis П1) — never "not computed". Stored and
+    // returned byte-for-byte; never built/derived from Address/CityId/AddressPoint.
+    string? YandexMapsUrl = null,
+    string? TwoGisUrl = null,
+    // ARCHITECTURE_CYCLE15.md §252.3/§282 — always the already-normalized value (never a raw/garbage
+    // stored int), default 2. Public on every caller so the client UI can explain the rule before the
+    // server ever applies it.
+    int ClientRescheduleMinHours = 2
 );
 
 // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance of TermsOwner (D3) that gates company creation. Checked
@@ -163,7 +174,16 @@ public record UpdateCompanyDto(
     // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7): omitted/null → don't touch, same convention as every
     // other plain-nullable field above; 0 → explicit reset to BookingHorizon.Default (90); anything
     // outside [1, 365] → 400 via BookingHorizon.TryNormalize, checked in CompaniesController.Update.
-    int? BookingHorizonDays = null
+    int? BookingHorizonDays = null,
+    // ARCHITECTURE_CYCLE15.md §283 — three-state semantics, NOT the plain "omitted/null = don't touch"
+    // convention above: omitted/null = don't touch; "" or whitespace-only = CLEAR the field (NULL in
+    // DB); any other string = validate (MapLinkValidation) and store byte-for-byte. See
+    // CompaniesController.Update for where that distinction actually happens.
+    string? YandexMapsUrl = null,
+    string? TwoGisUrl = null,
+    // Omitted/null → don't touch; outside [0, 168] → 400 via ClientRescheduleWindow.TryNormalize. 0 IS
+    // a legitimate explicit value here ("до самого начала визита"), unlike BookingHorizonDays's 0.
+    int? ClientRescheduleMinHours = null
 );
 
 // US-24 p.4 / US-19 p.7 — GET /api/companies/{id}/photo-usage.

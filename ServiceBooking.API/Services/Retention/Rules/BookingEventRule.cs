@@ -30,7 +30,9 @@ public sealed class BookingEventRule(AppDbContext db) : IRetentionRule
         {
             var skippedSummary = $"retention[{(ctx.DryRun ? "dry" : "live")}] {Name}: " +
                 "срок хранения не настроен, правило пропущено";
-            return new RetentionOutcome(Name, Scanned: 0, Affected: 0, skippedSummary);
+            // TD-04 (ARCHITECTURE_CYCLE16.md §246.3): Skipped=true — "not configured", distinct from
+            // "configured and had nothing to do" (Scanned: 0 alone would look identical to that).
+            return new RetentionOutcome(Name, Scanned: 0, Affected: 0, skippedSummary) { Skipped = true };
         }
 
         var cutoff = ctx.NowUtc.AddDays(-ctx.Periods.BookingEventDays);
