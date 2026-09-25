@@ -26,5 +26,16 @@ public class CustomWebApplicationFactory(string connectionString) : WebApplicati
         // deterministic 32-byte key NotificationTestFactory/NotificationDispatchTestFactory already use,
         // so a row encrypted under one factory type is readable by tests seeded via another.
         builder.UseSetting("Notifications:EncryptionKey", NotificationDispatchTestFactory.TestEncryptionKeyBase64);
+
+        // Cycle 18 QA finding: appsettings.json ships "Trial:PhoneKeyHmac": "" (Д14 — the key must never
+        // live in the repo), and neither appsettings.Testing.json nor this factory ever set a test value,
+        // unlike Notifications:EncryptionKey right above. With TrialOptions.UniquenessCheck.Enabled
+        // defaulting true, EVERY trial activation in EVERY test host (owner or superadmin path) failed
+        // closed with "TrialUniquenessCheckUnavailable" before this line existed — the entire block D
+        // (activation) surface was untestable, which is exactly how zero functional tests on trial
+        // activation went unnoticed. Fixed, deterministic 32-byte test key, same convention as the
+        // encryption key above.
+        builder.UseSetting("Trial:PhoneKeyHmac", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
+        builder.UseSetting("Trial:PhoneKeyId", "qa-test-key");
     }
 }
