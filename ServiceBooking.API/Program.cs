@@ -356,6 +356,9 @@ builder.Services.AddSingleton<LegalDocumentProvider>();
 builder.Services.AddScoped<ConsentLedger>();
 // T5-B6 (ARCHITECTURE_CYCLE5.md §48.1) — reuses Notifications:EncryptionKey, no new secret to provision.
 builder.Services.AddScoped<HealthNoteProtector>();
+// TD-03 (ARCHITECTURE_CYCLE16.md §245.4) — the single gate for "does this account get the
+// phone-matching branch of its own guest-recorded data". Scoped: wraps one AppDbContext query.
+builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectScopeResolver>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(

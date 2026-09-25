@@ -10,6 +10,7 @@ using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.PhoneVerification;
+using ServiceBooking.API.Services.Subjects;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -26,7 +27,7 @@ public class ProfileController(
     LegalDocumentProvider legalProvider, ConsentLedger ledger, HealthNoteProtector healthNoteProtector,
     GuestBookingLookup guestBookingLookup, IPhoneVerificationMethodRegistry phoneVerificationRegistry,
     PhoneVerificationWriter phoneVerificationWriter, IOptions<PhoneVerificationOptions> phoneVerificationOptions,
-    ILogger<ProfileController> logger)
+    SubjectScopeResolver subjectScopeResolver, ILogger<ProfileController> logger)
     : ControllerBase
 {
     [HttpGet]
@@ -78,10 +79,17 @@ public class ProfileController(
         // as much as a visit made while logged in — DeleteAccount already anonymizes both branches, so
         // the export must show both too, or a deletion could erase data the export never revealed
         // (API_CONTRACT.md §8).
-        var canonicalPhone = user.PhoneNumber;
+        // TD-03 (ARCHITECTURE_CYCLE16.md §245): the single gate. `ownPhone` is the account's own
+        // contact — always shown back to the account (ExportProfileDto below). `guestMatchPhone` is
+        // null unless this account has PROVEN it owns that number (VerifiedPhones) — every predicate
+        // below that used to read a single ambiguous `canonicalPhone` now reads exactly one of the two,
+        // per §245.4's distribution table.
+        var scope = await subjectScopeResolver.ForAccountAsync(user, HttpContext.RequestAborted);
+        var ownPhone = scope.OwnPhone;
+        var guestMatchPhone = scope.GuestMatchPhone; // SUBJECT-PHONE-GATE: gated — canonical guard for the whole export
         var bookings = await db.Bookings
             .Include(b => b.Service).Include(b => b.Master).Include(b => b.Company)
-            .Where(b => b.ClientId == userId || (canonicalPhone != null && b.GuestPhone == canonicalPhone))
+            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
             .Select(b => new ExportBookingDto(
                 b.Id, b.Date, b.StartTime, b.EndTime, b.Company.Name, b.Service.Name,
@@ -101,14 +109,14 @@ public class ProfileController(
         // registering (a client can be both, if they booked as a guest before signing up).
         var notesAboutMe = await db.ClientNotes
             .Include(n => n.Company).Include(n => n.Photos)
-            .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .OrderByDescending(n => n.CreatedAt)
             .Select(n => new ExportNoteMetaDto(n.Company.Name, n.CreatedAt, n.Photos.Count))
             .ToListAsync();
 
         var photosOfMe = await db.ClientNotePhotos
             .Include(p => p.ClientNote).ThenInclude(n => n.Company)
-            .Where(p => p.ClientNote.ClientId == userId || (canonicalPhone != null && p.ClientNote.GuestPhone == canonicalPhone))
+            .Where(p => p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .OrderByDescending(p => p.CreatedAt)
             .Select(p => new ExportPhotoMetaDto(p.ClientNote.Company.Name, p.CreatedAt, p.SizeBytes))
             .ToListAsync();
@@ -118,19 +126,19 @@ public class ProfileController(
         // like the sections above) build BOTH the company-id union and the "what is stored" tags in one
         // pass, then ONE second query fetches the company cards themselves — never one query per company.
         var bookingCompanyIds = await db.Bookings
-            .Where(b => b.ClientId == userId || (canonicalPhone != null && b.GuestPhone == canonicalPhone))
+            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .Select(b => b.CompanyId).Distinct().ToListAsync();
         var noteCompanyIds = await db.ClientNotes
-            .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .Select(n => n.CompanyId).Distinct().ToListAsync();
         var photoCompanyIds = await db.ClientNotePhotos
-            .Where(p => p.ClientNote.ClientId == userId || (canonicalPhone != null && p.ClientNote.GuestPhone == canonicalPhone))
+            .Where(p => p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .Select(p => p.CompanyId).Distinct().ToListAsync();
         // Code review В4: was ClientId-only, unlike every neighboring section above — a health note filed
         // while this person was still a guest (booked, then registered later) is stored by GuestPhone,
         // exactly like ClientNote/ClientNotePhoto, and the export silently omitted it.
         var healthNoteRows = await db.ClientHealthNotes
-            .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync();
 
         var whatIsStoredByCompany = new Dictionary<Guid, List<string>>();
@@ -163,8 +171,8 @@ public class ProfileController(
             .Select(n => new ExportNotificationDto(
                 n.SentAtUtc, n.Type.ToString(), n.Status.ToString(), n.Company.Name, n.ContentRedactedAtUtc == null))
             .ToListAsync();
-        var optOutRow = canonicalPhone is null ? null
-            : await db.NotificationOptOuts.AsNoTracking().FirstOrDefaultAsync(o => o.Phone == canonicalPhone);
+        var optOutRow = guestMatchPhone is null ? null
+            : await db.NotificationOptOuts.AsNoTracking().FirstOrDefaultAsync(o => o.Phone == guestMatchPhone);  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
         var optOut = new ExportOptOutDto(optOutRow is not null, optOutRow?.OptedOutAtUtc);
 
         // US-77 — decrypted explicitly (HealthNoteProtector's own doc comment: never via a transparent
@@ -183,17 +191,41 @@ public class ProfileController(
         // than trusting the mirror alone, since the mirror could in principle drift. The MAX-account
         // identifier (even hashed) and any open session are deliberately excluded — neither is data the
         // subject can meaningfully read back, and an open session lives minutes anyway.
-        var verifiedPhoneRow = canonicalPhone is null ? null
-            : await db.VerifiedPhones.AsNoTracking().FirstOrDefaultAsync(v => v.Phone == canonicalPhone);
+        var verifiedPhoneRow = guestMatchPhone is null ? null
+            : await db.VerifiedPhones.AsNoTracking().FirstOrDefaultAsync(v => v.Phone == guestMatchPhone);  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
         var phoneVerification = new ExportPhoneVerificationDto(
             verifiedPhoneRow is not null, verifiedPhoneRow?.Method.ToString(), verifiedPhoneRow?.VerifiedAtUtc);
+
+        // TD-03 (ARCHITECTURE_CYCLE16.md §245.6, API_CONTRACT_CYCLE16.md §273.1). §272/A2: this section
+        // MUST NOT become an oracle for "does this phone have guest data" — it reports only that the
+        // rule was applied, never a count or a yes/no about hidden rows. `applied` is derived from
+        // `scope.GateApplied` alone, never from whether any of the sections above turned out empty.
+        var guestDataGate = new ExportGuestDataGateDto(
+            scope.GateApplied,
+            scope.GateApplied ? "PhoneNotVerified" : null,
+            scope.GateApplied ? SubjectGateTexts.Resolve(legalProvider.Current) : null,
+            // BACKEND DEVIATION FROM ARCHITECTURE_CYCLE16.md §245.6/§273.1/§277: those sections write
+            // "/subject-request" throughout, but the route that has actually existed in the app since
+            // cycle 5 is "/data-request" (frontend/src/App.tsx, SubjectRequestPage.tsx) — "/subject-request"
+            // does not exist and would 404. A prior partial run of this cycle already found and fixed
+            // this on the frontend side (commit f94a052, useExportData.test.tsx) and flagged the
+            // contract/architecture docs as still needing the same fix from architect. Backend here
+            // follows the real, working route rather than reproducing the doc's typo. See report.
+            scope.GateApplied ? "/data-request" : null);
+
+        if (scope.GateApplied)
+        {
+            // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
+            logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/export");
+        }
 
         // ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49: "признаны результатом работы салона"
         // is removed — it is not a valid ground for refusal (ч. 8 ст. 14 152-ФЗ is exhaustive). Replaced
         // with routing to the actual operator of that data — see `operators` above.
         var export = new ProfileExportDto(
             DateTime.UtcNow,
-            new ExportProfileDto(user.FirstName, user.LastName, user.PhoneNumber, user.Email, user.AvatarUrl, user.CreatedAt),
+            // ownPhone (§245.4 table): the account's own contact — shown regardless of verification.
+            new ExportProfileDto(user.FirstName, user.LastName, ownPhone, user.Email, user.AvatarUrl, user.CreatedAt),
             consent, memberships, bookings, reviews, notesAboutMe, photosOfMe,
             // Code review, "заодно": names the section by key, not just by description — the reader
             // must not have to guess which of several sections in this same file "compan(ies) below" refers to.
@@ -201,7 +233,7 @@ public class ProfileController(
             "компания — контакты и адрес каждой такой компании перечислены в разделе «operators» этой " +
             "выгрузки. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
             "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.",
-            operators, notifications, optOut, healthNotesExport, phoneVerification);
+            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate);
 
         Response.Headers.ContentDisposition =
             $"attachment; filename=\"servicebooking-export-{DateOnly.FromDateTime(DateTime.UtcNow):yyyy-MM-dd}.json\"";
@@ -372,11 +404,20 @@ public class ProfileController(
             return Conflict("За вами числится компания. Передайте её другому владельцу или обратитесь " +
                              "в поддержку — тогда аккаунт можно будет удалить.");
 
-        // Captured before any field on `user` is scrubbed below — needed to find guest-path bookings/
-        // notes recorded under this phone before the account existed (same match MastersController.
-        // GetClients and the export endpoint use), and to clean up the old avatar file after commit.
-        var canonicalPhone = user.PhoneNumber;
+        // TD-03 (ARCHITECTURE_CYCLE16.md §245): resolved before any field on `user` is scrubbed below.
+        // `guestMatchPhone` is null unless this account proved it owns its own number — an unverified
+        // account can no longer physically DESTROY someone else's guest-recorded data just by deleting
+        // itself. `ownPhone` is captured only for the avatar/file cleanup below, which is this
+        // account's own data regardless of verification.
+        var scope = await subjectScopeResolver.ForAccountAsync(user, HttpContext.RequestAborted);
+        var guestMatchPhone = scope.GuestMatchPhone; // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
         var oldAvatarUrl = user.AvatarUrl;
+
+        if (scope.GateApplied)
+        {
+            // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
+            logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/delete-account");
+        }
 
         await using var transaction = await db.Database.BeginTransactionAsync();
 
@@ -394,7 +435,7 @@ public class ProfileController(
         // cleanup happens only after a successful commit).
         var notesAboutMe = await db.ClientNotes
             .Include(n => n.Photos)
-            .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+            .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync();
         var photoKeysToDelete = notesAboutMe.SelectMany(n => n.Photos)
             .Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
@@ -409,7 +450,7 @@ public class ProfileController(
         // row would sit until the retention sweep aged it out three years later. Same double condition as
         // notesAboutMe above.
         var healthNotesAboutMe = await db.ClientHealthNotes
-            .Where(h => h.ClientId == userId || (canonicalPhone != null && h.GuestPhone == canonicalPhone))
+            .Where(h => h.ClientId == userId || (guestMatchPhone != null && h.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync();
         db.ClientHealthNotes.RemoveRange(healthNotesAboutMe);
 
@@ -432,7 +473,7 @@ public class ProfileController(
         // registration on this same number starts unverified (Q9) — by removing the row, not a flag flip.
         db.VerifiedPhones.RemoveRange(
             await db.VerifiedPhones.Where(v => v.UserId == userId
-                || (canonicalPhone != null && v.Phone == canonicalPhone)).ToListAsync());
+                || (guestMatchPhone != null && v.Phone == guestMatchPhone)).ToListAsync());  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
         // Review finding: matching purely by CanonicalPhone (with no UserId check) used to also delete a
         // COMPLETE STRANGER's still-live session on the same number — e.g. someone else mid-registration
         // on the exact phone this account is being deleted from under, whose next poll would 404 without
@@ -441,7 +482,7 @@ public class ProfileController(
         // caller.
         db.PhoneVerificationSessions.RemoveRange(
             await db.PhoneVerificationSessions.Where(s => s.UserId == userId
-                || (canonicalPhone != null && s.CanonicalPhone == canonicalPhone
+                || (guestMatchPhone != null && s.CanonicalPhone == guestMatchPhone  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
                     && s.Status != PhoneVerificationStatus.Pending && s.Status != PhoneVerificationStatus.Linked))
                 .ToListAsync());
 
@@ -449,7 +490,7 @@ public class ProfileController(
         // completed visit must stay intact (US-39 p.3). Matches both the client path and the guest path
         // (a booking made before this person registered, found the same way as step 2's notes).
         var bookingsToAnonymize = await db.Bookings
-            .Where(b => b.ClientId == userId || (canonicalPhone != null && b.GuestPhone == canonicalPhone))
+            .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync();
         foreach (var booking in bookingsToAnonymize)
         {
@@ -460,6 +501,23 @@ public class ProfileController(
             booking.Notes = null;
             booking.ClientDeleted = true;
         }
+
+        // TD-05 (ARCHITECTURE_CYCLE16.md §247.2, no migration — §240.3/§247.1). Two rules, both scoped
+        // to exactly the set of bookings the gate above already allowed touching (never a separate
+        // phone-matching lookup here — that would be a sixth place, §245.2/§247.2):
+        //   - Client events for THIS account (ActorUserId == userId) → tombstone.
+        //   - Guest events on a booking that was just anonymized above → tombstone (same person, no
+        //     account link existed at the time).
+        // Staff/SuperAdmin/System events are untouched — different subject, different retention (D1/TD-18).
+        const string deletedActorTombstone = "Удалённый пользователь"; // same form as Reviews.ReviewerName above
+        var anonymizedBookingIds = bookingsToAnonymize.Select(b => b.Id).ToHashSet();
+        var eventsToTombstone = await db.BookingEvents
+            .Where(e =>
+                (e.ActorKind == BookingActorKind.Client && e.ActorUserId == userId) ||
+                (e.ActorKind == BookingActorKind.Guest && anonymizedBookingIds.Contains(e.BookingId)))
+            .ToListAsync();
+        foreach (var bookingEvent in eventsToTombstone)
+            bookingEvent.ActorNameSnapshot = deletedActorTombstone;
 
         // I9/N9: EVERY notification row for this person carries its own snapshot of the recipient's
         // phone/name/rendered text (§23.4), independent of the booking row anonymized above — cancelling
@@ -474,7 +532,7 @@ public class ProfileController(
         // NotificationOptOut rows are deliberately NOT touched here — they are what stops the platform
         // from ever messaging this phone again, which is the opposite of what this endpoint should undo.
         var allNotifications = await db.OutboundNotifications
-            .Where(n => n.RecipientUserId == userId || (canonicalPhone != null && n.RecipientPhone == canonicalPhone))
+            .Where(n => n.RecipientUserId == userId || (guestMatchPhone != null && n.RecipientPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync();
         foreach (var notification in allNotifications)
         {
@@ -719,7 +777,7 @@ public class ProfileController(
         DateTime? phoneVerifiedAtUtc = null;
         if (u.PhoneNumberConfirmed && u.PhoneNumber is not null)
             phoneVerifiedAtUtc = await db.VerifiedPhones.AsNoTracking()
-                .Where(v => v.Phone == u.PhoneNumber)
+                .Where(v => v.Phone == u.PhoneNumber)  // SUBJECT-PHONE-GATE: not-account-scoped — only ever reached when u.PhoneNumberConfirmed is already true (own mirror), displays only this account's own verification timestamp, never a guest-matched row (ARCHITECTURE_CYCLE16.md §245.3)
                 .Select(v => (DateTime?)v.VerifiedAtUtc)
                 .FirstOrDefaultAsync();
 
@@ -859,6 +917,24 @@ public class ProfileController(
         if (string.IsNullOrEmpty(phone))
             return BadRequest("У аккаунта нет подтверждённого номера телефона — отзывать нечего.");
 
+        // TD-03 (ARCHITECTURE_CYCLE16.md §245.2 row 3 — a place the spec itself did not name, found
+        // while reading the code). Before this gate, an unverified account could destroy a COMPLETE
+        // STRANGER's photos/health notes at any company just by knowing that company's id and typing
+        // its own (unproven) phone number. The ledger consent revoke itself stays phone-scoped as
+        // before (it is not a destructive read/write of someone else's ClientNote/ClientHealthNote
+        // rows); only the two GuestPhone-matched deletions below are gated.
+        var user = await userManager.FindByIdAsync(userId);
+        var scope = user is null
+            ? new SubjectScope(userId, phone, null)
+            : await subjectScopeResolver.ForAccountAsync(user, HttpContext.RequestAborted);
+        var guestMatchPhone = scope.GuestMatchPhone; // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+
+        if (scope.GateApplied)
+        {
+            // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
+            logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/consents/revoke");
+        }
+
         var subject = ConsentSubject.ForPhoneInCompany(phone, dto.CompanyId.Value);
         var revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
 
@@ -868,7 +944,7 @@ public class ProfileController(
         {
             var photos = await db.ClientNotePhotos.Include(p => p.ClientNote)
                 .Where(p => p.CompanyId == dto.CompanyId
-                            && (p.ClientNote.ClientId == userId || p.ClientNote.GuestPhone == phone))
+                            && (p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
                 .ToListAsync();
             photosDeleted = photos.Count;
             if (photos.Count > 0)
@@ -886,7 +962,7 @@ public class ProfileController(
         else // HealthDataConsent
         {
             var healthNotes = await db.ClientHealthNotes
-                .Where(n => n.CompanyId == dto.CompanyId && (n.ClientId == userId || n.GuestPhone == phone))
+                .Where(n => n.CompanyId == dto.CompanyId && (n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
                 .ToListAsync();
             healthNotesDeleted = healthNotes.Count;
             if (healthNotes.Count > 0)
@@ -928,9 +1004,24 @@ public class ProfileController(
         var healthNotesDeleted = 0;
         var queuedNotificationsCancelled = 0;
         var profileFieldsCleared = new List<string>();
-        // Code review В4: only the health-notes branch below was missing this — every neighboring
-        // section (Export, above) already matches both halves of the subject.
-        var canonicalPhone = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.PhoneNumber).FirstOrDefaultAsync();
+        // TD-03 (ARCHITECTURE_CYCLE16.md §245.2 row 4 — a place the spec itself did not name). Before
+        // this gate an unverified account could both DESTROY a stranger's health notes (apply: true)
+        // AND, via the preview endpoint, learn their COUNT without deleting anything — a double
+        // violation of §272/A2 ("not an oracle"). Only the health-notes branch below reads a phone at
+        // all; the WorkPhotos branch above is ClientId-only by construction and needs no gate.
+        var accountForScope = await userManager.FindByIdAsync(userId);
+        var scope = accountForScope is null
+            ? new SubjectScope(userId, null, null)
+            : await subjectScopeResolver.ForAccountAsync(accountForScope, HttpContext.RequestAborted);
+        var guestMatchPhone = scope.GuestMatchPhone; // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+
+        if (scope.GateApplied)
+        {
+            // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
+            logger.LogInformation(
+                "guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId,
+                apply ? "profile/consents/revoke" : "profile/consents/revoke-preview");
+        }
 
         // Code review, "заодно": the four sections below used to run as four independent SaveChangesAsync
         // calls with no shared transaction — a crash between any two of them left a partially-applied
@@ -965,7 +1056,7 @@ public class ProfileController(
         if (wholeDocument || purpose == ConsentPurpose.HealthData)
         {
             var healthNotes = await db.ClientHealthNotes
-                .Where(n => n.ClientId == userId || (canonicalPhone != null && n.GuestPhone == canonicalPhone))
+                .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
                 .ToListAsync();
             healthNotesDeleted = healthNotes.Count;
             if (apply && healthNotes.Count > 0)
@@ -1105,12 +1196,19 @@ public record DeleteAccountDto(string CurrentPassword);
 // replaces "результат работы салона" with), `Notifications`/`OptOut` (US-75), `HealthNotes` (US-77).
 // ARCHITECTURE_CYCLE14.md §151.3: PhoneVerification is the one section this cycle adds — additive,
 // appended last, same convention as T5-B11's own additions above it.
+// ARCHITECTURE_CYCLE16.md §245.6, API_CONTRACT_CYCLE16.md §273.1: GuestDataGate is cycle 16's one
+// additive section — appended last again, same convention.
 public record ProfileExportDto(
     DateTime GeneratedAt, ExportProfileDto Profile, List<ExportConsentDto> Consents,
     List<ExportMembershipDto> Memberships, List<ExportBookingDto> Bookings, List<ExportReviewDto> Reviews,
     List<ExportNoteMetaDto> NotesAboutMe, List<ExportPhotoMetaDto> PhotosOfMe, string Explanation,
     List<ExportOperatorDto> Operators, List<ExportNotificationDto> Notifications, ExportOptOutDto OptOut,
-    List<ExportHealthNoteDto> HealthNotes, ExportPhoneVerificationDto PhoneVerification);
+    List<ExportHealthNoteDto> HealthNotes, ExportPhoneVerificationDto PhoneVerification,
+    ExportGuestDataGateDto GuestDataGate);
+
+// API_CONTRACT_CYCLE16.md §273.1. §272/A2: deliberately carries no count or "hasHiddenData" flag — only
+// whether the rule applied, so the response can never be used to infer whether hidden data exists.
+public record ExportGuestDataGateDto(bool Applied, string? Reason, string? Explanation, string? SubjectRequestPath);
 
 public record ExportPhoneVerificationDto(bool PhoneVerified, string? Method, DateTime? VerifiedAtUtc);
 

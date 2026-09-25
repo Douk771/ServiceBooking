@@ -41,7 +41,7 @@ public sealed class PhoneVerificationSessionService(
 
         var now = DateTime.UtcNow;
         var openSessionsCount = await db.PhoneVerificationSessions.CountAsync(s =>
-            s.CanonicalPhone == canonicalPhone &&
+            s.CanonicalPhone == canonicalPhone &&  // SUBJECT-PHONE-GATE: not-account-scoped — cycle 14 phone-verification subsystem itself (ARCHITECTURE_CYCLE16.md §245.3)
             (s.Status == PhoneVerificationStatus.Pending || s.Status == PhoneVerificationStatus.Linked) &&
             s.ExpiresAtUtc > now, ct);
         if (openSessionsCount >= options.Value.MaxOpenSessionsPerPhone)

@@ -129,7 +129,7 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
                     Email: lastBooking.GuestEmail,
                     LastVisitDate: lastBooking.Date,
                     TotalVisits: g.Count(),
-                    Notes: NotesFor(notes.Where(n => n.GuestPhone == g.Key)),
+                    Notes: NotesFor(notes.Where(n => n.GuestPhone == g.Key)),  // SUBJECT-PHONE-GATE: staff-scoped — company staff viewing THEIR OWN company's clients, not an account-scoped "my own data" query; no sewing of guest↔account identity happens here (ARCHITECTURE_CYCLE16.md §245.3)
                     BookingSummaries: g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
                         .Select(b => new BookingSummaryDto(b.Date, b.Service.Name, b.Status.ToString()))
                         .ToList(),

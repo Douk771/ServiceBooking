@@ -1087,18 +1087,42 @@ public class BookingsController(
         // (decision П3), so this is computed, not stored.
         var precedesJournal = events.All(e => e.Kind != BookingEventKind.Created);
 
-        var eventDtos = events.Select(e => new BookingEventDto(
-            e.Id, e.Kind, e.OccurredAtUtc,
-            BookingEventTexts.Title(e.Kind),
-            new BookingEventActorDto(
-                e.ActorKind, e.ActorNameSnapshot, e.ActorRoleSnapshot,
-                BookingEventTexts.ActorLabel(e.Kind, e.ActorKind, e.ActorNameSnapshot, e.ActorRoleSnapshot)),
-            e.Kind == BookingEventKind.Rescheduled && e.PreviousDate is not null && e.PreviousStartTime is not null
-                && e.NewDate is not null && e.NewStartTime is not null
-                ? new BookingRescheduleDto(e.PreviousDate.Value, e.PreviousStartTime.Value, e.NewDate.Value, e.NewStartTime.Value)
-                : null,
-            e.Kind == BookingEventKind.Cancelled ? e.CancellationReason : null
-        )).ToList();
+        // TD-05 read side (ARCHITECTURE_CYCLE16.md §247.3, no migration/backfill — §240.3). Catches
+        // every row already accumulated BEFORE this cycle too, not only future deletions: one extra
+        // indexed query per call (ids ≤ number of events on one booking), no separate phone-matching
+        // logic here — that would be a sixth TD-03 place (§245.2/§247.2).
+        const string deletedActorTombstone = "Удалённый пользователь";
+        var actorIds = events.Where(e => e.ActorUserId != null).Select(e => e.ActorUserId!).Distinct().ToList();
+        var deletedActorIds = actorIds.Count == 0 ? []
+            : await db.Users.AsNoTracking()
+                .Where(u => actorIds.Contains(u.Id) && u.DeletedAtUtc != null)
+                .Select(u => u.Id).ToListAsync();
+        var deletedActorIdSet = deletedActorIds.ToHashSet();
+
+        var eventDtos = events.Select(e =>
+        {
+            // §247.3, exactly: ActorKind == Client && ActorUserId ∈ deletedActorIds. Guest events have
+            // no ActorUserId to look up (that's §247.5's named residual risk, closed on the WRITE side
+            // instead — see DeleteAccount). Staff/SuperAdmin/System are a different subject and a
+            // different retention schedule (D1/TD-18), untouched here.
+            var isDeletedClient = e.ActorKind == BookingActorKind.Client
+                && e.ActorUserId is not null && deletedActorIdSet.Contains(e.ActorUserId);
+            var actorName = isDeletedClient ? deletedActorTombstone : e.ActorNameSnapshot;
+            var actorLabel = isDeletedClient
+                ? deletedActorTombstone
+                : BookingEventTexts.ActorLabel(e.Kind, e.ActorKind, e.ActorNameSnapshot, e.ActorRoleSnapshot);
+
+            return new BookingEventDto(
+                e.Id, e.Kind, e.OccurredAtUtc,
+                BookingEventTexts.Title(e.Kind),
+                new BookingEventActorDto(e.ActorKind, actorName, e.ActorRoleSnapshot, actorLabel),
+                e.Kind == BookingEventKind.Rescheduled && e.PreviousDate is not null && e.PreviousStartTime is not null
+                    && e.NewDate is not null && e.NewStartTime is not null
+                    ? new BookingRescheduleDto(e.PreviousDate.Value, e.PreviousStartTime.Value, e.NewDate.Value, e.NewStartTime.Value)
+                    : null,
+                e.Kind == BookingEventKind.Cancelled ? e.CancellationReason : null
+            );
+        }).ToList();
 
         return Ok(new BookingHistoryDto(id, precedesJournal, eventDtos));
     }

@@ -33,7 +33,7 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
         var phone = await CallerCanonicalPhoneAsync();
         if (phone is null) return Ok(new NotificationPreferencesDto(true));
 
-        var optedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone);
+        var optedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone);  // SUBJECT-PHONE-GATE: not-account-scoped — reads only the CALLER's own opt-out status for their own phone (CallerCanonicalPhoneAsync), never another subject's data (ARCHITECTURE_CYCLE16.md §245.3)
         return Ok(new NotificationPreferencesDto(!optedOut));
     }
 
@@ -55,7 +55,7 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
     {
         if (!TryReadToken(token, out var phone)) return NotFound();
 
-        var alreadyOptedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone);
+        var alreadyOptedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone);  // SUBJECT-PHONE-GATE: not-account-scoped — anonymous unsubscribe link, phone comes from a signed one-time token, not from any caller account (ARCHITECTURE_CYCLE16.md §245.3)
         return Ok(new UnsubscribePageDto(PhoneDisplayMask.Mask(phone), alreadyOptedOut));
     }
 
@@ -291,7 +291,7 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
 
     private async Task SetOptOutAsync(string phone, bool optedOut, OptOutSource source, string? userId)
     {
-        var existing = await db.NotificationOptOuts.FirstOrDefaultAsync(o => o.Phone == phone);
+        var existing = await db.NotificationOptOuts.FirstOrDefaultAsync(o => o.Phone == phone);  // SUBJECT-PHONE-GATE: not-account-scoped — writes the opt-out FOR the phone the caller explicitly supplied (own preferences endpoint or signed unsubscribe token), not a guest-data lookup by an unrelated account (ARCHITECTURE_CYCLE16.md §245.3)
         if (optedOut)
         {
             if (existing is not null) return; // idempotent

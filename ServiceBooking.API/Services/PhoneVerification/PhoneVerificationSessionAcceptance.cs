@@ -24,7 +24,7 @@ public static class PhoneVerificationSessionAcceptance
         && candidate.Status == PhoneVerificationStatus.Verified
         && candidate.Purpose == PhoneVerificationPurpose.Profile
         && candidate.UserId == userId
-        && candidate.CanonicalPhone == newCanonicalPhone
+        && candidate.CanonicalPhone == newCanonicalPhone  // SUBJECT-PHONE-GATE: not-account-scoped — cycle 14 phone-VERIFICATION subsystem itself deciding whether a session proves a number; not a TD-03 guest-data sewing point (ARCHITECTURE_CYCLE16.md §245.3)
         && candidate.ConsumableUntilUtc is { } consumableUntil && consumableUntil > nowUtc;
 
     /// <summary>API_CONTRACT_CYCLE14.md §168's equivalent gate for <c>POST /api/auth/register</c>: a
@@ -37,7 +37,7 @@ public static class PhoneVerificationSessionAcceptance
         && candidate.Purpose == PhoneVerificationPurpose.Registration
         && candidate.UserId == null
         && candidate.ConsumableUntilUtc is { } consumableUntil && consumableUntil > nowUtc
-        && candidate.CanonicalPhone == canonicalPhone;
+        && candidate.CanonicalPhone == canonicalPhone;  // SUBJECT-PHONE-GATE: not-account-scoped — cycle 14 phone-verification subsystem itself (ARCHITECTURE_CYCLE16.md §245.3)
 
     /// <summary>
     /// Cycle-12 review, blockers 1+2: a <c>Purpose=Profile</c> session is reused for two different
@@ -52,5 +52,5 @@ public static class PhoneVerificationSessionAcceptance
     ///    via <see cref="IsUsableForChangePhone"/> above.
     /// </summary>
     public static bool IsOwnCurrentNumberConfirmation(string sessionCanonicalPhone, string? accountPhoneNumber) =>
-        accountPhoneNumber is not null && sessionCanonicalPhone == accountPhoneNumber;
+        accountPhoneNumber is not null && sessionCanonicalPhone == accountPhoneNumber;  // SUBJECT-PHONE-GATE: not-account-scoped — cycle 14 phone-verification subsystem itself (ARCHITECTURE_CYCLE16.md §245.3)
 }
