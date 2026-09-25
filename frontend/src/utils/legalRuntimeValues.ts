@@ -34,12 +34,19 @@ function escapeHtml(value: string): string {
 }
 
 /** Matches `<span data-legal-when="name">…inner…</span>` (or `data-legal-unless`), non-greedy on the
- *  inner content, single level — the markup never nests `when`/`unless` inside one another. */
+ *  inner content, single level — the markup never nests `when`/`unless` inside one another.
+ *
+ * ARCHITECTURE_CYCLE17.md §306.1 (C15-1): matches the same forms the build-time scanner
+ * (`RuntimeValueScanner.cs`) accepts — arbitrary whitespace/newlines inside the tag, extra
+ * attributes before/after the `data-legal-*` attribute, spaces around `=`. Contract for what both
+ * sides must agree on: `contracts/legal/runtime-value-forms.json`. Not covered, deliberately, on
+ * both sides equally (no divergence): single-quoted attribute values, `>` inside the attribute
+ * value. */
 function conditionalPattern(attr: 'data-legal-when' | 'data-legal-unless'): RegExp {
-  return new RegExp(`<span ${attr}="([a-zA-Z]+)">([\\s\\S]*?)</span>`, 'g')
+  return new RegExp(`<span\\b[^>]*?\\b${attr}\\s*=\\s*"([^"]*)"[^>]*>([\\s\\S]*?)</span>`, 'g')
 }
 
-const VALUE_PATTERN = /<span data-legal-value="([a-zA-Z]+)"><\/span>/g
+const VALUE_PATTERN = /<span\b[^>]*?\bdata-legal-value\s*=\s*"([^"]*)"[^>]*>\s*<\/span>/g
 
 export function applyLegalRuntimeValues(
   html: string,

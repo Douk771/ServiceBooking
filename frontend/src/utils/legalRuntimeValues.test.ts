@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { applyLegalRuntimeValues } from './legalRuntimeValues'
+import runtimeValueForms from '../../../contracts/legal/runtime-value-forms.json'
 
 describe('applyLegalRuntimeValues — ARCHITECTURE_CYCLE15.md §256', () => {
   it('fills in a plain data-legal-value span with the escaped value', () => {
@@ -45,5 +46,29 @@ describe('applyLegalRuntimeValues — ARCHITECTURE_CYCLE15.md §256', () => {
     const second = applyLegalRuntimeValues(html, { companyName: 'Салон Б' })
     expect(first).toBe('Салон А')
     expect(second).toBe('Салон Б')
+  })
+})
+
+describe('applyLegalRuntimeValues — shared corpus (ARCHITECTURE_CYCLE17.md §306.2 / C15-1)', () => {
+  // contracts/legal/runtime-value-forms.json is the source of truth read by BOTH the C# scanner
+  // (RuntimeValueScanner.cs, RuntimeValueFormsCorpusTests.cs) and this file. Divergence between
+  // the two is exactly the C15-1 defect this test exists to catch.
+  for (const testCase of runtimeValueForms.cases) {
+    const values = { companyName: 'Салон «Ландыш»' }
+    if (testCase.frontSubstitutes) {
+      it(`substitutes form "${testCase.id}"`, () => {
+        const result = applyLegalRuntimeValues(testCase.html, values)
+        expect(result).not.toContain('data-legal-')
+      })
+    } else {
+      it(`leaves form "${testCase.id}" untouched (not recognized by either side)`, () => {
+        expect(applyLegalRuntimeValues(testCase.html, values)).toBe(testCase.html)
+      })
+    }
+  }
+
+  it('unknown value name: scanner sees it (build fails) but front leaves markup intact', () => {
+    const { html } = runtimeValueForms.unknownNameCase
+    expect(applyLegalRuntimeValues(html, { companyName: 'Салон «Ландыш»' })).toBe(html)
   })
 })
