@@ -18,7 +18,7 @@ namespace ServiceBooking.Tests.Tests;
 /// <summary>
 /// QA cycle 15, Block E (US-15-10/11/12/13, T-E1..T-E8) — a client reschedules their own booking
 /// through PATCH /api/bookings/{id}/reschedule, one route with server-computed authority
-/// (ARCHITECTURE_CYCLE15.md §257.1-§257.8, API_CONTRACT_CYCLE15.md §287). Written against SPEC.md §5
+/// (ARCHITECTURE_CYCLE15.md §257.1-§257.8, API_CONTRACT_CYCLE15.md §287). Written against SPEC_CYCLE15_BOOKING_CARD_TARIFF.md §5
 /// (US-15-10..13) and §0-bis П4/П5, not against the implementation. Includes two scenarios the backend
 /// implementer flagged as easy to miss in review: the symmetric 403->404 replacement on
 /// GET /api/bookings/slots?excludeBookingId= (not just PATCH .../reschedule), and that a SECOND

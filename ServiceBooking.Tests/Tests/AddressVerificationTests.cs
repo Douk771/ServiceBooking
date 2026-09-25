@@ -12,8 +12,8 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 13 — SPEC.md US-132…US-140, ARCHITECTURE_CYCLE13.md §207/§209/§214,
-/// API_CONTRACT_CYCLE13.md §233/§234/§242. Written from SPEC.md's acceptance criteria and
+/// QA cycle 13 — SPEC_CYCLE13_PHOTO_LOGO_MAPS.md US-132…US-140, ARCHITECTURE_CYCLE13.md §207/§209/§214,
+/// API_CONTRACT_CYCLE13.md §233/§234/§242. Written from SPEC_CYCLE13_PHOTO_LOGO_MAPS.md's acceptance criteria and
 /// LEGAL_REVIEW.md §16.2/§16.5's licence constraints, independently of the controller's own
 /// implementation, per this cycle's QA brief. Every test that reaches the geocoder does so through
 /// <see cref="AddressVerificationTestFactory.Geocoder"/> (<see cref="FakeAddressGeocoder"/>) — never

@@ -9,7 +9,7 @@ namespace ServiceBooking.Tests.Tests;
 /// <summary>
 /// QA cycle 15, Block B (US-15-05/US-15-06, T-B1) — PUT /api/companies/{id} is the single write path
 /// for the owner-supplied Яндекс Карты / 2ГИС links, and GET /api/companies/{slug} is the single public
-/// read path. Written against SPEC.md §5 (US-15-05/06), §0-bis П1/П2 and
+/// read path. Written against SPEC_CYCLE15_BOOKING_CARD_TARIFF.md §5 (US-15-05/06), §0-bis П1/П2 and
 /// API_CONTRACT_CYCLE15.md/ARCHITECTURE_CYCLE15.md §253/§283/§284, not against the implementation.
 /// </summary>
 public class Cycle15MapLinksTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)

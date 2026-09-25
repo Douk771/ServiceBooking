@@ -15,7 +15,7 @@ namespace ServiceBooking.Tests.Tests;
 /// <summary>
 /// QA cycle 15, Block D (US-15-07/08/09, T-D3/T-D4) — "устаревший тариф" (IsActive:true +
 /// IsPublic:false) is expressed with the EXISTING pair of flags, no new status field
-/// (SPEC.md §0-bis П3, ARCHITECTURE_CYCLE15.md §255). Written against SPEC.md §5/API_CONTRACT_CYCLE15.md
+/// (SPEC_CYCLE15_BOOKING_CARD_TARIFF.md §0-bis П3, ARCHITECTURE_CYCLE15.md §255). Written against SPEC_CYCLE15_BOOKING_CARD_TARIFF.md §5/API_CONTRACT_CYCLE15.md
 /// §288, not against the implementation. PlansTab.tsx's own defect (constants sent on every save) is a
 /// frontend concern covered by PlansTab.test.tsx — these tests exercise the SERVER'S contract for the
 /// same endpoint directly over HTTP, independent of the admin UI.
