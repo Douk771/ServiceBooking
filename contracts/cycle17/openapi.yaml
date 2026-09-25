@@ -122,6 +122,8 @@ paths:
               schema:
                 type: string
               example: "Cancellation reason must be 300 characters or fewer."
+        '401':
+          description: Не аутентифицирован (тело пустое)
         '403':
           description: Вызывающий не владелец записи и не персонал компании (тело пустое)
         '404':
@@ -154,6 +156,7 @@ paths:
           description: upcoming | Pending | Confirmed | Cancelled | Completed | NoShow
           schema:
             type: string
+            enum: [upcoming, Pending, Confirmed, Cancelled, Completed, NoShow]
       responses:
         '200':
           description: Список визитов клиента
@@ -300,6 +303,7 @@ components:
     SubscriptionRequestInput:
       type: object
       additionalProperties: false
+      required: [options]
       properties:
         planId:
           type: string
@@ -307,6 +311,10 @@ components:
           nullable: true
         options:
           type: array
+          description: |
+            Обязательное поле со стороны ASP.NET model-binding (C# DTO объявляет Options непустым
+            non-nullable List без значения по умолчанию) — отсутствие поля отклоняется общим 400
+            ДО контроллера. Пустой массив [] допустим, отсутствие поля — нет.
           items:
             type: object
             required: [optionId, quantity]
