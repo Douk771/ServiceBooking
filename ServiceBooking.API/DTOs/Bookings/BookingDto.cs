@@ -65,7 +65,13 @@ public record BookingDto(
     // itself, never trusted as a standing permission.
     bool? ClientRescheduleAllowed = null,
     int? ClientRescheduleMinHours = null,
-    int? CompanyBookingHorizonDays = null
+    int? CompanyBookingHorizonDays = null,
+    // ARCHITECTURE_CYCLE17.md §304.3, API_CONTRACT_CYCLE17.md §323 — computed ONLY on
+    // GET /api/bookings/client; null everywhere else (project-wide "server didn't compute this for
+    // this caller" convention). Mirrors PATCH .../cancel's rule for a ClientOwner caller (status +
+    // window), but deliberately does NOT fold in AllowSelfBooking/plan online-booking gate — cancel
+    // depends on neither. A hint for the UI, re-checked by the server on the PATCH itself.
+    bool? ClientCancelAllowed = null
 );
 
 // US-67 (API_CONTRACT_CYCLE6.md §43.2): one line per service in the visit, in visit order.

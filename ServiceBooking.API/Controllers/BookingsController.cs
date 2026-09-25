@@ -654,11 +654,18 @@ public class BookingsController(
                 (plan?.AllowOnlineBooking ?? false) &&
                 nowForWindowUtc <= currentVisitStartUtc - TimeSpan.FromHours(minHours);
 
+            // ARCHITECTURE_CYCLE17.md §304.3, API_CONTRACT_CYCLE17.md §323 — deliberately does NOT
+            // fold in AllowSelfBooking/plan.AllowOnlineBooking: cancel depends on neither (§0-bis).
+            var cancelAllowed =
+                (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed) &&
+                ClientRescheduleWindow.CanClientCancel(nowForWindowUtc, currentVisitStartUtc, minHours);
+
             // П8/API_CONTRACT_CYCLE10.md §123: reminderStatus/historyEventCount always null on the
             // client's own endpoint — not filtered on the frontend, simply never computed here.
             return MapToDto(b, b.Service, b.Master, name, reminderStatus: null, historyEventCount: null,
                 clientRescheduleAllowed: rescheduleAllowed, clientRescheduleMinHours: minHours,
-                companyBookingHorizonDays: BookingHorizon.Normalize(company.BookingHorizonDays));
+                companyBookingHorizonDays: BookingHorizon.Normalize(company.BookingHorizonDays),
+                clientCancelAllowed: cancelAllowed);
         }));
     }
 
@@ -917,16 +924,38 @@ public class BookingsController(
     public async Task<IActionResult> Cancel(Guid id, [FromBody] string? reason)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var booking = await db.Bookings.FindAsync(id);
+        // ARCHITECTURE_CYCLE17.md §304 — Company is needed for the client-owner window check; a single
+        // Include() replaces FindAsync, not a second round trip (§316 "Масштабирование").
+        var booking = await db.Bookings.Include(b => b.Company).FirstOrDefaultAsync(b => b.Id == id);
         if (booking is null) return NotFound();
 
-        var canCancel = booking.ClientId == userId || await CanManageBookingAsync(booking, userId);
-        if (!canCancel) return Forbid();
+        // ARCHITECTURE_CYCLE17.md §304.1 — authority computed strictly server-side, staff checked
+        // first (dead-on with Reschedule's RescheduleAuthority, §257.1 cycle 15). Not 404 for None —
+        // that would be a breaking change to an already-shipped endpoint (§304.2/§322.3, долг C17-2).
+        var authority = await CanManageBookingAsync(booking, userId)
+            ? RescheduleAuthority.Staff
+            : booking.ClientId == userId ? RescheduleAuthority.ClientOwner : RescheduleAuthority.None;
+        if (authority == RescheduleAuthority.None) return Forbid();
 
         // US-06: the reason now actually reaches the other side (BookingDto.cancellationReason), so it
-        // needs the same length guard every other free-text field in the product gets.
+        // needs the same length guard every other free-text field in the product gets. Validation of
+        // input comes before the window check (§313 CY17-B-07) — 400 is already spoken for by this.
         if (reason is { Length: > 300 })
             return BadRequest("Cancellation reason must be 300 characters or fewer.");
+
+        // ARCHITECTURE_CYCLE17.md §304.1/§304.2 — window applies ONLY to the client-owner path; staff
+        // are unaffected, byte-for-byte as before. 409, not 400 (§304.2 explains the asymmetry with
+        // Reschedule's 400): 400 here is already occupied by the reason-length check above.
+        if (authority == RescheduleAuthority.ClientOwner)
+        {
+            var minHours = ClientRescheduleWindow.Normalize(booking.Company.ClientRescheduleMinHours);
+            var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, booking.Company.TimeZoneId);
+            if (!ClientRescheduleWindow.CanClientCancel(DateTime.UtcNow, visitStartUtc, minHours))
+            {
+                return Conflict(
+                    $"Отменить запись можно не позже чем за {minHours} ч до визита. Чтобы отменить, свяжитесь с салоном.");
+            }
+        }
 
         booking.Status = BookingStatus.Cancelled;
         booking.CancellationReason = reason;
@@ -985,7 +1014,8 @@ public class BookingsController(
 
     private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName,
         ReminderStatusDto? reminderStatus = null, int? historyEventCount = null,
-        bool? clientRescheduleAllowed = null, int? clientRescheduleMinHours = null, int? companyBookingHorizonDays = null)
+        bool? clientRescheduleAllowed = null, int? clientRescheduleMinHours = null, int? companyBookingHorizonDays = null,
+        bool? clientCancelAllowed = null)
     {
         // US-67 (API_CONTRACT_CYCLE6.md §43.2): `services` is built from BookingServices when loaded
         // (every path except the in-memory object returned by Create, which sets it explicitly before
@@ -1006,7 +1036,7 @@ public class BookingsController(
             b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus,
             totalDurationMinutes, items,
             b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount,
-            clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays);
+            clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays, clientCancelAllowed);
     }
 
     // API_CONTRACT_CYCLE4.md §30.3. Picks the highest-Generation Reminder row for a booking (§23.5: a

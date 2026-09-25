@@ -76,4 +76,46 @@ public class ClientRescheduleWindowTests
         var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         ClientRescheduleWindow.IsWithinWindow(now, now, now.AddMinutes(1), minHours: 0).Should().BeTrue();
     }
+
+    // ARCHITECTURE_CYCLE17.md §304.1 — CanClientCancel: one end of the window (no "new visit" to
+    // check, unlike reschedule).
+
+    [Fact]
+    public void CanClientCancel_VisitFarEnoughAway_ReturnsTrue()
+    {
+        var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var visitStart = now.AddHours(5);
+        ClientRescheduleWindow.CanClientCancel(now, visitStart, minHours: 2).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanClientCancel_VisitTooClose_ReturnsFalse()
+    {
+        var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var visitStart = now.AddHours(1);
+        ClientRescheduleWindow.CanClientCancel(now, visitStart, minHours: 2).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CanClientCancel_ExactlyOnTheBoundary_ReturnsTrue()
+    {
+        var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var visitStart = now.AddHours(2);
+        ClientRescheduleWindow.CanClientCancel(now, visitStart, minHours: 2).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanClientCancel_ZeroMinHours_AllowsRightUpToVisitStart()
+    {
+        var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        ClientRescheduleWindow.CanClientCancel(now, now, minHours: 0).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CanClientCancel_VisitAlreadyInThePast_ReturnsFalse()
+    {
+        var now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var visitStart = now.AddHours(-1);
+        ClientRescheduleWindow.CanClientCancel(now, visitStart, minHours: 2).Should().BeFalse();
+    }
 }
