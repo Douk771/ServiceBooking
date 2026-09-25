@@ -154,3 +154,53 @@ describe('SettingsTab — unsaved edits survive an unrelated `my-companies` refe
     expect(saveButton).not.toBeDisabled()
   })
 })
+
+// ARCHITECTURE_CYCLE17.md §305.3/§326 (US-17-03, C15-6.3): the hint text must match the ACTUAL "PUT
+// with the field omitted" behaviour ("leave the saved value alone"), not the field's server-side
+// default — and clearing the field must not send `clientRescheduleMinHours` in the body at all.
+describe('SettingsTab — clientRescheduleMinHours hint and empty-field behaviour (§305.3, §326)', () => {
+  function renderSettings(companyId = 'co1') {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={qc}>
+        <SettingsTab companyId={companyId} />
+      </QueryClientProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    update.mockReset().mockResolvedValue({})
+    getMy.mockReset().mockResolvedValue([
+      { id: 'co1', name: 'Салон красоты', allowSelfBooking: true, clientRescheduleMinHours: 24 },
+    ])
+  })
+
+  it('shows the "leave the saved value alone" hint, not the old "2 hours by default" copy', async () => {
+    renderSettings()
+
+    expect(await screen.findByText(/Пусто — оставить текущее значение/)).toBeInTheDocument()
+    expect(screen.queryByText('Пусто — 2 часа по умолчанию. 0 — можно перенести вплоть до начала визита.')).not.toBeInTheDocument()
+  })
+
+  it('label mentions both reschedule and cancellation, since one window now governs both (§304)', async () => {
+    renderSettings()
+    expect(await screen.findByLabelText('За сколько часов клиент может перенести или отменить запись')).toBeInTheDocument()
+  })
+
+  it('clearing the field omits clientRescheduleMinHours from the PUT body entirely', async () => {
+    renderSettings()
+
+    const hoursInput = await screen.findByLabelText('За сколько часов клиент может перенести или отменить запись')
+    await waitFor(() => expect(hoursInput).toHaveValue(24))
+    await userEvent.clear(hoursInput)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalled())
+    const body = update.mock.calls[0][1] as Record<string, unknown>
+    // `undefined` (not sent by JSON.stringify, which is what actually crosses the wire) rather than
+    // an empty string/0 — an empty string would be a stray no-op to the API contract, 0 is a
+    // legitimate explicit value the owner didn't type.
+    expect(body.clientRescheduleMinHours).toBeUndefined()
+  })
+})
