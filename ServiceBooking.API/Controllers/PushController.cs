@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Notifications;
+using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.WebPush;
 using ServiceBooking.Core.Entities;
@@ -34,7 +35,8 @@ public class PushController(
         var enabled = string.Equals(opts.Provider, "web-push", StringComparison.OrdinalIgnoreCase);
 
         var memberships = await db.CompanyMembers.AsNoTracking()
-            .Where(cm => cm.UserId == userId && (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner))
+            .Where(CompanyMembership.IsStaffRole)
+            .Where(cm => cm.UserId == userId)
             .Select(cm => cm.CompanyId).Distinct().ToListAsync();
 
         var companies = await db.Companies.AsNoTracking()

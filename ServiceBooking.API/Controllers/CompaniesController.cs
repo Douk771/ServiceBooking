@@ -235,8 +235,8 @@ public class CompaniesController(
             // A Client-role membership row exists for a company's own customers (e.g. anyone who books
             // there), never for staff — without this filter they'd show up in the public "book a
             // master" picker (audit Q6/US-12).
+            .Where(CompanyMembership.IsStaffRole)
             .Where(cm => cm.CompanyId == id && cm.Company.IsActive &&
-                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner) &&
                 (honorIncludeHidden || cm.ProvidesServices));
 
         if (parsedServiceId.HasValue)
