@@ -1,6 +1,33 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `91196aa` (HEAD ветки `cycle/018-trial-plan`),
+**Актуально по состоянию на коммит: `e2e927b` (HEAD ветки `cycle/020-legal-closure` = `develop`
+`e3774c1` + один коммит документа `LEGAL_DECISIONS_CYCLE20.md`), дата: 2026-09-28.** Прошлая
+отметка была `91196aa` (ветка цикла 18 до мёржа). **Следующий diff отсчитывайте от `e3774c1`
+(`develop`)** — это последний коммит `develop` на момент правки; `e2e927b` кода не содержит.
+
+⚖️ **Как читать эту редакцию (вход в цикл 20, «закрытие правовых вопросов»).** Точечное обновление по
+диапазону `91196aa..e2e927b`: мёрж цикла 18 в `develop` (`7820bf9`), документ закрытия цикла 18
+(`487d25c`, это правка самого CURRENT_STATE), две починки после красного CI (`baa8da9` — переменные
+триала в дымовом тесте, `e3774c1` — детерминированный NTF-W005) и документ решений заказчика
+`LEGAL_DECISIONS_CYCLE20.md`. **Новых эндпоинтов, сущностей, колонок, миграций и зависимостей нет**
+(файлов миграций по-прежнему 70); продуктовый код не менялся ни одной строкой. Добавлено: **§0.4**
+(что есть в коде по каждому пункту `LEGAL_DECISIONS_CYCLE20.md` — сверено по коду 2026-09-28),
+заметки в §7 (NTF-W005), §8 (дымовой тест CI), §10.5 (документ цикла 20). Метка блоков — ⚖️20.
+
+🔴 **Цикл 20 стартует ДО вливания цикла 19, вопреки строке «Q-L9/Q-L10/AV1/TD16-4» в
+`LEGAL_DECISIONS_CYCLE20.md`** (там сказано «стартует от `develop` ПОСЛЕ вливания цикла 19»).
+Решение пользователя 2026-09-28: «начинать сейчас, при мёрже разберёмся». Факт на момент правки
+(после `git fetch`): `origin/cycle/019-tariff-limits-geocoder-cleanup` **не содержит ни одного
+коммита сверх `develop`** (`git log develop..origin/cycle/019-…` пуст). Значит, **геокодер в
+дереве цикла 20 целиком на месте** (104 упоминания в `.cs` вне миграций; `Services/Geo/**`,
+`Yandex/YandexAddressGeocoder.cs`, `CompanyAddressController`, `DeploymentSafetyChecks`), а
+упоминания геокодера/Яндекса есть в `legal-drafts/01-privacy-policy.html` (2),
+`02-terms-client.html` (1), `13-public-address-notice.html` (1). Правки `legal-drafts/` циклов 19 и
+20 будут пересекаться — конфликт ожидается при мёрже, а не при старте.
+
+---
+
+_Предыдущая редакция шапки (вход — `91196aa`):_ **коммит `91196aa` (HEAD ветки `cycle/018-trial-plan`),
 дата: 2026-09-26.** Прошлая отметка была `9864b3c` (**та же ветка, редакция середины цикла** — она
 описывала цикл 18 до четырёх кругов ревью). Правка снята **на ветке цикла 18, до мёржа в
 `develop`** — ветки эта правка не трогает, мёрж делает devops-engineer. **Следующий diff
@@ -699,6 +726,26 @@ US-60…US-67, ветка `cycle/06-booking-fixes`), остальные девя
 ⚖️ **Пропорция роста другая, чем в цикле 4.** Фронтенд вырос почти вдвое (+81) — впервые прирост
 фронта обогнал функциональный набор (+16). Причина в том, что цикл 5 менял в основном **формы и
 экраны согласий**, а не серверные алгоритмы.
+
+### 0.4 ⚖️20 Что в коде есть по каждому пункту `LEGAL_DECISIONS_CYCLE20.md` (сверено по коду на `e2e927b`)
+
+Это не план, а снимок «как есть» по тем местам, которые документ решений называет. Строки
+«Разработка: проверить…» из документа решений здесь уже проверены.
+
+| Пункт | Что в коде сейчас (факт) | Где |
+|---|---|---|
+| **LG1** (бумажное согласие на здоровье) | Поле «здоровье» — отдельная сущность `ClientHealthNote` (шифротекст, `HealthNoteProtector`). Запись `PUT .../health-note` разрешена, если есть **электронное** согласие: салонная форма `HealthDataConsent` (`POST .../health-consent`, пишется в `ConsentRecord` с IP и User-Agent) **или** согласие самого клиента `PdnConsent` с целью `HealthData`. `GET .../health-note` без согласия отдаёт `ConsentRequired: true`. **Отметки «письменное согласие получено на бумаге» (кто/когда) нет, печатной формы бланка нет.** uiText `HealthDataConsent` → `legal-drafts/11-health-data-consent.html`, `2026-09-22-draft` | `ServiceBooking.API/Controllers/ClientConsentsController.cs` (стр. 90–193, `HasHealthConsentAsync` стр. ~262), `Core/Entities/ClientHealthNote.cs` |
+| **C15-8 / C17-4** (ручное назначение тарифа) | `PUT /api/admin/billing-accounts/{accountId}/subscription` принимает `Billing_AssignSubscriptionInput(PlanId, IsActive, PaidUntil, Options, Amount, Comment?, RequestId?, ConfirmLimitOverflow)` — **причины из закрытого списка нет**, есть только необязательный свободный `Comment`. Назначение триала этой ручкой отклоняется (цикл 18, `0ee9943`); перевыдача триала — отдельная ручка с `Billing_RegrantTrialInput(string Reason)`, причина — свободная строка. ⚠️ В `DTOs/Billing/AdminBillingDtos.cs:65` лежит дубликат `AssignSubscriptionInput` с той же формой, **нигде не используется** | `ServiceBooking.API/Controllers/AdminBillingController.cs` (стр. ~615, записи стр. ~976–980) |
+| **C18-8(б)** (баннер об изменении условий/цены с фиксацией ознакомления) | **Общего механизма нет.** Есть три частных: 451-гейт `ConsentGate` (переакцепт новой редакции документа — это не баннер, он блокирует), ознакомление с условиями триала (`BillingAccount.TrialTermsAcknowledgedAtUtc`, `POST /api/billing/trial/terms-acknowledgement`), подтверждение шаблона уведомлений (`TemplateAcknowledgementModal`). Тексты уведомлений о снятом тарифе — константы `Services/Billing/LegalNotices.cs`, ознакомление с ними не фиксируется | `frontend/src/components/legal/ConsentGate.tsx`, `Controllers/BillingController.cs:60`, `frontend/src/pages/owner/TemplateAcknowledgementModal*` |
+| **C17-6 / C17-10** (отмена ≤ 24 ч) | Одно поле `Company.ClientRescheduleMinHours` управляет и переносом, и отменой (§9 **C17-6**); предел `ClientRescheduleWindow.Max = 168`, валидация «от 0 до 168 часов». Отдельного потолка для отмены нет | `ServiceBooking.API/Services/Bookings/ClientRescheduleWindow.cs:15`, `CompaniesController.cs:533` |
+| **CYCLE16 В1** (журнал срабатываний гейта: 1 год, без IP) | **Отдельного журнала (таблицы) нет.** Срабатывание гейта — строка в логе приложения: `guest-data gate applied: userId=… endpoint=profile/export` и `phone-change gate blocked: userId=… phone={MaskedPhone} reason=…`. IP в эти строки и в обогащение request-логов (`EnrichDiagnosticContext`: только `traceId`, `userId`) **не пишется**. Срок хранения логов — `Retention:AppLogDays = 90` (правило `AppLogAgeRule`), **не 1 год**; отдельного правила для гейта нет. IP клиента при этом есть в логах reverse-proxy (nginx) — вне приложения, не проверялось | `ProfileController.cs:219`, `:329`; `Program.cs:1077–1105`; `Services/Retention/RetentionPeriods.cs:84` |
+| **CYCLE16 В8 / D1** (`BookingEvents` 3 года) | `Retention:BookingEventDays = 0` в `RetentionPeriods` и в `appsettings.json:67`; 0 = «срок не задан», `BookingEventRule` ничего не удаляет. В `.env.production.example` и `docker-compose.prod.yml` переменной нет. На старте не проверяется (в отличие от `ConsentRecordDays`/`TemplateHistoryDays`) | `ServiceBooking.API/Services/Retention/RetentionPeriods.cs:60–68`, `Rules/BookingEventRule.cs` |
+| **LG6** (только свои компании в подписке) | Код **допускает** в одном биллинг-аккаунте компании с разными владельцами: при переносе компании новый владелец должен быть держателем целевого аккаунта **или** участником (`CompanyMembers`) любой компании этого аккаунта (`IsNewOwnerLinkedToTargetAccount(isHolder, isMember)`) | `ServiceBooking.API/Services/Billing/CompanyTransferService.cs:59–80` |
+| **D2** (подсказка о людях на фото салона) | В форме загрузки фото салона подсказки нет: только «Перетащите фото сюда или» и «JPEG, PNG или WEBP, до 5 МБ…» | `frontend/src/pages/owner/CompanyPhotosSection.tsx:198–212` |
+| **C18-8(а) / О10–О11** (uiTexts гейта) | В `legal-drafts/legal.json` `uiTexts` — 7 ключей (`BookingNotice`, `TemplateAdWarning`, `UnsubscribePage`, `PhotoConsent`, `HealthDataConsent`, `GuardianConfirmation`, `PublicAddressNotice`); **`guestDataGateNotice` нет**, код отдаёт fallback `SubjectGateTexts` | `legal-drafts/legal.json:59–66`, `ServiceBooking.API/Services/Subjects/SubjectGateTexts.cs` |
+| **Статус комплекта** | Все 5 документов и все 7 uiTexts — `isDraft: true`; версии `2026-09-22-draft`…`2026-09-26-draft`. В `legal-drafts/` два файла с префиксом `13-` (`13-payment-terms.html` — в `deferredDrafts`, `13-public-address-notice.html` — uiText) | `legal-drafts/legal.json` |
+| **TD16-1** | Без изменений — §9 **TD16-1**; сид опубликованного `TermsOwner` — `ServiceBooking.Tests/Infrastructure/TestHostSettings.cs:115–135` | — |
+| **CYCLE16 В4** (второй канал подтверждения) | Callback не реализован; единственный канал — бот MAX (§4.24), рубильник не переведён. По решению — вне цикла 20 | §4.24 |
 
 ---
 
@@ -6127,6 +6174,16 @@ QA **до** реализации серверной части и фиксиру
 по-прежнему нет вовсе: Playwright или аналога не появилось, экраны триала покрыты только компонентно
 (Vitest).
 
+⚖️20 **Правка набора после мёржа цикла 18 (`e3774c1`, на `develop`).** Число тестов не изменилось;
+переписан один сценарий — **NTF-W005** (`ServiceBooking.Tests/Tests/NotificationWebhookUnsubscribeTests.cs`,
+`Webhook_RealRateLimitPolicy_TripsAfterQuota`). Раньше он делал 601 настоящий запрос против квоты
+600/мин и на загруженном раннере CI (`MaxParallelThreads=2`) не успевал уложиться в минутное окно —
+ложное падение. Теперь тест поднимает хост через `RateLimitTestFactory` с новым необязательным
+параметром `notificationsWebhookPermitLimit` (ставит `RateLimits:notifications-webhook:PermitLimit`;
+тот же приём, что уже был для `auth-login`/`auth-register`/`data-export`/`booking-create`), квота 5 —
+5 × 401, шестой — 429. `TEST_CATALOG.md` (запись NTF-W005) обновлён. Команда запуска наборов не
+менялась (см. «Как запускать» выше).
+
 ## 8. CI и деплой
 
 🗺 **Цикл 13 не трогал CI вообще** — `.github/workflows/**`, `deploy/**`, `Makefile` и
@@ -6678,6 +6735,16 @@ actions). Раннбука по включению чего-либо цикл н
 перед сменой версий нужно убедиться, что опубликованный комплект на боевой машине **не активен** и
 в `ConsentRecord` **нет записей на предыдущие черновые редакции** (иначе сдвиг версий превратится в
 гейт для уже согласившихся). `isDraft` у обоих документов остался `true`, комплект не публикуется.
+
+⚖️20 **Починка CI после мёржа цикла 18 (`baa8da9`, на `develop`).** Шаг `docker-build` поднимает
+контейнер для дымового теста (`smoke.sh`) со своими `-e`, и о переменных триала не знал: приложение
+падало на старте в `DeploymentSafetyChecks.ValidateTrialSecrets`, дымовой тест ждал
+`/api/health/live` до таймаута. В `.github/workflows/ci.yml` (≈ стр. 340) добавлены
+`-e Trial__PhoneKeyHmac="$(openssl rand -base64 32)"` и `-e Trial__PhoneKeyId=ci-smoke` — ключ
+генерируется на месте, как `Jwt__Key` и пароль суперадмина. Проверка на старте осталась как есть.
+Вывод, зафиксированный в сообщении коммита: любая новая fail-fast проверка на старте требует обойти
+**все** места, где приложение запускается (compose, `.env.production.example`, шаг CI `docker-build`),
+а не только compose и пример `.env`.
 
 ## 9. Технический долг и риски (по убыванию приоритета)
 
@@ -9556,6 +9623,17 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 пакета в `frontend/package.json` и каталога с такими тестами не найдено.
 
 ### 10.5 Документы цикла работ
+
+⚖️20 **Цикл 20 («закрытие правовых вопросов», ветка `cycle/020-legal-closure`) — на момент правки в
+дереве есть ровно один его документ:**
+
+| ⚖️20 Документ цикла 20 | Размер | Что это |
+|---|---|---|
+| **`LEGAL_DECISIONS_CYCLE20.md`** (корень) | 62 строки, markdown | Окончательные решения заказчика от 28.09.2026 по открытым правовым вопросам. §1 — таблица «ID / вопрос / решение / что это значит для работ» (LG1, C15-8/C17-4, C18-8(б), C17-6/C17-10, CYCLE16 В1/В8/В2/В4/В7, LG6, Q-L11, C-9, C-13, D2, Q-L9/Q-L10/AV1/TD16-4, CYCLE18 В1/В4/В5/В6, NP6/LG3, C-2/C-3/C-4/LG4); §2 — ранее решённое, но не сделанное (вставки CYCLE16 §4.1–4.4, uiTexts гейта, пересборка `App_Data/legal`, TD16-1); §3 — действия заказчика вне кода; §4 — вне объёма (D13, NP3, N9-2). Что по каждому пункту есть в коде — §0.4 |
+
+Корневые `SPEC.md`/`ARCHITECTURE.md`/`API_CONTRACT.md` на момент правки **циклу 20 не принадлежат**:
+`SPEC.md` — по-прежнему спека цикла 18 (не заархивирована под `SPEC_CYCLE18_*`, §9 **C5**),
+`ARCHITECTURE.md`/`API_CONTRACT.md` — документы цикла 3. Каталога `docs/history/` нет.
 
 🆕 **Состояние корня после цикла 18 — читать первым.** Корневой `SPEC.md` — это **спека цикла 18**
 («системный тариф Триал»); цикл занял корневой файл, как до него циклы 11, 13, 14, 15 и 17 (§9 **C5**).
