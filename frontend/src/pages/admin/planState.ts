@@ -7,7 +7,7 @@ import type { PlanConfig } from '../../api/plans'
  */
 export type PlanStateTone = 'public' | 'hidden' | 'archived'
 
-export interface PlanStateInfo {
+interface PlanStateInfo {
   label: string
   tone: PlanStateTone
 }

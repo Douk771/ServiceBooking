@@ -6,8 +6,7 @@ type Schemas = components['schemas']
 type Cycle18 = Cycle18Schemas['schemas']
 
 export type TrialAccountFilter = Cycle18['TrialAccountFilter']
-export type TrialRegrantInput = Cycle18['TrialRegrantInput']
-export type TrialRefusalDto = Cycle18['TrialRefusalDto']
+type TrialRegrantInput = Cycle18['TrialRegrantInput']
 
 /** Cycle 7 shapes + cycle 18 `trial`/`trialState`/`trialEndsAt` (additive — §369, §372). */
 export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDto'] & Cycle18['AdminBillingAccountListItemTrialPatch']
@@ -15,15 +14,15 @@ export type AdminBillingAccount = Schemas['AdminBillingAccountDto'] & Cycle18['A
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
 export type AssignSubscriptionInput = Schemas['AssignSubscriptionInput']
 export type AssignOptionInput = Schemas['AssignOptionInput']
-export type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto']
+type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto']
 export type AdminSubscriptionRequest = Schemas['AdminSubscriptionRequestDto']
 export type SubscriptionStatus = Schemas['SubscriptionStatus']
-export type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
+type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
 
 /** Cycle-3 pagination envelope (`page`/`pageSize`/`totalCount`) used by every /admin/billing-*
  *  list endpoint in this cycle — distinct from the older `total`/`hasNext` envelope elsewhere in
  *  the admin API, so it's adapted to the shared <Pagination> component's shape at the call site. */
-export interface PagedResult<T> {
+interface PagedResult<T> {
   items: T[]
   page: number
   pageSize: number

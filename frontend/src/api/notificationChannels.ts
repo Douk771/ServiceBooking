@@ -1,7 +1,7 @@
 import { api } from './client'
 import type { ChannelDto, ChannelOffer, LegalEntityForm, NotificationTransport } from '../types'
 
-export interface RequestChannelPayload {
+interface RequestChannelPayload {
   legalEntityForm: LegalEntityForm
   inn: string
   /** Version of `TermsOwner` — the channel offer (D9) lives as its appendix (§43.2), so acceptance is

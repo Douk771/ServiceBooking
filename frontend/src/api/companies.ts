@@ -2,7 +2,7 @@ import { api } from './client'
 import type { Company } from '../types'
 
 /** contracts/cycle9/openapi.yaml — PagedCompanyDto (US-115). */
-export interface PagedCompanyDto {
+interface PagedCompanyDto {
   items: Company[]
   page: number
   pageSize: number
@@ -64,12 +64,12 @@ export interface CreateCompanyPayload {
 /** §42.1 — the response now carries a fresh token (claim `lco`) alongside the company. Without
  *  saving it immediately, the owner would get owner-gate 451 on their own just-created company until
  *  their next login. */
-export interface CreateCompanyResponse {
+interface CreateCompanyResponse {
   company: Company
   token: string
 }
 
-export interface UpdateCompanyPayload {
+interface UpdateCompanyPayload {
   name?: string
   description?: string
   address?: string
@@ -88,7 +88,7 @@ export interface UpdateCompanyPayload {
   bookingHorizonDays?: number
 }
 
-export interface CompanyPhotoUsage {
+interface CompanyPhotoUsage {
   companyId: string
   usedBytes: number
   photoCount: number

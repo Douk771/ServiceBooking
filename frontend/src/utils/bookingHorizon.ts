@@ -13,7 +13,7 @@ const MIN_HORIZON_DAYS = 1
 const MAX_HORIZON_DAYS = 365
 export const HORIZON_OUT_OF_RANGE_MESSAGE = 'Горизонт записи — от 1 до 365 дней'
 
-export interface ParsedBookingHorizon {
+interface ParsedBookingHorizon {
   /** What to send on the wire: 0 (blank/default) or a validated 1..365 value. */
   value: number
   /** Set when the input can't be sent as-is; `value` is meaningless in that case. */

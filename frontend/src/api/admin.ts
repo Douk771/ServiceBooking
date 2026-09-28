@@ -1,7 +1,7 @@
 import { api } from './client'
 import type { BookingStatus, Paged } from '../types'
 
-export interface AdminStats {
+interface AdminStats {
   totalCompanies: number
   totalUsers: number
   totalBookings: number
@@ -44,7 +44,7 @@ export interface AdminCompany {
   subscriptionActive: boolean
 }
 
-export interface AdminBooking {
+interface AdminBooking {
   id: string
   companyName: string
   serviceName: string
@@ -58,7 +58,7 @@ export interface AdminBooking {
   price: number
 }
 
-export interface MasterReport {
+interface MasterReport {
   masterId: string
   masterName: string
   commissionPercent: number

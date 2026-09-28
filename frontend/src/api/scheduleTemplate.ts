@@ -7,7 +7,7 @@ export interface DayTemplate {
   endTime: string // HH:mm
 }
 
-export interface WeeklyTemplate {
+interface WeeklyTemplate {
   masterId: string
   companyId: string
   days: DayTemplate[]

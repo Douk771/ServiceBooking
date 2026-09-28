@@ -1,7 +1,7 @@
 import { api } from './client'
 import type { DueState, Paged, SubjectRequestDto, SubjectRequestKind, SubjectRequestStatus } from '../types'
 
-export interface SubjectRequestPayload {
+interface SubjectRequestPayload {
   kind: SubjectRequestKind
   phone: string
   contactValue: string

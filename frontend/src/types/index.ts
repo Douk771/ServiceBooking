@@ -543,10 +543,10 @@ export interface Paged<T> {
 /** §38.3 — exact string values, five types instead of two. `"Terms"` no longer exists (BREAKING №1);
  *  it became `"TermsClient"`, and the /terms route/URL is unchanged. */
 export type LegalDocumentType = 'Privacy' | 'TermsClient' | 'TermsOwner' | 'PdnConsent' | 'ChannelRiskNotice'
-export type LegalChangeKind = 'Material' | 'Editorial'
+type LegalChangeKind = 'Material' | 'Editorial'
 /** §38.3 — which 451 mechanism a document participates in: blocks everything, blocks owner actions
  *  only, or blocks nothing (consent recorded through its own endpoints instead, §41). */
-export type LegalGate = 'Global' | 'OwnerScope' | 'None'
+type LegalGate = 'Global' | 'OwnerScope' | 'None'
 /** §39.3 — microcopy documents (not gated, no `changeKind`/`gate`), fetched by key rather than type. */
 export type LegalTextKey =
   | 'BookingNotice'
@@ -563,7 +563,7 @@ export type LegalTextKey =
    *  leaving the screen empty. */
   | 'GuestDataGateNotice'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
-export type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
+type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =
   | 'Registration'
   | 'ReAcceptance'
@@ -754,7 +754,7 @@ export interface LegalReadinessBlocker {
   detail: string
 }
 
-export interface LegalReadinessPlaceholderRef {
+interface LegalReadinessPlaceholderRef {
   name: string
   count: number
 }
@@ -782,7 +782,7 @@ export interface LegalReadinessUiText {
   placeholders: LegalReadinessPlaceholderRef[]
 }
 
-export type LegalPlaceholderSource = 'из реквизитов оператора' | 'после уведомления РКН' | 'решение заказчика' | 'из манифеста'
+type LegalPlaceholderSource = 'из реквизитов оператора' | 'после уведомления РКН' | 'решение заказчика' | 'из манифеста'
 
 export interface LegalReadinessPlaceholderSummary {
   name: string
@@ -796,7 +796,7 @@ export interface LegalReadinessPlaceholderSummary {
   optional: boolean
 }
 
-export interface LegalReadinessBrokenLink {
+interface LegalReadinessBrokenLink {
   file: string
   href: string
 }
@@ -806,7 +806,7 @@ export interface LegalReadinessLinks {
   broken: LegalReadinessBrokenLink[]
 }
 
-export interface LegalReadinessMissingAnchor {
+interface LegalReadinessMissingAnchor {
   route: string
   anchor: string
 }
@@ -815,7 +815,7 @@ export interface LegalReadinessAnchors {
   missing: LegalReadinessMissingAnchor[]
 }
 
-export interface LegalReadinessImpactEntry {
+interface LegalReadinessImpactEntry {
   documentType: LegalDocumentType
   gate: LegalGate
   users: number

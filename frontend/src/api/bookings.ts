@@ -1,7 +1,7 @@
 import { api } from './client'
 import type { Booking, TimeSlot } from '../types'
 
-export interface CreateBookingPayload {
+interface CreateBookingPayload {
   companyId: string
   serviceId: string
   /**
@@ -62,10 +62,10 @@ export interface AvailabilityResponse {
 }
 
 /** API_CONTRACT_CYCLE10.md §122.1 */
-export type BookingEventKind = 'Created' | 'Rescheduled' | 'Cancelled' | 'Completed' | 'NoShow' | 'PaymentMarked'
-export type BookingEventActorKind = 'Client' | 'Guest' | 'Staff' | 'SuperAdmin' | 'System'
+type BookingEventKind = 'Created' | 'Rescheduled' | 'Cancelled' | 'Completed' | 'NoShow' | 'PaymentMarked'
+type BookingEventActorKind = 'Client' | 'Guest' | 'Staff' | 'SuperAdmin' | 'System'
 
-export interface BookingEventActor {
+interface BookingEventActor {
   kind: BookingEventActorKind
   name: string | null
   role: 'Master' | 'CompanyOwner' | null

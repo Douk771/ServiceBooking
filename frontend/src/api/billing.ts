@@ -15,13 +15,10 @@ import type { components as Cycle18Schemas } from '../types/api-cycle18.generate
 
 type Schemas = components['schemas']
 
-export type SubscriptionStatus = Schemas['SubscriptionStatus']
-export type OptionAvailability = Schemas['OptionAvailability']
-
 export type AvailableOptionDto = Schemas['AvailableOptionDto']
-export type SubscriptionRequestDto = Schemas['SubscriptionRequestDto']
+type SubscriptionRequestDto = Schemas['SubscriptionRequestDto']
 export type OwnerSubscriptionDto = Schemas['OwnerSubscriptionDto']
-export type SubscriptionRequestInput = Schemas['SubscriptionRequestInput']
+type SubscriptionRequestInput = Schemas['SubscriptionRequestInput']
 
 // ── Cycle 18 (trial plan) — API_CONTRACT_CYCLE18.md §362–§363. Types come from the generated
 // cycle18 schema, not hand-written — same convention as the rest of this file (N22).
@@ -30,12 +27,12 @@ type Cycle18 = Cycle18Schemas['schemas']
 export type TrialStateDto = Cycle18['TrialStateDto']
 export type TrialWarningDto = Cycle18['TrialWarningDto']
 export type TrialRefusalDto = Cycle18['TrialRefusalDto']
-export type TrialActivationInput = Cycle18['TrialActivationInput']
-export type TrialTermsAcknowledgementInput = Cycle18['TrialTermsAcknowledgementInput']
+type TrialActivationInput = Cycle18['TrialActivationInput']
+type TrialTermsAcknowledgementInput = Cycle18['TrialTermsAcknowledgementInput']
 /** `OwnerSubscriptionDto` (cycle 7/17) + `trial`/`usage.overLimit*` (cycle 18, additive only —
  *  §372, "ломающих изменений нет"). Kept as an intersection rather than a second hand-written copy
  *  of the whole DTO, per the contract's own `additionalProperties: true` note. */
-export type OwnerSubscriptionDtoWithTrial = OwnerSubscriptionDto & Cycle18['OwnerSubscriptionDtoTrialPatch']
+type OwnerSubscriptionDtoWithTrial = OwnerSubscriptionDto & Cycle18['OwnerSubscriptionDtoTrialPatch']
 
 export const billingApi = {
   /** GET /api/billing/subscription. 404 means the caller owns no company (not an error state). */

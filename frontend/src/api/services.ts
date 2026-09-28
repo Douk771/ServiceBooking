@@ -1,7 +1,7 @@
 import { api } from './client'
 import type { Service } from '../types'
 
-export interface CreateServicePayload {
+interface CreateServicePayload {
   companyId: string
   name: string
   description?: string

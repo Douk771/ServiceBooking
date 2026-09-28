@@ -43,7 +43,7 @@ export interface PushAvailabilityInput {
 }
 
 /** Web Push for Home Screen web apps shipped in iOS/iPadOS 16.4 — below that, installing doesn't help. */
-export const IOS_MIN_PUSH_VERSION: readonly [number, number] = [16, 4]
+const IOS_MIN_PUSH_VERSION: readonly [number, number] = [16, 4]
 
 /**
  * Returns the single reason a master cannot (yet) turn push on, in the priority order of

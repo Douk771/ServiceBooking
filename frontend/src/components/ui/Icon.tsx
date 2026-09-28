@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react'
 
-export type IconName =
+type IconName =
   | 'calendar'
   | 'clock'
   | 'map-pin'

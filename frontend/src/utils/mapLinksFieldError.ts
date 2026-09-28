@@ -12,7 +12,7 @@
  * link message is attributed to that field — the one place it's guaranteed to be correct when only
  * one link field is filled in, and the more likely guess otherwise.
  */
-export type MapLinksErrorField = 'yandexMapsUrl' | 'twoGisUrl' | 'clientRescheduleMinHours' | null
+type MapLinksErrorField = 'yandexMapsUrl' | 'twoGisUrl' | 'clientRescheduleMinHours' | null
 
 export function mapLinksFieldError(serverText: string | undefined | null): MapLinksErrorField {
   if (!serverText) return null
