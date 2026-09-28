@@ -16,22 +16,11 @@ import type { components as Cycle18Schemas } from '../types/api-cycle18.generate
 type Schemas = components['schemas']
 
 export type SubscriptionStatus = Schemas['SubscriptionStatus']
-export type OptionKind = Schemas['OptionKind']
-export type OptionStatus = Schemas['OptionStatus']
 export type OptionAvailability = Schemas['OptionAvailability']
-export type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
 
-export type SubscribedPlanDto = Schemas['SubscribedPlanDto']
-export type SubscribedOptionDto = Schemas['SubscribedOptionDto']
 export type AvailableOptionDto = Schemas['AvailableOptionDto']
-export type CoveredCompanyDto = Schemas['CoveredCompanyDto']
-export type SubscriptionUsageDto = Schemas['SubscriptionUsageDto']
-export type SubscriptionWarningDto = Schemas['SubscriptionWarningDto']
-export type SubscriptionRequestItemDto = Schemas['SubscriptionRequestItemDto']
 export type SubscriptionRequestDto = Schemas['SubscriptionRequestDto']
 export type OwnerSubscriptionDto = Schemas['OwnerSubscriptionDto']
-export type RejectedRequestDto = Schemas['RejectedRequestDto']
-export type RequestedOptionInput = Schemas['RequestedOptionInput']
 export type SubscriptionRequestInput = Schemas['SubscriptionRequestInput']
 
 // ── Cycle 18 (trial plan) — API_CONTRACT_CYCLE18.md §362–§363. Types come from the generated
@@ -60,12 +49,8 @@ export const billingApi = {
   /** DELETE /api/billing/subscription/request — idempotent, 204 whether or not a pending request existed. */
   cancelRequest: (): Promise<void> => api.delete('/billing/subscription/request').then(() => undefined),
 
-  /** GET /api/billing/trial (§362) — 404 means the caller has no billing account at all (not an
-   *  error state, same convention as getSubscription above). */
-  getTrial: (): Promise<TrialStateDto> => api.get<TrialStateDto>('/billing/trial').then((r) => r.data),
-
   /** POST /api/billing/trial (§363). Body is the single `termsVersion` field, echoing the version
-   *  shown to the owner (`activationTerms.version` from getTrial) — the server rejects any other
+   *  shown to the owner (`activationTerms.version` from the subscription's `trial` block) — the server rejects any other
    *  value with 409 TrialTermsVersionMismatch. Returns the whole subscription DTO on success so the
    *  caller can swap in the response directly instead of refetching (§371 п.4). */
   activateTrial: (termsVersion: string): Promise<OwnerSubscriptionDtoWithTrial> =>

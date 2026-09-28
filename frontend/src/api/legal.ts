@@ -1,11 +1,10 @@
 import { api } from './client'
-import type { ConsentStatus, LegalDocument, LegalDocumentMeta, LegalDocumentType, LegalManifest, LegalText, LegalTextKey } from '../types'
+import type { ConsentStatus, LegalDocument, LegalDocumentType, LegalManifest, LegalText, LegalTextKey } from '../types'
 
 export const legalApi = {
   /** GET /api/legal/documents — public. §39.1 (BREAKING): an object with `documents`+`uiTexts`, not a
-   *  bare array. Callers that only need the five document entries can keep using `getDocuments()`. */
+   *  bare array. */
   getManifest: () => api.get<LegalManifest>('/legal/documents').then((r) => r.data),
-  getDocuments: (): Promise<LegalDocumentMeta[]> => legalApi.getManifest().then((m) => m.documents),
 
   /** GET /api/legal/documents/{type} — public, metadata + HTML text of one document (§39.2).
    *  `type` is case-insensitive server-side; we always send lowercase. */

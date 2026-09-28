@@ -169,9 +169,6 @@ export const bookingsApi = {
       })
       .then((r) => r.data),
 
-  getOccupied: (masterId: string, date: string) =>
-    api.get<{ start: string; end: string }[]>('/bookings/occupied', { params: { masterId, date } }).then((r) => r.data),
-
   getMasterBookings: (date?: string, to?: string) =>
     api.get<Booking[]>('/bookings/master', { params: { date, to } }).then((r) => r.data),
 

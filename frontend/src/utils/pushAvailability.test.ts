@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   getPushUnavailableReason,
   detectIosEnvironment,
-  detectIosSafariNotInstalled,
   type IosEnvironment,
   type PushAvailabilityInput,
 } from './pushAvailability'
@@ -57,30 +56,32 @@ describe('getPushUnavailableReason (ARCHITECTURE_CYCLE9.md §105.10)', () => {
   })
 })
 
-describe('detectIosSafariNotInstalled', () => {
+// Cycle-9 scenarios, formerly asserted through the removed `detectIosSafariNotInstalled` wrapper
+// (cycle 22): same inputs, checked against the live `detectIosEnvironment`.
+describe('detectIosEnvironment — cycle-9 scenarios', () => {
   const IPHONE_UA =
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
   const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
 
   it('iPhone Safari, not standalone → true', () => {
-    expect(detectIosSafariNotInstalled({ userAgent: IPHONE_UA, maxTouchPoints: 5 })).toBe(true)
+    expect(detectIosEnvironment({ userAgent: IPHONE_UA, maxTouchPoints: 5 })).toMatchObject({ isIos: true, isStandalone: false })
   })
 
   it('iPhone Safari installed to home screen (standalone) → false', () => {
     const nav = { userAgent: IPHONE_UA, maxTouchPoints: 5, standalone: true } as Navigator & { standalone: boolean }
-    expect(detectIosSafariNotInstalled(nav)).toBe(false)
+    expect(detectIosEnvironment(nav)).toMatchObject({ isIos: true, isStandalone: true })
   })
 
   it('Android Chrome → false, not iOS at all', () => {
-    expect(detectIosSafariNotInstalled({ userAgent: ANDROID_UA, maxTouchPoints: 5 })).toBe(false)
+    expect(detectIosEnvironment({ userAgent: ANDROID_UA, maxTouchPoints: 5 }).isIos).toBe(false)
   })
 
   it('desktop → false', () => {
     expect(
-      detectIosSafariNotInstalled({
+      detectIosEnvironment({
         userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15',
         maxTouchPoints: 0,
-      }),
+      }).isIos,
     ).toBe(false)
   })
 })
@@ -141,7 +142,6 @@ describe('CY21 — detectIosEnvironment', () => {
 
   it('CY21-09 display-mode: standalone alone (no navigator.standalone) counts as installed', () => {
     expect(detectIosEnvironment({ userAgent: IPHONE_174, maxTouchPoints: 5 }, true).isStandalone).toBe(true)
-    expect(detectIosSafariNotInstalled({ userAgent: IPHONE_174, maxTouchPoints: 5 }, true)).toBe(false)
   })
 
   it('CY21-10 Chrome on iPhone is treated like Safari (same WebKit limitation), version from the OS token', () => {

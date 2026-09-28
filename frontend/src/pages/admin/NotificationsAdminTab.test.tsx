@@ -34,7 +34,6 @@ function channel(overrides: Partial<AdminChannelDto> = {}): AdminChannelDto {
     state: 'Connected',
     stateText: 'подключён',
     paymentState: 'Paid',
-    paidFrom: null,
     paidUntil: null,
     companyCount: 1,
     idleSince: null,

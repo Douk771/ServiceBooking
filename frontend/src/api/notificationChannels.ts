@@ -19,7 +19,6 @@ export const notificationChannelsApi = {
   /** API_CONTRACT_CYCLE5.md §50.1 (BREAKING № 7) — INN, legal form and offer acceptance are now
    *  required; a request without them is a 400. */
   request: (payload: RequestChannelPayload) => api.post<ChannelDto>('/notification-channels', payload).then((r) => r.data),
-  get: (id: string) => api.get<ChannelDto>(`/notification-channels/${id}`).then((r) => r.data),
   acceptRisk: (id: string, version: string) =>
     api.post<void>(`/notification-channels/${id}/accept-risk`, { version }).then((r) => r.data),
   connect: (id: string) =>

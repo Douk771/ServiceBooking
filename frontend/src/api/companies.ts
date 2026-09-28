@@ -100,11 +100,9 @@ export interface CompanyPhotoUsage {
 }
 
 export const companiesApi = {
-  getAll: () => api.get<Company[]>('/companies').then((r) => r.data),
   /**
    * US-115 (contracts/cycle9/openapi.yaml GET /companies/public). Anonymous public catalog for the
-   * homepage. Filtering by cityId/search and paging happen server-side — never fetch getAll() and
-   * filter in the browser (SPEC §6/§9.17 regression).
+   * homepage. Filtering by cityId/search and paging happen server-side.
    */
   getPublic: (params: { cityId?: number; search?: string; page?: number; pageSize?: number } = {}) =>
     api.get<PagedCompanyDto>('/companies/public', { params }).then((r) => r.data),

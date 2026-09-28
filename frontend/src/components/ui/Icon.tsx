@@ -34,9 +34,9 @@ export type IconName =
   | 'external-link'
 
 /**
- * Minimal line-icon set for the premium redesign (see design_handoff_site_redesign/README.md).
+ * Minimal line-icon set for the premium redesign.
  * 24×24 viewBox, stroke=currentColor, replaces emoji everywhere in the app. Paths for icons that
- * appear in the design mockups are copied verbatim from the .dc.html files; the rest (mail, users,
+ * appear in the design mockups were copied verbatim from the handoff mockups; the rest (mail, users,
  * settings, menu, plus, bar-chart, megaphone, credit-card, alert-circle, star-outline, chevron-down)
  * are hand-authored in the same stroke-width/cap/join style since the mockups didn't need them.
  */

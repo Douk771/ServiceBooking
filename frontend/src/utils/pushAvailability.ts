@@ -103,12 +103,6 @@ export function detectIosEnvironment(nav: NavigatorLike, displayModeStandalone =
   }
 }
 
-/** Cycle-9 name kept for callers that only need the yes/no answer. */
-export function detectIosSafariNotInstalled(nav: NavigatorLike, displayModeStandalone = false): boolean {
-  const env = detectIosEnvironment(nav, displayModeStandalone)
-  return env.isIos && !env.isStandalone
-}
-
 function parseIosVersion(ua: string, isIphoneLike: boolean): readonly [number, number] | null {
   // "CPU iPhone OS 17_4 like Mac OS X" / "CPU OS 16_3 like Mac OS X" (iPad with a mobile UA).
   const os = isIphoneLike ? /OS (\d+)_(\d+)/.exec(ua) : null

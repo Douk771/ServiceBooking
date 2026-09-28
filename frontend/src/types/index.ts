@@ -4,11 +4,6 @@ import type { components as Cycle14Components } from './api-cycle14.generated'
 
 // ── Cycle 13 (ARCHITECTURE_CYCLE13.md §208/§211, API_CONTRACT_CYCLE13.md §232): read straight off
 // the generated schema, same convention as the cycle 9 aliases above (§118 п. 1).
-export type AddressPrecision = Cycle13Components['schemas']['AddressPrecision']
-export type AddressVerificationStatus = Cycle13Components['schemas']['AddressVerificationStatus']
-export type AddressLookupOutcome = Cycle13Components['schemas']['AddressLookupOutcome']
-export type AddressWarningCode = Cycle13Components['schemas']['AddressWarningCode']
-export type AddressWarningDto = Cycle13Components['schemas']['AddressWarningDto']
 export type GeoPointDto = Cycle13Components['schemas']['GeoPointDto']
 export type AddressCandidateDto = Cycle13Components['schemas']['AddressCandidateDto']
 export type AddressLookupResultDto = Cycle13Components['schemas']['AddressLookupResultDto']
@@ -35,7 +30,6 @@ export type StaffPushSettings = Cycle9Components['schemas']['StaffPushSettingsDt
 // the generated schema (§118 п. 1 convention) so an append-only enum member (e.g. a future failure
 // reason, or a second method once calls/SMS land) shows up as a type error at every switch that needs
 // updating, instead of silently falling through to a default branch.
-export type PhoneVerificationMethod = Cycle14Components['schemas']['PhoneVerificationMethod']
 export type PhoneVerificationStatus = Cycle14Components['schemas']['PhoneVerificationStatus']
 export type PhoneVerificationFailureReason = Cycle14Components['schemas']['PhoneVerificationFailureReason']
 export type PhoneVerificationConfig = Cycle14Components['schemas']['PhoneVerificationConfig']
@@ -205,8 +199,6 @@ export interface ChannelDto {
   stateText: string
   phoneMasked: string | null
   paymentState: ChannelPaymentState
-  /** @deprecated Cycle 7: paidFrom is always null now — payment is per-account, not per-number. */
-  paidFrom: string | null
   paidUntil: string | null
   requestedAt: string | null
   connectedAt: string | null
@@ -354,7 +346,6 @@ export interface AdminChannelDto {
   state: ChannelState
   stateText: string
   paymentState: ChannelPaymentState
-  paidFrom: string | null
   paidUntil: string | null
   companyCount: number
   idleSince: string | null
@@ -412,15 +403,6 @@ export interface Service {
   durationMinutes: number
   price: number
   imageUrl?: string
-}
-
-export interface Master {
-  id: string
-  firstName: string
-  lastName: string
-  avatarUrl?: string
-  bio?: string
-  role: string
 }
 
 export interface TimeSlot {

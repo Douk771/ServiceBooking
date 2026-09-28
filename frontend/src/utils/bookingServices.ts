@@ -13,13 +13,3 @@ export function formatBookingServiceNames(booking: Pick<Booking, 'serviceName' |
   }
   return booking.serviceName
 }
-
-/** Sum of durations across all services of the visit — falls back to summing `services` if the
- *  server's echoed `totalDurationMinutes` is missing (defensive; contract guarantees it's present). */
-export function bookingTotalDuration(booking: Pick<Booking, 'totalDurationMinutes' | 'services'>): number | undefined {
-  if (booking.totalDurationMinutes != null) return booking.totalDurationMinutes
-  if (booking.services && booking.services.length > 0) {
-    return booking.services.reduce((sum, s) => sum + s.durationMinutes, 0)
-  }
-  return undefined
-}
