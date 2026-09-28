@@ -332,36 +332,35 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // removed rather than rewritten.
 
     [Fact, TestCase("ADM-048")]
-    public async Task LegacyOwnerSubscriptionEndpoint_ReturnsGoneWithReplacementRoute()
+    public async Task RemovedLegacyOwnerSubscriptionWrite_IsNoLongerRouted()
     {
-        // contracts/cycle7/openapi.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
-        // favor of PUT /admin/billing-accounts/{accountId}/subscription and must answer 410 Gone,
-        // unconditionally, without touching the body — regression coverage for AdminController's
-        // LegacyEndpointGone so a future change can't silently resurrect the old write behavior.
+        // CY22-01 (ARCHITECTURE_CYCLE22.md §372): the cycle-7 410 stub for
+        // PUT /api/admin/owners/{ownerUserId}/subscription (legacyAssignOwnerSubscription) was deleted in
+        // cycle 22 — the replacement is PUT /admin/billing-accounts/{accountId}/subscription. Guards
+        // against the old write behavior being silently resurrected. 405, not 404: the same path is still
+        // routed for GET (the US-63 subscription diagnostics endpoint), so ASP.NET Core routing answers
+        // Method Not Allowed for any other verb — no stub of our own is involved.
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
 
         var response = await adminClient.PutAsJsonAsync($"/api/admin/owners/{Guid.NewGuid()}/subscription",
             new { planConfigId = (Guid?)null, paidUntil = (DateTime?)null, isActive = true, comment = (string?)null });
 
-        response.StatusCode.Should().Be(HttpStatusCode.Gone);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("/admin/billing-accounts/{accountId}/subscription");
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact, TestCase("ADM-049")]
-    public async Task LegacyNotificationChannelPaymentEndpoint_ReturnsGoneWithReplacementRoute()
+    public async Task RemovedLegacyNotificationChannelPayment_IsNoLongerRouted()
     {
-        // Same retirement (contracts/cycle7/openapi.yaml, legacyChannelPayment) on the notification-channel side.
+        // CY22-01 (ARCHITECTURE_CYCLE22.md §372): same removal on the notification-channel side
+        // (POST /api/admin/notification-channels/{id}/payment, legacyChannelPayment).
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
 
         var response = await adminClient.PostAsJsonAsync($"/api/admin/notification-channels/{Guid.NewGuid()}/payment",
             new { });
 
-        response.StatusCode.Should().Be(HttpStatusCode.Gone);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("/admin/billing-accounts/{accountId}/subscription");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact, TestCase("ADM-018")]
@@ -706,8 +705,8 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // ("UpdateSubscription_CalledTwice_UpdatesExistingRowRatherThanDuplicating") tested
     // AdminController.UpdateSubscription's own body-parsing/upsert behavior. That endpoint
     // (PUT /api/admin/owners/{ownerUserId}/subscription) is now contractually retired
-    // (contracts/cycle7/openapi.yaml, redaction 2.1) and answers 410 Gone unconditionally without touching its
-    // body — see ADM-048 below for coverage of the retirement itself. Its replacement
+    // (contracts/cycle7/openapi.yaml, redaction 2.1); its 410 stub was removed altogether in cycle 22
+    // (ARCHITECTURE_CYCLE22.md §372) — see ADM-048 below for coverage of the removal itself. Its replacement
     // (PUT /admin/billing-accounts/{accountId}/subscription) doesn't exist yet (cycle-07 backend
     // report), so there is currently no endpoint whose date-parsing/upsert behavior these two tests
     // could exercise; removed rather than kept red or rewritten against dead code. Re-add equivalent

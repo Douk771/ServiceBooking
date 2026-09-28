@@ -290,15 +290,6 @@ public class AdminController(
         return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
     }
 
-    // contracts/cycle7/openapi.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
-    // favor of PUT /admin/billing-accounts/{accountId}/subscription (AdminBillingController,
-    // implemented this cycle) and must answer 410 Gone rather than behave as before, so a stale admin
-    // client can't silently keep writing tariff/paid-until onto AccountSubscription once the
-    // BillingAccount model replaces it.
-    [HttpPut("owners/{ownerUserId}/subscription")]
-    public IActionResult UpdateSubscription(string ownerUserId, [FromBody] object? dto) =>
-        LegacyEndpointGone("PUT /api/admin/billing-accounts/{accountId}/subscription");
-
     /// <summary>
     /// US-63 diagnostic endpoint (ARCHITECTURE_CYCLE6.md §43.2, API_CONTRACT_CYCLE6.md §42.2):
     /// answers "the plan is assigned — why doesn't it work" in one round trip, instead of a support
@@ -767,7 +758,8 @@ public class AdminController(
 
         // Deactivating a plan that still has active subscribers would silently strip their features on
         // their very next request (SubscriptionResolver.Resolve treats PlanConfig.IsActive == false as
-        // Free) — the admin must move them off the plan first (see UpdateSubscription).
+        // Free) — the admin must move them off the plan first
+        // (PUT /api/admin/billing-accounts/{accountId}/subscription, AdminBillingController).
         var subscriberCount = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
         if (subscriberCount > 0)
             return Conflict($"Cannot delete a plan with {subscriberCount} active subscriber(s). Move them to another plan first.");
@@ -1026,15 +1018,6 @@ public class AdminController(
             PendingRequests: channels.Count(c => c.RequestedAtUtc is not null && c.PaidUntilUtc is null)));
     }
 
-    // contracts/cycle7/openapi.yaml (legacyChannelPayment, redaction 2.1): retired in favor of
-    // PUT /admin/billing-accounts/{accountId}/subscription (AdminBillingController, implemented this
-    // cycle), which folds the notification-channel option into the account's option matrix.
-    // Must answer 410 Gone rather than keep writing ChannelPaymentLog rows against a model that's being
-    // replaced.
-    [HttpPost("notification-channels/{id:guid}/payment")]
-    public IActionResult RecordChannelPayment(Guid id, [FromBody] object? dto) =>
-        LegacyEndpointGone("PUT /api/admin/billing-accounts/{accountId}/subscription");
-
     [HttpPost("notification-channels/{id:guid}/suspend")]
     public Task<IActionResult> SuspendChannel(Guid id, [FromBody] AdminChannelSuspendDto dto) => SetSuspendedAsync(id, true, dto.Comment);
 
@@ -1236,16 +1219,6 @@ public class AdminController(
             freshPrice, freshIdleDays, dto.PricingPublicEnabled, freshBlockedReason,
             freshTrialDuration, freshTrialWindow, freshTrialThresholds));
     }
-
-    // Plain-text 410 body per contracts/cycle7/openapi.yaml's `text/plain: {schema: {type: string}}` response —
-    // shared by both cycle-5 retired routes so they always point callers at the same replacement.
-    private static IActionResult LegacyEndpointGone(string replacementRoute) =>
-        new ContentResult
-        {
-            StatusCode = StatusCodes.Status410Gone,
-            Content = $"Этот маршрут упразднён. Используйте {replacementRoute}.",
-            ContentType = "text/plain; charset=utf-8",
-        };
 
     // ── Retention policy (T5-B8/B9, ARCHITECTURE_CYCLE5.md §49.5) ────────────────
 

@@ -2843,12 +2843,14 @@ curl "http://localhost:5000/api/admin/companies?page=1&pageSize=20" -H "Authoriz
 
 Подписка резолвится через владельца (`ownerUserId`) — если у нескольких компаний один и тот же владелец, у них будут одинаковые `planConfigId`/`planName`/`paidUntil`/`subscriptionActive` (см. §3.1). При отсутствии подписки у владельца `planConfigId` — `null`, а `planName` — строка `"Free"`.
 
-#### `PUT /api/admin/owners/{ownerUserId}/subscription`
+#### ~~`PUT /api/admin/owners/{ownerUserId}/subscription`~~ — удалён в цикле 22 (ARCHITECTURE_CYCLE22.md §372)
 
-**Отозван в цикле 7 (US-77, `contracts/cycle7/openapi.yaml` redaction 2.1).** `AccountSubscription`
-больше не адресуется по владельцу-человеку — тариф теперь привязан к `BillingAccount`, который может
-не совпадать с тем, кто управляет компанией (см. §3.1/ARCHITECTURE_CYCLE7.md §43.4). Эндпоинт всегда
-отвечает `410 Gone` с телом, указывающим замену, и не принимает и не применяет тело запроса. Используйте
+**Отозван в цикле 7 (US-77, `contracts/cycle7/openapi.yaml` redaction 2.1), заглушка `410 Gone` удалена
+в цикле 22.** `AccountSubscription` больше не адресуется по владельцу-человеку — тариф теперь привязан к
+`BillingAccount`, который может не совпадать с тем, кто управляет компанией (см. §3.1/ARCHITECTURE_CYCLE7.md
+§43.4). Обработчика `PUT` больше нет; поскольку тот же путь по-прежнему обслуживает
+`GET /api/admin/owners/{ownerUserId}/subscription` (диагностика US-63), `PUT` на него отвечает
+`405 Method Not Allowed`. Используйте
 `PUT /api/admin/billing-accounts/{accountId}/subscription` (см. `API_CONTRACT_CYCLE7.md` и
 `contracts/cycle7/openapi.yaml`; отдельного раздела в этом документе для него пока нет).
 
@@ -3249,7 +3251,7 @@ curl http://localhost:5000/api/health/ready
 |---|---|
 | GET | `/api/admin/notification-channels` (`PagedResult`, фильтры `state`/`paymentState`) |
 | GET | `/api/admin/notification-channels/summary` |
-| POST | `/api/admin/notification-channels/{id}/payment` |
+| ~~POST~~ | ~~`/api/admin/notification-channels/{id}/payment`~~ — отозван в цикле 7 (`410 Gone`), удалён в цикле 22 (ARCHITECTURE_CYCLE22.md §372): маршрута больше нет (`404`); оплата канала — через `PUT /api/admin/billing-accounts/{accountId}/subscription` |
 | POST | `/api/admin/notification-channels/{id}/suspend` · `/resume` |
 | GET / PUT | `/api/admin/platform-settings` |
 
