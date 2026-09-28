@@ -6,6 +6,15 @@
 > четыре цикла подряд и расходился с кодом). Разделы, помеченные «цикл 15»/«цикл 17», сверены
 > напрямую с `BookingsController.cs`, `AdminController.cs`, `CompanyDto.cs`, `BookingDto.cs`,
 > `OwnerBillingDtos.cs`. Биллинг владельца (`/api/billing/*`) описан здесь **не полностью** — см. §4.16.
+>
+> **Цикл 22 (рефакторинг, `ARCHITECTURE_CYCLE22.md` §380):** новых эндпоинтов и полей нет, изменения
+> контракта — только удаления и одна смена источника данных: удалены две заглушки `410` (§4.12, §4.15),
+> удалено поле `paidFrom` каналов, `paidUntil`/`paymentState` каналов и два счётчика админской сводки
+> теперь считаются по фактическому финансированию канала (§4.15, «Цикл 22»). Контроллеры разрезаны на
+> несколько файлов (`AdminController` → + `AdminPlansController`/`AdminChannelsController`/
+> `AdminPlatformController` и т. д., карта — `CURRENT_STATE.md`, редакция 🧽); **маршруты, коды и тела
+> не изменились** (проверено тестом CY22-12 по таблице из 179 эндпоинтов). Ссылки вида
+> `AdminController.cs` в разделах ниже — на момент их написания.
 
 ## Содержание
 
@@ -514,7 +523,7 @@ CommissionPercent`, по умолчанию `0`), а не пользовател
 
 ### 3.8. Роли в JWT и их проверка на каждом запросе
 
-`TokenService.GenerateToken` добавляет claim'ы `ClaimTypes.Role` из списка ролей пользователя **на момент генерации токена** (при регистрации или логине) — сам токен остаётся снимком ролей на момент выпуска. Однако при проверке токена на каждом защищённом запросе обработчик `OnTokenValidated` (см. `Program.cs`) перечитывает **текущий** список ролей пользователя из базы через `UserManager.GetRolesAsync` и заменяет им claim'ы ролей в `ClaimsPrincipal` запроса. Поэтому если роль пользователя меняется после выпуска токена (владелец назначил его мастером, SuperAdmin изменил список ролей или отозвал роль), это отражается **немедленно** на следующем же запросе с уже выданным токеном — повторный вход не требуется. Это касается и отзыва прав: если у пользователя забрали роль (например, разжаловали SuperAdmin), доступ, завязанный на неё, пропадает сразу же, а не только через 7 дней при истечении токена. Единственное, что при этом не проверяется живьём — это `Email`/`FirstName`/`LastName`/`Sub` в самом токене: они остаются такими, какими были на момент выпуска, до следующего входа.
+`TokenService.GenerateToken` добавляет claim'ы `ClaimTypes.Role` из списка ролей пользователя **на момент генерации токена** (при регистрации или логине) — сам токен остаётся снимком ролей на момент выпуска. Однако при проверке токена на каждом защищённом запросе обработчик `OnTokenValidated` (см. `Program.cs`; с цикла 22 — `Startup/AuthenticationExtensions.cs`) перечитывает **текущий** список ролей пользователя из базы (до цикла 22 — через `UserManager.GetRolesAsync`; с цикла 22 — одним запросом `SecurityStamp` + имена ролей, без кеширования, §9.21 `CURRENT_STATE.md`) и заменяет им claim'ы ролей в `ClaimsPrincipal` запроса. Поэтому если роль пользователя меняется после выпуска токена (владелец назначил его мастером, SuperAdmin изменил список ролей или отозвал роль), это отражается **немедленно** на следующем же запросе с уже выданным токеном — повторный вход не требуется. Это касается и отзыва прав: если у пользователя забрали роль (например, разжаловали SuperAdmin), доступ, завязанный на неё, пропадает сразу же, а не только через 7 дней при истечении токена. Единственное, что при этом не проверяется живьём — это `Email`/`FirstName`/`LastName`/`Sub` в самом токене: они остаются такими, какими были на момент выпуска, до следующего входа.
 
 ### 3.9. Канонический телефон (цикл санации B, US-26)
 
@@ -3294,6 +3303,32 @@ curl http://localhost:5000/api/health/ready
   `AllowNotificationChannel=false` — MAX работает в коде и в тестах, но ни один реальный владелец не
   может им воспользоваться до отдельного решения о выпуске.
 
+#### 🆕 Цикл 22: статус оплаты канала — по финансированию, поле `paidFrom` удалено (`ARCHITECTURE_CYCLE22.md` §379–§380)
+
+Колонки `NotificationChannels.PaidFromUtc`/`PaidUntilUtc` удалены миграцией `DropChannelLegacyPaidPeriod`:
+с цикла 7 их никто не писал (при покупке опции они не заполнялись, при замене канала обнулялись), а
+шесть мест продолжали их читать. Теперь все эти места берут **финансирование канала** из одного
+источника (`ChannelFundingReader`) — опции `notifications.whatsapp` биллинг-аккаунта, а если у опции
+нет своего `PaidUntilUtc` — периода подписки аккаунта. Это тот же расчёт, которым с цикла 7 уже
+пользовался список каналов владельца (`GET /api/notification-channels`).
+
+| Где | Что изменилось |
+|---|---|
+| `ChannelDto` (`GET /api/notification-channels`, `…/{id}`) | поле `paidFrom` (всегда `null` с цикла 7) **удалено**; `paidUntil`/`paymentState` — как и прежде, из финансирования |
+| `AdminChannelDto` (`GET /api/admin/notification-channels`) | поле `paidFrom` **удалено**; `paidUntil` — дата «оплачено до» финансирования, а не колонки; `paymentState` (и query-фильтр `paymentState`) — `Suspended`, если канал приостановлен администратором, иначе `Paid`, если канал финансирован, иначе `NotPaid` |
+| `AdminChannelSummaryDto` (`GET /api/admin/notification-channels/summary`) | `expiringIn7Days` — канал финансирован и его `paidUntil` попадает в `[сейчас, сейчас + 7 дней]`; `pendingRequests` — владелец запросил канал (`requestedAt` задан), канал **не** финансирован и его состояние не `Replaced`. Исключение `Replaced` — **осознанное добавление цикла 22**: заменённый канал — терминальная история, он никогда не финансирован и иначе засчитывался бы заявкой после каждой замены. Раньше: `paidUntil` колонки в окне / «запрошен и колонка пуста» |
+| `SettingsChannelDto` (`GET/PUT /api/companies/{id}/notification-settings`, объект `channel`) | `paymentState`/`paidUntil` — из финансирования; дата «оплаченный период до» в тексте состояния `NeedsReconnect` — оттуда же. Сводка журнала (`GET /api/companies/{id}/notifications/summary`) — `channelPaidUntil` оттуда же |
+| `ReplaceChannelResponseDto` (`POST /api/notification-channels/{id}/replace`) | `paidUntil` — финансирование нового канала; колонки при замене больше не копируются и не обнуляются |
+| `ChannelPaymentLog` (приостановка/возобновление админом) | `oldPaidUntil`/`newPaidUntil` — финансирование на момент операции (приостановка его не меняет, поэтому они равны) |
+
+**Простой канала** (`ChannelHealthTask`, `idleSince`/`idleDeadline`) считается от того же финансирования.
+До цикла 22 задача читала пустую колонку и считала **каждый** канал неоплаченным: через
+`ChannelIdleDays` любой канал помечался простаивающим, а его инстанс у провайдера удалялся, даже если
+опция оплачена и компания активна. Формы ответов, кроме удалённого `paidFrom`, не изменились.
+
+Во фронтовом `src/types/api-cycle9.generated.ts` поле `paidFrom` ещё объявлено — это исторический
+сгенерированный контракт цикла 9, оставлен намеренно; рукописные типы фронта поле больше не содержат.
+
 ---
 
 ### 4.16. Биллинг владельца (`/api/billing`) — описан частично
@@ -3736,7 +3771,7 @@ curl -X POST http://localhost:5000/api/admin/plans \
 | `200 OK` | Успешное чтение или обработка запроса, где не требуется возвращать заголовок `Location` (большинство `GET`, а также многие `POST`/`PUT`, использующие `Ok(...)` вместо `CreatedAtAction(...)`, например `POST /api/companies/{id}/members`, `POST /api/services`) |
 | `201 Created` | Успешное создание ресурса через `CreatedAtAction` — только `POST /api/bookings` и `POST /api/companies` |
 | `204 No Content` | Успешная операция без тела ответа: большинство `PATCH`/`DELETE`, а также некоторые `PUT` (например, `PUT /api/companies/{id}/members/{memberId}/services`, `PUT /api/admin/*`) |
-| `400 Bad Request` | Не пройдена модельная валидация ASP.NET Core (автоматически, `ValidationProblemDetails`, для любого контроллера с `[ApiController]` — включая новые `[MaxLength]`/`[Range]` на `CreateBookingDto`/`CreateServiceDto`); бизнес-валидация не проходит: "Name and phone are required for guest booking", "Captcha required for guest booking", "Invalid captcha", "Service does not belong to this company", "Service is not available", "Master is not a staff member of this company" (все — `POST /api/bookings`); "One or more services do not belong to this company" (`PUT /api/companies/{id}/members/{memberId}/services`); "Both 'from' and 'to' are required." / "Invalid date range…" (`GET /api/companies/{id}/stats`, `POST /api/schedule-template/apply`); "Plan is not active" / "Owner not found" не путать с 404 (`PUT /api/admin/owners/{id}/subscription`); "Unknown role" (`POST /api/companies/{id}/members`, неизвестное имя роли — раньше падало `500`); "Unknown status filter…" (`GET /api/bookings/client`); неверный текущий пароль; ошибки Identity при регистрации/создании пользователя; запись уже отменена при попытке завершить/отметить неявку; `rating` вне диапазона 1–5 при создании отзыва |
+| `400 Bad Request` | Не пройдена модельная валидация ASP.NET Core (автоматически, `ValidationProblemDetails`, для любого контроллера с `[ApiController]` — включая новые `[MaxLength]`/`[Range]` на `CreateBookingDto`/`CreateServiceDto`); бизнес-валидация не проходит: "Name and phone are required for guest booking", "Captcha required for guest booking", "Invalid captcha", "Service does not belong to this company", "Service is not available", "Master is not a staff member of this company" (все — `POST /api/bookings`); "One or more services do not belong to this company" (`PUT /api/companies/{id}/members/{memberId}/services`); "Both 'from' and 'to' are required." / "Invalid date range…" (`GET /api/companies/{id}/stats`, `POST /api/schedule-template/apply`); "Plan is not active" / "Owner not found" не путать с 404 (`PUT /api/admin/owners/{id}/subscription` — эндпоинт удалён в цикле 22, теперь `405`, см. §4.12); "Unknown role" (`POST /api/companies/{id}/members`, неизвестное имя роли — раньше падало `500`); "Unknown status filter…" (`GET /api/bookings/client`); неверный текущий пароль; ошибки Identity при регистрации/создании пользователя; запись уже отменена при попытке завершить/отметить неявку; `rating` вне диапазона 1–5 при создании отзыва |
 | `401 Unauthorized` | Заголовок `Authorization` отсутствует или токен невалиден/просрочен на защищённом эндпоинте (включая отозванный по `SecurityStamp` — см. §3.8); неверные учётные данные при входе; аккаунт временно заблокирован после 5 неудачных попыток входа; анонимный запрос к `GET /api/bookings/occupied` (было анонимным, стало защищённым) |
 | `402 Payment Required` | Гостевая/самостоятельная запись при плане подписки Free (`Online booking requires a paid subscription.`); попытка создать новую запись при просроченной подписке (`Subscription expired. New bookings are not allowed.`) — оба случая только в `POST /api/bookings` |
 | `403 Forbidden` | Пользователь аутентифицирован, но не обладает нужной ролью (`[Authorize(Roles=...)]`) или не проходит проверку владения (не CompanyOwner/мастер/SuperAdmin для данного ресурса, включая `WorkingHoursController.GET`/`ScheduleTemplateController`/`GET /api/bookings/occupied`); гостевая/несотрудничная запись при `Company.AllowSelfBooking=false`; попытка назначить роль, на которую нет прав; попытка оставить отзыв за чужую (привязанную к другому клиенту) или гостевую запись; `Master` пытается создать/изменить/удалить услугу |

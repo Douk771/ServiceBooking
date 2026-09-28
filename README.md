@@ -547,7 +547,9 @@ ServiceBooking.Infrastructure --startup-project ServiceBooking.API`. Верси�
 - `JWT_KEY` — ключ подписи JWT, ≥32 случайных символа.
 - `SUPERADMIN_PHONE` / `SUPERADMIN_PASSWORD` — учётная запись, которая получает роль SuperAdmin
   при первом старте.
-- `SMARTCAPTCHA_SECRET_KEY` / `SMARTCAPTCHA_SITE_KEY` — из кабинета Yandex Cloud SmartCaptcha.
+- `SMARTCAPTCHA_SECRET_KEY` — серверный ключ из кабинета Yandex Cloud SmartCaptcha. Публичный site-key
+  сюда не кладётся: фронт получает его при сборке из переменной CI `VITE_SMARTCAPTCHA_SITEKEY`
+  (`SMARTCAPTCHA_SITE_KEY` удалён в цикле 22 — API его не читал).
 - `FORWARDEDHEADERS__TRUSTEDNETWORKS__0` — подсеть docker-моста, единственная, из которой rate
   limiting доверяет реальному IP клиента (за nginx).
 - `SENTRY_DSN` — необязательно, DSN self-hosted GlitchTip (трекер ошибок, см. `DEPLOY.md` §11);

@@ -1843,7 +1843,7 @@ GREEN-API, здесь — платформенный бот.
    расписанию. При `PHONEVERIFY_PROVIDER=stub` задача — честный no-op и в лог не пишет: иначе она
    раз в четыре часа слала бы ложную тревогу в GlitchTip.
 3. **Токен вебхука не должен попадать в логи.** Маскируется в двух местах сразу —
-   `deploy/nginx/ezbook.conf` и `MaskSensitiveRequestPath` в `Program.cs`. В цикле 9 на этом уже
+   `deploy/nginx/ezbook.conf` и `MaskSensitiveRequestPath` в `Startup/LoggingExtensions.cs` (до цикла 22 — `Program.cs`). В цикле 9 на этом уже
    обожглись: nginx писал токен вебхука в access-log открытым текстом. Если правите конфиг nginx —
    проверьте маскировку заново.
 

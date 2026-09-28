@@ -138,7 +138,7 @@ services:
     # /api/health/live never touches the database (ARCHITECTURE.md §10.1), so this only tells docker
     # "the process is up and answering HTTP" — readiness (DB + migrations) is what deploy-remote.sh /
     # rollback.sh poll separately after a restart (T-D3). start_period is generous on purpose: it has to
-    # cover EF Core applying pending migrations on startup (Program.cs -> MigrateAsync()).
+    # cover EF Core applying pending migrations on startup (Startup/StartupSeedingExtensions.cs -> MigrateAsync(); Program.cs before cycle 22).
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
       interval: 30s
