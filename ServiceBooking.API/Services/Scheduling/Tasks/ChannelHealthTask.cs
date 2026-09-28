@@ -245,7 +245,9 @@ public sealed class ChannelHealthTask(
         var channels = await db.NotificationChannels.Where(c => c.State != ChannelState.Replaced).ToListAsync(ct);
 
         // Cycle 22 (§379, Р2): "paid period live" = the channel is funded — one batch for the whole pass.
-        var funding = await fundingReader.LoadAsync(channels, ct);
+        // The task's clock is handed to the reader for its option filter (C22-5); plan resolution inside
+        // it still reads the wall clock.
+        var funding = await fundingReader.LoadAsync(channels, ct, nowUtc: now);
 
         var warned = 0;
         var deleted = 0;

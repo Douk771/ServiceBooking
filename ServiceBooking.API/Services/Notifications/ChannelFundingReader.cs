@@ -25,8 +25,14 @@ public sealed class ChannelFundingReader(AppDbContext db, SubscriptionResolver s
 {
     /// <summary>Funding for every channel of every billing account the given channels belong to (a
     /// channel without a billing account gets no entry — callers treat that as NotPaid).</summary>
+    /// <remarks><c>nowUtc</c> is "now" for the notifications.whatsapp option's EndsAtUtc filter (which option
+    /// row supplies the paid-until); defaults to <see cref="DateTime.UtcNow"/>. A scheduled task passes its
+    /// own <see cref="INotificationClock"/> instant here (ChannelHealthTask, debt C22-5). The funding
+    /// STATE is not affected by it: it ranks channels by the effective plan's paid numbers, and plan
+    /// resolution (<see cref="SubscriptionResolver.GetEffectivePlansForAccountsAsync"/>, which takes no
+    /// "now") still reads the wall clock — the part of C22-5 that remains open.</remarks>
     public async Task<Dictionary<Guid, ChannelFundingInfo>> LoadAsync(
-        IReadOnlyList<NotificationChannel> channels, CancellationToken ct = default)
+        IReadOnlyList<NotificationChannel> channels, CancellationToken ct = default, DateTime? nowUtc = null)
     {
         var result = new Dictionary<Guid, ChannelFundingInfo>();
         var accountIds = channels.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct().ToList();
@@ -42,12 +48,13 @@ public sealed class ChannelFundingReader(AppDbContext db, SubscriptionResolver s
         // row has no paid period of its own (cycle 22 dropped its PaidUntilUtc column). An option row with no own PaidUntilUtc
         // rides the subscription's own paid period instead (same convention SubscriptionResolver uses),
         // so falls back to the subscription's PaidUntil. One option row per account is looked at — the
-        // first one the database returns, as the per-account FirstOrDefault did.
-        var nowUtc = DateTime.UtcNow;
+        // first one the database returns, as the per-account FirstOrDefault did. "Now" for the EndsAtUtc
+        // filter is the caller's (a task's INotificationClock), else the wall clock.
+        var now = nowUtc ?? DateTime.UtcNow;
         var whatsappOptionByAccount = (await db.AccountSubscriptionOptions
                 .Include(o => o.Option)
                 .Where(o => accountIds.Contains(o.BillingAccountId) && o.Option.Code == SubscriptionResolver.WhatsAppOptionCode)
-                .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > nowUtc)
+                .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
                 .ToListAsync(ct))
             .GroupBy(o => o.BillingAccountId)
             .ToDictionary(g => g.Key, g => g.First());

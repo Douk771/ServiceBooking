@@ -174,6 +174,48 @@ public class Cycle22ChannelFundingTests(TestDatabaseFixture fixture) : Notificat
         (await IdleOf(inactiveCompany.ChannelId)).Should().NotBeNull("funded, but no active company — still idle");
     }
 
+    /// <summary>Review of cycle 22 (debt C22-5): the reader's WhatsApp-option filter runs on the "now" the
+    /// caller hands it — ChannelHealthTask hands its <see cref="ServiceBooking.API.Services.Notifications.INotificationClock"/>
+    /// instant — not on the wall clock. A <see cref="FakeClock"/> moved past the option's EndsAtUtc drops
+    /// the option: paid-until falls back to the subscription's period. The funding STATE (what the idle
+    /// computation reads) comes from plan resolution, which still runs on the wall clock and so stays
+    /// Funded here — the part of C22-5 that remains open; this assertion flips when the resolver takes
+    /// "now" too.</summary>
+    [Fact, TestCase("CY22-04b")]
+    public async Task FundingReader_OptionFilter_UsesCallersClock()
+    {
+        var s = await SeedAsync(Funding.FarFuture);
+        var clock = new FakeClock();
+
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var option = await db.AccountSubscriptionOptions.Include(o => o.Option)
+            .SingleAsync(o => o.BillingAccountId == s.AccountId && o.Option.Code == ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode);
+        option.EndsAtUtc = clock.UtcNow.AddDays(1);
+        await db.SaveChangesAsync();
+        var subscriptionPaidUntil = await db.AccountSubscriptions.AsNoTracking()
+            .Where(x => x.BillingAccountId == s.AccountId).Select(x => x.PaidUntil).SingleAsync();
+        subscriptionPaidUntil.Should().NotBeNull();
+        subscriptionPaidUntil!.Value.Should().NotBeCloseTo(s.ExpectedPaidUntil!.Value, TimeSpan.FromDays(1),
+            "the two paid-until sources must be distinguishable for this test to mean anything");
+
+        var reader = scope.ServiceProvider.GetRequiredService<ServiceBooking.API.Services.Notifications.ChannelFundingReader>();
+        var channel = await db.NotificationChannels.AsNoTracking().SingleAsync(c => c.Id == s.ChannelId);
+
+        // Clock before EndsAtUtc (and the default, wall clock): the option is live and supplies paid-until.
+        var before = (await reader.LoadAsync([channel], nowUtc: clock.UtcNow))[channel.Id];
+        before.PaidUntil.Should().BeCloseTo(s.ExpectedPaidUntil!.Value, DbPrecision);
+        (await reader.LoadAsync([channel]))[channel.Id].PaidUntil.Should().BeCloseTo(s.ExpectedPaidUntil!.Value, DbPrecision);
+
+        // Clock moved past EndsAtUtc: the option is filtered out by the CALLER's clock.
+        clock.Advance(TimeSpan.FromDays(2));
+        var after = (await reader.LoadAsync([channel], nowUtc: clock.UtcNow))[channel.Id];
+        after.PaidUntil.Should().BeCloseTo(subscriptionPaidUntil.Value, DbPrecision,
+            "an option ended by the caller's clock no longer supplies paid-until");
+        after.State.Should().Be(ServiceBooking.API.Services.Billing.ChannelFundingState.Funded,
+            "C22-5 remainder: plan resolution (paid numbers → funding state) still reads the wall clock");
+    }
+
     // ── CY22-05: replacing a blocked channel ──────────────────────────────────────────────────────
 
     [Theory, TestCase("CY22-05")]
