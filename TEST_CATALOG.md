@@ -5530,7 +5530,7 @@ ServiceBooking.Tests`: **797/797 зелёных** (795 на момент пос�
 
 ## Цикл 21 — iPhone: уведомления через «На экран Домой» (`CY21-`, 15 тестов, frontend/vitest)
 
-Источник — `SPEC.md` цикла 21 (US-21-01…US-21-03) и `ARCHITECTURE_CYCLE21.md` §362/§363/§365. Бэкенд
+Источник — `SPEC_CYCLE21_IOS_HOME_SCREEN_PUSH.md` (цикл 21) (US-21-01…US-21-03) и `ARCHITECTURE_CYCLE21.md` §362/§363/§365. Бэкенд
 цикл не трогает, поэтому все тесты — фронтовые (`npm run test:run`), плюс шаг смоука собранного фронта.
 
 ### `frontend/src/utils/pushAvailability.test.ts`
