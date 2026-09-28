@@ -45,4 +45,25 @@ favicon_svg_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/favicon.svg
 [ "$favicon_svg_code" = "200" ] || fail "GET /favicon.svg returned $favicon_svg_code (expected 200)"
 log "favicon OK"
 
+# ARCHITECTURE_CYCLE19.md §365 (US-19-03) - iPhone Web Push exists only for an app opened from the
+# Home Screen, and iOS opens it as an app only when the served manifest says `display: standalone`.
+# Cycle 9 shipped `display: "browser"`, which turned "Add to Home Screen" into a plain Safari bookmark
+# with no push at all - silently. A request, not a glance at public/: the manifest must ship, parse,
+# and keep the standalone display mode; index.html must still link it.
+curl -sf "$BASE_URL/manifest.webmanifest" -o /tmp/smoke-frontend-manifest.json \
+  || fail "GET /manifest.webmanifest did not return 200"
+python3 - /tmp/smoke-frontend-manifest.json <<'PY' || fail "manifest.webmanifest must parse and have display=standalone, start_url, scope and icons"
+import json, sys
+m = json.load(open(sys.argv[1], encoding="utf-8"))
+assert m.get("display") in ("standalone", "fullscreen"), m.get("display")
+assert m.get("start_url") and m.get("scope"), (m.get("start_url"), m.get("scope"))
+assert m.get("icons"), "icons"
+PY
+index_html=$(curl -sf "$BASE_URL/index.html") || fail "GET /index.html failed"
+grep -q 'rel="manifest" href="/manifest.webmanifest"' <<<"$index_html" || fail "index.html no longer links the manifest"
+grep -q 'rel="apple-touch-icon"' <<<"$index_html" || fail "index.html no longer links apple-touch-icon"
+apple_icon_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/apple-touch-icon.png")
+[ "$apple_icon_code" = "200" ] || fail "GET /apple-touch-icon.png returned $apple_icon_code (expected 200)"
+log "home screen manifest OK (display=standalone)"
+
 log "ALL FRONTEND SMOKE CHECKS PASSED"
