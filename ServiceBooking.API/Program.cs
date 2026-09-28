@@ -267,21 +267,34 @@ builder.Services.AddAuthentication(opt =>
                 var userId = principal?.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (userId is null) { context.Fail("Invalid token"); return; }
 
-                var userManager = context.HttpContext.RequestServices.GetRequiredService<UserManager<AppUser>>();
-                var user = await userManager.FindByIdAsync(userId);
+                // Cycle 22 (§375 F20, closes §9.21): ONE query for both things this check needs — the
+                // current SecurityStamp and the current role names — instead of FindByIdAsync +
+                // GetRolesAsync. Still read on EVERY request, never cached: a role revoked in the
+                // database is gone on the very next request (SEC-050, CY22-11). No-tracking — the
+                // user row is not left attached to the request's DbContext.
+                var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var user = await db.Users.AsNoTracking()
+                    .Where(u => u.Id == userId)
+                    .Select(u => new
+                    {
+                        u.SecurityStamp,
+                        Roles = db.UserRoles.Where(ur => ur.UserId == u.Id)
+                            .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name!)
+                            .ToList(),
+                    })
+                    .FirstOrDefaultAsync();
                 if (user is null) { context.Fail("User no longer exists"); return; }
 
                 // A JWT lives up to 7 days, so changing a leaked password must invalidate tokens issued
                 // before it. ASP.NET Identity already rotates SecurityStamp on ChangePasswordAsync/
                 // SetUserNameAsync; we compare a hash of the stamp baked into the token with a hash of
                 // the current one (TokenService.HashSecurityStamp) — the raw stamp is never put in the
-                // token in the first place. `user` is already loaded for the role refresh below, so this
-                // costs no extra query.
+                // token in the first place.
                 var stampHash = principal!.FindFirstValue("sstamp");
                 if (stampHash is null || stampHash != TokenService.HashSecurityStamp(user.SecurityStamp))
                 { context.Fail("Token has been revoked"); return; }
 
-                var currentRoles = await userManager.GetRolesAsync(user);
+                var currentRoles = user.Roles;
 
                 var identity = (ClaimsIdentity)principal!.Identity!;
                 foreach (var staleRoleClaim in identity.FindAll(identity.RoleClaimType).ToList())
@@ -724,50 +737,20 @@ builder.Services.AddRateLimiter(o =>
     o.AddPolicy("notifications-webhook", ctx => IpWindowPolicy(ctx, "notifications-webhook", defaultPermitLimit: 600, defaultWindowMinutes: 1));
 
     // data-export: keyed by user id only — the endpoint requires [Authorize], there is no anonymous case.
-    o.AddPolicy("data-export", ctx =>
-    {
-        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
-        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
-        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = config.GetValue("RateLimits:data-export:PermitLimit", 3),
-            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:data-export:WindowMinutes", 1440)),
-            QueueLimit = 0
-        });
-    });
+    o.AddPolicy("data-export", ctx => UserWindowPolicy(ctx, "data-export", defaultPermitLimit: 3, defaultWindowMinutes: 1440));
 
     // push-subscribe: ARCHITECTURE_CYCLE9.md §105.5 (US-123) — "20/час на пользователя". Keyed by user
     // id only, same shape as data-export above: the endpoint requires [Authorize], there is no
     // anonymous case, and the caller subscribing THEIR OWN devices is exactly what this bounds (not an
     // IP, which a shared salon computer would make the wrong partition key for).
-    o.AddPolicy("push-subscribe", ctx =>
-    {
-        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
-        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
-        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = config.GetValue("RateLimits:push-subscribe:PermitLimit", 20),
-            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:push-subscribe:WindowMinutes", 60)),
-            QueueLimit = 0
-        });
-    });
+    o.AddPolicy("push-subscribe", ctx => UserWindowPolicy(ctx, "push-subscribe", defaultPermitLimit: 20, defaultWindowMinutes: 60));
 
     // address-verify: ARCHITECTURE_CYCLE13.md §210/§238 — the tenth named policy, "30/час на
     // пользователя". Keyed by user id only, same shape as data-export/push-subscribe above: all three
     // routes it guards require [Authorize], there is no anonymous case. Applied to all three
     // CompanyAddressController routes — two can reach the paid geocoder, the third writes journal rows —
     // and one budget covers all three on purpose (§210: "один и тот же бюджет одного и того же человека").
-    o.AddPolicy("address-verify", ctx =>
-    {
-        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
-        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
-        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = config.GetValue("RateLimits:address-verify:PermitLimit", 30),
-            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:address-verify:WindowMinutes", 60)),
-            QueueLimit = 0
-        });
-    });
+    o.AddPolicy("address-verify", ctx => UserWindowPolicy(ctx, "address-verify", defaultPermitLimit: 30, defaultWindowMinutes: 60));
 
     // ARCHITECTURE_CYCLE14.md §150.4 (Q8) — three new policies, twelve total.
     //
@@ -796,17 +779,7 @@ builder.Services.AddRateLimiter(o =>
     // phone-change: POST /api/profile/change-phone — 5/час на пользователя (R14). The route was NOT
     // covered by any policy before this cycle; US-14-17 turns it into a perebor oracle (Р3), so it gets
     // one now.
-    o.AddPolicy("phone-change", ctx =>
-    {
-        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
-        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
-        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = config.GetValue("RateLimits:phone-change:PermitLimit", 5),
-            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:phone-change:WindowMinutes", 60)),
-            QueueLimit = 0
-        });
-    });
+    o.AddPolicy("phone-change", ctx => UserWindowPolicy(ctx, "phone-change", defaultPermitLimit: 5, defaultWindowMinutes: 60));
 
     // trial-activate: POST /api/billing/trial — 5/сутки на пользователя (ARCHITECTURE_CYCLE18.md §342).
     // Без него кнопка активации становится бесплатным способом перебирать отказы (перебор редакций
@@ -831,17 +804,7 @@ builder.Services.AddRateLimiter(o =>
     // repeating the request (404 either way), but the 404 itself is cheap enough that unbounded retries
     // are free — this caps the id-guessing budget the same way phone-change caps OTP-guessing.
     // Applies to BOTH branches: staff moving their own bookings is human-paced too, 30/hour is ample.
-    o.AddPolicy("booking-reschedule", ctx =>
-    {
-        var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
-        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
-        return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = config.GetValue("RateLimits:booking-reschedule:PermitLimit", 30),
-            Window = TimeSpan.FromMinutes(config.GetValue("RateLimits:booking-reschedule:WindowMinutes", 60)),
-            QueueLimit = 0
-        });
-    });
+    o.AddPolicy("booking-reschedule", ctx => UserWindowPolicy(ctx, "booking-reschedule", defaultPermitLimit: 30, defaultWindowMinutes: 60));
 
     // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
     // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
@@ -891,6 +854,24 @@ static RateLimitPartition<string> IpWindowPolicy(
     var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
     var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
     return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+    {
+        PermitLimit = config.GetValue($"RateLimits:{policyName}:PermitLimit", defaultPermitLimit),
+        Window = TimeSpan.FromMinutes(config.GetValue($"RateLimits:{policyName}:WindowMinutes", defaultWindowMinutes)),
+        QueueLimit = 0
+    });
+}
+
+// Cycle 22 D9 — the user-keyed twin of IpWindowPolicy, shared by data-export, push-subscribe,
+// address-verify, phone-change and booking-reschedule: partition by the caller's user id ("anonymous"
+// if the JWT carries none — all five routes require [Authorize]), PermitLimit/WindowMinutes read from
+// RateLimits:{policyName}:* with the given defaults. Configuration is still resolved on every request,
+// exactly as the five inline copies did.
+static RateLimitPartition<string> UserWindowPolicy(
+    HttpContext ctx, string policyName, int defaultPermitLimit, int defaultWindowMinutes)
+{
+    var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+    var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
+    return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
     {
         PermitLimit = config.GetValue($"RateLimits:{policyName}:PermitLimit", defaultPermitLimit),
         Window = TimeSpan.FromMinutes(config.GetValue($"RateLimits:{policyName}:WindowMinutes", defaultWindowMinutes)),
