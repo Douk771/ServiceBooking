@@ -717,8 +717,7 @@ public class CompaniesController(
                 // itself (SubscriptionResolver.Resolve) — otherwise an expired subscription's raw plan
                 // name/quantity leaks into the 402 text (e.g. "8 included") while the limit that was
                 // actually enforced came from Free (1).
-                var subUsableNow = sub is not null && sub.IsActive
-                    && (!sub.PaidUntil.HasValue || sub.PaidUntil >= DateTime.UtcNow)
+                var subUsableNow = SubscriptionUsability.IsUsable(sub, DateTime.UtcNow)
                     && sub.PlanConfig is { IsActive: true };
                 var planIncluded = subUsableNow ? sub!.PlanConfig!.MaxEmployees ?? EffectivePlan.Free.AccountMaxEmployees!.Value
                     : EffectivePlan.Free.AccountMaxEmployees!.Value;

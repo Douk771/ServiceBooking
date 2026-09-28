@@ -155,7 +155,7 @@ public class OwnerSubscriptionService(
     /// </summary>
     public static bool IsOnFreePlan(AccountSubscription? sub, DateTime now)
     {
-        var subUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
+        var subUsable = SubscriptionUsability.IsUsable(sub, now);
         return !subUsable || sub!.PlanConfig is not { IsActive: true } || sub.PlanConfig.IsSystemFree;
     }
 

@@ -304,6 +304,10 @@ public class AdminBillingController(
                 db.Companies.Any(c => c.BillingAccountId == x.a.Id && c.Name.Contains(search)));
         }
 
+        // The status/trialState CASE below spells the "subscription in force" rule out by hand
+        // (cycle 18 B4): it runs in SQL over a LEFT JOINed, possibly-null subscription, where the
+        // SubscriptionUsability.UsableAt expression can't be spliced in. Keep it in step with
+        // SubscriptionUsability (cycle 22 D1) — the one definition of the rule.
         var withStatus = joined.Select(x => new
         {
             x.a,
@@ -554,7 +558,7 @@ public class AdminBillingController(
     {
         if (account.TrialStartedAtUtc is null) return new { state = "Never" };
 
-        var isCurrentlyUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now)
+        var isCurrentlyUsable = SubscriptionUsability.IsUsable(sub, now)
             && account.TrialEndsAtUtc.HasValue && account.TrialEndsAtUtc >= now;
         var state = isCurrentlyUsable ? "Active" : "Expired";
 

@@ -35,13 +35,13 @@ public static class PublicListingQuery
     public static IQueryable<Company> WhereAllowsPublicListing(
         this IQueryable<Company> companies, AppDbContext db, DateTime nowUtc) =>
         companies.Where(c =>
-            (db.AccountSubscriptions
+            // "No subscription row, or one not in force, or on an inactive plan → allowed (Free
+            // allows listing); a subscription in force on an active plan → that plan's flag" — written
+            // as NOT EXISTS so the in-force rule is SubscriptionUsability's own expression (cycle 22
+            // D1). Equivalent to the former FirstOrDefault projection: BillingAccountId is unique on
+            // AccountSubscriptions, so there is at most one row to look at.
+            !db.AccountSubscriptions
                 .Where(s => s.BillingAccountId == c.BillingAccountId)
-                .Select(s => (bool?)(
-                    s.IsActive
-                    && (!s.PaidUntil.HasValue || s.PaidUntil >= nowUtc)
-                    && s.PlanConfig != null && s.PlanConfig.IsActive
-                        ? s.PlanConfig.AllowPublicListing
-                        : true))
-                .FirstOrDefault()) ?? true);
+                .Where(SubscriptionUsability.UsableAt(nowUtc))
+                .Any(s => s.PlanConfig != null && s.PlanConfig.IsActive && !s.PlanConfig.AllowPublicListing));
 }
