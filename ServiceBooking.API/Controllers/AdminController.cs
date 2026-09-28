@@ -152,11 +152,9 @@ public class AdminController(
             // same way before matching against PhoneNumber. Anything else (e.g. "Иванов", "ivanov@")
             // is searched as typed against every column — normalizing it would just strip letters out
             // of a name search and break it (ARCHITECTURE.md §11.2).
-            var digitCount = search.Count(char.IsDigit);
-            var looksLikePhone = digitCount >= 5 && !search.Any(char.IsLetter);
-            var phoneSearch = looksLikePhone ? PhoneNormalizer.Normalize(search) : search;
+            var phoneSearch = PhoneNormalizer.ParseSearch(search).Term;
 
-            // digitCount above is Unicode-aware (char.IsDigit), but PhoneNormalizer.Normalize only keeps
+            // ParseSearch counts digits Unicode-aware (char.IsDigit), but PhoneNormalizer.Normalize only keeps
             // ASCII 0-9 (US-26, kept in sync with the SQL migration on purpose — see PhoneNormalizer's
             // doc comment). A search string made entirely of non-ASCII digits (e.g. Arabic-Indic) passes
             // the "looks like a phone" check yet normalizes to "" — without this guard,

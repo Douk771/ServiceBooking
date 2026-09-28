@@ -295,9 +295,7 @@ public class AdminBillingController(
             // a phone number must be normalized the same way before matching PhoneNumber, same
             // convention as AdminController.GetUsers, or a formatted phone ("+7 (999) 123-45-67")
             // never matches anything.
-            var digitCount = search.Count(char.IsDigit);
-            var looksLikePhone = digitCount >= 5 && !search.Any(char.IsLetter);
-            var phoneSearch = looksLikePhone ? PhoneNormalizer.Normalize(search) : search;
+            var phoneSearch = PhoneNormalizer.ParseSearch(search).Term;
 
             joined = joined.Where(x =>
                 x.a.Owner.Email!.Contains(search) ||

@@ -134,4 +134,27 @@ public class PhoneNormalizerTests
         ok.Should().BeFalse();
         canonical.Should().Be("380671234567"); // still normalized, just not accepted
     }
+
+    // ── ParseSearch (cycle 22 D2) — the one phone-vs-name heuristic of the search boxes ─────────
+
+    [Theory]
+    [InlineData("+7 999 123-45-67", true, "79991234567")]  // formatted phone → canonical
+    [InlineData("8 (999) 123 45 67", true, "79991234567")]
+    [InlineData("12345", true, "12345")]                  // exactly 5 digits — the threshold
+    [InlineData("1234", false, "1234")]                   // 4 digits → not a phone, kept as typed
+    [InlineData("Иванов", false, "Иванов")]
+    [InlineData("ivan 79991234567", false, "ivan 79991234567")] // any letter → name search
+    [InlineData("anna@test.local", false, "anna@test.local")]
+    [InlineData("", false, "")]
+    public void ParseSearch_ClassifiesAndNormalizes(string search, bool isPhone, string term) =>
+        PhoneNormalizer.ParseSearch(search).Should().Be(new PhoneSearch(isPhone, term));
+
+    [Fact]
+    public void ParseSearch_NonAsciiDigitsOnly_IsPhoneWithEmptyTerm()
+    {
+        // char.IsDigit is Unicode-aware, Normalize keeps ASCII only — callers guard on Term.Length > 0.
+        var parsed = PhoneNormalizer.ParseSearch("\u0661\u0662\u0663\u0664\u0665");
+        parsed.IsPhone.Should().BeTrue();
+        parsed.Term.Should().BeEmpty();
+    }
 }
