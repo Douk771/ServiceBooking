@@ -31,7 +31,9 @@ public class CompaniesController(
     [HttpGet]
     public async Task<ActionResult<List<CompanyDto>>> GetAll()
     {
-        var companies = await db.Companies.Where(c => c.IsActive).ToListAsync();
+        // §375 F21: the owner's own opt-in (ShowInPublicListing, see below) is a plain column — filtered
+        // in SQL, so opted-out companies are never loaded, nor resolved/rated/covered below.
+        var companies = await db.Companies.AsNoTracking().Where(c => c.IsActive && c.ShowInPublicListing).ToListAsync();
         var plans = await subscriptionResolver.GetEffectivePlansAsync(companies.Select(c => c.Id));
         var ratings = await GetReviewAggregatesAsync(companies.Select(c => c.Id));
         var cities = await GetCitiesAsync(companies.Select(c => c.CityId));
@@ -47,7 +49,7 @@ public class CompaniesController(
         // at all (not "called and cached", not called), so employeeCount/accountSeatsUsed/
         // accountSeatsLimit/canAddEmployee cost this endpoint exactly zero extra queries.
         return Ok(companies
-            .Where(c => c.ShowInPublicListing && plans[c.Id].AllowPublicListing)
+            .Where(c => plans[c.Id].AllowPublicListing)
             .Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
                 c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
                 geoOptions.Value, covers.GetValueOrDefault(c.Id))));
@@ -136,20 +138,9 @@ public class CompaniesController(
             .Include(cm => cm.Company)
             .Where(cm => cm.UserId == userId && cm.Role == UserRole.CompanyOwner && cm.Company.IsActive)
             .ToListAsync();
-        var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
-        var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
-        var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
-        var (employeeCounts, usageByAccount) = await GetUsageAsync(memberships.Select(cm => cm.Company));
-        var covers = await GetCoversAsync(memberships.Select(cm => cm.CompanyId));
-
         // GetMy only ever returns CompanyOwner memberships (the query above filters on
         // cm.Role == UserRole.CompanyOwner), so every row here is a company this caller manages.
-        return Ok(memberships.Select(cm =>
-            MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount,
-                cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
-                employeeCounts.GetValueOrDefault(cm.CompanyId),
-                cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null,
-                geoOptions.Value, covers.GetValueOrDefault(cm.CompanyId), canManage: true)));
+        return Ok(await MapMembershipsToDtosAsync(memberships, canManage: _ => true));
     }
 
     // Returns all companies where the current user is a member (any role)
@@ -162,23 +153,36 @@ public class CompaniesController(
             .Include(cm => cm.Company)
             .Where(cm => cm.UserId == userId && cm.Company.IsActive)
             .ToListAsync();
-        var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
-        var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
-        var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
-        var (employeeCounts, usageByAccount) = await GetUsageAsync(memberships.Select(cm => cm.Company));
-        var covers = await GetCoversAsync(memberships.Select(cm => cm.CompanyId));
         // §232/§237, review finding (cycle 13 review, blocking #2): unlike GetMy, this endpoint returns
         // companies for EVERY membership role — a Master's own membership row must not light up
         // addressVerification.available. SuperAdmin manages every company regardless of membership role.
         var isSuperAdmin = User.IsInRole("SuperAdmin");
 
-        return Ok(memberships.Select(cm =>
+        return Ok(await MapMembershipsToDtosAsync(memberships,
+            canManage: cm => isSuperAdmin || cm.Role == UserRole.CompanyOwner));
+    }
+
+    /// <summary>
+    /// Cycle 22 (D7, in-controller part — the assembler itself moves out in P5): the batched enrichment
+    /// GetMy and GetMemberOf share — plans, ratings, cities, seat usage and covers for every membership's
+    /// company in one query each — then one CompanyDto per membership, in membership order.
+    /// </summary>
+    private async Task<List<CompanyDto>> MapMembershipsToDtosAsync(
+        List<CompanyMember> memberships, Func<CompanyMember, bool> canManage)
+    {
+        var plans = await subscriptionResolver.GetEffectivePlansAsync(memberships.Select(cm => cm.CompanyId));
+        var ratings = await GetReviewAggregatesAsync(memberships.Select(cm => cm.CompanyId));
+        var cities = await GetCitiesAsync(memberships.Select(cm => cm.Company.CityId));
+        var (employeeCounts, usageByAccount) = await GetUsageAsync(memberships.Select(cm => cm.Company));
+        var covers = await GetCoversAsync(memberships.Select(cm => cm.CompanyId));
+
+        return memberships.Select(cm =>
             MapToDto(cm.Company, plans[cm.CompanyId], ratings[cm.CompanyId].AverageRating, ratings[cm.CompanyId].ReviewCount,
                 cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
                 employeeCounts.GetValueOrDefault(cm.CompanyId),
                 cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null,
-                geoOptions.Value, covers.GetValueOrDefault(cm.CompanyId),
-                canManage: isSuperAdmin || cm.Role == UserRole.CompanyOwner)));
+                geoOptions.Value, covers.GetValueOrDefault(cm.CompanyId), canManage: canManage(cm)))
+            .ToList();
     }
 
     [HttpGet("{slug}")]
@@ -569,14 +573,7 @@ public class CompaniesController(
 
         await db.SaveChangesAsync();
 
-        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
-        var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
-        var (updateEmployeeCounts, updateUsageByAccount) = await GetUsageAsync([company]);
-        var updateCovers = await GetCoversAsync([company.Id]);
-        return Ok(MapToDto(company, plan, averageRating, reviewCount, city,
-            updateEmployeeCounts.GetValueOrDefault(company.Id),
-            company.BillingAccountId.HasValue ? updateUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
-            geoOptions.Value, updateCovers.GetValueOrDefault(company.Id), canManage: true));
+        return Ok(await MapManagedCompanyToDtoAsync(company, city));
     }
 
     // Uploads/replaces the company's logo. US-25 p.6: moved onto the same ImageUploadService every other
@@ -616,15 +613,25 @@ public class CompaniesController(
 
         storage.DeletePublic(oldUrl); // old file removed on replace, same as before this cycle, just reordered
 
+        var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
+        return Ok(await MapManagedCompanyToDtoAsync(company, city));
+    }
+
+    /// <summary>
+    /// Cycle 22 (D7, in-controller part): the full CompanyDto that PUT /api/companies/{id} and the logo
+    /// upload both return to the company's manager after a write — plan, rating, seat usage and cover
+    /// re-read for this one company. <paramref name="city"/> is resolved by the caller.
+    /// </summary>
+    private async Task<CompanyDto> MapManagedCompanyToDtoAsync(Company company, City? city)
+    {
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(company.Id);
-        var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
-        var (logoEmployeeCounts, logoUsageByAccount) = await GetUsageAsync([company]);
-        var logoCovers = await GetCoversAsync([company.Id]);
-        return Ok(MapToDto(company, plan, averageRating, reviewCount, city,
-            logoEmployeeCounts.GetValueOrDefault(company.Id),
-            company.BillingAccountId.HasValue ? logoUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
-            geoOptions.Value, logoCovers.GetValueOrDefault(company.Id), canManage: true));
+        var (employeeCounts, usageByAccount) = await GetUsageAsync([company]);
+        var covers = await GetCoversAsync([company.Id]);
+        return MapToDto(company, plan, averageRating, reviewCount, city,
+            employeeCounts.GetValueOrDefault(company.Id),
+            company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
+            geoOptions.Value, covers.GetValueOrDefault(company.Id), canManage: true);
     }
 
     // US-24 p.4 / US-19 p.7: the only place a company's client-photo storage usage is exposed. NOT
