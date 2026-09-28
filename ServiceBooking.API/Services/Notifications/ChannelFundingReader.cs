@@ -13,12 +13,13 @@ public sealed record ChannelFundingInfo(ChannelFundingState State, string Text, 
 /// <summary>
 /// ARCHITECTURE_CYCLE7.md §47.1/§47.3 — whether a notification channel is actually paid for, read from
 /// what the account bought (its effective plan's paid numbers ranked over its live channels, and the
-/// notifications.whatsapp option's period), never from the channel's own legacy PaidUntilUtc column.
+/// notifications.whatsapp option's period), never from the channel row itself (its legacy PaidUntilUtc column is dropped in cycle 22).
 ///
 /// Cycle 22 (ARCHITECTURE_CYCLE22.md §375 F14, §379): extracted from NotificationChannelsController's
 /// private LoadFundingAsync/IsChannelFundedAsync with the same semantics, and BATCHED — one query per
 /// kind of row for all the billing accounts involved, instead of three queries per account. Package P4
-/// reuses it to replace the remaining readers of NotificationChannel.PaidUntilUtc.
+/// made it the single source for every former reader of NotificationChannel.PaidUntilUtc (admin channel
+/// list/summary/suspend log, company notification settings/summary, ChannelHealthTask idle, replace).
 /// </summary>
 public sealed class ChannelFundingReader(AppDbContext db, SubscriptionResolver subscriptionResolver)
 {
@@ -37,8 +38,8 @@ public sealed class ChannelFundingReader(AppDbContext db, SubscriptionResolver s
                 .ToListAsync(ct))
             .ToLookup(c => c.BillingAccountId!.Value);
 
-        // N6, §47.3: the paid-until shown is the account's notifications.whatsapp option's, not the
-        // channel's own (no-longer-written) PaidUntilUtc column. An option row with no own PaidUntilUtc
+        // N6, §47.3: the paid-until shown is the account's notifications.whatsapp option's, the channel
+        // row has no paid period of its own (cycle 22 dropped its PaidUntilUtc column). An option row with no own PaidUntilUtc
         // rides the subscription's own paid period instead (same convention SubscriptionResolver uses),
         // so falls back to the subscription's PaidUntil. One option row per account is looked at — the
         // first one the database returns, as the per-account FirstOrDefault did.

@@ -18,7 +18,7 @@ public class NotificationGateTests
     private static readonly EffectivePlan DenyingPlan =
         EffectivePlan.Free with { AllowNotificationChannel = false, PaidNotificationNumbers = 0 };
 
-    private static NotificationChannel PaidChannel() => new() { PaidUntilUtc = Now.AddDays(10) };
+    private static NotificationChannel PaidChannel() => new();
     private static CompanyNotificationSettings DefaultSettings() => new();
 
     private static NotificationGateResult Evaluate(
@@ -75,14 +75,14 @@ public class NotificationGateTests
     {
         // §47.2: an Unfunded channel blocks with NotOnPaidPlan (append-only NotificationReason honestly
         // covers both "account never paid" and "paid for fewer numbers than configured", §47.2).
-        var result = Evaluate(channel: new NotificationChannel { PaidUntilUtc = null }, channelIsFunded: false);
+        var result = Evaluate(channel: new NotificationChannel(), channelIsFunded: false);
         result.Reason.Should().Be(NotificationReason.NotOnPaidPlan);
     }
 
     [Fact]
     public void Evaluate_ChannelFundingExpired_Blocked()
     {
-        var result = Evaluate(channel: new NotificationChannel { PaidUntilUtc = Now.AddDays(-1) }, channelIsFunded: false);
+        var result = Evaluate(channel: new NotificationChannel(), channelIsFunded: false);
         result.Reason.Should().Be(NotificationReason.NotOnPaidPlan);
     }
 
@@ -115,7 +115,7 @@ public class NotificationGateTests
     {
         // §30.2: connectivity is a "hold for later" concern for the dispatcher, NOT a gate rejection —
         // a queued row for a Disconnected channel must stay Pending, not become Skipped.
-        var channel = new NotificationChannel { PaidUntilUtc = Now.AddDays(10), State = ChannelState.Disconnected };
+        var channel = new NotificationChannel { State = ChannelState.Disconnected };
         var result = Evaluate(channel: channel);
         result.Outcome.Should().Be(NotificationGateOutcome.Allowed);
     }

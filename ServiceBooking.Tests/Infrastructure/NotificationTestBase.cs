@@ -272,8 +272,8 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
     }
 
     /// <summary>
-    /// Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §47.1) — funding is no longer read off the channel's
-    /// own PaidUntilUtc; it comes from the account's paid <c>notifications.whatsapp</c> quantity
+    /// Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §47.1) — funding is not read off the channel row (its
+    /// legacy PaidUntilUtc column is dropped in cycle 22); it comes from the account's paid <c>notifications.whatsapp</c> quantity
     /// (<see cref="ServiceBooking.API.Services.SubscriptionResolver.WhatsAppOptionCode"/>). Every raw-row
     /// seeding helper that wants a channel to actually be <c>Funded</c> must call this too — creates the
     /// catalog row on first use (idempotent per test database) and one <c>AccountSubscriptionOption</c>
@@ -332,8 +332,7 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
     /// database (bypassing the QR flow, which this factory's <c>NoopChannelProvisioning</c> stub would
     /// otherwise require polling through — direct seeding is the same shortcut
     /// <c>NotificationDispatchTests.SeedConnectedChannelAsync</c> already takes for the same reason).</summary>
-    protected async Task<(AuthResponseDto Owner, CompanyDto Company, NotificationChannel Channel)> CreateConnectedChannelAsync(
-        DateTime? paidUntilUtc = null)
+    protected async Task<(AuthResponseDto Owner, CompanyDto Company, NotificationChannel Channel)> CreateConnectedChannelAsync()
     {
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         await GiveNotificationCapablePlanAsync(owner.UserId);
@@ -348,7 +347,6 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
             Id = Guid.NewGuid(), OwnerUserId = owner.UserId, BillingAccountId = billingAccountId, State = ChannelState.Connected,
             PhoneNumber = UniquePhone().TrimStart('+'),
             ProviderInstanceId = Unique("instance"),
-            PaidFromUtc = DateTime.UtcNow.AddDays(-1), PaidUntilUtc = paidUntilUtc ?? DateTime.UtcNow.AddDays(30),
             ConnectedAtUtc = DateTime.UtcNow.AddDays(-1),
             RiskAcceptedAtUtc = DateTime.UtcNow.AddDays(-1),
         };
