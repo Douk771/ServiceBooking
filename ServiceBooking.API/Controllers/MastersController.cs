@@ -23,7 +23,8 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
 
     [HttpGet("clients")]
     public async Task<ActionResult<PagedResult<MasterClientDto>>> GetClients(
-        [FromQuery] Guid companyId, [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] Guid companyId, [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize,
+        CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -39,12 +40,122 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
         // decides `canDelete` on every note and photo below (decision Q16).
         var callerIsOwner = await CompanyMembership.IsOwnerAsync(db, companyId, userId);
 
-        // Get all bookings for this master in this company
-        var bookings = await db.Bookings
-            .Include(b => b.Client)
-            .Include(b => b.Service)
-            .Where(b => b.MasterId == userId && b.CompanyId == companyId)
-            .ToListAsync();
+        // Cycle 22 (§375 F1/F2, closes §9.17): the master's bookings are GROUPED IN SQL — one row per
+        // client (registered by ClientId, guest by GuestPhone) with the last visit date and the visit
+        // count — instead of loading every booking of the master in the company (with Client and Service)
+        // to group in memory. Booking summaries and notes are then read only for the clients on the
+        // requested page.
+        var masterBookings = db.Bookings.AsNoTracking()
+            .Where(b => b.MasterId == userId && b.CompanyId == companyId);
+
+        // Registered clients. Name/phone/email come from the client's own row — the same row the old
+        // in-memory code reached through lastBooking.Client (every booking of a group has the same
+        // ClientId); a missing row still yields "Unknown" and nulls.
+        var registered = await (
+            from g in masterBookings
+                .Where(b => b.ClientId != null)
+                .GroupBy(b => b.ClientId!)
+                .Select(g => new { ClientId = g.Key, LastVisitDate = g.Max(b => b.Date), TotalVisits = g.Count() })
+            join u in db.Users on g.ClientId equals u.Id into users
+            from u in users.DefaultIfEmpty()
+            select new
+            {
+                g.ClientId,
+                g.LastVisitDate,
+                g.TotalVisits,
+                HasUser = u != null,
+                FirstName = u != null ? u.FirstName : null,
+                LastName = u != null ? u.LastName : null,
+                Phone = u != null ? u.PhoneNumber : null,
+                Email = u != null ? u.Email : null,
+                PhoneVerified = u != null ? (bool?)u.PhoneNumberConfirmed : null,
+            })
+            .ToListAsync(ct);
+
+        // Guests, keyed by phone. Name/email are the LAST visit's (latest Date, then latest EndTime) —
+        // exactly what the in-memory lastBooking picked.
+        var guests = await masterBookings
+            .Where(b => b.ClientId == null && b.GuestPhone != null)
+            .GroupBy(b => b.GuestPhone!)
+            .Select(g => new
+            {
+                GuestPhone = g.Key,
+                LastVisitDate = g.Max(b => b.Date),
+                TotalVisits = g.Count(),
+                Latest = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.EndTime)
+                    .Select(b => new { b.GuestName, b.GuestEmail })
+                    .First(),
+            })
+            .ToListAsync(ct);
+
+        var rows = registered
+            .Select(r => new ClientRow(
+                ClientId: r.ClientId,
+                GuestPhone: null,
+                Name: r.HasUser ? $"{r.FirstName} {r.LastName}".Trim() : "Unknown",
+                // The "contact visible only 24h after visit" rule (decision Q10, cycle A) is removed:
+                // it was half-implemented (no re-hide, no UI to unlock early) and served no
+                // protection — a master who serves a client already has their phone/notes from the
+                // booking flow.
+                Phone: r.Phone,
+                Email: r.Email,
+                LastVisitDate: r.LastVisitDate,
+                TotalVisits: r.TotalVisits,
+                // ARCHITECTURE_CYCLE14.md §149.2 (Q17): read off the same user row as the name/phone.
+                PhoneVerified: r.PhoneVerified))
+            .Concat(guests.Select(g => new ClientRow(
+                ClientId: null,
+                GuestPhone: g.GuestPhone,
+                Name: g.Latest.GuestName ?? "Guest",
+                Phone: g.GuestPhone,
+                Email: g.Latest.GuestEmail,
+                LastVisitDate: g.LastVisitDate,
+                TotalVisits: g.TotalVisits,
+                // §149.2: a guest with no account — "not applicable", not "unverified". null, never false.
+                PhoneVerified: null)))
+            // US-49: ordered by last visit date DESC, tie-broken by the same client key GetClients/AddNote
+            // use everywhere else: registered client id, or guest phone. Ordering, search and the page
+            // slice run over these per-CLIENT rows in memory on purpose (cycle 22 decision, §375 F1): the
+            // tie-break uses .NET's string comparer and the name search is OrdinalIgnoreCase — Postgres'
+            // ORDER BY/ILIKE depend on the database collation/ctype and are not guaranteed to agree, and
+            // the response must stay byte-identical (CY22-06…08).
+            .OrderByDescending(c => c.LastVisitDate)
+            .ThenBy(c => c.ClientId ?? c.GuestPhone)
+            .ToList();
+
+        // US-49 regression fix (QA cycle C): search must filter the FULL client list before pagination,
+        // not just the page the frontend happens to already have in hand.
+        //
+        // Same phone-vs-name heuristic as AdminController.GetUsers (ARCHITECTURE.md §11.2): a search
+        // string that looks like a phone number is normalized the way phones are stored, so
+        // "+7 999 123-45-67", "8 999 123 45 67" and "79991234567" all match the same canonical client.
+        // Anything else is matched against the client's display name, case-insensitively.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var phoneSearch = PhoneNormalizer.ParseSearch(search).Term;
+
+            rows = rows.Where(c =>
+                c.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                (phoneSearch.Length > 0 && c.Phone is not null && c.Phone.Contains(phoneSearch)))
+                .ToList();
+        }
+
+        var total = rows.Count;
+        var pageRows = rows.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
+
+        var pageClientIds = pageRows.Where(r => r.ClientId != null).Select(r => r.ClientId!).ToArray();
+        var pageGuestPhones = pageRows.Where(r => r.ClientId == null).Select(r => r.GuestPhone!).ToArray();
+
+        // Booking summaries — for the page's clients only.
+        var summaries = pageRows.Count == 0
+            ? []
+            : await masterBookings
+                .Where(b => (b.ClientId != null && pageClientIds.Contains(b.ClientId))
+                    || (b.ClientId == null && b.GuestPhone != null && pageGuestPhones.Contains(b.GuestPhone)))
+                .Select(b => new { b.ClientId, b.GuestPhone, b.Date, b.StartTime, ServiceName = b.Service.Name, b.Status })
+                .ToListAsync(ct);
+        var summariesByClient = summaries.Where(b => b.ClientId != null).ToLookup(b => b.ClientId!);
+        var summariesByGuest = summaries.Where(b => b.ClientId == null).ToLookup(b => b.GuestPhone!);
 
         // Notes are shared across the whole company: a master seeing a client (e.g. a new booking to a
         // master this client hasn't visited before) sees prior notes written by ANY colleague in the
@@ -54,25 +165,33 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
         // partitioned per client/guest — not by pulling every note (and every attached photo) the
         // company has ever accumulated into memory and slicing afterwards in NotesFor(...) below (code
         // review finding: a salon with a couple of years of history could have thousands of rows here).
-        // COALESCE(ClientId, GuestPhone) mirrors exactly how the two grouping branches below identify a
-        // "client" — a registered client by id, a guest by phone.
-        var notes = await db.ClientNotes
-            .FromSqlInterpolated($"""
-                SELECT ranked.* FROM (
-                    SELECT cn.*,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY COALESCE(cn."ClientId", cn."GuestPhone")
-                               ORDER BY cn."CreatedAt" DESC
-                           ) AS "Rn"
-                    FROM "ClientNotes" cn
-                    WHERE cn."CompanyId" = {companyId}
-                ) ranked
-                WHERE ranked."Rn" <= {NotesPerClient}
-                """)
-            .Include(n => n.Master)
-            .Include(n => n.Booking).ThenInclude(b => b!.Service)
-            .Include(n => n.Photos).ThenInclude(p => p.UploadedBy)
-            .ToListAsync();
+        // COALESCE(ClientId, GuestPhone) mirrors exactly how the two grouping branches above identify a
+        // "client" — a registered client by id, a guest by phone. Cycle 22 (§375 F1): the ranking still
+        // runs over the whole company (unchanged partitions), but only the page's clients' notes are
+        // returned — the filter sits OUTSIDE the window, matching the per-client lookups below.
+        var notes = pageRows.Count == 0
+            ? []
+            : await db.ClientNotes
+                .FromSqlInterpolated($"""
+                    SELECT ranked.* FROM (
+                        SELECT cn.*,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY COALESCE(cn."ClientId", cn."GuestPhone")
+                                   ORDER BY cn."CreatedAt" DESC
+                               ) AS "Rn"
+                        FROM "ClientNotes" cn
+                        WHERE cn."CompanyId" = {companyId}
+                    ) ranked
+                    WHERE ranked."Rn" <= {NotesPerClient}
+                      AND (ranked."ClientId" = ANY({pageClientIds}) OR ranked."GuestPhone" = ANY({pageGuestPhones}))
+                    """)
+                .AsNoTracking()
+                .Include(n => n.Master)
+                .Include(n => n.Booking).ThenInclude(b => b!.Service)
+                .Include(n => n.Photos).ThenInclude(p => p.UploadedBy)
+                .ToListAsync(ct);
+        var notesByClient = notes.Where(n => n.ClientId != null).ToLookup(n => n.ClientId!);
+        var notesByGuest = notes.Where(n => n.GuestPhone != null).ToLookup(n => n.GuestPhone!);  // SUBJECT-PHONE-GATE: staff-scoped — company staff viewing THEIR OWN company's clients, not an account-scoped "my own data" query; no sewing of guest↔account identity happens here (ARCHITECTURE_CYCLE16.md §245.3)
 
         // The query above already caps each client/guest at NotesPerClient rows — this Take is a cheap,
         // redundant safety net (in case a future refactor of the query above ever loses the window-
@@ -83,101 +202,31 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
             .Select(n => MapNoteToDto(n, userId, callerIsOwner))
             .ToList();
 
-        // Group by registered clients
-        var registeredClients = bookings
-            .Where(b => b.ClientId != null)
-            .GroupBy(b => b.ClientId!)
-            .Select(g =>
-            {
-                var lastBooking = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.EndTime).First();
-                var client = lastBooking.Client;
-                return new MasterClientDto(
-                    ClientId: g.Key,
-                    GuestPhone: null,
-                    Name: client != null ? $"{client.FirstName} {client.LastName}".Trim() : "Unknown",
-                    // The "contact visible only 24h after visit" rule (decision Q10, cycle A) is removed:
-                    // it was half-implemented (no re-hide, no UI to unlock early) and served no
-                    // protection — a master who serves a client already has their phone/notes from the
-                    // booking flow.
-                    Phone: client?.PhoneNumber,
-                    Email: client?.Email,
-                    LastVisitDate: lastBooking.Date,
-                    TotalVisits: g.Count(),
-                    Notes: NotesFor(notes.Where(n => n.ClientId == g.Key)),
-                    BookingSummaries: g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
-                        .Select(b => new BookingSummaryDto(b.Date, b.Service.Name, b.Status.ToString()))
-                        .ToList(),
-                    // ARCHITECTURE_CYCLE14.md §149.2 (Q17): ZERO extra queries — Client is already
-                    // Include()d above, so PhoneNumberConfirmed rides along with the name/phone that were
-                    // already being read from the same row.
-                    PhoneVerified: client?.PhoneNumberConfirmed
-                );
-            });
-
-        // Group by guest phone
-        var guestClients = bookings
-            .Where(b => b.ClientId == null && b.GuestPhone != null)
-            .GroupBy(b => b.GuestPhone!)
-            .Select(g =>
-            {
-                var lastBooking = g.OrderByDescending(b => b.Date).ThenByDescending(b => b.EndTime).First();
-                return new MasterClientDto(
-                    ClientId: null,
-                    GuestPhone: g.Key,
-                    Name: lastBooking.GuestName ?? "Guest",
-                    Phone: g.Key,
-                    Email: lastBooking.GuestEmail,
-                    LastVisitDate: lastBooking.Date,
-                    TotalVisits: g.Count(),
-                    Notes: NotesFor(notes.Where(n => n.GuestPhone == g.Key)),  // SUBJECT-PHONE-GATE: staff-scoped — company staff viewing THEIR OWN company's clients, not an account-scoped "my own data" query; no sewing of guest↔account identity happens here (ARCHITECTURE_CYCLE16.md §245.3)
-                    BookingSummaries: g.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
-                        .Select(b => new BookingSummaryDto(b.Date, b.Service.Name, b.Status.ToString()))
-                        .ToList(),
-                    // §149.2: a guest with no account — "not applicable", not "unverified". null, never false.
-                    PhoneVerified: null
-                );
-            });
-
-        // US-49: pagination applies to THIS list — the clients grouped from the master's bookings in
-        // this company, already fully materialized above (existing shape, not restructured by this
-        // cycle) — not to the ROW_NUMBER() note-capping query above it, which stays exactly as it was
-        // (ARCHITECTURE.md §15: "GET /api/masters/clients содержит ROW_NUMBER()-запрос через
-        // FromSqlInterpolated" is a warning about not disturbing that query, not a description of how
-        // pagination itself is implemented). Ordered by last visit date DESC, tie-broken by the same
-        // client key GetClients/AddNote use everywhere else: registered client id, or guest phone.
-        var allClients = registeredClients.Concat(guestClients)
-            .OrderByDescending(c => c.LastVisitDate)
-            .ThenBy(c => c.ClientId ?? c.GuestPhone)
-            .ToList();
-
-        // US-49 regression fix (QA cycle C): search must filter the FULL client list before pagination,
-        // not just the page the frontend happens to already have in hand — otherwise a client on page 3
-        // is simply invisible to a search typed on page 1. This list is already fully materialized in
-        // memory above (existing shape, see comment on the block above), so filtering here is a plain
-        // LINQ-to-objects Where, not a second SQL round trip.
-        //
-        // Same phone-vs-name heuristic as AdminController.GetUsers (ARCHITECTURE.md §11.2): a search
-        // string that looks like a phone number (≥5 digits, no letters) is normalized through
-        // PhoneNormalizer the same way phones are stored, so "+7 999 123-45-67", "8 999 123 45 67" and
-        // "79991234567" all match the same canonical client regardless of how the caller typed it.
-        // Anything else is matched against the client's display name, case-insensitively.
-        if (!string.IsNullOrWhiteSpace(search))
+        var pageItems = pageRows.Select(r =>
         {
-            var digitCount = search.Count(char.IsDigit);
-            var looksLikePhone = digitCount >= 5 && !search.Any(char.IsLetter);
-            var phoneSearch = looksLikePhone ? PhoneNormalizer.Normalize(search) : search;
-
-            allClients = allClients.Where(c =>
-                c.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                (phoneSearch.Length > 0 && c.Phone is not null && c.Phone.Contains(phoneSearch)))
-                .ToList();
-        }
-
-        var total = allClients.Count;
-        var pageItems = allClients.Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
+            var visits = r.ClientId != null ? summariesByClient[r.ClientId] : summariesByGuest[r.GuestPhone!];
+            return new MasterClientDto(
+                ClientId: r.ClientId,
+                GuestPhone: r.GuestPhone,
+                Name: r.Name,
+                Phone: r.Phone,
+                Email: r.Email,
+                LastVisitDate: r.LastVisitDate,
+                TotalVisits: r.TotalVisits,
+                Notes: NotesFor(r.ClientId != null ? notesByClient[r.ClientId] : notesByGuest[r.GuestPhone!]),
+                BookingSummaries: visits.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
+                    .Select(b => new BookingSummaryDto(b.Date, b.ServiceName, b.Status.ToString()))
+                    .ToList(),
+                PhoneVerified: r.PhoneVerified);
+        }).ToList();
 
         return Ok(Pagination.Create(pageItems, currentPage, currentPageSize, total));
     }
+
+    /// <summary>One client of <see cref="GetClients"/> before its page's notes and summaries are read.</summary>
+    private sealed record ClientRow(
+        string? ClientId, string? GuestPhone, string Name, string? Phone, string? Email,
+        DateOnly LastVisitDate, int TotalVisits, bool? PhoneVerified);
 
     [HttpPost("clients/notes")]
     [RequiresOwnerTerms]
