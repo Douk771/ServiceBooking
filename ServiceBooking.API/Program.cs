@@ -383,6 +383,10 @@ builder.Services.AddScoped<HealthNoteProtector>();
 // TD-03 (ARCHITECTURE_CYCLE16.md §245.4) — the single gate for "does this account get the
 // phone-matching branch of its own guest-recorded data". Scoped: wraps one AppDbContext query.
 builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectScopeResolver>();
+// Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the bodies of GET /api/profile/export and
+// POST /api/profile/delete-account (+ preview), moved out of ProfileController unchanged.
+builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectDataExporter>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.AccountDeletionService>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
