@@ -274,27 +274,12 @@ public sealed class NotificationDispatchTask(
     private async Task RefreshVisitStartTimesAsync(List<OutboundNotification> candidates, CancellationToken ct)
     {
         var bookingIds = candidates.Where(n => n.BookingId.HasValue).Select(n => n.BookingId!.Value).Distinct().ToList();
-        if (bookingIds.Count == 0) return;
+        var visitStartByBooking = await VisitStartResolver.ResolveAsync(db, bookingIds, ct);
 
-        var bookings = await db.Bookings
-            .Where(b => bookingIds.Contains(b.Id))
-            .Select(b => new { b.Id, b.CompanyId, b.Date, b.StartTime })
-            .ToListAsync(ct);
-        if (bookings.Count == 0) return;
-
-        var companyIds = bookings.Select(b => b.CompanyId).Distinct().ToList();
-        var companyTimeZones = await db.Companies
-            .Where(c => companyIds.Contains(c.Id))
-            .Select(c => new { c.Id, c.TimeZoneId })
-            .ToDictionaryAsync(c => c.Id, c => c.TimeZoneId, ct);
-
-        var bookingById = bookings.ToDictionary(b => b.Id);
         foreach (var row in candidates)
         {
-            if (row.BookingId is not { } bookingId || !bookingById.TryGetValue(bookingId, out var booking)) continue;
-            if (!companyTimeZones.TryGetValue(booking.CompanyId, out var timeZoneId)) continue;
-
-            row.VisitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, timeZoneId);
+            if (row.BookingId is { } bookingId && visitStartByBooking.TryGetValue(bookingId, out var visitStartUtc))
+                row.VisitStartUtc = visitStartUtc;
         }
     }
 
@@ -337,6 +322,13 @@ public sealed class NotificationDispatchTask(
         var sentCount = 0;
         var failedCount = 0;
 
+        // Cycle 22 (§375 F24): the channel's secret is decrypted ONCE per group — on the first row that
+        // gets that far, exactly where the per-row decrypt used to happen (after that row's in-flight
+        // marker is saved) — and reused for the rest of the group. Nothing inside the loop changes the
+        // ciphertext or instance id except the failure path below, which ends the group, so every row
+        // would have decrypted to the same credentials. The failure semantics are untouched.
+        ChannelCredentials? groupCredentials = null;
+
         for (var i = 0; i < rowIds.Count; i++)
         {
             if (budgetCt.IsCancellationRequested) break; // budget exhausted mid-channel — remainder stays Pending
@@ -355,8 +347,9 @@ public sealed class NotificationDispatchTask(
             ChannelCredentials credentials;
             try
             {
-                var token = SecretProtector.Decrypt(channel.ProviderSecretCiphertext ?? string.Empty, encryptionKey ?? string.Empty, channel.Id);
-                credentials = new ChannelCredentials(channel.ProviderInstanceId ?? string.Empty, token);
+                credentials = groupCredentials ??= new ChannelCredentials(
+                    channel.ProviderInstanceId ?? string.Empty,
+                    SecretProtector.Decrypt(channel.ProviderSecretCiphertext ?? string.Empty, encryptionKey ?? string.Empty, channel.Id));
             }
             catch (Exception ex) when (ex is ChannelSecretUnavailableException or ArgumentException)
             {
