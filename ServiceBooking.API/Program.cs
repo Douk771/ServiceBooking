@@ -321,6 +321,8 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Billing.TrialStateReader>
 // directly from BookingsController (create/cancel/reschedule) — registered here because Program.cs is
 // this developer's file this cycle.
 builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
+// Cycle 22 (ARCHITECTURE_CYCLE22.md §375 F14, §379): channel funding, batched across billing accounts.
+builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.ChannelFundingReader>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorResolver>();
 builder.Services.AddHttpClient<CaptchaService>();

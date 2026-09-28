@@ -607,8 +607,15 @@ public class ProfileController(
                 ownedChannel.LastStateReason = ChannelStateReason.DisconnectedByOwner;
             }
 
+        }
+
+        // The owned channels' Pending rows are cancelled and their company assignments removed — one
+        // query each for ALL owned channels (cycle 22 §375 F15), not two per channel.
+        var ownedChannelIds = ownedChannels.Select(c => c.Id).ToList();
+        if (ownedChannelIds.Count > 0)
+        {
             var channelPending = await db.OutboundNotifications
-                .Where(n => n.ChannelId == ownedChannel.Id && n.Status == NotificationStatus.Pending)
+                .Where(n => n.ChannelId != null && ownedChannelIds.Contains(n.ChannelId.Value) && n.Status == NotificationStatus.Pending)
                 .ToListAsync();
             foreach (var row in channelPending)
             {
@@ -622,7 +629,7 @@ public class ProfileController(
             // event there would keep queuing Pending rows that just sit until they expire, instead of the
             // company being told up front there is no usable channel (§23.2's NoUsableChannel gate).
             var channelAssignments = await db.ChannelCompanyAssignments
-                .Where(a => a.ChannelId == ownedChannel.Id).ToListAsync();
+                .Where(a => ownedChannelIds.Contains(a.ChannelId)).ToListAsync();
             db.ChannelCompanyAssignments.RemoveRange(channelAssignments);
         }
 

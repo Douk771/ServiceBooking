@@ -26,7 +26,8 @@ public class CompanyNotificationsController(
     AppDbContext db,
     SubscriptionResolver subscriptionResolver,
     PlatformSettings platformSettings,
-    LegalDocumentProvider legalProvider) : ControllerBase
+    LegalDocumentProvider legalProvider,
+    ChannelFundingReader fundingReader) : ControllerBase
 {
     // ── Settings ─────────────────────────────────────────────────────────────────────────────────
 
@@ -470,14 +471,9 @@ public class CompanyNotificationsController(
     }
 
     // ARCHITECTURE_CYCLE7.md §47.1/§47.2: funded/unfunded, ranked across every live channel on the
-    // SAME billing account as `channel` — not a channel-level payment read.
-    private async Task<bool> IsChannelFundedAsync(NotificationChannel? channel, EffectivePlan plan)
-    {
-        if (channel?.BillingAccountId is not { } accountId) return false;
-        var siblings = await db.NotificationChannels.AsNoTracking().Where(c => c.BillingAccountId == accountId).ToListAsync();
-        var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
-        return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
-    }
+    // SAME billing account as `channel` — not a channel-level payment read (ChannelFundingReader).
+    private Task<bool> IsChannelFundedAsync(NotificationChannel? channel, EffectivePlan plan) =>
+        fundingReader.IsFundedAsync(channel, plan);
 
     private static int BuildMask(IReadOnlyList<NotificationType> types)
     {
