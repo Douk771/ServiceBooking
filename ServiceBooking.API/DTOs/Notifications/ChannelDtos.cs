@@ -16,9 +16,8 @@ public record ChannelDto(
     string StateText,
     string? PhoneMasked,
     ChannelPaymentStatus PaymentState,
-    // Deprecated (§47.3): always null from here on — PaidFromUtc is a historical column, no longer
-    // read by business logic (same precedent as NotificationChannel.ContactEmail).
-    DateTime? PaidFrom,
+    // Cycle 22 (ARCHITECTURE_CYCLE22.md §380, Р6): the always-null PaidFrom field is removed. PaidUntil
+    // is the funding's paid-until (the account's WhatsApp option, else its subscription period).
     DateTime? PaidUntil,
     DateTime? RequestedAt,
     DateTime? ConnectedAt,

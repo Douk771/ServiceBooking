@@ -236,7 +236,7 @@ public class NotificationChannelsController(
 
         var nowUtc = DateTime.UtcNow;
         // §47.3: Connect can only bind a FUNDED number — ChannelFunding.Rank over the account's own
-        // live channels, not the channel's own (historical) PaidUntilUtc.
+        // live channels (the channel row has no paid period of its own).
         var funded = await fundingReader.IsFundedAsync(channel, plan);
         var paymentState = funded ? ChannelPaymentStatus.Paid : ChannelPaymentStatus.NotPaid;
         if (!funded)
@@ -504,7 +504,8 @@ public class NotificationChannelsController(
     }
 
     /// <summary>B8 / API_CONTRACT_CYCLE4.md §27, US-63 — replacing a banned number. No re-payment: the
-    /// paid period and company assignments move to a fresh channel row; the old one becomes terminal
+    /// paid period belongs to the billing account (cycle 22, §379) and stays with it; company assignments
+    /// move to a fresh channel row; the old one becomes terminal
     /// (<see cref="ChannelState.Replaced"/>) with a pointer forward. The owner then goes through the
     /// ordinary accept-risk/connect/QR flow (§24) on the new channel — this endpoint only does the move.</summary>
     [HttpPost("{id:guid}/replace")]
@@ -535,8 +536,6 @@ public class NotificationChannelsController(
             Transport = channel.Transport,
             State = ChannelState.NotConnected,
             RequestedAtUtc = DateTime.UtcNow,
-            PaidFromUtc = channel.PaidFromUtc,
-            PaidUntilUtc = channel.PaidUntilUtc,
         };
         db.NotificationChannels.Add(newChannel);
 
@@ -558,11 +557,9 @@ public class NotificationChannelsController(
         channel.ReplacedByChannelId = newChannel.Id;
         channel.State = ChannelState.Replaced;
         channel.LastStateReason = ChannelStateReason.ReplacedAfterBan;
-        // N6: the paid period already moved to newChannel (captured above) — left set here, this
-        // terminal row would still read as ChannelPaymentState.Of(...) == Paid, and an admin summary
-        // that flags "expires within 7 days" would count the SAME paid period twice, once per channel.
-        channel.PaidFromUtc = null;
-        channel.PaidUntilUtc = null;
+        // N6 / cycle 22 (§379, Р2): nothing to move or clear for the paid period — it belongs to the
+        // billing account (its WhatsApp option / subscription), not to the channel row. The terminal row
+        // is never funded (ChannelFunding.Rank skips Replaced), so nothing counts it twice.
         db.ChannelStateEvents.Add(new ChannelStateEvent
         {
             Id = Guid.NewGuid(), ChannelId = channel.Id,
@@ -572,7 +569,10 @@ public class NotificationChannelsController(
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        return StatusCode(201, new ReplaceChannelResponseDto(newChannel.Id, newChannel.PaidUntilUtc, assignments.Count));
+        // The account's paid period as the owner's list shows it for the new channel (ChannelFundingReader).
+        var funding = await fundingReader.LoadAsync([newChannel]);
+        return StatusCode(201, new ReplaceChannelResponseDto(
+            newChannel.Id, funding.GetValueOrDefault(newChannel.Id)?.PaidUntil, assignments.Count));
     }
 
     [HttpPost("{id:guid}/companies")]
@@ -803,10 +803,9 @@ public class NotificationChannelsController(
 
     private Task<int> PlatformIdleDaysAsync() => platformSettings.GetChannelIdleDaysAsync();
 
-    // §47.3: PaymentState/PaidFrom/PaidUntil keep their FORM but their SOURCE is now `funding` (the
-    // account's subscription-driven ranking), not the channel's own historical PaidFromUtc/PaidUntilUtc
-    // columns — those are read here ONLY as the (deprecated, always-null-for-PaidFrom) legacy fields the
-    // contract still exposes, never to decide payment state.
+    // §47.3: PaymentState/PaidUntil keep their FORM but their SOURCE is `funding` (the account's
+    // subscription-driven ranking). Cycle 22 (§379/§380, Р2/Р6): the channel's own PaidFromUtc/PaidUntilUtc
+    // columns are dropped, and so is the always-null PaidFrom field.
     private static ChannelDto MapToDto(
         NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, ChannelFundingInfo> funding)
     {
@@ -820,15 +819,13 @@ public class NotificationChannelsController(
             _ => ChannelPaymentStatus.NotPaid,
         };
         var phoneMasked = channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber);
-        // N6, §47.3: StateText/ChannelDto.paidUntil both read the SUBSCRIPTION's paid-until now, not
-        // channel.PaidUntilUtc (that column is no longer written by anything — see the field's own
-        // remarks below).
+        // N6, §47.3: StateText/ChannelDto.paidUntil both read the funding's paid-until (the WhatsApp
+        // option's, else the subscription's) — the channel row has no paid period of its own.
         var stateText = ChannelPresentation.StateText(channel.State, phoneMasked, idleDays, subscriptionPaidUntil, channel.LastStateReason);
         var riskAccepted = channel.RiskAcceptedAtUtc is not null;
 
         return new ChannelDto(
             channel.Id, channel.Transport, channel.State, stateText, phoneMasked, paymentState,
-            PaidFrom: null, // §47.3: deprecated, always null — PaidFromUtc is a historical column, not read.
             subscriptionPaidUntil, channel.RequestedAtUtc, channel.ConnectedAtUtc,
             channel.RiskAcceptedAtUtc, channel.IdleSinceUtc,
             channel.IdleSinceUtc is not null ? channel.IdleSinceUtc.Value.AddDays(idleDays) : null,

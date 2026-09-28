@@ -332,10 +332,18 @@ public class CompanyNotificationsController(
 
         var assignedChannelIds = await db.ChannelCompanyAssignments.AsNoTracking()
             .Where(a => a.CompanyId == companyId).Select(a => a.ChannelId).ToListAsync(ct);
-        var channelPaidUntil = assignedChannelIds.Count > 0
-            ? await db.NotificationChannels.AsNoTracking()
-                .Where(c => assignedChannelIds.Contains(c.Id)).MaxAsync(c => (DateTime?)c.PaidUntilUtc, ct)
-            : null;
+        // Cycle 22 (§379, Р2): the latest funding paid-until among the company's assigned channels (the
+        // WhatsApp option's, else the subscription period — ChannelFundingReader), not the dropped column.
+        DateTime? channelPaidUntil = null;
+        if (assignedChannelIds.Count > 0)
+        {
+            var assignedChannels = await db.NotificationChannels.AsNoTracking()
+                .Where(c => assignedChannelIds.Contains(c.Id)).ToListAsync(ct);
+            var funding = await fundingReader.LoadAsync(assignedChannels, ct);
+            channelPaidUntil = assignedChannels
+                .Select(c => funding.GetValueOrDefault(c.Id)?.PaidUntil)
+                .Max();
+        }
 
         var companyAssignments = await db.ChannelCompanyAssignments.AsNoTracking()
             .CountAsync(a => assignedChannelIds.Contains(a.ChannelId), ct);
@@ -403,20 +411,26 @@ public class CompanyNotificationsController(
         var priorityAssignment = assignments.FirstOrDefault(a => a.Transport == priorityTransport);
         var channel = priorityAssignment?.Channel;
 
-        // §47.3: ChannelDto/SettingsChannelDto's paymentState keeps its FORM but its SOURCE is now the
-        // account's funding ranking, not the channel's own (historical, unread-by-business-logic)
-        // PaidFromUtc/PaidUntilUtc columns.
-        ChannelPaymentStatus? paymentState = channel is null
-            ? null
-            : channel.IsSuspendedByAdmin
-                ? ChannelPaymentStatus.Suspended
-                : await IsChannelFundedAsync(channel, plan) ? ChannelPaymentStatus.Paid : ChannelPaymentStatus.NotPaid;
+        // §47.3: ChannelDto/SettingsChannelDto's paymentState keeps its FORM but its SOURCE is the
+        // account's funding ranking. Cycle 22 (§379, Р2): paidUntil (and the NeedsReconnect state text's
+        // "оплаченный период до") come from the same funding — the WhatsApp option's PaidUntilUtc, else
+        // the subscription period — instead of the channel's dropped PaidUntilUtc column.
+        ChannelPaymentStatus? paymentState = null;
+        DateTime? paidUntil = null;
+        if (channel is not null)
+        {
+            // The assignment's composite FK pins the channel to the company's own billing account, so the
+            // reader's per-account plan is the same `plan` this screen resolved for the company.
+            var funding = (await fundingReader.LoadAsync([channel])).GetValueOrDefault(channel.Id);
+            paymentState = ChannelPaymentState.Of(channel, funding);
+            paidUntil = funding?.PaidUntil;
+        }
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         var stateText = channel is null ? null : ChannelPresentation.StateText(
             channel.State, channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber),
-            idleDays, channel.PaidUntilUtc, channel.LastStateReason);
+            idleDays, paidUntil, channel.LastStateReason);
 
-        var channelDto = new SettingsChannelDto(channel is not null, channel?.Id, channel?.State, stateText, paymentState, channel?.PaidUntilUtc);
+        var channelDto = new SettingsChannelDto(channel is not null, channel?.Id, channel?.State, stateText, paymentState, paidUntil);
 
         var blockedReason = ChannelPresentation.SettingsBlockedReason(
             plan.AllowNotificationChannel, channel is not null, paymentState, channel?.State);
