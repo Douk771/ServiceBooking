@@ -338,6 +338,9 @@ builder.Services.AddScoped<ServiceBooking.API.Services.NotificationScheduler>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.ChannelFundingReader>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingEventLog>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorResolver>();
+// Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the body of POST /api/bookings, moved out of
+// BookingsController unchanged (+ the shared service-selection validation the slot endpoints use).
+builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingCreationService>();
 builder.Services.AddHttpClient<CaptchaService>();
 // T5-B10 (ARCHITECTURE_CYCLE5.md §50.1, US-74) — reuses the existing CaptchaService/rate-limiting
 // machinery, no new infrastructure.
