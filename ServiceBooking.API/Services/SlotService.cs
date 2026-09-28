@@ -28,6 +28,7 @@ public class SlotService(AppDbContext db, IConfiguration configuration)
         ScheduleFallback fallback = ScheduleFallback.None, Guid? excludeBookingId = null)
     {
         var workingHours = await db.WorkingHours
+            .AsNoTracking() // read-only (§375 F9)
             .Include(wh => wh.Breaks)
             .FirstOrDefaultAsync(wh => wh.MasterId == masterId && wh.CompanyId == companyId && wh.Date == date && wh.IsWorking);
 

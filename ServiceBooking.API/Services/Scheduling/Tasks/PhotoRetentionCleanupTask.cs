@@ -157,7 +157,14 @@ public sealed class PhotoRetentionCleanupTask(
                 // rows (code review finding): EF Core/Npgsql cannot translate a `p => new[] { a, b }`
                 // projection inside the query itself, and throws InvalidOperationException at runtime for
                 // every single run of this task — the exact failure QA reproduced deterministically.
+                //
+                // Cycle 22 (§375 F6): scoped to this company first, so the lookup rides the
+                // (CompanyId, CreatedAt) index instead of scanning every photo row. Exact, not a
+                // narrowing: a photo's files are always written under its own CompanyId's folder
+                // (ClientNotePhotosController — SavePrivateAsync(note.CompanyId, …) with
+                // CompanyId = note.CompanyId), and nothing ever moves a photo row to another company.
                 var known = await db.ClientNotePhotos
+                    .Where(p => p.CompanyId == companyId)
                     .Where(p => keys.Contains(p.StoragePath) || keys.Contains(p.ThumbnailPath))
                     .Select(p => new { p.StoragePath, p.ThumbnailPath })
                     .ToListAsync(ct);
