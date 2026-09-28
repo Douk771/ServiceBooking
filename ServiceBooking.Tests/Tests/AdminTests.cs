@@ -1249,13 +1249,13 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         // SubscriptionPlanConfigs.PricePerMonth is an unbounded `numeric` column, so an extreme value
         // doesn't overflow the DB the way SubscriptionOption's numeric(10,2) does — but it still must be
-        // rejected with a 400 (AdminController.MaxPlanPricePerMonth), because a denormalized plan price
+        // rejected with a 400 (AdminPlansController.MaxPlanPricePerMonth), because a denormalized plan price
         // is exactly the kind of value that turns a LATER addition/multiplication (BillingCalculator.
         // TotalMonthlyPrice) into an unhandled OverflowException — a 500 far away from where the bad
         // data was actually written.
         var admin = await LoginAsSuperAdminAsync();
         var plan = NewPlanConfig();
-        plan.PricePerMonth = AdminController.MaxPlanPricePerMonth + 1;
+        plan.PricePerMonth = AdminPlansController.MaxPlanPricePerMonth + 1;
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/plans", plan);
 

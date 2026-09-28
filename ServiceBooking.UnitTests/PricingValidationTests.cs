@@ -50,20 +50,20 @@ public class PricingValidationTests
 
     [Fact]
     public void ValidatePlanInput_PriceAtTheCeiling_IsAccepted() =>
-        AdminController.ValidatePlanInput(NewPlanInput(AdminController.MaxPlanPricePerMonth)).Should().BeNull();
+        AdminPlansController.ValidatePlanInput(NewPlanInput(AdminPlansController.MaxPlanPricePerMonth)).Should().BeNull();
 
     [Fact]
     public void ValidatePlanInput_PriceAboveTheCeiling_Is400() =>
-        AdminController.ValidatePlanInput(NewPlanInput(AdminController.MaxPlanPricePerMonth + 0.01m))
+        AdminPlansController.ValidatePlanInput(NewPlanInput(AdminPlansController.MaxPlanPricePerMonth + 0.01m))
             .Should().BeOfType<BadRequestObjectResult>();
 
     [Fact]
     public void ValidatePlanInput_NegativeMaxEmployees_Is400() =>
-        AdminController.ValidatePlanInput(NewPlanInput() with { MaxEmployees = -1 })
+        AdminPlansController.ValidatePlanInput(NewPlanInput() with { MaxEmployees = -1 })
             .Should().BeOfType<BadRequestObjectResult>();
 
     [Fact]
     public void ValidatePlanInput_NegativeMaxCompanies_Is400() =>
-        AdminController.ValidatePlanInput(NewPlanInput() with { MaxCompanies = -1 })
+        AdminPlansController.ValidatePlanInput(NewPlanInput() with { MaxCompanies = -1 })
             .Should().BeOfType<BadRequestObjectResult>();
 }
