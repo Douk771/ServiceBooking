@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { format, endOfMonth, startOfMonth } from 'date-fns'
@@ -38,7 +38,17 @@ beforeEach(() => {
 })
 
 describe('BookingCalendar — short booking horizon (defect fix)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('retries with a clamped `to` instead of crashing when the horizon is shorter than the displayed month', async () => {
+    // Pin "today" early in a month: on the real date, from the ~28th on, today + 3 days already spills
+    // into the next month, the horizon is no longer shorter than the displayed month and no retry
+    // happens — the test was red on those days (CURRENT_STATE.md §9 C21-1). Only Date is faked, so
+    // waitFor's own timers keep running.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 10, 12, 0, 0))
     const today = new Date()
     const horizonDays = 3 // company set a horizon far shorter than "rest of this month"
     const horizonLastDate = new Date(today)

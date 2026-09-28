@@ -21,8 +21,7 @@
 - **Что НЕ менялось.** `public/sw.js` (ни строки, запрет на `fetch`/кеш — в силе), бэкенд, API, БД,
   миграции (**70** файлов, как и было), сроки хранения. Новых эндпоинтов — 0.
 - **Тесты.** `CY21-01…CY21-15` (vitest), `TEST_CATALOG.md` раздел «Цикл 21». Полный `vitest run` —
-  632/633; красный `BookingCalendar.test.tsx › short booking horizon` **красный и на `develop`**:
-  зависит от текущей даты — долг **C21-1**.
+  633/633 после закрытия ✅ **C21-1** (датозависимый тест `BookingCalendar`, был красным и на `develop`).
 - **Условие выката (C21-2).** Apple отвергает VAPID `sub`, если это не настоящий `mailto:`/`https:`
   (`403 BadJwtToken`); `DeploymentSafetyChecks` проверяет только непустоту `WEBPUSH_VAPID_SUBJECT` —
   сверить значение на сервере. После выката — ручная проверка на iPhone (`ARCHITECTURE_CYCLE21.md` §365).
@@ -8896,8 +8895,8 @@ V1 (в частности, `consents/revoke-preview` как оракул чуж�
 
 ### 📲 Цикл 21 — C21-1…C21-2
 
-- **C21-1. `frontend/src/components/booking/BookingCalendar.test.tsx` › «retries with a clamped `to`…»
-  зависит от текущей даты** и красный на `develop` (`e3774c1`) 2026-09-28: ближе к концу месяца горизонт
+- ✅ **C21-1 (закрыт в цикле 21). `frontend/src/components/booking/BookingCalendar.test.tsx` › «retries with a clamped `to`…»
+  зависел от текущей даты** и красный на `develop` (`e3774c1`) 2026-09-28: ближе к концу месяца горизонт
   записи уже не короче остатка месяца, повторного запроса не происходит, ожидание «2 вызова» не
   выполняется. Лечится фиксацией времени в тесте (`vi.useFakeTimers` / `vi.setSystemTime`). Продуктовый
   код не затронут; к циклу 19 не относится.
