@@ -9,6 +9,7 @@ using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Legal;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
@@ -252,36 +253,43 @@ public class AdminController(
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         search = Pagination.SanitizeSearch(search);
-        var query = db.Companies
-            .Include(c => c.Members)
-            .AsQueryable();
+        var query = db.Companies.AsNoTracking();
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(c => c.Name.Contains(search) || c.Email!.Contains(search));
 
         var total = await query.CountAsync();
+        // §375 F10: the member count is projected (COUNT in SQL), not every member row Include()d.
         var companies = await query.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
-            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
+            .Select(c => new
+            {
+                c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
+                c.OwnerUserId, c.BillingAccountId, MemberCount = c.Members.Count,
+            })
+            .ToListAsync();
         var ids = companies.Select(c => c.Id).ToList();
         var ownerIds = companies.Select(c => c.OwnerUserId).Distinct().ToList();
         // The tariff is account-level (§45.1): it belongs to the company's BillingAccountId, not to
         // OwnerUserId directly — OwnerUserId here is only used to show the responsible person's email.
         var accountIds = companies.Where(c => c.BillingAccountId.HasValue)
             .Select(c => c.BillingAccountId!.Value).Distinct().ToList();
-        var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
+        var subs = await db.AccountSubscriptions.AsNoTracking().Include(s => s.PlanConfig)
             .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync();
+        // BillingAccountId is unique on AccountSubscriptions — one row per account at most.
+        var subByAccount = subs.ToDictionary(s => s.BillingAccountId!.Value);
         var ownerEmails = await db.Users.Where(u => ownerIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Email ?? u.PhoneNumber ?? u.Id);
         var bookingCounts = await db.Bookings
             .Where(b => ids.Contains(b.CompanyId))
             .GroupBy(b => b.CompanyId)
             .Select(g => new { CompanyId = g.Key, Count = g.Count() })
-            .ToListAsync();
+            .ToDictionaryAsync(x => x.CompanyId, x => x.Count);
 
         var result = companies.Select(c =>
         {
-            var sub = c.BillingAccountId.HasValue ? subs.FirstOrDefault(s => s.BillingAccountId == c.BillingAccountId) : null;
-            var count = bookingCounts.FirstOrDefault(x => x.CompanyId == c.Id)?.Count ?? 0;
+            var sub = c.BillingAccountId.HasValue ? subByAccount.GetValueOrDefault(c.BillingAccountId.Value) : null;
+            var count = bookingCounts.GetValueOrDefault(c.Id);
             return new AdminCompanyDto(c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
-                c.Members.Count, count, c.OwnerUserId, ownerEmails.GetValueOrDefault(c.OwnerUserId, c.OwnerUserId),
+                c.MemberCount, count, c.OwnerUserId, ownerEmails.GetValueOrDefault(c.OwnerUserId, c.OwnerUserId),
                 sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true);
         }).ToList();
 
@@ -448,6 +456,7 @@ public class AdminController(
         [FromQuery] BookingStatus? status)
     {
         var query = db.Bookings
+            .AsNoTracking()
             .Include(b => b.Service)
             .Include(b => b.Master)
             .Include(b => b.Client)
@@ -467,9 +476,7 @@ public class AdminController(
             // US-67 (ARCHITECTURE_CYCLE6.md §47.2): the visit shown as one line — comma-joined service
             // names — rather than one row per service. Falls back to Service.Name only if
             // BookingServices somehow has no rows (should never happen after the backfill).
-            b.BookingServices.Count > 0
-                ? string.Join(", ", b.BookingServices.OrderBy(bs => bs.Position).Select(bs => bs.NameSnapshot))
-                : b.Service.Name,
+            string.Join(", ", b.ServiceNames()),
             $"{b.Master.FirstName} {b.Master.LastName}",
             b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Гость",
             b.GuestPhone ?? b.Client?.PhoneNumber,
@@ -535,12 +542,9 @@ public class AdminController(
         db.SubscriptionPlanConfigs.Add(plan);
         await db.SaveChangesAsync();
         pricingCatalogCache.Invalidate();
-        // A brand-new plan has no subscribers yet — no need for the AccountSubscriptions round trip
-        // GetActiveSubscriberCountsAsync does for the list/update endpoints.
+        // A brand-new plan has no subscribers yet — no need for the AccountSubscriptions round trip.
         // Contract (API_CONTRACT_CYCLE7.md) documents 201 Created for a successful create, not 200.
-        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync();
-        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
-        return StatusCode(StatusCodes.Status201Created, MapAdminPlanDto(plan, subscribedAccounts: 0, rules, totalOptionsInCatalog));
+        return StatusCode(StatusCodes.Status201Created, await BuildAdminPlanDtoAsync(plan, isNew: true));
     }
 
     [HttpPut("plans/{id:guid}")]
@@ -618,10 +622,7 @@ public class AdminController(
             return Conflict("Another plan is already marked as the system free plan.");
         }
         pricingCatalogCache.Invalidate();
-        var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
-        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
-        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog));
+        return Ok(await BuildAdminPlanDtoAsync(plan));
     }
 
     /// <summary>
@@ -637,11 +638,7 @@ public class AdminController(
         if (plan is null) return NotFound();
 
         if (plan.IsSystemFree == dto.IsSystemFree)
-        {
-            var unchangedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
-            var unchangedRules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-            return Ok(MapAdminPlanDto(plan, unchangedAccounts, unchangedRules, await db.SubscriptionOptions.CountAsync()));
-        }
+            return Ok(await BuildAdminPlanDtoAsync(plan));
 
         if (!dto.IsSystemFree && plan.IsSystemFree)
         {
@@ -685,9 +682,7 @@ public class AdminController(
             return Conflict("Another plan is already marked as the system free plan.");
         }
         pricingCatalogCache.Invalidate();
-        var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
-        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, await db.SubscriptionOptions.CountAsync()));
+        return Ok(await BuildAdminPlanDtoAsync(plan));
     }
 
     /// <summary>
@@ -703,13 +698,9 @@ public class AdminController(
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
 
-        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
-        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-        var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
-
         // Idempotent — same value is a no-op 200 (§366).
         if (plan.IsSystemTrial == dto.IsSystemTrial)
-            return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog));
+            return Ok(await BuildAdminPlanDtoAsync(plan));
 
         if (dto.IsSystemTrial)
         {
@@ -732,7 +723,7 @@ public class AdminController(
             return Conflict("Другой тариф уже помечен как пробный период.");
         }
         pricingCatalogCache.Invalidate();
-        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog));
+        return Ok(await BuildAdminPlanDtoAsync(plan));
     }
 
     [HttpDelete("plans/{id:guid}")]
@@ -766,6 +757,20 @@ public class AdminController(
         await db.SaveChangesAsync();
         pricingCatalogCache.Invalidate();
         return NoContent();
+    }
+
+    /// <summary>
+    /// Cycle 22 D8 — the single-plan admin DTO every plan endpoint returns (create, update, the two
+    /// flag endpoints): active subscribers of this plan, its option rules, the catalog size. A plan
+    /// created in this very request has no subscribers — <paramref name="isNew"/> skips that count.
+    /// </summary>
+    private async Task<AdminPlanDto> BuildAdminPlanDtoAsync(SubscriptionPlanConfig plan, bool isNew = false)
+    {
+        var subscribedAccounts = isNew ? 0
+            : await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == plan.Id && s.IsActive);
+        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync();
+        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
+        return MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog);
     }
 
     private async Task<Dictionary<Guid, int>> GetActiveSubscriberCountsAsync(IEnumerable<Guid> planIds)
@@ -971,14 +976,24 @@ public class AdminController(
         // count (one row per channel, not per message) a full materialize-then-filter is acceptable; see
         // ChannelPaymentState's own doc comment for why this can never become a stored column.
         var nowUtc = DateTime.UtcNow;
-        var all = await query.ToListAsync();
-        var filtered = paymentState.HasValue
-            ? all.Where(c => ChannelPaymentState.Of(c, nowUtc) == paymentState.Value).ToList()
-            : all;
-
-        var total = filtered.Count;
-        var page1 = filtered.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
-            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
+        int total;
+        List<NotificationChannel> page1;
+        if (paymentState.HasValue)
+        {
+            var filtered = (await query.ToListAsync())
+                .Where(c => ChannelPaymentState.Of(c, nowUtc) == paymentState.Value).ToList();
+            total = filtered.Count;
+            page1 = filtered.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
+                .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToList();
+        }
+        else
+        {
+            // §375 F12: without the computed payment filter, count and page in SQL — same order
+            // (CreatedAt DESC, then Id: uuid order in Postgres equals Guid.CompareTo order).
+            total = await query.CountAsync();
+            page1 = await query.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
+                .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
+        }
 
         var ownerIds = page1.Select(c => c.OwnerUserId).Distinct().ToList();
         var owners = await db.Users.AsNoTracking().Where(u => ownerIds.Contains(u.Id))
