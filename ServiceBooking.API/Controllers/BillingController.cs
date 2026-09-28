@@ -23,10 +23,10 @@ public class BillingController(
 {
     // ── Cycle 18 (API_CONTRACT_CYCLE18.md §362-§363.1) ────────────────────────────────────────────
     [HttpGet("trial")]
-    public async Task<ActionResult<TrialStateDto>> GetTrial()
+    public async Task<ActionResult<TrialStateDto>> GetTrial(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var dto = await trialStateReader.GetAsync(userId);
+        var dto = await trialStateReader.GetAsync(userId, ct);
         return dto is null ? NotFound() : Ok(dto);
     }
 

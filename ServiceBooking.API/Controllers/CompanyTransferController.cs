@@ -23,9 +23,9 @@ namespace ServiceBooking.API.Controllers;
 public class CompanyTransferController(AppDbContext db, CompanyTransferService transferService, AccountUsageReader usageReader) : ControllerBase
 {
     [HttpGet("{companyId:guid}/transfer/preview")]
-    public async Task<IActionResult> Preview(Guid companyId, [FromQuery] Guid targetBillingAccountId, [FromQuery] string? newOwnerUserId)
+    public async Task<IActionResult> Preview(Guid companyId, [FromQuery] Guid targetBillingAccountId, [FromQuery] string? newOwnerUserId, CancellationToken ct)
     {
-        var company = await db.Companies.FindAsync(companyId);
+        var company = await db.Companies.FindAsync([companyId], ct);
         if (company is null) return NotFound();
 
         var result = await transferService.PreviewAsync(companyId, targetBillingAccountId, newOwnerUserId);
@@ -66,9 +66,9 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             ownerUnchangedNotice = $"Ответственный не меняется: компанией продолжит управлять {currentOwnerName}.";
         }
 
-        var willDetach = await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == companyId);
+        var willDetach = await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == companyId, ct);
         var willCancel = await db.OutboundNotifications.CountAsync(n =>
-            n.CompanyId == companyId && n.Status == NotificationStatus.Pending);
+            n.CompanyId == companyId && n.Status == NotificationStatus.Pending, ct);
 
         var dto = new CompanyTransferPreviewDto(
             company.Id, company.Name, seatsOfCompany, sourceSide, targetSide,
@@ -106,15 +106,15 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
     }
 
     [HttpGet("{companyId:guid}/owner-history")]
-    public async Task<IActionResult> GetOwnerHistory(Guid companyId)
+    public async Task<IActionResult> GetOwnerHistory(Guid companyId, CancellationToken ct)
     {
-        if (!await db.Companies.AnyAsync(c => c.Id == companyId)) return NotFound();
+        if (!await db.Companies.AnyAsync(c => c.Id == companyId, ct)) return NotFound();
 
         var logs = await db.CompanyOwnerChangeLogs.Where(l => l.CompanyId == companyId)
-            .OrderByDescending(l => l.ChangedAtUtc).ToListAsync();
+            .OrderByDescending(l => l.ChangedAtUtc).ToListAsync(ct);
 
         var userIds = logs.SelectMany(l => new[] { l.OldOwnerUserId, l.NewOwnerUserId, l.ChangedByUserId }).Distinct().ToList();
-        var names = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+        var names = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim(), ct);
 
         var items = logs.Select(l => new CompanyOwnerChangeDto(
             l.Id, l.ChangedAtUtc, names.GetValueOrDefault(l.ChangedByUserId, l.ChangedByUserId),

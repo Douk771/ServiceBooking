@@ -51,13 +51,13 @@ public class MailingController(AppDbContext db, SubscriptionResolver subscriptio
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetHistory(Guid id)
+    public async Task<IActionResult> GetHistory(Guid id, CancellationToken ct)
     {
         if (!await CanManageCompany(id)) return Forbid();
         var logs = await db.MailLogs
             .Where(m => m.CompanyId == id)
             .OrderByDescending(m => m.SentAt)
-            .ToListAsync();
+            .ToListAsync(ct);
         return Ok(logs);
     }
 

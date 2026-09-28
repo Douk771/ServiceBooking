@@ -29,11 +29,11 @@ public class CompaniesController(
     IOptions<GeoOptions> geoOptions) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<List<CompanyDto>>> GetAll()
+    public async Task<ActionResult<List<CompanyDto>>> GetAll(CancellationToken ct)
     {
         // §375 F21: the owner's own opt-in (ShowInPublicListing, see below) is a plain column — filtered
         // in SQL, so opted-out companies are never loaded, nor resolved/rated/covered below.
-        var companies = await db.Companies.AsNoTracking().Where(c => c.IsActive && c.ShowInPublicListing).ToListAsync();
+        var companies = await db.Companies.AsNoTracking().Where(c => c.IsActive && c.ShowInPublicListing).ToListAsync(ct);
         var plans = await subscriptionResolver.GetEffectivePlansAsync(companies.Select(c => c.Id));
         var ratings = await GetReviewAggregatesAsync(companies.Select(c => c.Id));
         var cities = await GetCitiesAsync(companies.Select(c => c.CityId));
@@ -69,7 +69,8 @@ public class CompaniesController(
     // promised behavior for malformed input, not just out-of-range input.
     [HttpGet("public")]
     public async Task<ActionResult<ServiceBooking.API.DTOs.Common.PagedResult<CompanyDto>>> GetPublic(
-        [FromQuery] int? cityId, [FromQuery] string? search, [FromQuery] string? page, [FromQuery] string? pageSize)
+        [FromQuery] int? cityId, [FromQuery] string? search, [FromQuery] string? page, [FromQuery] string? pageSize,
+        CancellationToken ct)
     {
         var (normalizedPage, normalizedPageSize) = ServiceBooking.API.DTOs.Common.Pagination.Normalize(
             ServiceBooking.API.DTOs.Common.Pagination.ParseNullableInt(page),
@@ -108,11 +109,11 @@ public class CompaniesController(
 
         query = query.OrderBy(c => c.Name).ThenBy(c => c.Id);
 
-        var total = await query.CountAsync();
+        var total = await query.CountAsync(ct);
         var pageItems = await query
             .Skip((normalizedPage - 1) * normalizedPageSize)
             .Take(normalizedPageSize)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         // Rating/city/cover lookups and plan resolution (for the DTO's plan-derived fields, not for
         // filtering) stay batched for the page only, same as GetAll/GetMy/GetMemberOf above — covers are
@@ -131,13 +132,13 @@ public class CompaniesController(
 
     [HttpGet("my")]
     [Authorize]
-    public async Task<ActionResult<List<CompanyDto>>> GetMy()
+    public async Task<ActionResult<List<CompanyDto>>> GetMy(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var memberships = await db.CompanyMembers
             .Include(cm => cm.Company)
             .Where(cm => cm.UserId == userId && cm.Role == UserRole.CompanyOwner && cm.Company.IsActive)
-            .ToListAsync();
+            .ToListAsync(ct);
         // GetMy only ever returns CompanyOwner memberships (the query above filters on
         // cm.Role == UserRole.CompanyOwner), so every row here is a company this caller manages.
         return Ok(await MapMembershipsToDtosAsync(memberships, canManage: _ => true));
@@ -146,13 +147,13 @@ public class CompaniesController(
     // Returns all companies where the current user is a member (any role)
     [HttpGet("member")]
     [Authorize]
-    public async Task<ActionResult<List<CompanyDto>>> GetMemberOf()
+    public async Task<ActionResult<List<CompanyDto>>> GetMemberOf(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var memberships = await db.CompanyMembers
             .Include(cm => cm.Company)
             .Where(cm => cm.UserId == userId && cm.Company.IsActive)
-            .ToListAsync();
+            .ToListAsync(ct);
         // §232/§237, review finding (cycle 13 review, blocking #2): unlike GetMy, this endpoint returns
         // companies for EVERY membership role — a Master's own membership row must not light up
         // addressVerification.available. SuperAdmin manages every company regardless of membership role.
@@ -186,9 +187,9 @@ public class CompaniesController(
     }
 
     [HttpGet("{slug}")]
-    public async Task<ActionResult<CompanyDto>> GetBySlug(string slug)
+    public async Task<ActionResult<CompanyDto>> GetBySlug(string slug, CancellationToken ct)
     {
-        var c = await db.Companies.FirstOrDefaultAsync(c => c.Slug == slug && c.IsActive);
+        var c = await db.Companies.FirstOrDefaultAsync(c => c.Slug == slug && c.IsActive, ct);
         if (c is null) return NotFound();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(c.Id);
@@ -197,7 +198,7 @@ public class CompaniesController(
         // GET /api/companies/{companyId}/reviews happens to have loaded (which visibly changed as the
         // caller paged through reviews — ARCHITECTURE.md §11.2/§21.5 pagination note).
         var (averageRating, reviewCount) = await GetReviewAggregateAsync(c.Id);
-        var city = c.CityId.HasValue ? await db.Cities.FindAsync(c.CityId.Value) : null;
+        var city = c.CityId.HasValue ? await db.Cities.FindAsync([c.CityId.Value], ct) : null;
         // §109.3: the public page is the ONE place `photos` is filled — gallery with zero extra
         // requests. The cover is just photos[0] here, so it's derived rather than queried a second time.
         var photos = await GetPhotosOrderedAsync(c.Id);
@@ -210,7 +211,8 @@ public class CompaniesController(
     // Public: list masters for a company, optionally filtered by serviceId
     [HttpGet("{id:guid}/masters")]
     public async Task<ActionResult<List<MasterPublicDto>>> GetMasters(
-        Guid id, [FromQuery] string? serviceId, [FromQuery] bool includeHidden = false)
+        Guid id, [FromQuery] string? serviceId, [FromQuery] bool includeHidden = false,
+        CancellationToken ct = default)
     {
         // serviceId is bound as string (not Guid?) on purpose: ASP.NET Core's default model binder
         // treats an empty string for a nullable Guid query param as "absent" and silently maps it to
@@ -248,14 +250,14 @@ public class CompaniesController(
             var masterIdsForService = await db.MasterServices
                 .Where(ms => ms.ServiceId == parsedServiceId.Value)
                 .Select(ms => ms.MasterId)
-                .ToListAsync();
+                .ToListAsync(ct);
 
             // If no service assignments exist for anyone, show all masters (fallback)
             if (masterIdsForService.Count > 0)
                 memberQuery = memberQuery.Where(cm => masterIdsForService.Contains(cm.UserId));
         }
 
-        var members = await memberQuery.ToListAsync();
+        var members = await memberQuery.ToListAsync(ct);
 
         return Ok(members.Select(cm => new MasterPublicDto(
             cm.UserId, cm.User.FirstName, cm.User.LastName, cm.User.AvatarUrl, cm.Bio, cm.ProvidesServices
@@ -264,19 +266,19 @@ public class CompaniesController(
 
     [HttpGet("{id:guid}/members")]
     [Authorize]
-    public async Task<ActionResult<List<MemberDto>>> GetMembers(Guid id)
+    public async Task<ActionResult<List<MemberDto>>> GetMembers(Guid id, CancellationToken ct)
     {
         if (!await CanManageCompany(id)) return Forbid();
 
         var members = await db.CompanyMembers
             .Include(cm => cm.User)
             .Where(cm => cm.CompanyId == id)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var userIds = members.Select(m => m.UserId).ToList();
         var masterServices = await db.MasterServices
             .Where(ms => userIds.Contains(ms.MasterId))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var result = members.Select(cm => new MemberDto(
             cm.Id, cm.UserId, cm.User.FirstName, cm.User.LastName,
@@ -640,9 +642,9 @@ public class CompaniesController(
     // over every company in a list (ARCHITECTURE.md §12.3). One call, one company, one screen.
     [HttpGet("{id:guid}/photo-usage")]
     [Authorize]
-    public async Task<ActionResult<CompanyPhotoUsageDto>> GetPhotoUsage(Guid id)
+    public async Task<ActionResult<CompanyPhotoUsageDto>> GetPhotoUsage(Guid id, CancellationToken ct)
     {
-        var company = await db.Companies.FindAsync(id);
+        var company = await db.Companies.FindAsync([id], ct);
         if (company is null) return NotFound();
 
         // Staff of THIS company, or SuperAdmin — this is the one place SuperAdmin gets numbers about
@@ -652,8 +654,8 @@ public class CompaniesController(
             (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, id, userId));
         if (!isAllowed) return Forbid();
 
-        var usedBytes = await db.ClientNotePhotos.Where(p => p.CompanyId == id).SumAsync(p => (long?)p.SizeBytes) ?? 0;
-        var photoCount = await db.ClientNotePhotos.CountAsync(p => p.CompanyId == id);
+        var usedBytes = await db.ClientNotePhotos.Where(p => p.CompanyId == id).SumAsync(p => (long?)p.SizeBytes, ct) ?? 0;
+        var photoCount = await db.ClientNotePhotos.CountAsync(p => p.CompanyId == id, ct);
         var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
 
         double? percentUsed = plan.PhotoQuotaMb is { } quotaMb && quotaMb > 0

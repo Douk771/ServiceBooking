@@ -29,24 +29,24 @@ public class AdminController(
     // ── Stats ──────────────────────────────────────────────────────────────────
 
     [HttpGet("stats")]
-    public async Task<ActionResult<AdminStatsDto>> GetStats()
+    public async Task<ActionResult<AdminStatsDto>> GetStats(CancellationToken ct)
     {
-        var totalCompanies = await db.Companies.CountAsync();
-        var totalUsers = await db.Users.CountAsync();
-        var totalBookings = await db.Bookings.CountAsync();
-        var completedBookings = await db.Bookings.CountAsync(b => b.Status == BookingStatus.Completed);
+        var totalCompanies = await db.Companies.CountAsync(ct);
+        var totalUsers = await db.Users.CountAsync(ct);
+        var totalBookings = await db.Bookings.CountAsync(ct);
+        var completedBookings = await db.Bookings.CountAsync(b => b.Status == BookingStatus.Completed, ct);
 
         var revenueByService = await db.Bookings
             .Where(b => b.Status == BookingStatus.Completed)
             .GroupBy(b => 1)
             .Select(g => g.Sum(b => b.Price))
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(ct);
 
         // §50.1: visible without opening the subject-requests section — a one-person, no-shift-rotation
         // operator (Р8) must see this without remembering to go looking for it.
         var nowUtc = DateTime.UtcNow;
         var overdueSubjectRequests = await db.SubjectRequests.CountAsync(r =>
-            r.DueAtUtc < nowUtc && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected);
+            r.DueAtUtc < nowUtc && r.Status != SubjectRequestStatus.Answered && r.Status != SubjectRequestStatus.Rejected, ct);
 
         return Ok(new AdminStatsDto(totalCompanies, totalUsers, totalBookings, completedBookings, revenueByService, overdueSubjectRequests));
     }
@@ -56,7 +56,8 @@ public class AdminController(
     [HttpGet("subject-requests")]
     public async Task<ActionResult<PagedResult<SubjectRequestDto>>> GetSubjectRequests(
         [FromQuery] SubjectRequestStatus? status, [FromQuery] SubjectRequestKind? kind, [FromQuery] string? dueState,
-        [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] int? page, [FromQuery] int? pageSize,
+        CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.SubjectRequests.AsNoTracking().AsQueryable();
@@ -81,16 +82,16 @@ public class AdminController(
             };
         }
 
-        var total = await query.CountAsync();
+        var total = await query.CountAsync(ct);
         // Urgent-first, always — §50.1: "самое горящее сверху", not a caller-chosen sort.
         var rows = await query.OrderBy(r => r.DueAtUtc)
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var handlerIds = rows.Where(r => r.HandlerUserId is not null).Select(r => r.HandlerUserId!).Distinct().ToList();
         var handlerNames = handlerIds.Count == 0 ? new Dictionary<string, string>()
             : await db.Users.Where(u => handlerIds.Contains(u.Id))
-                .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+                .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim(), ct);
 
         var items = rows.Select(r => new SubjectRequestDto(
             r.Id, r.Reference, r.Kind.ToString(), r.Status.ToString(), PhoneDisplayMask.Mask(r.SubjectPhone),
@@ -141,7 +142,8 @@ public class AdminController(
 
     [HttpGet("users")]
     public async Task<ActionResult<PagedResult<AdminUserDto>>> GetUsers(
-        [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize,
+        CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         search = Pagination.SanitizeSearch(search);
@@ -170,9 +172,9 @@ public class AdminController(
 
         // US-49 p.6: tie-break by Id — CreatedAt alone doesn't guarantee a deterministic order for rows
         // with equal timestamps, and without one, page 2 can reshow (or skip) a row page 1 already showed.
-        var total = await query.CountAsync();
+        var total = await query.CountAsync(ct);
         var users = await query.OrderBy(u => u.CreatedAt).ThenBy(u => u.Id)
-            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync(ct);
         var userIds = users.Select(u => u.Id).ToList();
 
         // Subscriptions are account-level (§45.1) — resolve each user's billing account first, then
@@ -181,16 +183,16 @@ public class AdminController(
         var accounts = await db.BillingAccounts
             .Where(a => userIds.Contains(a.OwnerUserId))
             .Select(a => new { a.OwnerUserId, a.Id })
-            .ToListAsync();
+            .ToListAsync(ct);
         var accountIdByUser = accounts.ToDictionary(a => a.OwnerUserId, a => a.Id);
         var accountIds = accounts.Select(a => a.Id).ToList();
         var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
-            .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync();
+            .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync(ct);
         var ownedCounts = await db.Companies
             .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value))
             .GroupBy(c => c.BillingAccountId!.Value)
             .Select(g => new { BillingAccountId = g.Key, Count = g.Count() })
-            .ToListAsync();
+            .ToListAsync(ct);
 
         // US-49 p.3: ONE join for the whole page's roles instead of userManager.GetRolesAsync(u) inside
         // the loop below — the previous shape made N extra queries per page, independent of page size
@@ -199,7 +201,7 @@ public class AdminController(
         var roleMap = await (from ur in db.UserRoles
                               join r in db.Roles on ur.RoleId equals r.Id
                               where userIds.Contains(ur.UserId)
-                              select new { ur.UserId, r.Name }).ToListAsync();
+                              select new { ur.UserId, r.Name }).ToListAsync(ct);
         var rolesByUser = roleMap.GroupBy(x => x.UserId)
             .ToDictionary(g => g.Key, g => g.Select(x => x.Name ?? "").ToList());
 
@@ -249,7 +251,8 @@ public class AdminController(
 
     [HttpGet("companies")]
     public async Task<ActionResult<PagedResult<AdminCompanyDto>>> GetCompanies(
-        [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize,
+        CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         search = Pagination.SanitizeSearch(search);
@@ -257,7 +260,7 @@ public class AdminController(
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(c => c.Name.Contains(search) || c.Email!.Contains(search));
 
-        var total = await query.CountAsync();
+        var total = await query.CountAsync(ct);
         // §375 F10: the member count is projected (COUNT in SQL), not every member row Include()d.
         var companies = await query.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id)
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
@@ -266,7 +269,7 @@ public class AdminController(
                 c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
                 c.OwnerUserId, c.BillingAccountId, MemberCount = c.Members.Count,
             })
-            .ToListAsync();
+            .ToListAsync(ct);
         var ids = companies.Select(c => c.Id).ToList();
         var ownerIds = companies.Select(c => c.OwnerUserId).Distinct().ToList();
         // The tariff is account-level (§45.1): it belongs to the company's BillingAccountId, not to
@@ -274,15 +277,15 @@ public class AdminController(
         var accountIds = companies.Where(c => c.BillingAccountId.HasValue)
             .Select(c => c.BillingAccountId!.Value).Distinct().ToList();
         var subs = await db.AccountSubscriptions.AsNoTracking().Include(s => s.PlanConfig)
-            .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync();
+            .Where(s => s.BillingAccountId != null && accountIds.Contains(s.BillingAccountId!.Value)).ToListAsync(ct);
         // BillingAccountId is unique on AccountSubscriptions — one row per account at most.
         var subByAccount = subs.ToDictionary(s => s.BillingAccountId!.Value);
-        var ownerEmails = await db.Users.Where(u => ownerIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Email ?? u.PhoneNumber ?? u.Id);
+        var ownerEmails = await db.Users.Where(u => ownerIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Email ?? u.PhoneNumber ?? u.Id, ct);
         var bookingCounts = await db.Bookings
             .Where(b => ids.Contains(b.CompanyId))
             .GroupBy(b => b.CompanyId)
             .Select(g => new { CompanyId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.CompanyId, x => x.Count);
+            .ToDictionaryAsync(x => x.CompanyId, x => x.Count, ct);
 
         var result = companies.Select(c =>
         {
@@ -312,16 +315,16 @@ public class AdminController(
     /// call it, but the contract didn't mark it Gone, and support engineers may still hit it directly.
     /// </summary>
     [HttpGet("owners/{ownerUserId}/subscription")]
-    public async Task<ActionResult<SubscriptionDiagnosticsDto>> GetSubscriptionDiagnostics(string ownerUserId)
+    public async Task<ActionResult<SubscriptionDiagnosticsDto>> GetSubscriptionDiagnostics(string ownerUserId, CancellationToken ct)
     {
-        var owner = await db.Users.FirstOrDefaultAsync(u => u.Id == ownerUserId);
+        var owner = await db.Users.FirstOrDefaultAsync(u => u.Id == ownerUserId, ct);
         if (owner is null) return NotFound("Owner not found");
 
-        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId, ct);
 
         var sub = account is null ? null : await db.AccountSubscriptions
             .Include(s => s.PlanConfig)
-            .FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
+            .FirstOrDefaultAsync(s => s.BillingAccountId == account.Id, ct);
 
         var nowUtc = DateTime.UtcNow;
         var effective = account is null
@@ -339,7 +342,7 @@ public class AdminController(
             ? new List<Company>()
             : await db.Companies.Where(c => c.BillingAccountId == account.Id)
                 .Select(c => new Company { Id = c.Id, Name = c.Name, AllowSelfBooking = c.AllowSelfBooking })
-                .ToListAsync();
+                .ToListAsync(ct);
 
         var companyDtos = companies.Select(c =>
         {
@@ -360,23 +363,23 @@ public class AdminController(
     }
 
     [HttpGet("owners/{ownerUserId}/subscription-history")]
-    public async Task<ActionResult<List<SubscriptionChangeLogDto>>> GetSubscriptionHistory(string ownerUserId)
+    public async Task<ActionResult<List<SubscriptionChangeLogDto>>> GetSubscriptionHistory(string ownerUserId, CancellationToken ct)
     {
         var logs = await db.SubscriptionChangeLogs
             .Where(l => l.OwnerUserId == ownerUserId)
             .OrderByDescending(l => l.ChangedAt)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var configIds = logs.SelectMany(l => new[] { l.OldPlanConfigId, l.NewPlanConfigId })
             .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
         var configNames = await db.SubscriptionPlanConfigs
             .Where(p => configIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, p => p.Name);
+            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
 
         var changedByIds = logs.Select(l => l.ChangedByUserId).Distinct().ToList();
         var changedByEmails = await db.Users
             .Where(u => changedByIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u.Email ?? u.PhoneNumber ?? u.Id);
+            .ToDictionaryAsync(u => u.Id, u => u.Email ?? u.PhoneNumber ?? u.Id, ct);
 
         return Ok(logs.Select(l => new SubscriptionChangeLogDto(
             l.Id, l.ChangedAt, changedByEmails.GetValueOrDefault(l.ChangedByUserId, l.ChangedByUserId),
@@ -453,7 +456,8 @@ public class AdminController(
         [FromQuery] Guid? companyId,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
-        [FromQuery] BookingStatus? status)
+        [FromQuery] BookingStatus? status,
+        CancellationToken ct)
     {
         var query = db.Bookings
             .AsNoTracking()
@@ -469,7 +473,7 @@ public class AdminController(
         if (to.HasValue) query = query.Where(b => b.Date <= to);
         if (status.HasValue) query = query.Where(b => b.Status == status);
 
-        var bookings = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime).Take(500).ToListAsync();
+        var bookings = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime).Take(500).ToListAsync(ct);
 
         return Ok(bookings.Select(b => new AdminBookingDto(
             b.Id, b.Company.Name,
@@ -485,12 +489,12 @@ public class AdminController(
     // ── Subscription Plan Configs ──────────────────────────────────────────────
 
     [HttpGet("plans")]
-    public async Task<IActionResult> GetPlans()
+    public async Task<IActionResult> GetPlans(CancellationToken ct)
     {
-        var plans = await db.SubscriptionPlanConfigs.OrderBy(p => p.PricePerMonth).ToListAsync();
+        var plans = await db.SubscriptionPlanConfigs.OrderBy(p => p.PricePerMonth).ToListAsync(ct);
         var subscriberCounts = await GetActiveSubscriberCountsAsync(plans.Select(p => p.Id));
-        var rules = await db.PlanOptionRules.Where(r => plans.Select(p => p.Id).Contains(r.PlanConfigId)).ToListAsync();
-        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
+        var rules = await db.PlanOptionRules.Where(r => plans.Select(p => p.Id).Contains(r.PlanConfigId)).ToListAsync(ct);
+        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync(ct);
         return Ok(new AdminPlansListDto(plans.Select(p =>
             MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id), rules.Where(r => r.PlanConfigId == p.Id).ToList(), totalOptionsInCatalog)).ToList()));
     }
@@ -936,9 +940,10 @@ public class AdminController(
     // action means that cost is only ever paid here.
     [HttpGet("scheduled-tasks")]
     public async Task<ActionResult<List<ScheduledTaskStatusDto>>> GetScheduledTasks(
-        [FromServices] IEnumerable<IScheduledTask> scheduledTasks, [FromServices] IConfiguration config)
+        [FromServices] IEnumerable<IScheduledTask> scheduledTasks, [FromServices] IConfiguration config,
+        CancellationToken ct)
     {
-        var states = await db.ScheduledTaskStates.ToDictionaryAsync(s => s.Name);
+        var states = await db.ScheduledTaskStates.ToDictionaryAsync(s => s.Name, ct);
         var nowUtc = DateTime.UtcNow;
 
         var result = scheduledTasks.Select(task =>
@@ -963,7 +968,8 @@ public class AdminController(
     public async Task<ActionResult<PagedResult<AdminChannelDto>>> GetNotificationChannels(
         [FromQuery] ChannelState? state, [FromQuery] ChannelPaymentStatus? paymentState,
         [FromQuery] NotificationTransport? transport,
-        [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] int? page, [FromQuery] int? pageSize,
+        CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.NotificationChannels.AsNoTracking().Include(c => c.Assignments).AsQueryable();
@@ -980,7 +986,7 @@ public class AdminController(
         List<NotificationChannel> page1;
         if (paymentState.HasValue)
         {
-            var filtered = (await query.ToListAsync())
+            var filtered = (await query.ToListAsync(ct))
                 .Where(c => ChannelPaymentState.Of(c, nowUtc) == paymentState.Value).ToList();
             total = filtered.Count;
             page1 = filtered.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
@@ -990,14 +996,14 @@ public class AdminController(
         {
             // §375 F12: without the computed payment filter, count and page in SQL — same order
             // (CreatedAt DESC, then Id: uuid order in Postgres equals Guid.CompareTo order).
-            total = await query.CountAsync();
+            total = await query.CountAsync(ct);
             page1 = await query.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Id)
-                .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
+                .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync(ct);
         }
 
         var ownerIds = page1.Select(c => c.OwnerUserId).Distinct().ToList();
         var owners = await db.Users.AsNoTracking().Where(u => ownerIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u);
+            .ToDictionaryAsync(u => u.Id, u => u, ct);
 
         var items = page1.Select(c =>
         {
@@ -1014,9 +1020,9 @@ public class AdminController(
     }
 
     [HttpGet("notification-channels/summary")]
-    public async Task<ActionResult<AdminChannelSummaryDto>> GetNotificationChannelsSummary()
+    public async Task<ActionResult<AdminChannelSummaryDto>> GetNotificationChannelsSummary(CancellationToken ct)
     {
-        var channels = await db.NotificationChannels.AsNoTracking().ToListAsync();
+        var channels = await db.NotificationChannels.AsNoTracking().ToListAsync(ct);
         var nowUtc = DateTime.UtcNow;
         var in7Days = nowUtc.AddDays(7);
 
@@ -1060,15 +1066,16 @@ public class AdminController(
     [HttpGet("platform-settings")]
     public async Task<ActionResult<AdminPlatformSettingsDto>> GetPlatformSettings(
         [FromServices] Services.Notifications.PlatformSettings platformSettings,
-        [FromServices] Services.Legal.LegalDocumentProvider legalDocuments)
+        [FromServices] Services.Legal.LegalDocumentProvider legalDocuments,
+        CancellationToken ct)
     {
-        var price = await platformSettings.GetChannelPricePerMonthAsync();
-        var idleDays = await platformSettings.GetChannelIdleDaysAsync();
-        var pricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync();
+        var price = await platformSettings.GetChannelPricePerMonthAsync(ct);
+        var idleDays = await platformSettings.GetChannelIdleDaysAsync(ct);
+        var pricingPublicEnabled = await pricingCatalogCache.IsPublicEnabledAsync(ct);
         var blockedReason = PricingCatalogCache.GetPublicationBlockReason(legalDocuments.Current);
-        var trialDurationDays = await platformSettings.GetTrialDurationDaysAsync();
-        var trialMailingWindowDays = await platformSettings.GetTrialMailingWindowDaysAsync();
-        var trialWarningThresholdsDays = (await platformSettings.GetTrialWarningThresholdsDaysAsync()).ToList();
+        var trialDurationDays = await platformSettings.GetTrialDurationDaysAsync(ct);
+        var trialMailingWindowDays = await platformSettings.GetTrialMailingWindowDaysAsync(ct);
+        var trialWarningThresholdsDays = (await platformSettings.GetTrialWarningThresholdsDaysAsync(ct)).ToList();
         return Ok(new AdminPlatformSettingsDto(
             price, idleDays, pricingPublicEnabled, blockedReason,
             trialDurationDays, trialMailingWindowDays, trialWarningThresholdsDays));

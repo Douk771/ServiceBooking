@@ -88,7 +88,7 @@ public class ClientConsentsController(
     // ── Health note (US-77, T5-B6) ──────────────────────────────────────────────────────────────────
 
     [HttpGet("health-note")]
-    public async Task<IActionResult> GetHealthNote(Guid companyId, string clientKey)
+    public async Task<IActionResult> GetHealthNote(Guid companyId, string clientKey, CancellationToken ct)
     {
         // §48.2 rule 2: SuperAdmin is refused outright, not given an empty value — the precedent is
         // ClientNotePhotosController.ServeAsync, the only other place this happens.
@@ -109,7 +109,7 @@ public class ClientConsentsController(
         string? updatedByName = null;
         if (row.UpdatedByUserId is not null)
         {
-            var updatedBy = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UpdatedByUserId);
+            var updatedBy = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == row.UpdatedByUserId, ct);
             updatedByName = updatedBy is not null ? $"{updatedBy.FirstName} {updatedBy.LastName}".Trim() : null;
         }
 

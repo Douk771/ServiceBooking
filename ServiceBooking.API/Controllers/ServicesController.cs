@@ -16,12 +16,12 @@ namespace ServiceBooking.API.Controllers;
 public class ServicesController(AppDbContext db, ImageUploadService imageUploadService, FileStorage storage) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<List<ServiceDto>>> GetByCompany([FromQuery] Guid companyId)
+    public async Task<ActionResult<List<ServiceDto>>> GetByCompany([FromQuery] Guid companyId, CancellationToken ct)
     {
         var services = await db.Services
             .Where(s => s.CompanyId == companyId && s.IsActive)
             .Select(s => new ServiceDto(s.Id, s.CompanyId, s.Name, s.Description, s.DurationMinutes, s.Price, s.ImageUrl))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(services);
     }

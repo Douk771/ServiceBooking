@@ -26,7 +26,7 @@ public class PushController(
     AppDbContext db, PushSubscriptionWriter writer, IOptions<WebPushOptions> webPushOptions) : ControllerBase
 {
     [HttpGet("config")]
-    public async Task<ActionResult<PushConfigDto>> GetConfig()
+    public async Task<ActionResult<PushConfigDto>> GetConfig(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var opts = webPushOptions.Value;
@@ -37,13 +37,13 @@ public class PushController(
         var memberships = await db.CompanyMembers.AsNoTracking()
             .Where(CompanyMembership.IsStaffRole)
             .Where(cm => cm.UserId == userId)
-            .Select(cm => cm.CompanyId).Distinct().ToListAsync();
+            .Select(cm => cm.CompanyId).Distinct().ToListAsync(ct);
 
         var companies = await db.Companies.AsNoTracking()
-            .Where(c => memberships.Contains(c.Id)).Select(c => new { c.Id, c.Name }).ToListAsync();
+            .Where(c => memberships.Contains(c.Id)).Select(c => new { c.Id, c.Name }).ToListAsync(ct);
         var settingsByCompany = await db.CompanyNotificationSettings.AsNoTracking()
             .Where(s => memberships.Contains(s.CompanyId))
-            .ToDictionaryAsync(s => s.CompanyId, s => s.StaffPushEnabled);
+            .ToDictionaryAsync(s => s.CompanyId, s => s.StaffPushEnabled, ct);
 
         var companyDtos = companies.Select(c => new PushConfigCompanyDto(
             c.Id, c.Name, settingsByCompany.TryGetValue(c.Id, out var v) ? v : new CompanyNotificationSettings().StaffPushEnabled)).ToList();

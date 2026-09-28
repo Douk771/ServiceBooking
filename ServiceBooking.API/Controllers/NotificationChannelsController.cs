@@ -42,28 +42,28 @@ public class NotificationChannelsController(
         "Проверка канала уведомлений ezbook.ru: если вы видите это сообщение, канал работает.";
 
     [HttpGet]
-    public async Task<ActionResult<ChannelListDto>> GetAll()
+    public async Task<ActionResult<ChannelListDto>> GetAll(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         // B9: access to a channel you already OWN must never depend on still owning a company — a former
         // owner (company handed to someone else, or simply no companies left) can still see and disconnect
         // a channel they are paying for. Company ownership only gates the "nothing to show yet" path.
-        if (!await IsAnyCompanyOwnerAsync(userId) && !await db.NotificationChannels.AnyAsync(c => c.OwnerUserId == userId))
+        if (!await IsAnyCompanyOwnerAsync(userId) && !await db.NotificationChannels.AnyAsync(c => c.OwnerUserId == userId, ct))
             return Forbid();
 
         var channels = await db.NotificationChannels.AsNoTracking()
             .Include(c => c.Assignments).ThenInclude(a => a.Company)
             .Where(c => c.OwnerUserId == userId)
             .OrderByDescending(c => c.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var idleDays = await PlatformIdleDaysAsync();
-        var funding = await fundingReader.LoadAsync(channels);
+        var funding = await fundingReader.LoadAsync(channels, ct);
         return Ok(new ChannelListDto(channels.Select(c => MapToDto(c, idleDays, funding)).ToList()));
     }
 
     [HttpGet("offer")]
-    public async Task<ActionResult<ChannelOfferDto>> GetOffer()
+    public async Task<ActionResult<ChannelOfferDto>> GetOffer(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await IsAnyCompanyOwnerAsync(userId)) return Forbid();
@@ -72,7 +72,7 @@ public class NotificationChannelsController(
         var plan = accountId.HasValue
             ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
             : EffectivePlan.Free;
-        var price = await platformSettings.GetChannelPricePerMonthAsync();
+        var price = await platformSettings.GetChannelPricePerMonthAsync(ct);
 
         // B12 (§104.8): riskText/riskVersion now come from the SAME ChannelRiskNotice legal document the
         // /channel-risk public page and accept-risk's own version check read — one noticeholder, not
@@ -184,13 +184,13 @@ public class NotificationChannelsController(
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<ChannelDto>> GetById(Guid id)
+    public async Task<ActionResult<ChannelDto>> GetById(Guid id, CancellationToken ct)
     {
         var channel = await LoadOwnedChannelAsync(id);
         if (channel is null) return NotFound();
 
         var idleDays = await PlatformIdleDaysAsync();
-        var funding = await fundingReader.LoadAsync([channel]);
+        var funding = await fundingReader.LoadAsync([channel], ct);
         return Ok(MapToDto(channel, idleDays, funding));
     }
 

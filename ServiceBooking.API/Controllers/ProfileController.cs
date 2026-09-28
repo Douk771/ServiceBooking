@@ -53,7 +53,7 @@ public class ProfileController(
     // anywhere in the response — human-readable names stand in for every reference to another entity.
     [HttpGet("export")]
     [EnableRateLimiting("data-export")]
-    public async Task<IActionResult> Export()
+    public async Task<IActionResult> Export(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var user = await userManager.FindByIdAsync(userId);
@@ -72,7 +72,7 @@ public class ProfileController(
             .Include(cm => cm.Company)
             .Where(cm => cm.UserId == userId)
             .Select(cm => new ExportMembershipDto(cm.Company.Name, cm.Role.ToString(), cm.JoinedAt))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         // Matches DeleteAccount's step 3 and MastersController.GetClients: a visit made as a guest
         // BEFORE this person registered, on the same canonical phone, is data about this subject just
@@ -95,14 +95,14 @@ public class ProfileController(
                 b.Id, b.Date, b.StartTime, b.EndTime, b.Company.Name, b.Service.Name,
                 b.Master.FirstName + " " + b.Master.LastName, b.Status.ToString(), b.PaymentStatus.ToString(),
                 b.Price, b.CancellationReason))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var reviews = await db.Reviews
             .Include(r => r.Company)
             .Where(r => r.ClientId == userId)
             .OrderByDescending(r => r.CreatedAt)
             .Select(r => new ExportReviewDto(r.Company.Name, r.Rating, r.Comment, r.CreatedAt))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         // Notes/photos "about me" are found the same way DeleteAccount and MastersController.GetClients
         // do: by ClientId for a registered client, or by canonical GuestPhone for visits made before
@@ -112,14 +112,14 @@ public class ProfileController(
             .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .OrderByDescending(n => n.CreatedAt)
             .Select(n => new ExportNoteMetaDto(n.Company.Name, n.CreatedAt, n.Photos.Count))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var photosOfMe = await db.ClientNotePhotos
             .Include(p => p.ClientNote).ThenInclude(n => n.Company)
             .Where(p => p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .OrderByDescending(p => p.CreatedAt)
             .Select(p => new ExportPhotoMetaDto(p.ClientNote.Company.Name, p.CreatedAt, p.SizeBytes))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         // T5-B11 (ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49). "Без N+1": three cheap
         // id-only queries (one per source — bookings/notes/photos already scoped to this subject exactly
@@ -127,19 +127,19 @@ public class ProfileController(
         // pass, then ONE second query fetches the company cards themselves — never one query per company.
         var bookingCompanyIds = await db.Bookings
             .Where(b => b.ClientId == userId || (guestMatchPhone != null && b.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-            .Select(b => b.CompanyId).Distinct().ToListAsync();
+            .Select(b => b.CompanyId).Distinct().ToListAsync(ct);
         var noteCompanyIds = await db.ClientNotes
             .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-            .Select(n => n.CompanyId).Distinct().ToListAsync();
+            .Select(n => n.CompanyId).Distinct().ToListAsync(ct);
         var photoCompanyIds = await db.ClientNotePhotos
             .Where(p => p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-            .Select(p => p.CompanyId).Distinct().ToListAsync();
+            .Select(p => p.CompanyId).Distinct().ToListAsync(ct);
         // Code review В4: was ClientId-only, unlike every neighboring section above — a health note filed
         // while this person was still a guest (booked, then registered later) is stored by GuestPhone,
         // exactly like ClientNote/ClientNotePhoto, and the export silently omitted it.
         var healthNoteRows = await db.ClientHealthNotes
             .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var whatIsStoredByCompany = new Dictionary<Guid, List<string>>();
         void Tag(IEnumerable<Guid> companyIds, string kind)
@@ -159,7 +159,7 @@ public class ProfileController(
         var operators = operatorCompanyIds.Count == 0 ? []
             : await db.Companies.AsNoTracking().Where(c => operatorCompanyIds.Contains(c.Id))
                 .Select(c => new ExportOperatorDto(c.Id, c.Name, c.Address, c.Phone, c.Email, whatIsStoredByCompany[c.Id]))
-                .ToListAsync();
+                .ToListAsync(ct);
 
         // US-75 — sent notifications and opt-out status. bodyAvailable reflects §51's затирание: a row
         // past its retention window has ContentRedactedAtUtc set, and the export must say so plainly
@@ -170,9 +170,9 @@ public class ProfileController(
             .OrderByDescending(n => n.CreatedAt)
             .Select(n => new ExportNotificationDto(
                 n.SentAtUtc, n.Type.ToString(), n.Status.ToString(), n.Company.Name, n.ContentRedactedAtUtc == null))
-            .ToListAsync();
+            .ToListAsync(ct);
         var optOutRow = guestMatchPhone is null ? null
-            : await db.NotificationOptOuts.AsNoTracking().FirstOrDefaultAsync(o => o.Phone == guestMatchPhone);  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            : await db.NotificationOptOuts.AsNoTracking().FirstOrDefaultAsync(o => o.Phone == guestMatchPhone, ct);  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
         var optOut = new ExportOptOutDto(optOutRow is not null, optOutRow?.OptedOutAtUtc);
 
         // US-77 — decrypted explicitly (HealthNoteProtector's own doc comment: never via a transparent
@@ -192,7 +192,7 @@ public class ProfileController(
         // identifier (even hashed) and any open session are deliberately excluded — neither is data the
         // subject can meaningfully read back, and an open session lives minutes anyway.
         var verifiedPhoneRow = guestMatchPhone is null ? null
-            : await db.VerifiedPhones.AsNoTracking().FirstOrDefaultAsync(v => v.Phone == guestMatchPhone);  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            : await db.VerifiedPhones.AsNoTracking().FirstOrDefaultAsync(v => v.Phone == guestMatchPhone, ct);  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
         var phoneVerification = new ExportPhoneVerificationDto(
             verifiedPhoneRow is not null, verifiedPhoneRow?.Method.ToString(), verifiedPhoneRow?.VerifiedAtUtc);
 
@@ -393,11 +393,11 @@ public class ProfileController(
     // deletion. Allow-listed in LegalConsentFilter alongside POST delete-account itself (§360.2):
     // the right to leave the service cannot be gated behind accepting a new legal-document revision.
     [HttpGet("delete-account/preview")]
-    public async Task<ActionResult<AccountDeletionPreviewDto>> DeleteAccountPreview()
+    public async Task<ActionResult<AccountDeletionPreviewDto>> DeleteAccountPreview(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var everHadTrial = await db.BillingAccounts
-            .AnyAsync(a => a.OwnerUserId == userId && a.TrialStartedAtUtc != null);
+            .AnyAsync(a => a.OwnerUserId == userId && a.TrialStartedAtUtc != null, ct);
         return Ok(new AccountDeletionPreviewDto(
             everHadTrial ? Services.Billing.TrialLegalNotices.TrialRegistryNoticeOnAccountDeletion : null));
     }

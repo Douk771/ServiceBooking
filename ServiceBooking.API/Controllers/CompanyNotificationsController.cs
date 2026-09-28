@@ -32,20 +32,20 @@ public class CompanyNotificationsController(
     // ── Settings ─────────────────────────────────────────────────────────────────────────────────
 
     [HttpGet("notification-settings")]
-    public async Task<ActionResult<NotificationSettingsDto>> GetSettings(Guid companyId)
+    public async Task<ActionResult<NotificationSettingsDto>> GetSettings(Guid companyId, CancellationToken ct)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
 
-        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId, ct);
         if (company is null) return NotFound();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
-        var settings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId);
+        var settings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId, ct);
         // ARCHITECTURE_CYCLE9.md §104.3/§104.5: a company may now hold one assignment PER TRANSPORT, not
         // one ever — every live assignment is loaded so connectedTransports/priorityChannelHealthy can be
         // computed across all of them, not just an arbitrary FirstOrDefault.
         var assignments = await db.ChannelCompanyAssignments.AsNoTracking()
-            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync();
+            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync(ct);
 
         return Ok(await BuildSettingsDtoAsync(plan, settings, assignments));
     }
@@ -129,11 +129,11 @@ public class CompanyNotificationsController(
     // ── Templates ────────────────────────────────────────────────────────────────────────────────
 
     [HttpGet("notification-templates")]
-    public async Task<ActionResult<TemplatesResponseDto>> GetTemplates(Guid companyId)
+    public async Task<ActionResult<TemplatesResponseDto>> GetTemplates(Guid companyId, CancellationToken ct)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
 
-        var rows = await db.NotificationTemplates.AsNoTracking().Where(t => t.CompanyId == companyId).ToListAsync();
+        var rows = await db.NotificationTemplates.AsNoTracking().Where(t => t.CompanyId == companyId).ToListAsync(ct);
         var placeholders = TemplatePlaceholders.All
             .Select(p => new TemplatePlaceholderDto(p.Token, p.Description, p.Types)).ToList();
 
@@ -285,7 +285,8 @@ public class CompanyNotificationsController(
         Guid companyId, [FromQuery] int? page, [FromQuery] int? pageSize,
         [FromQuery] NotificationStatus? status, [FromQuery] NotificationType? type,
         [FromQuery] NotificationTransport? transport,
-        [FromQuery] DateTime? from, [FromQuery] DateTime? to)
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        CancellationToken ct)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
 
@@ -298,9 +299,9 @@ public class CompanyNotificationsController(
         if (from.HasValue) query = query.Where(n => n.CreatedAt >= from);
         if (to.HasValue) query = query.Where(n => n.CreatedAt <= to);
 
-        var total = await query.CountAsync();
+        var total = await query.CountAsync(ct);
         var rows = await query.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id)
-            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync(ct);
 
         // N8/N9: ProfileController.DeleteAccount scrubs a Cancelled row's RecipientPhone to an empty
         // string (never a fake sentinel like "deleted", which PhoneDisplayMask.Mask would garble into
@@ -317,7 +318,7 @@ public class CompanyNotificationsController(
     }
 
     [HttpGet("notifications/summary")]
-    public async Task<ActionResult<NotificationSummaryDto>> GetSummary(Guid companyId, [FromQuery] int? days)
+    public async Task<ActionResult<NotificationSummaryDto>> GetSummary(Guid companyId, [FromQuery] int? days, CancellationToken ct)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
 
@@ -327,31 +328,31 @@ public class CompanyNotificationsController(
         var rows = await db.OutboundNotifications.AsNoTracking()
             .Where(n => n.CompanyId == companyId && n.CreatedAt >= sinceUtc)
             .Select(n => new NotificationCounterRow(n.CompanyId, n.Status, n.ReadAtUtc))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var assignedChannelIds = await db.ChannelCompanyAssignments.AsNoTracking()
-            .Where(a => a.CompanyId == companyId).Select(a => a.ChannelId).ToListAsync();
+            .Where(a => a.CompanyId == companyId).Select(a => a.ChannelId).ToListAsync(ct);
         var channelPaidUntil = assignedChannelIds.Count > 0
             ? await db.NotificationChannels.AsNoTracking()
-                .Where(c => assignedChannelIds.Contains(c.Id)).MaxAsync(c => (DateTime?)c.PaidUntilUtc)
+                .Where(c => assignedChannelIds.Contains(c.Id)).MaxAsync(c => (DateTime?)c.PaidUntilUtc, ct)
             : null;
 
         var companyAssignments = await db.ChannelCompanyAssignments.AsNoTracking()
-            .CountAsync(a => assignedChannelIds.Contains(a.ChannelId));
+            .CountAsync(a => assignedChannelIds.Contains(a.ChannelId), ct);
         var multiCompanyChannel = companyAssignments > 1;
 
         IReadOnlyList<NotificationSummaryByCompanyDto>? byCompany = null;
         if (multiCompanyChannel)
         {
             var siblingCompanyIds = await db.ChannelCompanyAssignments.AsNoTracking()
-                .Where(a => assignedChannelIds.Contains(a.ChannelId)).Select(a => a.CompanyId).ToListAsync();
+                .Where(a => assignedChannelIds.Contains(a.ChannelId)).Select(a => a.CompanyId).ToListAsync(ct);
 
             var siblingRows = await db.OutboundNotifications.AsNoTracking()
                 .Where(n => siblingCompanyIds.Contains(n.CompanyId) && n.CreatedAt >= sinceUtc)
                 .Select(n => new NotificationCounterRow(n.CompanyId, n.Status, n.ReadAtUtc))
-                .ToListAsync();
+                .ToListAsync(ct);
             var companyNames = await db.Companies.AsNoTracking()
-                .Where(c => siblingCompanyIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name);
+                .Where(c => siblingCompanyIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
 
             byCompany = siblingRows.GroupBy(r => r.CompanyId)
                 .Select(g => Summarize(g.Key, companyNames.GetValueOrDefault(g.Key, ""), g)).ToList();

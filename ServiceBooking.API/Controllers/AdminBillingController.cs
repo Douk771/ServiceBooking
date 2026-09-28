@@ -90,9 +90,9 @@ public class AdminBillingController(
     // ── Options catalog (US-66) ───────────────────────────────────────────────────
 
     [HttpGet("options")]
-    public async Task<IActionResult> GetOptions()
+    public async Task<IActionResult> GetOptions(CancellationToken ct)
     {
-        var options = await db.SubscriptionOptions.OrderBy(o => o.SortOrder).ThenBy(o => o.Name).ToListAsync();
+        var options = await db.SubscriptionOptions.OrderBy(o => o.SortOrder).ThenBy(o => o.Name).ToListAsync(ct);
         var counts = await GetOptionSubscriberCountsAsync(options.Select(o => o.Id));
         return Ok(new { options = options.Select(o => MapOptionDto(o, counts.GetValueOrDefault(o.Id))).ToList() });
     }
@@ -263,7 +263,8 @@ public class AdminBillingController(
     [HttpGet("billing-accounts")]
     public async Task<IActionResult> GetBillingAccounts(
         [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? trial,
-        [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] int? page, [FromQuery] int? pageSize,
+        CancellationToken ct)
     {
         // Cycle 18 (API_CONTRACT_CYCLE18.md §369) — unlike `status` above (which quietly matches nothing
         // on an unrecognized value, same as the pre-cycle-18 behaviour), `trial` is a NEW parameter with
@@ -343,10 +344,10 @@ public class AdminBillingController(
             withStatus = withStatus.Where(x => x.trialState == canonicalTrialState);
         }
 
-        var total = await withStatus.CountAsync();
+        var total = await withStatus.CountAsync(ct);
         var page1 = await withStatus.OrderBy(x => x.a.CreatedAtUtc)
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var accountIds = page1.Select(x => x.a.Id).ToList();
         var plans = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
@@ -360,17 +361,17 @@ public class AdminBillingController(
         var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
             .Where(o => accountIds.Contains(o.BillingAccountId))
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
-            .ToListAsync();
+            .ToListAsync(ct);
         var planConfigIds = page1.Where(x => x.sub != null && x.sub.PlanConfigId.HasValue)
             .Select(x => x.sub!.PlanConfigId!.Value).Distinct().ToList();
         var planRules = planConfigIds.Count == 0
             ? []
-            : await db.PlanOptionRules.Where(r => planConfigIds.Contains(r.PlanConfigId)).ToListAsync();
+            : await db.PlanOptionRules.Where(r => planConfigIds.Contains(r.PlanConfigId)).ToListAsync(ct);
         var registeredCounts = await db.NotificationChannels
             .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value) && c.State != ChannelState.Replaced)
             .GroupBy(c => c.BillingAccountId!.Value)
             .Select(g => new { AccountId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(g => g.AccountId, g => g.Count);
+            .ToDictionaryAsync(g => g.AccountId, g => g.Count, ct);
 
         var result = page1.Select(x =>
         {
@@ -419,10 +420,10 @@ public class AdminBillingController(
     }
 
     [HttpGet("billing-accounts/{accountId:guid}")]
-    public async Task<IActionResult> GetBillingAccount(Guid accountId)
+    public async Task<IActionResult> GetBillingAccount(Guid accountId, CancellationToken ct)
     {
         var account = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan)
-            .FirstOrDefaultAsync(a => a.Id == accountId);
+            .FirstOrDefaultAsync(a => a.Id == accountId, ct);
         if (account is null) return NotFound();
 
         var dto = await BuildAdminAccountDtoAsync(account);
@@ -840,9 +841,9 @@ public class AdminBillingController(
     }
 
     [HttpGet("billing-accounts/{accountId:guid}/subscription-history")]
-    public async Task<IActionResult> GetSubscriptionHistory(Guid accountId)
+    public async Task<IActionResult> GetSubscriptionHistory(Guid accountId, CancellationToken ct)
     {
-        var ownerUserId = await db.BillingAccounts.Where(a => a.Id == accountId).Select(a => a.OwnerUserId).FirstOrDefaultAsync();
+        var ownerUserId = await db.BillingAccounts.Where(a => a.Id == accountId).Select(a => a.OwnerUserId).FirstOrDefaultAsync(ct);
         if (ownerUserId is null) return NotFound();
 
         // N3, §49: pre-cycle-5 rows (cycles 1-4) have BillingAccountId == NULL — the column didn't
@@ -851,14 +852,14 @@ public class AdminBillingController(
         // invisible in the admin's own history screen (US-73).
         var logs = await db.SubscriptionChangeLogs
             .Where(l => l.BillingAccountId == accountId || (l.BillingAccountId == null && l.OwnerUserId == ownerUserId))
-            .OrderByDescending(l => l.ChangedAt).ToListAsync();
+            .OrderByDescending(l => l.ChangedAt).ToListAsync(ct);
 
         var planIds = logs.SelectMany(l => new[] { l.OldPlanConfigId, l.NewPlanConfigId }).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
-        var planNames = await db.SubscriptionPlanConfigs.Where(p => planIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name);
+        var planNames = await db.SubscriptionPlanConfigs.Where(p => planIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
 
         var changedByIds = logs.Select(l => l.ChangedByUserId).Distinct().ToList();
         var changedByNames = await db.Users.Where(u => changedByIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim(), ct);
 
         var items = logs.Select(l => new
         {
@@ -885,7 +886,7 @@ public class AdminBillingController(
     // ── Subscription requests queue (US-67, US-70) ────────────────────────────────
 
     [HttpGet("subscription-requests")]
-    public async Task<IActionResult> GetSubscriptionRequests([FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize)
+    public async Task<IActionResult> GetSubscriptionRequests([FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
 
@@ -897,17 +898,17 @@ public class AdminBillingController(
         // N19 — filtered, ordered and paged entirely in SQL; only the page's own rows come back, not
         // every pending request in the system.
         var pendingQuery = db.BillingAccounts.Where(a => a.RequestedAtUtc != null);
-        var total = await pendingQuery.CountAsync();
+        var total = await pendingQuery.CountAsync(ct);
         var page1 = await pendingQuery.Include(a => a.Owner).Include(a => a.RequestedPlan)
             .OrderBy(a => a.RequestedAtUtc)
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
-            .ToListAsync();
-        var allOptions = await db.SubscriptionOptions.ToListAsync();
+            .ToListAsync(ct);
+        var allOptions = await db.SubscriptionOptions.ToListAsync(ct);
 
         var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
-            .Where(s => s.BillingAccountId != null && page1.Select(a => a.Id).Contains(s.BillingAccountId!.Value)).ToListAsync();
+            .Where(s => s.BillingAccountId != null && page1.Select(a => a.Id).Contains(s.BillingAccountId!.Value)).ToListAsync(ct);
         var companyCounts = await db.Companies.Where(c => c.BillingAccountId != null && page1.Select(a => a.Id).Contains(c.BillingAccountId!.Value))
-            .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { AccountId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.AccountId, x => x.Count);
+            .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { AccountId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.AccountId, x => x.Count, ct);
 
         var items = page1.Select(a =>
         {
