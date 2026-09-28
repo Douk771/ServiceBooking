@@ -5087,7 +5087,7 @@ SPEC_CYCLE17_C15_TECHDEBT.md/ARCHITECTURE_CYCLE17.md §313, независимо
 
 ## Цикл 18 — QA-написанные тест-кейсы (`CY18-`, 31 тест, `ServiceBooking.Tests/Tests/Cycle18TrialPlanTests.cs`)
 
-Написаны по `SPEC.md` (US-18-01…US-18-14, решения Д1–Д21), независимо от реализации backend/frontend —
+Написаны по `SPEC_CYCLE18_TRIAL_PLAN.md` (US-18-01…US-18-14, решения Д1–Д21), независимо от реализации backend/frontend —
 разработчик оставил в `ServiceBooking.UnitTests` только чистую логику (`TrialWindowTests`,
 `TrialPhoneKeyTests`, `TrialActivationTermsVersionTests`); функциональных тестов на активацию/каталог/
 антифрод/админ-экраны триала до этого файла не было вовсе.
@@ -5200,7 +5200,7 @@ SPEC_CYCLE17_C15_TECHDEBT.md/ARCHITECTURE_CYCLE17.md §313, независимо
 `d2fff69`, `b37b566`, `a7d2979`; разработчик функциональных тестов на неё не написал (юнит-тесты на
 чистую логику — да, `TrialWindowTests` и т.п. в `ServiceBooking.UnitTests`, они не дублируются здесь).
 Этот файл закрывает именно этот разрыв. Написан по `ARCHITECTURE_CYCLE18.md` §336/§337/§343 и
-`SPEC.md` (Д5, Д16, Д18, Д19), независимо от реализации, отдельно от `Cycle18TrialPlanTests.cs`
+`SPEC_CYCLE18_TRIAL_PLAN.md` (Д5, Д16, Д18, Д19), независимо от реализации, отдельно от `Cycle18TrialPlanTests.cs`
 (тот файл не тронут — в нём параллельно работал backend-developer).
 
 **Инфраструктура.** `Cycle18TrialMailingWindowHookTests` (сценарии 1–5, окно рассылок) не может

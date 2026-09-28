@@ -17,7 +17,7 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 18 ("Вызов 2") — written from SPEC.md (US-18-01…US-18-14, decisions Д1-Д21) independently
+/// QA cycle 18 ("Вызов 2") — written from SPEC_CYCLE18_TRIAL_PLAN.md (US-18-01…US-18-14, decisions Д1-Д21) independently
 /// of the backend/frontend implementation, per this cycle's QA brief. Covers block A (catalog
 /// protections), B (admin settings validation), C (one-time-ness / antifraud), D (activation), and the
 /// public/admin pricing surface (US-18-12) plus the admin billing-account trial view (US-18-14).
@@ -178,7 +178,7 @@ public class Cycle18TrialPlanTests(TestDatabaseFixture fixture) : ApiTestBase(fi
     }
 
     /// <summary>
-    /// R4 (SPEC.md §5) — the found-but-not-fixed hole: "Триал не считается кандидатом" на приём
+    /// R4 (SPEC_CYCLE18_TRIAL_PLAN.md §5) — the found-but-not-fixed hole: "Триал не считается кандидатом" на приём
     /// флага системного бесплатного тарифа. <c>ValidateSystemFreeAsync</c> (AdminController) checks
     /// only <c>PricePerMonth == 0</c> and "no other IsSystemFree plan exists" — it never checks
     /// <c>IsSystemTrial</c>. This test documents the concrete, reachable violation: a superadmin can
