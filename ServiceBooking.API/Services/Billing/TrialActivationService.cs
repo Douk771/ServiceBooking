@@ -74,48 +74,33 @@ public class TrialActivationService(
 
         var sub = await db.AccountSubscriptions.Include(s => s.PlanConfig)
             .FirstOrDefaultAsync(s => s.BillingAccountId == account.Id, ct);
-        var subUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
-
-        // §2 — TrialAlreadyActive: a currently usable subscription already on the trial plan.
-        if (subUsable && sub!.PlanConfigId == plan.Id)
-            return Refuse("TrialAlreadyActive", TrialLegalNotices.TrialAlreadyActiveNotice);
-
-        // §3 — AlreadyOnPaidPlan (Д9): a usable subscription on ANY plan with a positive price.
-        if (subUsable && sub!.PlanConfig is { PricePerMonth: > 0 })
-            return Refuse("AlreadyOnPaidPlan",
-                string.Format(TrialLegalNotices.TrialRefusedActivePaidSubscription, sub.PaidUntil?.ToString("dd.MM.yyyy")));
-
         var canBypass = request.Mode == TrialGrantMode.SuperAdminOverride;
 
-        // §4 — TrialAlreadyUsed: this account's own past. Not bypassable by form alone — the caller
-        // must have explicitly asked for Mode.SuperAdminOverride with a reason.
+        // §4 input — this account's own past (an override grant doesn't count as "used").
         var alreadyUsed = account.TrialStartedAtUtc is not null ||
             await db.TrialGrants.AnyAsync(g => g.BillingAccountId == account.Id && g.Source != TrialGrantSource.SuperAdminOverride, ct);
-        if (alreadyUsed && !canBypass)
-            return Refuse("TrialAlreadyUsed",
-                string.Format(TrialLegalNotices.TrialRefusedAlreadyUsedByAccount, account.TrialStartedAtUtc?.ToString("dd.MM.yyyy") ?? "ранее"));
-
-        // §5/§6 — the owner's phone must be verified, UNLESS this is an emergency regrant.
+        // §5/§6 input — the owner's latest verified phone (also the uniqueness key's input below).
         var verifiedPhone = await db.VerifiedPhones.AsNoTracking()
             .Where(v => v.UserId == account.OwnerUserId)
             .OrderByDescending(v => v.VerifiedAtUtc)
             .Select(v => v.Phone)
             .FirstOrDefaultAsync(ct);
-        // R7/§9 — PhoneVerificationUnavailable follows the same shape as ChangePhoneSubsystemDisabled
-        // (GuestBookingGateDecision, ProfileController): the gate only asks the subsystem's state when
-        // verification is actually required. A verified phone already satisfies §5/§6 regardless of
-        // whether the subsystem happens to be enabled right now — it exists to CONFIRM a number, not to
-        // re-attest one that's already confirmed. Only when there's no verified phone AND the subsystem
-        // is switched off is the honest "cannot verify right now" refusal correct; with the subsystem
-        // enabled, an unverified owner still gets the ordinary PhoneNotVerified prompt.
-        if (!canBypass && verifiedPhone is null)
-        {
-            var maxAdapter = phoneVerificationRegistry.Get(PhoneVerificationMethod.MaxBot);
-            if (!maxAdapter.Enabled)
-                return Refuse("PhoneVerificationUnavailable", TrialLegalNotices.TrialRefusedPhoneVerificationUnavailable);
 
-            return Refuse("PhoneNotVerified", TrialLegalNotices.TrialRefusedPhoneNotVerified);
-        }
+        // §2–§6 — one ordered set of conditions shared with TrialStateReader's dry run (cycle 22 D11,
+        // closes C18-11). §1's platform-state checks already returned above, before the transaction.
+        var subUsable = SubscriptionUsability.IsUsable(sub, now);
+        var refusal = TrialEligibility.Evaluate(new TrialEligibilityFacts(
+            Offered: true,
+            SubscriptionUsable: subUsable,
+            OnTrialPlan: subUsable && sub!.PlanConfigId == plan.Id,
+            OnPaidPlan: sub?.PlanConfig is { PricePerMonth: > 0 },
+            SubscriptionPaidUntil: sub?.PaidUntil,
+            AlreadyUsed: alreadyUsed,
+            TrialStartedAtUtc: account.TrialStartedAtUtc,
+            HasVerifiedPhone: verifiedPhone is not null,
+            PhoneVerificationEnabled: phoneVerificationRegistry.Get(PhoneVerificationMethod.MaxBot).Enabled,
+            CanBypass: canBypass));
+        if (refusal is not null) return Refuse(refusal.Code, refusal.Message);
 
         // §7 — fail-closed uniqueness check (Д6/К1). Never bypassable — bypassing it means granting
         // without the check, which Д6 forbids outright.
