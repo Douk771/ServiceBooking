@@ -10,7 +10,7 @@
  * showing the lawyer's text in the wrong spot is a lesser defect than silently dropping it because a
  * heading was reworded during legal review.
  */
-export interface LegalSection {
+interface LegalSection {
   heading: string
   html: string
 }

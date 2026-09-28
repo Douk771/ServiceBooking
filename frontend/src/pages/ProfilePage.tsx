@@ -21,6 +21,7 @@ import { isPhoneChangeVerificationRequired, isPhoneChangeVerificationUnavailable
 import { usePhoneVerificationConfig } from '../hooks/usePhoneVerification'
 import { VerifyPhoneButton, type PhoneVerificationRefValue } from '../components/phoneVerification/VerifyPhoneButton'
 import { PhoneVerifiedBadge } from '../components/phoneVerification/PhoneVerifiedBadge'
+import { formatMonthlyPrice } from '../utils/pricingFormat'
 
 const roleLabel: Record<string, string> = {
   Client: 'Клиент',
@@ -59,7 +60,7 @@ function PlanSection({ plan }: { plan: ProfilePlanDto }) {
       <div className="flex items-center gap-3.5 mb-3.5 flex-wrap">
         <span className="text-lg font-bold text-ink">{plan.planName}</span>
         <span className="text-sm font-semibold text-gold-dark">
-          {plan.pricePerMonth > 0 ? `${plan.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : 'Бесплатно'}
+          {formatMonthlyPrice(plan.pricePerMonth)}
         </span>
         {plan.paidUntil && (
           <span className="text-[12.5px] text-muted">

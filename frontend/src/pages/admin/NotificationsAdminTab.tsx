@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDate } from '../../utils/dateFormat'
 import { adminNotificationsApi } from '../../api/platformSettings'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
@@ -12,10 +11,6 @@ import { getNotificationErrorMessage } from '../../utils/notificationError'
 import { TRANSPORT_FILTER_OPTIONS, TRANSPORT_LABELS } from '../../utils/notificationTransport'
 import { getPricingPublicBlockedMessage } from '../../utils/legalError'
 import type { NotificationTransport, PricingPublicBlockedReason } from '../../types'
-
-function fmt(d: string | null) {
-  return d ? format(parseISO(d), 'd MMM yyyy', { locale: ru }) : '—'
-}
 
 // ── Summary tile row ─────────────────────────────────────────────────────────
 
@@ -145,9 +140,9 @@ function ChannelsList() {
                 </span>
               </div>
               <p className="text-xs text-muted mt-0.5">
-                {c.companyCount} компаний · оплачен до {fmt(c.paidUntil)}
-                {c.requestedAt && <> · заявка от {fmt(c.requestedAt)}</>}
-                {c.idleSince && <> · простой с {fmt(c.idleSince)}</>}
+                {c.companyCount} компаний · оплачен до {fmtDate(c.paidUntil)}
+                {c.requestedAt && <> · заявка от {fmtDate(c.requestedAt)}</>}
+                {c.idleSince && <> · простой с {fmtDate(c.idleSince)}</>}
                 {/* §50.2 — INN is visible only to the owner and to SuperAdmin. */}
                 {c.inn && <> · ИНН {c.inn}</>}
               </p>

@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AxiosError } from 'axios'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDate } from '../../utils/dateFormat'
 import { clientConsentsApi } from '../../api/clientConsents'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
@@ -106,7 +105,7 @@ export function HealthNoteCard({ companyId, clientKey }: Props) {
           {data.updatedBy && (
             <p className="text-[11px] text-[#B5624A] mt-1">
               {data.updatedBy}
-              {data.updatedAt && ` · ${format(parseISO(data.updatedAt), 'd MMM yyyy', { locale: ru })}`}
+              {data.updatedAt && ` · ${fmtDate(data.updatedAt)}`}
             </p>
           )}
           <div className="flex gap-2 mt-2">

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { format } from 'date-fns'
+import { fmtDate } from '../utils/dateFormat'
 import { adminApi, type AdminUser, type AdminCompany } from '../api/admin'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { PlansTab } from './admin/PlansTab'
@@ -13,12 +13,14 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { StatusBadge } from '../components/ui/Badge'
+import { BOOKING_STATUS_LABELS } from '../utils/bookingStatus'
 import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
 import { Pagination } from '../components/ui/Pagination'
 import { getCompanyAdminErrorMessage } from '../utils/companyAdminError'
 import { formatPhone } from '../utils/phone'
 import { formatBookingServiceNames } from '../utils/bookingServices'
+import { formatRub } from '../utils/money'
 
 // ── Stats tab ─────────────────────────────────────────────────────────────────
 
@@ -38,7 +40,7 @@ function StatsTab() {
     { label: 'Компаний', value: data?.totalCompanies ?? 0 },
     { label: 'Пользователей', value: data?.totalUsers ?? 0 },
     { label: 'Записей всего', value: data?.totalBookings ?? 0 },
-    { label: 'Выручка (завершённые)', value: `${(data?.totalRevenue ?? 0).toLocaleString('ru-RU')} ₽` },
+    { label: 'Выручка (завершённые)', value: formatRub(data?.totalRevenue ?? 0) },
   ]
 
   return (
@@ -248,7 +250,7 @@ function CompaniesTab() {
                     )}
                     {c.paidUntil && (
                       <span className="text-xs text-muted">
-                        до {format(parseISO(c.paidUntil), 'd MMM yyyy', { locale: ru })}
+                        до {fmtDate(c.paidUntil)}
                       </span>
                     )}
                   </div>
@@ -462,10 +464,11 @@ function AllBookingsTab() {
             className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold"
           >
             <option value="">Все</option>
-            <option value="Confirmed">Подтверждено</option>
-            <option value="Completed">Выполнено</option>
-            <option value="Cancelled">Отменено</option>
-            <option value="NoShow">Не пришёл</option>
+            {(['Confirmed', 'Completed', 'Cancelled', 'NoShow'] as const).map((s) => (
+              <option key={s} value={s}>
+                {BOOKING_STATUS_LABELS[s]}
+              </option>
+            ))}
           </select>
         </div>
         <div className="flex items-end">
@@ -498,7 +501,7 @@ function AllBookingsTab() {
                   </p>
                 )}
               </div>
-              <span className="text-sm font-semibold text-gold-dark">{b.price.toLocaleString('ru-RU')} ₽</span>
+              <span className="text-sm font-semibold text-gold-dark">{formatRub(b.price)}</span>
             </Card>
           ))}
           {data.length === 0 && <p className="text-center text-muted py-8">Записей не найдено</p>}

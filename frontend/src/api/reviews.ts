@@ -10,7 +10,7 @@ export interface Review {
   createdAt: string
 }
 
-export interface CanReviewItem {
+interface CanReviewItem {
   bookingId: string
   serviceName: string
   masterName: string

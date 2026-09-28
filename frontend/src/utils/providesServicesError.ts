@@ -9,7 +9,7 @@ import { AxiosError } from 'axios'
  * будущие записи…") that the caller should show with a "confirm anyway" action, retrying the same
  * request with `confirm: true` — the already-created bookings are never affected either way.
  */
-export interface ProvidesServicesErrorResult {
+interface ProvidesServicesErrorResult {
   message: string
   needsConfirmation: boolean
 }

@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDate } from '../utils/dateFormat'
 import { companiesApi } from '../api/companies'
 import { servicesApi } from '../api/services'
 import { reviewsApi } from '../api/reviews'
@@ -14,6 +13,7 @@ import { CompanyPhotoGallery } from '../components/company/CompanyPhotoGallery'
 import { CompanyMapLinks } from '../components/company/CompanyMapLinks'
 import { telHref, formatPhone } from '../utils/phone'
 import type { Service } from '../types'
+import { formatRub } from '../utils/money'
 
 function ServiceCard({
   service,
@@ -46,7 +46,7 @@ function ServiceCard({
               <Icon name="clock" size={13} strokeWidth={1.6} />
               {service.durationMinutes} мин
             </span>
-            <span className="font-semibold text-gold-dark">{service.price.toLocaleString('ru-RU')} ₽</span>
+            <span className="font-semibold text-gold-dark">{formatRub(service.price)}</span>
           </div>
         </div>
       </div>
@@ -250,7 +250,7 @@ export function CompanyPage() {
                   </span>
                 </div>
                 <span className="text-[12.5px] text-muted shrink-0">
-                  {format(parseISO(r.createdAt), 'd MMM yyyy', { locale: ru })}
+                  {fmtDate(r.createdAt)}
                 </span>
               </div>
               <div className="flex gap-0.5 mb-2">

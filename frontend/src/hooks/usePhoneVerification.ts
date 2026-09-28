@@ -27,7 +27,7 @@ export function usePhoneVerificationConfig() {
   })
 }
 
-export interface UsePhoneVerificationResult {
+interface UsePhoneVerificationResult {
   session: PhoneVerificationSessionCreated | null
   status: PhoneVerificationSessionStatus | null
   /** True while a session exists and hasn't reached a terminal status yet. */

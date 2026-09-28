@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDate } from '../../utils/dateFormat'
 import { clientConsentsApi } from '../../api/clientConsents'
 import { Icon } from '../ui/Icon'
 
@@ -33,7 +32,7 @@ export function PhotoConsentBadge({ companyId, clientKey }: { companyId: string;
   return (
     <p className="text-xs text-success flex items-center gap-1">
       <Icon name="check" size={12} strokeWidth={2} /> Фото: клиент согласие дал
-      {data.grantedAt && ` (${format(parseISO(data.grantedAt), 'd MMM yyyy', { locale: ru })})`}
+      {data.grantedAt && ` (${fmtDate(data.grantedAt)})`}
     </p>
   )
 }

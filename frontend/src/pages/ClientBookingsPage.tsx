@@ -13,6 +13,7 @@ import { RescheduleModal } from '../components/booking/RescheduleModal'
 import { getCancelErrorMessage } from '../utils/cancelError'
 import { formatBookingServiceNames } from '../utils/bookingServices'
 import type { Booking } from '../types'
+import { formatRub } from '../utils/money'
 
 type FilterTab = 'all' | 'upcoming' | 'completed' | 'cancelled'
 
@@ -178,7 +179,7 @@ export function ClientBookingsPage() {
                         )}
                         {b.price != null && (
                           <p className="text-[13px] font-semibold text-gold-dark mt-0.5">
-                            {b.price.toLocaleString('ru-RU')} ₽
+                            {formatRub(b.price)}
                           </p>
                         )}
                         {b.status === 'Cancelled' && b.cancellationReason && (

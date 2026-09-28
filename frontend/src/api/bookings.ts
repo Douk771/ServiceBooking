@@ -1,7 +1,7 @@
 import { api } from './client'
 import type { Booking, TimeSlot } from '../types'
 
-export interface CreateBookingPayload {
+interface CreateBookingPayload {
   companyId: string
   serviceId: string
   /**
@@ -62,10 +62,10 @@ export interface AvailabilityResponse {
 }
 
 /** API_CONTRACT_CYCLE10.md §122.1 */
-export type BookingEventKind = 'Created' | 'Rescheduled' | 'Cancelled' | 'Completed' | 'NoShow' | 'PaymentMarked'
-export type BookingEventActorKind = 'Client' | 'Guest' | 'Staff' | 'SuperAdmin' | 'System'
+type BookingEventKind = 'Created' | 'Rescheduled' | 'Cancelled' | 'Completed' | 'NoShow' | 'PaymentMarked'
+type BookingEventActorKind = 'Client' | 'Guest' | 'Staff' | 'SuperAdmin' | 'System'
 
-export interface BookingEventActor {
+interface BookingEventActor {
   kind: BookingEventActorKind
   name: string | null
   role: 'Master' | 'CompanyOwner' | null
@@ -168,9 +168,6 @@ export const bookingsApi = {
         startTime: data.startTime.length === 5 ? `${data.startTime}:00` : data.startTime,
       })
       .then((r) => r.data),
-
-  getOccupied: (masterId: string, date: string) =>
-    api.get<{ start: string; end: string }[]>('/bookings/occupied', { params: { masterId, date } }).then((r) => r.data),
 
   getMasterBookings: (date?: string, to?: string) =>
     api.get<Booking[]>('/bookings/master', { params: { date, to } }).then((r) => r.data),

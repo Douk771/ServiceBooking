@@ -6,12 +6,6 @@ export const STATUS_BADGE_CLASS: Record<SubscriptionStatus, string> = {
   Expired: 'bg-danger-bg text-danger',
 }
 
-/** ru('₽ 12 345') formatting shared by every money field on this screen — whole rubles only
- *  (Currency = RUB is the only value the contract ever returns), never fractional kopecks. */
-export function formatRub(value: number): string {
-  return `${Math.round(value).toLocaleString('ru-RU')} ₽`
-}
-
 export interface AssignOptionRow {
   optionId: string
   name: string
