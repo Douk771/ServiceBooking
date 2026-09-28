@@ -837,7 +837,7 @@ public class CompaniesController(
 
     [HttpGet("{id:guid}/stats")]
     [Authorize]
-    public async Task<IActionResult> GetStats(Guid id, [FromQuery] DateTime? from, [FromQuery] DateTime? to)
+    public async Task<IActionResult> GetStats(Guid id, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
     {
         if (!await CanManageCompany(id)) return Forbid();
 
@@ -851,79 +851,79 @@ public class CompaniesController(
         var fromDate = DateOnly.FromDateTime(from.Value);
         var toDate = DateOnly.FromDateTime(to.Value);
 
-        var bookings = await db.Bookings
-            .Include(b => b.Service)
-            .Include(b => b.Master)
-            .Include(b => b.BookingServices)
-            .Where(b => b.CompanyId == id && b.Date >= fromDate && b.Date <= toDate)
-            .ToListAsync();
+        // Cycle 22 (§375 F3, closes the second half of §9.19): every figure is an aggregate computed
+        // in SQL over the period's bookings — the period is no longer loaded into memory (and the
+        // unused Service include is gone). Money stays decimal end to end (numeric SUM in Postgres),
+        // so the totals and their scale are what the in-memory decimal sums produced (CY22-09/10).
+        var period = db.Bookings.AsNoTracking()
+            .Where(b => b.CompanyId == id && b.Date >= fromDate && b.Date <= toDate);
+        var completed = period.Where(b => b.Status == BookingStatus.Completed);
 
-        var completed = bookings.Where(b => b.Status == BookingStatus.Completed).ToList();
-        var cancelled = bookings.Where(b => b.Status == BookingStatus.Cancelled).ToList();
-
-        var totalRevenue = completed.Sum(b => b.Price);
+        var countsByStatus = await period
+            .GroupBy(b => b.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        int CountOf(BookingStatus status) => countsByStatus.Where(c => c.Status == status).Sum(c => c.Count);
 
         // New clients: first VISIT in this company falls in [fromDate, toDate] — same date semantics as
         // the revenue filter above (ARCHITECTURE.md §14.3), so a single response never mixes "first
         // created" and "first visited" as two different meanings of "new".
-        var allCompanyBookings = await db.Bookings
+        var newClientsCount = await db.Bookings
             .Where(b => b.CompanyId == id && b.ClientId != null)
             .GroupBy(b => b.ClientId!)
-            .Select(g => new { ClientId = g.Key, FirstDate = g.Min(b => b.Date) })
-            .ToListAsync();
+            .Select(g => g.Min(b => b.Date))
+            .CountAsync(firstDate => firstDate >= fromDate && firstDate <= toDate, ct);
 
-        var newClientsCount = allCompanyBookings.Count(c => c.FirstDate >= fromDate && c.FirstDate <= toDate);
-
-        var masterStats = completed
+        var byMaster = await completed
             .GroupBy(b => b.MasterId)
-            .Select(g =>
+            .Select(g => new { MasterId = g.Key, BookingsCount = g.Count(), Revenue = g.Sum(b => b.Price) })
+            .ToListAsync(ct);
+        var masterIds = byMaster.Select(m => m.MasterId).ToList();
+        var masterNames = await db.Users.AsNoTracking()
+            .Where(u => masterIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.FirstName, u.LastName })
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim(), ct);
+        var masterStats = byMaster
+            .Select(g => new
             {
-                var master = g.First().Master;
-                return new
-                {
-                    masterId = g.Key,
-                    masterName = master != null ? $"{master.FirstName} {master.LastName}".Trim() : g.Key,
-                    bookingsCount = g.Count(),
-                    revenue = g.Sum(b => b.Price)
-                };
+                masterId = g.MasterId,
+                masterName = masterNames.TryGetValue(g.MasterId, out var name) ? name : g.MasterId,
+                bookingsCount = g.BookingsCount,
+                revenue = g.Revenue
             }).ToList();
 
         // US-67 (ARCHITECTURE_CYCLE6.md §44.2 p.4): the "top services" breakdown counts individual
         // services from BookingServices, not visits — a 3-service visit contributes 3 counts here,
-        // one per line item, while totalRevenue above (computed from Booking.Price) still counts the
+        // one per line item, while totalRevenue below (computed from Booking.Price) still counts the
         // visit exactly once. Pre-cycle bookings have exactly one BookingServices row each (backfilled),
-        // so this is unchanged for them.
-        var popularServices = bookings
-            .SelectMany(b => b.BookingServices)
-            .GroupBy(bs => bs.ServiceId)
-            .Select(g =>
-            {
-                return new
-                {
-                    serviceId = g.Key,
-                    serviceName = g.First().NameSnapshot,
-                    count = g.Count()
-                };
-            })
+        // so this is unchanged for them. serviceName: the name snapshot of the service's rows (the old
+        // code took the first row's; rows of one service only differ after a rename — MAX picks one of
+        // them deterministically).
+        var popularServices = (await db.BookingServices.AsNoTracking()
+                .Where(bs => period.Any(b => b.Id == bs.BookingId))
+                .GroupBy(bs => bs.ServiceId)
+                .Select(g => new { serviceId = g.Key, serviceName = g.Max(bs => bs.NameSnapshot)!, count = g.Count() })
+                .ToListAsync(ct))
             .OrderByDescending(s => s.count)
             .ToList();
 
-        var dailyRevenue = completed
+        var dailyRevenue = await completed
             .GroupBy(b => b.Date)
-            .Select(g => new
-            {
-                date = g.Key,
-                revenue = g.Sum(b => b.Price)
-            })
+            .Select(g => new { date = g.Key, revenue = g.Sum(b => b.Price) })
             .OrderBy(d => d.date)
-            .ToList();
+            .ToListAsync(ct);
+
+        // Summed in C# from the per-day sums (exact decimal arithmetic, the same result as summing the
+        // bookings): an empty period yields decimal 0 — serialized "0", as before — rather than SQL's
+        // COALESCE(SUM(...), 0.0).
+        var totalRevenue = dailyRevenue.Sum(d => d.revenue);
 
         return Ok(new
         {
             totalRevenue,
-            bookingsCount = bookings.Count,
-            completedCount = completed.Count,
-            cancelledCount = cancelled.Count,
+            bookingsCount = countsByStatus.Sum(c => c.Count),
+            completedCount = CountOf(BookingStatus.Completed),
+            cancelledCount = CountOf(BookingStatus.Cancelled),
             newClientsCount,
             masterStats,
             popularServices,
