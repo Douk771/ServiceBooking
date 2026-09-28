@@ -5672,18 +5672,19 @@ ServiceBooking.Tests`: **797/797 зелёных** (795 на момент пос�
 обращаются к `AdminPlansController`/`AdminOptionsController` (разрезание), у `ValidateOptionInput` нет
 параметра `existingCode`, `NotificationGateTests` не заполняет удалённую колонку.
 
-### Фронтенд (`npm run test:run`, 633 → 639)
+### Фронтенд (`npm run test:run`, 633 → 640)
 
 - **Удалено 6 тестов вместе с удалённым кодом:** `billingApi.getTrial` (1 — метод не вызывался),
   `bookingTotalDuration` (3 — функцию использовали только тесты), `getTrialRefusalCode` (2 — то же).
 - **Перенесено 2:** `formatRub` из `billingAccountsHelpers.test.ts` → `utils/money.test.ts` как
   `formatRubRounded` (округление до рубля для экрана биллинг-аккаунтов).
-- **Новых 12:** `utils/dateFormat.test.ts` — 5 (`fmtDate`/`fmtDateTime`: формат, совпадение с заменённым
+- **Новых 13:** `utils/dateFormat.test.ts` — 5 (`fmtDate`/`fmtDateTime`: формат, совпадение с заменённым
   инлайном, «—» для пустого); `utils/money.test.ts` — 2 новых на `formatRub` (ровно прежний шаблон
   `${x.toLocaleString('ru-RU')} ₽`, копейки и неразрывный пробел) + 2 перенесённых; `utils/bookingStatus.test.ts` —
   3 (одна таблица подписей: «Подтверждена», «Выполнена», «Отменена»; неизвестный статус показывается как
-  есть; `StatusBadge` читает ту же таблицу); `components/review/ReviewModal.test.tsx` — 2 (подписанный
-  диалог `role="dialog"` с прежним содержимым; закрытие по Esc).
+  есть; `StatusBadge` читает ту же таблицу); `components/review/ReviewModal.test.tsx` — 3 (подписанный
+  диалог `role="dialog"` с прежним содержимым; закрытие по Esc; ревью цикла 22 — пока отзыв отправляется,
+  окно не закрывается: Esc и щелчок мимо окна ничего не делают, крестик неактивен, как и «Отмена»).
 - **Переписаны без изменения числа:** `pushAvailability.test.ts` — сценарии цикла 9 удалённой
   `detectIosSafariNotInstalled` переведены на `detectIosEnvironment`; `NotificationsAdminTab.test.tsx` — из
   фикстуры убрано поле `paidFrom`.
@@ -5695,7 +5696,7 @@ ServiceBooking.Tests`: **797/797 зелёных** (795 на момент пос�
 | Сборка решения | 0 предупреждений | 0 предупреждений |
 | `ServiceBooking.UnitTests` | 1522/1522 | **1558/1558** |
 | `ServiceBooking.Tests` (функциональные) | 797/797 | **815/815** |
-| Фронтенд (`vitest`) | 633/633 | **639/639** |
+| Фронтенд (`vitest`) | 633/633 | **640/640** |
 | `tsc --noEmit`, `eslint`, `knip` | чисто | чисто (`knip` — без неиспользуемых файлов, зависимостей и экспортов, кроме исключений §376) |
 
 Числа не меньше базовой линии за вычетом тестов, удалённых вместе с кодом (6 фронтовых и 1 юнит,

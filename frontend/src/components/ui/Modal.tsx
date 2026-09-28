@@ -6,10 +6,14 @@ interface Props {
   title: string
   onClose: () => void
   children: ReactNode
+  /** false — Esc, a backdrop click and the X do nothing (e.g. while a submit is in flight). Default true. */
+  dismissible?: boolean
 }
 
-export function Modal({ title, onClose, children }: Props) {
-  const dismiss = useOverlayDismiss(onClose)
+const noop = () => {}
+
+export function Modal({ title, onClose, children, dismissible = true }: Props) {
+  const dismiss = useOverlayDismiss(dismissible ? onClose : noop)
   const titleId = useId()
   return (
     <div className="fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-4" {...dismiss}>
@@ -23,7 +27,12 @@ export function Modal({ title, onClose, children }: Props) {
           <h2 id={titleId} className="text-lg font-serif font-medium text-ink">
             {title}
           </h2>
-          <button onClick={onClose} aria-label="Закрыть" className="text-muted hover:text-ink transition-colors">
+          <button
+            onClick={onClose}
+            disabled={!dismissible}
+            aria-label="Закрыть"
+            className="text-muted hover:text-ink transition-colors disabled:opacity-40 disabled:pointer-events-none"
+          >
             <Icon name="x" size={18} strokeWidth={1.8} />
           </button>
         </div>

@@ -30,8 +30,9 @@ export function ReviewModal({ bookingId, serviceName, masterName, companyId, onC
     },
   })
 
+  // While the review is being sent the window cannot be closed — Esc, backdrop and X included, like «Отмена» below.
   return (
-    <Modal title="Оставить отзыв" onClose={onClose}>
+    <Modal title="Оставить отзыв" onClose={onClose} dismissible={!submit.isPending}>
       <p className="text-sm text-ink-soft mb-5">
         {serviceName} у мастера {masterName}
       </p>
