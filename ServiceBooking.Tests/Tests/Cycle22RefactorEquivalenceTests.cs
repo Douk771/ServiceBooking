@@ -338,6 +338,95 @@ public class Cycle22RefactorEquivalenceTests(TestDatabaseFixture fixture) : ApiT
             """);
     }
 
+    // ── CY22-07b/08b — page-scoped reads: notes and booking summaries, exact JSON (cycle 22 review) ──
+
+    /// <summary>
+    /// Review of cycle 22: CY22-07/08 compare only keys and totals, while the rewrite reads notes and
+    /// booking summaries for the REQUESTED PAGE's clients only — so those are asserted here on page
+    /// slices, as exact JSON. On top of the shared dataset (which CY22-06 keeps exactly as it was) one more
+    /// note is seeded carrying BOTH a ClientId (C4, last page) and a GuestPhone (G2, first page) — the
+    /// data model allows it (no constraint ties the two). The pre-rewrite code (a08c6ca) loaded every
+    /// note of the company and matched registered clients on <c>n.ClientId == key</c> and guests on
+    /// <c>n.GuestPhone == key</c> independently, so such a note showed under BOTH; the rewrite's page
+    /// filter (<c>ClientId = ANY(page ids) OR GuestPhone = ANY(page phones)</c>) plus the same two lookups
+    /// must keep that, whichever of the two lands on the page. Every other client's notes/summaries are
+    /// exactly CY22-06's.
+    /// </summary>
+    private async Task<ClientsWorld> SeedClientsWorldWithDualNoteAsync()
+    {
+        var w = await SeedClientsWorldAsync();
+        var dualId = Guid.NewGuid();
+        var g2Phone = w.Placeholders.Single(p => p.Label == "78{T}").Value + "000502";
+        await DbAsync(async db =>
+        {
+            db.ClientNotes.Add(new ClientNote
+            {
+                Id = dualId, CompanyId = w.CompanyId, MasterId = w.ColleagueId, ClientId = $"{w.Prefix}-04", GuestPhone = g2Phone,
+                Note = "И клиент, и телефон гостя", CreatedAt = new DateTime(2025, 3, 12, 9, 0, 0, DateTimeKind.Utc),
+            });
+            await db.SaveChangesAsync();
+        });
+        return w with { Placeholders = [.. w.Placeholders, (dualId.ToString(), "{N4}")] };
+    }
+
+    [Fact, TestCase("CY22-07b")]
+    public async Task MasterClients_PageSlices_NotesAndSummaries_ExactJson()
+    {
+        var w = await SeedClientsWorldWithDualNoteAsync();
+        var url = $"/api/masters/clients?companyId={w.CompanyId}";
+
+        // First page: two guests (G2 carries the dual note) and C1 (booking-linked note + colleague's note with a photo).
+        Canon(await GetRawAsync(w.Master, url + "&page=1&pageSize=3"), w.Placeholders).Should().Be(ExpectedPage1Of3);
+        // Last page: registered clients only (C4 — the dual note again, no guest on the page).
+        Canon(await GetRawAsync(w.Master, url + "&page=3&pageSize=3"), w.Placeholders).Should().Be(ExpectedPage3Of3);
+        // A page of guests only (G1, G2).
+        Canon(await GetRawAsync(w.Master, url + "&page=1&pageSize=2"), w.Placeholders).Should().Be(ExpectedPage1Of2);
+    }
+
+    [Fact, TestCase("CY22-08b")]
+    public async Task MasterClients_SearchSlices_NotesAndSummaries_ExactJson()
+    {
+        var w = await SeedClientsWorldWithDualNoteAsync();
+        var url = $"/api/masters/clients?companyId={w.CompanyId}&search=";
+
+        // Name search + paging: the first of two matches (C1), full notes and summaries.
+        Canon(await GetRawAsync(w.Master, url + Uri.EscapeDataString("анна") + "&page=1&pageSize=1"), w.Placeholders)
+            .Should().Be(ExpectedSearchAnnaPage1Of1);
+        // A guest alone (by name), and a registered client alone (by phone digits) — each gets the dual note.
+        Canon(await GetRawAsync(w.Master, url + Uri.EscapeDataString("Мария")), w.Placeholders).Should().Be(ExpectedSearchMaria);
+        Canon(await GetRawAsync(w.Master, url + "000004"), w.Placeholders).Should().Be(ExpectedSearchC4Phone);
+    }
+
+    private const string ExpectedPage1Of3 =
+        """
+        {"items":[{"clientId":null,"guestPhone":"78{T}000501","name":"Гость Новый","phone":"78{T}000501","email":"new.{P}@test.local","lastVisitDate":"{FUTURE}","totalVisits":2,"notes":[{"id":"{N3}","note":"Гость, просил перезвонить","createdAt":"2025-02-01T16:00:00Z","authorId":"{M}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":true,"photos":[]}],"bookingSummaries":[{"date":"{FUTURE}","serviceName":"Укладка {P}","status":"Confirmed"},{"date":"2025-02-01","serviceName":"Стрижка","status":"Completed"}],"phoneVerified":null},{"clientId":null,"guestPhone":"78{T}000502","name":"Мария","phone":"78{T}000502","email":null,"lastVisitDate":"2025-03-10","totalVisits":2,"notes":[{"id":"{N4}","note":"И клиент, и телефон гостя","createdAt":"2025-03-12T09:00:00Z","authorId":"{M2}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":false,"photos":[]}],"bookingSummaries":[{"date":"2025-03-10","serviceName":"Окрашивание","status":"Completed"},{"date":"2025-03-10","serviceName":"Стрижка","status":"Cancelled"}],"phoneVerified":null},{"clientId":"{P}-01","guestPhone":null,"name":"Анна Иванова","phone":"78{T}000001","email":"anna.{P}@test.local","lastVisitDate":"2025-03-10","totalVisits":3,"notes":[{"id":"{N1}","note":"Любит короткие стрижки","createdAt":"2025-03-10T10:05:00Z","authorId":"{M}","authorName":"Test User","bookingId":"{B_C1_0310}","bookingDate":"2025-03-10","bookingServiceName":"Стрижка","canDelete":true,"photos":[]},{"id":"{N2}","note":"Аллергия на аммиак","createdAt":"2025-01-05T11:00:00Z","authorId":"{M2}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":false,"photos":[{"id":"{PH1}","url":"/api/client-notes/photos/{PH1}","thumbnailUrl":"/api/client-notes/photos/{PH1}/thumb","width":800,"height":600,"sizeBytes":12345,"createdAt":"2025-01-05T11:01:00Z","uploadedByName":"Test User","canDelete":true}]}],"bookingSummaries":[{"date":"2025-03-10","serviceName":"Стрижка","status":"Cancelled"},{"date":"2025-03-10","serviceName":"Стрижка","status":"Completed"},{"date":"2025-01-05","serviceName":"Окрашивание","status":"Completed"}],"phoneVerified":true}],"page":1,"pageSize":3,"total":7,"hasNext":true}
+        """;
+
+    private const string ExpectedPage3Of3 =
+        """
+        {"items":[{"clientId":"{P}-04","guestPhone":null,"name":"Пётр","phone":"78{T}000004","email":null,"lastVisitDate":"2024-12-01","totalVisits":1,"notes":[{"id":"{N4}","note":"И клиент, и телефон гостя","createdAt":"2025-03-12T09:00:00Z","authorId":"{M2}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":false,"photos":[]}],"bookingSummaries":[{"date":"2024-12-01","serviceName":"Стрижка","status":"Pending"}],"phoneVerified":false}],"page":3,"pageSize":3,"total":7,"hasNext":false}
+        """;
+
+    private const string ExpectedPage1Of2 =
+        """
+        {"items":[{"clientId":null,"guestPhone":"78{T}000501","name":"Гость Новый","phone":"78{T}000501","email":"new.{P}@test.local","lastVisitDate":"{FUTURE}","totalVisits":2,"notes":[{"id":"{N3}","note":"Гость, просил перезвонить","createdAt":"2025-02-01T16:00:00Z","authorId":"{M}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":true,"photos":[]}],"bookingSummaries":[{"date":"{FUTURE}","serviceName":"Укладка {P}","status":"Confirmed"},{"date":"2025-02-01","serviceName":"Стрижка","status":"Completed"}],"phoneVerified":null},{"clientId":null,"guestPhone":"78{T}000502","name":"Мария","phone":"78{T}000502","email":null,"lastVisitDate":"2025-03-10","totalVisits":2,"notes":[{"id":"{N4}","note":"И клиент, и телефон гостя","createdAt":"2025-03-12T09:00:00Z","authorId":"{M2}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":false,"photos":[]}],"bookingSummaries":[{"date":"2025-03-10","serviceName":"Окрашивание","status":"Completed"},{"date":"2025-03-10","serviceName":"Стрижка","status":"Cancelled"}],"phoneVerified":null}],"page":1,"pageSize":2,"total":7,"hasNext":true}
+        """;
+
+    private const string ExpectedSearchAnnaPage1Of1 =
+        """
+        {"items":[{"clientId":"{P}-01","guestPhone":null,"name":"Анна Иванова","phone":"78{T}000001","email":"anna.{P}@test.local","lastVisitDate":"2025-03-10","totalVisits":3,"notes":[{"id":"{N1}","note":"Любит короткие стрижки","createdAt":"2025-03-10T10:05:00Z","authorId":"{M}","authorName":"Test User","bookingId":"{B_C1_0310}","bookingDate":"2025-03-10","bookingServiceName":"Стрижка","canDelete":true,"photos":[]},{"id":"{N2}","note":"Аллергия на аммиак","createdAt":"2025-01-05T11:00:00Z","authorId":"{M2}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":false,"photos":[{"id":"{PH1}","url":"/api/client-notes/photos/{PH1}","thumbnailUrl":"/api/client-notes/photos/{PH1}/thumb","width":800,"height":600,"sizeBytes":12345,"createdAt":"2025-01-05T11:01:00Z","uploadedByName":"Test User","canDelete":true}]}],"bookingSummaries":[{"date":"2025-03-10","serviceName":"Стрижка","status":"Cancelled"},{"date":"2025-03-10","serviceName":"Стрижка","status":"Completed"},{"date":"2025-01-05","serviceName":"Окрашивание","status":"Completed"}],"phoneVerified":true}],"page":1,"pageSize":1,"total":2,"hasNext":true}
+        """;
+
+    private const string ExpectedSearchMaria =
+        """
+        {"items":[{"clientId":null,"guestPhone":"78{T}000502","name":"Мария","phone":"78{T}000502","email":null,"lastVisitDate":"2025-03-10","totalVisits":2,"notes":[{"id":"{N4}","note":"И клиент, и телефон гостя","createdAt":"2025-03-12T09:00:00Z","authorId":"{M2}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":false,"photos":[]}],"bookingSummaries":[{"date":"2025-03-10","serviceName":"Окрашивание","status":"Completed"},{"date":"2025-03-10","serviceName":"Стрижка","status":"Cancelled"}],"phoneVerified":null}],"page":1,"pageSize":20,"total":1,"hasNext":false}
+        """;
+
+    private const string ExpectedSearchC4Phone =
+        """
+        {"items":[{"clientId":"{P}-04","guestPhone":null,"name":"Пётр","phone":"78{T}000004","email":null,"lastVisitDate":"2024-12-01","totalVisits":1,"notes":[{"id":"{N4}","note":"И клиент, и телефон гостя","createdAt":"2025-03-12T09:00:00Z","authorId":"{M2}","authorName":"Test User","bookingId":null,"bookingDate":null,"bookingServiceName":null,"canDelete":false,"photos":[]}],"bookingSummaries":[{"date":"2024-12-01","serviceName":"Стрижка","status":"Pending"}],"phoneVerified":false}],"page":1,"pageSize":20,"total":1,"hasNext":false}
+        """;
+
     // ── GET /api/companies/{id}/stats — dataset ─────────────────────────────────────────────────
 
     private sealed record StatsWorld(HttpClient Owner, Guid CompanyId, (string Value, string Label)[] Placeholders);
