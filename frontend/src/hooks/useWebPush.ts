@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { pushApi } from '../api/push'
 import { urlBase64ToUint8Array, arrayBufferToBase64Url } from '../utils/webPushEncoding'
-import { detectIosSafariNotInstalled, getPushUnavailableReason, type PushUnavailableReason } from '../utils/pushAvailability'
+import { detectIosEnvironment, getPushUnavailableReason, type PushUnavailableReason } from '../utils/pushAvailability'
 import type { PushSubscriptionDevice } from '../types'
 
 // ARCHITECTURE_CYCLE9.md §105.5/§105.9/§105.10, API_CONTRACT_CYCLE9.md §115 — feature detection,
@@ -13,6 +13,16 @@ import type { PushSubscriptionDevice } from '../types'
 
 const SERVICE_WORKER_SUPPORTED = typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
 const EMPTY_DEVICES: PushSubscriptionDevice[] = []
+
+/** ARCHITECTURE_CYCLE21.md §362 — iOS + "opened from the Home Screen" detection, safe outside a browser. */
+function readIosEnvironment() {
+  if (typeof navigator === 'undefined') return { isIos: false, isStandalone: false, version: null }
+  const displayModeStandalone =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(display-mode: standalone)').matches
+      : false
+  return detectIosEnvironment(navigator, displayModeStandalone)
+}
 
 function readPermission(): NotificationPermission | 'unsupported' {
   if (typeof Notification === 'undefined') return 'unsupported'
@@ -113,7 +123,7 @@ export function useWebPush(): UseWebPushResult {
     serviceWorkerSupported: SERVICE_WORKER_SUPPORTED,
     isSecureContext: typeof window !== 'undefined' && window.isSecureContext,
     permission,
-    isIosSafariNotInstalled: typeof navigator !== 'undefined' ? detectIosSafariNotInstalled(navigator) : false,
+    ios: readIosEnvironment(),
     platformEnabled: configQuery.data?.enabled,
     companyStaffPushEnabled,
   })

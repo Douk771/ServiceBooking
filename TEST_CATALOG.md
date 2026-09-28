@@ -5087,7 +5087,7 @@ SPEC_CYCLE17_C15_TECHDEBT.md/ARCHITECTURE_CYCLE17.md §313, независимо
 
 ## Цикл 18 — QA-написанные тест-кейсы (`CY18-`, 31 тест, `ServiceBooking.Tests/Tests/Cycle18TrialPlanTests.cs`)
 
-Написаны по `SPEC.md` (US-18-01…US-18-14, решения Д1–Д21), независимо от реализации backend/frontend —
+Написаны по `SPEC_CYCLE18_TRIAL_PLAN.md` (US-18-01…US-18-14, решения Д1–Д21), независимо от реализации backend/frontend —
 разработчик оставил в `ServiceBooking.UnitTests` только чистую логику (`TrialWindowTests`,
 `TrialPhoneKeyTests`, `TrialActivationTermsVersionTests`); функциональных тестов на активацию/каталог/
 антифрод/админ-экраны триала до этого файла не было вовсе.
@@ -5200,7 +5200,7 @@ SPEC_CYCLE17_C15_TECHDEBT.md/ARCHITECTURE_CYCLE17.md §313, независимо
 `d2fff69`, `b37b566`, `a7d2979`; разработчик функциональных тестов на неё не написал (юнит-тесты на
 чистую логику — да, `TrialWindowTests` и т.п. в `ServiceBooking.UnitTests`, они не дублируются здесь).
 Этот файл закрывает именно этот разрыв. Написан по `ARCHITECTURE_CYCLE18.md` §336/§337/§343 и
-`SPEC.md` (Д5, Д16, Д18, Д19), независимо от реализации, отдельно от `Cycle18TrialPlanTests.cs`
+`SPEC_CYCLE18_TRIAL_PLAN.md` (Д5, Д16, Д18, Д19), независимо от реализации, отдельно от `Cycle18TrialPlanTests.cs`
 (тот файл не тронут — в нём параллельно работал backend-developer).
 
 **Инфраструктура.** `Cycle18TrialMailingWindowHookTests` (сценарии 1–5, окно рассылок) не может
@@ -5525,3 +5525,52 @@ ServiceBooking.Tests`: **797/797 зелёных** (795 на момент пос�
 не её устранение (полное закрытие требует advisory-блокировки — сознательно не сделано в этом проходе,
 зафиксировано как явный остаточный риск, а не тихий долг). Ветка готова к передаче на следующий этап по
 этой части функциональности.
+
+---
+
+## Цикл 21 — iPhone: уведомления через «На экран Домой» (`CY21-`, 15 тестов, frontend/vitest)
+
+Источник — `SPEC.md` цикла 21 (US-21-01…US-21-03) и `ARCHITECTURE_CYCLE21.md` §362/§363/§365. Бэкенд
+цикл не трогает, поэтому все тесты — фронтовые (`npm run test:run`), плюс шаг смоука собранного фронта.
+
+### `frontend/src/utils/pushAvailability.test.ts`
+
+| ID | Что проверяет |
+|---|---|
+| CY21-01 | вкладка Safari на iOS без `PushManager` → `ios-safari-not-installed`, **не** `unsupported-browser` (регрессия цикла 9) |
+| CY21-02 | установленное приложение, iOS ≥ 16.4, всё доступно → тумблер (`null`) |
+| CY21-03 | установленное приложение на iOS 16.3 → `ios-version-too-old` |
+| CY21-04 | ровно iOS 16.4 — достаточно |
+| CY21-05 | неизвестная версия iOS не выдаёт «обновите iOS» |
+| CY21-06 | запрет разрешения: в приложении на iOS → `ios-permission-denied`, вне iOS → `permission-denied` |
+| CY21-07 | выключатели платформы/компании действуют и в установленном приложении |
+| CY21-08 | `detectIosEnvironment`: iPhone Safari, версия из `OS 17_4` |
+| CY21-09 | `display-mode: standalone` без `navigator.standalone` считается установленным |
+| CY21-10 | Chrome на iPhone распознаётся как iOS, версия из токена ОС |
+| CY21-11 | iPadOS с «настольным» UA — iOS, версия из `Version/18.1` |
+| CY21-12 | настоящий Mac (без сенсора) — не iOS |
+
+### `frontend/src/components/push/PushUnavailableNotice.test.tsx`
+
+| ID | Что проверяет |
+|---|---|
+| CY21-13 | для айфона вне приложения — текст и четыре шага («Поделиться», «На экран «Домой»», «войдите заново») |
+| CY21-14 | для других причин шагов нет; текст про iOS 16.4 |
+| CY21-15 | запрет в приложении на айфоне ведёт в «Настройки айфона», не к адресной строке |
+
+### Смоук собранного фронта — `deploy/ci/smoke-frontend.sh` (US-21-03)
+
+`GET /manifest.webmanifest` → 200, JSON, `display` ∈ {`standalone`, `fullscreen`}, есть `start_url`,
+`scope`, `icons`; `index.html` ссылается на манифест и `apple-touch-icon`; `GET /apple-touch-icon.png`
+→ 200. Проверено в обе стороны: на `dist/` с `display: "browser"` шаг падает.
+
+**Прогон (2026-09-28).** Новые файлы: **27/27 зелёных** (24 в `pushAvailability.test.ts`, из них 12
+новых, + 3). Полный `vitest run`: **633/633**. По дороге закрыт долг **C21-1**: тест
+`BookingCalendar.test.tsx › short booking horizon › retries with a clamped \`to\`` падал и на исходном
+`develop` (`e3774c1`), потому что зависел от сегодняшней даты (с ~28-го числа горизонт в 3 дня уже не
+короче остатка месяца, повторного запроса нет) — теперь дата в тесте зафиксирована. `tsc --noEmit`,
+`eslint` и `npm run build` — чисто.
+
+**Не автоматизируется:** доставка на реальный iPhone — чек-лист в `ARCHITECTURE_CYCLE21.md` §365,
+выполняется при выкате.
+
