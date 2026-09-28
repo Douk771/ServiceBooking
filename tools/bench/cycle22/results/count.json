@@ -1,0 +1,422 @@
+{
+ "masters/clients p1": {
+  "before": {
+   "status": 200,
+   "stmts": 6,
+   "roundtrips": 6,
+   "rows": 6654,
+   "bytes_from_db": 4692875,
+   "resp_bytes": 15740,
+   "resets": 6
+  },
+  "after": {
+   "status": 200,
+   "stmts": 7,
+   "roundtrips": 7,
+   "rows": 2533,
+   "bytes_from_db": 258536,
+   "resp_bytes": 15740,
+   "resets": 7
+  }
+ },
+ "masters/clients p60 (middle)": {
+  "before": {
+   "status": 200,
+   "stmts": 6,
+   "roundtrips": 6,
+   "rows": 6654,
+   "bytes_from_db": 4692875,
+   "resp_bytes": 8206,
+   "resets": 6
+  },
+  "after": {
+   "status": 200,
+   "stmts": 7,
+   "roundtrips": 7,
+   "rows": 2454,
+   "bytes_from_db": 248665,
+   "resp_bytes": 8206,
+   "resets": 7
+  }
+ },
+ "masters/clients search phone": {
+  "before": {
+   "status": 200,
+   "stmts": 6,
+   "roundtrips": 6,
+   "rows": 6654,
+   "bytes_from_db": 4692875,
+   "resp_bytes": 2678,
+   "resets": 6
+  },
+  "after": {
+   "status": 200,
+   "stmts": 7,
+   "roundtrips": 7,
+   "rows": 2443,
+   "bytes_from_db": 246883,
+   "resp_bytes": 2678,
+   "resets": 7
+  }
+ },
+ "masters/clients search name": {
+  "before": {
+   "status": 200,
+   "stmts": 6,
+   "roundtrips": 6,
+   "rows": 6654,
+   "bytes_from_db": 4692875,
+   "resp_bytes": 11891,
+   "resets": 6
+  },
+  "after": {
+   "status": 200,
+   "stmts": 7,
+   "roundtrips": 7,
+   "rows": 2480,
+   "bytes_from_db": 254370,
+   "resp_bytes": 11891,
+   "resets": 7
+  }
+ },
+ "company stats 1 month": {
+  "before": {
+   "status": 200,
+   "stmts": 5,
+   "roundtrips": 5,
+   "rows": 4751,
+   "bytes_from_db": 1654471,
+   "resp_bytes": 3556,
+   "resets": 5
+  },
+  "after": {
+   "status": 200,
+   "stmts": 8,
+   "roundtrips": 8,
+   "rows": 65,
+   "bytes_from_db": 4353,
+   "resp_bytes": 3556,
+   "resets": 8
+  }
+ },
+ "company stats 1 year": {
+  "before": {
+   "status": 200,
+   "stmts": 5,
+   "roundtrips": 5,
+   "rows": 24030,
+   "bytes_from_db": 18300328,
+   "resp_bytes": 17340,
+   "resets": 5
+  },
+  "after": {
+   "status": 200,
+   "stmts": 8,
+   "roundtrips": 8,
+   "rows": 399,
+   "bytes_from_db": 14690,
+   "resp_bytes": 17340,
+   "resets": 8
+  }
+ },
+ "reports/masters 1 month": {
+  "before": {
+   "status": 200,
+   "stmts": 9,
+   "roundtrips": 9,
+   "rows": 1269,
+   "bytes_from_db": 811007,
+   "resp_bytes": 1789,
+   "resets": 9
+  },
+  "after": {
+   "status": 200,
+   "stmts": 8,
+   "roundtrips": 8,
+   "rows": 1268,
+   "bytes_from_db": 170808,
+   "resp_bytes": 1789,
+   "resets": 8
+  }
+ },
+ "reports/masters 1 year": {
+  "before": {
+   "status": 200,
+   "stmts": 9,
+   "roundtrips": 9,
+   "rows": 15249,
+   "bytes_from_db": 9731793,
+   "resp_bytes": 1821,
+   "resets": 9
+  },
+  "after": {
+   "status": 200,
+   "stmts": 8,
+   "roundtrips": 8,
+   "rows": 15248,
+   "bytes_from_db": 2022977,
+   "resp_bytes": 1821,
+   "resets": 8
+  }
+ },
+ "bookings/master 1 day": {
+  "before": {
+   "status": 200,
+   "stmts": 5,
+   "roundtrips": 5,
+   "rows": 13,
+   "bytes_from_db": 13427,
+   "resp_bytes": 3862,
+   "resets": 5
+  },
+  "after": {
+   "status": 200,
+   "stmts": 4,
+   "roundtrips": 4,
+   "rows": 12,
+   "bytes_from_db": 9821,
+   "resp_bytes": 3862,
+   "resets": 4
+  }
+ },
+ "bookings/master 1 month": {
+  "before": {
+   "status": 200,
+   "stmts": 5,
+   "roundtrips": 5,
+   "rows": 559,
+   "bytes_from_db": 434838,
+   "resp_bytes": 235721,
+   "resets": 5
+  },
+  "after": {
+   "status": 200,
+   "stmts": 4,
+   "roundtrips": 4,
+   "rows": 558,
+   "bytes_from_db": 299470,
+   "resp_bytes": 235721,
+   "resets": 4
+  }
+ },
+ "bookings/client (~150)": {
+  "before": {
+   "status": 200,
+   "stmts": 8,
+   "roundtrips": 8,
+   "rows": 165,
+   "bytes_from_db": 243055,
+   "resp_bytes": 178374,
+   "resets": 8
+  },
+  "after": {
+   "status": 200,
+   "stmts": 7,
+   "roundtrips": 7,
+   "rows": 164,
+   "bytes_from_db": 242349,
+   "resp_bytes": 178374,
+   "resets": 7
+  }
+ },
+ "bookings/{id} (master)": {
+  "before": {
+   "status": 200,
+   "stmts": 6,
+   "roundtrips": 6,
+   "rows": 8,
+   "bytes_from_db": 9052,
+   "resp_bytes": 1398,
+   "resets": 6
+  },
+  "after": {
+   "status": 200,
+   "stmts": 5,
+   "roundtrips": 5,
+   "rows": 7,
+   "bytes_from_db": 7137,
+   "resp_bytes": 1398,
+   "resets": 5
+  }
+ },
+ "bookings/availability 30d (anon)": {
+  "before": {
+   "status": 200,
+   "stmts": 6,
+   "roundtrips": 6,
+   "rows": 130,
+   "bytes_from_db": 11522,
+   "resp_bytes": 2971,
+   "resets": 6
+  },
+  "after": {
+   "status": 200,
+   "stmts": 6,
+   "roundtrips": 6,
+   "rows": 130,
+   "bytes_from_db": 11522,
+   "resp_bytes": 2971,
+   "resets": 6
+  }
+ },
+ "bookings/slots 1 day (anon)": {
+  "before": {
+   "status": 200,
+   "stmts": 5,
+   "roundtrips": 5,
+   "rows": 5,
+   "bytes_from_db": 1354,
+   "resp_bytes": 609,
+   "resets": 5
+  },
+  "after": {
+   "status": 200,
+   "stmts": 5,
+   "roundtrips": 5,
+   "rows": 5,
+   "bytes_from_db": 1354,
+   "resp_bytes": 609,
+   "resets": 5
+  }
+ },
+ "bookings/slots 1 day (client JWT)": {
+  "before": {
+   "status": 200,
+   "stmts": 8,
+   "roundtrips": 8,
+   "rows": 8,
+   "bytes_from_db": 2577,
+   "resp_bytes": 609,
+   "resets": 8
+  },
+  "after": {
+   "status": 200,
+   "stmts": 7,
+   "roundtrips": 7,
+   "rows": 7,
+   "bytes_from_db": 1871,
+   "resp_bytes": 609,
+   "resets": 7
+  }
+ },
+ "admin/companies p1": {
+  "before": {
+   "status": 200,
+   "stmts": 7,
+   "roundtrips": 7,
+   "rows": 88,
+   "bytes_from_db": 32204,
+   "resp_bytes": 7781,
+   "resets": 7
+  },
+  "after": {
+   "status": 200,
+   "stmts": 6,
+   "roundtrips": 6,
+   "rows": 42,
+   "bytes_from_db": 11472,
+   "resp_bytes": 7781,
+   "resets": 6
+  }
+ },
+ "admin/bookings (no filter, top 500)": {
+  "before": {
+   "status": 200,
+   "stmts": 3,
+   "roundtrips": 3,
+   "rows": 562,
+   "bytes_from_db": 747733,
+   "resp_bytes": 165611,
+   "resets": 3
+  },
+  "after": {
+   "status": 200,
+   "stmts": 2,
+   "roundtrips": 2,
+   "rows": 561,
+   "bytes_from_db": 746997,
+   "resp_bytes": 165611,
+   "resets": 2
+  }
+ },
+ "admin/bookings company+month": {
+  "before": {
+   "status": 200,
+   "stmts": 3,
+   "roundtrips": 3,
+   "rows": 561,
+   "bytes_from_db": 748673,
+   "resp_bytes": 165751,
+   "resets": 3
+  },
+  "after": {
+   "status": 200,
+   "stmts": 2,
+   "roundtrips": 2,
+   "rows": 560,
+   "bytes_from_db": 747937,
+   "resp_bytes": 165751,
+   "resets": 2
+  }
+ },
+ "admin/notification-channels p1": {
+  "before": {
+   "status": 200,
+   "stmts": 4,
+   "roundtrips": 4,
+   "rows": 272,
+   "bytes_from_db": 91014,
+   "resp_bytes": 6527,
+   "resets": 4
+  },
+  "after": {
+   "status": 200,
+   "stmts": 10,
+   "roundtrips": 10,
+   "rows": 82,
+   "bytes_from_db": 23424,
+   "resp_bytes": 6207,
+   "resets": 10
+  }
+ },
+ "profile (trivial auth, F20)": {
+  "before": {
+   "status": 200,
+   "stmts": 3,
+   "roundtrips": 3,
+   "rows": 5,
+   "bytes_from_db": 1262,
+   "resp_bytes": 240,
+   "resets": 3
+  },
+  "after": {
+   "status": 200,
+   "stmts": 3,
+   "roundtrips": 3,
+   "rows": 5,
+   "bytes_from_db": 1778,
+   "resp_bytes": 240,
+   "resets": 3
+  }
+ },
+ "legal/documents (anon baseline)": {
+  "before": {
+   "status": 200,
+   "stmts": 0,
+   "roundtrips": 0,
+   "rows": 0,
+   "bytes_from_db": 0,
+   "resp_bytes": 2196,
+   "resets": 0
+  },
+  "after": {
+   "status": 200,
+   "stmts": 0,
+   "roundtrips": 0,
+   "rows": 0,
+   "bytes_from_db": 0,
+   "resp_bytes": 2196,
+   "resets": 0
+  }
+ }
+}
