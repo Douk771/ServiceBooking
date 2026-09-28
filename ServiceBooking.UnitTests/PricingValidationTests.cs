@@ -13,20 +13,20 @@ namespace ServiceBooking.UnitTests;
 /// </summary>
 public class PricingValidationTests
 {
-    private static Billing_AdminOptionInput NewOptionInput(decimal? price = 100, int? maxQuantity = 10) => new(
+    private static AdminOptionInput NewOptionInput(decimal? price = 100, int? maxQuantity = 10) => new(
         Code: "test.option", Name: "Test option", Description: null, Kind: "Toggle", CapabilityKey: null,
         PricePerMonth: price, UnitName: null, MaxQuantity: maxQuantity);
 
     [Fact]
     public void ValidateOptionInput_PriceAtTheColumnCeiling_IsAccepted() =>
-        AdminBillingController.ValidateOptionInput(NewOptionInput(AdminBillingController.MaxOptionPricePerMonth), existingCode: null)
+        AdminBillingController.ValidateOptionInput(NewOptionInput(AdminBillingController.MaxOptionPricePerMonth))
             .Should().BeNull();
 
     [Fact]
     public void ValidateOptionInput_PriceAboveTheColumnCeiling_Is400NotAnUnhandledOverflow()
     {
         var result = AdminBillingController.ValidateOptionInput(
-            NewOptionInput(AdminBillingController.MaxOptionPricePerMonth + 0.01m), existingCode: null);
+            NewOptionInput(AdminBillingController.MaxOptionPricePerMonth + 0.01m));
 
         result.Should().BeOfType<BadRequestObjectResult>();
     }
@@ -35,14 +35,14 @@ public class PricingValidationTests
     public void ValidateOptionInput_MaxQuantityAboveItsCeiling_Is400()
     {
         var result = AdminBillingController.ValidateOptionInput(
-            NewOptionInput(maxQuantity: AdminBillingController.MaxOptionMaxQuantity + 1), existingCode: null);
+            NewOptionInput(maxQuantity: AdminBillingController.MaxOptionMaxQuantity + 1));
 
         result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
     public void ValidateOptionInput_NullPrice_IsStillAccepted_NotForSaleIsAValidState() =>
-        AdminBillingController.ValidateOptionInput(NewOptionInput(price: null), existingCode: null).Should().BeNull();
+        AdminBillingController.ValidateOptionInput(NewOptionInput(price: null)).Should().BeNull();
 
     private static AdminPlanInput NewPlanInput(decimal price = 990) => new(
         Name: "Standard", Description: null, Highlights: null, PricePerMonth: price,

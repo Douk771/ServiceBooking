@@ -40,7 +40,7 @@ public class OwnerSubscriptionService(
             ? await db.PlanOptionRules.Where(r => r.PlanConfigId == planConfigId).ToListAsync()
             : [];
 
-        var optionDtos = subscribedOptions.Select(o => ToSubscribedOptionDto(o, planRules, now)).ToList();
+        var optionDtos = subscribedOptions.Select(o => ToSubscribedOptionDto(o, planRules)).ToList();
 
         var usage = (await usageReader.GetAsync([account.Id])).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
 
@@ -236,7 +236,7 @@ public class OwnerSubscriptionService(
         return $"Оплачено {paid} из {registered} заведённых номеров. Чтобы включить остальные, подключите ещё одну «Рассылку в WhatsApp».";
     }
 
-    private SubscribedOptionDto ToSubscribedOptionDto(AccountSubscriptionOption row, List<PlanOptionRule> planRules, DateTime now)
+    private SubscribedOptionDto ToSubscribedOptionDto(AccountSubscriptionOption row, List<PlanOptionRule> planRules)
     {
         var rule = planRules.FirstOrDefault(r => r.OptionId == row.OptionId);
         // N14 — a missing rule means Unavailable (fail-closed on money, §43.3), never Extra. This

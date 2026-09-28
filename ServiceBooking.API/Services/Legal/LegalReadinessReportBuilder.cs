@@ -217,5 +217,3 @@ public record LegalReadinessAnchorsDto(List<LegalReadinessMissingAnchorDto> Miss
 public record LegalReadinessImpactEntryDto(string DocumentType, string Gate, int Users);
 
 public record LegalReadinessImpactSummaryDto(List<LegalReadinessImpactEntryDto> ReAcceptanceRequired, string Note);
-
-public record LegalReadinessDriftDto(string ComparedWith, List<string> DifferentFiles);

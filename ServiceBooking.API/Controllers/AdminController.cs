@@ -1247,11 +1247,6 @@ public class AdminController(
             ContentType = "text/plain; charset=utf-8",
         };
 
-    private static AdminChannelDto MapAdminChannelDto(NotificationChannel channel, int idleDays) => new(
-        channel.Id, channel.Transport, channel.State, ChannelPaymentState.Of(channel, DateTime.UtcNow), "", null,
-        channel.PaidFromUtc, channel.PaidUntilUtc, channel.Assignments.Count, channel.IdleSinceUtc, channel.RequestedAtUtc,
-        channel.Inn, channel.LegalEntityForm);
-
     // ── Retention policy (T5-B8/B9, ARCHITECTURE_CYCLE5.md §49.5) ────────────────
 
     // §49.5: "сроки не переписываются руками в документ, а выгружаются из работающей конфигурации" —
@@ -1305,15 +1300,6 @@ public record SubscriptionDiagnosticsDto(
 public record SubscriptionDiagnosticsCompanyDto(
     Guid CompanyId, string Name, bool AllowSelfBooking, bool OnlineBookingEnabled,
     PlanNotAppliedReason BlockingReason);
-
-// PUT /api/admin/plans/{id} body. Cycle-5 fields are nullable and applied only when present in the
-// request (see UpdatePlan) — binding straight into SubscriptionPlanConfig used to reset them to
-// false/0/null whenever a caller that doesn't know about them (the current admin UI) omitted them.
-public record UpdatePlanDto(
-    string Name, decimal PricePerMonth, int? MaxEmployees, int? MaxCompanies,
-    bool AllowOnlineBooking, bool AllowMailing, bool AllowAnalytics, bool AllowPublicListing, bool AllowOnlinePayment,
-    int? PhotoQuotaMb, PhotoRetention PhotoRetention, string? Description, bool IsActive, int NotifyDaysBefore,
-    string? Highlights = null, bool? IsPublic = null, int? SortOrder = null, bool? IsSystemFree = null);
 
 // contracts/cycle7/openapi.yaml AdminPlanDto/PlanOptionRuleDto — `Options` is always empty (see MapAdminPlanDto)
 // until the BillingAccount option catalog exists (cycle-07 backend report).
@@ -1379,8 +1365,6 @@ public record RetentionPolicyDto(
 public record AdminChannelSummaryDto(
     int Connected, int Connecting, int Disconnected, int Blocked,
     int NeedsReconnect, int Idle, int ExpiringIn7Days, int PendingRequests);
-
-public record AdminChannelPaymentDto(DateOnly PaidFrom, DateOnly PaidUntil, decimal? Amount, string? Comment);
 
 public record AdminChannelSuspendDto(string? Comment);
 

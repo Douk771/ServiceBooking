@@ -46,7 +46,7 @@ public class AdminBillingController(
     }
 
     [HttpPost("billing-accounts/{accountId:guid}/trial/regrant")]
-    public async Task<IActionResult> RegrantTrial(Guid accountId, [FromBody] Billing_RegrantTrialInput dto)
+    public async Task<IActionResult> RegrantTrial(Guid accountId, [FromBody] RegrantTrialInput dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Reason) || dto.Reason.Trim().Length == 0)
             return BadRequest("Причина обязательна.");
@@ -98,9 +98,9 @@ public class AdminBillingController(
     }
 
     [HttpPost("options")]
-    public async Task<IActionResult> CreateOption([FromBody] Billing_AdminOptionInput dto)
+    public async Task<IActionResult> CreateOption([FromBody] AdminOptionInput dto)
     {
-        var validationError = ValidateOptionInput(dto, existingCode: null);
+        var validationError = ValidateOptionInput(dto);
         if (validationError is not null) return validationError;
 
         if (await db.SubscriptionOptions.AnyAsync(o => o.Code == dto.Code))
@@ -128,7 +128,7 @@ public class AdminBillingController(
     }
 
     [HttpPut("options/{id:guid}")]
-    public async Task<IActionResult> UpdateOption(Guid id, [FromBody] Billing_AdminOptionInput dto)
+    public async Task<IActionResult> UpdateOption(Guid id, [FromBody] AdminOptionInput dto)
     {
         var option = await db.SubscriptionOptions.FindAsync(id);
         if (option is null) return NotFound();
@@ -136,7 +136,7 @@ public class AdminBillingController(
         if (dto.Code != option.Code)
             return BadRequest("Код опции менять нельзя.");
 
-        var validationError = ValidateOptionInput(dto, existingCode: option.Code);
+        var validationError = ValidateOptionInput(dto);
         if (validationError is not null) return validationError;
 
         option.Name = dto.Name;
@@ -189,7 +189,7 @@ public class AdminBillingController(
     // (BillingCalculator.MonthlyPriceFor multiplies a subscribed quantity by the option's price).
     public const int MaxOptionMaxQuantity = 1_000_000;
 
-    internal static IActionResult? ValidateOptionInput(Billing_AdminOptionInput dto, string? existingCode)
+    internal static IActionResult? ValidateOptionInput(AdminOptionInput dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Code) || !CodePattern.IsMatch(dto.Code))
             return new BadRequestObjectResult("Код опции обязателен и должен соответствовать формату ^[a-z0-9.-]{2,64}$.");
@@ -613,7 +613,7 @@ public class AdminBillingController(
     }
 
     [HttpPut("billing-accounts/{accountId:guid}/subscription")]
-    public async Task<IActionResult> AssignSubscription(Guid accountId, [FromBody] Billing_AssignSubscriptionInput dto)
+    public async Task<IActionResult> AssignSubscription(Guid accountId, [FromBody] AssignSubscriptionInput dto)
     {
         var account = await db.BillingAccounts.Include(a => a.Owner).FirstOrDefaultAsync(a => a.Id == accountId);
         if (account is null) return NotFound();
@@ -965,18 +965,18 @@ public class AdminBillingController(
     }
 }
 
-// ── Local input DTOs (kept private-ish to this controller; distinct names avoid clashing with the
-// legacy record types already declared at the bottom of AdminController.cs) ─────────────────────────
-public record Billing_AdminOptionInput(
+// ── Local input DTOs of this controller (the former `Billing_` prefix only avoided a clash with dead
+// twins in DTOs/Billing/AdminBillingDtos.cs, removed in cycle 22 — ARCHITECTURE_CYCLE22.md §371) ────
+public record AdminOptionInput(
     string Code, string Name, string? Description, string Kind, string? CapabilityKey,
     decimal? PricePerMonth, string? UnitName, int? MaxQuantity, bool IsPublic = false, bool IsActive = true, int SortOrder = 0);
 
-public record Billing_AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
+public record AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
 
-public record Billing_RegrantTrialInput(string Reason);
+public record RegrantTrialInput(string Reason);
 
-public record Billing_AssignSubscriptionInput(
-    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<Billing_AssignOptionInput> Options,
+public record AssignSubscriptionInput(
+    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<AssignOptionInput> Options,
     decimal? Amount, string? Comment, Guid? RequestId, bool ConfirmLimitOverflow = false);
 
 public record RejectRequestDto(string? Comment);

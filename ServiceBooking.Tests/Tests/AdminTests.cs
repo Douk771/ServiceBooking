@@ -1186,7 +1186,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         created.Highlights.Should().Equal("Было");
 
         var updateResponse = await adminClient.PutJsonAsync($"/api/admin/plans/{created.Id}",
-            ToUpdateDto(created, highlights: "Стало\nВторая строка", isPublic: true, sortOrder: 42));
+            ToUpdateDto(created, highlights: ["Стало", "Вторая строка"], isPublic: true, sortOrder: 42));
 
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await updateResponse.Content.ReadJsonAsync<AdminPlanDto>();
@@ -1310,22 +1310,24 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     /// <summary>
-    /// Builds a PUT /api/admin/plans/{id} request body from a previously-fetched AdminPlanDto plus
-    /// explicit overrides — the request (UpdatePlanDto) and response (AdminPlanDto) shapes differ (most
-    /// notably: request Highlights is a single newline-joined string, response Highlights is a
-    /// List&lt;string&gt; — see the QA report's note on this being an AdminPlanInput/contract mismatch
-    /// worth a backend follow-up), so the response body can't just be echoed back as the next PUT's body.
+    /// Builds a PUT /api/admin/plans/{id} request body (AdminPlanInput) from a previously-fetched
+    /// AdminPlanDto plus explicit overrides — the request and response shapes differ (the response carries
+    /// Currency/IsSystemFree/SubscribedAccounts etc. that the request doesn't accept), so the response body
+    /// can't just be echoed back as the next PUT's body. IsPublic/SortOrder/Highlights/Options stay null
+    /// ("not specified — keep the current value") unless overridden. Cycle 22 (ARCHITECTURE_CYCLE22.md
+    /// §371): switched from a dead test-only plan DTO to the live AdminPlanInput.
     /// </summary>
-    private static UpdatePlanDto ToUpdateDto(AdminPlanDto plan,
+    private static AdminPlanInput ToUpdateDto(AdminPlanDto plan,
         string? name = null, decimal? pricePerMonth = null, int? maxEmployees = null, int? maxCompanies = null,
         bool? allowAnalytics = null, int? photoQuotaMb = null, PhotoRetention? photoRetention = null,
-        bool? isActive = null, string? highlights = null, bool? isPublic = null, int? sortOrder = null,
-        bool? isSystemFree = null) => new(
-            name ?? plan.Name, pricePerMonth ?? plan.PricePerMonth,
-            maxEmployees ?? plan.MaxEmployees, maxCompanies ?? plan.MaxCompanies,
-            plan.AllowOnlineBooking, plan.AllowMailing, allowAnalytics ?? plan.AllowAnalytics,
-            plan.AllowPublicListing, plan.AllowOnlinePayment,
-            photoQuotaMb ?? plan.PhotoQuotaMb, photoRetention ?? plan.PhotoRetention,
-            plan.Description, isActive ?? plan.IsActive, plan.NotifyDaysBefore,
-            highlights, isPublic, sortOrder, isSystemFree);
+        bool? isActive = null, List<string>? highlights = null, bool? isPublic = null, int? sortOrder = null) => new(
+            Name: name ?? plan.Name, Description: plan.Description, Highlights: highlights,
+            PricePerMonth: pricePerMonth ?? plan.PricePerMonth,
+            MaxEmployees: maxEmployees ?? plan.MaxEmployees, MaxCompanies: maxCompanies ?? plan.MaxCompanies,
+            AllowOnlineBooking: plan.AllowOnlineBooking, AllowMailing: plan.AllowMailing,
+            AllowAnalytics: allowAnalytics ?? plan.AllowAnalytics,
+            AllowPublicListing: plan.AllowPublicListing, AllowOnlinePayment: plan.AllowOnlinePayment,
+            PhotoQuotaMb: photoQuotaMb ?? plan.PhotoQuotaMb, PhotoRetention: photoRetention ?? plan.PhotoRetention,
+            NotifyDaysBefore: plan.NotifyDaysBefore,
+            IsPublic: isPublic, IsActive: isActive ?? plan.IsActive, SortOrder: sortOrder);
 }

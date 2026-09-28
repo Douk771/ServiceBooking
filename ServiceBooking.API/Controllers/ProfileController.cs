@@ -1158,9 +1158,9 @@ public class ProfileController(
         // "granted" is the latest row per purpose UNDER PdnConsent specifically, revoked or not — a
         // revoked purpose still needs to show up (with revokedAt set) so the profile screen can render
         // it as "revoked" rather than making it look like it was never granted (API_CONTRACT_CYCLE5.md
-        // §41.1). Deliberately NOT ConsentLedger.CurrentAllAsync, which only ever returns non-revoked
-        // rows — that method answers a different question ("what currently applies"), used for gating
-        // decisions elsewhere, not for this audit-style view.
+        // §41.1). Deliberately NOT a "current grants" read (ConsentLedger.CurrentAsync), which only
+        // ever returns non-revoked rows — that answers a different question ("what currently applies"),
+        // used for gating decisions elsewhere, not for this audit-style view.
         var granted = history
             .Where(s => s.DocumentKey == LegalDocumentType.PdnConsent.ToString() && s.Purpose is not null)
             .GroupBy(s => s.Purpose)
