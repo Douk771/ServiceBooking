@@ -4,7 +4,6 @@ import {
   computeExpectedTotal,
   buildAssignInput,
   isPaidUntilMissing,
-  formatRub,
   type AssignOptionRow,
 } from './billingAccountsHelpers'
 
@@ -137,15 +136,5 @@ describe('buildAssignInput — free plan never carries an expiry', () => {
       confirmLimitOverflow: false,
     })
     expect(input.paidUntil).toBe('2026-01-01')
-  })
-})
-
-describe('formatRub', () => {
-  it('formats whole rubles with a ru-RU thousands separator and no kopecks', () => {
-    expect(formatRub(12345)).toBe(`${(12345).toLocaleString('ru-RU')} ₽`)
-  })
-
-  it('rounds fractional values to the nearest ruble', () => {
-    expect(formatRub(999.6)).toBe(`${(1000).toLocaleString('ru-RU')} ₽`)
   })
 })

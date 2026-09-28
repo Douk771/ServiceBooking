@@ -20,14 +20,7 @@ import { NoteCard } from '../components/clientNotes/NoteCard'
 import { NotePhotoUploader } from '../components/clientNotes/NotePhotoUploader'
 import { MyDevicesCard } from '../components/push/MyDevicesCard'
 import type { Booking } from '../types'
-
-const STATUS_LABELS: Record<string, string> = {
-  Pending: 'Ожидает',
-  Confirmed: 'Подтверждена',
-  Completed: 'Выполнена',
-  Cancelled: 'Отменена',
-  NoShow: 'Не пришёл',
-}
+import { bookingStatusLabel } from '../utils/bookingStatus'
 
 function dayLabel(dateStr: string) {
   const d = parseISO(dateStr)
@@ -103,7 +96,7 @@ function ClientHistoryPanel({ booking, client }: ClientHistoryPanelProps) {
                         : 'bg-cream-deep text-ink-soft'
                   }`}
                 >
-                  {STATUS_LABELS[b.status] ?? b.status}
+                  {bookingStatusLabel(b.status)}
                 </span>
               </div>
             ))}

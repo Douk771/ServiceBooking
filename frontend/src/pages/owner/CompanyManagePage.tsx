@@ -27,6 +27,7 @@ import { PhoneInput } from '../../components/ui/PhoneInput'
 import { formatPhone, isRussianPhone } from '../../utils/phone'
 import { formatCityTimeZone } from '../../utils/timezone'
 import type { Service, City } from '../../types'
+import { formatRub } from '../../utils/money'
 
 // ── Services tab ──────────────────────────────────────────────────────────────
 
@@ -169,7 +170,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
                   <p className="font-medium text-ink">{s.name}</p>
                   <p className="text-sm text-muted flex items-center gap-1">
                     <Icon name="clock" size={13} strokeWidth={1.7} /> {s.durationMinutes} мин ·{' '}
-                    {s.price.toLocaleString('ru-RU')} ₽
+                    {formatRub(s.price)}
                   </p>
                   {s.description && <p className="text-xs text-muted mt-0.5 line-clamp-1">{s.description}</p>}
                 </div>

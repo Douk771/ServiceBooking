@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDateTime } from '../../utils/dateFormat'
 import { mailingApi } from '../../api/mailing'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
@@ -95,7 +94,7 @@ export function MailingTab({ companyId }: { companyId: string }) {
                   <div className="text-right shrink-0">
                     <p className="text-sm text-muted">{log.recipientCount} получателей</p>
                     <p className="text-xs text-muted mt-0.5">
-                      {format(parseISO(log.sentAt), 'd MMM yyyy, HH:mm', { locale: ru })}
+                      {fmtDateTime(log.sentAt)}
                     </p>
                   </div>
                 </div>

@@ -13,6 +13,7 @@ import { ChannelRequestModal } from '../../components/notifications/ChannelReque
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import { TRANSPORT_LABELS } from '../../utils/notificationTransport'
 import type { ChannelDto } from '../../types'
+import { formatRub } from '../../utils/money'
 
 // ── Offer (before any channel is bought) ────────────────────────────────────────
 
@@ -74,7 +75,7 @@ function OfferCard({ hasExistingChannel }: { hasExistingChannel: boolean }) {
         передаются номер получателя, имя и текст сообщения.
       </p>
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <p className="text-lg font-semibold text-gold-dark">{offer.pricePerMonth.toLocaleString('ru-RU')} ₽ / мес</p>
+        <p className="text-lg font-semibold text-gold-dark">{formatRub(offer.pricePerMonth)} / мес</p>
         <Button onClick={() => setShowRequest(true)}>Подключить канал</Button>
       </div>
 

@@ -11,15 +11,8 @@ import { Icon } from '../../components/ui/Icon'
 import { TemplateAcknowledgementModal } from './TemplateAcknowledgementModal'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
 import type { NotificationType } from '../../types'
+import { NOTIFICATION_TYPE_LABELS } from '../../utils/notificationTransport'
 
-const TYPE_LABELS: Record<NotificationType, string> = {
-  BookingConfirmed: 'Подтверждение записи',
-  Reminder: 'Напоминание о визите',
-  BookingCancelled: 'Отмена записи',
-  BookingRescheduled: 'Перенос записи',
-  StaffBookingCreated: 'Новая запись (персоналу)',
-  StaffBookingCancelled: 'Отмена записи (персоналу)',
-}
 const EDITABLE_TYPES: NotificationType[] = ['BookingConfirmed', 'Reminder', 'BookingCancelled', 'BookingRescheduled']
 
 /** Server body of the second 400 case in §47.2 — markers hit and `confirmedDespiteMarkers` wasn't set. */
@@ -142,7 +135,7 @@ export function NotificationTemplatesTab({ companyId }: { companyId: string }) {
               activeType === t ? 'bg-white text-ink shadow-sm' : 'text-gold-dark hover:text-ink'
             }`}
           >
-            {TYPE_LABELS[t]}
+            {NOTIFICATION_TYPE_LABELS[t]}
           </button>
         ))}
       </div>

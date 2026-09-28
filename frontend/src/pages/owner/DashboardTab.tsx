@@ -4,6 +4,7 @@ import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, end
 import { statsApi, type CompanyStats } from '../../api/stats'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
+import { formatRub } from '../../utils/money'
 
 type Period = 'today' | 'week' | 'month' | 'custom'
 
@@ -32,7 +33,7 @@ function BarChart({ data }: { data: { date: string; revenue: number }[] }) {
             <div
               className="w-full bg-[#C9A877] rounded-t-md transition-all"
               style={{ height: `${Math.max(pct, 2)}%` }}
-              title={`${d.revenue.toLocaleString('ru-RU')} ₽`}
+              title={formatRub(d.revenue)}
             />
             <span className="text-[10px] text-muted rotate-45 origin-left">{label}</span>
           </div>
@@ -90,7 +91,7 @@ export function DashboardTab({ companies }: Props) {
       <div className="flex flex-col gap-6">
         {/* Stat tiles */}
         <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
-          <StatTile label="Выручка" value={`${stats.totalRevenue.toLocaleString('ru-RU')} ₽`} />
+          <StatTile label="Выручка" value={formatRub(stats.totalRevenue)} />
           <StatTile label="Записей" value={String(stats.bookingsCount)} />
           <StatTile label="Выполнено" value={String(stats.completedCount)} />
           <StatTile label="Новых клиентов" value={String(stats.newClientsCount)} />
@@ -116,7 +117,7 @@ export function DashboardTab({ companies }: Props) {
                     className="flex items-center justify-between gap-4 py-2.5 border-b border-cream-deep last:border-0 text-[13.5px]"
                   >
                     <span className="text-ink">{m.masterName}</span>
-                    <span className="font-semibold text-gold-dark shrink-0">{m.revenue.toLocaleString('ru-RU')} ₽</span>
+                    <span className="font-semibold text-gold-dark shrink-0">{formatRub(m.revenue)}</span>
                   </div>
                 ))}
               </div>

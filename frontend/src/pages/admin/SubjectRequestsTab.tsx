@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDateTime } from '../../utils/dateFormat'
 import { subjectRequestsApi } from '../../api/subjectRequests'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
@@ -10,10 +9,6 @@ import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
 import { getSubjectRequestAdminErrorMessage } from '../../utils/subjectRequestError'
 import type { DueState, SubjectRequestDto, SubjectRequestKind, SubjectRequestStatus } from '../../types'
-
-function fmt(iso: string) {
-  return format(parseISO(iso), 'd MMM yyyy, HH:mm', { locale: ru })
-}
 
 const KIND_LABEL: Record<SubjectRequestKind, string> = {
   Access: 'Доступ',
@@ -190,7 +185,7 @@ export function SubjectRequestsTab() {
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DUE_CLASS[r.dueState]}`}>{DUE_LABEL[r.dueState]}</span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">
-                  {r.phoneMasked} · поступило {fmt(r.receivedAt)} · срок до {fmt(r.dueAt)}
+                  {r.phoneMasked} · поступило {fmtDateTime(r.receivedAt)} · срок до {fmtDateTime(r.dueAt)}
                 </p>
               </div>
               <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setAnswering(r)}>
