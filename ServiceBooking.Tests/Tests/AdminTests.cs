@@ -1267,12 +1267,12 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         // SubscriptionOptions.PricePerMonth IS numeric(10,2) — above this ceiling, SaveChangesAsync
         // itself would throw a raw Npgsql "numeric field overflow" (an unhandled 500), which is exactly
-        // why AdminBillingController.ValidateOptionInput checks this BEFORE the row ever reaches the
-        // DbContext (AdminBillingController.MaxOptionPricePerMonth).
+        // why AdminOptionsController.ValidateOptionInput checks this BEFORE the row ever reaches the
+        // DbContext (AdminOptionsController.MaxOptionPricePerMonth).
         var admin = await LoginAsSuperAdminAsync();
         var input = new AdminOptionInput(
             Unique("opt-cap-"), "Слишком дорогая опция", null, "Toggle", null,
-            AdminBillingController.MaxOptionPricePerMonth + 1, null, null);
+            AdminOptionsController.MaxOptionPricePerMonth + 1, null, null);
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/options", input);
 

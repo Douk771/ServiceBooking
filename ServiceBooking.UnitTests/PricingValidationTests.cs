@@ -19,14 +19,14 @@ public class PricingValidationTests
 
     [Fact]
     public void ValidateOptionInput_PriceAtTheColumnCeiling_IsAccepted() =>
-        AdminBillingController.ValidateOptionInput(NewOptionInput(AdminBillingController.MaxOptionPricePerMonth))
+        AdminOptionsController.ValidateOptionInput(NewOptionInput(AdminOptionsController.MaxOptionPricePerMonth))
             .Should().BeNull();
 
     [Fact]
     public void ValidateOptionInput_PriceAboveTheColumnCeiling_Is400NotAnUnhandledOverflow()
     {
-        var result = AdminBillingController.ValidateOptionInput(
-            NewOptionInput(AdminBillingController.MaxOptionPricePerMonth + 0.01m));
+        var result = AdminOptionsController.ValidateOptionInput(
+            NewOptionInput(AdminOptionsController.MaxOptionPricePerMonth + 0.01m));
 
         result.Should().BeOfType<BadRequestObjectResult>();
     }
@@ -34,15 +34,15 @@ public class PricingValidationTests
     [Fact]
     public void ValidateOptionInput_MaxQuantityAboveItsCeiling_Is400()
     {
-        var result = AdminBillingController.ValidateOptionInput(
-            NewOptionInput(maxQuantity: AdminBillingController.MaxOptionMaxQuantity + 1));
+        var result = AdminOptionsController.ValidateOptionInput(
+            NewOptionInput(maxQuantity: AdminOptionsController.MaxOptionMaxQuantity + 1));
 
         result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
     public void ValidateOptionInput_NullPrice_IsStillAccepted_NotForSaleIsAValidState() =>
-        AdminBillingController.ValidateOptionInput(NewOptionInput(price: null)).Should().BeNull();
+        AdminOptionsController.ValidateOptionInput(NewOptionInput(price: null)).Should().BeNull();
 
     private static AdminPlanInput NewPlanInput(decimal price = 990) => new(
         Name: "Standard", Description: null, Highlights: null, PricePerMonth: price,
