@@ -3,14 +3,14 @@
 **Разделы §330–§356.** Ветка цикла — `cycle/018-trial-plan` (её подготовил devops-engineer; ветки,
 коммиты и мёржи — не зона архитектора). Отправная точка — `develop` = `e9b7005`.
 
-**Вход:** `SPEC.md` (цикл 18; решения по развилкам **Д1–Д13** закрыты, **Д14–Д21** — раздел «Решения,
+**Вход:** `SPEC_CYCLE18_TRIAL_PLAN.md` (цикл 18; решения по развилкам **Д1–Д13** закрыты, **Д14–Д21** — раздел «Решения,
 уточнённые после правового разбора», тоже закрыты и не перерешиваются), `LEGAL_REVIEW_CYCLE18.md`
 целиком (§2.6 и §3.7 — готовые вставки в комплект, §4 — 18 готовых текстов, §5 — условия **Т1–Т5**,
 §6.1 — требования О1–О17), `CURRENT_STATE.md` **§0.2**, §3, §4.18, §4.19, §4.26 🔁, §4.27 🧹,
 §4.27 🔒, §5.0-bis, §5.0-septies, §5.0-octies 🧹/🔒, §6, §7, §9, §10.5.
 
 ⚠️ **Второй проход по этому документу (дополняющий, не переписывающий).** Первая редакция писалась до
-того, как в `SPEC.md` появились Д14–Д21. Правлены: §330, §332.3–§332.5, §332.7, §334 целиком, §335.2,
+того, как в `SPEC_CYCLE18_TRIAL_PLAN.md` появились Д14–Д21. Правлены: §330, §332.3–§332.5, §332.7, §334 целиком, §335.2,
 §335.3, §337.1, §338.1, §339.1, §341–§343, §345–§348, §351, §352. Добавлены: §334.5, §334.6, §335.4,
 §337.3, §338.4, §338.5, §343.1–§343.5, §353–§356. Что именно поменялось по смыслу — §354.
 
@@ -1315,11 +1315,11 @@ npm run types:api:cycle18        # openapi-typescript → src/types/api-cycle18.
 **D1.** Архивирование спек циклов 13/15/17 и перенаправление ссылок — §7 SPEC, шесть циклов долга:
 
 ```
-git show e9b7005:SPEC.md > SPEC_CYCLE17_C15_TECHDEBT.md
-git show f45fe56:SPEC.md > SPEC_CYCLE15_BOOKING_CARD_TARIFF.md
-git show 4058ae9:SPEC.md > SPEC_CYCLE13_PHOTO_LOGO_MAPS.md
+git show e9b7005:SPEC_CYCLE18_TRIAL_PLAN.md > SPEC_CYCLE17_C15_TECHDEBT.md
+git show f45fe56:SPEC_CYCLE18_TRIAL_PLAN.md > SPEC_CYCLE15_BOOKING_CARD_TARIFF.md
+git show 4058ae9:SPEC_CYCLE18_TRIAL_PLAN.md > SPEC_CYCLE13_PHOTO_LOGO_MAPS.md
 ```
-плюс перенаправление ссылок «`SPEC.md` §…», означающих циклы 13/15/17, в `ARCHITECTURE_CYCLE13.md`,
+плюс перенаправление ссылок «`SPEC_CYCLE18_TRIAL_PLAN.md` §…», означающих циклы 13/15/17, в `ARCHITECTURE_CYCLE13.md`,
 `ARCHITECTURE_CYCLE15.md`, `API_CONTRACT_CYCLE15.md`, `ARCHITECTURE_CYCLE17.md`,
 `API_CONTRACT_CYCLE17.md`, `LEGAL_REVIEW.md`, `CURRENT_STATE.md` §10.5; проверка —
 `grep -rn "SPEC\.md" --include="*.md" --include="*.cs" --include="*.ts" --include="*.tsx" .`
