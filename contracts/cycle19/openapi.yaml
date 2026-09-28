@@ -1,0 +1,1041 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 19
+# (лимиты сотрудников и компаний задаются только тарифом; удаление заготовки геокодера).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл и правила — API_CONTRACT_CYCLE19.md (§400–§416),
+# решения — ARCHITECTURE_CYCLE19.md (§380–§396), требования — SPEC.md цикла 19 (раздел
+# «Ответы заказчика (2026-09-28)» приоритетнее предположений). При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle19/openapi.yaml --port 4019
+#             npm run types:api:cycle19   (openapi-typescript -> src/types/api-cycle19.generated.ts)
+#   QA        schemathesis run contracts/cycle19/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle19/openapi.yaml
+#             npm run types:api:cycle19 && git diff --exit-code src/types/api-cycle19.generated.ts
+#
+# Здесь описаны ТОЛЬКО маршруты, которые цикл 19 меняет по форме или по смыслу, плюс
+# POST /api/companies/address/notice (форма не меняется, но фронт после удаления генерата цикла 13
+# берёт его типы отсюда). Остальной API — API_DOCUMENTATION.md и контракты циклов 3–18.
+#
+# У больших существующих DTO (OwnerSubscriptionDto, AdminPlanDto, AdminBillingAccountDto, CompanyDto,
+# PublicPricingDto) схема описывает ТОЛЬКО значимые для цикла поля и стоит с
+# additionalProperties: true — «форма прежняя плюс/минус вот это», без второй расходящейся копии DTO.
+# Удалённые поля перечислены в x-removed-properties (расширение-документация, инструменты его
+# игнорируют; отсутствие проверяет функциональный тест ADDR-032, см. API_CONTRACT_CYCLE19.md §413.4).
+
+info:
+  title: ServiceBooking API — цикл 19 (лимиты только в тарифе, геокодер удалён)
+  version: "19.0.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase в JSON; enum — строками (имена членов C#, PascalCase); DateTime — ISO-8601 UTC;
+      * тела осознанных ошибок 400/402/409/429 — ГОЛАЯ СТРОКА (text/plain) по-русски;
+      * 401 и 403 — ПУСТОЕ тело; 404 без явного тела — ПУСТОЕ тело (SuppressMapClientErrors = true);
+      * текст, который видит человек, собирает СЕРВЕР; фронт печатает его как есть.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, КОТОРЫЕ СХЕМА ЗАКРЕПЛЯЕТ ФОРМОЙ:
+
+    1. ОПЦИЯ-ЛИМИТ — это опция каталога, у которой capabilityKey (после trim и приведения к
+       нижнему регистру) равен "employees" или "companies". Признак определяет СЕРВЕР по
+       capabilityKey, а не по code: переименованный code не возвращает дублирование.
+       На сиде это extra-employees и extra-companies.
+
+    2. ОПЦИИ-ЛИМИТЫ НЕ ВОЗВРАЩАЮТСЯ НИ ОДНИМ СПИСКОМ, где их можно выбрать, купить или увидеть:
+       GET /api/admin/options, AdminPlanDto.options, availableOptions и options владельца,
+       options карточки аккаунта суперадмина, GET /api/pricing (и админский предпросмотр).
+       Фронт СВОЕГО фильтра по capabilityKey НЕ заводит — решает сервер (ARCHITECTURE_CYCLE19.md §386.2).
+
+    3. ПРИСЛАТЬ ОПЦИЮ-ЛИМИТ НЕЛЬЗЯ:
+       * заявка владельца и назначение подписки суперадмином → 400, ничего не сохраняется;
+       * создание/правка опции с capabilityKey employees/companies → 400;
+       * правка самой выведенной опции → 409;
+       * матрица тарифа (PUT/POST /api/admin/plans…) → правило по выведенной опции МОЛЧА
+         ИГНОРИРУЕТСЯ (200), а сохранённое в БД правило по ней НЕ удаляется и не меняется.
+
+    4. ЗАЯВКА, ПОДАННАЯ ДО ВЫКАТА, не ломает экраны: у строк заявки есть retired, у заявки —
+       retiredOptionsNotice (готовый текст сервера, null если выведенных строк нет). Выведенные
+       строки не входят в estimatedMonthlyPrice и при одобрении не применяются.
+
+    5. ЛИМИТ = ПОЛЕ ТАРИФА + БОНУС АККАУНТА. Сотрудники: MaxEmployees + GrandfatheredEmployeeBonus;
+       компании: MaxCompanies. null в поле тарифа = без ограничения, бонус к нему не прибавляется.
+       Купленные количества опций в лимит больше не входят.
+
+    6. ГЕОКОДЕРА НЕТ. POST /api/companies/address/lookup → 404 при ЛЮБОЙ конфигурации.
+       PUT /api/companies/{id}/address принимает verify и игнорирует его; ответ — { company }.
+       CompanyDto больше не содержит addressVerification и addressPoint.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4019
+    description: prism mock по этой схеме (фронт до появления бэкенда)
+
+tags:
+  - name: admin-options
+    description: Каталог опций в админке — без опций-лимитов, с запретом возвращать дублирование.
+  - name: admin-plans
+    description: Тарифы — лимиты только в полях тарифа, матрица опций без опций-лимитов.
+  - name: admin-billing
+    description: Карточка аккаунта, назначение подписки суперадмином и очередь заявок.
+  - name: billing-owner
+    description: Экран подписки владельца и заявка на тариф.
+  - name: pricing
+    description: Публичная витрина цен — без опций-лимитов при любых данных.
+  - name: companies
+    description: Компания — адрес без геокодера и правовой гейт публичности адреса.
+
+security:
+  - bearer: []
+
+paths:
+
+  # ─────────────────────────────── admin-options ───────────────────────────────
+
+  /api/admin/options:
+    get:
+      tags: [admin-options]
+      operationId: listAdminOptionsCycle19
+      summary: Каталог опций для админки (без опций-лимитов)
+      description: |
+        Прежняя форма ответа ({ options: AdminOptionDto[] }). Изменение цикла 19 — только смысловое:
+        опции-лимиты (capabilityKey employees/companies) в список НЕ попадают никогда, даже если
+        они активны. Из этого же списка фронт строит матрицу тарифа и выбор опций при назначении
+        подписки, поэтому выведенные опции там не появляются без собственного фильтра фронта.
+      responses:
+        "200":
+          description: Каталог без опций-лимитов.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [options]
+                properties:
+                  options:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminOptionDto" }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+    post:
+      tags: [admin-options]
+      operationId: createAdminOptionCycle19
+      summary: Создать опцию (capabilityKey employees/companies запрещён)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminOptionInput" }
+      responses:
+        "201":
+          description: Опция создана.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOptionDto" }
+        "400":
+          description: |
+            Ошибка валидации. Новое в цикле 19 — capabilityKey, равный (без учёта регистра и
+            пробелов по краям) "employees" или "companies":
+            «Возможности «employees» и «companies» нельзя продавать опцией: лимиты сотрудников и
+            компаний задаются только полями тарифа «Макс. сотрудников» и «Макс. компаний».»
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+        "409":
+          description: Опция с таким code уже существует (без изменений).
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/admin/options/{id}:
+    put:
+      tags: [admin-options]
+      operationId: updateAdminOptionCycle19
+      summary: Изменить опцию (выведенную — нельзя; перевести в employees/companies — нельзя)
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminOptionInput" }
+      responses:
+        "200":
+          description: Опция изменена.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminOptionDto" }
+        "400":
+          description: |
+            Ошибка валидации (как раньше) либо capabilityKey employees/companies — тот же текст,
+            что у POST.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+        "404": { description: Опции нет (пустое тело). }
+        "409":
+          description: |
+            Новое в цикле 19 — правится САМА выведенная опция (её сохранённый capabilityKey —
+            employees/companies): «Опция «{name}» выведена из оборота: лимиты сотрудников и компаний
+            задаются только тарифом. Изменить её нельзя.» Проверка выполняется ДО проверки «код
+            менять нельзя».
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/admin/option-capabilities:
+    get:
+      tags: [admin-options]
+      operationId: listOptionCapabilitiesCycle19
+      summary: Известные возможности опций (без employees и companies)
+      responses:
+        "200":
+          description: Список для выпадающего списка редактора опций.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [capabilities]
+                properties:
+                  capabilities:
+                    type: array
+                    items: { $ref: "#/components/schemas/CapabilityDto" }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+
+  # ─────────────────────────────── admin-plans ───────────────────────────────
+
+  /api/admin/plans:
+    post:
+      tags: [admin-plans]
+      operationId: createAdminPlanCycle19
+      summary: Создать тариф (правила по опциям-лимитам в options игнорируются)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlanInput" }
+      responses:
+        "201":
+          description: Тариф создан. options в ответе — без опций-лимитов.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlanDtoCycle19" }
+        "400":
+          description: Ошибка валидации (без изменений).
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+        "409":
+          description: Конфликт системного бесплатного тарифа (без изменений).
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/admin/plans/{id}:
+    put:
+      tags: [admin-plans]
+      operationId: updateAdminPlanCycle19
+      summary: Изменить тариф (правила по опциям-лимитам игнорируются, сохранённые не трогаются)
+      description: |
+        options — ПОЛНАЯ матрица (как с цикла 7), но с двумя правилами цикла 19:
+          1. элемент options с optionId выведенной опции молча отбрасывается (200, не 4xx) — так
+             не ломается сохранение тарифа из закэшированной старой вкладки, которая шлёт всю
+             матрицу целиком;
+          2. сохранённое правило по выведенной опции НЕ удаляется, даже если его нет в options
+             (иначе новый фронт, который его не видит, стёр бы его при первом сохранении).
+        Поля maxEmployees/maxCompanies — единственное место, где задаётся лимит.
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminPlanInput" }
+      responses:
+        "200":
+          description: Тариф сохранён. options в ответе — без опций-лимитов.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminPlanDtoCycle19" }
+        "400":
+          description: Ошибка валидации (без изменений).
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+        "404": { description: Тарифа нет (пустое тело). }
+        "409":
+          description: Конфликт деактивации/системного тарифа (без изменений).
+          content:
+            text/plain:
+              schema: { type: string }
+
+  # ─────────────────────────────── admin-billing ───────────────────────────────
+
+  /api/admin/billing-accounts/{accountId}:
+    get:
+      tags: [admin-billing]
+      operationId: getAdminBillingAccountCycle19
+      summary: Карточка биллинг-аккаунта (лимиты по новой формуле, заявка с пометкой выведенных опций)
+      parameters:
+        - $ref: "#/components/parameters/AccountIdPath"
+      responses:
+        "200":
+          description: Карточка аккаунта.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBillingAccountDtoCycle19" }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+        "404": { description: Аккаунта нет (пустое тело). }
+
+  /api/admin/billing-accounts/{accountId}/subscription:
+    put:
+      tags: [admin-billing]
+      operationId: assignSubscriptionCycle19
+      summary: Назначить подписку (опции-лимиты запрещены; проверка превышения по новой формуле)
+      description: |
+        Порядок проверок (новое выделено):
+          404 аккаунт → 400 paidUntil в прошлом → 400 нет paidUntil у платного → 409 заявка
+          обработана → 404 тариф → 409 триал здесь не назначается → 400 опция не найдена →
+          **400 опция выведена из оборота** → 400 количество → 409 опция недоступна на тарифе →
+          409 превышение лимита без confirmLimitOverflow.
+        Проверка превышения: companiesUsed > maxCompanies тарифа ИЛИ
+        employeesUsed > maxEmployees тарифа + grandfatheredEmployeeBonus (null = без проверки).
+        Количества опций из запроса в лимит НЕ входят.
+      parameters:
+        - $ref: "#/components/parameters/AccountIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignSubscriptionInput" }
+      responses:
+        "200":
+          description: Подписка назначена; ответ — карточка аккаунта.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBillingAccountDtoCycle19" }
+        "400":
+          description: |
+            Ошибка валидации. Новое в цикле 19 — в options есть выведенная опция:
+            «Опция «{name}» больше не подключается: лимиты сотрудников и компаний задаются только
+            тарифом.» Ничего не сохраняется.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+        "404": { description: Аккаунта или тарифа нет. }
+        "409":
+          description: |
+            Заявка уже обработана / опция недоступна на тарифе / превышение лимита без
+            confirmLimitOverflow (текст без изменений) / TrialPlanNotAssignableHere (JSON, цикл 18).
+          content:
+            text/plain:
+              schema: { type: string }
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required: [code, message]
+                properties:
+                  code: { type: string }
+                  message: { type: string }
+
+  /api/admin/subscription-requests:
+    get:
+      tags: [admin-billing]
+      operationId: listSubscriptionRequestsCycle19
+      summary: Очередь заявок (строки выведенных опций помечены, готовый текст предупреждения)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Страница заявок.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, page, pageSize, totalCount]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminSubscriptionRequestDtoCycle19" }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  totalCount: { type: integer }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не суперадмин (пустое тело). }
+
+  # ─────────────────────────────── billing-owner ───────────────────────────────
+
+  /api/billing/subscription:
+    get:
+      tags: [billing-owner]
+      operationId: getOwnerSubscriptionCycle19
+      summary: Экран подписки владельца (без опций-лимитов; заявка с пометкой выведенных строк)
+      responses:
+        "200":
+          description: Подписка владельца.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwnerSubscriptionDtoCycle19" }
+        "401": { description: Не авторизован (пустое тело). }
+        "404": { description: У пользователя нет биллинг-аккаунта (пустое тело). }
+
+  /api/billing/subscription/request:
+    post:
+      tags: [billing-owner]
+      operationId: submitSubscriptionRequestCycle19
+      summary: Подать заявку на тариф/опции (опции-лимиты запрещены)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubscriptionRequestInput" }
+      responses:
+        "200":
+          description: Заявка сохранена (повторная подача перезаписывает прежнюю).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubscriptionRequestDto" }
+        "400":
+          description: |
+            Ошибка валидации. Новое в цикле 19 — в options есть выведенная опция:
+            «Опция «{name}» больше не подключается: лимиты сотрудников и компаний задаются только
+            тарифом.» Ничего не сохраняется, прежняя заявка (если была) остаётся как была.
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Не авторизован (пустое тело). }
+        "404": { description: У пользователя нет биллинг-аккаунта (пустое тело). }
+
+  # ─────────────────────────────── pricing ───────────────────────────────
+
+  /api/pricing:
+    get:
+      tags: [pricing]
+      operationId: getPublicPricingCycle19
+      summary: Публичная витрина цен (опций-лимитов нет при любых данных)
+      security: []
+      description: |
+        Форма без изменений. options никогда не содержит опций-лимитов, даже если в данных они
+        активны, публичны и с ценой. includedEmployees/includedCompanies — ровно поля тарифа.
+        Тот же построитель обслуживает GET /api/admin/pricing/preview — правило то же.
+      responses:
+        "200":
+          description: Витрина.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicPricingDtoCycle19" }
+        "304": { description: Не изменилось (ETag). }
+        "404": { description: Витрина выключена рубильником публикации цен (пустое тело). }
+
+  # ─────────────────────────────── companies ───────────────────────────────
+
+  /api/companies/my:
+    get:
+      tags: [companies]
+      operationId: getMyCompaniesCycle19
+      summary: Компании владельца (без addressVerification)
+      responses:
+        "200":
+          description: Компании текущего пользователя.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CompanyDtoCycle19" }
+        "401": { description: Не авторизован (пустое тело). }
+
+  /api/companies/{slug}:
+    get:
+      tags: [companies]
+      operationId: getCompanyBySlugCycle19
+      summary: Публичная страница компании (без addressPoint)
+      security: []
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Компания.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanyDtoCycle19" }
+        "404": { description: Компании нет (пустое тело). }
+
+  /api/companies/{id}/address:
+    put:
+      tags: [companies]
+      operationId: saveCompanyAddressCycle19
+      summary: Сохранить или стереть адрес компании (без проверки по карте)
+      description: |
+        Адрес пишется ПОБАЙТНО как прислан; пустая строка стирает адрес. verify принимается и
+        ИГНОРИРУЕТСЯ (совместимость с закэшированным фронтом). Пять колонок проверки адреса в
+        таблице Companies код не читает и не пишет. Гейт публичности адреса — отдельный вызов
+        POST /api/companies/address/notice ДО этого (фронт). Лимит — политика address-verify
+        (по умолчанию 30 запросов в час на пользователя, имя политики не менялось).
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveCompanyAddressInput" }
+      responses:
+        "200":
+          description: Адрес сохранён. Ответ — обёртка с полной CompanyDto; поля verification больше нет.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanyAddressUpdateResultDto" }
+        "400":
+          description: «Адрес не должен превышать 300 символов» (без изменений).
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Не авторизован (пустое тело). }
+        "403": { description: Не владелец и не суперадмин (пустое тело). }
+        "404": { description: Компании нет (пустое тело). }
+        "429":
+          description: «Слишком много попыток изменить адрес. Повторите позже.» (текст новый, политика прежняя)
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/companies/address/notice:
+    post:
+      tags: [companies]
+      operationId: confirmPublicAddressNoticeCycle19
+      summary: Подтвердить предупреждение о публичности адреса (без изменений)
+      description: |
+        Форма и поведение без изменений (цикл 13, §242). Описан здесь, чтобы фронт брал типы
+        из api-cycle19.generated.ts после удаления генерата цикла 13. Та же политика address-verify.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitAddressNoticeInput" }
+      responses:
+        "200":
+          description: Подтверждение записано в журнал согласий.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AddressNoticeResultDto" }
+        "400":
+          description: «Подтверждение обязательно.»
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Не авторизован (пустое тело). }
+        "409":
+          description: «Текст был обновлён ещё раз — перечитайте и подтвердите заново.»
+          content:
+            text/plain:
+              schema: { type: string }
+        "429":
+          description: «Слишком много попыток изменить адрес. Повторите позже.»
+          content:
+            text/plain:
+              schema: { type: string }
+        "503":
+          description: «Правовые документы временно недоступны.»
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/companies/address/lookup:
+    post:
+      tags: [companies]
+      operationId: addressLookupRemovedCycle19
+      summary: УДАЛЁН в цикле 19 — всегда 404
+      deprecated: true
+      description: |
+        Маршрута больше нет. Ответ 404 с пустым телом при ЛЮБОЙ конфигурации, включая оставшиеся в
+        окружении ADDRESSVERIFICATION__PROVIDER=yandex и любые значения остальных ключей
+        ADDRESSVERIFICATION__*. Описан только чтобы QA автоматически проверил «404 всегда».
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "404": { description: Маршрута нет (пустое тело). }
+
+components:
+
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AccountIdPath:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+
+    OptionAvailability:
+      type: string
+      enum: [Unavailable, Included, Extra]
+
+    OptionKind:
+      type: string
+      enum: [Toggle, Quantity]
+
+    AdminOptionDto:
+      type: object
+      additionalProperties: false
+      required: [id, code, name, kind, capabilityKnown, currency, isPublic, isActive, sortOrder, subscribedAccounts]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        kind: { $ref: "#/components/schemas/OptionKind" }
+        capabilityKey:
+          type: string
+          nullable: true
+          description: Никогда не employees/companies — такие опции в ответы не попадают.
+        capabilityKnown: { type: boolean }
+        pricePerMonth: { type: number, nullable: true }
+        currency: { type: string, enum: [RUB] }
+        unitName: { type: string, nullable: true }
+        maxQuantity: { type: integer, nullable: true }
+        isPublic: { type: boolean }
+        isActive: { type: boolean }
+        sortOrder: { type: integer }
+        subscribedAccounts: { type: integer, minimum: 0 }
+
+    AdminOptionInput:
+      type: object
+      additionalProperties: true
+      required: [code, name, kind]
+      properties:
+        code: { type: string, pattern: "^[a-z0-9.\\-]{2,64}$" }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, nullable: true }
+        kind: { $ref: "#/components/schemas/OptionKind" }
+        capabilityKey:
+          type: string
+          nullable: true
+          description: |
+            Свободный текст разрешён (как с цикла 7), КРОМЕ employees/companies в любом регистре и с
+            пробелами по краям — такие значения дают 400.
+        pricePerMonth: { type: number, nullable: true, minimum: 0, maximum: 99999999.99 }
+        unitName: { type: string, nullable: true }
+        maxQuantity: { type: integer, nullable: true, minimum: 1, maximum: 1000000 }
+        isPublic: { type: boolean, default: false }
+        isActive: { type: boolean, default: true }
+        sortOrder: { type: integer, default: 0 }
+
+    CapabilityDto:
+      type: object
+      additionalProperties: false
+      required: [key, kind, name]
+      properties:
+        key:
+          type: string
+          enum: [notifications.whatsapp, analytics, online-payment]
+        kind:
+          type: string
+          enum: [Numeric, Boolean]
+        name: { type: string }
+
+    AdminPlanOptionRuleInput:
+      type: object
+      additionalProperties: true
+      required: [optionId, availability]
+      properties:
+        optionId: { type: string, format: uuid }
+        availability: { $ref: "#/components/schemas/OptionAvailability" }
+        includedQuantity: { type: integer, nullable: true, minimum: 0 }
+
+    AdminPlanInput:
+      type: object
+      additionalProperties: true
+      required: [name, pricePerMonth]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, nullable: true }
+        highlights:
+          type: array
+          nullable: true
+          items: { type: string }
+        pricePerMonth: { type: number, minimum: 0, maximum: 99999999.99 }
+        maxEmployees:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: ЕДИНСТВЕННЫЙ источник лимита сотрудников тарифа (null = без ограничения).
+        maxCompanies:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: ЕДИНСТВЕННЫЙ источник лимита компаний тарифа (null = без ограничения).
+        allowOnlineBooking: { type: boolean, default: false }
+        allowMailing: { type: boolean, default: false }
+        allowAnalytics: { type: boolean, default: false }
+        allowPublicListing: { type: boolean, default: true }
+        allowOnlinePayment: { type: boolean, default: false }
+        photoQuotaMb: { type: integer, nullable: true, minimum: 0 }
+        photoRetention:
+          type: string
+          enum: [SixMonths, TwelveMonths]
+        notifyDaysBefore: { type: integer, default: 7 }
+        isPublic: { type: boolean, nullable: true }
+        isActive: { type: boolean, default: true }
+        sortOrder: { type: integer, nullable: true }
+        options:
+          type: array
+          nullable: true
+          description: |
+            Полная матрица. null/отсутствует = матрицу не трогать. Элементы по выведенным опциям
+            отбрасываются молча; сохранённые правила по ним не удаляются.
+          items: { $ref: "#/components/schemas/AdminPlanOptionRuleInput" }
+
+    AdminPlanDtoCycle19:
+      type: object
+      additionalProperties: true
+      required: [id, maxEmployees, maxCompanies, options, optionCoverage]
+      properties:
+        id: { type: string, format: uuid }
+        maxEmployees: { type: integer, nullable: true }
+        maxCompanies: { type: integer, nullable: true }
+        options:
+          type: array
+          description: Правила кроме Unavailable, БЕЗ опций-лимитов.
+          items:
+            type: object
+            additionalProperties: false
+            required: [optionId, availability]
+            properties:
+              optionId: { type: string, format: uuid }
+              availability: { $ref: "#/components/schemas/OptionAvailability" }
+              includedQuantity: { type: integer, nullable: true }
+        optionCoverage:
+          type: object
+          additionalProperties: false
+          required: [configured, total, text]
+          description: configured и total считаются БЕЗ опций-лимитов (цикл 19).
+          properties:
+            configured: { type: integer, minimum: 0 }
+            total: { type: integer, minimum: 0 }
+            text: { type: string }
+
+    AssignOptionInput:
+      type: object
+      additionalProperties: true
+      required: [optionId, quantity]
+      properties:
+        optionId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        paidUntil: { type: string, format: date, nullable: true }
+
+    AssignSubscriptionInput:
+      type: object
+      additionalProperties: true
+      required: [isActive]
+      properties:
+        planId: { type: string, format: uuid, nullable: true }
+        isActive: { type: boolean }
+        paidUntil: { type: string, format: date, nullable: true }
+        options:
+          type: array
+          nullable: true
+          description: Опция-лимит в списке → 400. Отсутствие поля = «без опций».
+          items: { $ref: "#/components/schemas/AssignOptionInput" }
+        amount: { type: number, nullable: true }
+        comment: { type: string, nullable: true }
+        requestId: { type: string, format: uuid, nullable: true }
+        confirmLimitOverflow: { type: boolean, default: false }
+
+    SubscribedOptionDtoCycle19:
+      type: object
+      additionalProperties: true
+      required: [optionId, name, quantity, status]
+      description: Строка подключённой опции. Опции-лимиты в эти списки не попадают.
+      properties:
+        optionId: { type: string, format: uuid }
+        name: { type: string }
+        quantity: { type: integer }
+        status:
+          type: string
+          enum: [Active, Ending, PendingPayment, Unavailable]
+
+    SubscriptionRequestItemDto:
+      type: object
+      additionalProperties: false
+      required: [optionId, name, quantity, retired]
+      properties:
+        optionId: { type: string, format: uuid }
+        name: { type: string }
+        quantity: { type: integer }
+        retired:
+          type: boolean
+          description: |
+            Новое в цикле 19. true — строка про опцию-лимит (заявка подана до выката). Такая строка
+            не входит в estimatedMonthlyPrice и при одобрении не применяется.
+
+    SubscriptionRequestDto:
+      type: object
+      additionalProperties: false
+      required: [id, status, createdAt, estimatedMonthlyPrice, items]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [Pending] }
+        createdAt: { type: string, format: date-time }
+        desiredPlanId: { type: string, format: uuid, nullable: true }
+        desiredPlanName: { type: string, nullable: true }
+        estimatedMonthlyPrice:
+          type: number
+          description: Без строк retired = true.
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SubscriptionRequestItemDto" }
+        comment: { type: string, nullable: true }
+        irreversibilityNotice: { type: string, nullable: true }
+        retiredOptionsNotice:
+          type: string
+          nullable: true
+          description: |
+            Новое в цикле 19. Готовый текст сервера, если в заявке есть хотя бы одна строка
+            retired = true, иначе null. Фронт печатает как есть — владельцу на экране подписки,
+            суперадмину в карточке заявки и в окне одобрения ДО подтверждения.
+
+    AdminSubscriptionRequestDtoCycle19:
+      type: object
+      additionalProperties: false
+      required: [id, billingAccountId, requestedByName, createdAt, status, items, estimatedMonthlyPrice, companiesCount]
+      properties:
+        id: { type: string, format: uuid }
+        billingAccountId: { type: string, format: uuid }
+        accountName: { type: string, nullable: true }
+        requestedByName: { type: string }
+        requestedByPhoneMasked: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        status: { type: string, enum: [Pending] }
+        currentPlanName: { type: string, nullable: true }
+        desiredPlanName: { type: string, nullable: true }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SubscriptionRequestItemDto" }
+        estimatedMonthlyPrice:
+          type: number
+          description: Без строк retired = true.
+        comment: { type: string, nullable: true }
+        companiesCount: { type: integer }
+        retiredOptionsNotice:
+          type: string
+          nullable: true
+          description: Тот же текст, что в SubscriptionRequestDto.retiredOptionsNotice.
+
+    AdminBillingAccountDtoCycle19:
+      type: object
+      additionalProperties: true
+      required: [id, companiesUsed, employeesUsed, grandfatheredEmployeeBonus, options]
+      properties:
+        id: { type: string, format: uuid }
+        companiesUsed: { type: integer }
+        companiesLimit:
+          type: integer
+          nullable: true
+          description: MaxCompanies действующего тарифа (Free — 1); купленные количества не входят.
+        employeesUsed: { type: integer }
+        employeesLimit:
+          type: integer
+          nullable: true
+          description: MaxEmployees действующего тарифа (Free — 1) + grandfatheredEmployeeBonus; null = без ограничения.
+        grandfatheredEmployeeBonus: { type: integer, minimum: 0 }
+        grandfatheredEmployeeBonusText: { type: string, nullable: true }
+        totalMonthlyPrice:
+          type: number
+          description: Без опций-лимитов.
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/SubscribedOptionDtoCycle19" }
+        pendingRequest:
+          allOf:
+            - $ref: "#/components/schemas/SubscriptionRequestDto"
+          nullable: true
+
+    OwnerSubscriptionDtoCycle19:
+      type: object
+      additionalProperties: true
+      required: [options, availableOptions]
+      properties:
+        options:
+          type: array
+          items: { $ref: "#/components/schemas/SubscribedOptionDtoCycle19" }
+        availableOptions:
+          type: array
+          description: Опции, которые можно запросить. Опций-лимитов здесь нет никогда.
+          items:
+            type: object
+            additionalProperties: true
+            required: [optionId, name, availability, canRequest]
+            properties:
+              optionId: { type: string, format: uuid }
+              name: { type: string }
+              availability: { $ref: "#/components/schemas/OptionAvailability" }
+              canRequest: { type: boolean }
+        totalMonthlyPrice:
+          type: number
+          description: Без опций-лимитов.
+        pendingRequest:
+          allOf:
+            - $ref: "#/components/schemas/SubscriptionRequestDto"
+          nullable: true
+
+    SubscriptionRequestInput:
+      type: object
+      additionalProperties: true
+      properties:
+        planId: { type: string, format: uuid, nullable: true }
+        options:
+          type: array
+          nullable: true
+          description: Опция-лимит в списке → 400, ничего не сохраняется.
+          items:
+            type: object
+            additionalProperties: true
+            required: [optionId, quantity]
+            properties:
+              optionId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1 }
+        comment: { type: string, nullable: true, maxLength: 500 }
+
+    PublicPricingDtoCycle19:
+      type: object
+      additionalProperties: true
+      required: [plans, options]
+      properties:
+        plans:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [id, name]
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              includedCompanies:
+                type: integer
+                nullable: true
+                description: Ровно MaxCompanies тарифа.
+              includedEmployees:
+                type: integer
+                nullable: true
+                description: Ровно MaxEmployees тарифа.
+        options:
+          type: array
+          description: Без опций-лимитов при любых данных.
+          items:
+            type: object
+            additionalProperties: true
+            required: [id, name]
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+
+    CompanyDtoCycle19:
+      type: object
+      additionalProperties: true
+      required: [id, name]
+      x-removed-properties: [addressVerification, addressPoint]
+      description: |
+        CompanyDto БЕЗ addressVerification и addressPoint (удалены в цикле 19 — их не отдаёт ни один
+        маршрут). Остальная форма — как в контрактах циклов 3–18; перечислены только поля, важные
+        для этого цикла.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        address:
+          type: string
+          nullable: true
+          description: Ровно то, что сохранил владелец (побайтно); null — адреса нет.
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        accountSeatsLimit:
+          type: integer
+          nullable: true
+          description: Лимит сотрудников аккаунта по формуле цикла 19.
+        canAddEmployee:
+          type: boolean
+          nullable: true
+          description: Считается по формуле цикла 19 (тариф + бонус).
+
+    SaveCompanyAddressInput:
+      type: object
+      additionalProperties: true
+      required: [address]
+      properties:
+        address:
+          type: string
+          maxLength: 300
+          description: Пустая строка стирает адрес. Сохраняется побайтно.
+        verify:
+          type: boolean
+          default: false
+          deprecated: true
+          description: Принимается и игнорируется (совместимость с закэшированным фронтом).
+
+    CompanyAddressUpdateResultDto:
+      type: object
+      additionalProperties: false
+      required: [company]
+      properties:
+        company: { $ref: "#/components/schemas/CompanyDtoCycle19" }
+
+    SubmitAddressNoticeInput:
+      type: object
+      additionalProperties: true
+      required: [textVersion, confirmed]
+      properties:
+        textVersion: { type: string }
+        confirmed: { type: boolean }
+
+    AddressNoticeResultDto:
+      type: object
+      additionalProperties: false
+      required: [version, acknowledgedAt]
+      properties:
+        version: { type: string }
+        acknowledgedAt: { type: string, format: date-time }
