@@ -14,7 +14,7 @@ import type { PushSubscriptionDevice } from '../types'
 const SERVICE_WORKER_SUPPORTED = typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
 const EMPTY_DEVICES: PushSubscriptionDevice[] = []
 
-/** ARCHITECTURE_CYCLE19.md §362 — iOS + "opened from the Home Screen" detection, safe outside a browser. */
+/** ARCHITECTURE_CYCLE21.md §362 — iOS + "opened from the Home Screen" detection, safe outside a browser. */
 function readIosEnvironment() {
   if (typeof navigator === 'undefined') return { isIos: false, isStandalone: false, version: null }
   const displayModeStandalone =

@@ -6,7 +6,7 @@ import { PUSH_UNAVAILABLE_MESSAGES, type PushUnavailableReason } from '../../uti
  * unavailable". `reason` is picked by useWebPush()/getPushUnavailableReason and just printed here
  * verbatim: this component makes no decisions of its own.
  *
- * ARCHITECTURE_CYCLE19.md §363 (US-19-01) — for an iPhone outside the installed app the copy is
+ * ARCHITECTURE_CYCLE21.md §363 (US-21-01) — for an iPhone outside the installed app the copy is
  * followed by step-by-step "Add to Home Screen" instructions: saying "install it" without saying how
  * is exactly the dead end the customer hit.
  */

@@ -45,7 +45,7 @@ favicon_svg_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/favicon.svg
 [ "$favicon_svg_code" = "200" ] || fail "GET /favicon.svg returned $favicon_svg_code (expected 200)"
 log "favicon OK"
 
-# ARCHITECTURE_CYCLE19.md §365 (US-19-03) - iPhone Web Push exists only for an app opened from the
+# ARCHITECTURE_CYCLE21.md §365 (US-21-03) - iPhone Web Push exists only for an app opened from the
 # Home Screen, and iOS opens it as an app only when the served manifest says `display: standalone`.
 # Cycle 9 shipped `display: "browser"`, which turned "Add to Home Screen" into a plain Safari bookmark
 # with no push at all - silently. A request, not a glance at public/: the manifest must ship, parse,

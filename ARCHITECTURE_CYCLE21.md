@@ -1,10 +1,10 @@
-# ARCHITECTURE — цикл 19 ServiceBooking: уведомления мастеру на iPhone через «На экран Домой»
+# ARCHITECTURE — цикл 21 ServiceBooking: уведомления мастеру на iPhone через «На экран Домой»
 
-**Разделы §360–§366.** Вход: `SPEC.md` (цикл 19, решения Р1–Р4, истории US-19-01…US-19-03),
+**Разделы §360–§366.** Вход: `SPEC.md` (цикл 21, решения Р1–Р4, истории US-21-01…US-21-03),
 `ARCHITECTURE_CYCLE9.md` §101, §103.2, §105.9, §105.10. Отправная точка — `develop` = `e3774c1`.
 
 **API-контракта у цикла нет:** бэкенд, эндпоинты, модель данных и миграции не меняются (Р4), поэтому
-`API_CONTRACT_CYCLE19.md` и `contracts/cycle19/` не заводятся.
+`API_CONTRACT_CYCLE21.md` и `contracts/cycle19/` не заводятся.
 
 ---
 
@@ -19,7 +19,7 @@
 
 Это **отменяет** две строки цикла 9: «полноценный PWA-манифест с `display: standalone`» из списка
 «чего в стеке намеренно не появляется» (§101) и предупреждение «`display: "browser"` — осознанно»
-(§103.2). Обоснование отмены: §103.2 опирался на «SPEC §3 выносит PWA за рамки», а SPEC цикла 19 (Р1)
+(§103.2). Обоснование отмены: §103.2 опирался на «SPEC §3 выносит PWA за рамки», а SPEC цикла 21 (Р1)
 вносит установку в рамки. Офлайн-часть PWA по-прежнему за рамками (Р2).
 
 ## §361. Манифест и `index.html`
@@ -73,7 +73,7 @@
 
 Старая функция `detectIosSafariNotInstalled` оставлена обёрткой над `detectIosEnvironment`.
 
-## §363. Инструкция (US-19-01)
+## §363. Инструкция (US-21-01)
 
 `components/push/PushUnavailableNotice.tsx` для причины `ios-safari-not-installed` дописывает к
 тексту `<ol>` из четырёх шагов: «Поделиться» (встроенный SVG-значок — в `ui/Icon` такого нет;
@@ -103,10 +103,10 @@
 
 | Что | Где | ID |
 |---|---|---|
-| порядок причин, iOS-развилки, граница 16.4, неизвестная версия | `src/utils/pushAvailability.test.ts` | CY19-01…CY19-07 |
-| `detectIosEnvironment`: iPhone, `display-mode`, Chrome на iOS, iPadOS, Mac | там же | CY19-08…CY19-12 |
-| шаги инструкции, «войти заново», тексты других причин | `src/components/push/PushUnavailableNotice.test.tsx` | CY19-13…CY19-15 |
-| манифест отдаётся и `standalone`; `index.html` ссылается на манифест и `apple-touch-icon` | `deploy/ci/smoke-frontend.sh` (джоб `frontend`) | US-19-03 |
+| порядок причин, iOS-развилки, граница 16.4, неизвестная версия | `src/utils/pushAvailability.test.ts` | CY21-01…CY21-07 |
+| `detectIosEnvironment`: iPhone, `display-mode`, Chrome на iOS, iPadOS, Mac | там же | CY21-08…CY21-12 |
+| шаги инструкции, «войти заново», тексты других причин | `src/components/push/PushUnavailableNotice.test.tsx` | CY21-13…CY21-15 |
+| манифест отдаётся и `standalone`; `index.html` ссылается на манифест и `apple-touch-icon` | `deploy/ci/smoke-frontend.sh` (джоб `frontend`) | US-21-03 |
 
 **Проверка на устройстве (не автоматизируется, делается при выкате):** iPhone с iOS ≥ 16.4 →
 `https://ezbook.ru/my-bookings` в Safari → видны шаги → «На экран Домой» → открыть с иконки

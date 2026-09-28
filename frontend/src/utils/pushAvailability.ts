@@ -2,10 +2,10 @@
 // not pass acceptance (US-118). This module is the single place that decides WHICH explanation applies;
 // PushUnavailableNotice.tsx only renders the picked reason's copy.
 //
-// ARCHITECTURE_CYCLE19.md §362 — cycle 19 answers Q13 with "yes": iPhone push is supported through
+// ARCHITECTURE_CYCLE21.md §362 — cycle 21 answers Q13 with "yes": iPhone push is supported through
 // "Add to Home Screen". The iOS checks moved to the TOP of the priority list: an iOS Safari tab has no
 // `PushManager` at all, so with the cycle-9 order it always fell into 'unsupported-browser' and the
-// master never learned that installing the app is the fix (US-19-02).
+// master never learned that installing the app is the fix (US-21-02).
 
 export type PushUnavailableReason =
   | 'ios-safari-not-installed'
@@ -47,7 +47,7 @@ export const IOS_MIN_PUSH_VERSION: readonly [number, number] = [16, 4]
 
 /**
  * Returns the single reason a master cannot (yet) turn push on, in the priority order of
- * §105.10's table as amended by ARCHITECTURE_CYCLE19.md §362, or `null` when the toggle should be
+ * §105.10's table as amended by ARCHITECTURE_CYCLE21.md §362, or `null` when the toggle should be
  * offered.
  */
 export function getPushUnavailableReason(input: PushAvailabilityInput): PushUnavailableReason | null {
