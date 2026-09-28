@@ -1,5 +1,244 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
+**Актуально по состоянию на коммит: `e3774c1` (`develop`, он же HEAD ветки
+`cycle/019-tariff-limits-geocoder-cleanup` — `git rev-parse develop HEAD` даёт один хеш), дата:
+2026-09-28.** Прошлая отметка была `91196aa` (ветка цикла 18 до мёржа). Отсчёт следующего diff — от
+`e3774c1`.
+
+🧩 **Как читать эту редакцию (сверка на входе в цикл 19, «лимиты тарифа и удаление геокодера»).**
+Это **точечное обновление-сверка**, репозиторий заново не сканировался. Диапазон `91196aa..e3774c1` —
+**4 коммита, 5 файлов, +407 / −172**, из них содержательно: `487d25c` (правка этого документа,
+закрытие цикла 18), `7820bf9` (мёрж цикла 18 в `develop`), **`baa8da9`** (CI) и **`e3774c1`**
+(стабилизация одного теста). **Новых эндпоинтов — 0, сущностей и колонок — 0, миграций — 0**
+(в `ServiceBooking.Infrastructure/Migrations/` по-прежнему **70** файлов без `.Designer`, включая
+`AppDbContextModelSnapshot.cs`). Добавлены: эта шапка, **§0.4** (сверенные по коду факты о двух
+областях, которые будет трогать цикл 19), поправка к §7 🎯 и к §8 🎯. Ни один существующий блок не
+сокращён. Метка блоков этой правки — 🧩.
+
+Что изменилось в коде после `91196aa`:
+- **`baa8da9` — CI.** Шаг дымового теста `docker-build` в `.github/workflows/ci.yml` (строки ~337–341)
+  теперь передаёт контейнеру `-e Trial__PhoneKeyHmac="$(openssl rand -base64 32)"` и
+  `-e Trial__PhoneKeyId=ci-smoke`. Без них после мёржа цикла 18 контейнер не стартовал
+  (`DeploymentSafetyChecks.ValidateTrialSecrets`), и `smoke.sh` ждал `/api/health/live` до таймаута.
+  Проверка старта не ослаблена — добавлены только переменные. См. поправку в §8 🎯.
+- **`e3774c1` — тест `NTF-W005`** (`ServiceBooking.Tests/Tests/NotificationWebhookUnsubscribeTests.cs`)
+  больше не шлёт 601 реальный запрос против боевой квоты 600/мин (на загруженном раннере цикл занимал
+  ~62 с, минутное окно лимитера успевало смениться, 429 не наступал). Теперь тест поднимает
+  `RateLimitTestFactory` с новым необязательным параметром `notificationsWebhookPermitLimit` (5) и
+  ждёт 429 на 6-м вызове. `TEST_CATALOG.md` (раздел про `NTF-W005`) обновлён в том же коммите.
+
+🗄 **Документы цикла 18 на месте, архива `docs/history/` по-прежнему нет.** Конвенция проекта —
+суффиксы в корне (`ARCHITECTURE_CYCLE18.md`, `API_CONTRACT_CYCLE18.md`, `LEGAL_REVIEW_CYCLE18.md` уже
+лежат под своими именами), а **корневой `SPEC.md` всё ещё занят циклом 18** (заголовок «SPEC — цикл 18
+… системный тариф „Триал“»). Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` — это всё ещё документы
+**цикла 3**, их никто не использует как текущие. По §10.5 и §9 **C5** архивировать `SPEC.md` под
+`SPEC_CYCLE18_*` и перенаправлять ссылки должен тот, кто займёт корень циклом 19. Эта правка файлы не
+переносила.
+
+### 0.4 🧩 На входе в цикл 19 — факты, сверенные по коду (не по документам)
+
+Цикл 19 по запросу заказчика трогает две области: (А) лимиты тарифа «макс. сотрудников / макс. компаний»
+и параллельные им опции каталога; (Б) удаление неиспользуемой заготовки геокодера. Ниже только то, что
+найдено в коде. Оценок и предложений здесь нет.
+
+#### А. Лимиты сотрудников и компаний: одно и то же задаётся в двух местах
+
+1. **Базовые лимиты — поля тарифа** `SubscriptionPlanConfig.MaxEmployees` / `MaxCompanies`
+   (`int?`, `null` = без ограничения; `ServiceBooking.Core/Entities/SubscriptionPlanConfig.cs`). В
+   админке это поля «Макс. сотрудников суммарно (∞)» / «Макс. компаний суммарно (∞)»
+   (`frontend/src/pages/admin/PlansTab.tsx` ~стр. 536–551, сериализация — `planForm.ts`), в списке
+   тарифов выводятся строки «Сотрудников суммарно: до N» / «Компаний суммарно: до N» (~стр. 369–372).
+   Публичная витрина `GET /api/pricing` отдаёт их как `includedEmployees`/`includedCompanies`
+   (`PricingCatalogBuilder.cs` стр. 105–106), и карточка `components/pricing/PlanCard.tsx` рисует
+   их по этим полям.
+2. **Опции каталога с тем же смыслом — это данные, а не код.** Миграция
+   `20260922121140_SeedBillingCatalog` сидирует три опции `SubscriptionOption` (все `Kind = Quantity`,
+   `PricePerMonth = NULL`, `IsPublic = false`): **`extra-companies`** («Дополнительная компания»,
+   `CapabilityKey = "companies"`), **`extra-employees`** («Дополнительные сотрудники»,
+   `CapabilityKey = "employees"`), `notifications.whatsapp`. Для каждой пары «существующий тариф ×
+   опция» записано правило `PlanOptionRule`: обе `extra-*` — **`Extra` (2)**, `IncludedQuantity = NULL`.
+   Тарифы, созданные позже, получают правила только из админки (отсутствие строки = `Unavailable`).
+   Ключи вынесены в `Services/Billing/CapabilityKeys.cs`. Правку ключей с `extra-*` на голые
+   `companies`/`employees` делала `20260922154148_FixSeedBillingCatalogCapabilityKeys`, её проверяет
+   `UnitTests/BillingCatalogSeedKeysTests.cs`. В выпадающем списке «возможностей» опции
+   (`OptionCapabilityCatalog.Known`, `GET /api/admin/option-capabilities`) оба ключа есть.
+3. **Матрица «тариф × опция» в той же форме тарифа.** `PlansTab.tsx` (~стр. 260–325) выводит для
+   **каждой** опции каталога, включая обе `extra-*`, селект `Недоступна / Включена / За доплату`.
+   Для `Quantity`-опции при `Included` появляется поле «кол-во» (`IncludedQuantity`). Сохраняется
+   через `PUT /api/admin/plans/{id}` (`AdminController` ~стр. 860–910, `IncludedQuantity < 0` → 400).
+   **Именно здесь «количество людей/компаний» задаётся второй раз.** Отдельного экрана редактора
+   каталога опций на фронтенде нет: `frontend/src/api/plans.ts` вызывает только
+   `GET /api/admin/options`. Запись опций (`POST|PUT|DELETE /api/admin/options…`,
+   `AdminBillingController` стр. 92–170) доступна только через API.
+4. **Как два источника реально складываются в лимит** (`Services/SubscriptionResolver.cs`):
+   `AccountMaxEmployees = plan.MaxEmployees + Σ Quantity строк AccountSubscriptionOption с
+   CapabilityKey "employees" + BillingAccount.GrandfatheredEmployeeBonus`; `AccountMaxCompanies =
+   plan.MaxCompanies + Σ Quantity строк с CapabilityKey "companies"`. Если базовый лимит `null`, сумма
+   тоже `null` (без ограничения). Строка опции учитывается, только если
+   `IsOptionCurrentlyPaid(...)`: подписка годна, `PaidUntilUtc` опции не истёк, а правило
+   **текущего** тарифа равно `Extra` или `Included`. При `Unavailable` или отсутствии правила
+   купленное количество выпадает из лимита.
+   ⚠️ **`PlanOptionRule.IncludedQuantity` в лимит не входит вообще.** Если в матрице поставить
+   `extra-employees = Включена, кол-во 3`, лимит сотрудников не вырастет: резолвер читает только
+   `AccountSubscriptionOption.Quantity`. `IncludedQuantity` используют лишь (а) расчёт цены
+   `BillingCalculator.MonthlyPriceFor` (при `Included` бесплатны первые `IncludedQuantity ?? 1` единицы;
+   вызывается из `AdminBillingController` ~стр. 387/458, `ProfileController` ~стр. 755,
+   `OwnerSubscriptionService` ~стр. 247) и (б) материализация опции при активации триала
+   (`TrialActivationService` ~стр. 282/301). Причём (б) касается **только** `notifications.whatsapp`:
+   строки `extra-*` триал не создаёт. Так что «Включена + количество» для `extra-*` на лимит не влияет,
+   а меняет только цену, если у аккаунта уже есть строка этой опции.
+5. **Где лимит применяется (читают `EffectivePlan`, а не поля тарифа напрямую).**
+   `CompaniesController`: создание компании → **402** `BillingTexts.CompanyLimitReached` (~стр.
+   412–416); добавление сотрудника (~стр. 698–725, там же разложение «входит в тариф / куплено / бонус»);
+   флаг `canAddEmployee` в `CompanyDto` (~стр. 985). `AdminBillingController.AssignSubscription`
+   (~стр. 685–703): проверка превышения при назначении тарифа, **409** без `confirmLimitOverflow`,
+   учитывает `extra-*` из того же запроса по `CapabilityKey`. Также используют:
+   `OwnerSubscriptionService`, `CompanyTransferService`/`CompanyTransferCalculator` (перенос компании
+   между аккаунтами), `ProfileController`, `TrialStateReader`, `AdminController` (CRUD тарифа,
+   `MaxEmployees`/`MaxCompanies` в `AdminPlanInput`).
+6. **Откуда у аккаунта берутся строки `extra-*`.** Только из двух мест. Первое — суперадмин в
+   `PUT /api/admin/billing-accounts/{accountId}/subscription` (фронт — `BillingAccountsAdminTab.tsx`).
+   Опция, для которой на выбранном тарифе нет правила или стоит `Unavailable`, даёт **409** «Опция
+   недоступна на выбранном тарифе.». Второе — заявка владельца `POST /api/billing/subscription/request`
+   (`BillingController` ~стр. 87–150, фронт — `pages/BillingPage.tsx` + `components/pricing/OptionRow.tsx`),
+   которая сохраняется в `BillingAccount.RequestedOptionsJson` и ждёт подтверждения суперадмином.
+   На публичной витрине `extra-*` видны только при `IsActive && IsPublic && PricePerMonth != null`.
+   После сида обе не публичны и без цены, поэтому публично их нет, пока админ не поменял данные.
+   **Что лежит в боевой БД (цены, публичность, правила, купленные строки `extra-*`), из репозитория
+   не видно.**
+7. **Тесты, которые держат эту арифметику:** юнит — `SubscriptionResolverRulesTests` (20 упоминаний
+   лимитов), `OwnerSubscriptionOverLimitTests`, `CompanyTransferCalculatorTests`,
+   `PricingValidationTests`, `PricingCatalogBuilderTests`, `BillingCatalogSeedKeysTests`,
+   `LegalOptionGuardsTests`; функциональные — `CompaniesTests` (15), `AdminTests`, `CompanyTransferTests`,
+   `ProfileTests`, `PricingTests`, `Cycle15PlansTests`, `Cycle18TrialPlanTests`,
+   `LegalPricingGateTests`; хелпер `ApiTestBase` (3 упоминания). Фронт — `PlansTab.test.tsx`/`.test.ts`,
+   `planState.test.ts`, `OptionRow.test.tsx`.
+8. **Связь с триалом (цикл 18).** §4.28 п. 0 и **C18-1** требуют, чтобы суперадмин проставил правило
+   триальному тарифу по **каждой** опции каталога, включая обе `extra-*`. Лимиты триала — те же
+   `MaxEmployees`/`MaxCompanies` триального тарифа. Правовая рамка перехода «триал → Free» (§4.28,
+   **C18-8**): превышение лимитов = **заморозка**, а не отключение. Любая правка расчёта лимита задевает
+   это условие.
+9. **Пользовательская документация** про опции `extra-*` молчит: в `docs/*.md`, `README.md`,
+   `API_DOCUMENTATION.md`, `CHANGELOG.md` нет ни `extra-employees`, ни `extra-companies`.
+
+#### Б. Геокодер: что составляет «заготовку» и с чем она переплетена
+
+**Состояние.** Код цикла 13 полный, но выключен рубильником `AddressVerification:Provider = logging`
+(по умолчанию в `appsettings.json`, `docker-compose.prod.yml`, `.env.production.example`). В этом
+режиме `LoggingAddressGeocoder` в сеть не ходит, `POST /api/companies/address/lookup` отвечает 404,
+`CompanyDto.addressVerification.available = false`, кнопка «Проверить адрес» не рисуется. Против
+живого API Яндекса рубильник не включался ни разу (§9 **AV2**). ⚠️ Какое значение
+`ADDRESSVERIFICATION__PROVIDER` стоит на боевой машине, **не подтверждено** (§9 **TD16-4**, доступ к
+машине заблокирован). Утверждение «на бою выключен» из репозитория не проверяется.
+
+**Только геокодер (в других местах не используется):**
+- `ServiceBooking.API/Services/Geo/` — `IAddressGeocoder.cs` (+ `AddressQuery`, `GeocodeOutcome`,
+  `GeocodeCandidate`, `GeocodeResult`, `GeoPoint`), `LoggingAddressGeocoder.cs`, `GeoOptions.cs`,
+  `GeoHandlerFactory.cs`, `AddressLookupService.cs`, `AddressNormalization.cs`, `AddressWarnings.cs`,
+  `AddressVerificationState.cs`; `Services/Geo/Yandex/` — `YandexAddressGeocoder.cs`,
+  `YandexGeocodeParser.cs`, `YandexGeocoderUrls.cs` (всего ~620 строк).
+- `Program.cs`: стр. 139–142 (`DeploymentSafetyChecks.ValidateAddressVerification`), 550–581 (options,
+  именованный HTTP-клиент `yandex-geocoder`, два фильтра логирования, три регистрации DI, выбор
+  реализации по `AddressVerification:Provider`).
+- `DeploymentSafetyChecks.ValidateAddressVerification` (~стр. 520–600): проверки `CacheHours ∈
+  [0,720]` и `MaxCandidates ∈ [1,5]`, которые **роняют старт в любом окружении**, плюс проверка
+  ключа и предупреждение про `StoreResults`.
+- Конфигурация: секция `AddressVerification` в `appsettings.json` (~стр. 198–210) и
+  `appsettings.Testing.json` (~стр. 31); пять переменных `ADDRESSVERIFICATION__*` в
+  `.env.production.example` (~стр. 184–206) и в `docker-compose.prod.yml` (~стр. 102–118). В
+  `.github/workflows/ci.yml` геокодера нет.
+- Эндпоинт `POST /api/companies/address/lookup` (`CompanyAddressController`, стр. 39–80) и его DTO в
+  `DTOs/Companies/CompanyAddressDtos.cs`.
+- Фронтенд: `companyAddressApi.lookup` (`frontend/src/api/companyAddress.ts`); в
+  `components/company/AddressVerifyField.tsx` — кнопка «Проверить адрес», список кандидатов, атрибуция,
+  статус «Подтверждён по карте»; вызов `saveAddress(..., true)` сразу после создания компании в
+  `pages/CabinetPage.tsx` стр. 150–157 (при выключенном рубильнике — no-op, ошибки глотаются).
+- Тесты: юнит — `AddressNormalizationTests`, `AddressVerificationStateTests`, `AddressWarningsTests`,
+  `CompanyAddressMappingTests`, `YandexGeocodeParserTests`, `YandexGeocoderUrlsTests`, а в
+  `DeploymentSafetyChecksTests` 29 упоминаний `ValidateAddressVerification`. Функциональные — часть
+  `ServiceBooking.Tests/Tests/AddressVerificationTests.cs` + `Infrastructure/AddressVerificationTestFactory.cs`
+  (`FakeAddressGeocoder`). Фронт — `AddressVerifyField.test.tsx`.
+- Контракт и типы: `contracts/cycle13/openapi.yaml` (45 упоминаний),
+  `frontend/src/types/api-cycle13.generated.ts` (`CompanyAddressVerificationDto`, `GeoPointDto`,
+  `AddressLookupResultDto`…), `frontend/src/types/index.ts` стр. 129/135. Контракт цикла 13 в
+  `redocly lint` CI не входит (§9 **C17-1**), шаг сверки сгенерированных типов его не перегенерирует.
+
+**Переплетено с геокодером, но само геокодером не является** — это работает при любом положении
+рубильника:
+- **`PUT /api/companies/{id}/address`** (`CompanyAddressController.SaveAddress`, стр. 81–165) — это
+  **единственный путь, которым фронт сохраняет адрес существующей компании.** Форма
+  `pages/owner/CompanyManagePage.tsx` (~стр. 850–860) не регистрирует `address` в своей форме, адрес
+  сохраняет `AddressVerifyField` через этот эндпоинт. Эндпоинт пишет `Address` побайтово, пустая
+  строка стирает адрес, обнуляет пять колонок верификации и только при `verify=true` зовёт
+  `AddressLookupService`. Параллельно `PUT /api/companies/{id}` (`CompaniesController` стр. 495) тоже
+  принимает `Address` (`null` = не трогать), но фронт так адрес не шлёт. Создание компании
+  (`POST /api/companies`, стр. 425) пишет `Address` напрямую.
+- **`POST /api/companies/address/notice`** и `components/company/PublicAddressNotice.tsx` —
+  предупреждение о публичности адреса с записью в `ConsentRecord` (`ConsentSource.AddressForm`,
+  `LegalTextKey.PublicAddressNotice`, `legal-drafts/13-public-address-notice.html`). Это правовой гейт,
+  от геокодера он не зависит (§4.25 C). Он живёт в том же контроллере и под той же политикой лимитов
+  **`address-verify`** (30/ч, `Program.cs` ~стр. 753–765 и сообщение 429 на ~стр. 862,
+  `appsettings.json` стр. 48, `appsettings.Testing.json` стр. 20), что и оба эндпоинта геокодера.
+  `AddressVerifyField` вызывает этот гейт перед каждым сохранением.
+- **`AddressVerifyField.tsx` — одновременно обычное поле ввода адреса** в настройках компании.
+  Логика геокодера (кандидаты, статус) и обычное сохранение со вложенным `PublicAddressNotice` лежат в
+  одном компоненте.
+- **`CompaniesController`** инжектирует `IOptions<GeoOptions>` (стр. 29) и в маппинге `CompanyDto`
+  (~стр. 988–1009) строит `addressVerification` (через `AddressVerificationState`) и `addressPoint`
+  (только при `StoreResults`). Поля `AddressVerification`/`AddressPoint` есть в
+  `DTOs/Companies/CompanyDto.cs` стр. 95–99, это часть публичного ответа.
+- **`ServiceBooking.Tests/Tests/AddressVerificationTests.cs` (28 тестов `ADDR-001…028`) смешанный.**
+  К геокодеру не относятся четыре `ConfirmNotice_*` и ряд `SaveAddress_*`: 401/403/404,
+  SuperAdmin, `EmptyString_ClearsAddress`, `PublicSearch_ByAddress_…_R7`, `ProviderLogging_StillSaves`.
+- **Ссылки в Яндекс Карты и 2ГИС** (`utils/mapLinks.ts`, `CompanyMapLinks.tsx`,
+  `Company.YandexMapsUrl`/`TwoGisUrl`) — отдельная функция циклов 13/15, геокодер не использует
+  (§4.25 B, §4.26).
+
+**Модель данных.** В `Companies` лежат пять nullable-колонок только для геокодера:
+`AddressVerifiedInputKey` (`varchar(300)`, `AppDbContext` стр. 117), `AddressVerifiedAt`,
+`AddressPrecision` (int, перечисление `ServiceBooking.Core/Enums/AddressPrecision.cs`),
+`AddressLatitude`, `AddressLongitude` (`Company.cs` стр. 69–88). Их добавила миграция
+`20260924065320_AddCompanyAddressVerification` (применяется вне хронологического порядка файлов, см.
+§3 «Миграции»). Колонки заполняются только успешной проверкой, поэтому при `Provider=logging` они
+должны быть пусты. На боевой БД это не проверено (см. TD16-4). Ограничения, действующие на любую
+правку схемы:
+- **Ломающие миграции запрещены с 25.09.2026** (решение заказчика, `SPEC_CYCLE16_TECH_DEBT.md`
+  §0-bis п. 3).
+- CI-шаг `Designer snapshots are monotonic` (`deploy/ci/check-migration-snapshots.sh`, §8) падает,
+  если свойство пропало из более позднего снапшота без соответствующего `DropColumn`.
+
+**Правовые тексты, где описана передача адреса геокодеру:**
+- `legal-drafts/13-public-address-notice.html`, служебное приложение Б, пп. Б.1 и Б.3. Интерфейс
+  показывает только раздел «Текст для владельца», приложение Б владелец не видит.
+- `legal-drafts/01-privacy-policy.html`, раздел 9: пункт **9.8 намеренно отсутствует** — между 9.7
+  (переходы в карты) и 9.9 оставлена дыра под публикацию «вместе с рубильником» (§9 **AV1**,
+  `DEPLOY.md` §19.4).
+
+Комплект правовых текстов в статусе `isDraft: true` (§9 **TD16-5**).
+
+**Документы, которые описывают геокодер как существующий:**
+- `DEPLOY.md` §19 (19.0–19.5, стр. ~1878–1990);
+- `CHANGELOG.md` (~стр. 278, 568, 740, 752–906);
+- `README.md` (~стр. 344–354);
+- `TEST_CATALOG.md` (стр. 57 и раздел цикла 13 со стр. ~4424);
+- `ARCHITECTURE_CYCLE13.md` §206/§209/§216;
+- `LEGAL_REVIEW.md` §16.2/§16.5;
+- в этом документе — §1 «Внешние сервисы», §2, §3 блок 🗺, §4.25 D, §6 🗺, §9 AV1/AV2/AV9, TD16-4.
+
+В `docs/**` и `API_DOCUMENTATION.md` геокодера нет, его туда и не вносили (§4.25).
+
+**Хрупкие места, которые видны из кода:**
+- Эндпоинты геокодера и правовой гейт делят одну политику лимитов `address-verify`.
+- Сохранение адреса во фронте идёт только через «геокодерный» эндпоинт и компонент.
+- `CompanyDto` протаскивает `GeoOptions` через статический маппер, который вызывается из нескольких
+  действий `CompaniesController`.
+- Урок `baa8da9`: любая проверка, роняющая старт, живёт во **всех** местах запуска приложения.
+  Помимо `docker-compose.prod.yml` и `.env.production.example` это ещё и `-e`-переменные
+  дымового теста в `ci.yml`, а также `appsettings.Testing.json` и фабрики тестов. Это относится и к
+  `ValidateAddressVerification`.
+
+---
+
 **Актуально по состоянию на коммит: `91196aa` (HEAD ветки `cycle/018-trial-plan`),
 дата: 2026-09-26.** Прошлая отметка была `9864b3c` (**та же ветка, редакция середины цикла** — она
 описывала цикл 18 до четырёх кругов ревью). Правка снята **на ветке цикла 18, до мёржа в
@@ -6081,6 +6320,13 @@ QA **до** реализации серверной части и фиксиру
 редакции относятся к состоянию **до** реализации §336/§337/§343/§333.3 — тот прогон был зелёным
 именно потому, что вызывать было нечего (§6 🎯 п. 9).
 
+🧩 **После мёржа (`e3774c1`): `NTF-W005` больше не зависит от скорости машины.** 62 новых теста
+цикла удлинили прогон, и при `MaxParallelThreads=2` 601 последовательный вызов вебхука перестал
+укладываться в минутное окно лимитера, из-за чего тест падал в CI. Теперь он идёт через
+`RateLimitTestFactory(..., notificationsWebhookPermitLimit: 5)` и ждёт 429 на 6-м вызове. Проверяется
+та же зарегистрированная политика `notifications-webhook`, урезана только квота. Число тестов не
+изменилось. Прогона после этой правки я не делал — запуск тестов в этой роли запрещён.
+
 **Новый функциональный набор — `ServiceBooking.Tests/Tests/Cycle18TrialPlanTests.cs`** (33 `[Fact]`
 + 1 `[Theory]`, кейсы `CY18-A01`…`CY18-G02`, все с атрибутом `TestCase`): блок A — защита каталога
 (цена, второй флаг, удаление, деактивация при живом подписчике, симметрия с `system-free`); блок B —
@@ -6672,6 +6918,12 @@ actions). Раннбука по включению чего-либо цикл н
 навсегда. Срок реестра — `Retention:TrialPhoneRegistrationDays` (по умолчанию 1095 дней); отдельного
 ключа в `appsettings.json` нет, работает дефолт из `RetentionPeriods`, и значение видно в
 `GET /api/admin/retention/policy`.
+
+🧩 **Поправка после мёржа (`baa8da9`).** Фраза «пустые дефолты, чтобы `docker-build` оставался
+зелёным» выше оказалась неверной. Дымовой тест в `ci.yml` поднимает контейнер **своими** `-e`, а не
+через compose, поэтому после мёржа цикла 18 в `develop` контейнер падал на
+`ValidateTrialSecrets`. Теперь шаг передаёт `Trial__PhoneKeyHmac` (генерируется
+`openssl rand -base64 32` на месте, как `Jwt__Key`) и `Trial__PhoneKeyId=ci-smoke`.
 
 ⚠️ **Предусловие О15 правового комплекта — из ветки не проверяется, проверяет devops на живой
 машине до выката:** редакции Политики и Соглашения с владельцем подняты до `2026-09-26-draft`, и
