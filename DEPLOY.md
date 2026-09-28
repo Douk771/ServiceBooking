@@ -374,7 +374,7 @@ nano .env
 | `JWT_KEY` | `openssl rand -base64 48`, минимум 32 символа, не равно плейсхолдеру из `appsettings.json` | обязательно, иначе контейнер не стартует |
 | `SUPERADMIN_PHONE` | ваш номер, формат `+7XXXXXXXXXX` — станет суперадмином при первом запуске | обязательно |
 | `SUPERADMIN_PASSWORD` | пароль суперадмина, не равен плейсхолдеру `Admin12345` | обязательно, иначе контейнер не стартует |
-| `SMARTCAPTCHA_SECRET_KEY` / `SMARTCAPTCHA_SITE_KEY` | кабинет Yandex Cloud SmartCaptcha | обязательно |
+| `SMARTCAPTCHA_SECRET_KEY` | кабинет Yandex Cloud SmartCaptcha (серверный ключ). Публичный site-key в `.env` не нужен — он задаётся переменной CI `VITE_SMARTCAPTCHA_SITEKEY` (§5.2); `SMARTCAPTCHA_SITE_KEY` удалён в цикле 22, API его никогда не читал — из существующего `.env` строку можно убрать | обязательно |
 | `FORWARDEDHEADERS__TRUSTEDNETWORKS__0` | подсеть docker-моста, по умолчанию `172.16.0.0/12` (ARCHITECTURE.md §9.1) | обязательно, пустое значение — контейнер не стартует |
 | `NOTIFICATIONS_PROVIDER` | `logging` (по умолчанию, безопасно оставить как есть) или `green-api`, осознанно | обязательно; при `green-api` четыре поля ниже становятся обязательными |
 | `NOTIFICATIONS_ENCRYPTION_KEY` | `openssl rand -base64 32` — **только при первой настройке на этой машине**; далее см. предупреждение ниже | обязательно при `NOTIFICATIONS_PROVIDER=green-api`, иначе контейнер не стартует |

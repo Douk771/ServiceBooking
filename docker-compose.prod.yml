@@ -44,7 +44,6 @@ services:
       - SuperAdmin__Phone=${SUPERADMIN_PHONE}
       - SuperAdmin__Password=${SUPERADMIN_PASSWORD}
       - SmartCaptcha__SecretKey=${SMARTCAPTCHA_SECRET_KEY}
-      - SmartCaptcha__SiteKey=${SMARTCAPTCHA_SITE_KEY}
       - ASPNETCORE_ENVIRONMENT=Production
       # Private storage class for client-note photos (ARCHITECTURE.md §3): must never resolve inside
       # wwwroot/uploads (the public class, api_uploads below) — the API fail-fasts on startup if it does.
