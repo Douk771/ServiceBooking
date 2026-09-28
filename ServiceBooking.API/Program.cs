@@ -341,6 +341,9 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingActorReso
 // Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the body of POST /api/bookings, moved out of
 // BookingsController unchanged (+ the shared service-selection validation the slot endpoints use).
 builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingCreationService>();
+// Cycle 22 P5 (§378): CompanyDto assembly and the company stats report, moved out of CompaniesController.
+builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyDtoAssembler>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyStatsService>();
 builder.Services.AddHttpClient<CaptchaService>();
 // T5-B10 (ARCHITECTURE_CYCLE5.md §50.1, US-74) — reuses the existing CaptchaService/rate-limiting
 // machinery, no new infrastructure.

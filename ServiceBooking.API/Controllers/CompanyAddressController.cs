@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Geo;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
@@ -20,7 +21,7 @@ namespace ServiceBooking.API.Controllers;
 /// (ARCHITECTURE_CYCLE13.md §207, §209, §220; API_CONTRACT_CYCLE13.md §233/§234/§242). A deliberately
 /// separate controller from <see cref="CompaniesController"/> (already the largest in the project, same
 /// reasoning that split <see cref="CompanyPhotosController"/> out in cycle 10) — reuses
-/// <see cref="CompanyMembership"/> and <see cref="CompaniesController.MapToDto"/> rather than a second,
+/// <see cref="CompanyMembership"/> and <see cref="CompanyDtoAssembler"/> rather than a second,
 /// drifting copy of "who can manage this company"/"what a CompanyDto looks like".
 ///
 /// All three routes require <see cref="AuthorizeAttribute"/> and share the <c>address-verify</c> rate
@@ -31,7 +32,7 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/companies")]
 public class CompanyAddressController(
     AppDbContext db, AddressLookupService lookupService, IOptions<GeoOptions> geoOptions,
-    SubscriptionResolver subscriptionResolver, AccountUsageReader accountUsageReader,
+    CompanyDtoAssembler companyDtoAssembler,
     LegalDocumentProvider legalProvider, ConsentLedger ledger) : ControllerBase
 {
     // ── POST /api/companies/address/lookup (§233) ───────────────────────────────────────────────────
@@ -229,37 +230,16 @@ public class CompanyAddressController(
     }
 
     /// <summary>Builds the exact same "full CompanyDto, as PUT /api/companies/{id} would" shape §234
-    /// promises — same four resolution calls (plan, review aggregate, usage, cover) Update/UploadLogo
-    /// make in <c>CompaniesController</c>, feeding the SAME <see cref="CompaniesController.MapToDto"/>
-    /// so the two endpoints can never quietly return differently-shaped companies.</summary>
+    /// promises — cycle 22 P5 (§378): through the SAME <see cref="CompanyDtoAssembler.MapManagedCompanyToDtoAsync"/>
+    /// Update/UploadLogo use (plan, review aggregate, seat usage, cover, then <see cref="CompanyDtoAssembler.MapToDto"/>),
+    /// instead of this controller's former hand-copied sequence of the same four reads, so the two endpoints
+    /// can never quietly return differently-shaped companies.</summary>
     private async Task<CompanyDto> BuildCompanyDtoAsync(Company company)
     {
-        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
 
-        var aggregate = await db.Reviews
-            .Where(r => r.CompanyId == company.Id)
-            .GroupBy(r => 1)
-            .Select(g => new { Count = g.Count(), Average = g.Average(r => (double)r.Rating) })
-            .FirstOrDefaultAsync();
-        var (averageRating, reviewCount) = aggregate is null ? ((double?)null, 0) : (aggregate.Average, aggregate.Count);
-
-        var employeeCounts = await accountUsageReader.GetCompanySeatsAsync([company.Id]);
-        var usageByAccount = company.BillingAccountId.HasValue
-            ? await accountUsageReader.GetAsync([company.BillingAccountId.Value])
-            : new Dictionary<Guid, AccountUsage>();
-
-        var coverPhoto = await db.CompanyPhotos.Where(p => p.CompanyId == company.Id && p.Position == 0).ToListAsync();
-        var cover = CompanyPhotoOrdering.SelectCovers(coverPhoto).GetValueOrDefault(company.Id);
-
         // §234: reached only after SaveAddress's own CanManageCompanyAsync check passed, so this caller
-        // always manages the company (review finding, cycle 13 review, blocking #2).
-        return CompaniesController.MapToDto(
-            company, plan, averageRating, reviewCount, city,
-            employeeCounts.GetValueOrDefault(company.Id),
-            company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
-            geoOptions.Value,
-            cover is null ? null : (cover.Url, cover.ThumbnailUrl),
-            canManage: true);
+        // always manages the company (review finding, cycle 13 review, blocking #2) — canManage: true.
+        return await companyDtoAssembler.MapManagedCompanyToDtoAsync(company, city);
     }
 }
