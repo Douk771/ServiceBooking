@@ -1,5 +1,3 @@
-using ServiceBooking.Core.Enums;
-
 namespace ServiceBooking.API.Services.Notifications.GreenApiMax;
 
 /// <summary>

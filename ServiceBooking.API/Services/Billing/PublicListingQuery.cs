@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 

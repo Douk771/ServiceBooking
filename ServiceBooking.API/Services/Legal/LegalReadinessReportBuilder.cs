@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Legal;
 

@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 

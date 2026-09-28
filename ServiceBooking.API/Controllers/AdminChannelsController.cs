@@ -1,17 +1,11 @@
-using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.DTOs.Common;
-using ServiceBooking.API.DTOs.Legal;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
-using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Notifications;
-using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;

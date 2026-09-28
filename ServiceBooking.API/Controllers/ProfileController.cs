@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
-using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.API.Services.Subjects;
 using ServiceBooking.Core.Entities;

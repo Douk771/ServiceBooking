@@ -1,6 +1,5 @@
 using FluentAssertions;
 using ServiceBooking.TestKit;
-using Xunit;
 
 namespace ServiceBooking.UnitTests;
 

@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.Infrastructure.Data;
 

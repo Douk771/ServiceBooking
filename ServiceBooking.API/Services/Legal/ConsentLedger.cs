@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;

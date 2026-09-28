@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
-using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Entities;

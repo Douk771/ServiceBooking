@@ -1,29 +1,6 @@
-using System.Diagnostics;
-using System.Reflection;
 using System.Security.Claims;
-using System.Text;
-using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
-using Serilog;
-using Serilog.Events;
-using Serilog.Formatting.Compact;
-using ServiceBooking.API.Services;
-using ServiceBooking.API.Services.Health;
-using ServiceBooking.API.Services.Legal;
-using ServiceBooking.API.Services.Scheduling;
-using ServiceBooking.API.Services.Scheduling.Tasks;
-using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
-using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Startup;
 

@@ -7,7 +7,6 @@ using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.ClientNotes;
 using ServiceBooking.API.DTOs.Legal;
-using ServiceBooking.API.Services.Retention;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;

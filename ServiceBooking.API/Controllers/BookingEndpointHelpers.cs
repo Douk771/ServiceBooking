@@ -1,16 +1,9 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
-using ServiceBooking.API.Services.Bookings;
-using ServiceBooking.API.Services.Legal;
-using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;

@@ -9,7 +9,6 @@ using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.WebPush;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;

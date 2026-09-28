@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Subjects;

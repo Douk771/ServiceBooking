@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
