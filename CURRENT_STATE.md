@@ -1,9 +1,177 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `7591cd2` (`develop`, merge `cycle/019-tariff-limits-geocoder-cleanup`), дата: 2026-09-30.**
-Прошлая отметка — `7117660` (итог цикла 20, правка документа — `7f7a26a`). **Следующий diff отсчитывайте
-от `7591cd2`.** Метка блоков этой правки — 🧮19 (итог цикла 19). Предыдущие метки ⚖️20✅ / 🚀20 ниже
-остаются в силе, кроме мест, где рядом стоит 🧮19.
+**Актуально по состоянию на коммит: `9a0ee29` (`develop`, fast-forward ветки `cycle/023-goods-orders-core`), дата: 2026-09-30.**
+Прошлая отметка — `7591cd2` (итог цикла 19). Документ после неё правился на `develop` ещё раз, `88b226e`
+(LIM19-020). **Следующий diff отсчитывайте от `9a0ee29`.** Метка блоков этой правки — 🛒23 (итог цикла 23).
+Предыдущие метки 🧮19 / ⚖️20✅ / 🚀20 ниже остаются в силе, кроме мест, где рядом стоит 🛒23.
+
+### 🛒23 Итог цикла 23 «Заказы», цикл 1 «Ядро» (goods.ezbook.ru) — что влито в `develop` (`88b226e..9a0ee29`)
+
+Документ обновлён точечно, остальные разделы заново не сканировались. Диапазон — 35 коммитов, 258 файлов,
++31 879 / −882. Источники: корневой `SPEC.md` (теперь это спека цикла 23, 600 строк; спека цикла 20 лежит
+в `SPEC_CYCLE20_LEGAL_CLOSURE.md`, цикла 22 — в `SPEC_CYCLE22_REFACTORING_DEAD_CODE.md`),
+`ARCHITECTURE_CYCLE23.md` (§386–§405), `API_CONTRACT_CYCLE23.md` (§406–§425), `contracts/cycle23/`, верхний
+раздел `CHANGELOG.md`, `README.md` и сам код. **Порядок вливания:** ветка стартовала от `169534a` (итог цикла 22).
+В неё влит `develop` с циклами 19–20 (мердж `2951597`), затем правки после мерджа (`c1a0e3a`, `d746281`,
+`7a2d30f`), затем ещё раз `develop` с `88b226e` (мердж `9a0ee29`). После этого `develop` перемотан
+fast-forward. **На бой цикл 23 НЕ выкачен.** Циклы 19 и 23 поверх `7117660` тоже не выкачены (см. 🚀20).
+
+**А. Тип компании и изоляция двух продуктов.**
+- `Company.Kind` — `ServiceBooking.Core/Enums/CompanyKind.cs`: `Services = 0` (салон, ezbook), `Orders = 1`
+  (магазин, goods). Хранится числом. Значение ставится один раз в `CompanyCreationService`, DTO-сеттера
+  нет нигде, в админке тоже. Старые строки получили `Services` через default колонки, бэкфилла не было.
+- `CompanyDto` в конце получил два поля с default: `Kind` — **строка** `"Services"`/`"Orders"` (намеренно
+  не enum, чтобы потребители без `JsonStringEnumConverter` не сломались) и `PublicUrl`. `PublicUrl` строит
+  только `Services/PublicSites/PublicSiteLinks.cs`: салон → `<ServicesBaseUrl>/company/<slug>`,
+  магазин → `<OrdersBaseUrl>/<slug>`. Новый `GET /api/companies/kinds-summary` возвращает
+  `CompanyKindsSummaryDto` (`count` + `siteUrl` по каждому типу). В списках компаний есть `?kind=`
+  (`CompanyKindQuery`). В админке появились колонка «Тип» и фильтр.
+- `Services/Companies/CompanyKindGuard.cs` — единая точка проверки. Салонные маршруты на магазин отвечают
+  **409 строкой** `«Это магазин: записи, услуги и расписание для него недоступны.»`. Правило: сначала
+  права, потом тип. Вызовы стоят в контроллерах `BookingAvailability`, `ClientConsents` (все 8 маршрутов,
+  включая маршруты письменного согласия цикла 20 — `d746281`), `CompanyMembers`, `CompanyNotifications`,
+  `CompanyPhotos`, `CompanyPushSettings`, `Mailing`, `Masters`, `NotificationChannels`, `Reports`,
+  `ScheduleTemplate`, `Services`, `WorkingHours`, а также в `BookingCreationService`. Маршруты заказов
+  (`ShopAccessResolver`) видят салон как **404**. В `CompanyMembersController` для магазина разрешена только
+  роль `Master` («Сотрудник»), иначе 400 `«В магазин можно добавить только сотрудника.»` — это касается
+  и SuperAdmin.
+- `Services/Companies/CompanyCreationService.cs` — сюда вынесен `Create` из `CompaniesController`.
+  Сервис общий для `POST /api/companies` (салон) и `POST /api/shops` (магазин): соглашение, город, адрес,
+  общий лимит компаний аккаунта.
+- Конфиг `PublicSites` (`ServicesBaseUrl` = `https://ezbook.ru`, `OrdersBaseUrl` = `https://goods.ezbook.ru`).
+  Fail-fast — `DeploymentSafetyChecks.ValidatePublicSites`: вне Development/Testing значение должно быть
+  `https://`-origin без пути и без `/` в конце. Пустое или отсутствующее значение означает встроенные
+  default, поэтому новой обязательной настройки нет.
+
+**Б. Модель данных — 7 новых таблиц и 2 миграции** (всего миграций теперь 76, в
+`ServiceBooking.Infrastructure/Migrations/`).
+- `20260929182901_AddCompanyKind` — одна колонка `Companies.Kind` (integer, not null, default 0), индекса нет.
+- `20260929183743_AddShopOrders` — таблицы `ShopSettings`, `ProductCategories`, `Products`, `Orders`,
+  `OrderItems`, `OrderEvents`, `OrderDailyCounters`. Сущности лежат в `ServiceBooking.Core/Entities/`:
+  `ShopSettings` (правила приёма, реквизиты, `OrdersRevision` — счётчик ревизии для опроса экрана),
+  `Order` (`Version` — оптимистичная блокировка, `+1` на каждое изменение, также снимки версий согласий
+  `ConsentPrivacyVersion`/`ConsentTermsVersion`/`CheckoutNoticeVersion`), `OrderItem` (снимок цены и
+  названия), `OrderEvent` (журнал), `OrderDailyCounter` (номер заказа сбрасывается раз в сутки по поясу
+  магазина). Новые enum: `OrderStatus` (`New, Accepted, Ready, Issued, Rejected, CancelledByCustomer,
+  CancelledByShop, NotPickedUp`), `OrderAction`, `OrderActorKind`, `OrderEventKind`, `OrderProblemReason`,
+  `OrderAcceptanceMode`, `ProductUnit`, `ShopCustomerMode`.
+- ⚠️ **Снимки `*.Designer.cs` обеих миграций сделаны раньше, чем в модель попали сущности цикла 20.** Их
+  генерировали на ветке до мерджа `2951597`. Например, `PlatformNotice` в
+  `20260929183743_AddShopOrders.Designer.cs` не встречается ни разу, а в `AppDbContextModelSnapshot.cs` — 9 раз.
+  По таймстампам миграции цикла 20 (`20260929142013`, `…142045`) идут раньше, так что порядок
+  применения правильный, и `AppDbContextModelSnapshot.cs` актуален. **`dotnet ef migrations remove` на
+  этих двух миграциях применять нельзя**: снимок откатится к Designer, и сущности цикла 20 потеряются.
+
+**В. API — пять новых контроллеров** (полная таблица — `API_CONTRACT_CYCLE23.md` §407, форма —
+`contracts/cycle23/openapi.yaml`).
+- `ShopsController` (`api/shops`, `[Authorize]`): `POST /`, `GET my`, `GET slug-check`, `GET {shopId}`,
+  `PUT {shopId}/settings`, `PUT {shopId}/seller`, `PUT {shopId}/slug`, `GET {shopId}/qr` (PNG, `ShopQrCode`).
+- `ShopCatalogController` (`api/shops/{shopId}`): категории (`GET/POST categories`, `PUT/DELETE
+  categories/{id}`, `PUT category-order`), товары (`GET/POST products`, `PUT/DELETE products/{id}`,
+  `PUT product-order`, `POST/DELETE products/{id}/image` — rate limit `uploads`,
+  `PUT products/{id}/sold-out`, `PUT products/{id}/stock`).
+- `StorefrontController` (`api/storefront/{slug}`, анонимно): `GET` и `POST quote` (политика `storefront`),
+  `POST orders` (политика `order-create`).
+- `PublicOrdersController` (`api/orders`): `GET public/{token}`, `POST public/{token}/cancel` (политика
+  `order-public`), `GET my` (`[Authorize]`).
+- `ShopOrdersController` (`api/shops/{shopId}`): `GET order-board?sinceRevision=&businessDate=` (политика
+  `order-board`). Если ревизия и дата не изменились, возвращается облегчённый ответ без списков. Также
+  `GET orders/{id}`, `POST orders/{id}/accept|reject|ready|not-picked-up|cancel|issue-quote|issue`,
+  `PUT orders/{id}/items`.
+- Права — `Services/Shops/ShopAccess.cs`, одна таблица: `Owner`/`SuperAdmin` могут всё, `Staff` (членство
+  с ролью `Master`) — только `ManageOrders`, `ManageStock`, `ViewShop`. На маршруте владельца сотрудник
+  получает 403 с пустым телом. Отдельного контроллера сотрудников магазина нет: goods пользуется
+  существующим `CompanyMembersController` с проверкой роли из п. А.
+- Сервисы: `Services/Orders/` (`OrderCreationService`, `OrderEditService`, `OrderTransitionService`,
+  `OrderStateMachine`, `OrderMoney`, `OrderQuantityRules`, `StockLedger` — резерв и списание,
+  `OrderNumberAllocator`, `OrderPhoneThrottle` — не больше 5 активных на магазин и 20 в сутки на телефон,
+  `OrderChangeLog`/`OrderEventLog`, `PublicOrderService`, `PublicOrderToken`, `OrderTexts`, `ShopClock`,
+  `OrdersOptions`) и `Services/Shops/` (`SlugPolicy`, `SlugTransliterator`, `CatalogAvailability`,
+  `CatalogOrdering`, `ProductInputRules`, `SellerInfoRequirements`, `ShopOrderingGate`,
+  `PhoneVerificationAvailability`, `ShopAccessResolver`, мапперы, `ShopQrCode`, `ShopTexts`).
+- **Токен заказа** — 32 байта CSPRNG в base64url без паддинга, то есть 43 символа и 256 бит. Страница
+  покупателя — `/o/<token>`. Неправильно сформированный токен получает 404 без обращения к БД.
+  `LoggingExtensions.MaskSensitiveRequestPath` заменяет токен в пути `/api/orders/public/` на `***`
+  и сохраняет хвост вида `/cancel`.
+- Конфиг `Orders`: `MaxProductsPerShop` 1000, `MaxCategoriesPerShop` 100, `MaxLines` 50,
+  `PhoneLimits` 5/20. Четыре новые rate-limit политики: `storefront` 120/мин по IP, `order-create`
+  20/ч по IP анонимно и 60/ч на пользователя, `order-public` 120/мин по IP, `order-board` 120/мин на
+  пользователя.
+- **ПДн.** Выгрузка субъекта (`SubjectDataExporter`) теперь включает заказы. Гостевые заказы попадают
+  в неё только при подтверждённом номере. `AccountDeletionService` обезличивает заказы: имя, телефон,
+  комментарий. Добавлено правило ретенции `OrderPersonalizationRule` (`order-personalization`), но
+  `Retention:OrderPersonalDataDays = 0`, и при `<= 0` правило помечается `Skipped` и **ничего не удаляет**,
+  пока юрист не назовёт срок.
+- `LegalTextKey.OrderCheckoutNotice = "orderCheckoutNotice"` — ключ **в нижнем регистре**, в отличие от
+  остальных. Он **намеренно не входит в `All`**: иначе fail-fast `LegalDocumentProvider` заблокировал бы
+  выкат, пока нет текста юриста. Фронт читает `GET /api/legal/texts/orderCheckoutNotice`, а на 404
+  показывает нейтральный fallback. Когда в `legal.json` появится запись, ключ должен совпасть **точно**,
+  с регистром.
+- Зарезервированные слаги берутся из `contracts/cycle23/goods-routes.json`: `SlugPolicy` читает его как
+  встроенный ресурс, а `goodsRoutes.test.ts` сверяет с ним маршруты фронта. Среди зарезервированных есть
+  `notices`. Слаг уникален на всей платформе, вместе с салонами.
+
+**Г. Второй фронтенд — `frontend/goods/`**, тот же npm-пакет.
+- Точка входа `goods/index.html` → `goods/src/main.tsx` → `GoodsApp.tsx`. Конфиги `vite.goods.config.ts`
+  (root `goods`, выход `../dist-goods`, порт `SB_GOODS_WEB_PORT`, по умолчанию 5174),
+  `tsconfig.goods.json` (алиас `@goods/*`, include `goods/src` и `src`), `tailwind.goods.config.js`.
+  Общие модули импортируются через `@/`. Скрипты `package.json`: `dev:goods`, `build:goods`,
+  `build:release` (`build` + `build:goods` + `scripts/merge-goods-dist.mjs` копирует `dist-goods/` в
+  `dist/__goods/`), `types:api:cycle23` (генерат — `src/types/api-cycle23.generated.ts`).
+- Внутри: `api/` (catalog, orders, shops, storefront, legalNotice), `pages/cabinet/*` (главная, создание
+  магазина, настройки, каталог, экран заказов), `components/storefront|orders|catalog`, хуки
+  `useOrderBoardPolling` (опрос через `boardTimer.worker.ts`), `useNewOrderSound`, `useWakeLock`, `useCart`
+  (localStorage), `utils/*` (деньги, корзина, статусы, идемпотентность, форматирование количеств).
+  `SettingsPage` использует общий `CompanyAddressField`.
+- Изменения в ezbook: `LegalGuard` вынесен в `frontend/src/components/legal/LegalGuard.tsx` с пропсами
+  `bypassPaths` и `showPlatformNotices`, его используют оба приложения. Добавлены `NoticeLink.tsx`
+  (ссылка уведомления платформы: на ezbook — `<Link>`, на goods — абсолютный `<a>` на origin из
+  `kinds-summary`; пока origin неизвестен, ссылка не рисуется), `utils/companyKind.ts`,
+  `utils/returnTo.ts`, `GoodsShopsNotice`, `ui/Icon.tsx`. `CompanyPage`/`EmbedPage` для магазина
+  редиректят на goods. На goods тоже показываются баннер уведомлений платформы цикла 20 и маршрут
+  `/notices` (`7a2d30f`).
+
+**Д. Инфраструктура — что есть в репозитории и чего нет.** ⚠️ Работы DO-1/DO-2 из
+`ARCHITECTURE_CYCLE23.md` §401/§403 **в репозитории не сделаны**. `deploy/nginx/goods.ezbook.conf` нет.
+В `deploy/nginx/ezbook.conf` нет `location ^~ /__goods/`. В `deploy/`, `.github/`, `DEPLOY.md` и
+`docker-compose.prod.yml` строки `goods` нет вообще. Оба deploy-workflow и CI-джоба `frontend` вызывают
+`npm run build`, а не `build:release`, поэтому артефакт `frontend-dist-<sha>` **не содержит `__goods/`**.
+В `deploy-remote.sh` нет смоука goods, в `smoke-frontend.sh` нет профиля goods. По словам вызывающего
+агента, в репозитории этого нет: vhost `goods.ezbook.ru` с сертификатом certbot поставлен **на сервере
+руками**, туда же руками добавлен `location ^~ /__goods/ { return 404; }` в серверный `ezbook.conf`,
+домен добавлен в SmartCaptcha. Сделано только одно: в `.env.dev.example` добавлены `SB_GOODS_WEB_PORT`
+и комментарий про `PublicSites`. CI `npx tsc --noEmit` берёт `tsconfig.json` (include `src`), и
+**`frontend/goods/` в CI по типам не проверяется**. Тесты goods в CI идут через vitest, lint — через
+`eslint .`.
+
+**Е. Тесты на `9a0ee29`** (по данным вызывающего агента, локальный прогон; CI зелёный — frontend,
+backend, docker-build). Юнит бэкенда **1951/1951**. Функциональные **934**: 932 плюс 2 теста цикла 19
+LIM19-020. Один раз замечен неопознанный нестабильный функциональный тест. Vitest **918/918**. Новые файлы:
+`ServiceBooking.Tests/Tests/Cycle23{ShopsCatalog,Orders,StaffOrders,StrictModeAndData}Tests.cs`
+(73 теста `CY23-`, база — `Infrastructure/Cycle23TestBase.cs`) и юнит-тесты `OrderDomainTests`,
+`OrderMoneyTests` (векторы из `contracts/cycle23/order-money-vectors.json`), `OrderStateMachineTests`,
+`ShopRulesTests`, `SlugPolicyTests`, `PublicSiteLinksTests`, `CompanyKindTests`, `OrderQuantityRulesTests`,
+`SlugTransliteratorTests`. `Cycle22RouteTable.golden.txt` обновлён намеренно. Во фронте есть тесты
+`goods/src/**/*.test.ts(x)` (vitest `include` расширен), `LegalGuard.test.tsx`, `NoticeLink.test.tsx`.
+Команды запуска не изменились (§7). Тест-кейсы описаны в `TEST_CATALOG.md`, раздел «Цикл 23»
+(стр. ~5913). Сквозного браузерного (e2e) набора по-прежнему нет.
+
+**Ж. Документация.** `API_DOCUMENTATION.md` §4.17 «Магазины и заказы на самовывоз (goods.ezbook.ru)»
+помечен «НЕ ВЫПУЩЕНО». ⚠️ Номер §4.17 в файле **повторяется**: такой же номер уже есть у раздела
+«Согласия и здоровье клиента» цикла 20. `CHANGELOG.md`: сверху стоит раздел «Не выпущено — «Заказы» на
+goods.ezbook.ru…». Числа тестов в нём (юнит 1804, функциональные 888) сняты до мерджа циклов 19–20 и
+**устарели** относительно Е. В `README.md` обновлены «О проекте» и «Чего пока нет» (goods), а числа
+лимитов сняты. Руководств про goods в `docs/` нет. ⚠️ Нумерация разделов снова пересекается:
+`ARCHITECTURE_CYCLE23.md` §386–§405 перекрывает `ARCHITECTURE_CYCLE19.md` §380–§396 и
+`ARCHITECTURE_CYCLE20.md` §400–§419, а `API_CONTRACT_CYCLE23.md` §406–§425 перекрывает контракты циклов
+19–20. Ссылку вида «§401» без имени файла однозначно прочитать нельзя.
+
+**З. Что заведомо не сделано (стенд, а не запуск).** Выключателя приёма, часов работы и паузы нет, магазин
+принимает заказы круглосуточно. Уведомлений о заказах нет ни в одну сторону. Тарифов магазинов и
+экрана подписки на goods нет: всё это цикл 2 направления. Юрист по §8 L1–L8 (`ARCHITECTURE_CYCLE23.md`
+§404) **не запускался**, поэтому: строка под «Заказать» — fallback; реквизиты продавца необязательны
+(`SellerInfoRequirements`); из пищевой информации есть только «Состав и аллергены»; срок ПДн равен 0.
+Риски — §9 «🛒 Цикл 23».
 
 ### 🧮19 Итог цикла 19 «лимиты только в тарифе, удаление заготовки геокодера» — что влито в `develop` (`7f7a26a..7591cd2`)
 
@@ -6394,12 +6562,15 @@ CI-джоб `docker-build`, не тест-раннер).
 # Проверить готовность среды, ничего не меняя и не удаляя:
 dotnet run --project ServiceBooking.TestKit -- doctor     # 0 — ок, 2 — есть непройденные проверки
 
-cd /Users/ikolomeets/RiderProjects/ServiceBooking3   # 💳 путь уточнён: каталог называется ServiceBooking3
+cd /Users/ikolomeets/RiderProjects/ServiceBooking2   # 🛒23 путь исправлен: рабочая копия — ServiceBooking2 (раньше тут стоял устаревший ServiceBooking3)
 dotnet build ServiceBooking.sln -warnaserror   # так же, как в CI
 dotnet test ServiceBooking.UnitTests     # быстрый, без БД и без Docker — прогонять первым
 dotnet test ServiceBooking.Tests         # основной функциональный набор, нужен Docker
 
 cd frontend && npm ci && npm run lint && npx tsc --noEmit && npm run test:run
+# 🛒23 vitest `include` охватывает и goods/src/**/*.test.ts(x) — отдельной команды для goods нет.
+# `npx tsc --noEmit` проверяет только src/ (tsconfig.json); типы goods проверяются лишь внутри
+# `npm run build:goods` (tsc -p tsconfig.goods.json), которого в CI нет.
 ```
 
 Полезное при разборе красного прогона (подробности — `docs/testing-isolation.md`):
@@ -9660,6 +9831,43 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   стр. ~176 всё ещё называет «дополнительные компании, дополнительные сотрудники» опциями. Пометок в
   `ARCHITECTURE_CYCLE13.md`/`API_CONTRACT_CYCLE13.md`/`LEGAL_REVIEW.md` §16 нет. Числа тестов после
   интеграции (`7bfa209`) в репозитории не зафиксированы.
+  🛒23 **Частично закрыт на `9a0ee29`.** В `CHANGELOG.md` появился раздел цикла 19 («Не выпущено — лимиты
+  сотрудников и компаний задаются только тарифом…», стр. ~177). В `README.md` фразы «дополнительные
+  компании, дополнительные сотрудники» больше нет, числа лимитов сняты (`c1a0e3a`). Пометок в документах
+  цикла 13 и `LEGAL_REVIEW.md` §16 по-прежнему нет.
+
+### 🛒 Цикл 23 — C23-1…C23-9 (открыто на `9a0ee29`)
+
+- **C23-1. 🔴 Выкат goods из репозитория не собран.** Как описано в 🛒23 Д, workflow собирает только
+  `npm run build`, так что `__goods/` в релиз не попадает. nginx-конфигов goods в `deploy/nginx/` нет,
+  смоука goods нет. `DEPLOY.md` про goods ничего не говорит. Серверный vhost и правка `ezbook.conf`
+  сделаны руками и в репозитории не отражены: при переустановке машины по `deploy/` их не восстановить.
+  Утверждение `CHANGELOG.md` «`npm run build:release` собирает оба сайта… Смоук после деплоя проверяет и
+  goods» кодом deploy/CI **не подтверждается**.
+- **C23-2. 🟠 Юрист по §8 L1–L8 не запускался** (`ARCHITECTURE_CYCLE23.md` §404). Что из этого следует:
+  `orderCheckoutNotice` отсутствует в `legal.json`, и фронт показывает fallback; `SellerInfoRequirements`
+  пуст; `OrderPersonalDataDays = 0`, так что правило `order-personalization` инертно и ПДн заказов не
+  удаляются никогда; отдельных документов для покупателей нет.
+- **C23-3. Ключ `orderCheckoutNotice` в нижнем регистре и вне `LegalTextKey.All`.** Если в `legal.json`
+  его запишут как `OrderCheckoutNotice`, 404 и fallback останутся, и никто этого не заметит. Когда текст
+  появится, ключ надо внести в `All` вручную, по примеру `GuestDataGateNotice` в цикле 20.
+- **C23-4. Designer-снимки `AddCompanyKind`/`AddShopOrders` не содержат сущностей цикла 20.**
+  `dotnet ef migrations remove` на них потеряет модель цикла 20 (🛒23 Б).
+- **C23-5. `frontend/goods/` не проверяется по типам в CI** (🛒23 Д). Ошибка типов в goods пройдёт CI
+  и всплывёт только на `npm run build:goods`.
+- **C23-6. goods — стенд.** Выключателя приёма, часов работы и паузы нет, заказы принимаются
+  круглосуточно, остановить приём можно только блокировкой магазина. Уведомлений о заказах нет.
+  Тарифов магазинов нет, лимиты компаний и сотрудников общие с салонами.
+- **C23-7. Нестабильный функциональный тест.** Один раз в локальном прогоне упал неопознанный
+  функциональный тест. Имя в репозитории не зафиксировано, итоговый прогон — 934 без падений.
+- **C23-8. Документы расходятся с фактом.** Числа тестов в разделе цикла 23 `CHANGELOG.md` устарели.
+  В `API_DOCUMENTATION.md` два раздела с номером §4.17. Нумерация § в документах цикла 23 пересекается
+  с циклами 19/20. Руководств по goods в `docs/` нет.
+- **C23-9. Правка заказа — место с недавней ошибкой.** QA нашёл, что при добавлении позиции итог
+  удваивался, а затем приходил ложный 409 `VersionMismatch`. Исправлено коммитами `a980fdd` и `923b047`:
+  новая позиция теперь добавляется через `db.OrderItems.Add`, без `order.Items.Add`. Код
+  `OrderEditService` опирается на отслеживание EF и `Order.Version`; при правках там снова легко
+  получить двойное добавление.
 
 ## 10. Что уже существует в документации и тест-кейсах
 
@@ -10357,6 +10565,21 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 пакета в `frontend/package.json` и каталога с такими тестами не найдено.
 
 ### 10.5 Документы цикла работ
+
+🛒23 **Документы цикла 23 (в корне; `docs/history/` по-прежнему нет, архивировать нечего и некуда):**
+корневой `SPEC.md` (600 строк) — это **спека цикла 23**, а не цикла 20. Спека цикла 20 — в
+`SPEC_CYCLE20_LEGAL_CLOSURE.md`, цикла 22 — в `SPEC_CYCLE22_REFACTORING_DEAD_CODE.md`. Строки ниже
+«корневой `SPEC.md` — спека цикла 20/22» устарели. Остальное: `ARCHITECTURE_CYCLE23.md` (1 139 строк,
+§386–§405: §388 модель, §389 изоляция по типу, §392 права, §394 остатки, §396 статусы и деньги,
+§398 ПДн, §399 второй фронт, §401 nginx/деплой/CI, §404 места под юриста) и `API_CONTRACT_CYCLE23.md`
+(597 строк, §406–§425; §407 сводка маршрутов, §419 коды 409, §421 салонные маршруты с 409). Каталог
+`contracts/cycle23/`: `openapi.yaml` (1 869 строк, генерат — `frontend/src/types/api-cycle23.generated.ts`),
+`goods-routes.json` (маршруты goods и зарезервированные слаги, читается и бэком, и тестом фронта),
+`order-money-vectors.json` (векторы денежных расчётов для юнит-тестов). Справочник для внешних
+потребителей — `API_DOCUMENTATION.md` §4.17 (второй с этим номером). Тест-кейсы — `TEST_CATALOG.md`,
+раздел «Цикл 23» (CY23-01…84, 73 теста). Продуктовое описание — `CHANGELOG.md` (верхний раздел
+«Не выпущено») и `README.md` («Заказы на самовывоз», «Чего пока нет»). Пользовательских руководств по
+goods в `docs/` нет.
 
 🧮19 **Документы цикла 19 (все в корне, по соглашению `_CYCLEnn`; `docs/history/` нет):**
 `SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md` (391 строка, спека с ответами заказчика на развилки;
