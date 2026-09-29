@@ -134,6 +134,49 @@ public class PlatformNoticeTextsTests
         title.Should().EndWith("…» удалена по просьбе изображённого на ней человека");
     }
 
+    // Code-review finding (cycle 20, blocking): EnsureNoBraces used to reject the FINAL rendered text for
+    // ANY '{'/'}' — including braces that are simply part of a company/plan name or changesSummary the
+    // user typed themselves. That turned a legitimate company name into a 500 (PublishPhotoRemovedAsync
+    // has no caller to return a 400 to — the photo was already deleted) or a false-positive 500 instead of
+    // a 400 from POST /api/admin/notices. The fix only rejects the KNOWN placeholder tokens left over
+    // verbatim — a company/plan name containing braces must render (and persist) exactly as typed.
+    [Fact]
+    public void BuildPhotoRemoved_CompanyNameWithBraces_DoesNotThrow_AndKeepsTheBracesVerbatim()
+    {
+        var (title, body) = PlatformNoticeTexts.BuildPhotoRemoved("Салон «Люкс» {VIP}", new DateOnly(2026, 10, 5));
+
+        title.Should().Contain("Салон «Люкс» {VIP}");
+        body.Should().Contain("Салон «Люкс» {VIP}");
+    }
+
+    [Fact]
+    public void BuildPriceChange_PlanNameWithBraces_DoesNotThrow_AndKeepsTheBracesVerbatim()
+    {
+        var (title, body) = PlatformNoticeTexts.BuildPriceChange("Бизнес {старый}", 990m, 1190m, EffectiveFrom);
+
+        title.Should().Contain("Бизнес {старый}");
+        body.Should().Contain("Бизнес {старый}");
+    }
+
+    [Fact]
+    public void BuildTermsChange_ChangesSummaryWithBraces_DoesNotThrow_AndKeepsTheBracesVerbatim()
+    {
+        var (_, body) = PlatformNoticeTexts.BuildTermsChange(
+            LegalDocumentType.Privacy, "добавлен раздел {12.3} про хранение", EffectiveFrom);
+
+        body.Should().Contain("добавлен раздел {12.3} про хранение");
+    }
+
+    [Fact]
+    public void BuildPhotoRemoved_CompanyNameEqualToAKnownPlaceholderToken_StillThrows()
+    {
+        // The one case the guard MUST still catch: a template that genuinely left a known placeholder
+        // token unsubstituted would be indistinguishable from this input — accepted as documented behavior
+        // (§11 rule 3's "programmer mistake" guard), not a realistic company name.
+        var act = () => PlatformNoticeTexts.BuildPhotoRemoved("{компания}", new DateOnly(2026, 10, 5));
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     [Fact]
     public void AcknowledgeButtonAndCaption_MatchTheLegalReviewVerbatim()
     {

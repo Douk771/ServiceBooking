@@ -149,27 +149,28 @@ public sealed class PlatformNoticePublisher(AppDbContext db, ILogger<PlatformNot
         }
 
         var nowUtc = DateTime.UtcNow;
-        var removalDateMsk = PlatformNoticeRules.TodayMoscow(nowUtc);
-        var (title, body) = PlatformNoticeTexts.BuildPhotoRemoved(company.Name, removalDateMsk);
-
-        var notice = new PlatformNotice
-        {
-            Id = Guid.NewGuid(),
-            Kind = PlatformNoticeKind.PhotoRemoved,
-            AudienceType = NoticeAudienceType.BillingAccount,
-            TargetBillingAccountId = billingAccountId,
-            Title = title,
-            Body = body,
-            TemplateVersion = PlatformNoticeTexts.TemplateVersion,
-            LinkUrl = null, // §11.3 — no contact/reference of the requester may leak, not even via a link
-            EffectiveFrom = null,
-            PublishedAtUtc = nowUtc,
-            VisibleUntilUtc = PlatformNoticeRules.ComputeVisibleUntilUtc(nowUtc, null),
-            CreatedByUserId = "system",
-        };
 
         try
         {
+            var removalDateMsk = PlatformNoticeRules.TodayMoscow(nowUtc);
+            var (title, body) = PlatformNoticeTexts.BuildPhotoRemoved(company.Name, removalDateMsk);
+
+            var notice = new PlatformNotice
+            {
+                Id = Guid.NewGuid(),
+                Kind = PlatformNoticeKind.PhotoRemoved,
+                AudienceType = NoticeAudienceType.BillingAccount,
+                TargetBillingAccountId = billingAccountId,
+                Title = title,
+                Body = body,
+                TemplateVersion = PlatformNoticeTexts.TemplateVersion,
+                LinkUrl = null, // §11.3 — no contact/reference of the requester may leak, not even via a link
+                EffectiveFrom = null,
+                PublishedAtUtc = nowUtc,
+                VisibleUntilUtc = PlatformNoticeRules.ComputeVisibleUntilUtc(nowUtc, null),
+                CreatedByUserId = "system",
+            };
+
             db.PlatformNotices.Add(notice);
             await db.SaveChangesAsync(ct);
         }

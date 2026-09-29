@@ -127,12 +127,23 @@ public static class PlatformNoticeTexts
         return templateWithPlaceholder.Replace(placeholder, truncatedName);
     }
 
-    /// <summary>§11 rule 3: "в сохранённом снимке не должно остаться ни одного {/}" — fail loud rather
-    /// than silently persist a template with an unresolved placeholder.</summary>
+    /// <summary>§11 rule 3: "в сохранённом снимке не должно остаться ни одного {/}" — this guards against
+    /// a PROGRAMMER mistake (a template placeholder that was never substituted), not against user-supplied
+    /// data. User input (company name, plan name, changesSummary) is substituted verbatim and is allowed to
+    /// contain literal '{'/'}' of its own — e.g. a company named «Салон {Люкс}» — so checking the rendered
+    /// result for ANY brace would reject legitimate user data with a 500/400. Instead we look for the exact
+    /// known placeholder tokens (the ones from the §11.2 table) still present verbatim in the rendered text,
+    /// which can only happen if a substitution step was skipped.</summary>
+    private static readonly string[] KnownPlaceholderTokens =
+        ["{дата}", "{название}", "{старая}", "{новая}", "{перечень}", "{компания}"];
+
     private static (string Title, string Body) EnsureNoBraces(string title, string body)
     {
-        if (title.Contains('{') || title.Contains('}') || body.Contains('{') || body.Contains('}'))
-            throw new InvalidOperationException("PlatformNoticeTexts left an unresolved placeholder in the rendered text.");
+        foreach (var token in KnownPlaceholderTokens)
+        {
+            if (title.Contains(token, StringComparison.Ordinal) || body.Contains(token, StringComparison.Ordinal))
+                throw new InvalidOperationException($"PlatformNoticeTexts left an unresolved placeholder ('{token}') in the rendered text.");
+        }
         return (title, body);
     }
 }
