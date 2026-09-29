@@ -3,7 +3,10 @@ namespace ServiceBooking.API.DTOs.Notifications;
 /// <summary>contracts/cycle9/openapi.yaml — <c>GET /api/push/config</c> (US-118). <c>PublicKey</c> is the
 /// ONLY way the VAPID public key reaches the browser (§105.2); <c>Enabled=false</c> is a normal,
 /// documented state (SPEC П13), not an error.</summary>
-public record PushConfigDto(bool Enabled, string? PublicKey, int MaxSubscriptionsPerUser, IReadOnlyList<PushConfigCompanyDto> Companies);
+public record PushConfigDto(
+    bool Enabled, string? PublicKey, int MaxSubscriptionsPerUser, IReadOnlyList<PushConfigCompanyDto> Companies,
+    // Cycle 24 (API_CONTRACT_CYCLE24.md §484): the site the answer is for — Services (ezbook, the default) or Orders (goods).
+    Core.Enums.CompanyKind Site = Core.Enums.CompanyKind.Services);
 
 /// <summary>One company the caller is staff of, and whether that company currently wants push at all —
 /// <c>StaffPushEnabled=false</c> means the frontend must not even ask for browser permission (US-118).</summary>
@@ -19,7 +22,10 @@ public record PushSubscriptionDto(Guid Id, string DeviceLabel, DateTime CreatedA
 
 /// <summary><c>POST /api/push/subscriptions</c> request body — no owner field anywhere in this shape
 /// (US-123: "создать чужую подписку" невозможно по форме запроса, владелец берётся из токена).</summary>
-public record CreatePushSubscriptionInput(string Endpoint, CreatePushSubscriptionKeysInput Keys, string? DeviceLabel);
+public record CreatePushSubscriptionInput(
+    string Endpoint, CreatePushSubscriptionKeysInput Keys, string? DeviceLabel,
+    // Cycle 24 (API_CONTRACT_CYCLE24.md §484): not sent = Services (ezbook keeps working unchanged); goods always sends Orders.
+    Core.Enums.CompanyKind? Site = null);
 
 public record CreatePushSubscriptionKeysInput(string P256dh, string Auth);
 

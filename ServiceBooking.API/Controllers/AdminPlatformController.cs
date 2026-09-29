@@ -255,7 +255,8 @@ public class AdminPlatformController(
             p.ClientHealthNoteDays, p.ConsentRecordDays, p.ChannelStateEventDays, p.PaymentLogDays,
             p.MailLogDays, p.AppLogDays, dryRun,
             p.PhoneVerificationSessionDays, p.VerifiedPhoneOrphanDays, p.TrialPhoneRegistrationDays,
-            p.BookingEventDays, p.GuestDataGateEventDays, p.PlatformNoticeDays));
+            p.BookingEventDays, p.GuestDataGateEventDays, p.PlatformNoticeDays,
+            p.OrderPushSubscriptionDays, p.CustomerOrderPushNotificationDays));
     }
 
     // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06) — the journal's
@@ -313,7 +314,9 @@ public record RetentionPolicyDto(
     int ClientHealthNoteDays, int ConsentRecordDays, int ChannelStateEventDays, int PaymentLogDays,
     int MailLogDays, int AppLogDays, bool DryRun,
     int PhoneVerificationSessionDays = 0, int VerifiedPhoneOrphanDays = 0, int TrialPhoneRegistrationDays = 0,
-    int BookingEventDays = 0, int GuestDataGateEventDays = 0, int PlatformNoticeDays = 0);
+    int BookingEventDays = 0, int GuestDataGateEventDays = 0, int PlatformNoticeDays = 0,
+    // ARCHITECTURE_CYCLE24.md §456.4, API_CONTRACT_CYCLE24.md §488 [legal L16] — the two rules of order web-push, appended at the end.
+    int OrderPushSubscriptionDays = 0, int CustomerOrderPushNotificationDays = 0);
 
 // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06). 🔴 No IP, no
 // User-Agent, no phone in any form, no counts — the schema behind this DTO has no such columns

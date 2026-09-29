@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Notifications.WebPush;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Notifications;
@@ -22,7 +23,8 @@ public sealed class PushSubscriptionWriter(AppDbContext db, IOptions<WebPushOpti
     /// (§105.4) so two tabs subscribing at the same instant can't both sneak past the potolok.
     /// </summary>
     public async Task<(PushSubscription Subscription, bool Created)> UpsertAsync(
-        string userId, string endpoint, string p256dh, string auth, string? deviceLabel, CancellationToken ct)
+        string userId, string endpoint, string p256dh, string auth, string? deviceLabel, CancellationToken ct,
+        CompanyKind site = CompanyKind.Services)
     {
         var encryptionKey = notificationOptions.Value.EncryptionKey ?? string.Empty;
 
@@ -37,6 +39,7 @@ public sealed class PushSubscriptionWriter(AppDbContext db, IOptions<WebPushOpti
         if (created) db.PushSubscriptions.Add(row);
 
         row.UserId = userId;
+        row.Site = site; // ARCHITECTURE_CYCLE24.md §454: the site the browser subscribed from
         // §105.5 rubeж 1: on a genuine ownership handoff the metadata is entirely the new owner's — a
         // "created" timestamp from the PREVIOUS owner's subscribe would be misleading on the devices
         // list. A same-owner re-subscribe (browser re-registered its own, unchanged endpoint) keeps its
@@ -51,14 +54,15 @@ public sealed class PushSubscriptionWriter(AppDbContext db, IOptions<WebPushOpti
 
         await db.SaveChangesAsync(ct);
 
-        await EvictOverflowAsync(userId, keepRowId: row.Id, ct);
+        await EvictOverflowAsync(userId, site, keepRowId: row.Id, ct);
 
         await transaction.CommitAsync(ct);
         return (row, created);
     }
 
-    public Task<List<PushSubscription>> ListAsync(string userId, CancellationToken ct) =>
-        db.PushSubscriptions.AsNoTracking().Where(s => s.UserId == userId)
+    /// <summary>The caller's devices on ONE site (ARCHITECTURE_CYCLE24.md §454): ezbook and goods devices are listed apart.</summary>
+    public Task<List<PushSubscription>> ListAsync(string userId, CancellationToken ct, CompanyKind site = CompanyKind.Services) =>
+        db.PushSubscriptions.AsNoTracking().Where(s => s.UserId == userId && s.Site == site)
             .OrderByDescending(s => s.CreatedAtUtc).ToListAsync(ct);
 
     /// <summary>§105.5: chosen by id, scoped to the caller's own <c>UserId</c> — a chosen id that
@@ -88,10 +92,11 @@ public sealed class PushSubscriptionWriter(AppDbContext db, IOptions<WebPushOpti
     /// error surfaced to the caller. <paramref name="keepRowId"/> is excluded from eviction candidates:
     /// the row this very call just wrote must never be the one removed, even in the edge case where a
     /// long-time subscriber's very first device happens to be their oldest by timestamp.</summary>
-    private async Task EvictOverflowAsync(string userId, Guid keepRowId, CancellationToken ct)
+    private async Task EvictOverflowAsync(string userId, CompanyKind site, Guid keepRowId, CancellationToken ct)
     {
         var max = webPushOptions.Value.MaxSubscriptionsPerUser;
-        var all = await db.PushSubscriptions.Where(s => s.UserId == userId).ToListAsync(ct);
+        // The ceiling and the eviction work inside the pair (user, site): a device of goods never pushes out a device of ezbook (§455).
+        var all = await db.PushSubscriptions.Where(s => s.UserId == userId && s.Site == site).ToListAsync(ct);
         var overflow = all.Count - max;
         if (overflow <= 0) return;
 

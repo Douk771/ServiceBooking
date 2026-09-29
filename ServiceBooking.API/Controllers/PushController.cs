@@ -7,8 +7,10 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Notifications.WebPush;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
@@ -25,8 +27,9 @@ public class PushController(
     AppDbContext db, PushSubscriptionWriter writer, IOptions<WebPushOptions> webPushOptions) : ControllerBase
 {
     [HttpGet("config")]
-    public async Task<ActionResult<PushConfigDto>> GetConfig(CancellationToken ct)
+    public async Task<ActionResult<PushConfigDto>> GetConfig([FromQuery] string? site, CancellationToken ct)
     {
+        if (!CompanyKindQuery.TryParse(site, out var siteKind)) return BadRequest(CompanyKindQuery.UnknownKindText);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var opts = webPushOptions.Value;
         // §105.3: enabled=false means Notifications:StaffPush:Provider=logging — a normal, documented
@@ -38,8 +41,9 @@ public class PushController(
             .Where(cm => cm.UserId == userId)
             .Select(cm => cm.CompanyId).Distinct().ToListAsync(ct);
 
+        // ARCHITECTURE_CYCLE24.md §484: only the companies of THIS site — the shops that leaked into the ezbook list in cycle 23 are gone from it.
         var companies = await db.Companies.AsNoTracking()
-            .Where(c => memberships.Contains(c.Id)).Select(c => new { c.Id, c.Name }).ToListAsync(ct);
+            .Where(c => memberships.Contains(c.Id) && c.Kind == siteKind).Select(c => new { c.Id, c.Name }).ToListAsync(ct);
         var settingsByCompany = await db.CompanyNotificationSettings.AsNoTracking()
             .Where(s => memberships.Contains(s.CompanyId))
             .ToDictionaryAsync(s => s.CompanyId, s => s.StaffPushEnabled, ct);
@@ -47,14 +51,15 @@ public class PushController(
         var companyDtos = companies.Select(c => new PushConfigCompanyDto(
             c.Id, c.Name, settingsByCompany.TryGetValue(c.Id, out var v) ? v : new CompanyNotificationSettings().StaffPushEnabled)).ToList();
 
-        return Ok(new PushConfigDto(enabled, enabled ? opts.VapidPublicKey : null, opts.MaxSubscriptionsPerUser, companyDtos));
+        return Ok(new PushConfigDto(enabled, enabled ? opts.VapidPublicKey : null, opts.MaxSubscriptionsPerUser, companyDtos, siteKind));
     }
 
     [HttpGet("subscriptions")]
-    public async Task<ActionResult<PushSubscriptionListDto>> ListSubscriptions([FromQuery] string? currentEndpoint)
+    public async Task<ActionResult<PushSubscriptionListDto>> ListSubscriptions([FromQuery] string? currentEndpoint, [FromQuery] string? site)
     {
+        if (!CompanyKindQuery.TryParse(site, out var siteKind)) return BadRequest(CompanyKindQuery.UnknownKindText);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var rows = await writer.ListAsync(userId, HttpContext.RequestAborted);
+        var rows = await writer.ListAsync(userId, HttpContext.RequestAborted, siteKind);
 
         var items = rows.Select(s => new PushSubscriptionDto(
             s.Id, s.DeviceLabel, s.CreatedAtUtc, s.LastSuccessAtUtc,
@@ -84,9 +89,11 @@ public class PushController(
         if (dto.DeviceLabel is { Length: > 100 })
             return BadRequest("Слишком длинное название устройства.");
 
+        if (dto.Site is { } requestedSite && !Enum.IsDefined(requestedSite)) return BadRequest(CompanyKindQuery.UnknownKindText);
+
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var (subscription, created) = await writer.UpsertAsync(
-            userId, dto.Endpoint, dto.Keys.P256dh, dto.Keys.Auth, dto.DeviceLabel, HttpContext.RequestAborted);
+            userId, dto.Endpoint, dto.Keys.P256dh, dto.Keys.Auth, dto.DeviceLabel, HttpContext.RequestAborted, dto.Site ?? CompanyKind.Services);
 
         var result = new PushSubscriptionDto(subscription.Id, subscription.DeviceLabel, subscription.CreatedAtUtc,
             subscription.LastSuccessAtUtc, IsCurrent: true);

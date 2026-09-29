@@ -44,6 +44,8 @@ public sealed class OrderPersonalizationRule(AppDbContext db) : IRetentionRule
             {
                 OrderPersonalData.Erase(o);
                 foreach (var orderEvent in o.Events) OrderPersonalData.TombstoneCustomerEvent(orderEvent);
+                // §461: the customer's browsers go with the personal data (a no-op when order-push-subscriptions already cleared them).
+                db.OrderPushSubscriptions.RemoveRange(db.OrderPushSubscriptions.Where(s => s.OrderId == o.Id));
             },
             ctx, db, ct,
             dateOf: o => o.CompletedAtUtc!.Value);

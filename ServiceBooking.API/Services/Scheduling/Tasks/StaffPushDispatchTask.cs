@@ -172,7 +172,9 @@ public sealed class StaffPushDispatchTask(
         var settings = await scopedDb.CompanyNotificationSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.CompanyId == row.CompanyId, runnerCt);
         var staffPushEnabled = settings?.StaffPushEnabled ?? new CompanyNotificationSettings().StaffPushEnabled;
-        if (!staffPushEnabled)
+        // ARCHITECTURE_CYCLE24.md §459.6: the owner's monthly-limit warning is about the account, not about a shop's staff notifications — the
+        // shop's "push to staff" switch does not hold it back.
+        if (!staffPushEnabled && row.Type != NotificationType.OwnerOrderLimitWarning)
             return await SkipAsync(scopedDb, row, NotificationReason.StaffPushDisabledByCompany, runnerCt);
 
         var subscription = row.SubscriptionId is { } subscriptionId
@@ -215,7 +217,7 @@ public sealed class StaffPushDispatchTask(
         // always <= the ideal value and never past it, so the push service is never told to hold a
         // message longer than this row itself would still be considered live for.
         var ttlSeconds = Math.Clamp((int)(row.ExpiresAtUtc - scopedClock.UtcNow).TotalSeconds, 1, 3600);
-        var topic = $"b-{row.BookingId?.ToString() ?? row.Id.ToString()}";
+        var topic = Topic(row);
 
         var outcome = await sender.SendAsync(target, row.Payload, ttlSeconds, topic, runnerCt);
 
@@ -273,6 +275,16 @@ public sealed class StaffPushDispatchTask(
                 throw new InvalidOperationException($"Unhandled {nameof(WebPushSendOutcome)} subtype: {outcome.GetType().Name}");
         }
     }
+
+    /// <summary>
+    /// The <c>Topic</c> header that lets the push service collapse repeats. Booking rows keep <c>b-{bookingId}</c> (cycle 9); order rows use
+    /// <c>o-{orderId}</c> (ARCHITECTURE_CYCLE24.md §455) and a row about neither (the owner's limit warning) its own id. RFC 8030 allows 32 characters of
+    /// the URL-safe alphabet, so the two new forms are cut to 32 (30 hex digits of a GUID are still unique).
+    /// </summary>
+    internal static string Topic(StaffPushNotification row) =>
+        row.OrderId is { } orderId ? $"o-{orderId:N}"[..32]
+        : row.BookingId is { } bookingId ? $"b-{bookingId}"
+        : $"l-{row.Id:N}"[..32];
 
     private static async Task<(int Sent, int Failed, int Skipped)> SkipAsync(
         AppDbContext scopedDb, StaffPushNotification row, NotificationReason reason, CancellationToken ct)

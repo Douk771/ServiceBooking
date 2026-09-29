@@ -84,6 +84,14 @@ public sealed class RetentionPeriods
     /// precedent). NOT fail-fast-checked at startup.</summary>
     public int OrderPersonalDataDays { get; set; } = 0;
 
+    /// <summary>ARCHITECTURE_CYCLE24.md §456.4 [legal L16]. Days after an order reaches a final status when its web-push subscriptions
+    /// (<see cref="Core.Entities.OrderPushSubscription"/>) are deleted. A technical term — nothing is sent after the final status — that legal-counsel may
+    /// change here. Default 7. Read by <see cref="Rules.OrderPushSubscriptionRule"/>.</summary>
+    public int OrderPushSubscriptionDays { get; set; } = 7;
+
+    /// <summary>§456.4 [legal L16]. Age of a <see cref="Core.Entities.CustomerOrderPushNotification"/> row since it was created. Default 90.</summary>
+    public int CustomerOrderPushNotificationDays { get; set; } = 90;
+
     /// <summary>Age of a <see cref="Core.Entities.ChannelStateEvent"/> since it occurred. Default 365.</summary>
     public int ChannelStateEventDays { get; set; } = 365;
 

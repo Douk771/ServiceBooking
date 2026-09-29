@@ -40,7 +40,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
             return;
 
         var subscriptions = await db.PushSubscriptions.AsNoTracking()
-            .Where(s => s.UserId == booking.MasterId).ToListAsync(ct);
+            .Where(s => s.UserId == booking.MasterId && s.Site == CompanyKind.Services).ToListAsync(ct); // ARCHITECTURE_CYCLE24.md §455: a master's booking push never goes to a goods device
         // §105.6 p.3: not subscribed on any device -> nobody to tell, nothing to queue.
         if (subscriptions.Count == 0) return;
 
@@ -104,7 +104,7 @@ public sealed class StaffPushScheduler(AppDbContext db)
             return;
 
         var subscriptions = await db.PushSubscriptions.AsNoTracking()
-            .Where(s => s.UserId == booking.MasterId).ToListAsync(ct);
+            .Where(s => s.UserId == booking.MasterId && s.Site == CompanyKind.Services).ToListAsync(ct); // ARCHITECTURE_CYCLE24.md §455: a master's booking push never goes to a goods device
         if (subscriptions.Count == 0) return;
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
