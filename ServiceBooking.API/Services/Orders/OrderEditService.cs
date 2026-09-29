@@ -151,7 +151,8 @@ public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActo
                     QuantityOrdered = line.Quantity, LineTotalEstimated = OrderMoney.LineTotal(p.Unit, p.Price, line.Quantity),
                     ReservesStock = settings.TrackStock && p.StockOnHand is not null,
                 };
-                order.Items.Add(added);
+                // Add() marks the entity Added (client-side Guid key) and EF fixup puts it into order.Items once — do not add it there manually.
+                db.OrderItems.Add(added);
                 changes.Add(new ChangeEntry(p.Name, null, new ChangeSide(line.Quantity, p.Price, p.Unit)));
             }
         }
