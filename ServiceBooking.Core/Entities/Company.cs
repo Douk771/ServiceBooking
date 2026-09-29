@@ -101,4 +101,10 @@ public class Company
     // normalized value (ServiceBooking.API.Services.Bookings.ClientRescheduleWindow.Normalize) — never
     // raw user input. NOT a way to turn client self-reschedule off entirely; that's AllowSelfBooking.
     public int ClientRescheduleMinHours { get; set; } = 2;
+
+    // ARCHITECTURE_CYCLE23.md §388.1 — product type of the company: a salon (online booking, ezbook.ru) or a
+    // pickup-order shop (goods.ezbook.ru). Set ONCE by CompanyCreationService and never changed afterwards —
+    // there is deliberately no DTO setter for it anywhere, the admin panel included. Every pre-existing row is
+    // Services through the column default (no backfill).
+    public CompanyKind Kind { get; set; } = CompanyKind.Services;
 }

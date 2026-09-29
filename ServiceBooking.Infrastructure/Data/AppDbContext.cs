@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.Infrastructure.Data;
 
@@ -124,6 +125,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // project can't reference the API assembly from Infrastructure) — same convention Company.cs
             // already uses for BookingHorizonDays/TimeZoneId's own literals.
             e.Property(c => c.ClientRescheduleMinHours).HasDefaultValue(2);
+            // ARCHITECTURE_CYCLE23.md §388.1 — every existing row is a salon (Services = 0), no backfill.
+            e.Property(c => c.Kind).HasDefaultValue(CompanyKind.Services);
         });
 
         builder.Entity<Service>(e =>

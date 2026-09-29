@@ -1,0 +1,14 @@
+namespace ServiceBooking.Core.Enums;
+
+/// <summary>
+/// ARCHITECTURE_CYCLE23.md §388.1 — product type of a company. Persisted as a number: append-only, never
+/// reorder or renumber (Services = 0 is the column default every existing row carries).
+/// </summary>
+public enum CompanyKind
+{
+    /// <summary>A salon / service business — online booking on ezbook.ru.</summary>
+    Services = 0,
+
+    /// <summary>A shop or canteen taking pickup orders on goods.ezbook.ru.</summary>
+    Orders = 1
+}
