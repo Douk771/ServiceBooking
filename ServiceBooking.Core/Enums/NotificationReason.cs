@@ -98,4 +98,14 @@ public enum NotificationReason
     /// simply no longer this row's recipient's. No retry; the row that queued for the original recipient is
     /// simply held, and a future queueing pass (once that recipient registers a device again) sends fresh.</summary>
     PushSubscriptionReassigned,
+
+    /// <summary>ARCHITECTURE_CYCLE24.md §457.1 — an order message that was not sent within
+    /// <c>Orders:CustomerMessageTtlMinutes</c> of being queued: an outdated status is worse than none.</summary>
+    OrderMessageOutdated,
+
+    /// <summary>§456.2 — the shop switched off web-push to customers after the row was queued.</summary>
+    CustomerPushDisabledByShop,
+
+    /// <summary>§457.3 — the shop switched off messenger messages to customers after the row was queued.</summary>
+    MessengerDisabledByShop,
 }

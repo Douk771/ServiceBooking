@@ -11,5 +11,8 @@ public enum OrderEventKind
     NotPickedUp = 5,
     CancelledByCustomer = 6,
     CancelledByShop = 7,
-    Edited = 8
+    Edited = 8,
+
+    /// <summary>ARCHITECTURE_CYCLE24.md §451.4 — staff moved the pickup time (and maybe the pickup date, which changes the number).</summary>
+    PickupChanged = 9
 }

@@ -31,6 +31,13 @@ public class OutboundNotification
     public Guid? BookingId { get; set; }
     public Booking? Booking { get; set; }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE24.md §448.1 — set instead of <see cref="BookingId"/> for a message about an order (never both).
+    /// For such a row <see cref="VisitStartUtc"/> means "the moment after which the message is outdated" (queued + 2 h).
+    /// </summary>
+    public Guid? OrderId { get; set; }
+    public Order? Order { get; set; }
+
     public NotificationType Type { get; set; }
 
     public string RecipientPhone { get; set; } = string.Empty;

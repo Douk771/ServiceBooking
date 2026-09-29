@@ -13,5 +13,8 @@ public enum OrderProblemReason
     InsufficientStock,
     BelowMinimum,
     InvalidQuantity,
-    PriceChanged
+    PriceChanged,
+
+    /// <summary>ARCHITECTURE_CYCLE24.md §452.1 — the product is not sold on the chosen pickup date (weekday mask / daily menu).</summary>
+    NotAvailableOnDate
 }

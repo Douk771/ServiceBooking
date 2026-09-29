@@ -47,6 +47,9 @@ public class BillingAccount
     public string? RequestedByUserId { get; set; }
     public string? RequestedComment { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE24.md §459.5 — the line of the pending request; null = "Записи" (every request before cycle 24).</summary>
+    public CompanyKind? RequestedLine { get; set; }
+
     // N10, US-70 — the reason an admin gave for rejecting the owner's LAST request. Deliberately its
     // own pair of columns, not a reuse of RequestedComment (that field is the OWNER's own comment on
     // THEIR request, already cleared by the time a rejection reason exists — writing the admin's answer

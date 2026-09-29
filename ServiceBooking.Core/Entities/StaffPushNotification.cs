@@ -27,6 +27,10 @@ public class StaffPushNotification
     public Guid? BookingId { get; set; }
     public Booking? Booking { get; set; }
 
+    /// <summary>ARCHITECTURE_CYCLE24.md §448.1 — set instead of <see cref="BookingId"/> for a row about an order (never both).</summary>
+    public Guid? OrderId { get; set; }
+    public Order? Order { get; set; }
+
     /// <summary>The specific device this row targets. Null only if the subscription was deleted between
     /// queueing and send (defensive — normally set).</summary>
     public Guid? SubscriptionId { get; set; }

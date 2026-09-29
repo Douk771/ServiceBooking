@@ -42,4 +42,7 @@ public class SubscriptionChangeLog
     // assignment" looks like in this table, not a third enum member.
     public SubscriptionChangeReason? ReasonCode { get; set; }
     public string? ReasonDetails { get; set; }
+
+    /// <summary>ARCHITECTURE_CYCLE24.md §459.5 — the tariff line the change is about (0 = "Записи", every old row).</summary>
+    public CompanyKind Line { get; set; } = CompanyKind.Services;
 }

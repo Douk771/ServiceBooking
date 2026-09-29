@@ -55,4 +55,19 @@ public class SubscriptionPlanConfig
     // PUT /api/admin/plans/{id}/system-trial — this field is deliberately absent from AdminPlanInput,
     // same convention as IsSystemFree.
     public bool IsSystemTrial { get; set; }
+
+    // ── Cycle 24 (ARCHITECTURE_CYCLE24.md §448.1, §459) — the "Заказы" tariff line. ──
+    // For Line = Orders: MaxCompanies = "Макс. магазинов", MaxEmployees = "Макс. участников" (the owner counts).
+
+    /// <summary>The line the tariff belongs to (<c>Services</c> = "Записи", <c>Orders</c> = "Заказы"). Set at creation, never changed.</summary>
+    public CompanyKind Line { get; set; } = CompanyKind.Services;
+
+    /// <summary>Products per shop; null = no tariff limit (the technical ceiling still applies).</summary>
+    public int? MaxProductsPerShop { get; set; }
+
+    /// <summary>Orders per calendar month per ACCOUNT; null = unlimited.</summary>
+    public int? MaxOrdersPerMonth { get; set; }
+
+    /// <summary>Whether shops on this tariff take orders at all.</summary>
+    public bool AllowOrders { get; set; } = true;
 }

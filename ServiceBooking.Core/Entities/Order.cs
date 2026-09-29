@@ -14,6 +14,24 @@ public class Order
     /// <summary>The shop's local date at creation time (by the shop's TimeZoneId).</summary>
     public DateOnly BusinessDate { get; set; }
 
+    // ── Cycle 24 (ARCHITECTURE_CYCLE24.md §448.1, §451) ──
+
+    public PickupKind PickupKind { get; set; } = PickupKind.Asap;
+
+    /// <summary>The working day the pickup belongs to (for an overnight interval — the day it STARTS). The number is unique within it.</summary>
+    public DateOnly PickupDate { get; set; }
+
+    /// <summary>Start of the slot, or the "as soon as possible" estimate (creation + preparation minutes).</summary>
+    public DateTime PickupStartUtc { get; set; }
+
+    /// <summary>End of the slot; null for <see cref="Enums.PickupKind.Asap"/>.</summary>
+    public DateTime? PickupEndUtc { get; set; }
+
+    /// <summary>[legal L9] the customer asked for status messages in the messenger.</summary>
+    public bool NotifyByMessenger { get; set; }
+    public string? MessengerConsentVersion { get; set; }
+    public DateTime? MessengerConsentAtUtc { get; set; }
+
     /// <summary>32 random bytes, base64url (43 chars). The access secret of the order page.</summary>
     public string PublicToken { get; set; } = string.Empty;
 

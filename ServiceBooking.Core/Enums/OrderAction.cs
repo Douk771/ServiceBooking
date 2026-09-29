@@ -12,5 +12,8 @@ public enum OrderAction
     Issue,
     NotPickedUp,
     Cancel,
-    Edit
+    Edit,
+
+    /// <summary>ARCHITECTURE_CYCLE24.md §451.4 — change the pickup time (New / Accepted).</summary>
+    ChangePickup
 }

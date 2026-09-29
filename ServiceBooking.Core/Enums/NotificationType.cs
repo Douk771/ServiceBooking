@@ -19,4 +19,16 @@ public enum NotificationType
     // booking (StaffPushScheduler.OnBookingRescheduledAsync) — staff rescheduling never queues this,
     // same rule StaffBookingCreated already applies to the master's own action.
     StaffBookingRescheduled,
+
+    // ARCHITECTURE_CYCLE24.md §458 — order notifications (bit positions 7–15 of the salon mask are never used by the
+    // salon screens: NotificationTypeCatalog.BookingTypes filters them out of enabledTypes).
+    StaffOrderCreated = 7,
+    StaffOrderCancelledByCustomer = 8,
+    OrderAccepted = 9,
+    OrderReady = 10,
+    OrderRejected = 11,
+    OrderCancelledByShop = 12,
+    OrderEditedByShop = 13,
+    OrderPickupChanged = 14,
+    OwnerOrderLimitWarning = 15,
 }

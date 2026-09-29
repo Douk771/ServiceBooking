@@ -19,6 +19,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<OrderEvent> OrderEvents => Set<OrderEvent>();
     public DbSet<OrderDailyCounter> OrderDailyCounters => Set<OrderDailyCounter>();
+
+    // ARCHITECTURE_CYCLE24.md §448.2 — time, availability, notifications and tariffs of shops.
+    public DbSet<ShopSpecialDay> ShopSpecialDays => Set<ShopSpecialDay>();
+    public DbSet<ShopDailyMenu> ShopDailyMenus => Set<ShopDailyMenu>();
+    public DbSet<ShopDailyMenuItem> ShopDailyMenuItems => Set<ShopDailyMenuItem>();
+    public DbSet<OrderPushSubscription> OrderPushSubscriptions => Set<OrderPushSubscription>();
+    public DbSet<CustomerOrderPushNotification> CustomerOrderPushNotifications => Set<CustomerOrderPushNotification>();
+    public DbSet<OrdersSubscription> OrdersSubscriptions => Set<OrdersSubscription>();
+    public DbSet<OrderMonthlyUsage> OrderMonthlyUsages => Set<OrderMonthlyUsage>();
     public DbSet<CompanyMember> CompanyMembers => Set<CompanyMember>();
     public DbSet<Service> Services => Set<Service>();
     public DbSet<MasterService> MasterServices => Set<MasterService>();
@@ -165,6 +174,80 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(s => s.SellerInn).HasMaxLength(12);
             e.Property(s => s.SellerOgrn).HasMaxLength(15);
             e.Property(s => s.SellerLegalAddress).HasMaxLength(500);
+
+            // Cycle 24 (ARCHITECTURE_CYCLE24.md §448.1): a DB default on EVERY new NOT NULL column —
+            // OrderEventLog's upsert INSERTs only the cycle-23 columns.
+            e.Property(s => s.WorkingHoursJson).HasColumnType("jsonb");
+            e.Property(s => s.OrdersStopped).HasDefaultValue(false);
+            e.Property(s => s.AcceptanceChangedByName).HasMaxLength(200);
+            e.Property(s => s.AsapEnabled).HasDefaultValue(true);
+            e.Property(s => s.ScheduledEnabled).HasDefaultValue(false);
+            e.Property(s => s.SlotStepMinutes).HasDefaultValue(15);
+            e.Property(s => s.PreorderDays).HasDefaultValue(0);
+            e.Property(s => s.MinPrepMinutes).HasDefaultValue(15).HasSentinel(-1); // 0 minutes is a real value
+            e.Property(s => s.CustomerWebPushEnabled).HasDefaultValue(true);
+            e.Property(s => s.CustomerMessengerEnabled).HasDefaultValue(false);
+        });
+
+        builder.Entity<ShopSpecialDay>(e =>
+        {
+            e.HasKey(d => new { d.CompanyId, d.Date });
+            e.HasOne<Company>().WithMany().HasForeignKey(d => d.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(d => d.IntervalsJson).HasColumnType("jsonb");
+        });
+
+        builder.Entity<ShopDailyMenu>(e =>
+        {
+            e.HasOne<Company>().WithMany().HasForeignKey(m => m.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(m => new { m.CompanyId, m.Date }).IsUnique();
+        });
+
+        builder.Entity<ShopDailyMenuItem>(e =>
+        {
+            e.HasKey(i => new { i.DailyMenuId, i.ProductId });
+            e.HasOne(i => i.DailyMenu).WithMany(m => m.Items).HasForeignKey(i => i.DailyMenuId).OnDelete(DeleteBehavior.Cascade);
+            // Products are deleted softly, the FK never gets in the way.
+            e.HasOne<Product>().WithMany().HasForeignKey(i => i.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(i => i.ProductId);
+        });
+
+        builder.Entity<OrderPushSubscription>(e =>
+        {
+            e.HasOne(s => s.Order).WithMany().HasForeignKey(s => s.OrderId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(s => s.Endpoint).HasMaxLength(500);
+            e.Property(s => s.KeyId).HasMaxLength(16);
+            e.HasIndex(s => new { s.OrderId, s.Endpoint }).IsUnique();
+            e.HasIndex(s => s.CreatedAtUtc);
+        });
+
+        builder.Entity<CustomerOrderPushNotification>(e =>
+        {
+            e.HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(n => n.Subscription).WithMany().HasForeignKey(n => n.SubscriptionId).OnDelete(DeleteBehavior.SetNull);
+            e.Property(n => n.Payload).HasMaxLength(1000);
+            e.Property(n => n.ReasonDetail).HasMaxLength(300);
+            e.Property(n => n.IdempotencyKey).HasMaxLength(200);
+            e.HasIndex(n => n.IdempotencyKey).IsUnique();
+            // The copy of IX_StaffPushNotifications_Dispatch (Status = 0 is Pending — a raw literal, see NotificationStatus).
+            e.HasIndex(n => new { n.ExpiresAtUtc, n.CreatedAt })
+                .HasDatabaseName("IX_CustomerOrderPushNotifications_Dispatch")
+                .HasFilter("\"Status\" = 0")
+                .IncludeProperties(n => new { n.CompanyId, n.SubscriptionId });
+            e.HasIndex(n => n.OrderId);
+        });
+
+        builder.Entity<OrdersSubscription>(e =>
+        {
+            e.HasOne(s => s.BillingAccount).WithMany().HasForeignKey(s => s.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(s => s.PlanConfig).WithMany().HasForeignKey(s => s.PlanConfigId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(s => s.BillingAccountId).IsUnique();
+        });
+
+        builder.Entity<OrderMonthlyUsage>(e =>
+        {
+            e.HasKey(u => new { u.BillingAccountId, u.Month });
+            e.HasOne<BillingAccount>().WithMany().HasForeignKey(u => u.BillingAccountId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<ProductCategory>(e =>
@@ -189,6 +272,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne<ProductCategory>().WithMany().HasForeignKey(p => p.CategoryId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(p => new { p.CompanyId, p.CategoryId, p.Position });
             e.HasIndex(p => p.CompanyId).HasDatabaseName("IX_Products_CompanyId_Live").HasFilter("\"DeletedAtUtc\" IS NULL");
+            // Cycle 24 (§448.1): the weekday mask, bit 0 = Monday … bit 6 = Sunday; 127 = every day.
+            // Sentinel -1: mask 0 ("only by daily menu") is a real value and must not be mistaken for "unset".
+            e.Property(p => p.AvailableWeekdaysMask).HasDefaultValue(127).HasSentinel(-1);
+            e.ToTable(t => t.HasCheckConstraint("CK_Products_AvailableWeekdaysMask_Range", "\"AvailableWeekdaysMask\" BETWEEN 0 AND 127"));
             // §388.4-4: stock is never negative. NULL = not tracked.
             e.ToTable(t => t.HasCheckConstraint("CK_Products_StockOnHand_NonNegative", "\"StockOnHand\" IS NULL OR \"StockOnHand\" >= 0"));
         });
@@ -210,7 +297,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne<Company>().WithMany().HasForeignKey(o => o.CompanyId).OnDelete(DeleteBehavior.Restrict);
             // Deleting the customer's account does not delete the shop's books — the link is just cleared.
             e.HasOne<AppUser>().WithMany().HasForeignKey(o => o.CustomerUserId).OnDelete(DeleteBehavior.SetNull);
-            e.HasIndex(o => new { o.CompanyId, o.BusinessDate, o.Number }).IsUnique();
+            // Cycle 24 (§448.1, §451.4): the number is unique within the PICKUP day. Creation day (BusinessDate) keeps a plain index for "created per day" reports.
+            e.Property(o => o.PickupKind).HasDefaultValue(PickupKind.Asap);
+            e.Property(o => o.MessengerConsentVersion).HasMaxLength(32);
+            e.HasIndex(o => new { o.CompanyId, o.PickupDate, o.Number }).IsUnique();
+            e.HasIndex(o => new { o.CompanyId, o.PickupDate, o.PickupStartUtc });
+            e.HasIndex(o => new { o.CompanyId, o.BusinessDate });
             e.HasIndex(o => o.PublicToken).IsUnique();
             e.HasIndex(o => new { o.CompanyId, o.IdempotencyKey }).IsUnique();
             e.HasIndex(o => new { o.CompanyId, o.Status });
@@ -248,7 +340,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<OrderDailyCounter>(e =>
         {
-            e.HasKey(c => new { c.CompanyId, c.BusinessDate });
+            e.HasKey(c => new { c.CompanyId, c.PickupDate });
             e.HasOne<Company>().WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -659,6 +751,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(n => n.Channel).WithMany().HasForeignKey(n => n.ChannelId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(n => n.Booking).WithMany().HasForeignKey(n => n.BookingId).OnDelete(DeleteBehavior.SetNull);
+            // Cycle 24 (§448.1): a message about an order — OrderId instead of BookingId.
+            e.HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(n => n.OrderId);
             e.Property(n => n.RecipientPhone).HasMaxLength(20);
             e.Property(n => n.Body).HasMaxLength(2000);
             e.Property(n => n.ReasonDetail).HasMaxLength(300);
@@ -719,6 +814,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(s => s.UserId);
+            // Cycle 24 (§454): the site the device subscribed from; the per-user ceiling and lists work inside (UserId, Site).
+            e.Property(s => s.Site).HasDefaultValue(CompanyKind.Services);
+            e.HasIndex(s => new { s.UserId, s.Site });
             e.Property(s => s.Endpoint).HasMaxLength(500);
             e.HasIndex(s => s.Endpoint).IsUnique();
             e.Property(s => s.DeviceLabel).HasMaxLength(100);
@@ -729,6 +827,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
         {
             e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(n => n.Booking).WithMany().HasForeignKey(n => n.BookingId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(n => n.OrderId);
             e.HasOne(n => n.Subscription).WithMany().HasForeignKey(n => n.SubscriptionId).OnDelete(DeleteBehavior.SetNull);
             e.Property(n => n.Payload).HasMaxLength(1000);
             e.Property(n => n.ReasonDetail).HasMaxLength(300);
@@ -776,7 +876,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
         // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.4): at most one system-free plan row, ever.
         builder.Entity<SubscriptionPlanConfig>(e =>
         {
-            e.HasIndex(p => p.IsSystemFree).IsUnique().HasFilter("\"IsSystemFree\" = true");
+            // Cycle 24 (§448.1): one system free tariff PER LINE.
+            e.Property(p => p.Line).HasDefaultValue(CompanyKind.Services);
+            e.Property(p => p.AllowOrders).HasDefaultValue(true);
+            e.HasIndex(p => p.Line).HasDatabaseName("IX_SubscriptionPlanConfigs_Line_SystemFree").IsUnique().HasFilter("\"IsSystemFree\" = true");
             // Cycle 18 (§332.1): at most one system-trial plan row, ever.
             e.HasIndex(p => p.IsSystemTrial).IsUnique().HasFilter("\"IsSystemTrial\" = true");
         });

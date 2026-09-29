@@ -19,6 +19,13 @@ public class PushSubscription
     public string UserId { get; set; } = string.Empty;
     public AppUser User { get; set; } = null!;
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE24.md §454 — which site the device subscribed from: <c>Services</c> = ezbook, <c>Orders</c> = goods.
+    /// The two sites have separate service worker registrations, so separate endpoints; the lists, the per-user ceiling
+    /// and the recipients of a notification are all kept apart by this value.
+    /// </summary>
+    public Enums.CompanyKind Site { get; set; } = Enums.CompanyKind.Services;
+
     /// <summary>Push service delivery address. Unique — re-subscribing the same browser upserts the
     /// existing row (§105.5) instead of creating a duplicate.</summary>
     public string Endpoint { get; set; } = string.Empty;

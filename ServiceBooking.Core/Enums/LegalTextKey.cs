@@ -40,6 +40,12 @@ public static class LegalTextKey
     // GET /api/legal/texts/OrderCheckoutNotice and shows a neutral fallback on 404.
     public const string OrderCheckoutNotice = "OrderCheckoutNotice";
 
+    // ARCHITECTURE_CYCLE24.md §457.2, §461 [legal L9, L13] — two more placeholders, DELIBERATELY NOT in All for the
+    // same reason: the deploy must not wait for legal-counsel. The frontend reads GET /api/legal/texts/<key> and shows
+    // its own SPEC fallback (messenger consent) or nothing (pre-order notice) on 404.
+    public const string OrderMessengerConsent = "OrderMessengerConsent";
+    public const string OrderPreorderNotice = "OrderPreorderNotice";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,

@@ -40,6 +40,18 @@ public class Product
     public bool IsPublished { get; set; }
     public bool IsSoldOut { get; set; }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE24.md §452.2 — the shop day a "sold out for today" mark was put on; null = "until cancelled".
+    /// A mark with a date before the shop's current day has no effect (computed, no background task).
+    /// </summary>
+    public DateOnly? SoldOutForDate { get; set; }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE24.md §452.4 — weekdays the product is sold on: bit 0 = Monday … bit 6 = Sunday. 127 = every day.
+    /// 0 is valid: "never by the weekly rule", the product is sold only through a daily menu.
+    /// </summary>
+    public int AvailableWeekdaysMask { get; set; } = 127;
+
     /// <summary>[legal L3] The only food-information field of cycle 1 (API: inside <c>foodInfo</c>).</summary>
     public string? CompositionAndAllergens { get; set; }
 
