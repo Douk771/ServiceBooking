@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   plansApi,
   type PlanConfig,
+  type PlanLine,
   type PhotoRetention,
   type OptionAvailability,
   type AdminPlanInput,
@@ -22,6 +23,7 @@ import {
   defaultForm,
   optionRulesToForm,
   optionRulesToPayload,
+  ordersPlanPayload,
   type PlanForm,
 } from './planForm'
 import { PRICE_CHANGE_SUPERADMIN_HINT } from '../../legal/staffNotices'
@@ -85,6 +87,8 @@ export function PlansTab() {
   const [form, setForm] = useState<PlanForm>(defaultForm)
   const [editingPlan, setEditingPlan] = useState<PlanConfig | null>(null)
   const [highlightsError, setHighlightsError] = useState('')
+  // Cycle 24: which line's plans are listed. Salons («Записи») first — the screen opens exactly as it did before.
+  const [lineFilter, setLineFilter] = useState<PlanLine>('Services')
 
   const { data: plans, isLoading } = useQuery({
     queryKey: ['admin-plans'],
@@ -119,6 +123,7 @@ export function PlansTab() {
     sortOrder: parseInt(form.sortOrder) || 0,
     highlights: form.highlights,
     options: optionRulesToPayload(form.optionRules),
+    ...ordersPlanPayload(form, !!editingPlan),
   })
 
   const createMut = useMutation({
@@ -168,6 +173,7 @@ export function PlansTab() {
         sortOrder: plan.sortOrder,
         highlights: plan.highlights ?? [],
         options: plan.options ?? [],
+        ...(plan.line === 'Orders' ? { maxProductsPerShop: plan.maxProductsPerShop ?? null, maxOrdersPerMonth: plan.maxOrdersPerMonth ?? null, allowOrders: plan.allowOrders ?? true } : {}),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-plans'] }),
   })
@@ -231,6 +237,10 @@ export function PlansTab() {
       isActive: plan.isActive,
       isPublic: plan.isPublic,
       sortOrder: String(plan.sortOrder ?? 0),
+      line: plan.line ?? 'Services',
+      maxProductsPerShop: plan.maxProductsPerShop != null ? String(plan.maxProductsPerShop) : '',
+      maxOrdersPerMonth: plan.maxOrdersPerMonth != null ? String(plan.maxOrdersPerMonth) : '',
+      allowOrders: plan.allowOrders ?? true,
     })
     setEditingPlan(plan)
     setShowCreate(true)
@@ -285,8 +295,10 @@ export function PlansTab() {
     }))
   }
 
-  const active = plans?.filter((p) => p.isActive) ?? []
-  const inactive = plans?.filter((p) => !p.isActive) ?? []
+  const inLine = plans?.filter((p) => (p.line ?? 'Services') === lineFilter)
+  const active = inLine?.filter((p) => p.isActive) ?? []
+  const inactive = inLine?.filter((p) => !p.isActive) ?? []
+  const isOrdersForm = form.line === 'Orders'
 
   const renderOptionRow = (option: AdminOptionDto) => {
     const rule = form.optionRules[option.id] ?? {
@@ -331,8 +343,24 @@ export function PlansTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
-        <p className="text-sm text-muted">Тарифные планы подписки</p>
-        <Button onClick={openCreate}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-sm text-muted">Тарифные планы подписки</p>
+          <div role="tablist" aria-label="Линейка тарифов" className="inline-flex rounded-full bg-cream-deep p-1">
+            {([['Services', 'Записи'], ['Orders', 'Заказы']] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={lineFilter === value}
+                onClick={() => setLineFilter(value)}
+                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${lineFilter === value ? 'bg-white text-ink shadow-soft' : 'text-ink-soft'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Button onClick={() => { openCreate(); setForm((f) => ({ ...f, line: lineFilter })) }}>
           <Icon name="plus" size={15} strokeWidth={2} /> Создать тариф
         </Button>
       </div>
@@ -368,12 +396,18 @@ export function PlansTab() {
                           {formatMonthlyPrice(plan.pricePerMonth)}
                         </span>
                         <span className="text-xs text-muted">
-                          Сотрудников суммарно: {plan.maxEmployees != null ? `до ${plan.maxEmployees}` : '∞'}
+                          {plan.line === 'Orders' ? 'Участников магазинов' : 'Сотрудников суммарно'}: {plan.maxEmployees != null ? `до ${plan.maxEmployees}` : '∞'}
                         </span>
                         <span className="text-xs text-muted">
-                          Компаний суммарно: {plan.maxCompanies != null ? `до ${plan.maxCompanies}` : '∞'}
+                          {plan.line === 'Orders' ? 'Магазинов' : 'Компаний суммарно'}: {plan.maxCompanies != null ? `до ${plan.maxCompanies}` : '∞'}
                         </span>
+                        {plan.line === 'Orders' && (
+                          <span className="text-xs text-muted" data-testid="orders-plan-limits">
+                            Товаров в магазине: {plan.maxProductsPerShop != null ? `до ${plan.maxProductsPerShop}` : '∞'} · Заказов в месяц: {plan.maxOrdersPerMonth != null ? `до ${plan.maxOrdersPerMonth}` : '∞'} · Приём заказов: {plan.allowOrders ? 'да' : 'нет'}
+                          </span>
+                        )}
                       </div>
+                      {plan.line !== 'Orders' && (
                       <div className="flex flex-wrap gap-1.5 mb-2">
                         <FeatureBadge label="Онлайн-запись" enabled={plan.allowOnlineBooking} />
                         <FeatureBadge label="Рассылка" enabled={plan.allowMailing} />
@@ -381,6 +415,7 @@ export function PlansTab() {
                         <FeatureBadge label="В общем списке" enabled={plan.allowPublicListing} />
                         <FeatureBadge label="Онлайн-оплата" enabled={plan.allowOnlinePayment} />
                       </div>
+                      )}
                       {(plan.highlights ?? []).length > 0 && (
                         <ul className="text-xs text-ink-soft list-disc list-inside mb-1">
                           {(plan.highlights ?? []).map((h, i) => (
@@ -427,7 +462,7 @@ export function PlansTab() {
                           Сделать системным бесплатным
                         </Button>
                       )}
-                      {!plan.isSystemTrial && plan.pricePerMonth === 0 && (
+                      {plan.line !== 'Orders' && !plan.isSystemTrial && plan.pricePerMonth === 0 && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -437,7 +472,7 @@ export function PlansTab() {
                           Сделать тарифом пробного периода
                         </Button>
                       )}
-                      {plan.isSystemTrial && (
+                      {plan.line !== 'Orders' && plan.isSystemTrial && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -521,6 +556,20 @@ export function PlansTab() {
       {showCreate && (
         <Modal title={editingPlan ? 'Редактировать тариф' : 'Создать тариф'} onClose={closeModal}>
           <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="plan-line" className="text-[13px] font-medium text-[#4A4038]">Линейка</label>
+              <select
+                id="plan-line"
+                value={form.line}
+                disabled={!!editingPlan}
+                onChange={(e) => setForm((f) => ({ ...f, line: e.target.value as PlanLine }))}
+                className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold bg-white text-ink disabled:opacity-60"
+              >
+                <option value="Services">Записи (салоны)</option>
+                <option value="Orders">Заказы (магазины)</option>
+              </select>
+              {editingPlan && <p className="text-[11px] text-muted">Линейку тарифа менять нельзя.</p>}
+            </div>
             <Input
               label="Название *"
               placeholder="Basic"
@@ -573,6 +622,32 @@ export function PlansTab() {
               </div>
             </div>
 
+            {isOrdersForm && (
+              <div className="grid grid-cols-2 gap-3" data-testid="orders-plan-fields">
+                <Input
+                  label="Макс. товаров в магазине (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxProductsPerShop}
+                  onChange={(e) => setForm((f) => ({ ...f, maxProductsPerShop: e.target.value }))}
+                  placeholder="∞"
+                />
+                <Input
+                  label="Заказов в месяц на аккаунт (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxOrdersPerMonth}
+                  onChange={(e) => setForm((f) => ({ ...f, maxOrdersPerMonth: e.target.value }))}
+                  placeholder="∞"
+                />
+                <label className="col-span-2 flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.allowOrders} onChange={(e) => setForm((f) => ({ ...f, allowOrders: e.target.checked }))} className="w-4 h-4 accent-gold" />
+                  <span className="text-sm text-ink-soft">Приём заказов</span>
+                </label>
+              </div>
+            )}
+
+            {!isOrdersForm && (
             <div className="grid grid-cols-2 gap-3">
               <Input
                 label="Квота фото клиентов, МБ (∞)"
@@ -594,7 +669,9 @@ export function PlansTab() {
                 </select>
               </div>
             </div>
+            )}
 
+            {!isOrdersForm && (
             <div>
               <p className="text-sm font-medium text-ink-soft mb-2">Функции</p>
               <div className="grid grid-cols-2 gap-2">
@@ -617,6 +694,7 @@ export function PlansTab() {
                 ))}
               </div>
             </div>
+            )}
 
             <div>
               <div className="flex items-center justify-between mb-2">

@@ -3,6 +3,7 @@ import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
 import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
 import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
+import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
 
 /**
  * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
@@ -44,13 +45,25 @@ type TrialTermsAcknowledgementInput = Cycle18['TrialTermsAcknowledgementInput']
  *  of the whole DTO, per the contract's own `additionalProperties: true` note. */
 type OwnerSubscriptionDtoWithTrial = OwnerSubscriptionDto & Cycle18['OwnerSubscriptionDtoTrialPatch']
 
+// ── Cycle 24 (ARCHITECTURE_CYCLE24.md §462.2 п.2, API_CONTRACT_CYCLE24.md §485.1) — the same screen serves the goods
+// «Заказы» line. Additive: `line`, `orders`, `availablePlans`. Without `line` everything below behaves exactly as before.
+type Cycle24 = Cycle24Schemas['schemas']
+export type BillingLine = Cycle24['CompanyKind']
+export type OrdersUsageDto = Cycle24['OrdersUsageDto']
+export type AvailablePlanDto = Cycle24['AvailablePlanDto']
+export type OwnerSubscriptionDtoCycle24Patch = Pick<Cycle24['OwnerSubscriptionDtoCycle24'], 'line' | 'orders' | 'availablePlans'>
+
 export const billingApi = {
   /** GET /api/billing/subscription. 404 means the caller owns no company (not an error state). */
-  getSubscription: (): Promise<OwnerSubscriptionDtoWithTrial> =>
-    api.get<OwnerSubscriptionDtoWithTrial>('/billing/subscription').then((r) => r.data),
+  getSubscription: (line?: BillingLine): Promise<OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch>> => {
+    type Body = OwnerSubscriptionDtoWithTrial & Partial<OwnerSubscriptionDtoCycle24Patch>
+    // ezbook never sends `line` (server default `Services`): that request is exactly the pre-cycle-24 one, no config object.
+    const request = line && line !== 'Services' ? api.get<Body>('/billing/subscription', { params: { line } }) : api.get<Body>('/billing/subscription')
+    return request.then((r) => r.data)
+  },
 
   /** POST /api/billing/subscription/request — full desired composition, overwrites any pending request. */
-  submitRequest: (input: SubscriptionRequestInput): Promise<SubscriptionRequestDto> =>
+  submitRequest: (input: SubscriptionRequestInput & { line?: BillingLine; planId?: string }): Promise<SubscriptionRequestDto> =>
     api.post<SubscriptionRequestDto>('/billing/subscription/request', input).then((r) => r.data),
 
   /** DELETE /api/billing/subscription/request — idempotent, 204 whether or not a pending request existed. */

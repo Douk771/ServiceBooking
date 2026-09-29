@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ReactElement } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { BillingPage } from './BillingPage'
 import type { OwnerSubscriptionDto } from '../api/billing'
 
 const getSubscription = vi.fn()
+const submitRequest = vi.fn()
 // Cycle 20 (§432.8) — OperatorDetailsSection queries this unconditionally from BillingPage; 404 is
 // its own "nothing to show yet" state (same convention as getSubscription/getTrial), same as every
 // other test in this file not caring about the trial-specific calls TrialCard/TrialBanner make.
@@ -18,7 +20,7 @@ vi.mock('../api/billing', async () => {
     ...actual,
     billingApi: {
       getSubscription: (...args: unknown[]) => getSubscription(...args),
-      submitRequest: vi.fn(),
+      submitRequest: (...args: unknown[]) => submitRequest(...args),
       cancelRequest: vi.fn(),
       getOperatorDetails: (...args: unknown[]) => getOperatorDetails(...args),
       updateOperatorDetails: vi.fn(),
@@ -174,5 +176,59 @@ describe('BillingPage — pendingRequest.retiredOptionsNotice (cycle 19)', () =>
     await screen.findByText('Заявка на рассмотрении')
     expect(screen.queryByText('выведена')).not.toBeInTheDocument()
     expect(screen.queryByText(/больше не подключаются/)).not.toBeInTheDocument()
+  })
+})
+
+// Cycle 24 (ARCHITECTURE_CYCLE24.md §462.2 п.2) — the same screen serves goods with line="Orders".
+describe('BillingPage — line (cycle 24)', () => {
+  const ordersSub = (over: Record<string, unknown> = {}) =>
+    makeSubscription({
+      plan: { id: 'p1', name: 'Заказы · Бесплатно', pricePerMonth: 0 },
+      usage: { companiesText: '1 магазин из 1', employeesText: '2 участника из 2', numbersText: '0 номеров' },
+      ...({
+        line: 'Orders',
+        orders: { ordersThisMonth: 120, ordersLimit: 150, monthLabel: 'сентябрь', text: 'Заказов в этом месяце: 120 из 150', warningLevel: 'Warning80', allowOrders: true },
+        availablePlans: [{ planId: 'pl1', name: 'Заказы · Старт', pricePerMonth: 990, description: 'Для небольшой кухни', highlights: ['до 1000 заказов'], limitsText: '3 магазина, 1000 заказов в месяц' }],
+      } as object),
+      ...over,
+    } as Partial<OwnerSubscriptionDto>)
+
+  it('without the prop asks for the default line and shows none of the Orders blocks (the salon screen is unchanged)', async () => {
+    getSubscription.mockResolvedValueOnce(makeSubscription())
+    renderWithProviders(<BillingPage />)
+    await screen.findByText('Ваша подписка')
+    expect(getSubscription).toHaveBeenCalledWith(undefined)
+    expect(screen.queryByTestId('available-plans')).toBeNull()
+    expect(screen.queryByTestId('orders-usage')).toBeNull()
+    expect(screen.getByText(/Смотрите страницу тарифов/)).toBeInTheDocument()
+  })
+
+  it('with line="Orders" asks for that line, prints the monthly counter with the 80 % warning and hides salon-only blocks', async () => {
+    getSubscription.mockResolvedValueOnce(ordersSub())
+    renderWithProviders(<BillingPage line="Orders" />)
+    expect(await screen.findByTestId('orders-limit-banner')).toHaveTextContent('Заказов в этом месяце: 120 из 150')
+    expect(getSubscription).toHaveBeenCalledWith('Orders')
+    expect(screen.getByTestId('orders-usage')).toBeInTheDocument()
+    expect(screen.queryByText(/Смотрите страницу тарифов/)).toBeNull()
+  })
+
+  it('lists the available plans (L14) and sends a request with the line and the plan', async () => {
+    getSubscription.mockResolvedValue(ordersSub())
+    submitRequest.mockResolvedValue({ line: 'Orders' })
+    const user = userEvent.setup()
+    renderWithProviders(<BillingPage line="Orders" />)
+    const plans = await screen.findByTestId('available-plans')
+    expect(within(plans).getByText('3 магазина, 1000 заказов в месяц')).toBeInTheDocument()
+    await user.click(within(plans).getByRole('button', { name: 'Запросить тариф «Заказы · Старт»' }))
+    expect(submitRequest).toHaveBeenCalledWith({ line: 'Orders', planId: 'pl1', options: [] })
+  })
+
+  it('shows the server text for a request from the other line (409)', async () => {
+    getSubscription.mockResolvedValue(ordersSub())
+    submitRequest.mockRejectedValue({ isAxiosError: true, response: { status: 409, data: 'У вас уже есть заявка на смену тарифа «Записи» — отмените её или дождитесь решения' } })
+    const user = userEvent.setup()
+    renderWithProviders(<BillingPage line="Orders" />)
+    await user.click(await screen.findByRole('button', { name: 'Запросить тариф «Заказы · Старт»' }))
+    expect(await screen.findByText(/У вас уже есть заявка на смену тарифа «Записи»/)).toBeInTheDocument()
   })
 })

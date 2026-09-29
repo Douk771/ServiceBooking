@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AxiosError } from 'axios'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { billingApi, type AvailableOptionDto } from '../api/billing'
+import { billingApi, type AvailableOptionDto, type BillingLine } from '../api/billing'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
@@ -26,21 +26,35 @@ import { BillingNoticesSummary } from '../components/billing/BillingNoticesSumma
  * real endpoint from the contract, so it lights up unchanged once the backend exists; until then it
  * renders the error state below (also exercised by unit tests via a mocked client).
  */
-export function BillingPage() {
+export function BillingPage({ line = 'Services' }: { line?: BillingLine } = {}) {
   const qc = useQueryClient()
+  // Cycle 24: goods mounts this same screen with line="Orders" (ARCHITECTURE_CYCLE24.md §462.2 п.2). Without the prop
+  // nothing below differs from before: same query key, same request, same blocks.
+  const isOrders = line === 'Orders'
+  const queryKey = isOrders ? ['owner-subscription', 'Orders'] : ['owner-subscription']
   const [requestError, setRequestError] = useState('')
   const [trialError, setTrialError] = useState('')
   const [desiredOptions, setDesiredOptions] = useState<Record<string, number> | null>(null)
 
   const { data, isLoading, isError, error, refetch, isRefetching } = useQuery({
-    queryKey: ['owner-subscription'],
-    queryFn: billingApi.getSubscription,
+    queryKey,
+    queryFn: () => billingApi.getSubscription(isOrders ? 'Orders' : undefined),
     retry: false,
   })
 
   useEffect(() => {
-    document.title = 'Ваша подписка — ServiceBooking'
-  }, [])
+    document.title = isOrders ? 'Ваша подписка — ezbook · Заказы' : 'Ваша подписка — ServiceBooking'
+  }, [isOrders])
+
+  // Cycle 24 (L14): a plan of the «Заказы» line is requested straight from `availablePlans`.
+  const planRequestMut = useMutation({
+    mutationFn: (planId: string) => billingApi.submitRequest({ line: 'Orders', planId, options: [] }),
+    onSuccess: () => {
+      setRequestError('')
+      qc.invalidateQueries({ queryKey: ['owner-subscription'] })
+    },
+    onError: (err: unknown) => setRequestError(getBillingErrorMessage(err, 'Не удалось отправить заявку.')),
+  })
 
   const cancelMut = useMutation({
     mutationFn: billingApi.cancelRequest,
@@ -55,6 +69,7 @@ export function BillingPage() {
     mutationFn: (options: Record<string, number>) =>
       billingApi.submitRequest({
         options: Object.entries(options).map(([optionId, quantity]) => ({ optionId, quantity })),
+        ...(isOrders ? { line: 'Orders' as const } : {}),
       }),
     onSuccess: () => {
       setRequestError('')
@@ -71,7 +86,7 @@ export function BillingPage() {
     mutationFn: (termsVersion: string) => billingApi.activateTrial(termsVersion),
     onSuccess: (next) => {
       setTrialError('')
-      qc.setQueryData(['owner-subscription'], next)
+      qc.setQueryData(queryKey, next)
     },
     onError: (err: unknown) => {
       // §371 п.5 — a stale termsVersion (409 TrialTermsVersionMismatch) is not a plain retry: the
@@ -177,7 +192,7 @@ export function BillingPage() {
     <div className="max-w-[860px] mx-auto px-8 pt-16 pb-24">
       <header className="mb-10">
         <h1 className="font-serif text-[36px] font-medium text-ink mb-2">Ваша подписка</h1>
-        <p className="text-sm text-ink-soft">Тариф и опции действуют на все ваши компании сразу.</p>
+        <p className="text-sm text-ink-soft">{isOrders ? 'Тариф действует на все ваши магазины сразу; опции — общие для аккаунта.' : 'Тариф и опции действуют на все ваши компании сразу.'}</p>
       </header>
 
       {/* Cycle 18 — трial plan (API_CONTRACT_CYCLE18.md §371). `trial` is null only when it has
@@ -233,6 +248,12 @@ export function BillingPage() {
         </Card>
       )}
 
+      {isOrders && data.orders && data.orders.warningLevel !== 'None' && data.orders.text && (
+        <Card className={`p-5 mb-6 border ${data.orders.warningLevel === 'Reached' ? 'border-danger bg-danger-bg' : 'border-warning bg-warning-bg'}`} data-testid="orders-limit-banner">
+          <p className="text-sm font-semibold text-ink">{data.orders.text}</p>
+        </Card>
+      )}
+
       <Card className="p-[26px] mb-6">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
           <h2 className="text-[15.5px] font-semibold text-ink">{data.plan.name}</h2>
@@ -258,6 +279,11 @@ export function BillingPage() {
           <div className="flex justify-between">
             <dt>{data.usage.numbersText}</dt>
           </div>
+          {isOrders && data.orders?.text && (
+            <div className="flex justify-between" data-testid="orders-usage">
+              <dt>{data.orders.text}</dt>
+            </div>
+          )}
         </dl>
       </Card>
 
@@ -282,6 +308,37 @@ export function BillingPage() {
         <Card className="p-[26px] mb-6 border border-danger bg-danger-bg">
           <h2 className="text-[15.5px] font-semibold text-ink mb-2">Заявка отклонена</h2>
           <p className="text-sm text-ink-soft">{data.lastRejectedRequest.reason}</p>
+        </Card>
+      )}
+
+      {isOrders && data.availablePlans && data.availablePlans.length > 0 && (
+        <Card className="p-[26px] mb-6" data-testid="available-plans">
+          <h2 className="text-[15.5px] font-semibold text-ink mb-4">Тарифы «Заказов»</h2>
+          <ul className="grid gap-4">
+            {data.availablePlans.map((p) => (
+              <li key={p.planId} className="flex items-start justify-between gap-4 flex-wrap">
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink">
+                    {p.name} · <span className="font-normal">{formatMonthlyPrice(p.pricePerMonth)}</span>
+                  </p>
+                  {p.description && <p className="text-sm text-ink-soft mt-0.5">{p.description}</p>}
+                  {p.highlights && p.highlights.length > 0 && (
+                    <ul className="text-sm text-ink-soft list-disc pl-5 mt-1">
+                      {p.highlights.map((h) => (
+                        <li key={h}>{h}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-xs text-muted mt-1">{p.limitsText}</p>
+                </div>
+                {data.canRequestChanges && (
+                  <Button size="sm" variant="secondary" className="min-h-[44px]" loading={planRequestMut.isPending && planRequestMut.variables === p.planId} onClick={() => planRequestMut.mutate(p.planId)} aria-label={`Запросить тариф «${p.name}»`}>
+                    Запросить
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
         </Card>
       )}
 
@@ -398,11 +455,13 @@ export function BillingPage() {
       <BillingNoticesSummary />
 
       {/* Т20-04 п. 3 (US-20-01) — operator-of-record details for the paper health-consent form. */}
-      <OperatorDetailsSection />
+      {!isOrders && <OperatorDetailsSection />}
 
-      <p className="text-xs text-muted">
-        Хотите сравнить тарифы целиком? <Link to="/pricing" className="underline">Смотрите страницу тарифов</Link>.
-      </p>
+      {!isOrders && (
+        <p className="text-xs text-muted">
+          Хотите сравнить тарифы целиком? <Link to="/pricing" className="underline">Смотрите страницу тарифов</Link>.
+        </p>
+      )}
     </div>
   )
 }

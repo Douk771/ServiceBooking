@@ -16,6 +16,16 @@ describe('billingApi.getSubscription', () => {
   })
 })
 
+describe('billingApi.getSubscription — line (cycle 24)', () => {
+  it('asks for the «Заказы» line only when told to, and never for Services', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: {} })
+    await billingApi.getSubscription('Orders')
+    expect(api.get).toHaveBeenLastCalledWith('/billing/subscription', { params: { line: 'Orders' } })
+    await billingApi.getSubscription('Services')
+    expect(api.get).toHaveBeenLastCalledWith('/billing/subscription')
+  })
+})
+
 describe('billingApi.submitRequest', () => {
   it('sends the full desired option composition, not a delta', async () => {
     const body = { id: '1', status: 'Pending' }

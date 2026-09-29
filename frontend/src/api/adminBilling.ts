@@ -3,12 +3,18 @@ import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
 import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
 import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
+import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
 import type { SubscriptionRequestDto } from './billing'
 
 type Schemas = components['schemas']
 type Cycle18 = Cycle18Schemas['schemas']
 type Cycle19 = Cycle19Schemas['schemas']
 type Cycle20 = Cycle20Schemas['schemas']
+type Cycle24 = Cycle24Schemas['schemas']
+
+/** Cycle 24 (API_CONTRACT_CYCLE24.md §485.3) — the account's «Заказы» subscription block and the request line. Additive. */
+export type AdminOrdersSubscription = Cycle24['AdminOrdersSubscriptionDto']
+export type BillingLine = Cycle24['CompanyKind']
 
 export type TrialAccountFilter = Cycle18['TrialAccountFilter']
 type TrialRegrantInput = Cycle18['TrialRegrantInput']
@@ -18,11 +24,11 @@ type TrialRegrantInput = Cycle18['TrialRegrantInput']
  *  API_CONTRACT_CYCLE19.md §407). */
 export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDto'] & Cycle18['AdminBillingAccountListItemTrialPatch']
 export type AdminBillingAccount = Omit<Schemas['AdminBillingAccountDto'], 'pendingRequest'> &
-  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null }
+  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null; ordersSubscription?: AdminOrdersSubscription | null }
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
 /** Cycle 20 (US-20-02, API_CONTRACT_CYCLE20.md §433.1) adds `reasonCode`/`reasonDetails` in the
  *  request body — same `AssignOptionInput`/log shapes otherwise. */
-export type AssignSubscriptionInput = Cycle20['AssignSubscriptionInput']
+export type AssignSubscriptionInput = Cycle20['AssignSubscriptionInput'] & { line?: BillingLine }
 export type AssignOptionInput = Schemas['AssignOptionInput']
 export type SubscriptionChangeReason = Cycle20['SubscriptionChangeReason']
 type SubscriptionChangeReasonDto = Cycle20['SubscriptionChangeReasonDto']
@@ -31,7 +37,7 @@ type SubscriptionChangeReasonDto = Cycle20['SubscriptionChangeReasonDto']
 type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto'] & Cycle20['SubscriptionHistoryItemReasonPatch']
 // ARCHITECTURE_CYCLE19.md FE-3, API_CONTRACT_CYCLE19.md §407 — `items[].retired` and
 // `retiredOptionsNotice` are new; read straight off the cycle19 schema (N22 convention).
-export type AdminSubscriptionRequest = Cycle19['AdminSubscriptionRequestDtoCycle19']
+export type AdminSubscriptionRequest = Cycle19['AdminSubscriptionRequestDtoCycle19'] & { line?: BillingLine }
 export type SubscriptionStatus = Schemas['SubscriptionStatus']
 type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
 

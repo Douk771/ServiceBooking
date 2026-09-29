@@ -389,3 +389,61 @@ describe('BillingAccountsAdminTab — retiredOptionsNotice in the requests queue
     expect(screen.queryByText(/выведена/)).not.toBeInTheDocument()
   })
 })
+
+// Cycle 24 (ARCHITECTURE_CYCLE24.md §462.2 п.3) — the account's «Заказы» subscription and the request line.
+describe('BillingAccountsAdminTab — «Заказы» line (cycle 24)', () => {
+  const ordersSubscription = { planId: null, planName: 'Заказы · Бесплатно', paidUntil: null, isActive: true, isFreeTier: true, shopsUsed: 1, shopsLimit: 1, seatsUsed: 2, seatsLimit: 2, ordersThisMonth: 120, ordersLimit: 150 }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listAccounts.mockResolvedValue({ items: [listItem()], page: 1, pageSize: 20, totalCount: 1 })
+    getHistory.mockResolvedValue([])
+    listPlans.mockResolvedValue([
+      paidPlan(),
+      paidPlan({ id: 'plan-orders', name: 'Заказы · Старт', line: 'Orders' } as Partial<PlanConfig>),
+    ])
+    listOptions.mockResolvedValue([])
+  })
+
+  it('shows the «Заказы» subscription block with the monthly counter, and offers only Orders plans when assigning it', async () => {
+    getAccount.mockResolvedValue(account({ ordersSubscription } as Partial<AdminBillingAccount>))
+    await renderTab()
+    await userEvent.click(await screen.findByText('Иван Петров'))
+    const block = await screen.findByTestId('orders-subscription')
+    expect(block).toHaveTextContent('Заказов в этом месяце120 / 150')
+    await userEvent.click(within(block).getByRole('button', { name: 'Назначить «Заказы»' }))
+    const select = (await screen.findByText('Тарифный план')).parentElement!.querySelector('select') as HTMLSelectElement
+    const labels = [...select.options].map((o) => o.textContent)
+    expect(labels.some((l) => l?.includes('Заказы · Старт'))).toBe(true)
+    expect(labels.some((l) => l?.includes('PRO'))).toBe(false)
+  })
+
+  it('sends line: Orders when the «Заказы» subscription is assigned', async () => {
+    getAccount.mockResolvedValue(account({ ordersSubscription } as Partial<AdminBillingAccount>))
+    assignSubscription.mockResolvedValue(account())
+    await renderTab()
+    await userEvent.click(await screen.findByText('Иван Петров'))
+    await userEvent.click(within(await screen.findByTestId('orders-subscription')).getByRole('button', { name: 'Назначить «Заказы»' }))
+    await screen.findByText('Тарифный план')
+    await userEvent.click(screen.getByRole('button', { name: /^Назначить$|^Сохранить$/ }))
+    await waitFor(() => expect(assignSubscription).toHaveBeenCalled())
+    expect(assignSubscription.mock.calls[0][1].line).toBe('Orders')
+  })
+
+  it('has no «Заказы» block for an account without one (an older server)', async () => {
+    getAccount.mockResolvedValue(account())
+    await renderTab()
+    await userEvent.click(await screen.findByText('Иван Петров'))
+    await screen.findByText('Назначить подписку')
+    expect(screen.queryByTestId('orders-subscription')).toBeNull()
+  })
+
+  it('marks the line of each request in the queue', async () => {
+    listAccounts.mockResolvedValue({ items: [], page: 1, pageSize: 20, totalCount: 0 })
+    listRequests.mockResolvedValue({ items: [subscriptionRequest({ id: 'r1', line: 'Orders' } as Partial<AdminSubscriptionRequest>), subscriptionRequest({ id: 'r2' })], page: 1, pageSize: 20, totalCount: 2 })
+    await renderTab()
+    await userEvent.click(screen.getByText('Заявки'))
+    const chips = await screen.findAllByTestId('request-line')
+    expect(chips.map((c) => c.textContent)).toEqual(['Заказы', 'Записи'])
+  })
+})

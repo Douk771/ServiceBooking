@@ -86,7 +86,7 @@ function OfferCard({ hasExistingChannel }: { hasExistingChannel: boolean }) {
 
 // ── Single channel card ──────────────────────────────────────────────────────────
 
-function ChannelCard({
+export function ChannelCard({
   channel,
   myCompanies,
   assignedElsewhereIds,

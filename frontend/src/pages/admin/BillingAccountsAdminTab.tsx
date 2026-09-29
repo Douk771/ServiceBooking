@@ -42,6 +42,8 @@ function toPagerProps(page: number, pageSize: number, totalCount: number) {
 // ── Assign subscription modal ─────────────────────────────────────────────────
 
 interface AssignTarget {
+  /** Cycle 24: which subscription of the account is being assigned. Absent = the salon one, exactly as before. */
+  line?: 'Services' | 'Orders'
   account: AdminBillingAccount
   /** Pending request being approved, if opened from the requests queue — its desired composition
    *  pre-fills the form and its id closes the request as Approved in the same call. */
@@ -50,6 +52,9 @@ interface AssignTarget {
 
 function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; onClose: () => void }) {
   const { account, request } = target
+  const line = target.line ?? 'Services'
+  const isOrders = line === 'Orders'
+  const ordersSub = account.ordersSubscription ?? null
   const qc = useQueryClient()
 
   const { data: plans } = useQuery({ queryKey: ['admin-plans'], queryFn: plansApi.list })
@@ -58,11 +63,12 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
   // (§433.3), so a fetch failure just means an empty dropdown, not a broken form.
   const { data: reasons } = useQuery({ queryKey: ['admin-subscription-change-reasons'], queryFn: adminBillingApi.getChangeReasons })
   const assignableReasons = (reasons ?? []).filter((r) => r.assignableManually)
-  const activePlans = (plans ?? []).filter((p) => p.isActive)
+  // Cycle 24: a plan of the other line is not assignable here (the server answers 400 «Тариф из другой линейки»).
+  const activePlans = (plans ?? []).filter((p) => p.isActive && (p.line ?? 'Services') === line)
 
-  const [planId, setPlanId] = useState<string>(account.planId ?? '')
-  const [isActive, setIsActive] = useState(account.isActive ?? true)
-  const [paidUntil, setPaidUntil] = useState(account.paidUntil ? account.paidUntil.slice(0, 10) : '')
+  const [planId, setPlanId] = useState<string>((isOrders ? ordersSub?.planId : account.planId) ?? '')
+  const [isActive, setIsActive] = useState((isOrders ? ordersSub?.isActive : account.isActive) ?? true)
+  const [paidUntil, setPaidUntil] = useState((isOrders ? ordersSub?.paidUntil : account.paidUntil) ? ((isOrders ? ordersSub?.paidUntil : account.paidUntil) as string).slice(0, 10) : '')
   const [amount, setAmount] = useState('')
   const [comment, setComment] = useState('')
   const [confirmOverflow, setConfirmOverflow] = useState(false)
@@ -126,6 +132,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
           confirmLimitOverflow: confirmOverflow,
           reasonCode: reasonCode || null,
           reasonDetails,
+          line,
         }),
       ),
     onSuccess: () => {
@@ -166,14 +173,14 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
             onChange={(e) => setPlanId(e.target.value)}
             className="w-full rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold"
           >
-            <option value="">Free (снять тариф)</option>
+            <option value="">{isOrders ? 'Бесплатный тариф «Заказов» (снять тариф)' : 'Free (снять тариф)'}</option>
             {activePlans.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} {p.pricePerMonth > 0 ? `— ${formatMonthlyPrice(p.pricePerMonth)}` : ''}
               </option>
             ))}
           </select>
-          {selectedPlan && !selectedPlan.allowOnlineBooking && (
+          {!isOrders && selectedPlan && !selectedPlan.allowOnlineBooking && (
             <p className="text-xs text-warning mt-1.5 bg-warning-bg rounded-lg px-2.5 py-1.5">
               В этом тарифе онлайн-запись выключена — клиенты не смогут записаться сами.
             </p>
@@ -497,6 +504,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
     queryFn: () => adminBillingApi.getHistory(accountId),
   })
   const [assigning, setAssigning] = useState(false)
+  const [assigningOrders, setAssigningOrders] = useState(false)
 
   return (
     <Modal title={isLoading || !account ? 'Загрузка…' : `Аккаунт — ${account.ownerName}`} onClose={onClose}>
@@ -509,6 +517,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
       ) : (
         <div className="flex flex-col gap-5">
           {assigning && <AssignSubscriptionModal target={{ account }} onClose={() => setAssigning(false)} />}
+          {assigningOrders && <AssignSubscriptionModal target={{ account, line: 'Orders' }} onClose={() => setAssigningOrders(false)} />}
 
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2 flex-wrap">
@@ -551,6 +560,36 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
               <p className="text-xs text-muted mt-1.5">{account.grandfatheredEmployeeBonusText}</p>
             )}
           </div>
+
+          {/* Cycle 24 (ARCHITECTURE_CYCLE24.md §462.2 п.3): the account's «Заказы» subscription — a separate block. */}
+          {account.ordersSubscription && (
+            <div data-testid="orders-subscription">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <p className="text-sm font-medium text-ink-soft">Подписка «Заказы» — {account.ordersSubscription.planName}</p>
+                <Button size="sm" variant="secondary" onClick={() => setAssigningOrders(true)}>
+                  Назначить «Заказы»
+                </Button>
+              </div>
+              <div className="rounded-xl border border-line divide-y divide-line text-sm">
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-ink-soft">{account.ordersSubscription.isFreeTier ? 'Бесплатный тариф' : `Оплачено до ${fmtDate(account.ordersSubscription.paidUntil)}`}</span>
+                  <span className="text-ink">{account.ordersSubscription.isActive ? 'активна' : 'не активна'}</span>
+                </div>
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-ink-soft">Магазины</span>
+                  <span className="text-ink">{account.ordersSubscription.shopsUsed} / {account.ordersSubscription.shopsLimit ?? '∞'}</span>
+                </div>
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-ink-soft">Участники магазинов</span>
+                  <span className="text-ink">{account.ordersSubscription.seatsUsed} / {account.ordersSubscription.seatsLimit ?? '∞'}</span>
+                </div>
+                <div className="flex justify-between px-3 py-2">
+                  <span className="text-ink-soft">Заказов в этом месяце</span>
+                  <span className="text-ink">{account.ordersSubscription.ordersThisMonth} / {account.ordersSubscription.ordersLimit ?? '∞'}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-xl bg-cream-deep px-3 py-2.5">
@@ -822,6 +861,7 @@ function RequestsQueueSection() {
           target={{
             account: approving.account,
             request: data?.items.find((r) => r.id === approving.requestId),
+            line: data?.items.find((r) => r.id === approving.requestId)?.line ?? 'Services',
           }}
           onClose={() => setApproving(null)}
         />
@@ -843,6 +883,10 @@ function RequestsQueueSection() {
                   <span className="font-medium text-ink">{r.requestedByName}</span>
                   {r.requestedByPhoneMasked && <span className="text-xs text-muted">{r.requestedByPhoneMasked}</span>}
                   <span className="text-xs text-muted">{fmtDateTime(r.createdAt)}</span>
+                  {/* Cycle 24: the «Линейка» of the request (absent from an older server = Записи). */}
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft" data-testid="request-line">
+                    {r.line === 'Orders' ? 'Заказы' : 'Записи'}
+                  </span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">
                   {r.currentPlanName ?? 'Free'}

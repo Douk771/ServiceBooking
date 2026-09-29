@@ -68,6 +68,8 @@ export function buildAssignInput(params: {
   confirmLimitOverflow: boolean
   reasonCode?: SubscriptionChangeReason | null
   reasonDetails?: string
+  /** Cycle 24: `Orders` assigns the «Заказы» subscription; omitted for Services so the body stays exactly as before. */
+  line?: 'Services' | 'Orders'
 }): AssignSubscriptionInput {
   return {
     planId: params.planId,
@@ -85,6 +87,7 @@ export function buildAssignInput(params: {
     // §433.1: a reason omitted where it isn't required is simply absent, not an explicit "no reason".
     reasonCode: params.reasonCode ?? undefined,
     reasonDetails: params.reasonDetails?.trim() ? params.reasonDetails.trim() : undefined,
+    ...(params.line === 'Orders' ? { line: 'Orders' as const } : {}),
   }
 }
 

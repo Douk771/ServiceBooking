@@ -1,9 +1,15 @@
 import { api } from './client'
 import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
+import type { components as Cycle24Schemas } from '../types/api-cycle24.generated'
 
 type Schemas = components['schemas']
 type Cycle18 = Cycle18Schemas['schemas']
+type Cycle24 = Cycle24Schemas['schemas']
+
+/** Cycle 24 (API_CONTRACT_CYCLE24.md §485.3): the plan's line and the «Заказы» fields. Additive; absent from an older server. */
+export type PlanLine = Cycle24['CompanyKind']
+type OrdersPlanFields = Partial<Pick<Cycle24['AdminPlanDtoCycle24'], 'line' | 'maxProductsPerShop' | 'maxOrdersPerMonth' | 'allowOrders'>>
 
 /** 152-ФЗ ч. 7 ст. 5 prohibits indefinite retention of personal data; `Forever` was removed from
  *  the contract (`contracts/cycle7/openapi.yaml`) to match `RemovePhotoRetentionForever`, which
@@ -15,9 +21,9 @@ export type OptionAvailability = Schemas['OptionAvailability']
  *  matrix (B4) — kept in sync with the generated AdminPlanDto rather than hand-duplicated. */
 /** Cycle 7 shape + `isSystemTrial`/`optionCoverage` (cycle 18, additive — API_CONTRACT_CYCLE18.md
  *  §366). Intersection rather than a second hand-written DTO copy, same convention as elsewhere. */
-export type PlanConfig = Schemas['AdminPlanDto'] & Cycle18['AdminPlanDtoTrialPatch']
+export type PlanConfig = Schemas['AdminPlanDto'] & Cycle18['AdminPlanDtoTrialPatch'] & OrdersPlanFields
 export type PlanOptionRuleDto = Schemas['PlanOptionRuleDto']
-export type AdminPlanInput = Schemas['AdminPlanInput']
+export type AdminPlanInput = Schemas['AdminPlanInput'] & OrdersPlanFields
 export type AdminOptionDto = Schemas['AdminOptionDto']
 
 export const plansApi = {

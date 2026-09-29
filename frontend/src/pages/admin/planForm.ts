@@ -1,4 +1,4 @@
-import type { PhotoRetention, OptionAvailability, PlanOptionRuleDto } from '../../api/plans'
+import type { PhotoRetention, OptionAvailability, PlanOptionRuleDto, PlanLine } from '../../api/plans'
 
 // Вынесено из PlansTab.tsx: react-refresh/only-export-components — файл, экспортирующий и компонент,
 // и обычные функции, лишается горячей подмены целиком, и правка разметки перезагружает страницу
@@ -38,6 +38,12 @@ export interface PlanForm {
   isActive: boolean
   isPublic: boolean
   sortOrder: string
+  // Cycle 24 (API_CONTRACT_CYCLE24.md §485.3). `line` is chosen at creation and cannot be changed afterwards (409).
+  // The three «Заказы» fields matter only for `line === 'Orders'`; `maxOrdersPerMonth` empty = no limit.
+  line: PlanLine
+  maxProductsPerShop: string
+  maxOrdersPerMonth: string
+  allowOrders: boolean
 }
 
 export const defaultForm: PlanForm = {
@@ -60,6 +66,10 @@ export const defaultForm: PlanForm = {
   isActive: true,
   isPublic: true,
   sortOrder: '0',
+  line: 'Services',
+  maxProductsPerShop: '',
+  maxOrdersPerMonth: '',
+  allowOrders: true,
 }
 
 export function optionRulesToForm(rules: PlanOptionRuleDto[]): PlanForm['optionRules'] {
@@ -84,4 +94,15 @@ export function optionRulesToPayload(rules: PlanForm['optionRules']): PlanOption
           ? parseInt(rule.includedQuantity)
           : null,
     }))
+}
+
+/** The extra input fields of a plan of the «Заказы» line; a salon plan sends NOTHING new, so its body is exactly what it was. */
+export function ordersPlanPayload(form: Pick<PlanForm, 'line' | 'maxProductsPerShop' | 'maxOrdersPerMonth' | 'allowOrders'>, isEditing: boolean) {
+  if (form.line !== 'Orders') return {}
+  return {
+    ...(isEditing ? {} : { line: 'Orders' as const }),
+    maxProductsPerShop: form.maxProductsPerShop.trim() === '' ? null : parseInt(form.maxProductsPerShop),
+    maxOrdersPerMonth: form.maxOrdersPerMonth.trim() === '' ? null : parseInt(form.maxOrdersPerMonth),
+    allowOrders: form.allowOrders,
+  }
 }
