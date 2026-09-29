@@ -653,6 +653,17 @@ public class AdminBillingController(
                     "Пробный тариф нельзя назначить через это действие — используйте выдачу/повторную выдачу пробного периода."));
         }
 
+        // ARCHITECTURE_CYCLE20.md §403.2 (US-20-02, Т20-01) — runs AFTER the trial refusal above (Р6:
+        // a trial-plan assignment is rejected first no matter which reason was supplied) and BEFORE any
+        // write. currentPlanId is read directly rather than via the (not-yet-loaded) `sub` below, so a
+        // reason mistake is caught before any option/limit checks run their own queries.
+        var currentPlanId = await db.AccountSubscriptions
+            .Where(s => s.BillingAccountId == accountId).Select(s => (Guid?)s.PlanConfigId).FirstOrDefaultAsync();
+        var reasonRequired = Services.Billing.ManualPlanAssignmentPolicy.RequiresReason(currentPlanId, dto.PlanId, plan?.IsPublic ?? true);
+        var reasonError = Services.Billing.ManualPlanAssignmentPolicy.Validate(dto.ReasonCode, dto.ReasonDetails, reasonRequired);
+        if (reasonError is not null)
+            return BadRequest(reasonError);
+
         var optionIds = optionLines.Select(o => o.OptionId).ToList();
         var options = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).ToListAsync();
         if (options.Count != optionIds.Distinct().Count())
@@ -814,6 +825,10 @@ public class AdminBillingController(
             OldOptionsSummary = oldOptionsSummary,
             NewOptionsSummary = newOptionsSummary,
             Comment = dto.Comment,
+            // ARCHITECTURE_CYCLE20.md §403.1 — written whenever supplied, even where not required
+            // (§433.1: "причина, присланная там, где она не обязательна, принимается и пишется").
+            ReasonCode = dto.ReasonCode,
+            ReasonDetails = dto.ReasonDetails,
         });
 
         account.UpdatedAtUtc = now;
@@ -875,8 +890,28 @@ public class AdminBillingController(
             newOptionsSummary = l.NewOptionsSummary,
             amount = (decimal?)null,
             comment = l.Comment,
+            // ARCHITECTURE_CYCLE20.md §403.1, API_CONTRACT_CYCLE20.md §433.2 (US-20-02) — all three null
+            // for rows without a reason (every path except manual assignment/trial regrant).
+            reasonCode = l.ReasonCode?.ToString(),
+            reasonTitle = l.ReasonCode is { } code ? Services.Billing.SubscriptionChangeReasonTexts.Title(code) : null,
+            reasonDetails = l.ReasonDetails,
         }).ToList();
 
+        return Ok(new { items });
+    }
+
+    // ARCHITECTURE_CYCLE20.md §403.3, API_CONTRACT_CYCLE20.md §433.3 (US-20-02) — the closed list for
+    // the manual-assignment dropdown; the frontend keeps no titles of its own.
+    [HttpGet("subscription-change-reasons")]
+    public IActionResult GetSubscriptionChangeReasons()
+    {
+        var items = Services.Billing.SubscriptionChangeReasonTexts.All.Select(r => new
+        {
+            code = r.Code.ToString(),
+            title = Services.Billing.SubscriptionChangeReasonTexts.Title(r.Code),
+            detailsRequired = r.DetailsRequired,
+            assignableManually = r.AssignableManually,
+        }).ToList();
         return Ok(new { items });
     }
 
@@ -977,6 +1012,9 @@ public record Billing_RegrantTrialInput(string Reason);
 
 public record Billing_AssignSubscriptionInput(
     Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<Billing_AssignOptionInput> Options,
-    decimal? Amount, string? Comment, Guid? RequestId, bool ConfirmLimitOverflow = false);
+    decimal? Amount, string? Comment, Guid? RequestId, bool ConfirmLimitOverflow = false,
+    // ARCHITECTURE_CYCLE20.md §403.1, API_CONTRACT_CYCLE20.md §433.1 (US-20-02) — appended at the end,
+    // both optional, so every existing positional call in the test suite keeps compiling.
+    Core.Enums.SubscriptionChangeReason? ReasonCode = null, string? ReasonDetails = null);
 
 public record RejectRequestDto(string? Comment);

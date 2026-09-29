@@ -62,11 +62,9 @@ public record AdminAccountCompanyDto(Guid CompanyId, string CompanyName, string 
 
 public record AdminAccountChannelDto(Guid ChannelId, string? PhoneMasked, string State, string FundingState, DateTime CreatedAt, int AssignedCompanies);
 
-public record AssignSubscriptionInput(
-    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<AssignOptionInput> Options,
-    decimal? Amount, string? Comment, Guid? RequestId, bool ConfirmLimitOverflow = false);
-
-public record AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
+// ARCHITECTURE_CYCLE20.md §403.3 (B3) — AssignSubscriptionInput/AssignOptionInput removed here: dead
+// code, superseded by Billing_AssignSubscriptionInput/Billing_AssignOptionInput in
+// AdminBillingController.cs (grep confirmed no other reference to either name in the codebase).
 
 public record AdminSubscriptionChangeLogDto(
     Guid Id, DateTime ChangedAt, string ChangedByName, string ChangeKind, Guid? CompanyId,

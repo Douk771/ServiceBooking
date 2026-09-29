@@ -233,6 +233,11 @@ public class TrialActivationService(
             Comment = comment,
             BillingAccountId = account.Id,
             ChangeKind = SubscriptionChangeKind.TrialGranted,
+            // ARCHITECTURE_CYCLE20.md §403.1 (US-20-02) — only the superadmin regrant path carries a
+            // reason; the ordinary self-service/superadmin-initial-grant paths are not a manual
+            // reassignment and leave both fields null.
+            ReasonCode = request.Mode == TrialGrantMode.SuperAdminOverride ? SubscriptionChangeReason.TrialReissue : null,
+            ReasonDetails = request.Mode == TrialGrantMode.SuperAdminOverride ? request.Reason : null,
         });
 
         // §333.3/§336.1 п.6 — closes R3 ("included on the plan" != "counted as paid" in
