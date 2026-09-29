@@ -21,12 +21,21 @@ export function blankLineForPrint(values: Record<string, string | null | undefin
  * ARCHITECTURE_CYCLE20.md §432.4 (US-20-01) — "фронт запоминает последний напечатанный `formId`" is a
  * page-to-page handoff (print page → mark-consent dialog back on the client card), not a server
  * concept: `GET …/health-consent-form` issues a FRESH `formId` on every call and never persists it.
- * `sessionStorage` (not `localStorage`) is deliberate — this is scratch state for "the form I just
- * printed in this browser tab", not something that should survive after the tab closes or leak across
- * devices/sessions; it also never touches the wire, so it carries no privacy weight of its own.
+ *
+ * §441 item 2 is explicit that `formId` must never be kept "anywhere except the print page's own
+ * memory" — that rules out `sessionStorage`/`localStorage` (inspectable via devtools, and survives a
+ * full reload of the tab), and it rules out keying anything by the raw `clientKey`, which for a guest
+ * client is a `phone:7999…` string that would otherwise sit in browser storage. This is a plain
+ * in-memory cache (a module-level `Map`, not a Web Storage API): it lives only for the lifetime of
+ * this browser tab's current page load, is invisible to devtools' Application/Storage panel, never
+ * touches the wire, and is gone on the next full reload — the closest an SPA can get to "print page's
+ * own memory" while still letting the mark-consent dialog on a *different* route read what was just
+ * printed without a server round trip.
  */
-function storageKey(companyId: string, clientKey: string): string {
-  return `health-consent-form:${companyId}:${clientKey}`
+const lastPrintedForms = new Map<string, LastPrintedHealthForm>()
+
+function cacheKey(companyId: string, clientKey: string): string {
+  return `${companyId}:${clientKey}`
 }
 
 export interface LastPrintedHealthForm {
@@ -35,22 +44,15 @@ export interface LastPrintedHealthForm {
 }
 
 export function saveLastPrintedHealthForm(companyId: string, clientKey: string, form: LastPrintedHealthForm): void {
-  try {
-    sessionStorage.setItem(storageKey(companyId, clientKey), JSON.stringify(form))
-  } catch {
-    // Private-browsing/storage-full failures are a UX inconvenience (the mark dialog just opens with
-    // an empty formId, same as "used the salon's own form"), never a reason to break printing.
-  }
+  lastPrintedForms.set(cacheKey(companyId, clientKey), form)
 }
 
 export function getLastPrintedHealthForm(companyId: string, clientKey: string): LastPrintedHealthForm | null {
-  try {
-    const raw = sessionStorage.getItem(storageKey(companyId, clientKey))
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<LastPrintedHealthForm>
-    if (typeof parsed.textVersion !== 'string') return null
-    return { formId: typeof parsed.formId === 'string' ? parsed.formId : null, textVersion: parsed.textVersion }
-  } catch {
-    return null
-  }
+  return lastPrintedForms.get(cacheKey(companyId, clientKey)) ?? null
+}
+
+/** Test-only: the in-memory cache above is intentionally module-scoped (not Web Storage), so tests
+ *  that rely on a clean slate between cases need an explicit reset instead of `sessionStorage.clear()`. */
+export function clearLastPrintedHealthFormsForTests(): void {
+  lastPrintedForms.clear()
 }

@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { clientConsentsApi } from '../api/clientConsents'
@@ -14,9 +13,11 @@ import { Icon } from '../components/ui/Icon'
  * `/companies/:companyId/clients/:clientKey/health-consent-form` — API_CONTRACT_CYCLE20.md §432.4
  * (US-20-01, Т20-04). Printed from the browser (`window.print()`), never generated/stored server-side
  * (§443: "ни одного маршрута, сохраняющего сгенерированный бланк"). Every reload/refetch of the values
- * gets a BRAND NEW `formId` from the server — that's by design (§432.4), which is why this page keeps
- * the one it showed last in `sessionStorage` (`saveLastPrintedHealthForm`) for the mark-consent dialog
- * back on the client card to read, rather than the server ever being asked "what was the last one".
+ * gets a BRAND NEW `formId` from the server — that's by design (§432.4), which is why this page remembers
+ * the one it last *printed* (`saveLastPrintedHealthForm`, in-memory only — see §441 item 2 note there)
+ * for the mark-consent dialog back on the client card to read, rather than the server ever being asked
+ * "what was the last one". Recorded at the moment "Печать" is clicked, not on every fetch/refetch of
+ * this page — "last printed" must mean printed, not merely opened/reloaded.
  */
 export function HealthConsentFormPrintPage() {
   const { companyId = '', clientKey: rawClientKey = '' } = useParams<{ companyId: string; clientKey: string }>()
@@ -33,9 +34,10 @@ export function HealthConsentFormPrintPage() {
 
   const { data: text, isLoading: textLoading } = useLegalText('HealthDataWrittenConsentForm')
 
-  useEffect(() => {
+  const handlePrint = () => {
     if (data) saveLastPrintedHealthForm(companyId, clientKey, { formId: data.formId, textVersion: data.textVersion })
-  }, [data, companyId, clientKey])
+    window.print()
+  }
 
   const section = text ? findSection(splitLegalSections(text.contentHtml), 'Бланк') : null
   const html = section ? section.html : text?.contentHtml
@@ -49,7 +51,7 @@ export function HealthConsentFormPrintPage() {
           <Button variant="secondary" size="sm" loading={isFetching} onClick={() => refetch()}>
             Получить новый бланк
           </Button>
-          <Button size="sm" disabled={!printableHtml} onClick={() => window.print()}>
+          <Button size="sm" disabled={!printableHtml} onClick={handlePrint}>
             <Icon name="printer" size={14} strokeWidth={1.8} />
             Печать
           </Button>

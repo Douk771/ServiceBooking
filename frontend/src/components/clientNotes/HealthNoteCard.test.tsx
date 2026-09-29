@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HealthNoteCard } from './HealthNoteCard'
+import { saveLastPrintedHealthForm, clearLastPrintedHealthFormsForTests } from '../../utils/healthConsentForm'
 
 const getHealthNote = vi.fn()
 const updateHealthNote = vi.fn()
@@ -38,7 +39,7 @@ beforeEach(() => {
   deleteHealthNote.mockReset()
   markWrittenConsent.mockReset()
   revokeWrittenConsent.mockReset()
-  sessionStorage.clear()
+  clearLastPrintedHealthFormsForTests()
 })
 
 // API_CONTRACT_CYCLE20.md §432.1 (LG1, US-20-01) — the field is gated ONLY by writtenConsent.granted.
@@ -84,7 +85,7 @@ describe('HealthNoteCard — closed without a written-consent mark (cycle 20)', 
   })
 
   it('prefills formId from the just-printed form when its version matches the current one', async () => {
-    sessionStorage.setItem('health-consent-form:c1:u1', JSON.stringify({ formId: 'HD-7K3M9QTX', textVersion: 'v1' }))
+    saveLastPrintedHealthForm('c1', 'u1', { formId: 'HD-7K3M9QTX', textVersion: 'v1' })
     const user = userEvent.setup()
     getHealthNote.mockResolvedValue({ value: null, consentRequired: true, writtenConsent: { granted: false, currentFormVersion: 'v1' } })
     markWrittenConsent.mockResolvedValueOnce({ granted: true, currentFormVersion: 'v1' })
@@ -99,13 +100,28 @@ describe('HealthNoteCard — closed without a written-consent mark (cycle 20)', 
   })
 
   it('does NOT prefill formId when the last-printed form is for an older text version', async () => {
-    sessionStorage.setItem('health-consent-form:c1:u1', JSON.stringify({ formId: 'HD-7K3M9QTX', textVersion: 'v0-old' }))
+    saveLastPrintedHealthForm('c1', 'u1', { formId: 'HD-7K3M9QTX', textVersion: 'v0-old' })
     const user = userEvent.setup()
     getHealthNote.mockResolvedValue({ value: null, consentRequired: true, writtenConsent: { granted: false, currentFormVersion: 'v1' } })
     renderCard()
 
     await user.click(await screen.findByRole('button', { name: 'Бланк подписан, оригинал у нас' }))
     expect(screen.queryByDisplayValue('HD-7K3M9QTX')).not.toBeInTheDocument()
+  })
+
+  it('does not submit an empty formId as "own form" — unchecking own-form with a blank number blocks the confirm button', async () => {
+    const user = userEvent.setup()
+    getHealthNote.mockResolvedValue({ value: null, consentRequired: true, writtenConsent: { granted: false, currentFormVersion: 'v1' } })
+    renderCard()
+
+    await user.click(await screen.findByRole('button', { name: 'Бланк подписан, оригинал у нас' }))
+    // Own-form is checked by default (no last print) — uncheck it, leaving the number blank.
+    await user.click(screen.getByRole('checkbox', { name: /собственный бланк салона/ }))
+    await user.click(screen.getByRole('checkbox', { name: 'Подписанный оригинал у нас' }))
+
+    expect(screen.getByText(/Укажите номер бланка/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Отметить' })).toBeDisabled()
+    expect(markWrittenConsent).not.toHaveBeenCalled()
   })
 
   it('shows a reprint prompt on 409 (form text was republished)', async () => {

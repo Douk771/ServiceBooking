@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { BLANK_LINE, blankLineForPrint, saveLastPrintedHealthForm, getLastPrintedHealthForm } from './healthConsentForm'
+import {
+  BLANK_LINE,
+  blankLineForPrint,
+  saveLastPrintedHealthForm,
+  getLastPrintedHealthForm,
+  clearLastPrintedHealthFormsForTests,
+} from './healthConsentForm'
 
 describe('blankLineForPrint', () => {
   it('replaces null with BLANK_LINE', () => {
@@ -31,7 +37,7 @@ describe('blankLineForPrint', () => {
 })
 
 describe('saveLastPrintedHealthForm / getLastPrintedHealthForm', () => {
-  beforeEach(() => sessionStorage.clear())
+  beforeEach(() => clearLastPrintedHealthFormsForTests())
 
   it('returns null when nothing was ever printed for this company/client pair', () => {
     expect(getLastPrintedHealthForm('co1', 'u1')).toBeNull()
@@ -63,8 +69,9 @@ describe('saveLastPrintedHealthForm / getLastPrintedHealthForm', () => {
     expect(getLastPrintedHealthForm('co1', 'u1')).toEqual({ formId: 'HD-BBBBBBBB', textVersion: 'v2' })
   })
 
-  it('returns null instead of throwing on corrupted storage content', () => {
-    sessionStorage.setItem('health-consent-form:co1:u1', '{not json')
-    expect(getLastPrintedHealthForm('co1', 'u1')).toBeNull()
+  it('never touches sessionStorage/localStorage — §441 item 2 forbids keeping formId anywhere but in-memory', () => {
+    saveLastPrintedHealthForm('co1', 'phone:79990000000', { formId: 'HD-AAAAAAAA', textVersion: 'v1' })
+    expect(sessionStorage.length).toBe(0)
+    expect(localStorage.length).toBe(0)
   })
 })
