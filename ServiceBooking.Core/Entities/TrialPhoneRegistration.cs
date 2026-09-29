@@ -2,7 +2,7 @@ namespace ServiceBooking.Core.Entities;
 
 /// <summary>
 /// Cycle 18, Д6/Д14 (ARCHITECTURE_CYCLE18.md §332.5). Sole purpose of processing — verbatim from Д17
-/// of SPEC.md — "учёт предоставленных пробных периодов и проверка соблюдения условия об однократном
+/// of SPEC_CYCLE18_TRIAL_PLAN.md — "учёт предоставленных пробных периодов и проверка соблюдения условия об однократном
 /// предоставлении пробного периода одному Абоненту" (short form for the UI and logs: "проверка
 /// однократности пробного периода"). Deliberately outlives the account: deleting an account removes
 /// its <c>VerifiedPhones</c> row (§151.2 cycle 14), so this table cannot lean on VerifiedPhones — or

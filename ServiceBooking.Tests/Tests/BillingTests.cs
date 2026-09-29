@@ -112,9 +112,17 @@ public class BillingTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             queuedItem.GetProperty("comment").GetString().Should().Be("Хочу перейти на новый тариф");
         }
 
+        // ARCHITECTURE_CYCLE20.md §403.2 (US-20-02) — ManualPlanAssignmentPolicy.RequiresReason looks
+        // only at (currentPlanId, targetPlanId, targetIsPublic), never at requestId: CreateTestPlanConfigAsync
+        // leaves the new plan's IsPublic at its entity default (false), so even this request-driven
+        // assignment now needs a reason like any other hand-picked hidden tariff.
         var assign = await AuthedClient(admin.Token).PutAsJsonAsync(
             $"/api/admin/billing-accounts/{accountId}/subscription",
-            new { planId, isActive = true, paidUntil = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(1)), options = new object[0], requestId = accountId });
+            new
+            {
+                planId, isActive = true, paidUntil = DateOnly.FromDateTime(DateTime.UtcNow.AddMonths(1)), options = new object[0], requestId = accountId,
+                reasonCode = "OperatorErrorCorrection", reasonDetails = "Назначение тарифа по заявке владельца",
+            });
         assign.EnsureSuccessStatusCode();
 
         var after = await (await AuthedClient(owner.Token).GetAsync("/api/billing/subscription"))

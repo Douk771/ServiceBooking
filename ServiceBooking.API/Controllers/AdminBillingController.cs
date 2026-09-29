@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
@@ -15,268 +14,30 @@ namespace ServiceBooking.API.Controllers;
 /// <summary>contracts/cycle7/openapi.yaml tag billing-admin — options catalog, billing accounts,
 /// subscription assignment and the owner request queue (US-66, US-67, US-70). Kept as a separate
 /// controller from <see cref="AdminController"/> (same "api/admin" route prefix, same SuperAdmin-only
-/// authorization) purely so this cycle's diff doesn't grow an already-780-line file further.</summary>
+/// authorization) purely so this cycle's diff doesn't grow an already-780-line file further.
+/// Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the options catalog moved to <see cref="AdminOptionsController"/>
+/// and the trial routes to <see cref="AdminTrialController"/> — same prefix, same gate, same routes.</summary>
 [ApiController]
 [Route("api/admin")]
 [Authorize(Roles = "SuperAdmin")]
 public class AdminBillingController(
-    AppDbContext db, PricingCatalogCache pricingCatalogCache,
+    AppDbContext db,
     SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    OwnerSubscriptionService ownerSubscriptionService, Services.Billing.TrialActivationService trialActivationService,
+    OwnerSubscriptionService ownerSubscriptionService,
     ILogger<AdminBillingController> logger) : ControllerBase
 {
-    // ── Cycle 18 (API_CONTRACT_CYCLE18.md §368) — superadmin trial grant/regrant ──────────────────
-
-    [HttpPost("billing-accounts/{accountId:guid}/trial")]
-    public async Task<IActionResult> GrantTrial(Guid accountId)
-    {
-        var account = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.Id == accountId);
-        if (account is null) return NotFound();
-
-        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var result = await trialActivationService.GrantAsync(new Services.Billing.TrialGrantRequest(
-            accountId, actorUserId, Core.Enums.TrialGrantSource.SuperAdmin, Services.Billing.TrialGrantMode.Normal,
-            Reason: null, AcknowledgedTermsVersion: null));
-
-        if (!result.Granted)
-            return Conflict(new DTOs.Billing.TrialRefusalDto(result.RefusalCode!, result.Message!));
-
-        var fresh = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
-        return Ok(await BuildAdminAccountDtoAsync(fresh));
-    }
-
-    [HttpPost("billing-accounts/{accountId:guid}/trial/regrant")]
-    public async Task<IActionResult> RegrantTrial(Guid accountId, [FromBody] Billing_RegrantTrialInput dto)
-    {
-        if (string.IsNullOrWhiteSpace(dto.Reason) || dto.Reason.Trim().Length == 0)
-            return BadRequest("Причина обязательна.");
-        if (dto.Reason.Length > 500)
-            return BadRequest("Причина не может быть длиннее 500 символов.");
-
-        var account = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.Id == accountId);
-        if (account is null) return NotFound();
-
-        var actorUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var result = await trialActivationService.GrantAsync(new Services.Billing.TrialGrantRequest(
-            accountId, actorUserId, Core.Enums.TrialGrantSource.SuperAdminOverride, Services.Billing.TrialGrantMode.SuperAdminOverride,
-            Reason: dto.Reason, AcknowledgedTermsVersion: null));
-
-        if (!result.Granted)
-            return Conflict(new DTOs.Billing.TrialRefusalDto(result.RefusalCode!, result.Message!));
-
-        var fresh = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
-        return Ok(await BuildAdminAccountDtoAsync(fresh));
-    }
-
-    // Cycle 18 (API_CONTRACT_CYCLE18.md §376) — Т1: proving, months later, exactly which wording an
-    // owner was shown at activation. Never removed from TrialTermsRegistry, so this always resolves for
-    // any version that was ever CurrentVersion.
-    [HttpGet("trial-terms/{version}")]
-    public IActionResult GetTrialTerms(string version)
-    {
-        var template = Services.Billing.TrialTermsRegistry.TryGetTemplate(version);
-        if (template is null) return NotFound();
-        var sha256 = Services.Billing.TrialTermsRegistry.Sha256Of(version);
-        var promisedThresholds = Services.Billing.TrialTermsRegistry.PromisedThresholdsByVersion.GetValueOrDefault(version, []);
-        return Ok(new
-        {
-            version,
-            sha256,
-            isCurrent = version == Services.Billing.TrialTermsRegistry.CurrentVersion,
-            promisedWarningThresholdsDays = promisedThresholds,
-            template,
-        });
-    }
-    // ── Options catalog (US-66) ───────────────────────────────────────────────────
-
-    [HttpGet("options")]
-    public async Task<IActionResult> GetOptions()
-    {
-        // ARCHITECTURE_CYCLE19.md §386.1/§402 — retired limit options never appear in the catalog, at
-        // any IsActive/IsPublic/price combination.
-        var options = await db.SubscriptionOptions.WhereNotRetired()
-            .OrderBy(o => o.SortOrder).ThenBy(o => o.Name).ToListAsync();
-        var counts = await GetOptionSubscriberCountsAsync(options.Select(o => o.Id));
-        return Ok(new { options = options.Select(o => MapOptionDto(o, counts.GetValueOrDefault(o.Id))).ToList() });
-    }
-
-    [HttpPost("options")]
-    public async Task<IActionResult> CreateOption([FromBody] Billing_AdminOptionInput dto)
-    {
-        var validationError = ValidateOptionInput(dto, existingCode: null);
-        if (validationError is not null) return validationError;
-
-        if (await db.SubscriptionOptions.AnyAsync(o => o.Code == dto.Code))
-            return Conflict($"Опция с кодом «{dto.Code}» уже существует.");
-
-        var option = new SubscriptionOption
-        {
-            Id = Guid.NewGuid(),
-            Code = dto.Code,
-            Name = dto.Name,
-            Description = dto.Description,
-            Kind = ParseKind(dto.Kind),
-            CapabilityKey = dto.CapabilityKey,
-            PricePerMonth = dto.PricePerMonth,
-            UnitName = dto.UnitName,
-            MaxQuantity = dto.MaxQuantity,
-            IsPublic = dto.IsPublic,
-            IsActive = dto.IsActive,
-            SortOrder = dto.SortOrder,
-        };
-        db.SubscriptionOptions.Add(option);
-        await db.SaveChangesAsync();
-        pricingCatalogCache.Invalidate();
-        return StatusCode(StatusCodes.Status201Created, MapOptionDto(option, 0));
-    }
-
-    [HttpPut("options/{id:guid}")]
-    public async Task<IActionResult> UpdateOption(Guid id, [FromBody] Billing_AdminOptionInput dto)
-    {
-        var option = await db.SubscriptionOptions.FindAsync(id);
-        if (option is null) return NotFound();
-
-        // ARCHITECTURE_CYCLE19.md §403: 409 on an already-retired option comes BEFORE the code-immutable
-        // 400 — an admin trying to edit "Дополнительные сотрудники" needs to know it's retired, not that
-        // its code can't change.
-        if (RetiredLimitOptions.IsRetired(option))
-            return Conflict(BillingTexts.RetiredOptionNotEditable(option.Name));
-
-        if (dto.Code != option.Code)
-            return BadRequest("Код опции менять нельзя.");
-
-        var validationError = ValidateOptionInput(dto, existingCode: option.Code);
-        if (validationError is not null) return validationError;
-
-        option.Name = dto.Name;
-        option.Description = dto.Description;
-        option.Kind = ParseKind(dto.Kind);
-        option.CapabilityKey = dto.CapabilityKey;
-        option.PricePerMonth = dto.PricePerMonth;
-        option.UnitName = dto.UnitName;
-        option.MaxQuantity = dto.MaxQuantity;
-        option.IsPublic = dto.IsPublic;
-        option.IsActive = dto.IsActive;
-        option.SortOrder = dto.SortOrder;
-        option.UpdatedAtUtc = DateTime.UtcNow;
-
-        await db.SaveChangesAsync();
-        pricingCatalogCache.Invalidate();
-        var count = await db.AccountSubscriptionOptions.CountAsync(o => o.OptionId == id);
-        return Ok(MapOptionDto(option, count));
-    }
-
-    [HttpDelete("options/{id:guid}")]
-    public async Task<IActionResult> DeactivateOption(Guid id)
-    {
-        var option = await db.SubscriptionOptions.FindAsync(id);
-        if (option is null) return NotFound();
-
-        option.IsActive = false;
-        option.UpdatedAtUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-        pricingCatalogCache.Invalidate();
-        return NoContent();
-    }
-
-    [HttpGet("option-capabilities")]
-    public IActionResult GetOptionCapabilities() =>
-        Ok(new { capabilities = OptionCapabilityCatalog.Known.Select(c => new { c.Key, c.Kind, c.Name }).ToList() });
-
-    // Contract §48: option codes are machine identifiers, not free text.
-    private static readonly System.Text.RegularExpressions.Regex CodePattern =
-        new("^[a-z0-9.\\-]{2,64}$", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    // N — SubscriptionOption.PricePerMonth is `numeric(10,2)` (AppDbContext), 8 integer digits + 2
-    // decimal, so anything at or above 10^8 overflows the column and Npgsql throws a raw
-    // PostgresException ("numeric field overflow") on SaveChangesAsync — an unhandled 500, not a 400
-    // (cycle-07 backend report, item 3, confirmed against the actual column precision). Validated here,
-    // before the row ever reaches the DbContext, same as every other business rule in this method.
-    public const decimal MaxOptionPricePerMonth = 99_999_999.99m;
-    // No column-precision reason for this one (MaxQuantity is a plain `int`) — just a sane upper bound
-    // so a denormalized value here can't later blow up a `decimal * int` multiplication elsewhere
-    // (BillingCalculator.MonthlyPriceFor multiplies a subscribed quantity by the option's price).
-    public const int MaxOptionMaxQuantity = 1_000_000;
-
-    internal static IActionResult? ValidateOptionInput(Billing_AdminOptionInput dto, string? existingCode)
-    {
-        // ARCHITECTURE_CYCLE19.md §403/§414 — new first check: "employees"/"companies" can no longer be
-        // sold as an option's capability, on both POST and PUT.
-        if (RetiredLimitOptions.IsRetiredCapability(dto.CapabilityKey))
-            return new BadRequestObjectResult(BillingTexts.LimitCapabilityNotSellable);
-        if (string.IsNullOrWhiteSpace(dto.Code) || !CodePattern.IsMatch(dto.Code))
-            return new BadRequestObjectResult("Код опции обязателен и должен соответствовать формату ^[a-z0-9.-]{2,64}$.");
-        if (string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Length > 100)
-            return new BadRequestObjectResult("Название обязательно (до 100 символов).");
-        if (dto.PricePerMonth is < 0)
-            return new BadRequestObjectResult("Цена не может быть отрицательной.");
-        if (dto.PricePerMonth > MaxOptionPricePerMonth)
-            return new BadRequestObjectResult($"Цена не может превышать {MaxOptionPricePerMonth}.");
-        if (dto.MaxQuantity is not null && dto.MaxQuantity < 1)
-            return new BadRequestObjectResult("Максимальное количество должно быть не меньше 1.");
-        if (dto.MaxQuantity > MaxOptionMaxQuantity)
-            return new BadRequestObjectResult($"Максимальное количество не может превышать {MaxOptionMaxQuantity}.");
-
-        if (TryParseKind(dto.Kind) is not { } kind)
-            return new BadRequestObjectResult("kind должен быть Toggle или Quantity.");
-        if (kind == OptionKind.Quantity && string.IsNullOrWhiteSpace(dto.UnitName))
-            return new BadRequestObjectResult("Для опции-количества обязательна единица измерения.");
-        if (kind == OptionKind.Toggle && !string.IsNullOrWhiteSpace(dto.UnitName))
-            return new BadRequestObjectResult("Для опции-переключателя единица измерения не задаётся.");
-
-        return null;
-    }
-
-    private static OptionKind? TryParseKind(string? kind) => kind switch
-    {
-        "Toggle" => OptionKind.Toggle,
-        "Quantity" => OptionKind.Quantity,
-        _ => null,
-    };
-
-    private static OptionKind ParseKind(string kind) =>
-        TryParseKind(kind) ?? throw new ArgumentOutOfRangeException(nameof(kind), kind, "kind must be Toggle or Quantity");
-
     // B5: PostgreSQL "timestamp with time zone" columns require Kind == Utc; DateOnly.ToDateTime always
     // yields Kind == Unspecified, which Npgsql rejects at runtime (500) rather than silently coercing.
     private static DateTime? ToUtc(DateOnly? date) =>
         date is null ? null : DateTime.SpecifyKind(date.Value.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
-
-    private async Task<Dictionary<Guid, int>> GetOptionSubscriberCountsAsync(IEnumerable<Guid> optionIds)
-    {
-        var ids = optionIds.ToList();
-        return await db.AccountSubscriptionOptions
-            .Where(o => ids.Contains(o.OptionId) && (o.EndsAtUtc == null || o.EndsAtUtc > DateTime.UtcNow))
-            .GroupBy(o => o.OptionId)
-            .Select(g => new { OptionId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.OptionId, x => x.Count);
-    }
-
-    private static object MapOptionDto(SubscriptionOption o, int subscribedAccounts) => new
-    {
-        id = o.Id,
-        code = o.Code,
-        name = o.Name,
-        description = o.Description,
-        kind = o.Kind.ToString(),
-        capabilityKey = o.CapabilityKey,
-        capabilityKnown = OptionCapabilityCatalog.IsKnown(o.CapabilityKey),
-        pricePerMonth = o.PricePerMonth,
-        currency = "RUB",
-        unitName = o.UnitName,
-        maxQuantity = o.MaxQuantity,
-        isPublic = o.IsPublic,
-        isActive = o.IsActive,
-        sortOrder = o.SortOrder,
-        subscribedAccounts,
-    };
 
     // ── Billing accounts (US-67) ──────────────────────────────────────────────────
 
     [HttpGet("billing-accounts")]
     public async Task<IActionResult> GetBillingAccounts(
         [FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? trial,
-        [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] int? page, [FromQuery] int? pageSize,
+        CancellationToken ct)
     {
         // Cycle 18 (API_CONTRACT_CYCLE18.md §369) — unlike `status` above (which quietly matches nothing
         // on an unrecognized value, same as the pre-cycle-18 behaviour), `trial` is a NEW parameter with
@@ -308,9 +69,7 @@ public class AdminBillingController(
             // a phone number must be normalized the same way before matching PhoneNumber, same
             // convention as AdminController.GetUsers, or a formatted phone ("+7 (999) 123-45-67")
             // never matches anything.
-            var digitCount = search.Count(char.IsDigit);
-            var looksLikePhone = digitCount >= 5 && !search.Any(char.IsLetter);
-            var phoneSearch = looksLikePhone ? PhoneNormalizer.Normalize(search) : search;
+            var phoneSearch = PhoneNormalizer.ParseSearch(search).Term;
 
             joined = joined.Where(x =>
                 x.a.Owner.Email!.Contains(search) ||
@@ -319,6 +78,10 @@ public class AdminBillingController(
                 db.Companies.Any(c => c.BillingAccountId == x.a.Id && c.Name.Contains(search)));
         }
 
+        // The status/trialState CASE below spells the "subscription in force" rule out by hand
+        // (cycle 18 B4): it runs in SQL over a LEFT JOINed, possibly-null subscription, where the
+        // SubscriptionUsability.UsableAt expression can't be spliced in. Keep it in step with
+        // SubscriptionUsability (cycle 22 D1) — the one definition of the rule.
         var withStatus = joined.Select(x => new
         {
             x.a,
@@ -354,10 +117,10 @@ public class AdminBillingController(
             withStatus = withStatus.Where(x => x.trialState == canonicalTrialState);
         }
 
-        var total = await withStatus.CountAsync();
+        var total = await withStatus.CountAsync(ct);
         var page1 = await withStatus.OrderBy(x => x.a.CreatedAtUtc)
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var accountIds = page1.Select(x => x.a.Id).ToList();
         var plans = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
@@ -373,17 +136,17 @@ public class AdminBillingController(
         var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => accountIds.Contains(o.BillingAccountId))
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
-            .ToListAsync();
+            .ToListAsync(ct);
         var planConfigIds = page1.Where(x => x.sub != null && x.sub.PlanConfigId.HasValue)
             .Select(x => x.sub!.PlanConfigId!.Value).Distinct().ToList();
         var planRules = planConfigIds.Count == 0
             ? []
-            : await db.PlanOptionRules.Where(r => planConfigIds.Contains(r.PlanConfigId)).ToListAsync();
+            : await db.PlanOptionRules.Where(r => planConfigIds.Contains(r.PlanConfigId)).ToListAsync(ct);
         var registeredCounts = await db.NotificationChannels
             .Where(c => c.BillingAccountId != null && accountIds.Contains(c.BillingAccountId!.Value) && c.State != ChannelState.Replaced)
             .GroupBy(c => c.BillingAccountId!.Value)
             .Select(g => new { AccountId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(g => g.AccountId, g => g.Count);
+            .ToDictionaryAsync(g => g.AccountId, g => g.Count, ct);
 
         var result = page1.Select(x =>
         {
@@ -432,203 +195,23 @@ public class AdminBillingController(
     }
 
     [HttpGet("billing-accounts/{accountId:guid}")]
-    public async Task<IActionResult> GetBillingAccount(Guid accountId)
+    public async Task<IActionResult> GetBillingAccount(Guid accountId, CancellationToken ct)
     {
         var account = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan)
-            .FirstOrDefaultAsync(a => a.Id == accountId);
+            .FirstOrDefaultAsync(a => a.Id == accountId, ct);
         if (account is null) return NotFound();
 
         var dto = await BuildAdminAccountDtoAsync(account);
         return Ok(dto);
     }
 
-    private async Task<object> BuildAdminAccountDtoAsync(BillingAccount account)
-    {
-        var now = DateTime.UtcNow;
-        var sub = await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
-        var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
-        var usage = (await usageReader.GetAsync([account.Id])).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
-
-        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
-            .Where(o => o.BillingAccountId == account.Id).Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now).ToListAsync();
-        var planRules = sub?.PlanConfigId is { } planId ? await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync() : [];
-
-        var companies = await db.Companies.Where(c => c.BillingAccountId == account.Id).ToListAsync();
-        var companyIds = companies.Select(c => c.Id).ToList();
-        var seatsByCompany = await usageReader.GetCompanySeatsAsync(companyIds);
-        var ownerIds = companies.Select(c => c.OwnerUserId).Distinct().ToList();
-        var ownerNames = await db.Users.Where(u => ownerIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
-
-        var channels = await db.NotificationChannels.Include(c => c.Assignments)
-            .Where(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced)
-            .OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToListAsync();
-        var funding = ChannelFunding.Rank(channels, plan.PaidNotificationNumbers);
-
-        var optionDtos = subscribedOptions.Select(o =>
-        {
-            var rule = planRules.FirstOrDefault(r => r.OptionId == o.OptionId);
-            // N14 — a missing rule means Unavailable (fail-closed, §43.3), never Extra.
-            var availability = rule?.Availability ?? OptionAvailability.Unavailable;
-            var monthly = BillingCalculator.MonthlyPriceFor(availability, o.Quantity, o.Option.PricePerMonth ?? 0m, rule?.IncludedQuantity);
-            // N5, §38.5 — same four-way status the owner screen now uses (OwnerSubscriptionService.
-            // ToSubscribedOptionDto), so the admin card doesn't show "Active" for something the owner
-            // sees as "Недоступно"/"Ожидает оплаты".
-            var status = availability == OptionAvailability.Unavailable ? "Unavailable"
-                : o.EndsAtUtc.HasValue ? "Ending"
-                : o.RequestedAtUtc.HasValue ? "PendingPayment"
-                : "Active";
-            var statusText = status switch
-            {
-                "Unavailable" => "Недоступно на текущем тарифе",
-                "Ending" => $"Действует до {o.EndsAtUtc:dd.MM.yyyy}",
-                "PendingPayment" => "Есть заявка на изменение количества",
-                _ => "Подключена",
-            };
-            return new
-            {
-                optionId = o.OptionId,
-                name = o.Option.Name,
-                description = o.Option.Description,
-                kind = o.Option.Kind.ToString(),
-                unitName = o.Option.UnitName,
-                quantity = o.Quantity,
-                pricePerUnit = o.Option.PricePerMonth ?? 0m,
-                pricePerMonth = monthly,
-                status,
-                statusText,
-                endsAt = o.EndsAtUtc,
-                canDisable = true,
-                paidUntil = o.PaidUntilUtc,
-                requestedQuantity = o.RequestedQuantity,
-                requestedAt = o.RequestedAtUtc,
-            };
-        }).ToList();
-
-        var totalMonthlyPrice = (sub?.PlanConfig?.PricePerMonth ?? 0m) + optionDtos.Sum(o => o.pricePerMonth);
-
-        var pendingRequest = ownerSubscriptionService.BuildPendingRequestDto(
-            account, subscribedOptions.Select(o => o.Option).Concat(await db.SubscriptionOptions.ToListAsync()).DistinctBy(o => o.Id).ToList(),
-            sub?.PlanConfig?.PricePerMonth ?? 0m);
-
-        var subscriptionStatus = OwnerSubscriptionService.SubscriptionStatusFor(sub, now);
-        var trialDto = await BuildAdminTrialDtoAsync(account, sub, now);
-
-        return new
-        {
-            id = account.Id,
-            name = account.Name,
-            ownerUserId = account.OwnerUserId,
-            ownerName = $"{account.Owner.FirstName} {account.Owner.LastName}".Trim(),
-            ownerPhoneMasked = account.Owner.PhoneNumber is null ? null : PhoneDisplayMask.Mask(account.Owner.PhoneNumber),
-            currency = "RUB",
-            status = subscriptionStatus,
-            statusText = OwnerSubscriptionService.StatusTextFor(subscriptionStatus, sub?.PaidUntil),
-            isActive = sub?.IsActive ?? false,
-            planId = sub?.PlanConfigId,
-            plan = new { id = sub?.PlanConfigId, name = sub?.PlanConfig?.Name ?? "Бесплатный", description = sub?.PlanConfig?.Description, pricePerMonth = sub?.PlanConfig?.PricePerMonth ?? 0m, includes = Array.Empty<string>() },
-            options = optionDtos,
-            totalMonthlyPrice,
-            paidUntil = sub?.PaidUntil,
-            companiesUsed = usage.CompaniesUsed,
-            companiesLimit = plan.AccountMaxCompanies,
-            employeesUsed = usage.SeatsUsed,
-            employeesLimit = plan.AccountMaxEmployees,
-            numbersPaid = plan.PaidNotificationNumbers,
-            numbersRegistered = channels.Count,
-            grandfatheredEmployeeBonus = account.GrandfatheredEmployeeBonus,
-            grandfatheredEmployeeBonusText = account.GrandfatheredEmployeeBonus > 0
-                ? $"Дополнительно {account.GrandfatheredEmployeeBonus} мест выдано миграцией тарифов." : null,
-            companies = companies.Select(c => new
-            {
-                companyId = c.Id,
-                companyName = c.Name,
-                ownerUserId = c.OwnerUserId,
-                ownerName = ownerNames.GetValueOrDefault(c.OwnerUserId),
-                employeeCount = seatsByCompany.GetValueOrDefault(c.Id),
-            }).ToList(),
-            channels = channels.Select(c => new
-            {
-                channelId = c.Id,
-                phoneMasked = c.PhoneNumber is null ? null : PhoneDisplayMask.Mask(c.PhoneNumber),
-                state = c.State.ToString(),
-                fundingState = funding.GetValueOrDefault(c.Id, ChannelFundingState.NotPaid).ToString(),
-                createdAt = c.CreatedAt,
-                assignedCompanies = c.Assignments.Count,
-            }).ToList(),
-            pendingRequest,
-            trial = trialDto,
-        };
-    }
-
-    // Cycle 18 (API_CONTRACT_CYCLE18.md §369) — no phone number or its hash anywhere in here (the
-    // trial-phone registry is never exposed by any DTO, admin included — §3 SPEC minimization).
-    // AdminAccountTrialDto.state is a closed enum [Never, Active, Expired] and `trial` itself is NOT
-    // nullable (contract fix, code-review finding #2) — an account that never had a trial gets
-    // { state: "Never" }, not a null object, so the frontend's grant-trial button (rendered only when
-    // state == "Never") is reachable for the one case it actually exists for.
-    private async Task<object> BuildAdminTrialDtoAsync(BillingAccount account, AccountSubscription? sub, DateTime now)
-    {
-        if (account.TrialStartedAtUtc is null) return new { state = "Never" };
-
-        var isCurrentlyUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now)
-            && account.TrialEndsAtUtc.HasValue && account.TrialEndsAtUtc >= now;
-        var state = isCurrentlyUsable ? "Active" : "Expired";
-
-        var grants = await db.TrialGrants.Where(g => g.BillingAccountId == account.Id)
-            .OrderByDescending(g => g.GrantedAtUtc).ToListAsync();
-        var grantedByIds = grants.Select(g => g.GrantedByUserId).Distinct().ToList();
-        var grantedByNames = await db.Users.Where(u => grantedByIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
-
-        int? daysLeft = isCurrentlyUsable && account.TrialEndsAtUtc.HasValue
-            ? Math.Max((int)Math.Ceiling((account.TrialEndsAtUtc.Value - now).TotalDays), 0)
-            : null;
-
-        return new
-        {
-            state,
-            startedAt = account.TrialStartedAtUtc,
-            endsAt = account.TrialEndsAtUtc,
-            daysLeft,
-            durationDays = account.TrialDurationDays,
-            warningThresholdsDays = Services.Billing.TrialWindow.ParseThresholds(account.TrialWarningThresholdsDays),
-            grantSource = account.TrialGrantSource?.ToString(),
-            grantedByName = account.TrialGrantSource == Core.Enums.TrialGrantSource.OwnerSelfService
-                ? null : grantedByNames.GetValueOrDefault(account.TrialGrantedByUserId ?? string.Empty),
-            termsVersion = account.TrialTermsVersion,
-            termsShownAt = account.TrialGrantSource == Core.Enums.TrialGrantSource.OwnerSelfService
-                ? account.TrialStartedAtUtc : null,
-            termsAcknowledgedAt = account.TrialTermsAcknowledgedAtUtc,
-            mailingWindow = new
-            {
-                state = account.TrialChannelFirstAuthorizedAtUtc is null ? "NotStarted"
-                    : account.TrialMailingWindowEndsAtUtc is null || account.TrialMailingWindowEndsAtUtc <= now ? "Ended"
-                    : "Running",
-                startedAt = account.TrialChannelFirstAuthorizedAtUtc,
-                endsAt = account.TrialMailingWindowEndsAtUtc,
-                daysLeft = account.TrialMailingWindowEndsAtUtc is { } end && end > now
-                    ? (int?)Math.Ceiling((end - now).TotalDays) : null,
-            },
-            grants = grants.Select(g => new
-            {
-                grantedAt = g.GrantedAtUtc,
-                endsAt = g.EndsAtUtc,
-                source = g.Source.ToString(),
-                grantedByName = g.Source == Core.Enums.TrialGrantSource.OwnerSelfService
-                    ? "—" : grantedByNames.GetValueOrDefault(g.GrantedByUserId, g.GrantedByUserId),
-                reason = g.Reason,
-                termsVersion = g.TermsVersion,
-                termsSha256 = g.TermsTextSha256,
-                termsShownAt = g.TermsShownAtUtc,
-                termsAcknowledgedAt = g.TermsAcknowledgedAtUtc,
-                warningThresholdsDays = Services.Billing.TrialWindow.ParseThresholds(g.WarningThresholdsDays),
-            }).ToList(),
-        };
-    }
+    // Cycle 22 P5 (§385): shared with the other half of the former AdminBillingController — the body lives
+    // in AdminAccountDtoBuilder, unchanged.
+    private Task<object> BuildAdminAccountDtoAsync(BillingAccount account) =>
+        AdminAccountDtoBuilder.BuildAsync(db, subscriptionResolver, usageReader, ownerSubscriptionService, account);
 
     [HttpPut("billing-accounts/{accountId:guid}/subscription")]
-    public async Task<IActionResult> AssignSubscription(Guid accountId, [FromBody] Billing_AssignSubscriptionInput dto)
+    public async Task<IActionResult> AssignSubscription(Guid accountId, [FromBody] AssignSubscriptionInput dto)
     {
         var account = await db.BillingAccounts.Include(a => a.Owner).FirstOrDefaultAsync(a => a.Id == accountId);
         if (account is null) return NotFound();
@@ -667,6 +250,17 @@ public class AdminBillingController(
                     "TrialPlanNotAssignableHere",
                     "Пробный тариф нельзя назначить через это действие — используйте выдачу/повторную выдачу пробного периода."));
         }
+
+        // ARCHITECTURE_CYCLE20.md §403.2 (US-20-02, Т20-01) — runs AFTER the trial refusal above (Р6:
+        // a trial-plan assignment is rejected first no matter which reason was supplied) and BEFORE any
+        // write. currentPlanId is read directly rather than via the (not-yet-loaded) `sub` below, so a
+        // reason mistake is caught before any option/limit checks run their own queries.
+        var currentPlanId = await db.AccountSubscriptions
+            .Where(s => s.BillingAccountId == accountId).Select(s => (Guid?)s.PlanConfigId).FirstOrDefaultAsync();
+        var reasonRequired = Services.Billing.ManualPlanAssignmentPolicy.RequiresReason(currentPlanId, dto.PlanId, plan?.IsPublic ?? true);
+        var reasonError = Services.Billing.ManualPlanAssignmentPolicy.Validate(dto.ReasonCode, dto.ReasonDetails, reasonRequired);
+        if (reasonError is not null)
+            return BadRequest(reasonError);
 
         var optionIds = optionLines.Select(o => o.OptionId).ToList();
         var options = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).ToListAsync();
@@ -830,6 +424,10 @@ public class AdminBillingController(
             OldOptionsSummary = oldOptionsSummary,
             NewOptionsSummary = newOptionsSummary,
             Comment = dto.Comment,
+            // ARCHITECTURE_CYCLE20.md §403.1 — written whenever supplied, even where not required
+            // (§433.1: "причина, присланная там, где она не обязательна, принимается и пишется").
+            ReasonCode = dto.ReasonCode,
+            ReasonDetails = dto.ReasonDetails,
         });
 
         account.UpdatedAtUtc = now;
@@ -854,9 +452,9 @@ public class AdminBillingController(
     }
 
     [HttpGet("billing-accounts/{accountId:guid}/subscription-history")]
-    public async Task<IActionResult> GetSubscriptionHistory(Guid accountId)
+    public async Task<IActionResult> GetSubscriptionHistory(Guid accountId, CancellationToken ct)
     {
-        var ownerUserId = await db.BillingAccounts.Where(a => a.Id == accountId).Select(a => a.OwnerUserId).FirstOrDefaultAsync();
+        var ownerUserId = await db.BillingAccounts.Where(a => a.Id == accountId).Select(a => a.OwnerUserId).FirstOrDefaultAsync(ct);
         if (ownerUserId is null) return NotFound();
 
         // N3, §49: pre-cycle-5 rows (cycles 1-4) have BillingAccountId == NULL — the column didn't
@@ -865,14 +463,14 @@ public class AdminBillingController(
         // invisible in the admin's own history screen (US-73).
         var logs = await db.SubscriptionChangeLogs
             .Where(l => l.BillingAccountId == accountId || (l.BillingAccountId == null && l.OwnerUserId == ownerUserId))
-            .OrderByDescending(l => l.ChangedAt).ToListAsync();
+            .OrderByDescending(l => l.ChangedAt).ToListAsync(ct);
 
         var planIds = logs.SelectMany(l => new[] { l.OldPlanConfigId, l.NewPlanConfigId }).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
-        var planNames = await db.SubscriptionPlanConfigs.Where(p => planIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name);
+        var planNames = await db.SubscriptionPlanConfigs.Where(p => planIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
 
         var changedByIds = logs.Select(l => l.ChangedByUserId).Distinct().ToList();
         var changedByNames = await db.Users.Where(u => changedByIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim(), ct);
 
         var items = logs.Select(l => new
         {
@@ -891,15 +489,35 @@ public class AdminBillingController(
             newOptionsSummary = l.NewOptionsSummary,
             amount = (decimal?)null,
             comment = l.Comment,
+            // ARCHITECTURE_CYCLE20.md §403.1, API_CONTRACT_CYCLE20.md §433.2 (US-20-02) — all three null
+            // for rows without a reason (every path except manual assignment/trial regrant).
+            reasonCode = l.ReasonCode?.ToString(),
+            reasonTitle = l.ReasonCode is { } code ? Services.Billing.SubscriptionChangeReasonTexts.Title(code) : null,
+            reasonDetails = l.ReasonDetails,
         }).ToList();
 
+        return Ok(new { items });
+    }
+
+    // ARCHITECTURE_CYCLE20.md §403.3, API_CONTRACT_CYCLE20.md §433.3 (US-20-02) — the closed list for
+    // the manual-assignment dropdown; the frontend keeps no titles of its own.
+    [HttpGet("subscription-change-reasons")]
+    public IActionResult GetSubscriptionChangeReasons()
+    {
+        var items = Services.Billing.SubscriptionChangeReasonTexts.All.Select(r => new
+        {
+            code = r.Code.ToString(),
+            title = Services.Billing.SubscriptionChangeReasonTexts.Title(r.Code),
+            detailsRequired = r.DetailsRequired,
+            assignableManually = r.AssignableManually,
+        }).ToList();
         return Ok(new { items });
     }
 
     // ── Subscription requests queue (US-67, US-70) ────────────────────────────────
 
     [HttpGet("subscription-requests")]
-    public async Task<IActionResult> GetSubscriptionRequests([FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize)
+    public async Task<IActionResult> GetSubscriptionRequests([FromQuery] string? status, [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
 
@@ -911,17 +529,17 @@ public class AdminBillingController(
         // N19 — filtered, ordered and paged entirely in SQL; only the page's own rows come back, not
         // every pending request in the system.
         var pendingQuery = db.BillingAccounts.Where(a => a.RequestedAtUtc != null);
-        var total = await pendingQuery.CountAsync();
+        var total = await pendingQuery.CountAsync(ct);
         var page1 = await pendingQuery.Include(a => a.Owner).Include(a => a.RequestedPlan)
             .OrderBy(a => a.RequestedAtUtc)
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
-            .ToListAsync();
-        var allOptions = await db.SubscriptionOptions.ToListAsync();
+            .ToListAsync(ct);
+        var allOptions = await db.SubscriptionOptions.ToListAsync(ct);
 
         var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
-            .Where(s => s.BillingAccountId != null && page1.Select(a => a.Id).Contains(s.BillingAccountId!.Value)).ToListAsync();
+            .Where(s => s.BillingAccountId != null && page1.Select(a => a.Id).Contains(s.BillingAccountId!.Value)).ToListAsync(ct);
         var companyCounts = await db.Companies.Where(c => c.BillingAccountId != null && page1.Select(a => a.Id).Contains(c.BillingAccountId!.Value))
-            .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { AccountId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.AccountId, x => x.Count);
+            .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { AccountId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.AccountId, x => x.Count, ct);
 
         var items = page1.Select(a =>
         {
@@ -997,18 +615,15 @@ public class AdminBillingController(
     }
 }
 
-// ── Local input DTOs (kept private-ish to this controller; distinct names avoid clashing with the
-// legacy record types already declared at the bottom of AdminController.cs) ─────────────────────────
-public record Billing_AdminOptionInput(
-    string Code, string Name, string? Description, string Kind, string? CapabilityKey,
-    decimal? PricePerMonth, string? UnitName, int? MaxQuantity, bool IsPublic = false, bool IsActive = true, int SortOrder = 0);
+// ── Local input DTOs of this controller (the former `Billing_` prefix only avoided a clash with dead
+// twins in DTOs/Billing/AdminBillingDtos.cs, removed in cycle 22 — ARCHITECTURE_CYCLE22.md §371) ────
+public record AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
 
-public record Billing_AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
-
-public record Billing_RegrantTrialInput(string Reason);
-
-public record Billing_AssignSubscriptionInput(
-    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<Billing_AssignOptionInput>? Options = null,
-    decimal? Amount = null, string? Comment = null, Guid? RequestId = null, bool ConfirmLimitOverflow = false);
+public record AssignSubscriptionInput(
+    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<AssignOptionInput>? Options = null,
+    decimal? Amount = null, string? Comment = null, Guid? RequestId = null, bool ConfirmLimitOverflow = false,
+    // ARCHITECTURE_CYCLE20.md §403.1, API_CONTRACT_CYCLE20.md §433.1 (US-20-02) — appended at the end,
+    // both optional, so every existing positional call in the test suite keeps compiling.
+    Core.Enums.SubscriptionChangeReason? ReasonCode = null, string? ReasonDetails = null);
 
 public record RejectRequestDto(string? Comment);

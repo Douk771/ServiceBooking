@@ -1,19 +1,24 @@
 import { Link } from 'react-router-dom'
 import { useLegalText } from '../../hooks/useLegalText'
+import { findSection, splitLegalSections } from '../../utils/legalSections'
 import { Icon } from '../ui/Icon'
+import type { LegalTextKey } from '../../types'
 
 /**
  * API_CONTRACT_CYCLE16.md §276, ARCHITECTURE_CYCLE16.md §245.6 п.2 (TD-03). Shown on `/profile`
- * next to "Скачать мои данные" and on `/profile/delete-account` before the user confirms deletion.
+ * next to "Скачать мои данные" (`GuestDataGateNotice`) and on `/profile/delete-account` before the
+ * user confirms deletion (`GuestDataGateDeleteNotice`, cycle 20 — Т20-08, its own key/text, distinct
+ * from the export one: §411 table, file 15 vs file 14).
  *
  * 🔴 The ONLY allowed trigger is `profile.phoneVerified === false` (§276.1/§272) — never "the export
  * came back empty" or any other inference from response contents. Passing anything else here would
  * turn this component into the oracle the contract explicitly forbids.
  *
- * Text is never hardcoded here (§276.3): it comes from `GET /api/legal/texts/GuestDataGateNotice`
- * (`useLegalText`, same mechanism as `PublicAddressNotice`), or — until legal-counsel publishes that
- * key — a neutral fallback matching ARCHITECTURE_CYCLE16.md §245.6 п.3 verbatim, so the screen is
- * never empty while the key is missing.
+ * Text is never hardcoded here (§276.3): it comes from `GET /api/legal/texts/{textKey}` (`useLegalText`,
+ * same mechanism as `PublicAddressNotice`), section "Текст" only (§411 — the manifest file carries a
+ * служебная справка paragraph too, which must not leak into the UI), or — until legal-counsel
+ * publishes the key, or if the "Текст" heading isn't found — a neutral fallback matching
+ * ARCHITECTURE_CYCLE16.md §245.6 п.3 verbatim, so the screen is never empty while the key is missing.
  */
 const FALLBACK_TEXT =
   'Эти сведения доступны после подтверждения номера телефона. Если подтвердить номер невозможно, ' +
@@ -23,11 +28,15 @@ interface Props {
   /** Only condition under which this component should even be mounted — enforced by callers, not
    *  re-derived here, so there is exactly one place in the codebase making this decision. */
   phoneVerified: boolean
+  /** Cycle 20 — which uiText to read; defaults to the export-screen key for callers that don't care. */
+  textKey?: Extract<LegalTextKey, 'GuestDataGateNotice' | 'GuestDataGateDeleteNotice'>
   className?: string
 }
 
-export function GuestDataGateNotice({ phoneVerified, className }: Props) {
-  const { data: text } = useLegalText('GuestDataGateNotice')
+export function GuestDataGateNotice({ phoneVerified, textKey = 'GuestDataGateNotice', className }: Props) {
+  const { data: text } = useLegalText(textKey)
+  const section = text ? findSection(splitLegalSections(text.contentHtml), 'Текст') : null
+  const html = section?.html ?? text?.contentHtml
 
   if (phoneVerified) return null
 
@@ -37,11 +46,8 @@ export function GuestDataGateNotice({ phoneVerified, className }: Props) {
     >
       <Icon name="alert-circle" size={15} strokeWidth={1.8} className="shrink-0 mt-0.5" />
       <div className="flex flex-col gap-1.5">
-        {text?.contentHtml ? (
-          <div
-            className="[&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_a]:underline"
-            dangerouslySetInnerHTML={{ __html: text.contentHtml }}
-          />
+        {html ? (
+          <div className="[&_p]:mb-1.5 [&_p:last-child]:mb-0 [&_a]:underline" dangerouslySetInnerHTML={{ __html: html }} />
         ) : (
           <p>{FALLBACK_TEXT}</p>
         )}

@@ -6,7 +6,7 @@ import type { AddressNoticeResultDto, Company } from '../types'
  * Kept as a named type because `Company` is a hand-maintained interface, not read off the
  * generated schema (§388.3).
  */
-export interface SaveCompanyAddressResult {
+interface SaveCompanyAddressResult {
   company: Company
 }
 

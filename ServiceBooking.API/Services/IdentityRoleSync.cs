@@ -34,8 +34,8 @@ public static class IdentityRoleSync
         // two roles this function owns. A Client-role CompanyMember row (a company's own customer, see
         // MastersController's comment on the same distinction) never contributes anything here.
         var desired = await db.CompanyMembers
-            .Where(cm => cm.UserId == userId &&
-                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner))
+            .Where(CompanyMembership.IsStaffRole)
+            .Where(cm => cm.UserId == userId)
             .Select(cm => cm.Role)
             .Distinct()
             .ToListAsync();

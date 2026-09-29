@@ -13,9 +13,7 @@ import prettierConfig from 'eslint-config-prettier'
 // is last in the array so it can turn off any formatting rule that would otherwise fight Prettier.
 export default tseslint.config(
   {
-    // design_handoff_site_redesign/ is static reference markup/JS handed off by design, not app
-    // source built by Vite — it isn't part of tsconfig's `include` either.
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'design_handoff_site_redesign/**'],
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

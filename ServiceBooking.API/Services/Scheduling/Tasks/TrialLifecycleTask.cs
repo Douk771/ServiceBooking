@@ -61,7 +61,7 @@ public sealed class TrialLifecycleTask(
         var now = clock.UtcNow;
         var phaseFailures = new List<string>();
 
-        var windowsOpened = await RunPhaseAsync("self-heal-window-start", () => SelfHealMissedWindowStartsAsync(now, ct), phaseFailures);
+        var windowsOpened = await RunPhaseAsync("self-heal-window-start", () => SelfHealMissedWindowStartsAsync(ct), phaseFailures);
         var windowsClosed = await RunPhaseAsync("close-window", () => CloseExpiredWindowsAsync(now, ct), phaseFailures);
         var warned = await RunPhaseAsync("warn", () => WarnApproachingExpiryAsync(now, ct), phaseFailures);
 
@@ -148,7 +148,7 @@ public sealed class TrialLifecycleTask(
     /// never ran (a channel connected through a code path added later that forgot to route through
     /// <c>Apply</c>, a restored backup, etc.). The window is dated from the REAL earliest authorization,
     /// never from the moment this pass happens to run.</summary>
-    private async Task<int> SelfHealMissedWindowStartsAsync(DateTime now, CancellationToken ct)
+    private async Task<int> SelfHealMissedWindowStartsAsync(CancellationToken ct)
     {
         var opened = 0;
         // Keyset cursor: StartIfDueAsync's own guards (TrialEndsAtUtc/TrialMailingWindowDays missing, or

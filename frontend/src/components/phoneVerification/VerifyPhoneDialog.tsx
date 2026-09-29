@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useOverlayDismiss } from '../../hooks/useOverlayDismiss'
 import { Icon } from '../ui/Icon'
 import { Button } from '../ui/Button'
 import { VerificationStatus } from './VerificationStatus'
@@ -39,9 +40,9 @@ export function VerifyPhoneDialog({ session, status, statusError, onClose, onRes
     }
   }
 
-  const handleKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
-    if (e.key === 'Escape') onClose()
-  }
+  // Esc (from anywhere, not only while focus is inside) and a genuine backdrop click — the same
+  // mechanism as every <Modal> (cycle 22, ARCHITECTURE_CYCLE22.md §377).
+  const dismiss = useOverlayDismiss(onClose)
 
   return (
     <div
@@ -49,13 +50,9 @@ export function VerifyPhoneDialog({ session, status, statusError, onClose, onRes
       aria-modal="true"
       aria-labelledby="verify-phone-dialog-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4 py-8"
-      onClick={onClose}
-      onKeyDown={handleKeyDown}
+      {...dismiss}
     >
-      <div
-        className="bg-white rounded-3xl border border-line shadow-soft max-w-[420px] w-full p-7 max-h-full overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="bg-white rounded-3xl border border-line shadow-soft max-w-[420px] w-full p-7 max-h-full overflow-y-auto">
         <div className="flex items-start justify-between gap-3 mb-1">
           <h2 id="verify-phone-dialog-title" className="font-serif text-xl text-ink">
             Подтверждение номера

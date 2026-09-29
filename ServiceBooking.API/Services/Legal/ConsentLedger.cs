@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -21,9 +20,13 @@ public sealed record ConsentGrant(
     ConsentSource Source,
     string? IpAddress = null,
     string? UserAgent = null,
-    string? RecordedByUserId = null);
+    string? RecordedByUserId = null,
+    // ARCHITECTURE_CYCLE20.md §402.2 (US-20-01) — the printed paper form's number for a `PaperForm`-source
+    // grant, or null when the salon used its own paper form. Meaningless (and always null) for every
+    // other source; appended at the end so every pre-cycle-20 positional construction keeps compiling.
+    string? FormId = null);
 
-/// <summary>Read-only projection of a ConsentRecord row for CurrentAsync/CurrentAllAsync/HistoryAsync —
+/// <summary>Read-only projection of a ConsentRecord row for CurrentAsync/HistoryAsync —
 /// callers of the ledger get a value they can't accidentally track/save through, only GrantAsync/
 /// RevokeAsync write.</summary>
 public sealed record ConsentState(
@@ -36,7 +39,11 @@ public sealed record ConsentState(
     Guid? CompanyId,
     DateTime GrantedAtUtc,
     DateTime? RevokedAtUtc,
-    string? RevokeReason);
+    string? RevokeReason,
+    // ARCHITECTURE_CYCLE20.md §402.2 — the paper form's printed number for a PaperForm-source row, or
+    // null for every other source (or a PaperForm row where the salon used its own form). Appended at the
+    // end so every pre-cycle-20 positional construction of this record keeps compiling.
+    string? FormId = null);
 
 /// <summary>
 /// The single reader and single writer of ConsentRecords (ARCHITECTURE_CYCLE5.md §45.1, §45.4). Scoped,
@@ -65,29 +72,10 @@ public class ConsentLedger(AppDbContext db)
         return record is null ? null : ToState(record);
     }
 
-    /// <summary>Every (DocumentKey, Purpose) combination this subject currently has a live grant for —
-    /// one row per combination, the most recent non-revoked one. Used to render "Мои согласия"
-    /// (API_CONTRACT_CYCLE5.md §41.1 `granted`), never the full journal (that's a separate, explicit
-    /// full-history read — this method's whole purpose is to answer "what applies right now").</summary>
-    public async Task<IReadOnlyList<ConsentState>> CurrentAllAsync(ConsentSubject subject, CancellationToken ct = default)
-    {
-        var candidates = await CurrentRecordsQuery(subject)
-            .OrderByDescending(c => c.GrantedAtUtc)
-            .ToListAsync(ct);
-
-        // Grouped in memory, not in SQL: per-subject row counts are small (a handful of document keys
-        // times a handful of purposes), and a window-function/DISTINCT ON translation would buy nothing
-        // here but complexity — this method is never on the hot path (see class comment).
-        return candidates
-            .GroupBy(c => (c.DocumentKey, c.Purpose))
-            .Select(g => ToState(g.First())) // already ordered by GrantedAtUtc desc
-            .ToList();
-    }
-
     /// <summary>The FULL journal for one subject — every row, revoked or not, newest first. Used where a
     /// human needs to see everything they ever did (API_CONTRACT_CYCLE5.md §41.1 `history`, §49
-    /// `consents` export section), never for an access-control decision (that's CurrentAsync/
-    /// CurrentAllAsync above — a revoked row must never look "current" to anything but this audit view).
+    /// `consents` export section), never for an access-control decision (that's CurrentAsync
+    /// above — a revoked row must never look "current" to anything but this audit view).
     ///
     /// Code review В3: for a <see cref="ConsentSubject.ForUser"/> subject, <paramref name="knownPhone"/>
     /// (the account's current canonical phone, when known) additionally pulls in every row recorded
@@ -168,7 +156,8 @@ public class ConsentLedger(AppDbContext db)
             GrantedAtUtc = now,
             IpAddress = grant.IpAddress,
             UserAgent = grant.UserAgent,
-            RecordedByUserId = grant.RecordedByUserId
+            RecordedByUserId = grant.RecordedByUserId,
+            FormId = grant.FormId,
         };
 
         db.ConsentRecords.Add(record);
@@ -183,27 +172,52 @@ public class ConsentLedger(AppDbContext db)
     /// once, matching API_CONTRACT_CYCLE5.md §41.3's "purpose: null → отзывается согласие целиком".
     /// Returns the number of rows actually revoked; 0 is a legitimate, idempotent answer ("nothing to
     /// revoke"), not an error (US-68 p.7).
+    ///
+    /// Composable under an AMBIENT transaction, same pattern as <see cref="WrittenHealthConsentRevoker.RevokeAsync"/>
+    /// (code review, cycle 20: <c>ProfileController.RevokeSalonConsentAsync</c>'s HealthDataConsent branch
+    /// used to call this AND <see cref="WrittenHealthConsentRevoker"/> as two independent transactions — a
+    /// failure between them left the ledger revoked but the paper mark/health note untouched, or vice
+    /// versa). Only opens (and later commits) its OWN transaction and advisory lock when
+    /// <c>db.Database.CurrentTransaction</c> is null.
     /// </summary>
-    public async Task<int> RevokeAsync(ConsentSubject subject, string documentKey, ConsentPurpose? purpose, string? reason, CancellationToken ct = default)
+    public async Task<int> RevokeAsync(
+        ConsentSubject subject, string documentKey, ConsentPurpose? purpose, string? reason,
+        // ARCHITECTURE_CYCLE20.md §402.2 — who lifted the mark; null (the default) means the subject
+        // themselves did it from their profile, or a retention rule did — every pre-cycle-20 call site
+        // keeps its exact prior meaning unchanged.
+        string? revokedByUserId = null, CancellationToken ct = default)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await AdvisoryLock.AcquireAsync(db, subject.LockKey);
-
-        var query = CurrentRecordsQuery(subject).Where(c => c.DocumentKey == documentKey);
-        if (purpose is not null)
-            query = query.Where(c => c.Purpose == purpose);
-
-        var toRevoke = await query.ToListAsync(ct);
-        var now = DateTime.UtcNow;
-        foreach (var record in toRevoke)
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
+        if (ownsTransaction)
         {
-            record.RevokedAtUtc = now;
-            record.RevokeReason = reason;
+            transaction = await db.Database.BeginTransactionAsync(ct);
+            await AdvisoryLock.AcquireAsync(db, subject.LockKey);
         }
 
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return toRevoke.Count;
+        try
+        {
+            var query = CurrentRecordsQuery(subject).Where(c => c.DocumentKey == documentKey);
+            if (purpose is not null)
+                query = query.Where(c => c.Purpose == purpose);
+
+            var toRevoke = await query.ToListAsync(ct);
+            var now = DateTime.UtcNow;
+            foreach (var record in toRevoke)
+            {
+                record.RevokedAtUtc = now;
+                record.RevokeReason = reason;
+                record.RevokedByUserId = revokedByUserId;
+            }
+
+            await db.SaveChangesAsync(ct);
+            if (ownsTransaction) await transaction!.CommitAsync(ct);
+            return toRevoke.Count;
+        }
+        finally
+        {
+            if (transaction is not null) await transaction.DisposeAsync();
+        }
     }
 
     /// <summary>The one place both partial indexes (IX_ConsentRecords_CurrentByUser,
@@ -218,5 +232,5 @@ public class ConsentLedger(AppDbContext db)
     }
 
     private static ConsentState ToState(ConsentRecord r) =>
-        new(r.Id, r.DocumentKey, r.Purpose, r.DocumentVersion, r.Act, r.Source, r.CompanyId, r.GrantedAtUtc, r.RevokedAtUtc, r.RevokeReason);
+        new(r.Id, r.DocumentKey, r.Purpose, r.DocumentVersion, r.Act, r.Source, r.CompanyId, r.GrantedAtUtc, r.RevokedAtUtc, r.RevokeReason, r.FormId);
 }

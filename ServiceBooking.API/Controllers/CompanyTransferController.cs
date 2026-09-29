@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
-using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -23,9 +22,9 @@ namespace ServiceBooking.API.Controllers;
 public class CompanyTransferController(AppDbContext db, CompanyTransferService transferService, AccountUsageReader usageReader) : ControllerBase
 {
     [HttpGet("{companyId:guid}/transfer/preview")]
-    public async Task<IActionResult> Preview(Guid companyId, [FromQuery] Guid targetBillingAccountId, [FromQuery] string? newOwnerUserId)
+    public async Task<IActionResult> Preview(Guid companyId, [FromQuery] Guid targetBillingAccountId, [FromQuery] string? newOwnerUserId, CancellationToken ct)
     {
-        var company = await db.Companies.FindAsync(companyId);
+        var company = await db.Companies.FindAsync([companyId], ct);
         if (company is null) return NotFound();
 
         var result = await transferService.PreviewAsync(companyId, targetBillingAccountId, newOwnerUserId);
@@ -43,6 +42,11 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             return result.Failure!.Kind switch
             {
                 TransferFailureKind.CompanyNotFound or TransferFailureKind.TargetAccountNotFound => NotFound(),
+                // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.1 (US-20-07, LG6) — the
+                // one blocked-preview case that also sets ownerChangeRequired: true, so the frontend
+                // knows a new owner (not a different target account) is the fix.
+                TransferFailureKind.CurrentOwnerNotLinkedToTargetAccount => Ok(await BuildBlockedPreviewDtoAsync(
+                    company, targetBillingAccountId, result.Failure!.Message, ownerChangeRequired: true)),
                 _ => Ok(await BuildBlockedPreviewDtoAsync(company, targetBillingAccountId, result.Failure!.Message)),
             };
         }
@@ -66,9 +70,9 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             ownerUnchangedNotice = $"Ответственный не меняется: компанией продолжит управлять {currentOwnerName}.";
         }
 
-        var willDetach = await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == companyId);
+        var willDetach = await db.ChannelCompanyAssignments.AnyAsync(a => a.CompanyId == companyId, ct);
         var willCancel = await db.OutboundNotifications.CountAsync(n =>
-            n.CompanyId == companyId && n.Status == NotificationStatus.Pending);
+            n.CompanyId == companyId && n.Status == NotificationStatus.Pending, ct);
 
         var dto = new CompanyTransferPreviewDto(
             company.Id, company.Name, seatsOfCompany, sourceSide, targetSide,
@@ -90,31 +94,36 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
     {
         var changedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var result = await transferService.TransferAsync(
-            companyId, dto.TargetBillingAccountId, dto.NewOwnerUserId, dto.ConfirmSeatOverflow, changedByUserId);
+            companyId, dto.TargetBillingAccountId, dto.NewOwnerUserId, dto.ConfirmSeatOverflow, changedByUserId,
+            dto.ConfirmRightsTransfer);
 
         if (result.Success) return NoContent();
 
         return result.Failure!.Kind switch
         {
             TransferFailureKind.CompanyNotFound or TransferFailureKind.TargetAccountNotFound => NotFound(),
-            TransferFailureKind.NewOwnerNotFound or TransferFailureKind.NewOwnerDeleted =>
+            TransferFailureKind.NewOwnerNotFound or TransferFailureKind.NewOwnerDeleted
+                // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.2 (Т20-09 п. 1).
+                or TransferFailureKind.RightsTransferNotConfirmed =>
                 new ContentResult { StatusCode = StatusCodes.Status400BadRequest, Content = result.Failure.Message, ContentType = "text/plain; charset=utf-8" },
             TransferFailureKind.CompanyLimitExceeded =>
                 new ContentResult { StatusCode = StatusCodes.Status402PaymentRequired, Content = result.Failure.Message, ContentType = "text/plain; charset=utf-8" },
+            // CurrentOwnerNotLinkedToTargetAccount (§407.2, LG6) falls through to this default 409,
+            // same status as NewOwnerNotLinkedToTargetAccount already gets.
             _ => new ContentResult { StatusCode = StatusCodes.Status409Conflict, Content = result.Failure.Message, ContentType = "text/plain; charset=utf-8" },
         };
     }
 
     [HttpGet("{companyId:guid}/owner-history")]
-    public async Task<IActionResult> GetOwnerHistory(Guid companyId)
+    public async Task<IActionResult> GetOwnerHistory(Guid companyId, CancellationToken ct)
     {
-        if (!await db.Companies.AnyAsync(c => c.Id == companyId)) return NotFound();
+        if (!await db.Companies.AnyAsync(c => c.Id == companyId, ct)) return NotFound();
 
         var logs = await db.CompanyOwnerChangeLogs.Where(l => l.CompanyId == companyId)
-            .OrderByDescending(l => l.ChangedAtUtc).ToListAsync();
+            .OrderByDescending(l => l.ChangedAtUtc).ToListAsync(ct);
 
         var userIds = logs.SelectMany(l => new[] { l.OldOwnerUserId, l.NewOwnerUserId, l.ChangedByUserId }).Distinct().ToList();
-        var names = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+        var names = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim(), ct);
 
         var items = logs.Select(l => new CompanyOwnerChangeDto(
             l.Id, l.ChangedAtUtc, names.GetValueOrDefault(l.ChangedByUserId, l.ChangedByUserId),
@@ -134,7 +143,8 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
         return new TransferSideDto(billingAccountId.Value, account?.Name, sub?.PlanConfig?.Name);
     }
 
-    private async Task<CompanyTransferPreviewDto> BuildBlockedPreviewDtoAsync(Company company, Guid targetBillingAccountId, string blockReason)
+    private async Task<CompanyTransferPreviewDto> BuildBlockedPreviewDtoAsync(
+        Company company, Guid targetBillingAccountId, string blockReason, bool ownerChangeRequired = false)
     {
         var sourceSide = await BuildSideDtoAsync(company.BillingAccountId);
         var targetSide = await BuildSideDtoAsync(targetBillingAccountId);
@@ -144,7 +154,8 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             company.Id, company.Name, seatsOfCompany, sourceSide, targetSide,
             TargetCompaniesUsed: 0, TargetCompaniesLimit: null, TargetSeatsUsed: 0, TargetSeatsLimit: null,
             CanTransfer: false, BlockReason: blockReason, SeatOverflow: false, SeatOverflowText: null,
-            WillDetachFromChannel: false, WillCancelPendingNotifications: 0, NewOwner: null, OwnerUnchangedNotice: null);
+            WillDetachFromChannel: false, WillCancelPendingNotifications: 0, NewOwner: null, OwnerUnchangedNotice: null,
+            OwnerChangeRequired: ownerChangeRequired);
     }
 
     private async Task<TransferNewOwnerDto> BuildNewOwnerDtoAsync(Guid companyId, Guid targetBillingAccountId, string newOwnerUserId)

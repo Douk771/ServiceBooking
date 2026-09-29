@@ -48,11 +48,11 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
         ResetToDefault();
     }
 
-    /// <summary>Restores the manifest to five Material, draft documents (+ six ui-texts) with a fresh
+    /// <summary>Restores the manifest to five Material, draft documents (+ twelve ui-texts) with a fresh
     /// version tag (unique per call so tests don't collide with whatever a previous test in this run
     /// already accepted). Only Privacy/TermsClient's version is what LEG- tests bump in this file — the
-    /// other three documents and the six texts get their own, always-valid version so
-    /// LegalDocumentProvider.LoadSnapshot's "all five types / all six keys present" requirement
+    /// other three documents and the twelve texts get their own, always-valid version so
+    /// LegalDocumentProvider.LoadSnapshot's "all five types / all twelve keys present" requirement
     /// (LegalDocumentProvider.cs's own LoadSnapshot) is satisfied on every call, not just the first.</summary>
     public string ResetToDefault()
     {
@@ -66,7 +66,7 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
     /// now requires (was two documents, "Privacy"/"Terms") — every LEG- test in this file only ever cares
     /// about Privacy/TermsClient's version/isDraft/changeKind (the two `gate: Global` documents a Material
     /// change on either one actually blocks), so those two are the ones driven by this method's
-    /// parameters; TermsOwner/PdnConsent/ChannelRiskNotice and the six ui-texts are written with their own
+    /// parameters; TermsOwner/PdnConsent/ChannelRiskNotice and the twelve ui-texts are written with their own
     /// fixed, always-non-draft version so they never trip the "isDraft without -draft suffix" or
     /// "PdnConsent needs purposes" checks. `version` must already end with "-draft" if isDraft is true —
     /// the provider rejects an isDraft document whose version doesn't carry the suffix
@@ -96,6 +96,13 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
                      ("health-data-consent.html", "Согласие на сведения о здоровье"),
                      ("guardian-confirmation.html", "Подтверждение полномочий"),
                      ("public-address-notice.html", "Предупреждение о публичности адреса"),
+                     // ARCHITECTURE_CYCLE20.md §411/§412 — five more required uiTexts keys, same
+                     // fail-fast rule as the other six: LoadSnapshot rejects a manifest missing any of them.
+                     ("guest-data-gate-notice.html", "Врезка о неполной выгрузке данных"),
+                     ("guest-data-gate-delete-notice.html", "Врезка на экране удаления учётной записи"),
+                     ("guest-data-gate-revoke-notice.html", "Врезки при отзыве согласия"),
+                     ("health-written-consent-form.html", "Бланк письменного согласия"),
+                     ("company-photo-people-notice.html", "Подсказка при загрузке фотографий салона"),
                  })
             File.WriteAllText(Path.Combine(LegalRoot, file), $"<p>{title}.</p>");
 
@@ -120,7 +127,12 @@ public sealed class LegalDocumentsTestFactory : WebApplicationFactory<Program>
             { "key": "PhotoConsent", "version": "fixed-text-1", "isDraft": false, "file": "photo-consent.html" },
             { "key": "HealthDataConsent", "version": "fixed-text-1", "isDraft": false, "file": "health-data-consent.html" },
             { "key": "GuardianConfirmation", "version": "fixed-text-1", "isDraft": false, "file": "guardian-confirmation.html" },
-            { "key": "PublicAddressNotice", "version": "fixed-text-1", "isDraft": false, "file": "public-address-notice.html" }
+            { "key": "PublicAddressNotice", "version": "fixed-text-1", "isDraft": false, "file": "public-address-notice.html" },
+            { "key": "GuestDataGateNotice", "version": "fixed-text-1", "isDraft": false, "file": "guest-data-gate-notice.html" },
+            { "key": "GuestDataGateDeleteNotice", "version": "fixed-text-1", "isDraft": false, "file": "guest-data-gate-delete-notice.html" },
+            { "key": "GuestDataGateRevokeNotice", "version": "fixed-text-1", "isDraft": false, "file": "guest-data-gate-revoke-notice.html" },
+            { "key": "HealthDataWrittenConsentForm", "version": "fixed-text-1", "isDraft": false, "file": "health-written-consent-form.html" },
+            { "key": "CompanyPhotoPeopleNotice", "version": "fixed-text-1", "isDraft": false, "file": "company-photo-people-notice.html" }
           ]
         }
         """);

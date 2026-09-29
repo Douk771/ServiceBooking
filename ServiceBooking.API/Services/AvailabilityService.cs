@@ -23,6 +23,7 @@ public class AvailabilityService(AppDbContext db)
         bool staffMode = false)
     {
         var workingHoursByDate = await db.WorkingHours
+            .AsNoTracking() // read-only (§375 F9)
             .Include(wh => wh.Breaks)
             .Where(wh => wh.MasterId == masterId && wh.CompanyId == companyId && wh.Date >= from && wh.Date <= to)
             .ToListAsync();

@@ -6,15 +6,12 @@ using System.Web;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.PhoneVerification;
 using ServiceBooking.API.Services.PhoneVerification;
-using ServiceBooking.Core.Enums;
-using ServiceBooking.Infrastructure.Data;
 using ServiceBooking.API.Services.PhoneVerification.Max;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;

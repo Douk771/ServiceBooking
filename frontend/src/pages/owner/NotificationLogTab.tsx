@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDate, fmtDateTime } from '../../utils/dateFormat'
 import { notificationsApi } from '../../api/notifications'
 import { Card } from '../../components/ui/Card'
 import { Icon } from '../../components/ui/Icon'
@@ -60,7 +59,7 @@ export function NotificationLogTab({ companyId }: { companyId: string }) {
           <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
             <p className="text-sm font-semibold text-ink">Сводка за {summary.days} дней</p>
             {summary.channelPaidUntil && (
-              <p className="text-xs text-muted">канал оплачен до {format(parseISO(summary.channelPaidUntil), 'd MMM yyyy', { locale: ru })}</p>
+              <p className="text-xs text-muted">канал оплачен до {fmtDate(summary.channelPaidUntil)}</p>
             )}
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 text-center">
@@ -166,7 +165,7 @@ export function NotificationLogTab({ companyId }: { companyId: string }) {
                     {TRANSPORT_LABELS[n.transport]}
                   </span>
                 </div>
-                <p className="text-xs text-muted mt-0.5">{format(parseISO(n.createdAt), 'd MMM yyyy, HH:mm', { locale: ru })}</p>
+                <p className="text-xs text-muted mt-0.5">{fmtDateTime(n.createdAt)}</p>
               </div>
               <span
                 className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ${

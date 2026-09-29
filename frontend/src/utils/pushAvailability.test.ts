@@ -1,11 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { getPushUnavailableReason, detectIosSafariNotInstalled, type PushAvailabilityInput } from './pushAvailability'
+import {
+  getPushUnavailableReason,
+  detectIosEnvironment,
+  type IosEnvironment,
+  type PushAvailabilityInput,
+} from './pushAvailability'
+
+const IOS_TAB: IosEnvironment = { isIos: true, isStandalone: false, version: [17, 4] }
+const IOS_APP: IosEnvironment = { isIos: true, isStandalone: true, version: [17, 4] }
 
 const BASE: PushAvailabilityInput = {
   serviceWorkerSupported: true,
   isSecureContext: true,
   permission: 'default',
-  isIosSafariNotInstalled: false,
+  ios: { isIos: false, isStandalone: false, version: null },
   platformEnabled: true,
   companyStaffPushEnabled: true,
 }
@@ -32,7 +40,7 @@ describe('getPushUnavailableReason (ARCHITECTURE_CYCLE9.md §105.10)', () => {
   })
 
   it('iOS Safari not installed to home screen → ios-safari-not-installed', () => {
-    expect(getPushUnavailableReason({ ...BASE, isIosSafariNotInstalled: true })).toBe('ios-safari-not-installed')
+    expect(getPushUnavailableReason({ ...BASE, ios: IOS_TAB })).toBe('ios-safari-not-installed')
   })
 
   it('GET /push/config enabled:false → platform-disabled', () => {
@@ -48,30 +56,111 @@ describe('getPushUnavailableReason (ARCHITECTURE_CYCLE9.md §105.10)', () => {
   })
 })
 
-describe('detectIosSafariNotInstalled', () => {
+// Cycle-9 scenarios, formerly asserted through the removed `detectIosSafariNotInstalled` wrapper
+// (cycle 22): same inputs, checked against the live `detectIosEnvironment`.
+describe('detectIosEnvironment — cycle-9 scenarios', () => {
   const IPHONE_UA =
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
   const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36'
 
   it('iPhone Safari, not standalone → true', () => {
-    expect(detectIosSafariNotInstalled({ userAgent: IPHONE_UA, maxTouchPoints: 5 })).toBe(true)
+    expect(detectIosEnvironment({ userAgent: IPHONE_UA, maxTouchPoints: 5 })).toMatchObject({ isIos: true, isStandalone: false })
   })
 
   it('iPhone Safari installed to home screen (standalone) → false', () => {
     const nav = { userAgent: IPHONE_UA, maxTouchPoints: 5, standalone: true } as Navigator & { standalone: boolean }
-    expect(detectIosSafariNotInstalled(nav)).toBe(false)
+    expect(detectIosEnvironment(nav)).toMatchObject({ isIos: true, isStandalone: true })
   })
 
   it('Android Chrome → false, not iOS at all', () => {
-    expect(detectIosSafariNotInstalled({ userAgent: ANDROID_UA, maxTouchPoints: 5 })).toBe(false)
+    expect(detectIosEnvironment({ userAgent: ANDROID_UA, maxTouchPoints: 5 }).isIos).toBe(false)
   })
 
   it('desktop → false', () => {
     expect(
-      detectIosSafariNotInstalled({
+      detectIosEnvironment({
         userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15',
         maxTouchPoints: 0,
-      }),
+      }).isIos,
     ).toBe(false)
+  })
+})
+
+// ARCHITECTURE_CYCLE21.md §362 — cycle 21 (Q13 answered "yes": push on iPhone via the Home Screen).
+describe('CY21 — iPhone: Home Screen install is the fix, and the page says so', () => {
+  it('CY21-01 an iOS Safari tab has no PushManager → still ios-safari-not-installed, NOT unsupported-browser', () => {
+    // The cycle-9 bug: 'unsupported-browser' won, so the iPhone copy was unreachable in real Safari.
+    expect(
+      getPushUnavailableReason({ ...BASE, ios: IOS_TAB, serviceWorkerSupported: false, permission: 'unsupported' }),
+    ).toBe('ios-safari-not-installed')
+  })
+
+  it('CY21-02 installed app on iOS ≥ 16.4 with everything available → toggle offered', () => {
+    expect(getPushUnavailableReason({ ...BASE, ios: IOS_APP })).toBeNull()
+  })
+
+  it('CY21-03 installed app on iOS 16.3 → ios-version-too-old, even though the APIs look absent', () => {
+    expect(
+      getPushUnavailableReason({ ...BASE, ios: { ...IOS_APP, version: [16, 3] }, serviceWorkerSupported: false }),
+    ).toBe('ios-version-too-old')
+  })
+
+  it('CY21-04 exactly iOS 16.4 is enough', () => {
+    expect(getPushUnavailableReason({ ...BASE, ios: { ...IOS_APP, version: [16, 4] } })).toBeNull()
+  })
+
+  it('CY21-05 unknown iOS version does not claim "update iOS"', () => {
+    expect(getPushUnavailableReason({ ...BASE, ios: { ...IOS_APP, version: null } })).toBeNull()
+  })
+
+  it('CY21-06 permission denied inside the installed app → iPhone Settings instructions, not the padlock', () => {
+    expect(getPushUnavailableReason({ ...BASE, ios: IOS_APP, permission: 'denied' })).toBe('ios-permission-denied')
+    expect(getPushUnavailableReason({ ...BASE, permission: 'denied' })).toBe('permission-denied')
+  })
+
+  it('CY21-07 installed app still respects platform/company switches', () => {
+    expect(getPushUnavailableReason({ ...BASE, ios: IOS_APP, platformEnabled: false })).toBe('platform-disabled')
+    expect(getPushUnavailableReason({ ...BASE, ios: IOS_APP, companyStaffPushEnabled: false })).toBe('company-disabled')
+  })
+})
+
+describe('CY21 — detectIosEnvironment', () => {
+  const IPHONE_174 =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1'
+  const IPHONE_CHROME_163 =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0 Mobile/15E148 Safari/604.1'
+  const IPAD_DESKTOP_UA =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15'
+
+  it('CY21-08 iPhone Safari tab → iOS, not standalone, version parsed from "OS 17_4"', () => {
+    expect(detectIosEnvironment({ userAgent: IPHONE_174, maxTouchPoints: 5 })).toEqual({
+      isIos: true,
+      isStandalone: false,
+      version: [17, 4],
+    })
+  })
+
+  it('CY21-09 display-mode: standalone alone (no navigator.standalone) counts as installed', () => {
+    expect(detectIosEnvironment({ userAgent: IPHONE_174, maxTouchPoints: 5 }, true).isStandalone).toBe(true)
+  })
+
+  it('CY21-10 Chrome on iPhone is treated like Safari (same WebKit limitation), version from the OS token', () => {
+    expect(detectIosEnvironment({ userAgent: IPHONE_CHROME_163, maxTouchPoints: 5 })).toEqual({
+      isIos: true,
+      isStandalone: false,
+      version: [16, 3],
+    })
+  })
+
+  it('CY21-11 iPadOS with a desktop UA → iOS, version from "Version/18.1"', () => {
+    expect(detectIosEnvironment({ userAgent: IPAD_DESKTOP_UA, maxTouchPoints: 5 })).toEqual({
+      isIos: true,
+      isStandalone: false,
+      version: [18, 1],
+    })
+  })
+
+  it('CY21-12 a real Mac (no touch) is not iOS', () => {
+    expect(detectIosEnvironment({ userAgent: IPAD_DESKTOP_UA, maxTouchPoints: 0 }).isIos).toBe(false)
   })
 })

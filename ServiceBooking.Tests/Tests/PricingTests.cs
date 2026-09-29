@@ -1,7 +1,7 @@
 using System.Net;
+using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using FluentAssertions;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Core.Entities;

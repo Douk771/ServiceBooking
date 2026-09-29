@@ -946,6 +946,49 @@ public class DeploymentSafetyChecksTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    // ── CY20-U-10 (ARCHITECTURE_CYCLE20.md §406.1/§406.2, Т20-06) ──────────────────────────────
+
+    [Fact]
+    public void ValidateRetentionPeriods_BookingEventDaysZero_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:BookingEventDays"] = "0" });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*BookingEventDays*");
+    }
+
+    [Fact]
+    public void ValidateRetentionPeriods_BookingEventDaysDefault_DoesNotThrow()
+    {
+        // No explicit config — must fall back to RetentionPeriods' own default (1095), which is valid.
+        var config = BuildConfig(new Dictionary<string, string?>());
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateRetentionPeriods_GuestDataGateEventDaysZero_Throws()
+    {
+        var config = BuildConfig(new Dictionary<string, string?> { ["Retention:GuestDataGateEventDays"] = "0" });
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*GuestDataGateEventDays*");
+    }
+
+    [Fact]
+    public void ValidateRetentionPeriods_GuestDataGateEventDaysDefault_DoesNotThrow()
+    {
+        var config = BuildConfig(new Dictionary<string, string?>());
+
+        var act = () => DeploymentSafetyChecks.ValidateRetentionPeriods(config);
+
+        act.Should().NotThrow();
+    }
+
     // ── ValidateStaffPushSecrets: ARCHITECTURE_CYCLE9.md §105.3 (Q15, R12) ─────────────────────────
 
     private static (string PublicKey, string PrivateKey) GenerateValidVapidPair()

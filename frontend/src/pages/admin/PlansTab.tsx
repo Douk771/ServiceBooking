@@ -24,6 +24,8 @@ import {
   optionRulesToPayload,
   type PlanForm,
 } from './planForm'
+import { PRICE_CHANGE_SUPERADMIN_HINT } from '../../legal/staffNotices'
+import { formatMonthlyPrice } from '../../utils/pricingFormat'
 
 const RETENTION_LABELS: Record<PhotoRetention, string> = {
   SixMonths: '6 месяцев',
@@ -363,7 +365,7 @@ export function PlansTab() {
                           </span>
                         )}
                         <span className="text-sm font-medium text-gold-dark">
-                          {plan.pricePerMonth > 0 ? `${plan.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : 'Бесплатно'}
+                          {formatMonthlyPrice(plan.pricePerMonth)}
                         </span>
                         <span className="text-xs text-muted">
                           Сотрудников суммарно: {plan.maxEmployees != null ? `до ${plan.maxEmployees}` : '∞'}
@@ -526,13 +528,20 @@ export function PlansTab() {
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
             <div className="grid grid-cols-3 gap-3">
-              <Input
-                label="Цена/мес (₽)"
-                type="number"
-                min={0}
-                value={form.pricePerMonth}
-                onChange={(e) => setForm((f) => ({ ...f, pricePerMonth: e.target.value }))}
-              />
+              <div className="flex flex-col gap-1">
+                <Input
+                  label="Цена/мес (₽)"
+                  type="number"
+                  min={0}
+                  value={form.pricePerMonth}
+                  onChange={(e) => setForm((f) => ({ ...f, pricePerMonth: e.target.value }))}
+                />
+                {/* ARCHITECTURE_CYCLE20.md §404.3 (US-20-03) — reminder only for an EXISTING plan
+                    (one that may already have active subscribers); a brand-new plan has none yet. No
+                    automatic link to a PlatformNotice of kind PriceChange exists (out of scope), so
+                    this is the only thing standing between a superadmin and a silent price bump. */}
+                {editingPlan && <p className="text-[11px] text-muted leading-snug">{PRICE_CHANGE_SUPERADMIN_HINT}</p>}
+              </div>
               <div>
                 <Input
                   label="Макс. сотрудников суммарно (∞)"

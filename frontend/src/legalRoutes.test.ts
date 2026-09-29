@@ -27,8 +27,19 @@ describe('legal routes vs App.tsx (contracts/cycle11/legal-routes.json)', () => 
     }
   })
 
-  it('has a redirect for every alias, pointing at its target', () => {
+  it('has a redirect for every alias, pointing at its target — except a self-mapped alias, which must be a real <Route> instead', () => {
+    // ARCHITECTURE_CYCLE20.md §411/§412.6 — `/data-request` was added to `aliases` mapping to
+    // ITSELF, not because it redirects anywhere: it's the existing real route that legal-text hrefs
+    // point at (replacing the dead `/subject-request`), listed here only so `allowedTargets`/the
+    // consent-gate-bypass check below can find it without a third parallel list. Self-mapped aliases
+    // are asserted to be an ordinary `<Route path="X" element={...}>`; every other alias still must
+    // be a `<Navigate to=…>` redirect, same as before this cycle.
     for (const [aliasPath, target] of Object.entries(routes.aliases)) {
+      if (aliasPath === target) {
+        const routeRe = new RegExp(`<Route\\s+path="${escapeRegExp(aliasPath)}"`)
+        expect(appSource, `expected a real <Route> for the self-mapped alias ${aliasPath}`).toMatch(routeRe)
+        continue
+      }
       const redirectRe = new RegExp(`<Route\\s+path="${escapeRegExp(aliasPath)}"[\\s\\S]*?to="${escapeRegExp(target)}"`)
       expect(appSource, `expected ${aliasPath} to redirect to ${target}`).toMatch(redirectRe)
     }

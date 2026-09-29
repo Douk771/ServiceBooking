@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
-using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -42,7 +41,7 @@ public class OwnerSubscriptionService(
             ? await db.PlanOptionRules.Where(r => r.PlanConfigId == planConfigId).ToListAsync()
             : [];
 
-        var optionDtos = subscribedOptions.Select(o => ToSubscribedOptionDto(o, planRules, now)).ToList();
+        var optionDtos = subscribedOptions.Select(o => ToSubscribedOptionDto(o, planRules)).ToList();
 
         var usage = (await usageReader.GetAsync([account.Id])).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
 
@@ -161,7 +160,7 @@ public class OwnerSubscriptionService(
     /// </summary>
     public static bool IsOnFreePlan(AccountSubscription? sub, DateTime now)
     {
-        var subUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
+        var subUsable = SubscriptionUsability.IsUsable(sub, now);
         return !subUsable || sub!.PlanConfig is not { IsActive: true } || sub.PlanConfig.IsSystemFree;
     }
 
@@ -242,7 +241,7 @@ public class OwnerSubscriptionService(
         return $"Оплачено {paid} из {registered} заведённых номеров. Чтобы включить остальные, подключите ещё одну «Рассылку в WhatsApp».";
     }
 
-    private SubscribedOptionDto ToSubscribedOptionDto(AccountSubscriptionOption row, List<PlanOptionRule> planRules, DateTime now)
+    private SubscribedOptionDto ToSubscribedOptionDto(AccountSubscriptionOption row, List<PlanOptionRule> planRules)
     {
         var rule = planRules.FirstOrDefault(r => r.OptionId == row.OptionId);
         // N14 — a missing rule means Unavailable (fail-closed on money, §43.3), never Extra. This

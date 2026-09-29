@@ -2,10 +2,9 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
-using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -27,7 +26,7 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/companies")]
 public class CompanyAddressController(
-    AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader accountUsageReader,
+    AppDbContext db, CompanyDtoAssembler companyDtoAssembler,
     LegalDocumentProvider legalProvider, ConsentLedger ledger) : ControllerBase
 {
     // ── PUT /api/companies/{id}/address (§413.2) ────────────────────────────────────────────────────
@@ -93,36 +92,12 @@ public class CompanyAddressController(
         CompanyAccess.CanManageCompanyAsync(db, User, companyId);
 
     /// <summary>Builds the exact same "full CompanyDto, as PUT /api/companies/{id} would" shape §413.2
-    /// promises — same four resolution calls (plan, review aggregate, usage, cover) Update/UploadLogo
-    /// make in <c>CompaniesController</c>, feeding the SAME <see cref="CompaniesController.MapToDto"/>
-    /// so the two endpoints can never quietly return differently-shaped companies.</summary>
+    /// promises — through the SAME <see cref="CompanyDtoAssembler.MapManagedCompanyToDtoAsync"/>
+    /// Update/UploadLogo use (cycle 22 P5, §378), so the endpoints can never return differently-shaped
+    /// companies. Reached only after SaveAddress's own CanManageCompanyAsync check passed.</summary>
     private async Task<CompanyDto> BuildCompanyDtoAsync(Company company)
     {
-        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
         var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
-
-        var aggregate = await db.Reviews
-            .Where(r => r.CompanyId == company.Id)
-            .GroupBy(r => 1)
-            .Select(g => new { Count = g.Count(), Average = g.Average(r => (double)r.Rating) })
-            .FirstOrDefaultAsync();
-        var (averageRating, reviewCount) = aggregate is null ? ((double?)null, 0) : (aggregate.Average, aggregate.Count);
-
-        var employeeCounts = await accountUsageReader.GetCompanySeatsAsync([company.Id]);
-        var usageByAccount = company.BillingAccountId.HasValue
-            ? await accountUsageReader.GetAsync([company.BillingAccountId.Value])
-            : new Dictionary<Guid, AccountUsage>();
-
-        var coverPhoto = await db.CompanyPhotos.Where(p => p.CompanyId == company.Id && p.Position == 0).ToListAsync();
-        var cover = CompanyPhotoOrdering.SelectCovers(coverPhoto).GetValueOrDefault(company.Id);
-
-        // §413.2: reached only after SaveAddress's own CanManageCompanyAsync check passed, so this
-        // caller always manages the company (review finding, cycle 13 review, blocking #2 — still true).
-        return CompaniesController.MapToDto(
-            company, plan, averageRating, reviewCount, city,
-            employeeCounts.GetValueOrDefault(company.Id),
-            company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
-            cover is null ? null : (cover.Url, cover.ThumbnailUrl),
-            canManage: true);
+        return await companyDtoAssembler.MapManagedCompanyToDtoAsync(company, city);
     }
 }

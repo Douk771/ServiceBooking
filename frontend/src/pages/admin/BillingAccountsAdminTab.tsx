@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDate, fmtDateTime } from '../../utils/dateFormat'
 import {
   adminBillingApi,
   type AdminBillingAccount,
@@ -22,20 +21,16 @@ import { getAdminBillingErrorMessage as getBillingErrorMessage, isLimitOverflowC
 import { getTrialErrorMessage } from '../../utils/trialError'
 import {
   STATUS_BADGE_CLASS,
-  formatRub,
   computeExpectedTotal,
   buildAssignInput,
   isPaidUntilMissing,
+  isManualReasonRequired,
+  manualReasonValidationError,
   type AssignOptionRow,
 } from './billingAccountsHelpers'
-
-function fmtDate(d: string | null | undefined) {
-  return d ? format(parseISO(d), 'd MMM yyyy', { locale: ru }) : '—'
-}
-
-function fmtDateTime(d: string | null | undefined) {
-  return d ? format(parseISO(d), 'd MMM yyyy, HH:mm', { locale: ru }) : '—'
-}
+import type { SubscriptionChangeReason } from '../../api/adminBilling'
+import { formatRubRounded } from '../../utils/money'
+import { formatMonthlyPrice } from '../../utils/pricingFormat'
 
 // Cycle-3 envelope is {items, page, pageSize, totalCount}; <Pagination> was built for the older
 // {total, hasNext} shape shared by the rest of the admin screens — adapted here rather than
@@ -59,6 +54,10 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
 
   const { data: plans } = useQuery({ queryKey: ['admin-plans'], queryFn: plansApi.list })
   const { data: catalogOptions } = useQuery({ queryKey: ['admin-options'], queryFn: plansApi.listOptions })
+  // US-20-02 — closed list of reasons; the dropdown only offers `assignableManually: true` entries
+  // (§433.3), so a fetch failure just means an empty dropdown, not a broken form.
+  const { data: reasons } = useQuery({ queryKey: ['admin-subscription-change-reasons'], queryFn: adminBillingApi.getChangeReasons })
+  const assignableReasons = (reasons ?? []).filter((r) => r.assignableManually)
   const activePlans = (plans ?? []).filter((p) => p.isActive)
 
   const [planId, setPlanId] = useState<string>(account.planId ?? '')
@@ -68,6 +67,8 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
   const [comment, setComment] = useState('')
   const [confirmOverflow, setConfirmOverflow] = useState(false)
   const [rows, setRows] = useState<AssignOptionRow[]>([])
+  const [reasonCode, setReasonCode] = useState<SubscriptionChangeReason | ''>('')
+  const [reasonDetails, setReasonDetails] = useState('')
 
   // Seed the option rows once from the account's current subscription (plus anything requested),
   // merged with the full catalog so options not yet subscribed can still be added here.
@@ -105,6 +106,10 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
   // the only real "missing" state. Last local guard before the server's own 400 (ARCHITECTURE_CYCLE6.md §43.3.6).
   const isFree = planId === ''
   const dateMissing = isPaidUntilMissing(planId, paidUntil)
+  // §433.1/§403.2 — required exactly when the target plan is hidden AND differs from the account's
+  // current plan; a UI hint only, the server is the actual source of truth (re-checked on submit).
+  const reasonRequired = isManualReasonRequired(account.planId ?? null, planId || null, selectedPlan?.isPublic)
+  const reasonError = reasonRequired || reasonCode ? manualReasonValidationError(reasonCode, reasonDetails, reasonRequired) : null
 
   const mut = useMutation({
     mutationFn: () =>
@@ -119,6 +124,8 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
           comment,
           requestId: request?.id ?? null,
           confirmLimitOverflow: confirmOverflow,
+          reasonCode: reasonCode || null,
+          reasonDetails,
         }),
       ),
     onSuccess: () => {
@@ -162,7 +169,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
             <option value="">Free (снять тариф)</option>
             {activePlans.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} {p.pricePerMonth > 0 ? `— ${p.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : ''}
+                {p.name} {p.pricePerMonth > 0 ? `— ${formatMonthlyPrice(p.pricePerMonth)}` : ''}
               </option>
             ))}
           </select>
@@ -203,7 +210,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
                   <input type="checkbox" checked={r.selected} onChange={() => toggleRow(r.optionId)} className="w-4 h-4 accent-gold shrink-0" />
                   <span className="min-w-0">
                     <span className="text-sm text-ink truncate block">{r.name}</span>
-                    <span className="text-xs text-muted">{formatRub(r.pricePerMonth)}{r.kind === 'Quantity' ? ` / ${r.unitName ?? 'ед.'}` : '/мес'}</span>
+                    <span className="text-xs text-muted">{formatRubRounded(r.pricePerMonth)}{r.kind === 'Quantity' ? ` / ${r.unitName ?? 'ед.'}` : '/мес'}</span>
                   </span>
                 </label>
                 {r.kind === 'Quantity' && r.selected && (
@@ -220,10 +227,46 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
           </div>
         </div>
 
+        {/* §441 item 10 (US-20-02) — appears ONLY when the target plan is hidden and differs from the
+            current one; a public plan or renewing the same hidden plan never shows this block. */}
+        {reasonRequired && (
+          <div className="rounded-xl border border-line px-3 py-3 flex flex-col gap-2.5">
+            <p className="text-xs text-ink-soft">Тариф скрыт от публичной витрины — укажите основание назначения.</p>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[13px] font-medium text-[#4A4038]">Основание</label>
+              <select
+                value={reasonCode}
+                onChange={(e) => setReasonCode(e.target.value as SubscriptionChangeReason | '')}
+                className="rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
+              >
+                <option value="">Выберите основание</option>
+                {assignableReasons.map((r) => (
+                  <option key={r.code} value={r.code}>
+                    {r.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {reasonCode === 'OperatorErrorCorrection' && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-medium text-[#4A4038]">Описание ошибки</label>
+                <textarea
+                  value={reasonDetails}
+                  onChange={(e) => setReasonDetails(e.target.value)}
+                  rows={2}
+                  maxLength={1000}
+                  className="rounded-xl border border-line px-3 py-2 text-sm outline-none focus:border-gold resize-none"
+                  placeholder="Оплата от 12.09 прошла, но тариф не был применён из-за сбоя импорта"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Invariant made visible, not implied: итог = цена тарифа + Σ опция × количество. */}
         <div className="rounded-xl bg-cream-deep px-4 py-3 flex items-center justify-between">
           <span className="text-sm text-ink-soft">Итог в месяц (тариф + опции)</span>
-          <span className="text-base font-semibold text-ink">{formatRub(expectedTotal)}</span>
+          <span className="text-base font-semibold text-ink">{formatRubRounded(expectedTotal)}</span>
         </div>
 
         <Input label="Сумма платежа (справочно)" type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -252,12 +295,13 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
           </label>
         )}
         {mut.isError && !overflow && <p className="text-sm text-danger">{getBillingErrorMessage(mut.error)}</p>}
+        {reasonError && <p className="text-sm text-danger">{reasonError}</p>}
 
         <div className="flex gap-3 pt-1">
           <Button variant="secondary" className="flex-1" onClick={onClose}>
             Отмена
           </Button>
-          <Button className="flex-1" loading={mut.isPending} disabled={dateMissing} onClick={() => mut.mutate()}>
+          <Button className="flex-1" loading={mut.isPending} disabled={dateMissing || !!reasonError} onClick={() => mut.mutate()}>
             Сохранить
           </Button>
         </div>
@@ -486,7 +530,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
             <div className="rounded-xl border border-line divide-y divide-line">
               <div className="flex items-center justify-between px-3 py-2 text-sm">
                 <span className="text-ink-soft">{account.plan.name}</span>
-                <span className="text-ink">{formatRub(account.plan.pricePerMonth)}</span>
+                <span className="text-ink">{formatRubRounded(account.plan.pricePerMonth)}</span>
               </div>
               {(account.options ?? []).map((o) => (
                 <div key={o.optionId} className="flex items-center justify-between px-3 py-2 text-sm flex-wrap gap-1">
@@ -495,12 +539,12 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
                     {o.kind === 'Quantity' ? ` × ${o.quantity}` : ''}
                     <span className="text-xs text-muted ml-1.5">{o.statusText}</span>
                   </span>
-                  <span className="text-ink">{formatRub(o.pricePerMonth)}</span>
+                  <span className="text-ink">{formatRubRounded(o.pricePerMonth)}</span>
                 </div>
               ))}
               <div className="flex items-center justify-between px-3 py-2.5 bg-cream-deep font-semibold text-sm">
                 <span>Итог в месяц</span>
-                <span>{formatRub(account.totalMonthlyPrice)}</span>
+                <span>{formatRubRounded(account.totalMonthlyPrice)}</span>
               </div>
             </div>
             {account.grandfatheredEmployeeBonusText && (
@@ -581,8 +625,16 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
                     )}
                     {h.newOptionsSummary && <span>{h.newOptionsSummary} </span>}
                     {h.newPaidUntil && <span>· до {fmtDate(h.newPaidUntil)}</span>}
-                    {h.amount != null && <span> · {formatRub(h.amount)}</span>}
+                    {h.amount != null && <span> · {formatRubRounded(h.amount)}</span>}
                   </div>
+                  {/* §433.2 — reasonTitle is the server's own copy (SubscriptionChangeReasonTexts.cs);
+                      the frontend never invents its own label for a reason code. */}
+                  {h.reasonTitle && (
+                    <div className="mt-1">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-warning-bg text-warning">{h.reasonTitle}</span>
+                      {h.reasonDetails && <span className="text-muted italic ml-1.5">{h.reasonDetails}</span>}
+                    </div>
+                  )}
                   {h.comment && <div className="text-muted mt-0.5 italic">{h.comment}</div>}
                 </div>
               ))}
@@ -643,7 +695,7 @@ function AccountRow({ item, onOpen }: { item: AdminBillingAccountListItem; onOpe
           )}
         </div>
         <p className="text-xs text-muted mt-0.5">
-          {item.planName ?? 'Free'} · {formatRub(item.totalMonthlyPrice ?? 0)}/мес · оплачено до {fmtDate(item.paidUntil)}
+          {item.planName ?? 'Free'} · {formatRubRounded(item.totalMonthlyPrice ?? 0)}/мес · оплачено до {fmtDate(item.paidUntil)}
         </p>
         <p className="text-xs text-muted mt-0.5">
           {item.companiesUsed}/{item.companiesLimit ?? '∞'} компаний · {item.employeesUsed}/{item.employeesLimit ?? '∞'} сотр. ·{' '}
@@ -807,7 +859,7 @@ function RequestsQueueSection() {
                       ))
                     : 'без опций'}
                 </p>
-                <p className="text-xs text-muted mt-0.5">Итог: {formatRub(r.estimatedMonthlyPrice)}/мес · {r.companiesCount ?? 0} компаний</p>
+                <p className="text-xs text-muted mt-0.5">Итог: {formatRubRounded(r.estimatedMonthlyPrice)}/мес · {r.companiesCount ?? 0} компаний</p>
                 {/* ARCHITECTURE_CYCLE19.md FE-3 — in the queue card, before the superadmin even
                     opens the approval modal. */}
                 {r.retiredOptionsNotice && <p className="text-xs text-warning mt-0.5">{r.retiredOptionsNotice}</p>}

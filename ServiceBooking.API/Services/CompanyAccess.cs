@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services;

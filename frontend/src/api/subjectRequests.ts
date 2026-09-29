@@ -1,12 +1,25 @@
 import { api } from './client'
 import type { DueState, Paged, SubjectRequestDto, SubjectRequestKind, SubjectRequestStatus } from '../types'
 
-export interface SubjectRequestPayload {
+interface SubjectRequestPayload {
   kind: SubjectRequestKind
   phone: string
   contactValue: string
   message: string
   captchaToken?: string
+}
+
+/** API_CONTRACT_CYCLE20.md §438 (US-20-09, НЕВЫЙ) — SuperAdmin-only manual registration of a request
+ *  that arrived by e-mail or post. `channel` excludes `WebForm` on purpose — that's what the public
+ *  form always sends, never something a human picks here. `phone` is optional and normalized server-side. */
+export interface ManualSubjectRequestPayload {
+  kind: SubjectRequestKind
+  channel: 'Email' | 'PostalMail'
+  /** ISO date-time the request actually arrived — `dueAt` is computed FROM this, not from "now". */
+  receivedAt: string
+  phone?: string | null
+  contactValue: string
+  message: string
 }
 
 /**
@@ -23,4 +36,9 @@ export const subjectRequestsApi = {
 
   adminSetStatus: (id: string, status: SubjectRequestStatus, resolution: string) =>
     api.post<void>(`/admin/subject-requests/${id}/status`, { status, resolution }).then((r) => r.data),
+
+  /** POST /api/admin/subject-requests (§438, NEW) — 201 with the same `SubjectRequestDto` shape the
+   *  list already renders, so the caller can just prepend/invalidate rather than reshape anything. */
+  adminRegister: (payload: ManualSubjectRequestPayload) =>
+    api.post<SubjectRequestDto>('/admin/subject-requests', payload).then((r) => r.data),
 }

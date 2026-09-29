@@ -6,7 +6,7 @@ using ServiceBooking.Core.Enums;
 namespace ServiceBooking.UnitTests;
 
 /// <summary>
-/// Covers AdminController.MapAdminPlanDto/SplitHighlights — the pure projection from
+/// Covers AdminPlansController.MapAdminPlanDto/SplitHighlights — the pure projection from
 /// SubscriptionPlanConfig onto contracts/cycle7/openapi.yaml's AdminPlanDto shape (contracts/cycle7/openapi.yaml,
 /// cycle-07 contract-drift fixes). No HTTP, no DB: exercises the mapping functions directly.
 /// </summary>
@@ -23,7 +23,7 @@ public class AdminPlanDtoMappingTests
     [Fact]
     public void MapAdminPlanDto_AlwaysReportsCurrencyAsRub()
     {
-        var dto = AdminController.MapAdminPlanDto(NewPlan(), subscribedAccounts: 0, rules: []);
+        var dto = AdminPlansController.MapAdminPlanDto(NewPlan(), subscribedAccounts: 0, rules: []);
 
         dto.Currency.Should().Be("RUB");
     }
@@ -34,7 +34,7 @@ public class AdminPlanDtoMappingTests
         var plan = NewPlan();
         plan.Highlights = null;
 
-        var dto = AdminController.MapAdminPlanDto(plan, subscribedAccounts: 0, rules: []);
+        var dto = AdminPlansController.MapAdminPlanDto(plan, subscribedAccounts: 0, rules: []);
 
         dto.Highlights.Should().NotBeNull().And.BeEmpty();
     }
@@ -56,7 +56,7 @@ public class AdminPlanDtoMappingTests
             new() { PlanConfigId = plan.Id, OptionId = unavailableOptionId, Availability = OptionAvailability.Unavailable },
         };
 
-        var dto = AdminController.MapAdminPlanDto(plan, subscribedAccounts: 3, rules);
+        var dto = AdminPlansController.MapAdminPlanDto(plan, subscribedAccounts: 3, rules);
 
         dto.Options.Should().HaveCount(2);
         dto.Options.Should().Contain(o => o.OptionId == includedOptionId && o.Availability == "Included" && o.IncludedQuantity == 2);
@@ -84,14 +84,14 @@ public class AdminPlanDtoMappingTests
     [InlineData("First\nSecond\n\nThird", new[] { "First", "Second", "Third" })]
     [InlineData(" leading and trailing spaces \n second ", new[] { "leading and trailing spaces", "second" })]
     public void SplitHighlights_SplitsTrimsAndDropsBlankLines(string? raw, string[] expected) =>
-        AdminController.SplitHighlights(raw).Should().Equal(expected);
+        AdminPlansController.SplitHighlights(raw).Should().Equal(expected);
 
     [Fact]
     public void SplitHighlights_CapsAtTenLines_MatchingTheSchemasMaxItems()
     {
         var raw = string.Join('\n', Enumerable.Range(1, 15).Select(i => $"Line {i}"));
 
-        var result = AdminController.SplitHighlights(raw);
+        var result = AdminPlansController.SplitHighlights(raw);
 
         result.Should().HaveCount(10);
         result.Should().Equal(Enumerable.Range(1, 10).Select(i => $"Line {i}"));

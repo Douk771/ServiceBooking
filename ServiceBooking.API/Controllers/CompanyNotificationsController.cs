@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
-using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
@@ -26,25 +25,26 @@ public class CompanyNotificationsController(
     AppDbContext db,
     SubscriptionResolver subscriptionResolver,
     PlatformSettings platformSettings,
-    LegalDocumentProvider legalProvider) : ControllerBase
+    LegalDocumentProvider legalProvider,
+    ChannelFundingReader fundingReader) : ControllerBase
 {
     // ── Settings ─────────────────────────────────────────────────────────────────────────────────
 
     [HttpGet("notification-settings")]
-    public async Task<ActionResult<NotificationSettingsDto>> GetSettings(Guid companyId)
+    public async Task<ActionResult<NotificationSettingsDto>> GetSettings(Guid companyId, CancellationToken ct)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
 
-        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId, ct);
         if (company is null) return NotFound();
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
-        var settings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId);
+        var settings = await db.CompanyNotificationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == companyId, ct);
         // ARCHITECTURE_CYCLE9.md §104.3/§104.5: a company may now hold one assignment PER TRANSPORT, not
         // one ever — every live assignment is loaded so connectedTransports/priorityChannelHealthy can be
         // computed across all of them, not just an arbitrary FirstOrDefault.
         var assignments = await db.ChannelCompanyAssignments.AsNoTracking()
-            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync();
+            .Include(a => a.Channel).Where(a => a.CompanyId == companyId).ToListAsync(ct);
 
         return Ok(await BuildSettingsDtoAsync(plan, settings, assignments));
     }
@@ -128,11 +128,11 @@ public class CompanyNotificationsController(
     // ── Templates ────────────────────────────────────────────────────────────────────────────────
 
     [HttpGet("notification-templates")]
-    public async Task<ActionResult<TemplatesResponseDto>> GetTemplates(Guid companyId)
+    public async Task<ActionResult<TemplatesResponseDto>> GetTemplates(Guid companyId, CancellationToken ct)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
 
-        var rows = await db.NotificationTemplates.AsNoTracking().Where(t => t.CompanyId == companyId).ToListAsync();
+        var rows = await db.NotificationTemplates.AsNoTracking().Where(t => t.CompanyId == companyId).ToListAsync(ct);
         var placeholders = TemplatePlaceholders.All
             .Select(p => new TemplatePlaceholderDto(p.Token, p.Description, p.Types)).ToList();
 
@@ -284,7 +284,8 @@ public class CompanyNotificationsController(
         Guid companyId, [FromQuery] int? page, [FromQuery] int? pageSize,
         [FromQuery] NotificationStatus? status, [FromQuery] NotificationType? type,
         [FromQuery] NotificationTransport? transport,
-        [FromQuery] DateTime? from, [FromQuery] DateTime? to)
+        [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        CancellationToken ct)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
 
@@ -294,12 +295,14 @@ public class CompanyNotificationsController(
         if (type.HasValue) query = query.Where(n => n.Type == type);
         // ARCHITECTURE_CYCLE9.md §114.3 (US-120) — additive ?transport= filter.
         if (transport.HasValue) query = query.Where(n => n.Transport == transport);
+        from = QueryDateTime.ToUtc(from);
+        to = QueryDateTime.ToUtc(to);
         if (from.HasValue) query = query.Where(n => n.CreatedAt >= from);
         if (to.HasValue) query = query.Where(n => n.CreatedAt <= to);
 
-        var total = await query.CountAsync();
+        var total = await query.CountAsync(ct);
         var rows = await query.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id)
-            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync();
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize).ToListAsync(ct);
 
         // N8/N9: ProfileController.DeleteAccount scrubs a Cancelled row's RecipientPhone to an empty
         // string (never a fake sentinel like "deleted", which PhoneDisplayMask.Mask would garble into
@@ -316,7 +319,7 @@ public class CompanyNotificationsController(
     }
 
     [HttpGet("notifications/summary")]
-    public async Task<ActionResult<NotificationSummaryDto>> GetSummary(Guid companyId, [FromQuery] int? days)
+    public async Task<ActionResult<NotificationSummaryDto>> GetSummary(Guid companyId, [FromQuery] int? days, CancellationToken ct)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
 
@@ -326,31 +329,39 @@ public class CompanyNotificationsController(
         var rows = await db.OutboundNotifications.AsNoTracking()
             .Where(n => n.CompanyId == companyId && n.CreatedAt >= sinceUtc)
             .Select(n => new NotificationCounterRow(n.CompanyId, n.Status, n.ReadAtUtc))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var assignedChannelIds = await db.ChannelCompanyAssignments.AsNoTracking()
-            .Where(a => a.CompanyId == companyId).Select(a => a.ChannelId).ToListAsync();
-        var channelPaidUntil = assignedChannelIds.Count > 0
-            ? await db.NotificationChannels.AsNoTracking()
-                .Where(c => assignedChannelIds.Contains(c.Id)).MaxAsync(c => (DateTime?)c.PaidUntilUtc)
-            : null;
+            .Where(a => a.CompanyId == companyId).Select(a => a.ChannelId).ToListAsync(ct);
+        // Cycle 22 (§379, Р2): the latest funding paid-until among the company's assigned channels (the
+        // WhatsApp option's, else the subscription period — ChannelFundingReader), not the dropped column.
+        DateTime? channelPaidUntil = null;
+        if (assignedChannelIds.Count > 0)
+        {
+            var assignedChannels = await db.NotificationChannels.AsNoTracking()
+                .Where(c => assignedChannelIds.Contains(c.Id)).ToListAsync(ct);
+            var funding = await fundingReader.LoadAsync(assignedChannels, ct);
+            channelPaidUntil = assignedChannels
+                .Select(c => funding.GetValueOrDefault(c.Id)?.PaidUntil)
+                .Max();
+        }
 
         var companyAssignments = await db.ChannelCompanyAssignments.AsNoTracking()
-            .CountAsync(a => assignedChannelIds.Contains(a.ChannelId));
+            .CountAsync(a => assignedChannelIds.Contains(a.ChannelId), ct);
         var multiCompanyChannel = companyAssignments > 1;
 
         IReadOnlyList<NotificationSummaryByCompanyDto>? byCompany = null;
         if (multiCompanyChannel)
         {
             var siblingCompanyIds = await db.ChannelCompanyAssignments.AsNoTracking()
-                .Where(a => assignedChannelIds.Contains(a.ChannelId)).Select(a => a.CompanyId).ToListAsync();
+                .Where(a => assignedChannelIds.Contains(a.ChannelId)).Select(a => a.CompanyId).ToListAsync(ct);
 
             var siblingRows = await db.OutboundNotifications.AsNoTracking()
                 .Where(n => siblingCompanyIds.Contains(n.CompanyId) && n.CreatedAt >= sinceUtc)
                 .Select(n => new NotificationCounterRow(n.CompanyId, n.Status, n.ReadAtUtc))
-                .ToListAsync();
+                .ToListAsync(ct);
             var companyNames = await db.Companies.AsNoTracking()
-                .Where(c => siblingCompanyIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name);
+                .Where(c => siblingCompanyIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.Name, ct);
 
             byCompany = siblingRows.GroupBy(r => r.CompanyId)
                 .Select(g => Summarize(g.Key, companyNames.GetValueOrDefault(g.Key, ""), g)).ToList();
@@ -401,20 +412,26 @@ public class CompanyNotificationsController(
         var priorityAssignment = assignments.FirstOrDefault(a => a.Transport == priorityTransport);
         var channel = priorityAssignment?.Channel;
 
-        // §47.3: ChannelDto/SettingsChannelDto's paymentState keeps its FORM but its SOURCE is now the
-        // account's funding ranking, not the channel's own (historical, unread-by-business-logic)
-        // PaidFromUtc/PaidUntilUtc columns.
-        ChannelPaymentStatus? paymentState = channel is null
-            ? null
-            : channel.IsSuspendedByAdmin
-                ? ChannelPaymentStatus.Suspended
-                : await IsChannelFundedAsync(channel, plan) ? ChannelPaymentStatus.Paid : ChannelPaymentStatus.NotPaid;
+        // §47.3: ChannelDto/SettingsChannelDto's paymentState keeps its FORM but its SOURCE is the
+        // account's funding ranking. Cycle 22 (§379, Р2): paidUntil (and the NeedsReconnect state text's
+        // "оплаченный период до") come from the same funding — the WhatsApp option's PaidUntilUtc, else
+        // the subscription period — instead of the channel's dropped PaidUntilUtc column.
+        ChannelPaymentStatus? paymentState = null;
+        DateTime? paidUntil = null;
+        if (channel is not null)
+        {
+            // The assignment's composite FK pins the channel to the company's own billing account, so the
+            // reader's per-account plan is the same `plan` this screen resolved for the company.
+            var funding = (await fundingReader.LoadAsync([channel])).GetValueOrDefault(channel.Id);
+            paymentState = ChannelPaymentState.Of(channel, funding);
+            paidUntil = funding?.PaidUntil;
+        }
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
         var stateText = channel is null ? null : ChannelPresentation.StateText(
             channel.State, channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber),
-            idleDays, channel.PaidUntilUtc, channel.LastStateReason);
+            idleDays, paidUntil, channel.LastStateReason);
 
-        var channelDto = new SettingsChannelDto(channel is not null, channel?.Id, channel?.State, stateText, paymentState, channel?.PaidUntilUtc);
+        var channelDto = new SettingsChannelDto(channel is not null, channel?.Id, channel?.State, stateText, paymentState, paidUntil);
 
         var blockedReason = ChannelPresentation.SettingsBlockedReason(
             plan.AllowNotificationChannel, channel is not null, paymentState, channel?.State);
@@ -470,14 +487,9 @@ public class CompanyNotificationsController(
     }
 
     // ARCHITECTURE_CYCLE7.md §47.1/§47.2: funded/unfunded, ranked across every live channel on the
-    // SAME billing account as `channel` — not a channel-level payment read.
-    private async Task<bool> IsChannelFundedAsync(NotificationChannel? channel, EffectivePlan plan)
-    {
-        if (channel?.BillingAccountId is not { } accountId) return false;
-        var siblings = await db.NotificationChannels.AsNoTracking().Where(c => c.BillingAccountId == accountId).ToListAsync();
-        var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
-        return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
-    }
+    // SAME billing account as `channel` — not a channel-level payment read (ChannelFundingReader).
+    private Task<bool> IsChannelFundedAsync(NotificationChannel? channel, EffectivePlan plan) =>
+        fundingReader.IsFundedAsync(channel, plan);
 
     private static int BuildMask(IReadOnlyList<NotificationType> types)
     {

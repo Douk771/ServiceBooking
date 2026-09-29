@@ -1,0 +1,84 @@
+### slots 1 day (occupancy)
+SELECT b."StartTime", b."EndTime" FROM "Bookings" b WHERE b."MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268' AND b."Date" = '2026-09-30' AND b."Status" <> 2
+Bitmap Heap Scan on "Bookings" b  (cost=4.48..27.23 rows=6 width=16) (actual time=0.021..0.022 rows=2 loops=1)
+  Recheck Cond: (("MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268'::text) AND ("Date" = '2026-09-30'::date))
+  Filter: ("Status" <> 2)
+  Heap Blocks: exact=1
+  Buffers: shared hit=4
+  ->  Bitmap Index Scan on "IX_Bookings_MasterId_Date"  (cost=0.00..4.47 rows=6 width=0) (actual time=0.011..0.012 rows=2 loops=1)
+        Index Cond: (("MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268'::text) AND ("Date" = '2026-09-30'::date))
+        Buffers: shared hit=3
+Planning:
+  Buffers: shared hit=171
+Planning Time: 0.544 ms
+Execution Time: 0.060 ms
+
+### availability 30 days
+SELECT b."Date", b."StartTime", b."EndTime" FROM "Bookings" b WHERE b."MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268' AND b."Date" >= '2026-09-28' AND b."Date" <= '2026-10-27' AND b."Status" <> 2
+Bitmap Heap Scan on "Bookings" b  (cost=5.88..342.07 rows=104 width=20) (actual time=0.037..0.106 rows=97 loops=1)
+  Recheck Cond: (("MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268'::text) AND ("Date" >= '2026-09-28'::date) AND ("Date" <= '2026-10-27'::date))
+  Filter: ("Status" <> 2)
+  Rows Removed by Filter: 6
+  Heap Blocks: exact=23
+  Buffers: shared hit=26
+  ->  Bitmap Index Scan on "IX_Bookings_MasterId_Date"  (cost=0.00..5.85 rows=115 width=0) (actual time=0.023..0.023 rows=103 loops=1)
+        Index Cond: (("MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268'::text) AND ("Date" >= '2026-09-28'::date) AND ("Date" <= '2026-10-27'::date))
+        Buffers: shared hit=3
+Planning:
+  Buffers: shared hit=176
+Planning Time: 0.607 ms
+Execution Time: 0.155 ms
+
+### bookings/master 1 month (rows)
+SELECT b.* FROM "Bookings" b WHERE b."MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268' AND b."Date" >= '2026-09-01' AND b."Date" <= '2026-09-30' ORDER BY b."Date", b."StartTime"
+Sort  (cost=483.82..484.27 rows=179 width=894) (actual time=0.288..0.297 rows=188 loops=1)
+  Sort Key: "Date", "StartTime"
+  Sort Method: quicksort  Memory: 63kB
+  Buffers: shared hit=43
+  ->  Bitmap Heap Scan on "Bookings" b  (cost=6.70..477.13 rows=179 width=894) (actual time=0.039..0.163 rows=188 loops=1)
+        Recheck Cond: (("MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268'::text) AND ("Date" >= '2026-09-01'::date) AND ("Date" <= '2026-09-30'::date))
+        Heap Blocks: exact=31
+        Buffers: shared hit=35
+        ->  Bitmap Index Scan on "IX_Bookings_MasterId_Date"  (cost=0.00..6.65 rows=179 width=0) (actual time=0.025..0.025 rows=188 loops=1)
+              Index Cond: (("MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268'::text) AND ("Date" >= '2026-09-01'::date) AND ("Date" <= '2026-09-30'::date))
+              Buffers: shared hit=4
+Planning:
+  Buffers: shared hit=264
+Planning Time: 0.580 ms
+Execution Time: 0.389 ms
+
+### masters/clients grouping (MasterId+CompanyId)
+SELECT b."ClientId", max(b."Date"), count(*) FROM "Bookings" b WHERE b."MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268' AND b."CompanyId" = '4945b370-dc20-4ccf-83a4-9a2670961c01' AND b."ClientId" IS NOT NULL GROUP BY b."ClientId"
+HashAggregate  (cost=1273.32..1294.60 rows=2128 width=31) (actual time=3.824..4.009 rows=1591 loops=1)
+  Group Key: "ClientId"
+  Batches: 1  Memory Usage: 369kB
+  Buffers: shared hit=868
+  ->  Bitmap Heap Scan on "Bookings" b  (cost=109.58..1246.09 rows=3631 width=23) (actual time=0.324..2.883 rows=3682 loops=1)
+        Recheck Cond: ("MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268'::text)
+        Filter: (("ClientId" IS NOT NULL) AND ("CompanyId" = '4945b370-dc20-4ccf-83a4-9a2670961c01'::uuid))
+        Rows Removed by Filter: 1181
+        Heap Blocks: exact=855
+        Buffers: shared hit=868
+        ->  Bitmap Index Scan on "IX_Bookings_MasterId_Date"  (cost=0.00..108.67 rows=4834 width=0) (actual time=0.213..0.213 rows=4863 loops=1)
+              Index Cond: ("MasterId" = 'eb91e7df-26c0-459f-91aa-78e2d2353268'::text)
+              Buffers: shared hit=13
+Planning:
+  Buffers: shared hit=186
+Planning Time: 0.597 ms
+Execution Time: 4.184 ms
+
+### stats: status counts 1 year (CompanyId+Date)
+SELECT b."Status", count(*) FROM "Bookings" b WHERE b."CompanyId" = '4945b370-dc20-4ccf-83a4-9a2670961c01' AND b."Date" >= '2025-09-01' AND b."Date" <= '2026-08-31' GROUP BY b."Status"
+HashAggregate  (cost=1841.76..1841.81 rows=5 width=12) (actual time=8.034..8.036 rows=4 loops=1)
+  Group Key: "Status"
+  Batches: 1  Memory Usage: 24kB
+  Buffers: shared hit=1064
+  ->  Seq Scan on "Bookings" b  (cost=0.00..1746.43 rows=19066 width=4) (actual time=2.046..5.906 rows=19075 loops=1)
+        Filter: (("Date" >= '2025-09-01'::date) AND ("Date" <= '2026-08-31'::date) AND ("CompanyId" = '4945b370-dc20-4ccf-83a4-9a2670961c01'::uuid))
+        Rows Removed by Filter: 19941
+        Buffers: shared hit=1064
+Planning:
+  Buffers: shared hit=195
+Planning Time: 0.600 ms
+Execution Time: 8.127 ms
+

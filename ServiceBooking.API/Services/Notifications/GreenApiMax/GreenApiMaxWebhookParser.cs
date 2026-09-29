@@ -1,5 +1,4 @@
 using System.Text.Json;
-using ServiceBooking.API.Services;
 using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Notifications.GreenApiMax;

@@ -34,6 +34,12 @@ public static class LegalRoutes
     {
         ["/offer-channel"] = "/terms-owner#offer-channel",
         ["/payment-terms"] = "/terms-owner#payment-terms",
+        // ARCHITECTURE_CYCLE20.md §411, §412.6 (Т20-08) — not a legal document alias in the "spliced-in
+        // appendix" sense above: this is the app's own subject-request form route, which cycle 20's new
+        // uiTexts (files 14-16) link to. Listed here (self-mapping, no anchor) purely so
+        // LegalReadinessReportBuilder.CheckLinks accepts it as a valid internal target — the same
+        // mechanism the two real aliases use, reused for the simplest case that needs no anchor.
+        ["/data-request"] = "/data-request",
     };
 
     /// <summary>Route → the in-page anchor(s) its content is required to contain. Used by `legal links`

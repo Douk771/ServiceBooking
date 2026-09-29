@@ -10,12 +10,12 @@ vi.mock('../../api/legal', () => ({
   legalApi: { getText: (...args: unknown[]) => getText(...args) },
 }))
 
-function renderNotice(phoneVerified: boolean) {
+function renderNotice(phoneVerified: boolean, textKey?: 'GuestDataGateNotice' | 'GuestDataGateDeleteNotice') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <GuestDataGateNotice phoneVerified={phoneVerified} />
+        <GuestDataGateNotice phoneVerified={phoneVerified} textKey={textKey} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -48,5 +48,23 @@ describe('GuestDataGateNotice', () => {
     renderNotice(false)
     expect(await screen.findByText('Официальный текст юриста')).toBeInTheDocument()
     expect(screen.queryByText(/Эти сведения доступны после подтверждения/)).not.toBeInTheDocument()
+  })
+
+  // Т20-08 (ARCHITECTURE_CYCLE20.md §411) — only the "Текст" section is shown; the служебная справка
+  // paragraph authored alongside it in the manifest file must never leak into the UI.
+  it('shows only the "Текст" section, not the служебная справка paragraph before it', async () => {
+    getText.mockResolvedValueOnce({
+      contentHtml: '<p><em>Служебная справка для команды: не показывать это.</em></p><h2>Текст</h2><p>Видимый текст для пользователя.</p>',
+    })
+    renderNotice(false)
+    expect(await screen.findByText('Видимый текст для пользователя.')).toBeInTheDocument()
+    expect(screen.queryByText(/Служебная справка/)).not.toBeInTheDocument()
+  })
+
+  it('reads GuestDataGateDeleteNotice on the delete screen, a DIFFERENT key from the export screen default', async () => {
+    getText.mockResolvedValueOnce({ contentHtml: '<h2>Текст</h2><p>Текст экрана удаления.</p>' })
+    renderNotice(false, 'GuestDataGateDeleteNotice')
+    expect(await screen.findByText('Текст экрана удаления.')).toBeInTheDocument()
+    expect(getText).toHaveBeenCalledWith('GuestDataGateDeleteNotice')
   })
 })

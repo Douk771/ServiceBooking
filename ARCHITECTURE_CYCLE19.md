@@ -3,7 +3,7 @@
 **Разделы §380–§396.** Ветка цикла — `cycle/019-tariff-limits-geocoder-cleanup` (её подготовил
 devops-engineer; ветки, коммиты и мёржи — не зона архитектора). Отправная точка — `develop` = `e3774c1`.
 
-**Вход:** `SPEC.md` цикла 19. Раздел «✅ Ответы заказчика (2026-09-28)» **приоритетнее** предположений
+**Вход:** `SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md` цикла 19. Раздел «✅ Ответы заказчика (2026-09-28)» **приоритетнее** предположений
 и §7 SPEC там, где они расходятся. `CURRENT_STATE.md` §0.4 (А и Б) — факты по коду, сверенные на
 входе. Действующее ограничение: **ломающие миграции запрещены с 25.09.2026**, CI проверяет снапшоты
 миграций (`Migrations snapshot drift`, `Designer snapshots are monotonic`).
@@ -21,10 +21,10 @@ devops-engineer; ветки, коммиты и мёржи — не зона ар
 
 ✅ **Служебная задача SPEC §4 (архив спеки цикла 18) по факту закрыта** коммитом `56eddd8`:
 `SPEC_CYCLE18_TRIAL_PLAN.md` лежит в корне, а `ARCHITECTURE_CYCLE18.md`, `API_CONTRACT_CYCLE18.md` и
-`LEGAL_REVIEW_CYCLE18.md` ссылаются на него (19 ссылок) и не содержат ни одной ссылки на `SPEC.md`.
-Остаток — задача **D0** (§390): одна ссылка «`SPEC.md` §5» в
+`LEGAL_REVIEW_CYCLE18.md` ссылаются на него (19 ссылок) и не содержат ни одной ссылки на `SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md`.
+Остаток — задача **D0** (§390): одна ссылка «`SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md` §5» в
 `ServiceBooking.Tests/Tests/Cycle18TrialPlanTests.cs:181` подразумевает спеку цикла 18. Плюс
-побайтная сверка `git show e3774c1:SPEC.md | cmp - SPEC_CYCLE18_TRIAL_PLAN.md`: у меня нет shell,
+побайтная сверка `git show e3774c1:SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md | cmp - SPEC_CYCLE18_TRIAL_PLAN.md`: у меня нет shell,
 проверить её я не могу.
 
 ---
@@ -632,10 +632,10 @@ frontend/
 
 ### Стадия 0 — до кода (devops, отдельный коммит)
 
-- **D0.** Перенаправить «`SPEC.md` §5» → «`SPEC_CYCLE18_TRIAL_PLAN.md` §5» в
+- **D0.** Перенаправить «`SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md` §5» → «`SPEC_CYCLE18_TRIAL_PLAN.md` §5» в
   `ServiceBooking.Tests/Tests/Cycle18TrialPlanTests.cs:181`. Прогнать
-  `git grep -n "SPEC.md" -- '*Trial*' '*Cycle18*'` и перенаправить остальные ссылки, если они
-  подразумевают спеку цикла 18. Сверить `git show e3774c1:SPEC.md | cmp - SPEC_CYCLE18_TRIAL_PLAN.md`.
+  `git grep -n "SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md" -- '*Trial*' '*Cycle18*'` и перенаправить остальные ссылки, если они
+  подразумевают спеку цикла 18. Сверить `git show e3774c1:SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md | cmp - SPEC_CYCLE18_TRIAL_PLAN.md`.
 
 ### Backend — трек А (лимиты)
 

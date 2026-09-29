@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { usePhotoUploadWithConsent } from '../../hooks/usePhotoUploadWithConsent'
 import { Button } from '../ui/Button'
 import { Icon } from '../ui/Icon'
+import { HEALTH_FORM_NO_PHOTO_NOTICE } from '../../legal/staffNotices'
 
 const MAX_PHOTOS = 5
 
@@ -160,6 +161,10 @@ export function NotePhotoUploader({
         </Button>
       </div>
       {error && <p className="text-xs text-danger">{error}</p>}
+      {/* Т20-03 п. 5 (LG1) — dословно юриста, `staffNotices.ts`. This uploader attaches photos to ANY
+          client note, so the warning is unconditional here, not gated on which note is open: staff
+          must never treat "attach a photo" as a way to record the paper consent form itself. */}
+      <p className="text-[11px] text-muted leading-snug">{HEALTH_FORM_NO_PHOTO_NOTICE}</p>
 
       {consentModal}
     </div>

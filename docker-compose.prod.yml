@@ -44,7 +44,6 @@ services:
       - SuperAdmin__Phone=${SUPERADMIN_PHONE}
       - SuperAdmin__Password=${SUPERADMIN_PASSWORD}
       - SmartCaptcha__SecretKey=${SMARTCAPTCHA_SECRET_KEY}
-      - SmartCaptcha__SiteKey=${SMARTCAPTCHA_SITE_KEY}
       - ASPNETCORE_ENVIRONMENT=Production
       # Private storage class for client-note photos (ARCHITECTURE.md §3): must never resolve inside
       # wwwroot/uploads (the public class, api_uploads below) — the API fail-fasts on startup if it does.
@@ -121,6 +120,11 @@ services:
       # false on the host, per the two-run procedure in DEPLOY.md. Empty/unset keeps the baked-in
       # default (dry run) — same fail-safe shape as NOTIFICATIONS_PROVIDER above.
       - ScheduledTasks__data-retention__DryRun=${RETENTION_DRY_RUN:-true}
+      # Сроки хранения цикла 20 (ARCHITECTURE_CYCLE20.md §413 D2). Числа названы в п. 13.2 Политики —
+      # не менять без legal-counsel. Пусто/не задано = значение по умолчанию из appsettings.json.
+      - Retention__BookingEventDays=${RETENTION__BOOKINGEVENTDAYS:-1095}
+      - Retention__GuestDataGateEventDays=${RETENTION__GUESTDATAGATEEVENTDAYS:-365}
+      - Retention__PlatformNoticeDays=${RETENTION__PLATFORMNOTICEDAYS:-1095}
     volumes:
       - api_uploads:/app/wwwroot/uploads          # public class: company logos, avatars, service images
       - api_private_uploads:/app/private-uploads  # private class: client-note photos — back this up separately, it holds personal data
@@ -139,7 +143,7 @@ services:
     # /api/health/live never touches the database (ARCHITECTURE.md §10.1), so this only tells docker
     # "the process is up and answering HTTP" — readiness (DB + migrations) is what deploy-remote.sh /
     # rollback.sh poll separately after a restart (T-D3). start_period is generous on purpose: it has to
-    # cover EF Core applying pending migrations on startup (Program.cs -> MigrateAsync()).
+    # cover EF Core applying pending migrations on startup (Startup/StartupSeedingExtensions.cs -> MigrateAsync(); Program.cs before cycle 22).
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
       interval: 30s

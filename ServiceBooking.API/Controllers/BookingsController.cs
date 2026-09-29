@@ -7,573 +7,47 @@ using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Bookings;
-using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
+using static ServiceBooking.API.Controllers.BookingEndpointHelpers;
 
 namespace ServiceBooking.API.Controllers;
-
 [ApiController]
 [Route("api/[controller]")]
 public class BookingsController(
-    AppDbContext db, SlotService slotService, AvailabilityService availabilityService, CaptchaService captchaService,
-    SubscriptionResolver subscriptionResolver, LegalDocumentProvider legalProvider,
+    AppDbContext db, SlotService slotService,
+    SubscriptionResolver subscriptionResolver,
     NotificationScheduler notificationScheduler, ServiceBooking.API.Services.Notifications.StaffPushScheduler staffPushScheduler,
     BookingEventLog eventLog, BookingActorResolver actorResolver,
-    ILogger<BookingsController> logger) : ControllerBase
+    ILogger<BookingsController> logger, BookingCreationService bookingCreation) : ControllerBase
 {
-    [HttpGet("occupied")]
-    [Authorize]
-    public async Task<ActionResult<List<OccupiedRangeDto>>> GetOccupied(
-        [FromQuery] string masterId,
-        [FromQuery] DateOnly date)
-    {
-        // masterId isn't secret (the public GET /api/companies/{id}/masters lists every master's id),
-        // so this endpoint used to let anyone anonymous pull any master's occupied hours across every
-        // company they work in (audit E3/Q9). Now it requires the caller to actually have a reason to
-        // know: SuperAdmin, the master themselves, or staff of at least one company the master also
-        // belongs to.
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var canView = User.IsInRole("SuperAdmin") || userId == masterId ||
-            await db.CompanyMembers.AnyAsync(cm => cm.UserId == userId &&
-                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner) &&
-                db.CompanyMembers.Any(m => m.UserId == masterId && m.CompanyId == cm.CompanyId));
-        if (!canView) return Forbid();
-
-        // Occupancy is deliberately NOT scoped by company: a master who works for two businesses is
-        // still one person, so a booking made in company A must block the same time in company B.
-        // Working hours ARE scoped by company (a master can keep different schedules) — the asymmetry
-        // is intentional (ARCHITECTURE.md §2.3, decision Q9). No companyId parameter is introduced here.
-        var bookings = await db.Bookings
-            .Where(b => b.MasterId == masterId && b.Date == date && b.Status != BookingStatus.Cancelled)
-            .Select(b => new OccupiedRangeDto(b.StartTime, b.EndTime))
-            .ToListAsync();
-        return Ok(bookings);
-    }
-
-    [HttpGet("slots")]
-    public async Task<ActionResult<List<TimeSlotResult>>> GetSlots(
-        [FromQuery] Guid companyId,
-        [FromQuery] string masterId,
-        [FromQuery] Guid? serviceId,
-        [FromQuery] DateOnly date,
-        [FromQuery] bool manual = false,
-        [FromQuery] bool extendedHours = false,
-        [FromQuery] List<Guid>? serviceIds = null,
-        [FromQuery] Guid? excludeBookingId = null)
-    {
-        // `manual` is client-supplied, so only honor it once we've independently verified the caller
-        // actually works in THIS company — same trust bar BookingsController.Create uses for
-        // isStaffManualBooking. Anyone else gets the regular schedule-gated grid, same as a guest
-        // (closes the A1 bypass: previously any authenticated user could pass manual=true).
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var isStaff = userId is not null &&
-            (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, companyId, userId));
-
-        int totalDuration;
-        if (excludeBookingId is not null)
-        {
-            // R2/R3 (`SPEC_CYCLE6_BOOKING_FIXES.md` §0.1 Q7, review of cycle 6): reschedule's own grid must (a) not block the
-            // booking's own current interval against itself, and (b) keep working when the service was
-            // later deactivated, dropped from the master's capability list, or the master left the
-            // company — none of that should make an existing booking un-reschedulable. Duration is
-            // therefore taken from the booking's own stored BookingServices/Service, never re-resolved
-            // and re-validated against the service/master catalog the way a NEW booking's serviceId is.
-            if (userId is null) return NotFound();
-            var booking = await db.Bookings.Include(b => b.BookingServices).Include(b => b.Service)
-                .FirstOrDefaultAsync(b => b.Id == excludeBookingId);
-            // §257.5/§290 (BREAKING № 1): a bare 404 with an EMPTY body — identical to the
-            // "not yours" answer below. A body here ("Booking not found") would make the two cases
-            // distinguishable again and turn the endpoint back into an existence oracle.
-            if (booking is null) return NotFound();
-            // ARCHITECTURE_CYCLE15.md §257.5/§290 (BREAKING № 1): a caller who is neither staff of this
-            // booking nor its own client gets a bare 404, same as a booking that doesn't exist —
-            // otherwise this endpoint would confirm "this booking id belongs to someone" to anyone who
-            // holds it. Order matters, same reasoning as before: authority first, the pair-match second.
-            var isOwnBooking = booking.ClientId == userId;
-            if (!isOwnBooking && !await CanManageBookingAsync(booking, userId)) return NotFound();
-            if (booking.CompanyId != companyId || booking.MasterId != masterId)
-                return BadRequest("excludeBookingId does not match companyId/masterId");
-
-            // NB: the "master works in this company" check below deliberately does NOT run on this
-            // path. The pair (companyId, masterId) is pinned to the booking's own CompanyId/MasterId
-            // by the equality check above, which is strictly stronger than a membership lookup — so
-            // nothing extra becomes addressable. Running it here would instead re-break the case all
-            // three documents (API_CONTRACT_CYCLE6.md §41.1, ARCHITECTURE_CYCLE6.md §46.3 and the
-            // comment right above) promise works: a master who has since left the company still has
-            // future bookings, and the owner must be able to move them.
-            totalDuration = booking.BookingServices is { Count: > 0 }
-                ? booking.BookingServices.Sum(bs => bs.DurationMinutes)
-                : booking.Service.DurationMinutes;
-        }
-        else
-        {
-            // The same triplet check POST /api/bookings performs, for the same reason: without it the
-            // caller picks companyId for the membership check but masterId/serviceId from anywhere. Staff
-            // of company A could then ask for a master of company B with manual=true and get that master's
-            // whole day minus their occupancy — and occupancy is deliberately cross-company (Q9), so this
-            // would be a weaker back door to exactly what GetOccupied above closes. 400, not 404: every
-            // object exists, it is the combination that is wrong (API_CONTRACT.md §2.2).
-            if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
-                return BadRequest("Этот мастер не работает в выбранной компании");
-
-            // US-67 (ARCHITECTURE_CYCLE6.md §47.2): serviceIds is the multi-service form of serviceId;
-            // when absent this is exactly the pre-cycle single-service path.
-            var (resolved, error) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
-            if (error is not null) return error;
-            totalDuration = resolved!.Value;
-        }
-
-        // ARCHITECTURE_CYCLE6.md §46.3: manual+staff -> DefaultWindow; manual+extendedHours+staff ->
-        // WholeDay; anything else (including extendedHours without manual, or a non-staff caller) -> None.
-        var fallback = manual && isStaff
-            ? (extendedHours ? ScheduleFallback.WholeDay : ScheduleFallback.DefaultWindow)
-            : ScheduleFallback.None;
-        var slots = await slotService.GetAvailableSlotsAsync(companyId, masterId, totalDuration, date, fallback, excludeBookingId);
-        return Ok(slots);
-    }
-
-    /// <summary>
-    /// Shared by GetSlots/GetAvailability: resolves the effective service list (single serviceId, or
-    /// serviceIds when supplied), validates the same three things POST /api/bookings validates
-    /// (existence/company/active, master capability — ARCHITECTURE_CYCLE6.md §47.1), and returns the
-    /// summed duration. Returns a non-null ActionResult when validation fails, which callers must
-    /// return directly.
-    /// </summary>
-    private async Task<(int? TotalDuration, ActionResult? Error)> ResolveTotalDurationAsync(
-        Guid companyId, string masterId, Guid? serviceId, List<Guid>? serviceIds)
-    {
-        var validation = BookingServiceSelection.Validate(serviceId, serviceIds);
-        if (!validation.IsValid) return (null, BadRequest(validation.Message));
-
-        var orderedIds = BookingServiceSelection.Resolve(serviceId, serviceIds);
-        var services = await db.Services.Where(s => orderedIds.Contains(s.Id)).ToListAsync();
-        if (services.Count != orderedIds.Distinct().Count()) return (null, NotFound("Service not found"));
-        if (services.Any(s => s.CompanyId != companyId))
-            return (null, BadRequest("Услуга не относится к выбранной компании"));
-        if (services.Any(s => !s.IsActive))
-            return (null, BadRequest("Услуга сейчас недоступна"));
-
-        var unsupported = await MasterCapability.FindUnsupportedServicesAsync(db, masterId, orderedIds);
-        if (unsupported.Count > 0)
-        {
-            var names = services.Where(s => unsupported.Contains(s.Id)).Select(s => s.Name);
-            return (null, BadRequest($"Мастер не оказывает услугу: {string.Join(", ", names)}"));
-        }
-
-        var servicesById = services.ToDictionary(s => s.Id);
-        var (totalDuration, _, _) = BookingServiceSelection.Aggregate(orderedIds, servicesById);
-        return (totalDuration, null);
-    }
-
-    /// <summary>
-    /// US-65 (ARCHITECTURE_CYCLE6.md §45): the whole-month state in one anonymous request, instead of
-    /// one GetSlots call per day. Same trust/validation shape as GetSlots — manual/extendedHours are
-    /// only honored for staff of this company; everyone else always gets ScheduleFallback.None.
-    /// </summary>
-    [HttpGet("availability")]
-    [EnableRateLimiting("availability")]
-    public async Task<ActionResult<AvailabilityDto>> GetAvailability(
-        [FromQuery] Guid companyId,
-        [FromQuery] string masterId,
-        [FromQuery] Guid? serviceId,
-        [FromQuery] DateOnly from,
-        [FromQuery] DateOnly to,
-        [FromQuery] bool manual = false,
-        [FromQuery] bool extendedHours = false,
-        [FromQuery] List<Guid>? serviceIds = null)
-    {
-        if (to < from) return BadRequest("to must not be before from");
-        if (to.DayNumber - from.DayNumber > 30) return BadRequest("Диапазон не может превышать 31 день");
-
-        var todayUtc = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (from < todayUtc.AddDays(-1)) return BadRequest("from is too far in the past");
-
-        var company = await db.Companies.FindAsync(companyId);
-        if (company is null) return NotFound("Company not found");
-
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var isStaff = userId is not null &&
-            (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, companyId, userId));
-        var honorManual = manual && isStaff;
-
-        var horizonDays = BookingHorizon.Normalize(company.BookingHorizonDays);
-        var horizonLastDate = BookingHorizon.LastBookableDate(todayUtc, horizonDays);
-        if (!honorManual && to > horizonLastDate)
-            return BadRequest($"Записаться можно не дальше чем на {horizonDays} дней вперёд");
-
-        if (!await CompanyMembership.IsStaffAsync(db, companyId, masterId))
-            return BadRequest("Этот мастер не работает в выбранной компании");
-
-        // US-67 (ARCHITECTURE_CYCLE6.md §47.2): same resolution GetSlots uses, so the calendar and the
-        // day's slot grid can never disagree about the visit's total duration.
-        var (totalDuration, durationError) = await ResolveTotalDurationAsync(companyId, masterId, serviceId, serviceIds);
-        if (durationError is not null) return durationError;
-
-        // ARCHITECTURE_CYCLE10.md §103.1: exactly the same trust table as GetSlots (BookingsController
-        // ~lines 121-125) — extendedHours without honorManual is None, same as everyone else.
-        var fallback = honorManual
-            ? (extendedHours ? ScheduleFallback.WholeDay : ScheduleFallback.DefaultWindow)
-            : ScheduleFallback.None;
-        var (defaultStart, defaultEnd) = slotService.GetDefaultWindow();
-        var days = await availabilityService.GetAvailabilityAsync(
-            companyId, masterId, totalDuration!.Value, from, to, fallback, defaultStart, defaultEnd, honorManual);
-
-        return Ok(new AvailabilityDto(from, to, totalDuration.Value, SlotCalculator.StepMinutes,
-            horizonDays, horizonLastDate, days, honorManual));
-    }
-
+    // Cycle 22 P5 (§378): occupied/slots/availability moved to BookingAvailabilityController; the body of
+    // Create to BookingCreationService, unchanged.
     [HttpPost]
     [EnableRateLimiting("booking-create")]
     public async Task<ActionResult<BookingDto>> Create(CreateBookingDto dto)
-    {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var isAuthenticated = userId is not null;
+    {        var result = await bookingCreation.CreateAsync(
+            dto, User, HttpContext.Connection.RemoteIpAddress?.ToString(), HttpContext.RequestAborted);
+        if (result.Error is not null) return result.Error;
 
-        // Company must exist before anything else — including for an authenticated caller. Previously
-        // this check only ran on the guest branch, so a logged-in caller with a bad CompanyId fell
-        // through to a 500 from a broken FK instead of a clean 404 (US-05).
-        var company = await db.Companies.FindAsync(dto.CompanyId);
-        if (company is null) return NotFound("Company not found");
-
-        // A booking is a "staff manual booking" when an authenticated caller who actually works in THIS
-        // company supplies guest details to record a walk-in for a third party. Everything else is an
-        // online self-booking: a guest booking for themselves, or an authenticated client booking for
-        // themselves.
-        var isManualBooking = !string.IsNullOrEmpty(dto.GuestName);
-        var isStaff = isAuthenticated &&
-            (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, dto.CompanyId, userId!));
-        var isStaffManualBooking = isManualBooking && isStaff;
-
-        // Anyone who supplies guest details without actually working here is not staff — they are a guest
-        // with an account, and they go through the exact same gates a guest does (self-booking toggle,
-        // captcha, tariff). This is the A1 bypass: previously `guestName` alone was enough to skip all four.
-        var isGuestPath = !isAuthenticated || (isManualBooking && !isStaff);
-
-        // The self-booking toggle governs every booking the public makes of its own accord, not just
-        // anonymous ones: a logged-in client booking themselves is online self-booking too. It used to
-        // sit inside the guest branch, so an authenticated client could ignore the switch entirely by
-        // calling the API directly — the same shape of hole as the guestName bypass this cycle closed.
-        // Staff are exempt: recording a walk-in is their tool, and the toggle is about the storefront.
-        if (!isStaff && !company.AllowSelfBooking) return Forbid();
-
-        if (isGuestPath)
-        {
-            // Guest booking is bot-protected by Yandex SmartCaptcha. When enforced (server key set, or
-            // Production) a valid token is mandatory and validation fails closed; in Development without
-            // a key it's skipped. See CaptchaService.
-            if (captchaService.IsEnforced)
-            {
-                if (string.IsNullOrEmpty(dto.CaptchaToken))
-                    return BadRequest("Captcha required for guest booking");
-
-                var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-                if (!await captchaService.ValidateAsync(dto.CaptchaToken, ip))
-                    return BadRequest("Invalid captcha");
-            }
-
-            if (string.IsNullOrEmpty(dto.GuestName) || string.IsNullOrEmpty(dto.GuestPhone))
-                return BadRequest("Name and phone are required for guest booking");
-        }
-
-        // US-26: canonical form is what gets stored, for guest bookings same as everywhere else —
-        // otherwise the same walk-in phoned in as "8 999..." and booked online as "+7 999..." would
-        // show up as two different people in MastersController.GetClients.
-        var guestPhone = dto.GuestPhone;
-        if (!string.IsNullOrEmpty(guestPhone))
-        {
-            // US-61/Q4 (§48.2 p.4): a new guest phone (self-booking or staff recording a walk-in) only
-            // accepts the Russian format.
-            if (!PhoneNormalizer.TryNormalizeRussian(guestPhone, out var canonicalGuestPhone))
-                return BadRequest("Введите номер телефона в формате +7 (900) 000-00-00");
-            guestPhone = canonicalGuestPhone;
-        }
-
-        // Plan: Free permits ONLY staff manual bookings. Any online self-booking — a guest booking for
-        // themselves, or an authenticated client booking for themselves — requires the company's owner
-        // account to be on a plan whose tariff config allows online booking (the resolver already
-        // treats an inactive/expired subscription as Free).
-        var effectivePlan = await subscriptionResolver.GetEffectivePlanAsync(dto.CompanyId);
-        if (!effectivePlan.AllowOnlineBooking && !isStaffManualBooking)
-            return StatusCode(402, "Online booking requires a paid subscription.");
-
-        // US-67 (ARCHITECTURE_CYCLE6.md §47.1): serviceIds is the multi-service form of serviceId —
-        // 1..5, no duplicates, serviceId must equal serviceIds[0] when both are sent.
-        var selectionValidation = BookingServiceSelection.Validate(dto.ServiceId, dto.ServiceIds);
-        if (!selectionValidation.IsValid) return BadRequest(selectionValidation.Message);
-
-        var orderedServiceIds = BookingServiceSelection.Resolve(dto.ServiceId, dto.ServiceIds);
-        var services = await db.Services.Where(s => orderedServiceIds.Contains(s.Id)).ToListAsync();
-        if (services.Count != orderedServiceIds.Distinct().Count()) return NotFound("Service not found");
-        // Objects exist but their combination doesn't make sense — 400, not 404 (ARCHITECTURE.md §14.4).
-        if (services.Any(s => s.CompanyId != dto.CompanyId))
-            return BadRequest("Услуга не относится к выбранной компании");
-        if (services.Any(s => !s.IsActive)) return BadRequest("Услуга сейчас недоступна");
-        if (!await CompanyMembership.IsStaffAsync(db, dto.CompanyId, dto.MasterId))
-            return BadRequest("Master is not a staff member of this company");
-
-        // The master must be able to perform EVERY selected service, not just the first one
-        // (ARCHITECTURE_CYCLE6.md §47.1 p.2) — a client adding a service the chosen master doesn't do
-        // gets told so directly, rather than a silently empty slot list.
-        var unsupportedServices = await MasterCapability.FindUnsupportedServicesAsync(db, dto.MasterId, orderedServiceIds);
-        if (unsupportedServices.Count > 0)
-        {
-            var unsupportedNames = services.Where(s => unsupportedServices.Contains(s.Id)).Select(s => s.Name);
-            return BadRequest($"Мастер не оказывает услугу: {string.Join(", ", unsupportedNames)}");
-        }
-
-        var servicesById = services.ToDictionary(s => s.Id);
-        var (totalDurationMinutes, totalPrice, orderedServices) =
-            BookingServiceSelection.Aggregate(orderedServiceIds, servicesById);
-        // service.Price/service.DurationMinutes below now mean "the visit total" — kept as one variable
-        // so the rest of this method (mostly written before US-67) reads exactly like it always did.
-        var service = orderedServices[0];
-
-        var slotEnd = dto.StartTime.AddMinutes(totalDurationMinutes);
-
-        // Not in the past, and doesn't wrap past midnight (TimeOnly can't represent 24:00, so an
-        // overflowing slot would otherwise silently give EndTime < StartTime). Applies to every path,
-        // including staff manual bookings — Q7's relaxation is about working hours, not about the past.
-        if (!IsBookableMoment(dto.Date, dto.StartTime, totalDurationMinutes))
-            return Conflict("Time slot is no longer available");
-
-        // US-65/Q5 (ARCHITECTURE_CYCLE6.md §45.7 p.2/p.3): the client-only path is bounded by the
-        // company's booking horizon; staff (manual bookings) are never subject to this — a salon must
-        // always be able to book a regular ahead of the public window. 400, not 409: this is unrelated
-        // to slot occupancy (§45.7 p.3).
-        if (!isStaffManualBooking)
-        {
-            var horizonDays = BookingHorizon.Normalize(company!.BookingHorizonDays);
-            var todayUtc = DateOnly.FromDateTime(DateTime.UtcNow);
-            if (!BookingHorizon.IsWithin(dto.Date, todayUtc, horizonDays))
-                return BadRequest($"Записаться можно не дальше чем на {horizonDays} дней вперёд");
-        }
-
-        AppUser? client = null;
-        if (isAuthenticated && !isManualBooking)
-            client = await db.Users.FindAsync(userId);
-
-        // Prepayment is gated the same way as public listing: the owner's own toggle
-        // (Company.RequirePrepayment) AND the tariff's AllowOnlinePayment — mirrors CompanyDto.PrepaymentEnabled.
-        // Applies to every non-staff path (a client who supplied guestName is still an online self-booking).
-        var requiresPrepayment = !isStaffManualBooking && effectivePlan.AllowOnlinePayment && company.RequirePrepayment;
-
-        // Snapshot the master's CURRENT commission rate for this company onto the booking, the same way
-        // Price snapshots the service's price — see the comment on Booking.CommissionPercent. Read here,
-        // at creation time, not looked up later by the report from a CompanyMembers row that may have
-        // changed rate or been deleted entirely.
-        var masterCommissionPercent = await db.CompanyMembers
-            .Where(cm => cm.CompanyId == dto.CompanyId && cm.UserId == dto.MasterId)
-            .Select(cm => cm.CommissionPercent)
-            .FirstOrDefaultAsync();
-
-        // US-37 p.3, ARCHITECTURE.md §5.2/§6.2: the consent snapshot is filled by the SERVER, from the
-        // legal documents in effect right now, and ONLY on the guest path — never from the request body
-        // (CreateBookingDto gets no new fields for this), and never on a staff manual booking or an
-        // authenticated client's own booking (their consent already lives in the ConsentRecord journal,
-        // ARCHITECTURE_CYCLE5.md §44.2). If the
-        // manifest happens to be unavailable (only possible outside Production), the booking still goes
-        // through — a guest's ability to book must not depend on the legal text provider being up —
-        // just without a consent snapshot on this one booking.
-        string? consentPrivacyVersion = null, consentTermsVersion = null;
-        DateTime? consentAcceptedAtUtc = null;
-        if (isGuestPath)
-        {
-            var legalSnapshot = legalProvider.Current;
-            var privacyDoc = legalSnapshot?.Get(LegalDocumentType.Privacy);
-            var termsDoc = legalSnapshot?.Get(LegalDocumentType.TermsClient);
-            if (privacyDoc is not null && termsDoc is not null)
-            {
-                consentPrivacyVersion = privacyDoc.Version;
-                consentTermsVersion = termsDoc.Version;
-                consentAcceptedAtUtc = DateTime.UtcNow;
-            }
-        }
-
-        // ARCHITECTURE_CYCLE5.md §44.5, API_CONTRACT_CYCLE5.md §46.1 (BREAKING № 5). BookingNoticeVersion
-        // is filled unconditionally — the ст. 18 notice (D5) is shown on the booking form regardless of
-        // who's filling it out, unlike the guest-only consent snapshot above. A manifest that isn't
-        // loaded (only possible outside Production) simply leaves it null, same "booking must not depend
-        // on the legal text provider being up" rule as the consent snapshot.
-        var bookingNoticeVersion = legalProvider.Current?.GetText(LegalTextKey.BookingNotice)?.Version;
-
-        // US-78 п. 1: applies only to the self-booking paths (client, guest, /embed — all the same
-        // endpoint) — a staff manual booking is the staff member's own tool, recording who's actually in
-        // front of them; there is no "someone else" to confirm authority over.
-        DateTime? guardianConfirmedAtUtc = null;
-        string? guardianConfirmationVersion = null;
-        if (!isStaffManualBooking && dto.BookedForOther)
-        {
-            if (dto.GuardianConfirmation is not { Confirmed: true })
-                return BadRequest("Для записи другого человека нужно подтвердить полномочия.");
-
-            var guardianText = legalProvider.Current?.GetText(LegalTextKey.GuardianConfirmation);
-            if (guardianText is null)
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
-            if (dto.GuardianConfirmation.TextVersion != guardianText.Version)
-                return Conflict("Текст подтверждения был обновлён — перечитайте и подтвердите заново.");
-
-            guardianConfirmedAtUtc = DateTime.UtcNow;
-            guardianConfirmationVersion = guardianText.Version;
-        }
-
-        var booking = new Booking
-        {
-            Id = Guid.NewGuid(),
-            CompanyId = dto.CompanyId,
-            ServiceId = dto.ServiceId,
-            MasterId = dto.MasterId,
-            // A client who supplies guestName without actually being staff is still the owner of the
-            // booking (A6 fix carried through here too) — only a genuine staff manual booking leaves
-            // ClientId unset. Previously `isManualBooking ? null : userId` gave such a client an
-            // ownerless "guest" booking that anyone could later review (see ReviewsController).
-            ClientId = isStaffManualBooking ? null : userId,
-            GuestName = dto.GuestName,
-            GuestPhone = guestPhone,
-            GuestEmail = dto.GuestEmail,
-            Date = dto.Date,
-            StartTime = dto.StartTime,
-            EndTime = slotEnd,
-            Notes = dto.Notes,
-            ConsentPrivacyVersion = consentPrivacyVersion,
-            ConsentTermsVersion = consentTermsVersion,
-            ConsentAcceptedAtUtc = consentAcceptedAtUtc,
-            BookingNoticeVersion = bookingNoticeVersion,
-            BookedForOther = !isStaffManualBooking && dto.BookedForOther,
-            GuardianConfirmedAtUtc = guardianConfirmedAtUtc,
-            GuardianConfirmationVersion = guardianConfirmationVersion,
-            Status = BookingStatus.Confirmed,
-            PaymentStatus = requiresPrepayment ? PaymentStatus.Pending : PaymentStatus.NotRequired,
-            Price = totalPrice,
-            CommissionPercent = masterCommissionPercent
-        };
-
-        // US-67 (ARCHITECTURE_CYCLE6.md §44.2 p.2/p.3): one row per selected service, in request order,
-        // snapshot at booking time — Σ prices/durations here must equal Price/EndTime-StartTime above.
-        var bookingServices = orderedServices.Select((s, position) => new BookingService
-        {
-            Id = Guid.NewGuid(),
-            BookingId = booking.Id,
-            ServiceId = s.Id,
-            Position = position,
-            NameSnapshot = s.Name,
-            DurationMinutes = s.DurationMinutes,
-            Price = s.Price,
-        }).ToList();
-
-        // Serialize concurrent create/reschedule requests for the same master+date so the
-        // conflict check below and the insert are atomic — otherwise two requests can both pass
-        // the check for the same free slot and both succeed, double-booking the master.
-        await using var transaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"booking-slot:{dto.MasterId}:{dto.Date:O}");
-
-        // Occupancy is deliberately NOT scoped by company: a master who works for two businesses is
-        // still one person, so a booking made in company A must block the same time in company B.
-        // Working hours ARE scoped by company (a master can keep different schedules) — the asymmetry
-        // is intentional (ARCHITECTURE.md §2.3).
-        var existingBookings = await db.Bookings
-            .Where(b => b.MasterId == dto.MasterId && b.Date == dto.Date && b.Status != BookingStatus.Cancelled)
-            .Select(b => new TimeRange(b.StartTime, b.EndTime))
-            .ToListAsync();
-
-        bool slotOk;
-        if (isStaffManualBooking)
-        {
-            // Decision Q7: staff may book any free time, no schedule/breaks/grid rule applies — only the
-            // existing conflict check (unchanged expression, dating back to before this cycle).
-            slotOk = !existingBookings.Any(b => b.Start < slotEnd && b.End > dto.StartTime);
-        }
-        else
-        {
-            // Everyone else gets exactly the rule GET /api/bookings/slots would have offered them: the
-            // same SlotCalculator, so the two can never drift apart (US-03).
-            var workingHours = await db.WorkingHours
-                .Include(wh => wh.Breaks)
-                .FirstOrDefaultAsync(wh => wh.MasterId == dto.MasterId && wh.CompanyId == dto.CompanyId
-                    && wh.Date == dto.Date && wh.IsWorking);
-            var breaks = workingHours?.Breaks.Select(b => new TimeRange(b.StartTime, b.EndTime)).ToList() ?? [];
-
-            slotOk = SlotCalculator.IsSlotAllowed(dto.StartTime, totalDurationMinutes,
-                workingHours?.StartTime, workingHours?.EndTime, breaks, existingBookings, ScheduleFallback.None);
-        }
-
-        if (!slotOk) return Conflict("Time slot is no longer available");
-
-        // Invariant check (ARCHITECTURE_CYCLE6.md §44.2 p.2): Σ BookingService rows must equal the
-        // booking's own totals before anything is persisted — a mismatch here is a bug in the
-        // aggregation above, not a user-facing 400.
-        if (bookingServices.Sum(bs => bs.Price) != booking.Price ||
-            bookingServices.Sum(bs => bs.DurationMinutes) != (booking.EndTime - booking.StartTime).TotalMinutes)
-            throw new InvalidOperationException("BookingService totals do not match the booking's Price/duration.");
-
-        db.Bookings.Add(booking);
-        db.BookingServices.AddRange(bookingServices);
-
-        // ARCHITECTURE_CYCLE10.md §105: one of six BookingEventLog.Append call sites, inside this same
-        // transaction and BEFORE SaveChangesAsync — deliberately not wrapped in try/catch (unlike the
-        // notification scheduler below): a failure to record the journal row must fail the booking too.
-        var createActor = await actorResolver.ResolveAsync(User, booking);
-        eventLog.Append(booking, BookingEventKind.Created,
-            createActor.Kind, createActor.UserId, createActor.NameSnapshot, createActor.RoleSnapshot);
-
-        // ARCHITECTURE_CYCLE4.md §25.3: queued in the SAME transaction as the booking itself, after all
-        // eight existing gates above (none of which are touched) and before SaveChangesAsync — the
-        // scheduler only tracks changes on this same AppDbContext, it never calls SaveChangesAsync
-        // itself. A failure here must not fail the booking (US-28 p.4: the booking is more important than
-        // the notification), so it's caught and logged, never rethrown.
-        try
-        {
-            await notificationScheduler.OnBookingCreatedAsync(
-                booking, orderedServices.Select(s => s.Name).ToList(), HttpContext.RequestAborted);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to queue notifications for booking {BookingId}", booking.Id);
-        }
-
-        // ARCHITECTURE_CYCLE9.md §105.6 (US-116) — same transaction, same "must never fail the booking"
-        // isolation as the WhatsApp/MAX scheduler call directly above. A separate try/catch (not folded
-        // into the one above) so a Web Push queueing bug can never suppress the WhatsApp/MAX event, or
-        // vice versa — each subsystem's own failure stays its own.
-        try
-        {
-            await staffPushScheduler.OnBookingCreatedAsync(
-                booking, orderedServices.Select(s => s.Name).ToList(),
-                User.FindFirstValue(ClaimTypes.NameIdentifier), HttpContext.RequestAborted);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to queue staff push notifications for booking {BookingId}", booking.Id);
-        }
-
-        await db.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        var master = await db.Users.FindAsync(dto.MasterId);
-        booking.Company = company;
-        booking.BookingServices = bookingServices;
-        var clientName = client is not null
-            ? $"{client.FirstName} {client.LastName}"
-            : dto.GuestName ?? "Guest";
-
-        return CreatedAtAction(nameof(GetById), new { id = booking.Id },
-            MapToDto(booking, service, master!, clientName, reminderStatus: null, historyEventCount: null));
+        return CreatedAtAction(nameof(GetById), new { id = result.BookingId }, result.Dto);
     }
 
     [HttpGet("{id:guid}")]
     [Authorize]
-    public async Task<ActionResult<BookingDto>> GetById(Guid id)
+    public async Task<ActionResult<BookingDto>> GetById(Guid id, CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var booking = await db.Bookings
+            .AsNoTracking()
             .Include(b => b.Service)
             .Include(b => b.Master)
             .Include(b => b.Client)
             .Include(b => b.Company)
             .Include(b => b.BookingServices)
-            .FirstOrDefaultAsync(b => b.Id == id);
+            .FirstOrDefaultAsync(b => b.Id == id, ct);
 
         if (booking is null) return NotFound();
 
@@ -584,7 +58,7 @@ public class BookingsController(
             ? $"{booking.Client.FirstName} {booking.Client.LastName}"
             : booking.GuestName ?? "Guest";
 
-        var reminderStatus = await ReminderStatusForAsync(booking.Id);
+        var reminderStatus = await ReminderStatusForAsync(booking.Id, ct);
 
         // API_CONTRACT_CYCLE10.md §123: historyEventCount is filled here only for staff of this booking's
         // company (or SuperAdmin) — the same "personnel of the company" bar §122's history endpoint uses,
@@ -593,7 +67,7 @@ public class BookingsController(
             (userId is not null && await CompanyMembership.IsStaffAsync(db, booking.CompanyId, userId));
         int? historyEventCount = null;
         if (isStaffOfCompany)
-            historyEventCount = await db.BookingEvents.CountAsync(e => e.BookingId == booking.Id);
+            historyEventCount = await db.BookingEvents.CountAsync(e => e.BookingId == booking.Id, ct);
 
         return Ok(MapToDto(booking, booking.Service, booking.Master, clientName, reminderStatus, historyEventCount));
     }
@@ -604,13 +78,14 @@ public class BookingsController(
 
     [HttpGet("client")]
     [Authorize]
-    public async Task<ActionResult<List<BookingDto>>> GetClientBookings([FromQuery] string? status)
+    public async Task<ActionResult<List<BookingDto>>> GetClientBookings([FromQuery] string? status, CancellationToken ct)
     {
         if (!BookingFilters.TryParseClientStatus(status, out var filter))
             return BadRequest("Unknown status filter. Expected: upcoming, Pending, Confirmed, Cancelled, Completed, NoShow.");
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var query = db.Bookings
+            .AsNoTracking()
             .Include(b => b.Service)
             .Include(b => b.Master)
             .Include(b => b.Client)
@@ -631,7 +106,7 @@ public class BookingsController(
             _ => query
         };
 
-        var bookings = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime).ToListAsync();
+        var bookings = await query.OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime).ToListAsync(ct);
 
         // ARCHITECTURE_CYCLE15.md §257.8/§286 — one batched plan lookup for the whole page, not one
         // query per booking (Company is already Include()d above, so this is the only extra round trip,
@@ -644,6 +119,9 @@ public class BookingsController(
             var name = b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Guest";
             var company = b.Company;
             var minHours = ClientRescheduleWindow.Normalize(company.ClientRescheduleMinHours);
+            // ARCHITECTURE_CYCLE20.md §405 (US-20-04) — cancel has its own, capped window; reschedule
+            // above keeps using the uncapped company value.
+            var cancelMinHours = ClientRescheduleWindow.EffectiveCancelHours(company.ClientRescheduleMinHours);
             var plan = plansByCompany.GetValueOrDefault(b.CompanyId);
             var currentVisitStartUtc = NotificationTiming.ComputeVisitStartUtc(b.Date, b.StartTime, company.TimeZoneId);
             // §286 — a hint, not a re-check of the target time (there isn't one yet): only the CURRENT
@@ -656,25 +134,28 @@ public class BookingsController(
 
             // ARCHITECTURE_CYCLE17.md §304.3, API_CONTRACT_CYCLE17.md §323 — deliberately does NOT
             // fold in AllowSelfBooking/plan.AllowOnlineBooking: cancel depends on neither (§0-bis).
+            // ARCHITECTURE_CYCLE20.md §405 — uses the CAPPED cancelMinHours, not minHours.
             var cancelAllowed =
                 (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed) &&
-                ClientRescheduleWindow.CanClientCancel(nowForWindowUtc, currentVisitStartUtc, minHours);
+                ClientRescheduleWindow.CanClientCancel(nowForWindowUtc, currentVisitStartUtc, cancelMinHours);
 
             // П8/API_CONTRACT_CYCLE10.md §123: reminderStatus/historyEventCount always null on the
             // client's own endpoint — not filtered on the frontend, simply never computed here.
             return MapToDto(b, b.Service, b.Master, name, reminderStatus: null, historyEventCount: null,
                 clientRescheduleAllowed: rescheduleAllowed, clientRescheduleMinHours: minHours,
                 companyBookingHorizonDays: BookingHorizon.Normalize(company.BookingHorizonDays),
-                clientCancelAllowed: cancelAllowed);
+                clientCancelAllowed: cancelAllowed, clientCancelMinHours: cancelMinHours);
         }));
     }
 
     [HttpGet("master")]
     [Authorize(Roles = "Master,CompanyOwner")]
-    public async Task<ActionResult<List<BookingDto>>> GetMasterBookings([FromQuery] DateOnly? date, [FromQuery] DateOnly? to)
+    public async Task<ActionResult<List<BookingDto>>> GetMasterBookings([FromQuery] DateOnly? date, [FromQuery] DateOnly? to,
+        CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var query = db.Bookings
+            .AsNoTracking()
             .Include(b => b.Service)
             .Include(b => b.Master)
             .Include(b => b.Client)
@@ -690,14 +171,14 @@ public class BookingsController(
         var bookings = await query
             .OrderBy(b => b.Date)
             .ThenBy(b => b.StartTime)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         // API_CONTRACT_CYCLE4.md §30.3: one batched query for the whole page's reminder status, not one
         // per booking — same "batch, don't loop" convention as everything else added this cycle.
-        var reminderStatusByBooking = await ReminderStatusesForAsync(bookings.Select(b => b.Id));
+        var reminderStatusByBooking = await ReminderStatusesForAsync(bookings.Select(b => b.Id), ct);
         // API_CONTRACT_CYCLE10.md §123: same batching convention for historyEventCount — one grouping
         // query for the whole page, not N+1.
-        var historyCountByBooking = await HistoryEventCountsForAsync(bookings.Select(b => b.Id));
+        var historyCountByBooking = await HistoryEventCountsForAsync(bookings.Select(b => b.Id), ct);
 
         return Ok(bookings.Select(b =>
         {
@@ -798,13 +279,10 @@ public class BookingsController(
         // US-67 (ARCHITECTURE_CYCLE6.md §47.2): duration comes from the sum of the visit's
         // BookingService rows, not booking.Service.DurationMinutes — a pre-cycle booking has exactly
         // one such row (backfilled), so this is a no-op change for it.
-        // The fallback mirrors MapToDto below: if BookingServices is somehow empty, fall back to the
-        // single legacy service rather than summing to zero. Without it a row-less visit reschedules
-        // to EndTime == StartTime and silently collapses to nothing — the two other places that read
-        // this sum already guard it, and the asymmetry was a review finding of this cycle.
-        var totalDurationMinutes = booking.BookingServices is { Count: > 0 }
-            ? booking.BookingServices.Sum(bs => bs.DurationMinutes)
-            : booking.Service.DurationMinutes;
+        // The fallback (BookingServiceExtensions): if BookingServices is somehow empty, fall back to the
+        // single legacy service rather than summing to zero — a row-less visit would otherwise
+        // reschedule to EndTime == StartTime and silently collapse to nothing.
+        var totalDurationMinutes = booking.TotalDurationMinutes();
         var slotEnd = dto.StartTime.AddMinutes(totalDurationMinutes);
 
         if (authority == RescheduleAuthority.Staff)
@@ -899,9 +377,7 @@ public class BookingsController(
             // rule StaffPushScheduler.OnBookingCreatedAsync already applies to creation).
             if (authority == RescheduleAuthority.ClientOwner)
             {
-                var serviceNames = booking.BookingServices is { Count: > 0 }
-                    ? booking.BookingServices.OrderBy(bs => bs.Position).Select(bs => bs.NameSnapshot).ToList()
-                    : [booking.Service.Name];
+                var serviceNames = booking.ServiceNames();
                 await staffPushScheduler.OnBookingRescheduledAsync(booking, serviceNames, userId, HttpContext.RequestAborted);
             }
         }
@@ -948,7 +424,9 @@ public class BookingsController(
         // Reschedule's 400): 400 here is already occupied by the reason-length check above.
         if (authority == RescheduleAuthority.ClientOwner)
         {
-            var minHours = ClientRescheduleWindow.Normalize(booking.Company.ClientRescheduleMinHours);
+            // ARCHITECTURE_CYCLE20.md §405 (US-20-04, Т20-05) — capped at MaxEnforcedCancelHours; the
+            // text below names the APPLIED number, never the company's raw (possibly larger) setting.
+            var minHours = ClientRescheduleWindow.EffectiveCancelHours(booking.Company.ClientRescheduleMinHours);
             var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, booking.Company.TimeZoneId);
             if (!ClientRescheduleWindow.CanClientCancel(DateTime.UtcNow, visitStartUtc, minHours))
             {
@@ -987,75 +465,33 @@ public class BookingsController(
     // SuperAdmin, or the CompanyOwner of the booking's company. Used by every staff operation (view,
     // complete, mark-paid, no-show, reschedule, cancel) so the rule can't drift between them again —
     // cancel used to be missing the CompanyOwner branch that all the others had.
-    // The one rule about *when* a booking may sit, shared by Create and Reschedule so the two can't
-    // drift apart: not in the past, and not wrapping past midnight (TimeOnly can't represent 24:00, so
-    // an overflowing slot would otherwise silently produce EndTime < StartTime). This applies to every
-    // path including staff manual bookings — Q7 relaxes working hours, not the past. UTC is the
-    // project-wide reference until timezones land; see ARCHITECTURE.md §2.5.
-    private static bool IsBookableMoment(DateOnly date, TimeOnly startTime, int durationMinutes)
-    {
-        var nowUtc = DateTime.UtcNow;
-        var today = DateOnly.FromDateTime(nowUtc);
-        var nowTime = TimeOnly.FromDateTime(nowUtc);
+    // Cycle 22 P5 (§385): the shared rule lives in BookingEndpointHelpers, unchanged.
+    private Task<bool> CanManageBookingAsync(Booking booking, string userId) =>
+        BookingEndpointHelpers.CanManageBookingAsync(db, User, booking, userId);
 
-        var isInThePast = date < today || (date == today && startTime < nowTime);
-        var overflowsIntoNextDay =
-            startTime.ToTimeSpan() + TimeSpan.FromMinutes(durationMinutes) >= TimeSpan.FromDays(1);
-
-        return !isInThePast && !overflowsIntoNextDay;
-    }
-
-    private async Task<bool> CanManageBookingAsync(Booking booking, string userId)
-    {
-        if (booking.MasterId == userId || User.IsInRole("SuperAdmin")) return true;
-        return await db.CompanyMembers.AnyAsync(cm =>
-            cm.CompanyId == booking.CompanyId && cm.UserId == userId && cm.Role == UserRole.CompanyOwner);
-    }
-
-    private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName,
-        ReminderStatusDto? reminderStatus = null, int? historyEventCount = null,
-        bool? clientRescheduleAllowed = null, int? clientRescheduleMinHours = null, int? companyBookingHorizonDays = null,
-        bool? clientCancelAllowed = null)
-    {
-        // US-67 (API_CONTRACT_CYCLE6.md §43.2): `services` is built from BookingServices when loaded
-        // (every path except the in-memory object returned by Create, which sets it explicitly before
-        // calling here); falls back to the single legacy service `s` only if BookingServices wasn't
-        // populated at all, which should never happen after the AddBookingServices backfill.
-        var items = b.BookingServices is { Count: > 0 }
-            ? b.BookingServices.OrderBy(bs => bs.Position)
-                .Select(bs => new BookingServiceItemDto(bs.ServiceId, bs.NameSnapshot, bs.DurationMinutes, bs.Price))
-                .ToList()
-            : [new BookingServiceItemDto(b.ServiceId, s.Name, s.DurationMinutes, b.Price)];
-        var totalDurationMinutes = items.Sum(i => i.DurationMinutes);
-
-        return new(b.Id, b.CompanyId, b.Company?.Name ?? "", b.Company?.Slug ?? "", b.ServiceId, items[0].Name, b.MasterId,
-            $"{master.FirstName} {master.LastName}", b.ClientId, clientName,
-            b.GuestPhone ?? b.Client?.PhoneNumber, b.GuestEmail ?? b.Client?.Email,
-            b.Date, b.StartTime, b.EndTime, b.Status, b.PaymentStatus, b.Price, b.CancellationReason,
-            b.Notes, b.CreatedAt,
-            b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus,
-            totalDurationMinutes, items,
-            b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount,
-            clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays, clientCancelAllowed);
-    }
 
     // API_CONTRACT_CYCLE4.md §30.3. Picks the highest-Generation Reminder row for a booking (§23.5: a
     // reschedule supersedes the previous generation's row rather than mutating it), so a rescheduled
     // booking's card reflects the CURRENT reminder, not one already Cancelled by NotificationScheduler.
-    private async Task<ReminderStatusDto?> ReminderStatusForAsync(Guid bookingId)
+    private async Task<ReminderStatusDto?> ReminderStatusForAsync(Guid bookingId, CancellationToken ct)
     {
-        var map = await ReminderStatusesForAsync([bookingId]);
+        var map = await ReminderStatusesForAsync([bookingId], ct);
         return map.GetValueOrDefault(bookingId);
     }
 
-    private async Task<Dictionary<Guid, ReminderStatusDto>> ReminderStatusesForAsync(IEnumerable<Guid> bookingIds)
+    private async Task<Dictionary<Guid, ReminderStatusDto>> ReminderStatusesForAsync(IEnumerable<Guid> bookingIds, CancellationToken ct)
     {
         var ids = bookingIds.Distinct().ToList();
         if (ids.Count == 0) return [];
 
+        // §375 F8: only the columns the status line needs — never the rendered Body.
         var rows = await db.OutboundNotifications.AsNoTracking()
             .Where(n => n.BookingId != null && ids.Contains(n.BookingId!.Value) && n.Type == NotificationType.Reminder)
-            .ToListAsync();
+            .Select(n => new
+            {
+                BookingId = n.BookingId, n.Generation, n.CreatedAt, n.Status, n.Reason, n.ChannelId, n.ReadAtUtc, n.AttemptCount,
+            })
+            .ToListAsync(ct);
 
         return rows.GroupBy(n => n.BookingId!.Value)
             .ToDictionary(
@@ -1072,7 +508,7 @@ public class BookingsController(
     /// ARCHITECTURE_CYCLE10.md §105/§123: one grouping query for the whole page's historyEventCount, the
     /// same "batch, don't loop" pattern as ReminderStatusesForAsync above.
     /// </summary>
-    private async Task<Dictionary<Guid, int>> HistoryEventCountsForAsync(IEnumerable<Guid> bookingIds)
+    private async Task<Dictionary<Guid, int>> HistoryEventCountsForAsync(IEnumerable<Guid> bookingIds, CancellationToken ct)
     {
         var ids = bookingIds.Distinct().ToList();
         if (ids.Count == 0) return [];
@@ -1081,7 +517,7 @@ public class BookingsController(
             .Where(e => ids.Contains(e.BookingId))
             .GroupBy(e => e.BookingId)
             .Select(g => new { BookingId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.BookingId, x => x.Count);
+            .ToDictionaryAsync(x => x.BookingId, x => x.Count, ct);
     }
 
     /// <summary>
@@ -1098,10 +534,10 @@ public class BookingsController(
     /// </summary>
     [HttpGet("{id:guid}/history")]
     [Authorize]
-    public async Task<ActionResult<BookingHistoryDto>> GetHistory(Guid id)
+    public async Task<ActionResult<BookingHistoryDto>> GetHistory(Guid id, CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var booking = await db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id);
+        var booking = await db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, ct);
         if (booking is null) return NotFound();
 
         var isStaffOfCompany = User.IsInRole("SuperAdmin") ||
@@ -1111,7 +547,7 @@ public class BookingsController(
         var events = await db.BookingEvents.AsNoTracking()
             .Where(e => e.BookingId == id)
             .OrderBy(e => e.OccurredAtUtc)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         // §122.2: a booking predates the journal exactly when it has no Created event — no backfill
         // (decision П3), so this is computed, not stored.
@@ -1126,7 +562,7 @@ public class BookingsController(
         var deletedActorIds = actorIds.Count == 0 ? []
             : await db.Users.AsNoTracking()
                 .Where(u => actorIds.Contains(u.Id) && u.DeletedAtUtc != null)
-                .Select(u => u.Id).ToListAsync();
+                .Select(u => u.Id).ToListAsync(ct);
         var deletedActorIdSet = deletedActorIds.ToHashSet();
 
         var eventDtos = events.Select(e =>

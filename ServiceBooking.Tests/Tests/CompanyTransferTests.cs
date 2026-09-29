@@ -38,7 +38,8 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync(
             $"/api/admin/companies/{company.Id}/transfer",
-            new CompanyTransferInput(targetAccountId, targetOwner.UserId)); // holder of B — trivially "linked" (§51.1)
+            // holder of B — trivially "linked" (§51.1); ConfirmRightsTransfer required since cycle 20 (LG6, Т20-09).
+            new CompanyTransferInput(targetAccountId, targetOwner.UserId, ConfirmRightsTransfer: true));
 
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
@@ -78,9 +79,13 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
         var (sourceOwner, company) = await CreateOwnerWithCompanyAsync();
         // Free plan: AccountMaxCompanies = 1 (SubscriptionResolver.Free). A brand-new owner's first
         // company already fills that limit.
-        var (targetOwner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var (targetOwner, targetOwnCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
 
         var (sourceAccountId, targetAccountId) = await GetAccountIdsAsync(company.Id, targetOwner.UserId);
+        // LG6 precondition (see LinkCurrentOwnerToTargetAccountAsync's own doc comment) — orthogonal to
+        // what this test actually exercises (the company-limit refusal), a seat added by this membership
+        // doesn't affect CompanyLimitExceeded, which this 402 is about.
+        await LinkCurrentOwnerToTargetAccountAsync(targetOwnCompany.Id, sourceOwner.UserId);
 
         int logsBefore;
         using (var scope = Factory.Services.CreateScope())
@@ -90,7 +95,7 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
         }
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync(
-            $"/api/admin/companies/{company.Id}/transfer", new CompanyTransferInput(targetAccountId, null));
+            $"/api/admin/companies/{company.Id}/transfer", new CompanyTransferInput(targetAccountId, null, ConfirmRightsTransfer: true));
 
         ((int)response.StatusCode).Should().Be(402);
         (await response.Content.ReadAsStringAsync()).Should().NotBeNullOrEmpty();
@@ -115,9 +120,14 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
 
         // Target: unlimited companies, but only 1 employee seat total — and already at that limit
         // through its own first company (the owner). Adding a 1-seat company tips it over.
-        var (targetOwner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
+        var (targetOwner, targetOwnCompany) = await CreateOwnerWithCompanyAsync(attachPlan: false);
         var (sourceAccountId, targetAccountId) = await GetAccountIdsAsync(company.Id, targetOwner.UserId);
         await SetPlanForAccountAsync(targetAccountId, maxEmployees: 1, maxCompanies: 5);
+        // LG6 precondition (see LinkCurrentOwnerToTargetAccountAsync's own doc comment) — this membership
+        // itself already pushes the target over its 1-seat limit, but that only makes the seat-overflow
+        // assertions below MORE true, never less; it does not change which check (company-limit vs
+        // seat-overflow) this test is about.
+        await LinkCurrentOwnerToTargetAccountAsync(targetOwnCompany.Id, sourceOwner.UserId);
 
         int logsBefore;
         using (var scope = Factory.Services.CreateScope())
@@ -127,7 +137,8 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
         }
 
         var refused = await AuthedClient(admin.Token).PostAsJsonAsync(
-            $"/api/admin/companies/{company.Id}/transfer", new CompanyTransferInput(targetAccountId, null, ConfirmSeatOverflow: false));
+            $"/api/admin/companies/{company.Id}/transfer",
+            new CompanyTransferInput(targetAccountId, null, ConfirmSeatOverflow: false, ConfirmRightsTransfer: true));
         ((int)refused.StatusCode).Should().Be(409);
 
         using (var scope = Factory.Services.CreateScope())
@@ -139,7 +150,8 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
         }
 
         var confirmed = await AuthedClient(admin.Token).PostAsJsonAsync(
-            $"/api/admin/companies/{company.Id}/transfer", new CompanyTransferInput(targetAccountId, null, ConfirmSeatOverflow: true));
+            $"/api/admin/companies/{company.Id}/transfer",
+            new CompanyTransferInput(targetAccountId, null, ConfirmSeatOverflow: true, ConfirmRightsTransfer: true));
         confirmed.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         using (var scope = Factory.Services.CreateScope())
@@ -185,14 +197,17 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
     {
         var admin = await LoginAsSuperAdminAsync();
         var (sourceOwner, company) = await CreateOwnerWithCompanyAsync();
-        var (targetOwner, _) = await CreateOwnerWithCompanyAsync();
+        var (targetOwner, targetOwnCompany) = await CreateOwnerWithCompanyAsync();
         var (_, targetAccountId) = await GetAccountIdsAsync(company.Id, targetOwner.UserId);
+        // LG6 precondition (see LinkCurrentOwnerToTargetAccountAsync's own doc comment).
+        await LinkCurrentOwnerToTargetAccountAsync(targetOwnCompany.Id, sourceOwner.UserId);
 
         var (_, sourceAccountIdForChannel) = await GetAccountIdsAsync(company.Id, sourceOwner.UserId);
         var channelId = await ConnectChannelAndQueuePendingAsync(company.Id, sourceOwner.UserId, sourceAccountIdForChannel);
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync(
-            $"/api/admin/companies/{company.Id}/transfer", new CompanyTransferInput(targetAccountId, null));
+            $"/api/admin/companies/{company.Id}/transfer",
+            new CompanyTransferInput(targetAccountId, null, ConfirmRightsTransfer: true));
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         using var scope = Factory.Services.CreateScope();
@@ -213,14 +228,17 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
     {
         var admin = await LoginAsSuperAdminAsync();
         var (sourceOwner, company) = await CreateOwnerWithCompanyAsync();
-        var (targetOwner, _) = await CreateOwnerWithCompanyAsync();
+        var (targetOwner, targetOwnCompany) = await CreateOwnerWithCompanyAsync();
         var (_, targetAccountId) = await GetAccountIdsAsync(company.Id, targetOwner.UserId);
+        // LG6 precondition (see LinkCurrentOwnerToTargetAccountAsync's own doc comment).
+        await LinkCurrentOwnerToTargetAccountAsync(targetOwnCompany.Id, sourceOwner.UserId);
 
         // Transfer WITHOUT a new owner: sourceOwner keeps managing the company (Company.OwnerUserId
         // unchanged), but targetOwner's billing account now pays for it — precisely the "two axes"
         // split the merge-review finding was about.
         var response = await AuthedClient(admin.Token).PostAsJsonAsync(
-            $"/api/admin/companies/{company.Id}/transfer", new CompanyTransferInput(targetAccountId, null));
+            $"/api/admin/companies/{company.Id}/transfer",
+            new CompanyTransferInput(targetAccountId, null, ConfirmRightsTransfer: true));
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         using (var scope = Factory.Services.CreateScope())
@@ -253,6 +271,23 @@ public class CompanyTransferTests(TestDatabaseFixture fixture) : ApiTestBase(fix
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>ARCHITECTURE_CYCLE20.md §407.1/§407.2 (US-20-07, LG6) — a transfer WITHOUT a new owner
+    /// now requires the company's CURRENT owner to already be linked to the receiving account (held by
+    /// them, or a CompanyMember of one of its companies). The scenarios below intentionally keep the
+    /// owner unchanged, so this helper links <paramref name="currentOwnerUserId"/> as a member of
+    /// <paramref name="targetCompanyId"/> (a company already on the target account) — satisfying the
+    /// precondition without altering what each test is actually exercising.</summary>
+    private async Task LinkCurrentOwnerToTargetAccountAsync(Guid targetCompanyId, string currentOwnerUserId)
+    {
+        using var scope = Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.CompanyMembers.Add(new CompanyMember
+        {
+            Id = Guid.NewGuid(), CompanyId = targetCompanyId, UserId = currentOwnerUserId, Role = UserRole.Master,
+        });
+        await db.SaveChangesAsync();
+    }
 
     private async Task<(Guid Source, Guid Target)> GetAccountIdsAsync(Guid sourceCompanyId, string targetOwnerUserId)
     {

@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Configuration;
-
 namespace ServiceBooking.API.Services;
 
 /// <summary>Named subfolder of the public storage root — every public image class gets one, mirroring

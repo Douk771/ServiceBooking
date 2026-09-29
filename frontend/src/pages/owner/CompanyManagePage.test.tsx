@@ -175,10 +175,14 @@ describe('SettingsTab — clientRescheduleMinHours hint and empty-field behaviou
     ])
   })
 
-  it('shows the "leave the saved value alone" hint, not the old "2 hours by default" copy', async () => {
+  // Т20-05 п. 3 (API_CONTRACT_CYCLE20.md §435, US-20-04) replaced the §305.3 "leave the saved value
+  // alone" hint with the lawyer's caption about the 24 h cancellation ceiling — dословно
+  // `staffNotices.ts` (CANCEL_WINDOW_FIELD_CAPTION), not a paraphrase written at the call site.
+  it('shows the Т20-05 п. 3 caption about the 24 h cancellation ceiling, not the old §305.3 copy', async () => {
     renderSettings()
 
-    expect(await screen.findByText(/Пусто — оставить текущее значение/)).toBeInTheDocument()
+    expect(await screen.findByText(/не больше 24 часов/)).toBeInTheDocument()
+    expect(screen.queryByText(/Пусто — оставить текущее значение/)).not.toBeInTheDocument()
     expect(screen.queryByText('Пусто — 2 часа по умолчанию. 0 — можно перенести вплоть до начала визита.')).not.toBeInTheDocument()
   })
 

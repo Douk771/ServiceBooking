@@ -84,7 +84,6 @@ public static class TestHostSettings
         builder.UseSetting("SuperAdmin:Email", admin.Email);
         builder.UseSetting("SuperAdmin:Password", SuperAdminPassword);
         builder.UseSetting("SmartCaptcha:SecretKey", "");
-        builder.UseSetting("SmartCaptcha:SiteKey", "");
         builder.UseSetting("Logging:LogLevel:Microsoft.EntityFrameworkCore", "Warning");
 
         // §71.3: file resources move from repo-relative shared directories to a run+factory-scoped temp

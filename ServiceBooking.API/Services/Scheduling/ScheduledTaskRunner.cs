@@ -47,12 +47,23 @@ public sealed class ScheduledTaskRunner(
         using var listScope = scopeFactory.CreateScope();
         var tasks = listScope.ServiceProvider.GetServices<IScheduledTask>().ToList();
 
+        // Cycle 22 (§375 F22): every task's state in ONE query per tick, as a pre-filter. It can only
+        // be stale in one direction — LastStartedAtUtc only ever moves forward (another instance ran
+        // the task meanwhile), and IsDue is monotone in it — so "not due" by this snapshot is final,
+        // while "due" is re-read from the DB right before running, exactly where the per-task read
+        // used to be. Same decisions, one query per tick plus one per task that is actually due.
+        var listDb = listScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var snapshot = await listDb.ScheduledTaskStates.AsNoTracking()
+            .ToDictionaryAsync(s => s.Name, s => s.LastStartedAtUtc, stoppingToken);
+
         foreach (var task in tasks)
         {
             if (stoppingToken.IsCancellationRequested) return;
 
             var options = ScheduledTaskOptions.For(config, task);
             if (!options.Enabled) continue;
+
+            if (!ScheduledTaskSchedule.IsDue(snapshot.GetValueOrDefault(task.Name), options.Period, DateTime.UtcNow)) continue;
 
             // "Is it time yet" is read from the DB, not memory — the whole point is to survive a
             // restart without re-running early (US-21 p.4).

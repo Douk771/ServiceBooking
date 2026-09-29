@@ -20,7 +20,8 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
         [FromQuery] string masterId,
         [FromQuery] Guid companyId,
         [FromQuery] DateOnly from,
-        [FromQuery] DateOnly to)
+        [FromQuery] DateOnly to,
+        CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(masterId, companyId, userId)) return Forbid();
@@ -30,7 +31,7 @@ public class WorkingHoursController(AppDbContext db) : ControllerBase
             .Where(wh => wh.MasterId == masterId && wh.CompanyId == companyId
                       && wh.Date >= from && wh.Date <= to)
             .OrderBy(wh => wh.Date)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(hours.Select(ToDto).ToList());
     }

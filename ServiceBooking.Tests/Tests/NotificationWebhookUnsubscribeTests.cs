@@ -1,12 +1,10 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Text;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
-using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;

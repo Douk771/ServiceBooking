@@ -2,6 +2,7 @@ import { api } from './client'
 import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
 import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
+import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
 
 /**
  * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
@@ -16,32 +17,18 @@ import type { components as Cycle19Schemas } from '../types/api-cycle19.generate
 
 type Schemas = components['schemas']
 
-export type SubscriptionStatus = Schemas['SubscriptionStatus']
-export type OptionKind = Schemas['OptionKind']
-export type OptionStatus = Schemas['OptionStatus']
-export type OptionAvailability = Schemas['OptionAvailability']
-export type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
-
-export type SubscribedPlanDto = Schemas['SubscribedPlanDto']
-export type SubscribedOptionDto = Schemas['SubscribedOptionDto']
 export type AvailableOptionDto = Schemas['AvailableOptionDto']
-export type CoveredCompanyDto = Schemas['CoveredCompanyDto']
-export type SubscriptionUsageDto = Schemas['SubscriptionUsageDto']
-export type SubscriptionWarningDto = Schemas['SubscriptionWarningDto']
 // ARCHITECTURE_CYCLE19.md §388.5/FE-4, API_CONTRACT_CYCLE19.md §408 — `items[].retired` and
 // `retiredOptionsNotice` are new (breaking-additive) fields on the request DTO; read straight off
 // the cycle19 schema rather than the cycle7 one (N22 convention).
 type Cycle19 = Cycle19Schemas['schemas']
-export type SubscriptionRequestItemDto = Cycle19['SubscriptionRequestItemDto']
 export type SubscriptionRequestDto = Cycle19['SubscriptionRequestDto']
 /** `OwnerSubscriptionDto` (cycle 7) with `pendingRequest` overridden to the cycle19 shape — the
  *  cycle7 schema's own nested `pendingRequest` type predates `retired`/`retiredOptionsNotice`. */
 export type OwnerSubscriptionDto = Omit<Schemas['OwnerSubscriptionDto'], 'pendingRequest'> & {
   pendingRequest?: SubscriptionRequestDto | null
 }
-export type RejectedRequestDto = Schemas['RejectedRequestDto']
-export type RequestedOptionInput = Schemas['RequestedOptionInput']
-export type SubscriptionRequestInput = Schemas['SubscriptionRequestInput']
+type SubscriptionRequestInput = Schemas['SubscriptionRequestInput']
 
 // ── Cycle 18 (trial plan) — API_CONTRACT_CYCLE18.md §362–§363. Types come from the generated
 // cycle18 schema, not hand-written — same convention as the rest of this file (N22).
@@ -50,12 +37,12 @@ type Cycle18 = Cycle18Schemas['schemas']
 export type TrialStateDto = Cycle18['TrialStateDto']
 export type TrialWarningDto = Cycle18['TrialWarningDto']
 export type TrialRefusalDto = Cycle18['TrialRefusalDto']
-export type TrialActivationInput = Cycle18['TrialActivationInput']
-export type TrialTermsAcknowledgementInput = Cycle18['TrialTermsAcknowledgementInput']
+type TrialActivationInput = Cycle18['TrialActivationInput']
+type TrialTermsAcknowledgementInput = Cycle18['TrialTermsAcknowledgementInput']
 /** `OwnerSubscriptionDto` (cycle 7/17) + `trial`/`usage.overLimit*` (cycle 18, additive only —
  *  §372, "ломающих изменений нет"). Kept as an intersection rather than a second hand-written copy
  *  of the whole DTO, per the contract's own `additionalProperties: true` note. */
-export type OwnerSubscriptionDtoWithTrial = OwnerSubscriptionDto & Cycle18['OwnerSubscriptionDtoTrialPatch']
+type OwnerSubscriptionDtoWithTrial = OwnerSubscriptionDto & Cycle18['OwnerSubscriptionDtoTrialPatch']
 
 export const billingApi = {
   /** GET /api/billing/subscription. 404 means the caller owns no company (not an error state). */
@@ -69,12 +56,8 @@ export const billingApi = {
   /** DELETE /api/billing/subscription/request — idempotent, 204 whether or not a pending request existed. */
   cancelRequest: (): Promise<void> => api.delete('/billing/subscription/request').then(() => undefined),
 
-  /** GET /api/billing/trial (§362) — 404 means the caller has no billing account at all (not an
-   *  error state, same convention as getSubscription above). */
-  getTrial: (): Promise<TrialStateDto> => api.get<TrialStateDto>('/billing/trial').then((r) => r.data),
-
   /** POST /api/billing/trial (§363). Body is the single `termsVersion` field, echoing the version
-   *  shown to the owner (`activationTerms.version` from getTrial) — the server rejects any other
+   *  shown to the owner (`activationTerms.version` from the subscription's `trial` block) — the server rejects any other
    *  value with 409 TrialTermsVersionMismatch. Returns the whole subscription DTO on success so the
    *  caller can swap in the response directly instead of refetching (§371 п.4). */
   activateTrial: (termsVersion: string): Promise<OwnerSubscriptionDtoWithTrial> =>
@@ -88,4 +71,19 @@ export const billingApi = {
     api
       .post<TrialStateDto>('/billing/trial/terms-acknowledgement', { termsVersion } satisfies TrialTermsAcknowledgementInput)
       .then((r) => r.data),
+
+  /** GET /api/billing/operator-details (§432.8, NEW) — held-account only; 404 = no billing account
+   *  at all (same "not an error state" convention as `getSubscription`/`getTrial` above). */
+  getOperatorDetails: (): Promise<ConsentOperatorDetailsDto> =>
+    api.get<ConsentOperatorDetailsDto>('/billing/operator-details').then((r) => r.data),
+
+  /** PUT /api/billing/operator-details — empty string / whitespace-only is sent through as-is; the
+   *  server treats it as `null` (§432.8), so the caller doesn't need to pre-convert. */
+  updateOperatorDetails: (input: ConsentOperatorDetailsInput): Promise<ConsentOperatorDetailsDto> =>
+    api.put<ConsentOperatorDetailsDto>('/billing/operator-details', input).then((r) => r.data),
 }
+
+// ── Cycle 20 (US-20-01, Т20-04 п. 3) — operator-of-record details for the paper consent form. ──────
+type Cycle20 = Cycle20Schemas['schemas']
+export type ConsentOperatorDetailsDto = Cycle20['ConsentOperatorDetailsDto']
+export type ConsentOperatorDetailsInput = Cycle20['ConsentOperatorDetailsInput']

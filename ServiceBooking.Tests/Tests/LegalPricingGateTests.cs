@@ -8,7 +8,6 @@ using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 using ServiceBooking.Tests.Infrastructure;
 

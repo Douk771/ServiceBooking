@@ -7,7 +7,8 @@ import { Link } from 'react-router-dom'
  */
 export function Footer() {
   return (
-    <footer className="border-t border-line mt-16">
+    // print:hidden — see the matching comment in Navbar.tsx.
+    <footer className="border-t border-line mt-16 print:hidden">
       <div className="max-w-[1180px] mx-auto px-4 sm:px-8 py-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-muted">
         <span>© {new Date().getFullYear()} EZBOOK</span>
         <Link to="/privacy" className="hover:text-ink-soft transition-colors">

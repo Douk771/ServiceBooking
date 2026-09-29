@@ -30,7 +30,7 @@ const NO_SCHEDULE_LABEL = 'нет графика'
 
 // ARCHITECTURE_CYCLE10.md §103.4/§108.5 — the server doesn't cap how far a staff caller can look
 // ahead (`honorManual`); the calendar itself gates the forward arrow so staff can't scroll forever.
-export const STAFF_MAX_MONTHS_AHEAD = 12
+const STAFF_MAX_MONTHS_AHEAD = 12
 
 const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 

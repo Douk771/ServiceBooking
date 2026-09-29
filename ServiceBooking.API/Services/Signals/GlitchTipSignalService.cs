@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 
 namespace ServiceBooking.API.Services.Signals;

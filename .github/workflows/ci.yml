@@ -143,15 +143,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ARCHITECTURE_CYCLE16.md §248.2 (TD-07). Six generated files, six contracts — regenerate all of
-      # them and fail if the regeneration doesn't match what's committed, so a contract edit that forgot
-      # to run `npm run types:api*` is caught here instead of surfacing as a silently broken screen.
+      # ARCHITECTURE_CYCLE16.md §248.2 (TD-07). Regenerate the generated files of cycles 7/9/13/14
+      # (cycle 18 — in the step below) and fail if the regeneration doesn't match what's committed, so
+      # a contract edit that forgot to run `npm run types:api*` is caught here instead of surfacing as
+      # a silently broken screen. Cycle 22 (ARCHITECTURE_CYCLE22.md §376): the unused generated files
+      # of cycles 10/11/15/16/17 were deleted; their contracts stay (documentation, redocly lint).
       - name: API types must match committed contracts (TD-07)
         run: |
           npm run types:api && npm run types:api9 \
-            && npm run types:api:cycle10 && npm run types:api:cycle11 \
-            && npm run types:api:cycle13 && npm run types:api:cycle14 \
-            && npm run types:api:cycle16
+            && npm run types:api:cycle13 && npm run types:api:cycle14
           git diff --exit-code -- src/types \
             || { echo "::error::src/types/*.generated.ts разошлись с contracts/**/openapi.yaml. Запустите npm run types:api* и закоммитьте результат (ARCHITECTURE_CYCLE16.md §248.2)"; exit 1; }
 
@@ -165,7 +165,8 @@ jobs:
             ../contracts/cycle13/openapi.yaml \
             ../contracts/cycle14/openapi.yaml \
             ../contracts/cycle16/openapi.yaml \
-            ../contracts/cycle18/openapi.yaml
+            ../contracts/cycle18/openapi.yaml \
+            ../contracts/cycle20/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -186,13 +187,9 @@ jobs:
       # перегенерирует и падает, если результат отличается от закоммиченного.
       - name: Generated API types must match the contracts
         run: |
-          npm run types:api:cycle15
-          npm run types:api:cycle16
-          npm run types:api:cycle17
           npm run types:api:cycle18
-          git diff --exit-code -- src/types/api-cycle15.generated.ts \
-            src/types/api-cycle16.generated.ts src/types/api-cycle17.generated.ts \
-            src/types/api-cycle18.generated.ts
+          npm run types:api:cycle20
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle20.generated.ts
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя

@@ -45,7 +45,9 @@ export function Navbar() {
     'block px-4 py-3 text-[15px] font-medium text-ink-soft hover:text-gold-dark hover:bg-cream-deep rounded-xl transition-colors'
 
   return (
-    <nav className="sticky top-0 z-50 bg-cream/86 backdrop-blur-md border-b border-line">
+    // print:hidden — US-20-01 (health-consent-form print page): the layout has no per-page "no chrome"
+    // mode, so the chrome hides itself for print instead of every printable page reimplementing it.
+    <nav className="sticky top-0 z-50 bg-cream/86 backdrop-blur-md border-b border-line print:hidden">
       <div className="max-w-[1180px] mx-auto px-4 sm:px-8 h-[76px] flex items-center justify-between">
         <Link to="/" className="flex items-center gap-3 shrink-0" onClick={closeMenu}>
           <span className="w-[38px] h-[38px] rounded-full bg-ink flex items-center justify-center shrink-0">

@@ -65,21 +65,21 @@ public class ReviewsController(AppDbContext db) : ControllerBase
 
     [HttpGet("can-review")]
     [Authorize]
-    public async Task<IActionResult> CanReview()
+    public async Task<IActionResult> CanReview(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
         var reviewedBookingIds = await db.Reviews
             .Where(r => r.ClientId == userId)
             .Select(r => r.BookingId)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var bookingIds = await db.Bookings
             .Where(b => b.ClientId == userId
                 && b.Status == BookingStatus.Completed
                 && !reviewedBookingIds.Contains(b.Id))
             .Select(b => b.Id)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(bookingIds);
     }
@@ -91,12 +91,13 @@ public class CompanyReviewsController(AppDbContext db) : ControllerBase
 {
     [HttpGet("{companyId}/reviews")]
     public async Task<ActionResult<PagedResult<ReviewDto>>> GetCompanyReviews(
-        Guid companyId, [FromQuery] int? page, [FromQuery] int? pageSize)
+        Guid companyId, [FromQuery] int? page, [FromQuery] int? pageSize,
+        CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.Reviews.Where(r => r.CompanyId == companyId);
 
-        var total = await query.CountAsync();
+        var total = await query.CountAsync(ct);
         // US-49 p.6: CreatedAt DESC, then Id — the tie-break PostgreSQL needs to guarantee page 2 never
         // reshows a row page 1 already showed when two reviews share a timestamp.
         var reviews = await query
@@ -107,7 +108,7 @@ public class CompanyReviewsController(AppDbContext db) : ControllerBase
             .Select(r => new ReviewDto(
                 r.Id, r.Rating, r.Comment, r.ReviewerName,
                 r.Master.FirstName + " " + r.Master.LastName, r.Booking.Service.Name, r.CreatedAt))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(Pagination.Create(reviews, currentPage, currentPageSize, total));
     }

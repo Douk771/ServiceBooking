@@ -186,7 +186,6 @@ public class NotificationDispatchTests(TestDatabaseFixture fixture) : IClassFixt
             Id = Guid.NewGuid(), OwnerUserId = auth.UserId, BillingAccountId = billingAccount.Id, State = ChannelState.Connected,
             PhoneNumber = "79990000000",
             ProviderInstanceId = Unique("instance"),
-            PaidFromUtc = DateTime.UtcNow.AddDays(-1), PaidUntilUtc = DateTime.UtcNow.AddDays(30),
             ConnectedAtUtc = DateTime.UtcNow.AddDays(-1),
         };
         // AAD binds ciphertext to the channel's own id (§24.1) — must be encrypted AFTER Id is assigned.

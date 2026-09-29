@@ -7,6 +7,10 @@ import { BillingPage } from './BillingPage'
 import type { OwnerSubscriptionDto } from '../api/billing'
 
 const getSubscription = vi.fn()
+// Cycle 20 (§432.8) — OperatorDetailsSection queries this unconditionally from BillingPage; 404 is
+// its own "nothing to show yet" state (same convention as getSubscription/getTrial), same as every
+// other test in this file not caring about the trial-specific calls TrialCard/TrialBanner make.
+const getOperatorDetails = vi.fn().mockRejectedValue({ isAxiosError: true, response: { status: 404 } })
 
 vi.mock('../api/billing', async () => {
   const actual = await vi.importActual<typeof import('../api/billing')>('../api/billing')
@@ -16,12 +20,22 @@ vi.mock('../api/billing', async () => {
       getSubscription: (...args: unknown[]) => getSubscription(...args),
       submitRequest: vi.fn(),
       cancelRequest: vi.fn(),
+      getOperatorDetails: (...args: unknown[]) => getOperatorDetails(...args),
+      updateOperatorDetails: vi.fn(),
     },
   }
 })
 
+// BillingNoticesSummary (US-20-03) queries this unconditionally alongside the subscription itself.
+const getNotices = vi.fn()
+vi.mock('../api/platformNotices', () => ({
+  platformNoticesApi: { getNotices: (...args: unknown[]) => getNotices(...args) },
+}))
+
 beforeEach(() => {
   getSubscription.mockReset()
+  getOperatorDetails.mockReset().mockRejectedValue({ isAxiosError: true, response: { status: 404 } })
+  getNotices.mockReset().mockResolvedValue({ acknowledgeButtonText: 'Я ознакомился', acknowledgeCaption: '', items: [] })
 })
 
 function renderWithProviders(ui: ReactElement) {

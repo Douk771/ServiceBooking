@@ -14,6 +14,19 @@ public static class ClientRescheduleWindow
     public const int Min = 0;
     public const int Max = 168;
 
+    /// <summary>ARCHITECTURE_CYCLE20.md §405 (US-20-04, Т20-05) — the customer-decided ceiling applied
+    /// ONLY to client cancel, never to reschedule: whatever the company configured, a client cancel is
+    /// never blocked more than 24 hours before the visit. Not a norm of law, a risk decision (D2 п.
+    /// 10.3.1, D3 п. 7.6 in the cycle-20 legal texts).</summary>
+    public const int MaxEnforcedCancelHours = 24;
+
+    /// <summary>The number of hours actually applied to a CLIENT CANCEL — the one point both
+    /// <c>BookingsController.Cancel</c>'s client-owner branch and <c>clientCancelAllowed</c> in
+    /// <c>GetClientBookings</c> must call, so a grep for <c>Normalize(</c> on the cancel path finds
+    /// nothing (§417's grep check). Reschedule is untouched — it keeps calling <see cref="Normalize"/>
+    /// directly on the company's stored value, with no ceiling.</summary>
+    public static int EffectiveCancelHours(int storedMinHours) => Math.Min(Normalize(storedMinHours), MaxEnforcedCancelHours);
+
     /// <summary>
     /// False only when a value was actually supplied and falls outside [Min, Max] — the one source of
     /// the 400 in CompaniesController.Update. Null/omitted -> false (caller must not touch the stored

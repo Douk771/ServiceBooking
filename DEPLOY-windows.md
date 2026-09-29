@@ -160,7 +160,9 @@ notepad C:\ezbook\publish\api\appsettings.Production.json
   первом старте, только если заполнены сразу оба; если аккаунт с этим номером уже
   зарегистрирован вручную через сайт, автосоздание его не тронет и роль SuperAdmin
   само по себе не добавит.
-- `SmartCaptcha:SecretKey` / `SiteKey` — из кабинета Yandex Cloud SmartCaptcha
+- `SmartCaptcha:SecretKey` — серверный ключ из кабинета Yandex Cloud SmartCaptcha (публичный
+  site-key API не читает — с цикла 22 ключа `SmartCaptcha:SiteKey` в `appsettings` нет; фронт
+  получает site-key при сборке, см. §5)
 
 Сохраните и закройте notepad, затем регистрируем и запускаем службу:
 

@@ -29,9 +29,8 @@ public class BookingActorResolver(AppDbContext db)
 
         if (userId is not null)
         {
-            var membership = await db.CompanyMembers.AsNoTracking().FirstOrDefaultAsync(cm =>
-                cm.CompanyId == booking.CompanyId && cm.UserId == userId &&
-                (cm.Role == UserRole.Master || cm.Role == UserRole.CompanyOwner));
+            var membership = await db.CompanyMembers.AsNoTracking().Where(CompanyMembership.IsStaffRole)
+                .FirstOrDefaultAsync(cm => cm.CompanyId == booking.CompanyId && cm.UserId == userId);
             if (membership is not null)
             {
                 var staffUser = await db.Users.FindAsync(userId);

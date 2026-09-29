@@ -26,7 +26,9 @@ import { getUploadErrorMessage } from '../../utils/uploadError'
 import { PhoneInput } from '../../components/ui/PhoneInput'
 import { formatPhone, isRussianPhone } from '../../utils/phone'
 import { formatCityTimeZone } from '../../utils/timezone'
+import { CANCEL_WINDOW_FIELD_CAPTION } from '../../legal/staffNotices'
 import type { Service, City } from '../../types'
+import { formatRub } from '../../utils/money'
 
 // ── Services tab ──────────────────────────────────────────────────────────────
 
@@ -169,7 +171,7 @@ function ServicesTab({ companyId }: { companyId: string }) {
                   <p className="font-medium text-ink">{s.name}</p>
                   <p className="text-sm text-muted flex items-center gap-1">
                     <Icon name="clock" size={13} strokeWidth={1.7} /> {s.durationMinutes} мин ·{' '}
-                    {s.price.toLocaleString('ru-RU')} ₽
+                    {formatRub(s.price)}
                   </p>
                   {s.description && <p className="text-xs text-muted mt-0.5 line-clamp-1">{s.description}</p>}
                 </div>
@@ -883,16 +885,19 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               placeholder="2"
               aria-invalid={mapLinksError?.field === 'clientRescheduleMinHours' || undefined}
               aria-describedby={
-                mapLinksError?.field === 'clientRescheduleMinHours' ? 'clientRescheduleMinHours-error' : undefined
+                (mapLinksError?.field === 'clientRescheduleMinHours' ? 'clientRescheduleMinHours-error ' : '') +
+                'clientRescheduleMinHours-caption'
               }
               {...register('clientRescheduleMinHours')}
             />
-            {/* §305.3 — the old copy ("Пусто — 2 часа по умолчанию") described a behaviour the API
-                never had (PUT already treats an omitted field as "leave the saved value alone",
-                §283 cycle 15); this text now matches that behaviour instead of the field's default. */}
-            <p className="text-xs text-muted">
-              Пусто — оставить текущее значение. 0 — можно перенести и отменить вплоть до начала визита. У новой
-              компании по умолчанию 2 часа.
+            {/* Т20-05 п. 3 (US-20-04) — replaces the §305.3 copy verbatim, dословно юриста
+                (`staffNotices.ts`, "не переписывать без legal-counsel"): the field still stores the
+                same 0–168 window used for reschedule, but for CANCELLATION the server now enforces a
+                24 h ceiling regardless of what's configured here (`clientCancelMinHours`,
+                API_CONTRACT_CYCLE20.md §435) — the caption explains that ceiling instead of silently
+                describing a number that no longer applies to cancellation. */}
+            <p id="clientRescheduleMinHours-caption" className="text-xs text-muted">
+              {CANCEL_WINDOW_FIELD_CAPTION}
             </p>
             {mapLinksError?.field === 'clientRescheduleMinHours' && (
               <p id="clientRescheduleMinHours-error" className="text-xs text-danger">

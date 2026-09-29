@@ -417,8 +417,8 @@ public abstract class ApiTestBase : IClassFixture<TestDatabaseFixture>
     ///
     /// Used to go through the real admin HTTP endpoint (<c>PUT /api/admin/owners/{ownerUserId}/subscription</c>),
     /// which exercised that endpoint's own validation as a side effect. That endpoint is now contractually
-    /// retired (contracts/cycle7/openapi.yaml, redaction 2.1 — see <c>AdminController.UpdateSubscription</c>, answers
-    /// 410 Gone) and its replacement (<c>PUT /admin/billing-accounts/{accountId}/subscription</c>) doesn't
+    /// retired (contracts/cycle7/openapi.yaml, redaction 2.1 — its 410 stub was removed
+    /// altogether in cycle 22, ARCHITECTURE_CYCLE22.md §372) and its replacement (<c>PUT /admin/billing-accounts/{accountId}/subscription</c>) doesn't
     /// exist yet (cycle-07 backend report), so this helper — which exists purely to arrange test
     /// preconditions, not to exercise that endpoint's behavior — writes the row directly, the same way
     /// <see cref="GiveActivePaidPlanAsync"/> already does. Tests that actually need to exercise an
@@ -528,13 +528,15 @@ public abstract class ApiTestBase : IClassFixture<TestDatabaseFixture>
         response.EnsureSuccessStatusCode();
     }
 
-    /// <summary>US-77/T5-B6: records staff-confirmed health-data consent for one client of one company —
-    /// the precondition <c>PUT .../health-note</c> enforces (API_CONTRACT_CYCLE5.md §45.2).</summary>
+    /// <summary>US-77/T5-B6, cycle 20 US-20-01: records the staff-confirmed PAPER written-health-consent
+    /// mark for one client of one company — the precondition <c>PUT .../health-note</c> enforces
+    /// (ARCHITECTURE_CYCLE20.md §402.3). Formerly posted to the now-410 <c>POST .../health-consent</c>
+    /// (electronic HealthDataConsent) — that document key no longer satisfies the gate at all.</summary>
     protected async Task GrantHealthConsentAsync(string staffToken, Guid companyId, string clientKey)
     {
         var response = await AuthedClient(staffToken).PostAsJsonAsync(
-            $"/api/companies/{companyId}/clients/{clientKey}/health-consent",
-            new { textVersion = CurrentTextVersion("HealthDataConsent"), confirmed = true });
+            $"/api/companies/{companyId}/clients/{clientKey}/health-written-consent",
+            new { textVersion = CurrentTextVersion("HealthDataWrittenConsentForm"), formId = (string?)null, confirmed = true });
         response.EnsureSuccessStatusCode();
     }
 

@@ -33,12 +33,16 @@ function renderCalendar() {
   )
 }
 
+// Every test here builds its fixture from "today" and expects it inside the displayed month
+// (today + 3 days for the horizon retry, "tomorrow" for the day-off cells). On the real calendar that
+// breaks near a month boundary — on the last day of a month "tomorrow" is not in the grid at all, and
+// from the ~28th today + 3 already spills over (CURRENT_STATE.md §9 C21-1). So "today" is pinned for the
+// whole file to the middle of a month, at noon (the lastFreeSlotStart test needs time already past
+// 00:00). Only Date is faked, so waitFor's own timers keep running.
 beforeEach(() => {
   getAvailability.mockReset()
-  // Fix only Date (timers stay real for waitFor) to mid-month: tests use "tomorrow"
-  // and must not depend on the real run date (month boundary).
   vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date(2026, 5, 15, 12, 0, 0))
+  vi.setSystemTime(new Date(2026, 8, 15, 12, 0, 0))
 })
 
 afterEach(() => {

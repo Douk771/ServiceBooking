@@ -5,8 +5,94 @@ import { getUploadErrorMessage } from '../../utils/uploadError'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Icon } from '../../components/ui/Icon'
+import { Modal } from '../../components/ui/Modal'
+import { useLegalText } from '../../hooks/useLegalText'
+import { findSection, splitLegalSections } from '../../utils/legalSections'
+import { useAuthStore } from '../../store/authStore'
 
 const MAX_PHOTOS = 10
+
+/**
+ * Т20-07 п. 1 (D2 цикла 10, US-20-06) — the lawyer's uiText `CompanyPhotoPeopleNotice` shown right
+ * above the picker/drop-zone, BEFORE a file is chosen (not after, not as a checkbox — no gate on the
+ * upload itself, per ARCHITECTURE_CYCLE20.md §408: "Галочки нет, загрузку подсказка не блокирует").
+ * Falls back to the whole document if the "Текст" section isn't found (§411), same rule as every
+ * other `findSection` call site — never leave the screen silently empty while text is missing.
+ */
+function CompanyPhotoPeopleNotice({ id }: { id: string }) {
+  const { data: text, isLoading } = useLegalText('CompanyPhotoPeopleNotice')
+  if (isLoading || !text?.contentHtml) return null
+  const section = findSection(splitLegalSections(text.contentHtml), 'Текст')
+  return (
+    <div id={id} className="text-xs text-ink-soft bg-cream-deep rounded-xl px-3 py-2.5 mb-3 flex items-start gap-2">
+      <Icon name="alert-circle" size={13} strokeWidth={1.8} className="shrink-0 mt-0.5 text-gold-dark" />
+      <div
+        className="[&_p]:mb-1 [&_p:last-child]:mb-0 [&_a]:underline"
+        dangerouslySetInnerHTML={{ __html: (section ?? { html: text.contentHtml }).html }}
+      />
+    </div>
+  )
+}
+
+/**
+ * Т20-07 п. 2 (§404.7) — SuperAdmin-only confirmation before removing a photo, so the reason (which
+ * decides whether the owner gets a `PhotoRemoved` platform notice) is a deliberate choice, not a side
+ * effect of the same click an owner would use. The owner's own delete button is untouched — no dialog,
+ * no reason, exactly as before this cycle.
+ */
+function SuperAdminRemovePhotoDialog({
+  loading,
+  onConfirm,
+  onClose,
+}: {
+  loading: boolean
+  onConfirm: (reason?: 'DepictedPersonRequest') => void
+  onClose: () => void
+}) {
+  const [reason, setReason] = useState<'DepictedPersonRequest' | 'other'>('other')
+  return (
+    <Modal title="Удалить фотографию" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-ink-soft">Причина удаления:</p>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="radio"
+              name="photo-removal-reason"
+              checked={reason === 'DepictedPersonRequest'}
+              onChange={() => setReason('DepictedPersonRequest')}
+              className="mt-0.5 accent-gold"
+            />
+            <span className="text-sm text-ink">По обращению изображённого человека (владельцу придёт уведомление)</span>
+          </label>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="radio"
+              name="photo-removal-reason"
+              checked={reason === 'other'}
+              onChange={() => setReason('other')}
+              className="mt-0.5 accent-gold"
+            />
+            <span className="text-sm text-ink">Другая причина</span>
+          </label>
+        </div>
+        <div className="flex gap-3 pt-1">
+          <Button variant="secondary" className="flex-1" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button
+            variant="danger"
+            className="flex-1"
+            loading={loading}
+            onClick={() => onConfirm(reason === 'DepictedPersonRequest' ? 'DepictedPersonRequest' : undefined)}
+          >
+            Удалить
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
 /**
  * ARCHITECTURE_CYCLE10.md §109.2 (US-125). Deliberately its OWN card, separate from the logo block
@@ -16,10 +102,12 @@ const MAX_PHOTOS = 10
  */
 export function CompanyPhotosSection({ companyId }: { companyId: string }) {
   const qc = useQueryClient()
+  const isSuperAdmin = useAuthStore((s) => s.hasRole('SuperAdmin'))
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const [reordering, setReordering] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [confirmingRemoval, setConfirmingRemoval] = useState<string | null>(null)
 
   const { data: photos, isLoading } = useQuery({
     queryKey: ['company-photos', companyId],
@@ -44,9 +132,13 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
   })
 
   const removeMut = useMutation({
-    mutationFn: (photoId: string) => companyPhotosApi.remove(companyId, photoId),
+    mutationFn: ({ photoId, reason }: { photoId: string; reason?: 'DepictedPersonRequest' }) =>
+      companyPhotosApi.remove(companyId, photoId, reason),
     onMutate: () => setError(''),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setConfirmingRemoval(null)
+      invalidate()
+    },
     onError: (err) => setError(getUploadErrorMessage(err)),
   })
 
@@ -141,7 +233,10 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
                   type="button"
                   aria-label="Удалить фото"
                   disabled={busy}
-                  onClick={() => removeMut.mutate(p.id)}
+                  // Т20-07 п. 2 — SuperAdmin gets the reason dialog (deletion is unchanged for the
+                  // owner, who never sees `reason` at all: the server ignores it for non-SuperAdmin
+                  // callers, but not sending it keeps the owner's request byte-for-byte what it was).
+                  onClick={() => (isSuperAdmin ? setConfirmingRemoval(p.id) : removeMut.mutate({ photoId: p.id }))}
                   className="w-6 h-6 rounded-full bg-white/90 flex items-center justify-center text-danger disabled:opacity-40"
                 >
                   <Icon name="x" size={12} strokeWidth={2} />
@@ -157,10 +252,15 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
         </div>
       )}
 
+      {/* Т20-07 п. 1 — shown BEFORE the picker/drop-zone below, unconditionally (not gated by
+          `atLimit`): the point is to inform before a file is chosen, not to react to one. */}
+      <CompanyPhotoPeopleNotice id="company-photo-people-notice" />
+
       <input
         ref={fileInputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
+        aria-describedby="company-photo-people-notice"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0]
@@ -211,6 +311,14 @@ export function CompanyPhotosSection({ companyId }: { companyId: string }) {
       </div>
       <p className="text-xs text-muted mt-1">JPEG, PNG или WEBP, до 5 МБ, не больше {MAX_PHOTOS} фото</p>
       {error && <p className="text-xs text-danger mt-1">{error}</p>}
+
+      {confirmingRemoval && (
+        <SuperAdminRemovePhotoDialog
+          loading={removeMut.isPending}
+          onConfirm={(reason) => removeMut.mutate({ photoId: confirmingRemoval, reason })}
+          onClose={() => setConfirmingRemoval(null)}
+        />
+      )}
     </Card>
   )
 }

@@ -35,34 +35,35 @@ public class NotificationChannelsController(
     PlatformSettings platformSettings,
     LegalDocumentProvider legalProvider,
     ConsentLedger ledger,
+    ChannelFundingReader fundingReader,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
     private const string TestMessageText =
         "Проверка канала уведомлений ezbook.ru: если вы видите это сообщение, канал работает.";
 
     [HttpGet]
-    public async Task<ActionResult<ChannelListDto>> GetAll()
+    public async Task<ActionResult<ChannelListDto>> GetAll(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         // B9: access to a channel you already OWN must never depend on still owning a company — a former
         // owner (company handed to someone else, or simply no companies left) can still see and disconnect
         // a channel they are paying for. Company ownership only gates the "nothing to show yet" path.
-        if (!await IsAnyCompanyOwnerAsync(userId) && !await db.NotificationChannels.AnyAsync(c => c.OwnerUserId == userId))
+        if (!await IsAnyCompanyOwnerAsync(userId) && !await db.NotificationChannels.AnyAsync(c => c.OwnerUserId == userId, ct))
             return Forbid();
 
         var channels = await db.NotificationChannels.AsNoTracking()
             .Include(c => c.Assignments).ThenInclude(a => a.Company)
             .Where(c => c.OwnerUserId == userId)
             .OrderByDescending(c => c.CreatedAt)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         var idleDays = await PlatformIdleDaysAsync();
-        var funding = await LoadFundingAsync(channels);
+        var funding = await fundingReader.LoadAsync(channels, ct);
         return Ok(new ChannelListDto(channels.Select(c => MapToDto(c, idleDays, funding)).ToList()));
     }
 
     [HttpGet("offer")]
-    public async Task<ActionResult<ChannelOfferDto>> GetOffer()
+    public async Task<ActionResult<ChannelOfferDto>> GetOffer(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await IsAnyCompanyOwnerAsync(userId)) return Forbid();
@@ -71,7 +72,7 @@ public class NotificationChannelsController(
         var plan = accountId.HasValue
             ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
             : EffectivePlan.Free;
-        var price = await platformSettings.GetChannelPricePerMonthAsync();
+        var price = await platformSettings.GetChannelPricePerMonthAsync(ct);
 
         // B12 (§104.8): riskText/riskVersion now come from the SAME ChannelRiskNotice legal document the
         // /channel-risk public page and accept-risk's own version check read — one noticeholder, not
@@ -178,18 +179,18 @@ public class NotificationChannelsController(
             IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()));
 
         var idleDays = await platformSettings.GetChannelIdleDaysAsync();
-        var funding = await LoadFundingAsync([channel]);
+        var funding = await fundingReader.LoadAsync([channel]);
         return CreatedAtAction(nameof(GetById), new { id = channel.Id }, MapToDto(channel, idleDays, funding));
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<ChannelDto>> GetById(Guid id)
+    public async Task<ActionResult<ChannelDto>> GetById(Guid id, CancellationToken ct)
     {
         var channel = await LoadOwnedChannelAsync(id);
         if (channel is null) return NotFound();
 
         var idleDays = await PlatformIdleDaysAsync();
-        var funding = await LoadFundingAsync([channel]);
+        var funding = await fundingReader.LoadAsync([channel], ct);
         return Ok(MapToDto(channel, idleDays, funding));
     }
 
@@ -235,8 +236,8 @@ public class NotificationChannelsController(
 
         var nowUtc = DateTime.UtcNow;
         // §47.3: Connect can only bind a FUNDED number — ChannelFunding.Rank over the account's own
-        // live channels, not the channel's own (historical) PaidUntilUtc.
-        var funded = await IsChannelFundedAsync(channel, plan);
+        // live channels (the channel row has no paid period of its own).
+        var funded = await fundingReader.IsFundedAsync(channel, plan);
         var paymentState = funded ? ChannelPaymentStatus.Paid : ChannelPaymentStatus.NotPaid;
         if (!funded)
             return StatusCode(402, "Канал не оплачен");
@@ -503,7 +504,8 @@ public class NotificationChannelsController(
     }
 
     /// <summary>B8 / API_CONTRACT_CYCLE4.md §27, US-63 — replacing a banned number. No re-payment: the
-    /// paid period and company assignments move to a fresh channel row; the old one becomes terminal
+    /// paid period belongs to the billing account (cycle 22, §379) and stays with it; company assignments
+    /// move to a fresh channel row; the old one becomes terminal
     /// (<see cref="ChannelState.Replaced"/>) with a pointer forward. The owner then goes through the
     /// ordinary accept-risk/connect/QR flow (§24) on the new channel — this endpoint only does the move.</summary>
     [HttpPost("{id:guid}/replace")]
@@ -534,8 +536,6 @@ public class NotificationChannelsController(
             Transport = channel.Transport,
             State = ChannelState.NotConnected,
             RequestedAtUtc = DateTime.UtcNow,
-            PaidFromUtc = channel.PaidFromUtc,
-            PaidUntilUtc = channel.PaidUntilUtc,
         };
         db.NotificationChannels.Add(newChannel);
 
@@ -557,11 +557,9 @@ public class NotificationChannelsController(
         channel.ReplacedByChannelId = newChannel.Id;
         channel.State = ChannelState.Replaced;
         channel.LastStateReason = ChannelStateReason.ReplacedAfterBan;
-        // N6: the paid period already moved to newChannel (captured above) — left set here, this
-        // terminal row would still read as ChannelPaymentState.Of(...) == Paid, and an admin summary
-        // that flags "expires within 7 days" would count the SAME paid period twice, once per channel.
-        channel.PaidFromUtc = null;
-        channel.PaidUntilUtc = null;
+        // N6 / cycle 22 (§379, Р2): nothing to move or clear for the paid period — it belongs to the
+        // billing account (its WhatsApp option / subscription), not to the channel row. The terminal row
+        // is never funded (ChannelFunding.Rank skips Replaced), so nothing counts it twice.
         db.ChannelStateEvents.Add(new ChannelStateEvent
         {
             Id = Guid.NewGuid(), ChannelId = channel.Id,
@@ -571,7 +569,10 @@ public class NotificationChannelsController(
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        return StatusCode(201, new ReplaceChannelResponseDto(newChannel.Id, newChannel.PaidUntilUtc, assignments.Count));
+        // The account's paid period as the owner's list shows it for the new channel (ChannelFundingReader).
+        var funding = await fundingReader.LoadAsync([newChannel]);
+        return StatusCode(201, new ReplaceChannelResponseDto(
+            newChannel.Id, funding.GetValueOrDefault(newChannel.Id)?.PaidUntil, assignments.Count));
     }
 
     [HttpPost("{id:guid}/companies")]
@@ -671,66 +672,10 @@ public class NotificationChannelsController(
 
     private async Task<ActionResult<ChannelDto>> BuildAssignedResponseAsync(NotificationChannel channel, int idleDays)
     {
-        await db.Entry(channel).Collection(c => c.Assignments).LoadAsync();
-        foreach (var assignment in channel.Assignments)
-            await db.Entry(assignment).Reference(a => a.Company).LoadAsync();
-        var funding = await LoadFundingAsync([channel]);
+        // §375 F13: the assignments and their companies in one query, not one Company load per row.
+        await db.Entry(channel).Collection(c => c.Assignments).Query().Include(a => a.Company).LoadAsync();
+        var funding = await fundingReader.LoadAsync([channel]);
         return StatusCode(201, MapToDto(channel, idleDays, funding));
-    }
-
-    // §47.1/§47.2: single-channel convenience over LoadFundingAsync.
-    private async Task<bool> IsChannelFundedAsync(NotificationChannel channel, EffectivePlan plan)
-    {
-        if (channel.BillingAccountId is not { } accountId) return false;
-        var siblings = await db.NotificationChannels.AsNoTracking().Where(c => c.BillingAccountId == accountId).ToListAsync();
-        var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
-        return ranking.TryGetValue(channel.Id, out var state) && state == ChannelFundingState.Funded;
-    }
-
-    /// <summary>
-    /// ARCHITECTURE_CYCLE7.md §47.1 — funding state + user-facing text for every channel in
-    /// <paramref name="channels"/>, grouped by billing account (normally one account per request here:
-    /// this is an owner's own channel list, not an admin-wide scan, so a query per distinct account is
-    /// acceptable — unlike CompaniesController's list endpoints, this is not the R11 hot path).
-    /// </summary>
-    private async Task<Dictionary<Guid, (ChannelFundingState State, string Text, DateTime? PaidUntil)>> LoadFundingAsync(IReadOnlyList<NotificationChannel> channels)
-    {
-        var result = new Dictionary<Guid, (ChannelFundingState, string, DateTime?)>();
-        var accountIds = channels.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct().ToList();
-        if (accountIds.Count == 0) return result;
-
-        var plans = await subscriptionResolver.GetEffectivePlansForAccountsAsync(accountIds);
-        foreach (var accountId in accountIds)
-        {
-            var plan = plans.TryGetValue(accountId, out var p) ? p : EffectivePlan.Free;
-            var siblings = await db.NotificationChannels.AsNoTracking().Where(c => c.BillingAccountId == accountId).ToListAsync();
-            var live = siblings.Where(c => c.State != ChannelState.Replaced).OrderBy(c => c.CreatedAt).ThenBy(c => c.Id).ToList();
-            var ranking = ChannelFunding.Rank(siblings, plan.PaidNotificationNumbers);
-            var workingChannel = live.FirstOrDefault(c => ranking.TryGetValue(c.Id, out var s) && s == ChannelFundingState.Funded);
-            var workingMasked = workingChannel?.PhoneNumber is null ? null : PhoneDisplayMask.Mask(workingChannel.PhoneNumber);
-
-            // N6, §47.3: ChannelDto.paidUntil's SOURCE is the account's notifications.whatsapp option,
-            // not the channel's own (no-longer-written) PaidUntilUtc column. A row with no own
-            // PaidUntilUtc rides the subscription's own paid period instead (same convention
-            // SubscriptionResolver uses), so falls back to the subscription's PaidUntil.
-            var whatsappOption = await db.AccountSubscriptionOptions
-                .Include(o => o.Option)
-                .Where(o => o.BillingAccountId == accountId && o.Option.Code == SubscriptionResolver.WhatsAppOptionCode)
-                .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > DateTime.UtcNow)
-                .FirstOrDefaultAsync();
-            var subPaidUntil = whatsappOption?.PaidUntilUtc is null
-                ? await db.AccountSubscriptions.Where(s => s.BillingAccountId == accountId).Select(s => s.PaidUntil).FirstOrDefaultAsync()
-                : null;
-            var optionPaidUntil = whatsappOption?.PaidUntilUtc ?? subPaidUntil;
-
-            foreach (var c in siblings)
-            {
-                var state = ranking.TryGetValue(c.Id, out var s2) ? s2 : ChannelFundingState.NotPaid;
-                var text = BillingTexts.FundingText(state, plan.PaidNotificationNumbers, live.Count, workingMasked);
-                result[c.Id] = (state, text, optionPaidUntil);
-            }
-        }
-        return result;
     }
 
     private async Task DecommissionInstanceAsync(NotificationChannel channel, ChannelState targetState, ChannelStateReason reason)
@@ -858,16 +803,15 @@ public class NotificationChannelsController(
 
     private Task<int> PlatformIdleDaysAsync() => platformSettings.GetChannelIdleDaysAsync();
 
-    // §47.3: PaymentState/PaidFrom/PaidUntil keep their FORM but their SOURCE is now `funding` (the
-    // account's subscription-driven ranking), not the channel's own historical PaidFromUtc/PaidUntilUtc
-    // columns — those are read here ONLY as the (deprecated, always-null-for-PaidFrom) legacy fields the
-    // contract still exposes, never to decide payment state.
+    // §47.3: PaymentState/PaidUntil keep their FORM but their SOURCE is `funding` (the account's
+    // subscription-driven ranking). Cycle 22 (§379/§380, Р2/Р6): the channel's own PaidFromUtc/PaidUntilUtc
+    // columns are dropped, and so is the always-null PaidFrom field.
     private static ChannelDto MapToDto(
-        NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, (ChannelFundingState State, string Text, DateTime? PaidUntil)> funding)
+        NotificationChannel channel, int idleDays, IReadOnlyDictionary<Guid, ChannelFundingInfo> funding)
     {
         var (fundingState, fundingText, subscriptionPaidUntil) = funding.TryGetValue(channel.Id, out var f)
             ? f
-            : (ChannelFundingState.NotPaid, BillingTexts.FundingText(ChannelFundingState.NotPaid, 0, 1, null), (DateTime?)null);
+            : new ChannelFundingInfo(ChannelFundingState.NotPaid, BillingTexts.FundingText(ChannelFundingState.NotPaid, 0, 1, null), null);
         var paymentState = fundingState switch
         {
             ChannelFundingState.Funded => ChannelPaymentStatus.Paid,
@@ -875,15 +819,13 @@ public class NotificationChannelsController(
             _ => ChannelPaymentStatus.NotPaid,
         };
         var phoneMasked = channel.PhoneNumber is null ? null : PhoneDisplayMask.Mask(channel.PhoneNumber);
-        // N6, §47.3: StateText/ChannelDto.paidUntil both read the SUBSCRIPTION's paid-until now, not
-        // channel.PaidUntilUtc (that column is no longer written by anything — see the field's own
-        // remarks below).
+        // N6, §47.3: StateText/ChannelDto.paidUntil both read the funding's paid-until (the WhatsApp
+        // option's, else the subscription's) — the channel row has no paid period of its own.
         var stateText = ChannelPresentation.StateText(channel.State, phoneMasked, idleDays, subscriptionPaidUntil, channel.LastStateReason);
         var riskAccepted = channel.RiskAcceptedAtUtc is not null;
 
         return new ChannelDto(
             channel.Id, channel.Transport, channel.State, stateText, phoneMasked, paymentState,
-            PaidFrom: null, // §47.3: deprecated, always null — PaidFromUtc is a historical column, not read.
             subscriptionPaidUntil, channel.RequestedAtUtc, channel.ConnectedAtUtc,
             channel.RiskAcceptedAtUtc, channel.IdleSinceUtc,
             channel.IdleSinceUtc is not null ? channel.IdleSinceUtc.Value.AddDays(idleDays) : null,

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 
@@ -25,21 +26,22 @@ namespace ServiceBooking.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/companies")]
-public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUploadService, FileStorage storage)
+public class CompanyPhotosController(
+    AppDbContext db, ImageUploadService imageUploadService, FileStorage storage, PlatformNoticePublisher noticePublisher)
     : ControllerBase
 {
     [HttpGet("{id:guid}/photos")]
-    public async Task<ActionResult<List<CompanyPhotoDto>>> GetPhotos(Guid id)
+    public async Task<ActionResult<List<CompanyPhotoDto>>> GetPhotos(Guid id, CancellationToken ct)
     {
         // Matches GetBySlug (CompaniesController): a deactivated company is NotFound to an anonymous
         // caller, not a visible gallery — this endpoint and GetBySlug must not disagree.
-        var exists = await db.Companies.AnyAsync(c => c.Id == id && c.IsActive);
+        var exists = await db.Companies.AnyAsync(c => c.Id == id && c.IsActive, ct);
         if (!exists) return NotFound();
 
         var photos = await db.CompanyPhotos
             .Where(p => p.CompanyId == id)
             .OrderBy(p => p.Position).ThenBy(p => p.CreatedAtUtc).ThenBy(p => p.Id)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(photos.Select(CompanyPhotoDto.From).ToList());
     }
@@ -133,11 +135,18 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
     [HttpDelete("{id:guid}/photos/{photoId:guid}")]
     [Authorize]
     [EnableRateLimiting("uploads")]
-    public async Task<IActionResult> Delete(Guid id, Guid photoId)
+    public async Task<IActionResult> Delete(Guid id, Guid photoId, [FromQuery] string? reason)
     {
+        // ARCHITECTURE_CYCLE20.md §404.7, API_CONTRACT_CYCLE20.md §434.8 (US-20-06/Т20-07) — the only
+        // accepted value is the literal below; anything else (a typo, a future value the frontend doesn't
+        // know about yet) is a 400, not silently ignored.
+        if (reason is not null && reason != "DepictedPersonRequest")
+            return BadRequest($"Неизвестное значение reason '{reason}'. Ожидается DepictedPersonRequest.");
+
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
-        if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
+        var isSuperAdmin = User.IsInRole("SuperAdmin");
+        if (!isSuperAdmin && !await IsOwnerOrSuperAdmin(id)) return Forbid();
 
         var photo = await db.CompanyPhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.CompanyId == id);
         // A photoId belonging to a DIFFERENT company is indistinguishable from "doesn't exist" —
@@ -162,6 +171,13 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
 
         storage.DeletePublic(url);
         storage.DeletePublic(thumbnailUrl);
+
+        // §404.7 — the parameter only ever means anything for SuperAdmin; an owner deleting their own
+        // photo with this query string on it (accidentally or otherwise) gets the ordinary 204, no notice.
+        // A publish failure must not undo the deletion above — PublishPhotoRemovedAsync itself never
+        // throws (its own doc comment), so no try/catch is needed at this call site.
+        if (isSuperAdmin && reason == "DepictedPersonRequest")
+            await noticePublisher.PublishPhotoRemovedAsync(company);
 
         return NoContent();
     }

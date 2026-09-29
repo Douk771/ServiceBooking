@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using ServiceBooking.Core.Entities;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -79,7 +79,7 @@ public class SubscriptionResolver(AppDbContext db)
     public static EffectivePlan Resolve(
         AccountSubscription? sub, int grandfatheredEmployeeBonus, int paidNotificationNumbers, DateTime nowUtc)
     {
-        var usable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= nowUtc);
+        var usable = SubscriptionUsability.IsUsable(sub, nowUtc);
         // A plan an admin has deactivated (SubscriptionPlanConfig.IsActive == false, e.g. discontinued)
         // must fall back to Free even for an account still actively subscribed to it — otherwise a
         // deleted plan keeps granting its features forever to whoever was on it when it was retired.
@@ -130,11 +130,13 @@ public class SubscriptionResolver(AppDbContext db)
         var accountIds = companies.Where(c => c.BillingAccountId.HasValue).Select(c => c.BillingAccountId!.Value).Distinct();
         var accountPlans = await GetEffectivePlansForAccountsAsync(accountIds);
 
+        // §375 F18: a dictionary lookup per company, not a linear FirstOrDefault scan (Id is the key).
+        var accountByCompany = companies.ToDictionary(c => c.Id, c => c.BillingAccountId);
         return ids.ToDictionary(
             id => id,
             id =>
             {
-                var accountId = companies.FirstOrDefault(c => c.Id == id)?.BillingAccountId;
+                var accountId = accountByCompany.GetValueOrDefault(id);
                 return accountId.HasValue && accountPlans.TryGetValue(accountId.Value, out var plan) ? plan : EffectivePlan.Free;
             });
     }
@@ -192,7 +194,7 @@ public class SubscriptionResolver(AppDbContext db)
         {
             var sub = subs.FirstOrDefault(s => s.BillingAccountId == id);
             var bonus = bonuses.FirstOrDefault(b => b.Id == id)?.GrandfatheredEmployeeBonus ?? 0;
-            var subUsable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= now);
+            var subUsable = SubscriptionUsability.IsUsable(sub, now);
 
             var currentPlanConfigId = sub?.PlanConfigId;
             int PaidQuantity(AccountSubscriptionOption o)

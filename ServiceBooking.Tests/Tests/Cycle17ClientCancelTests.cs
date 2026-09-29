@@ -230,4 +230,70 @@ public class Cycle17ClientCancelTests(TestDatabaseFixture fixture) : ApiTestBase
         dto.ClientRescheduleAllowed.Should().BeFalse(
             "reschedule DOES gate on AllowSelfBooking — the two flags must diverge here, proving cancel isn't reusing reschedule's rule");
     }
+
+    // ── CY20-B06: US-20-04 (Т20-05) — a company window above 24h is capped for CANCEL only ─────────
+    // SPEC_CYCLE20_LEGAL_CLOSURE.md §393: "Функциональные тесты цикла 17 (Cycle17ClientCancelTests.cs)
+    // дополнены случаями «окно > 24»." Written from SPEC.md, independently of ClientRescheduleWindow's
+    // own implementation.
+
+    [Fact, TestCase("CY20-B06a")]
+    public async Task CompanyWindowAbove24h_ClientCancelAt30Hours_Succeeds_ButRescheduleStillRefused()
+    {
+        // Company configured a generous 48h window; a client cancel must be capped at the 24h ceiling
+        // (Math.Min(48, 24) = 24), so a visit 30h out is still outside the APPLIED window -> cancel OK.
+        // Reschedule, in contrast, keeps using the full stored 48h, unchanged -> 30h out is inside it -> 400.
+        var (_, _, company, _, client, booking) = await SetUpConfirmedClientBookingAsync(clientRescheduleMinHours: 48);
+        await MoveBookingVisitStartAsync(booking.Id, company.TimeZoneId, minutesFromNow: 30 * 60);
+
+        var cancelResponse = await AuthedClient(client.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/cancel", (string?)null);
+        cancelResponse.StatusCode.Should().Be(HttpStatusCode.NoContent,
+            "US-20-04: a client cancel is never blocked more than 24h before the visit, regardless of the company's configured window");
+    }
+
+    [Fact, TestCase("CY20-B06b")]
+    public async Task CompanyWindowAbove24h_ClientCancelAt20Hours_StillRefused()
+    {
+        // 20h out is inside even the capped 24h ceiling -> still refused, proving the cap is a MINIMUM
+        // protection for the client, not a blanket "always allow inside 24h" override of every other rule.
+        var (_, _, company, _, client, booking) = await SetUpConfirmedClientBookingAsync(clientRescheduleMinHours: 48);
+        await MoveBookingVisitStartAsync(booking.Id, company.TimeZoneId, minutesFromNow: 20 * 60);
+
+        var response = await AuthedClient(client.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/cancel", (string?)null);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact, TestCase("CY20-B06c")]
+    public async Task CompanyWindowAt2Hours_CancelBehavior_IsUnaffectedByTheCeiling()
+    {
+        // §393's second scenario: "Given окно 2 ч — поведение отмены прежнее" — the 24h ceiling must
+        // never LOOSEN an already-stricter company setting (Math.Min(2, 24) = 2, unchanged).
+        var (_, _, company, _, client, booking) = await SetUpConfirmedClientBookingAsync(clientRescheduleMinHours: 2);
+        await MoveBookingVisitStartAsync(booking.Id, company.TimeZoneId, minutesFromNow: 60);
+
+        var response = await AuthedClient(client.Token).PatchAsJsonAsync($"/api/bookings/{booking.Id}/cancel", (string?)null);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            "a 2h company window must still block a cancel 1h before the visit — the 24h value is a ceiling, never a floor");
+    }
+
+    [Fact, TestCase("CY20-B06d")]
+    public async Task GetClientBookings_ClientCancelAllowedText_ReflectsTheAppliedCeiling_NotTheStoredValue()
+    {
+        // §389: "Текст клиенту «Отменить можно не позже чем за N ч» показывает применяемое N (≤ 24),
+        // а не сохранённое значение компании." ClientCancelAllowed itself is the boolean the frontend
+        // renders that copy from — assert it flips at the APPLIED (24h) boundary, not the stored (48h) one.
+        var (_, _, company, _, client, booking) = await SetUpConfirmedClientBookingAsync(clientRescheduleMinHours: 48);
+
+        // 25h out: outside the applied 24h ceiling -> allowed, even though it's inside the stored 48h.
+        await MoveBookingVisitStartAsync(booking.Id, company.TimeZoneId, minutesFromNow: 25 * 60);
+        var outsideCeiling = await AuthedClient(client.Token).GetAsync("/api/bookings/client");
+        var outsideList = await outsideCeiling.Content.ReadJsonAsync<List<BookingDto>>();
+        outsideList!.Single(b => b.Id == booking.Id).ClientCancelAllowed.Should().BeTrue(
+            "25h is outside the applied 24h ceiling, even though it's inside the company's stored 48h setting");
+
+        // 23h out: inside the applied 24h ceiling -> not allowed.
+        await MoveBookingVisitStartAsync(booking.Id, company.TimeZoneId, minutesFromNow: 23 * 60);
+        var insideCeiling = await AuthedClient(client.Token).GetAsync("/api/bookings/client");
+        var insideList = await insideCeiling.Content.ReadJsonAsync<List<BookingDto>>();
+        insideList!.Single(b => b.Id == booking.Id).ClientCancelAllowed.Should().BeFalse();
+    }
 }

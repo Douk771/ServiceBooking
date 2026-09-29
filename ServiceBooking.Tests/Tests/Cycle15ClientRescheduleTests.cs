@@ -7,8 +7,6 @@ using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.DTOs.Services;
-using ServiceBooking.API.Services.Notifications;
-using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 using ServiceBooking.Tests.Infrastructure;

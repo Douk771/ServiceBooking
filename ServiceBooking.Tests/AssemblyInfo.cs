@@ -1,5 +1,3 @@
-using Xunit;
-
 // T8-P11a (US-100, ARCHITECTURE_CYCLE8_PHASE2.md §99.2): randomizes test order WITHIN a class every
 // run, with a reproducible seed (ServiceBooking.Tests/Infrastructure/RandomTestCaseOrderer.cs), to
 // surface hidden "test B only passes after test A" ordering dependencies instead of letting a stable

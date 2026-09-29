@@ -52,7 +52,7 @@ function readObjectBody(data: unknown): string {
 }
 
 /** Translates one array of Identity errors (§39.6) into the human Russian text(s) shown to the user. */
-export function formatIdentityErrors(errors: IdentityError[]): string {
+function formatIdentityErrors(errors: IdentityError[]): string {
   return errors
     .map((e) => (e.code && IDENTITY_ERROR_MESSAGES[e.code]) || e.description || 'Проверьте введённые данные.')
     .join(' ')
