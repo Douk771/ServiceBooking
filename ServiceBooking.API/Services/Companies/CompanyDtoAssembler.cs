@@ -150,7 +150,7 @@ public sealed class CompanyDtoAssembler(
             cover?.Url, cover?.ThumbnailUrl, photos,
             addressVerification, addressPoint,
             c.YandexMapsUrl, c.TwoGisUrl, ClientRescheduleWindow.Normalize(c.ClientRescheduleMinHours),
-            c.Kind, siteLinks.CompanyPageUrl(c));
+            c.Kind.ToString(), siteLinks.CompanyPageUrl(c));
     }
 
     // ARCHITECTURE_CYCLE10.md §109.3: one batched query for the whole page's cover photos (Position ==

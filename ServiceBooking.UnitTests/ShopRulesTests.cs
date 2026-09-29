@@ -227,6 +227,7 @@ public class ShopRulesTests
     {
         OrderTexts.OnlyLeft(ProductUnit.Piece, 2).Should().Be("Осталось только 2 шт");
         OrderTexts.OnlyLeft(ProductUnit.Weight, 800).Should().Be("Осталось только 0,8 кг");
+        OrderTexts.OnlyLeft(ProductUnit.Piece, 0).Should().Be("Закончилось");
         OrderTexts.PriceWas(250m, 270m).Should().Be("Было 250 ₽, стало 270 ₽");
     }
 

@@ -15,6 +15,10 @@
 > `AdminPlatformController` и т. д., карта — `CURRENT_STATE.md`, редакция 🧽); **маршруты, коды и тела
 > не изменились** (проверено тестом CY22-12 по таблице из 179 эндпоинтов). Ссылки вида
 > `AdminController.cs` в разделах ниже — на момент их написания.
+>
+> **Цикл 23 (заказы, `goods.ezbook.ru`; НЕ ВЫПУЩЕНО):** новый раздел §4.17 — магазины, каталог, витрина, заказы на самовывоз;
+> у компаний появились `kind`/`publicUrl`, у списков «мои компании» — `?kind=` (по умолчанию `Services`), маршруты записи
+> отвечают магазину 409. Всё помечено как ещё не выпущенное до релиза цикла 23.
 
 ## Содержание
 
@@ -3574,6 +3578,137 @@ curl http://localhost:5000/api/health/ready
   **только на новые выдачи триала** — уже выданные триалы хранят свой снапшот этих значений и не
   меняются задним числом.
 * `DELETE /api/admin/plans/{id}` — новый повод для существующего 409: тариф-триал удалить нельзя.
+
+---
+
+### 4.17. Магазины и заказы на самовывоз (goods.ezbook.ru) — **новое в цикле 23 — НЕ ВЫПУЩЕНО (unreleased): доступно с ветки `cycle/023-goods-orders-core`, на боевом адресе появится с релизом цикла 23**
+
+Второй продукт платформы: магазины и столовые принимают заказы «на самовывоз» на отдельном сайте
+`https://goods.ezbook.ru/<адрес-магазина>`. Магазин — это `Company` с `kind = "Orders"`; салоны имеют
+`kind = "Services"` (все существующие компании). Форма запросов и ответов — единственный источник истины
+`contracts/cycle23/openapi.yaml`; порядок проверок и тексты — `API_CONTRACT_CYCLE23.md`; здесь — то, что
+**реально работает сейчас**, включая места, где реализация уточнила контракт.
+
+**Конвенции (без изменений):** camelCase; enum — строкой; `DateTime` — ISO-8601 UTC; `DateOnly` — `YYYY-MM-DD`;
+400/402/429 — голая русская строка (`text/plain`); 401/403/404 — пустое тело. **Исключение цикла:** все 409 домена
+заказов — JSON `{ "code", "message", … }` (`OrderRefusalDto` при оформлении, `OrderConflictDto` у персонала,
+`CatalogConflictDto` в каталоге и адресе). 409 существующих маршрутов записи для магазина — по-прежнему строка.
+Количество — **целое** в базовой единице: штуки (`Piece`) или граммы (`Weight`, цена за 1 кг). Сумму строки и итог
+считает сервер: штучный — `цена × шт`; весовой — округление половины вверх до копейки от `цена × граммы / 1000`.
+
+**Роли в магазине:** `Owner` (`CompanyOwner`), `Staff` (`Master`, в интерфейсе «Сотрудник»), `SuperAdmin`. Порядок
+проверок всех кабинетных маршрутов: токен → магазин существует и это магазин (иначе **404**, в том числе для id салона)
+→ роль (не участник или сотрудник на владельческом маршруте — **403** с пустым телом). Владельческие маршруты помечены
+владельческим гейтом (451, как у компаний).
+
+#### Изменения существующих маршрутов
+
+* `CompanyDto` и элементы `GET /api/admin/companies` получили `kind` (строка `"Services"`/`"Orders"`) и `publicUrl` —
+  абсолютную ссылку на публичную страницу (салон — `https://ezbook.ru/company/<slug>`, магазин —
+  `https://goods.ezbook.ru/<slug>`), у всех вызывающих, включая анонимных.
+* `GET /api/companies`, `GET /api/companies/public` — **только салоны**.
+* `GET /api/companies/my`, `GET /api/companies/member` — новый `?kind=Services|Orders`; **не передан → `Services`**
+  (магазины исчезают из кабинета ezbook без правок его фронта). Неизвестное значение (в том числе число) → 400
+  `«Неизвестный тип компании»`.
+* `GET /api/admin/companies?kind=` — не передан → все типы.
+* `GET /api/companies/kinds-summary` (вошедший) → `{ services: {count, siteUrl}, orders: {count, siteUrl} }` — активные
+  компании, где вызывающий участник любой роли.
+* `GET /api/companies/{slug}` отдаёт и магазин (`kind: "Orders"`).
+* `POST /api/companies/{id}/members` для магазина: роль только `Master`, иначе 400 `«В магазин можно добавить только
+  сотрудника.»`. Лимиты компаний и мест — общие на аккаунт (салоны и магазины считаются вместе).
+* **Маршруты записи для магазина — 409 строкой** `«Это магазин: записи, услуги и расписание для него недоступны.»`
+  (проверка после прав): `POST/PUT/DELETE /api/services*`, `PUT …/members/{id}/provides-services|services|commission`,
+  `GET /api/companies/{id}/masters|stats|photo-usage`, `POST/DELETE/PUT …/photos*`, запись `workinghours` и
+  `schedule-template` (в т. ч. `apply`), `POST /api/bookings`, `GET /api/bookings/slots|availability`,
+  `GET /api/reports/masters`, `…/mail`, `GET /api/masters/clients`, `POST /api/masters/clients/notes`, маршруты
+  `notification-settings|notification-templates|notifications`, `staff-push-settings`, `clients/{key}/…`,
+  `POST /api/notification-channels/{id}/companies`. Особенности: `GET /api/bookings/occupied` не имеет `companyId` — 409,
+  если у указанного `masterId` членство **только** в магазинах; `GET …/photos` и `GET …/reviews` у магазина отдают
+  пустой результат (публичные списки — не ошибка). Обратное — маршруты заказов с id/slug салона — **404**.
+
+#### Магазин (`/api/shops`)
+
+| Маршрут | Доступ | Смысл |
+|---|---|---|
+| `POST /api/shops` | вошедший, владельч. гейт | Создать магазин. Порядок: соглашение владельца (400/503/409-строка) → название (400 `«Укажите название магазина»`) → адрес (409 JSON `SlugInvalid`/`SlugReserved`/`SlugTaken`) → город (400) → часовой пояс (400) → лимит компаний (402). 201 `{ shop, token }` — **токен нужно заменить** (claim «lco») |
+| `GET /api/shops/my` | вошедший | Магазины, где я владелец или сотрудник, включая заблокированные (`isActive: false`) |
+| `GET /api/shops/slug-check?slug=&name=` | вошедший | `slug` → проверка `{slug, available, reason, reasonCode}`; только `name` → предложение (транслитерация ГОСТ 7.79-2000 Б, при занятости `-2`…`-20`, затем 4 случайных hex). Оба пусты → 400 |
+| `GET /api/shops/{id}` | владелец, сотрудник | `ShopManageDto`: `myRole`, `settings`, `seller`, `acceptingOrders`, `phoneVerificationAvailable`, `publicUrl`, `productCount` |
+| `PUT /api/shops/{id}/settings` | владелец | Полная замена четырёх полей; действуют только на **новые** заказы. `customerMode = VerifiedPhoneOnly` **включить** нельзя при выключенной подтверждении телефона (MAX) — 409 `PhoneVerificationUnavailable`; сохранение уже включённого режима разрешено |
+| `PUT /api/shops/{id}/seller` | владелец | Реквизиты продавца (необязательны в цикле 1). **Полная замена:** пустое или отсутствующее поле очищается. ИНН — контрольная сумма, при указанной форме ещё и длина (компания — 10, ИП/самозанятый — 12), иначе 400 `«ИНН указан с ошибкой»` |
+| `PUT /api/shops/{id}/slug` | владелец | Смена адреса; тот же адрес — 200 без изменений; старая ссылка и напечатанные QR **перестают работать** (редиректа нет) |
+| `GET /api/shops/{id}/qr` | владелец, сотрудник | `image/png` ~2000×2000, коррекция ошибок Q, содержимое — `publicUrl`; `Content-Disposition: attachment; filename="<slug>-qr.png"` |
+
+Адрес магазина: латиница нижнего регистра, цифры и дефис, 3–50 знаков, не из резерва слов
+(`contracts/cycle23/goods-routes.json`); занятость проверяется среди **всех** компаний (салонов и магазинов) без учёта регистра.
+
+#### Каталог (`/api/shops/{id}/…`)
+
+Чтение — владелец и сотрудник; изменение каталога — владелец (владельч. гейт); «закончилось» и остатки — владелец и сотрудник.
+Списки отдаются целиком (без `PagedResult`; ≤ 1000 товаров, ≤ 100 категорий).
+
+* `GET categories`, `POST categories` (201; 409 `CategoryLimitReached`), `PUT categories/{cid}`, `PUT category-order`
+  (`{ids}` — ровно все категории, иначе 400 `«Список категорий устарел — обновите страницу»`), `DELETE categories/{cid}`
+  (204; с товарами — 409 `CategoryNotEmpty`).
+* `GET products?search=&categoryId=` (`categoryId=none` — без категории), `POST products` (201; 409 `ProductLimitReached`),
+  `PUT products/{pid}` (полная замена; единица не меняется — 409 `UnitChangeNotAllowed`), `DELETE products/{pid}` (204,
+  мягкое удаление), `PUT product-order` (`{categoryId, productIds}`), `POST/DELETE products/{pid}/image` (multipart `file`,
+  два размера, политика `uploads`).
+* `PUT products/{pid}/sold-out` `{isSoldOut}` и `PUT products/{pid}/stock` `{onHand}` (целое ≥ 0 или `null` — не учитывать;
+  400 `«Остаток — целое число от 0»`). Остаток можно выставить ниже резерва — тогда `free < 0`.
+* `ProductDto.stock = { onHand, reserved, free }` всегда; `reserved` **вычисляется** из активных заказов, не хранится.
+  `availableToCustomers` — тот же вердикт, что увидит покупатель (одно правило «доступный товар»).
+* Правила товара: штучный — `portionText` (≤ 50); весовой — `weightStepGrams` 10…5000 (по умолчанию 100),
+  `minQuantityGrams` (кратно шагу, ≤ 10 000, по умолчанию = шаг). Штуки в заказе 1…99, граммы — кратно шагу, 10…10 000.
+
+#### Витрина и оформление (анонимно, лимит `storefront` 120/мин на IP; заказ — `order-create`)
+
+* `GET /api/storefront/{slug}` — 404 для несуществующего адреса и салона. Заблокированный магазин — 200,
+  `isAvailable: false`, `acceptingOrders: false`, `notAcceptingReason: «Магазин недоступен»`, пустой каталог. Иначе — видимые
+  категории, опубликованные товары, последним блок «Другое»; товар «Закончилось» приходит с `available: false`; **числа остатка нет**.
+* `POST /api/storefront/{slug}/quote` — всегда 200: построчные цены, `lineTotal` (для строки с проблемой — сколько бы она стоила,
+  в `total` не входит), `problem`, `hasProblems`, `acceptingOrders`. Больше 50 строк / повтор `productId` — 400.
+* `POST /api/storefront/{slug}/orders` — порядок проверок: модель (400) → магазин (404) и приём (409 `ShopNotAcceptingOrders`) →
+  корзина (409 `EmptyCart`/`TooManyLines`) → **повтор `idempotencyKey` → 200 с тем же заказом** (до капчи и лимитов) → покупатель
+  (строгий режим: `LoginRequired` / `PhoneVerificationUnavailable` / `PhoneVerificationRequired`; режим «Любой»: вошедший — на номер
+  аккаунта, гость — капча и телефон) → лимит по телефону (429) → позиции (409 `PriceChanged` или `ItemsUnavailable` сразу со **всеми**
+  `problems`). Успех — 201 `{ order, orderUrl }`. Нехватка остатка: `InsufficientStock` с `availableQuantity` (единственное место
+  с числом для покупателя; при нуле текст «Закончилось»). Номер заказа — сквозной в пределах суток магазина.
+
+#### Заказ у покупателя
+
+* `GET /api/orders/public/{token}` — страница заказа по секретной ссылке (256 бит); неизвестный токен — 404 без тела. Телефон — только
+  маской, имён сотрудников нет, правки магазина — в `shopChanges`. Опрос — раз в 10 с. Лимит `order-public`.
+* `POST /api/orders/public/{token}/cancel` — без входа, по ссылке: 200 или 409 `AlreadyReady` / `CancelNotAllowed` (с актуальным
+  `publicOrder`). Решает снимок настройки заказа `allowCustomerCancel`.
+* `GET /api/orders/my` — мои заказы: активные, затем завершённые за 30 дней; гостевые заказы на тот же номер не подтягиваются.
+
+#### Экран заказов (`/api/shops/{id}/…`, владелец и сотрудник)
+
+* `GET order-board?sinceRevision=&businessDate=` (лимит `order-board` 120/мин) — если счётчик ревизии и сутки совпали, ответ
+  `{ changed: false, revision, businessDate, serverTimeUtc }` без массивов; иначе четыре массива карточек. Опрос — раз в 5 с.
+* `GET orders/{oid}` — карточка с журналом. Действия — `POST orders/{oid}/accept|reject|ready|not-picked-up|cancel` с
+  `expectedVersion` (`reject`/`cancel` — ещё `reason` ≤ 300), правка `PUT orders/{oid}/items` (полный желаемый состав),
+  `POST orders/{oid}/issue-quote` и `POST orders/{oid}/issue` (фактические граммы по каждой весовой позиции, 1…100 000).
+* 409 `OrderConflictDto`: `VersionMismatch` / `InvalidTransition` (в теле актуальный `order`, действие **не** применено),
+  `LastItemCannotBeRemoved`, `InvalidQuantity`, `InsufficientStock` (`problems`), `ProductUnavailable`. Доступные кнопки — только
+  `availableActions` карточки. Нехватка остатка при выдаче — не ошибка: списание до нуля, отметка в журнале.
+
+#### Персональные данные
+
+* `GET /api/profile/export` — новая секция `orders` (заказы аккаунта, `source: "Account"`, и гостевые заказы на тот же номер —
+  `source: "GuestSamePhone"` — **только при подтверждённом номере**); в каждом заказе — только видимые покупателю события журнала.
+  Магазины с заказами субъекта попадают в `operators`.
+* `POST /api/profile/delete-account` — заказы аккаунта (и гостевые на подтверждённый номер) обезличиваются (имя, телефон, комментарий,
+  связь с аккаунтом; `personalDataErased`), учёт магазина цел, активные заказы не отменяются. Правило «владеете компанией — 409» относится и к магазинам.
+* Срок хранения `Retention:OrderPersonalDataDays` = 0 («срок не задан», ждёт заключения юриста): правило `order-personalization`
+  ничего не делает и пишет это в сводку задачи.
+
+#### Частота запросов
+
+`storefront` — 120/мин на IP; `order-create` — 20/час на IP анонимно, 60/час на пользователя (429 `«Слишком много заказов подряд —
+попробуйте через несколько минут»`); лимит по телефону — 5 активных заказов в магазине и 20 за сутки на платформе (429 `«Слишком много
+заказов на этот номер — дождитесь выдачи текущих или позвоните в магазин»`); `order-public` — 120/мин на IP; `order-board` — 120/мин на пользователя.
 
 ---
 

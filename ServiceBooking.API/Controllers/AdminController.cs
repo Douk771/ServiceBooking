@@ -298,7 +298,7 @@ public class AdminController(
             return new AdminCompanyDto(c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
                 c.MemberCount, count, c.OwnerUserId, ownerEmails.GetValueOrDefault(c.OwnerUserId, c.OwnerUserId),
                 sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true,
-                c.Kind, siteLinks.CompanyPageUrl(c.Kind, c.Slug));
+                c.Kind.ToString(), siteLinks.CompanyPageUrl(c.Kind, c.Slug));
         }).ToList();
 
         return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
@@ -515,7 +515,8 @@ public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, 
     Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive,
     // ARCHITECTURE_CYCLE23.md §408.6 — additive, appended with defaults: the company's product type and the
     // absolute link to its public page (PublicSiteLinks).
-    CompanyKind Kind = CompanyKind.Services, string PublicUrl = "");
+    // Kind: the enum's name as a string, for the same reason as CompanyDto.Kind (readable without the enum converter).
+    string Kind = nameof(CompanyKind.Services), string PublicUrl = "");
 
 
 public record SubscriptionDiagnosticsDto(

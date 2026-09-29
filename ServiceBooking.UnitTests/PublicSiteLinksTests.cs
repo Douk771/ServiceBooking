@@ -49,10 +49,23 @@ public class PublicSiteLinksTests
     [InlineData("https://ezbook.ru/", "https://goods.ezbook.ru")]      // trailing slash
     [InlineData("https://ezbook.ru", "https://goods.ezbook.ru/shop")]  // path
     [InlineData("https://ezbook.ru", "goods.ezbook.ru")]               // not absolute
-    [InlineData("", "https://goods.ezbook.ru")]                        // empty
     public void ValidatePublicSites_BadValue_ThrowsOutsideDeveloperEnvironment(string services, string orders) =>
         ((Action)(() => DeploymentSafetyChecks.ValidatePublicSites(Config(services, orders), "Production")))
             .Should().Throw<InvalidOperationException>();
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", "  ")]
+    public void ValidatePublicSites_NotConfigured_MeansDefaults_AndDoesNotThrow(string? services, string? orders) =>
+        ((Action)(() => DeploymentSafetyChecks.ValidatePublicSites(Config(services, orders), "Production"))).Should().NotThrow();
+
+    [Fact]
+    public void SiteBaseUrl_BlankConfigured_FallsBackToProductionDefaults()
+    {
+        var links = Links(services: "", orders: " ");
+        links.SiteBaseUrl(CompanyKind.Services).Should().Be("https://ezbook.ru");
+        links.SiteBaseUrl(CompanyKind.Orders).Should().Be("https://goods.ezbook.ru");
+    }
 
     [Fact]
     public void ValidatePublicSites_LocalhostHttp_AllowedInDevelopment() =>

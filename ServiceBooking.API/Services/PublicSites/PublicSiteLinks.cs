@@ -14,9 +14,15 @@ public sealed class PublicSiteLinks(IOptions<PublicSitesOptions> options)
     private readonly PublicSitesOptions _options = options.Value;
 
     /// <summary>Base address of the site that serves companies of this kind (no trailing slash).</summary>
-    public string SiteBaseUrl(CompanyKind kind) => Trim(kind == CompanyKind.Orders
-        ? _options.OrdersBaseUrl
-        : _options.ServicesBaseUrl);
+    public string SiteBaseUrl(CompanyKind kind)
+    {
+        var configured = kind == CompanyKind.Orders ? _options.OrdersBaseUrl : _options.ServicesBaseUrl;
+        // A blank value (an empty environment variable) means "not configured": the production defaults apply.
+        var fallback = kind == CompanyKind.Orders ? Defaults.OrdersBaseUrl : Defaults.ServicesBaseUrl;
+        return Trim(string.IsNullOrWhiteSpace(configured) ? fallback : configured);
+    }
+
+    private static readonly PublicSitesOptions Defaults = new();
 
     /// <summary>Salon: {Services}/company/{slug}; shop: {Orders}/{slug}.</summary>
     public string CompanyPageUrl(Company company) => CompanyPageUrl(company.Kind, company.Slug);

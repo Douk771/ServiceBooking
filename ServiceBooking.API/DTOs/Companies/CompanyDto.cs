@@ -112,7 +112,10 @@ public record CompanyDto(
     // with defaults (§115 convention). Kind is the company's product type; PublicUrl is the absolute link to
     // its public page, built ONLY by PublicSiteLinks (salon → ezbook.ru/company/<slug>, shop →
     // goods.ezbook.ru/<slug>). Filled for EVERY caller, anonymous ones included.
-    CompanyKind Kind = CompanyKind.Services,
+    // Kind is a STRING carrying the enum's name ("Services" / "Orders") — the same wire form the global JsonStringEnumConverter
+    // gives an enum, but readable by a plain System.Text.Json deserializer: many existing consumers (tests, tools) read this DTO
+    // without the enum converter, and an enum member here would break every one of them.
+    string Kind = nameof(CompanyKind.Services),
     string PublicUrl = ""
 );
 

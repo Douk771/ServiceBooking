@@ -115,7 +115,9 @@ public static class OrderTexts
     public static string InvalidTransition(OrderStatus current) =>
         $"Это действие недоступно для заказа в статусе «{StatusText(current)}»";
 
-    public static string OnlyLeft(ProductUnit unit, int available) => $"Осталось только {Quantity(unit, Math.Max(0, available))}";
+    /// <summary>"Осталось только 2 шт"; when nothing is left — "Закончилось" ("only 0 pcs left" reads wrong).</summary>
+    public static string OnlyLeft(ProductUnit unit, int available) =>
+        available <= 0 ? "Закончилось" : $"Осталось только {Quantity(unit, available)}";
 
     public static string PriceWas(decimal was, decimal now) => $"Было {Money(was)}, стало {Money(now)}";
 

@@ -522,7 +522,7 @@ public static class DeploymentSafetyChecks
     /// ARCHITECTURE_CYCLE23.md §391 — PublicSites:ServicesBaseUrl / OrdersBaseUrl. Outside a developer
     /// environment both must be absolute https:// origins with no path and no trailing slash: a link built
     /// from a malformed value would land in QR codes and (cycle 2) in customer notifications. An unrecognised
-    /// value stops the start (fail-closed convention). In Development/Testing http:// is allowed (localhost).
+    /// value stops the start (fail-closed convention); an absent or blank value means the built-in defaults. In Development/Testing http:// is allowed (localhost).
     /// </summary>
     public static void ValidatePublicSites(IConfiguration configuration, string environmentName)
     {
@@ -530,9 +530,9 @@ public static class DeploymentSafetyChecks
         foreach (var key in new[] { "ServicesBaseUrl", "OrdersBaseUrl" })
         {
             var value = configuration[$"{PublicSites.PublicSitesOptions.SectionName}:{key}"];
-            if (string.IsNullOrWhiteSpace(value))
-                throw new InvalidOperationException(
-                    $"PublicSites:{key} is empty. Set PublicSites__{key} or keep the default from appsettings.json.");
+            // Not configured (no appsettings.json at all, or a blank value): PublicSitesOptions/PublicSiteLinks fall back to the
+            // production defaults, which are valid by construction — so there is nothing to check and no new mandatory setting.
+            if (string.IsNullOrWhiteSpace(value)) continue;
 
             var isAbsolute = Uri.TryCreate(value, UriKind.Absolute, out var uri);
             var schemeOk = isAbsolute && (uri!.Scheme == Uri.UriSchemeHttps || (developer && uri.Scheme == Uri.UriSchemeHttp));
