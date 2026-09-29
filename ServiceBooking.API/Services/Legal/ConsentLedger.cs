@@ -192,6 +192,13 @@ public class ConsentLedger(AppDbContext db)
     /// once, matching API_CONTRACT_CYCLE5.md §41.3's "purpose: null → отзывается согласие целиком".
     /// Returns the number of rows actually revoked; 0 is a legitimate, idempotent answer ("nothing to
     /// revoke"), not an error (US-68 p.7).
+    ///
+    /// Composable under an AMBIENT transaction, same pattern as <see cref="WrittenHealthConsentRevoker.RevokeAsync"/>
+    /// (code review, cycle 20: <c>ProfileController.RevokeSalonConsentAsync</c>'s HealthDataConsent branch
+    /// used to call this AND <see cref="WrittenHealthConsentRevoker"/> as two independent transactions — a
+    /// failure between them left the ledger revoked but the paper mark/health note untouched, or vice
+    /// versa). Only opens (and later commits) its OWN transaction and advisory lock when
+    /// <c>db.Database.CurrentTransaction</c> is null.
     /// </summary>
     public async Task<int> RevokeAsync(
         ConsentSubject subject, string documentKey, ConsentPurpose? purpose, string? reason,
@@ -200,25 +207,37 @@ public class ConsentLedger(AppDbContext db)
         // keeps its exact prior meaning unchanged.
         string? revokedByUserId = null, CancellationToken ct = default)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await AdvisoryLock.AcquireAsync(db, subject.LockKey);
-
-        var query = CurrentRecordsQuery(subject).Where(c => c.DocumentKey == documentKey);
-        if (purpose is not null)
-            query = query.Where(c => c.Purpose == purpose);
-
-        var toRevoke = await query.ToListAsync(ct);
-        var now = DateTime.UtcNow;
-        foreach (var record in toRevoke)
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
+        if (ownsTransaction)
         {
-            record.RevokedAtUtc = now;
-            record.RevokeReason = reason;
-            record.RevokedByUserId = revokedByUserId;
+            transaction = await db.Database.BeginTransactionAsync(ct);
+            await AdvisoryLock.AcquireAsync(db, subject.LockKey);
         }
 
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return toRevoke.Count;
+        try
+        {
+            var query = CurrentRecordsQuery(subject).Where(c => c.DocumentKey == documentKey);
+            if (purpose is not null)
+                query = query.Where(c => c.Purpose == purpose);
+
+            var toRevoke = await query.ToListAsync(ct);
+            var now = DateTime.UtcNow;
+            foreach (var record in toRevoke)
+            {
+                record.RevokedAtUtc = now;
+                record.RevokeReason = reason;
+                record.RevokedByUserId = revokedByUserId;
+            }
+
+            await db.SaveChangesAsync(ct);
+            if (ownsTransaction) await transaction!.CommitAsync(ct);
+            return toRevoke.Count;
+        }
+        finally
+        {
+            if (transaction is not null) await transaction.DisposeAsync();
+        }
     }
 
     /// <summary>The one place both partial indexes (IX_ConsentRecords_CurrentByUser,

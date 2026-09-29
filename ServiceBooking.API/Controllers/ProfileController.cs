@@ -893,6 +893,13 @@ public class ProfileController(
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
+        // Code-review finding (cycle 20): `dto.Reason` used to reach ConsentRecord.RevokeReason
+        // (HasMaxLength(256), AppDbContext) unchecked — a reason longer than the column gave a 500
+        // (DbUpdateException) instead of a 400, on every branch below (PdnConsent, PhotoConsent,
+        // HealthDataConsent, HealthDataWrittenConsentForm all share this one column).
+        if (dto.Reason is { Length: > 256 })
+            return BadRequest("Причина не должна превышать 256 символов.");
+
         // Code review В3: §44.4 describes a revoke mechanism for the SALON-recorded PhotoConsent/
         // HealthDataConsent rows too (ClientConsentsController's PostPhotoConsent/PostHealthConsent) —
         // until now this endpoint only ever accepted PdnConsent, so a person had no way to withdraw a
@@ -984,45 +991,70 @@ public class ProfileController(
         int revoked;
         var photosDeleted = 0;
         var healthNotesDeleted = 0;
+        var photoPathsToDelete = new List<(string Full, string Thumb)>();
 
-        if (dto.DocumentKey == LegalTextKey.PhotoConsent)
+        // Code-review finding (cycle 20): the HealthDataConsent branch used to run `ledger.RevokeAsync`
+        // and `writtenHealthConsentRevoker.RevokeAsync` as two INDEPENDENT transactions — if the second
+        // failed, the electronic consent ended up revoked while the paper mark/health note survived it.
+        // One ambient transaction for the whole method now (ConsentLedger.RevokeAsync and
+        // WrittenHealthConsentRevoker.RevokeAsync are both composable under one, per their own doc
+        // comments), same "row goes first" convention as ApplyOrPreviewRevokeEffectsAsync: photo files are
+        // only actually deleted from disk AFTER this commits.
+        await using (var transaction = await db.Database.BeginTransactionAsync())
         {
-            revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
+            // ConsentLedger.RevokeAsync and WrittenHealthConsentRevoker.RevokeAsync both skip their OWN
+            // advisory-lock acquisition once an ambient transaction is already open (that's what makes them
+            // composable here) — so with this method now opening that ambient transaction, THIS call site
+            // must take the locks they would otherwise have taken, or the mutual exclusion those locks
+            // exist for (ConsentLedger.GrantAsync racing a concurrent grant; PutHealthNote racing a
+            // concurrent written-consent revoke, code review finding, cycle 20) silently stops applying.
+            // Acquiring both unconditionally (rather than per-branch) keeps this correct even if a future
+            // branch is added without updating this list; pg_advisory_xact_lock is safely re-entrant.
+            await AdvisoryLock.AcquireAsync(db, subject.LockKey);
+            await AdvisoryLock.AcquireAsync(db, $"consent:health-written:{guestMatchPhone}");
 
-            var photos = await db.ClientNotePhotos.Include(p => p.ClientNote)
-                .Where(p => p.CompanyId == dto.CompanyId
-                            && (p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-                .ToListAsync();
-            photosDeleted = photos.Count;
-            if (photos.Count > 0)
+            if (dto.DocumentKey == LegalTextKey.PhotoConsent)
             {
-                var paths = photos.Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
-                db.ClientNotePhotos.RemoveRange(photos);
-                await db.SaveChangesAsync();
-                foreach (var (full, thumb) in paths)
+                revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
+
+                var photos = await db.ClientNotePhotos.Include(p => p.ClientNote)
+                    .Where(p => p.CompanyId == dto.CompanyId
+                                && (p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+                    .ToListAsync();
+                photosDeleted = photos.Count;
+                if (photos.Count > 0)
                 {
-                    storage.DeletePrivate(full);
-                    storage.DeletePrivate(thumb);
+                    photoPathsToDelete.AddRange(photos.Select(p => (p.StoragePath, p.ThumbnailPath)));
+                    db.ClientNotePhotos.RemoveRange(photos);
+                    await db.SaveChangesAsync();
                 }
             }
+            else if (dto.DocumentKey == LegalTextKey.HealthDataConsent)
+            {
+                // API_CONTRACT_CYCLE20.md §432.9 — withdraws the salon's OWN electronic record AND every
+                // live paper-form mark in this company, deleting the health note exactly once (the shared
+                // cascade below already covers it; no separate ClientHealthNotes query is needed any more).
+                revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
+                var cascade = await writtenHealthConsentRevoker.RevokeAsync(
+                    guestMatchPhone, dto.CompanyId.Value, dto.Reason ?? WrittenHealthConsentTexts.RevokedFromProfile, revokedByUserId: null, userId);
+                revoked += cascade.Revoked;
+                healthNotesDeleted = cascade.HealthNotesDeleted;
+            }
+            else // LegalTextKey.HealthDataWrittenConsentForm (cycle 20, US-20-01)
+            {
+                var cascade = await writtenHealthConsentRevoker.RevokeAsync(
+                    guestMatchPhone, dto.CompanyId.Value, dto.Reason ?? WrittenHealthConsentTexts.RevokedFromProfile, revokedByUserId: null, userId);
+                revoked = cascade.Revoked;
+                healthNotesDeleted = cascade.HealthNotesDeleted;
+            }
+
+            await transaction.CommitAsync();
         }
-        else if (dto.DocumentKey == LegalTextKey.HealthDataConsent)
+
+        foreach (var (full, thumb) in photoPathsToDelete)
         {
-            // API_CONTRACT_CYCLE20.md §432.9 — withdraws the salon's OWN electronic record AND every live
-            // paper-form mark in this company, deleting the health note exactly once (the shared cascade
-            // below already covers it; no separate ClientHealthNotes query is needed any more).
-            revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
-            var cascade = await writtenHealthConsentRevoker.RevokeAsync(
-                guestMatchPhone, dto.CompanyId.Value, dto.Reason ?? WrittenHealthConsentTexts.RevokedFromProfile, revokedByUserId: null, userId);
-            revoked += cascade.Revoked;
-            healthNotesDeleted = cascade.HealthNotesDeleted;
-        }
-        else // LegalTextKey.HealthDataWrittenConsentForm (cycle 20, US-20-01)
-        {
-            var cascade = await writtenHealthConsentRevoker.RevokeAsync(
-                guestMatchPhone, dto.CompanyId.Value, dto.Reason ?? WrittenHealthConsentTexts.RevokedFromProfile, revokedByUserId: null, userId);
-            revoked = cascade.Revoked;
-            healthNotesDeleted = cascade.HealthNotesDeleted;
+            storage.DeletePrivate(full);
+            storage.DeletePrivate(thumb);
         }
 
         var effects = new RevokeEffectsDto(photosDeleted, healthNotesDeleted, [], 0);
@@ -1096,6 +1128,14 @@ public class ProfileController(
         // whole transaction roll back.
         var photoPathsToDelete = new List<(string Full, string Thumb)>();
         string? avatarUrlToDelete = null;
+
+        // Code-review finding (cycle 20, closing the same gap as RevokeSalonConsentAsync above): the
+        // HealthData branch below can call WrittenHealthConsentRevoker.RevokeAsync, which skips its own
+        // "consent:health-written:{phone}" advisory lock once it sees this method's ambient transaction —
+        // so PutHealthNote's matching lock (ClientConsentsController) would otherwise have nothing to
+        // synchronize against when the revoke comes through THIS endpoint instead of the staff-facing one.
+        if (apply && guestMatchPhone is not null)
+            await AdvisoryLock.AcquireAsync(db, $"consent:health-written:{guestMatchPhone}");
 
         if (wholeDocument || purpose == ConsentPurpose.WorkPhotos)
         {
