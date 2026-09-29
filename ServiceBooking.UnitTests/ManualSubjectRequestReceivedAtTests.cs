@@ -92,4 +92,16 @@ public class ManualSubjectRequestReceivedAtTests
         value.Should().Be(receivedAt);
         value!.Value.Kind.Should().Be(DateTimeKind.Utc);
     }
+
+    [Fact]
+    public void Validate_UnspecifiedKindValue_IsReadAsUtc()
+    {
+        // An ISO string without offset ("2026-09-20T15:30:00") deserializes to Kind=Unspecified —
+        // it must be read as UTC, not shifted by the server's local offset.
+        var receivedAt = new DateTime(2026, 9, 20, 15, 30, 0, DateTimeKind.Unspecified);
+        var (value, _) = ManualSubjectRequestReceivedAt.Validate(receivedAt, NowUtc);
+
+        value.Should().Be(new DateTime(2026, 9, 20, 15, 30, 0, DateTimeKind.Utc));
+        value!.Value.Kind.Should().Be(DateTimeKind.Utc);
+    }
 }

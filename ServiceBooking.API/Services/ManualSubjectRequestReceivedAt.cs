@@ -25,7 +25,11 @@ public static class ManualSubjectRequestReceivedAt
         if (receivedAt is null)
             return (null, "Укажите дату поступления обращения.");
 
-        var receivedAtUtc = receivedAt.Value.ToUniversalTime();
+        // Unspecified (ISO string without offset) is read as UTC, as before the fix; only an explicit
+        // offset (Kind=Local after System.Text.Json) is converted back to the true UTC instant.
+        var receivedAtUtc = receivedAt.Value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(receivedAt.Value, DateTimeKind.Utc)
+            : receivedAt.Value.ToUniversalTime();
 
         if (receivedAtUtc > nowUtc)
             return (null, "Дата поступления не может быть в будущем.");
