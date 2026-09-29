@@ -79,8 +79,7 @@ public class PushController(
         if (!string.Equals(opts.Provider, "web-push", StringComparison.OrdinalIgnoreCase))
             return Conflict("Уведомления на устройство пока не включены на платформе.");
 
-        if (string.IsNullOrWhiteSpace(dto.Endpoint) || dto.Endpoint.Length > 500 ||
-            !Uri.TryCreate(dto.Endpoint, UriKind.Absolute, out _))
+        if (!PushEndpointValidator.IsValid(dto.Endpoint))
             return BadRequest("Некорректный адрес подписки (endpoint).");
         if (dto.Keys is null || string.IsNullOrWhiteSpace(dto.Keys.P256dh) || dto.Keys.P256dh.Length > 200)
             return BadRequest("Некорректный ключ подписки (p256dh).");

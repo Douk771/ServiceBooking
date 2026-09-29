@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using ServiceBooking.API.Services.Notifications.WebPush;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -36,7 +37,7 @@ public class PublicOrdersController(
         var order = await FindByTokenAsync(token, ct);
         if (order is null) return NotFound();
 
-        if (string.IsNullOrWhiteSpace(input.Endpoint) || input.Endpoint.Length > 500 || !Uri.TryCreate(input.Endpoint, UriKind.Absolute, out _))
+        if (!PushEndpointValidator.IsValid(input.Endpoint))
             return BadRequest("Некорректный адрес подписки (endpoint).");
         if (input.Keys is null || string.IsNullOrWhiteSpace(input.Keys.P256dh) || input.Keys.P256dh.Length > 200)
             return BadRequest("Некорректный ключ подписки (p256dh).");
