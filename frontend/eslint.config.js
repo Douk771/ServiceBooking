@@ -80,6 +80,11 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Build helper scripts run in Node (frontend/scripts/*.mjs, e.g. merge-goods-dist.mjs).
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
+  {
     // ARCHITECTURE_CYCLE9.md §105.9 — plain JS served verbatim from public/, not built by Vite, so it
     // needs the service-worker global scope (`self`, `caches`, `clients`) instead of the browser one.
     files: ['public/sw.js'],
