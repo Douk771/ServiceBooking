@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { shopsApi } from '../../api/shops'
-import { Button } from '@/components/ui/Button'
+import { LinkButton } from '../../components/LinkButton'
 import { Icon } from '@/components/ui/Icon'
 import { EmptyState, ErrorState, LoadingList } from '../../components/StatePanels'
 import { getGoodsErrorMessage } from '../../utils/orderError'
@@ -18,11 +18,9 @@ export function CabinetHomePage() {
           <h1 className="font-serif text-[32px] text-ink">Мои магазины</h1>
           <p className="text-sm text-ink-soft mt-1">Магазины, которыми вы владеете или где вы работаете сотрудником.</p>
         </div>
-        <Link to="/cabinet/new">
-          <Button>
-            <Icon name="plus" size={16} /> Открыть магазин
-          </Button>
-        </Link>
+        <LinkButton to="/cabinet/new">
+          <Icon name="plus" size={16} /> Открыть магазин
+        </LinkButton>
       </div>
 
       {shops.isLoading ? (
@@ -33,11 +31,7 @@ export function CabinetHomePage() {
         <EmptyState
           title="У вас пока нет магазинов"
           text="Создайте магазин — это занимает несколько минут: название, город и адрес для покупателей."
-          action={
-            <Link to="/cabinet/new">
-              <Button>Открыть магазин</Button>
-            </Link>
-          }
+          action={<LinkButton to="/cabinet/new">Открыть магазин</LinkButton>}
         />
       ) : (
         <ul className="grid sm:grid-cols-2 gap-4">
