@@ -3,7 +3,8 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { CompanyMapLinks } from '@/components/company/CompanyMapLinks'
 import { Icon } from '@/components/ui/Icon'
-import { formatPhone, telHref } from '@/utils/phone'
+import { formatPhone } from '@/utils/phone'
+import { dialHref } from '../utils/dial'
 import { storefrontApi } from '../api/storefront'
 import { CartPanel } from '../components/storefront/CartPanel'
 import { ProductCard } from '../components/storefront/ProductCard'
@@ -113,7 +114,7 @@ export function StorefrontPage() {
             {shop.phone && (
               <p className="flex items-center gap-1.5">
                 <Icon name="phone" size={14} strokeWidth={1.8} />
-                <a href={telHref(shop.phone) || undefined} className="text-ink hover:text-gold-dark font-medium">
+                <a href={dialHref(shop.phone) || undefined} className="text-ink hover:text-gold-dark font-medium">
                   {formatPhone(shop.phone)}
                 </a>
               </p>
