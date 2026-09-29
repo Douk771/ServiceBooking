@@ -136,6 +136,49 @@ if ! check_legal_manifest; then
 fi
 echo "    OK"
 
+# Cycle 19 (ARCHITECTURE_CYCLE19.md §385.3, DO-2): cycle 19 retires the "extra employees / extra
+# companies" limit options. A still-live purchase of one would silently lose its extra limit on this
+# release, so the deploy stops until the customer decides (DEPLOY.md "Выкат цикла 19"). READ-ONLY:
+# writes nothing. Fail-closed: any psql error refuses the deploy. Runs before anything on the host is
+# touched, so a refusal needs no rollback.
+check_retired_limit_options() {
+  local dc=(docker compose -f docker-compose.prod.yml --env-file .env)
+  local report="deploy/checks/cycle19-limit-options-report.sql"
+  local live_sql="deploy/checks/cycle19-retired-limit-options-live.sql"
+
+  if [ -z "$("${dc[@]}" ps --status running -q postgres 2>/dev/null)" ]; then
+    echo "    SKIPPED: postgres service is not running (first deploy)"
+    return 0
+  fi
+
+  echo "    --- report for the customer (US-19-05) ---"
+  if ! "${dc[@]}" exec -T postgres psql -U postgres -d servicebooking -v ON_ERROR_STOP=1 < "$report"; then
+    echo "ERROR: could not run $report — refusing to deploy (fail-closed)." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    return 1
+  fi
+  echo "    --- end of report ---"
+
+  local rows
+  if ! rows="$("${dc[@]}" exec -T postgres psql -U postgres -d servicebooking -v ON_ERROR_STOP=1 -At -F ' | ' < "$live_sql")"; then
+    echo "ERROR: could not run $live_sql — refusing to deploy (fail-closed)." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    return 1
+  fi
+
+  if [ -n "$rows" ]; then
+    echo "$rows"
+    echo "ERROR: найдены незавершённые покупки опций «Дополнительные сотрудники/компании» (см. строки выше). Цикл 19 выводит эти опции из оборота; выкат остановлен до решения заказчика — DEPLOY.md §20 «Выкат цикла 19»." >&2
+    echo "Nothing has been changed on this host yet — no rollback needed." >&2
+    exit 1
+  fi
+  return 0
+}
+
+echo "==> Precheck: cycle 19 retired limit options (no live purchases of extra employees/companies)"
+check_retired_limit_options
+echo "    OK"
+
 echo "==> Recording rollback point"
 if [ -L "$CURRENT_LINK" ]; then
   readlink -f "$CURRENT_LINK" > "$PREVIOUS_MARKER"
