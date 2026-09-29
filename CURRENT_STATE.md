@@ -1,9 +1,55 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `9a0ee29` (`develop`, fast-forward ветки `cycle/023-goods-orders-core`), дата: 2026-09-30.**
-Прошлая отметка — `7591cd2` (итог цикла 19). Документ после неё правился на `develop` ещё раз, `88b226e`
-(LIM19-020). **Следующий diff отсчитывайте от `9a0ee29`.** Метка блоков этой правки — 🛒23 (итог цикла 23).
-Предыдущие метки 🧮19 / ⚖️20✅ / 🚀20 ниже остаются в силе, кроме мест, где рядом стоит 🛒23.
+**Актуально по состоянию на коммит: `8d4e98d` (`develop` = `origin/develop` = стартовая точка ветки `cycle/024-goods-orders-time-notify`), дата: 2026-09-30.**
+Прошлая отметка — `9a0ee29` (итог цикла 23). После неё в `develop` вошли четыре коммита: `16912e8` (запись
+цикла 23 в этот документ), `5996589` (ветка `cycle/023-goods-deploy`), `4ad9fa1` (ветка `fix/cycle23-debts`),
+`8d4e98d` (C23-7 в этом документе). Их содержание уже было вписано точечно в 🛒23 и §9, но шапка осталась
+на `9a0ee29`; эта правка сверяет вписанное с кодом и переносит отметку. **Следующий diff отсчитывайте от
+`8d4e98d`.** Метка блоков этой правки — 🛒23+ (долги цикла 23 после мерджа). Предыдущие метки 🛒23 / 🧮19 /
+⚖️20✅ / 🚀20 ниже остаются в силе, кроме мест, где рядом стоит 🛒23+.
+
+### 🛒23+ Что изменилось в `9a0ee29..8d4e98d` (24 файла, +970 / −155), сверено по коду
+
+- **Выкат goods из репозитория (C23-1, C23-5 закрыты).** `ci.yml` (джоба `frontend`): новый шаг
+  «Type-check goods» (`npx tsc --noEmit -p tsconfig.goods.json`); проверка генератов дополнена
+  `types:api:cycle23` / `src/types/api-cycle23.generated.ts`; redocly-линт — `contracts/cycle23/openapi.yaml`
+  (и в `contracts/redocly.yaml`); `Build` — **`npm run build:release`**; новый шаг «Smoke test (goods build in
+  dist/__goods)» — `deploy/ci/smoke-frontend.sh` с `SMOKE_PROFILE=goods`, `DIST_DIR=frontend/dist/__goods`,
+  `PORT=4174` (ждёт `<div id="root">`, favicon, `apple-touch-icon.png` и **отсутствие** `manifest.webmanifest`).
+  `deploy-production.yml` и `deploy-staging.yml` тоже собирают `npm run build:release`.
+  `deploy/deploy-remote.sh`: после готовности API — смоук goods через локальный nginx
+  (`curl --resolve $GOODS_HOST:443:127.0.0.1`): наличие `current/__goods/index.html`, `https://$GOODS_HOST/`
+  с `<div id="root">`, `https://$GOODS_HOST/api/health/ready` = 200; переменные `GOODS_HOST`
+  (default `goods.ezbook.ru`), `GOODS_SMOKE` (`0` — отключить только эту проверку). Новый
+  `deploy/nginx/goods.ezbook.conf` (vhost, root `/var/www/ezbook/current/__goods`, маскирование токена заказа
+  в access-log `goods.access.log` для путей `/o/<token>`, `/api/orders/public/<token>` и Referer).
+  `deploy/nginx/ezbook.conf`: `location ^~ /__goods/ { return 404; }`. `DEPLOY.md` §21 «goods.ezbook.ru —
+  второй сайт». `rollback.sh`, `ssh-deploy-wrapper.sh`, `docker-compose.prod.yml` не менялись. Комментарии в
+  конфигах утверждают, что на боевой машине vhost и правка `ezbook.conf` сделаны руками 2026-09-30; по
+  репозиторию это не проверяется. `origin/master` по-прежнему `263c661` (2026-07-28); признаков, что
+  релиз с циклом 23 выкачен через workflow, в репозитории нет.
+- **Ключ правового текста (C23-3, частично).** `LegalTextKey.OrderCheckoutNotice = "OrderCheckoutNotice"`
+  (был `orderCheckoutNotice`); фронт goods (`frontend/goods/src/api/legalNotice.ts`,
+  `CheckoutLegalNotice.tsx`) зовёт `/legal/texts/OrderCheckoutNotice`. В `LegalTextKey.All` ключа
+  по-прежнему нет, в `legal.json` текста нет, фронт показывает fallback.
+- **Designer-снимки (C23-4 закрыт).** `20260929182901_AddCompanyKind.Designer.cs` и
+  `20260929183743_AddShopOrders.Designer.cs` пересобраны: сущности цикла 20 (`PlatformNotice…`,
+  `WrittenConsent…`) теперь есть в обоих (по 9 вхождений, как в `AppDbContextModelSnapshot.cs`); в
+  `AddCompanyKind.Designer.cs` сущностей магазина нет. `AppDbContextModelSnapshot.cs` тоже переписан
+  (+/−120 строк, переупорядочение). Состав миграций не менялся.
+- **Нестабильный тест (C23-7 закрыт).** Генератор телефона из цифр GUID с добивкой нулями исправлен в
+  `LegalConsentVersionChangeTests`, `RateLimitingTests`, `UploadsStaticFilesTests`; одна строка в
+  `ServiceBooking.UnitTests/OrderDomainTests.cs` (ключ правового текста). Новых тестов и новых наборов нет.
+- **Документы.** `API_DOCUMENTATION.md`: раздел goods перенумерован §4.17 → **§4.20**. `CHANGELOG.md`: в верхнем
+  разделе «Не выпущено» числа тестов заменены на 1951 / 934 / 918 и описан `build:release`.
+  `ARCHITECTURE_CYCLE23.md` и `API_CONTRACT_CYCLE23.md` — мелкие правки.
+- **Корневые документы на `8d4e98d`:** `SPEC.md` — всё ещё спека **цикла 23** (в `SPEC_CYCLE23_*.md` она пока
+  не переименована); корневые `ARCHITECTURE.md` и `API_CONTRACT.md` — по-прежнему **цикла 3**; документы
+  цикла 23 лежат в `ARCHITECTURE_CYCLE23.md` / `API_CONTRACT_CYCLE23.md`. Каталога `docs/history/` нет; в
+  проекте принято переименование в корне по шаблону `SPEC_CYCLE<N>_<ТЕМА>.md` / `*_CYCLE<N>.md`.
+  Документов цикла 24 (`SPEC`/`ARCHITECTURE`/`API_CONTRACT`) в репозитории пока нет.
+- **Не менялось:** бэкенд (кроме строки `LegalTextKey`), модель данных, эндпоинты, фронт ezbook,
+  команды запуска тестов.
 
 ### 🛒23 Итог цикла 23 «Заказы», цикл 1 «Ядро» (goods.ezbook.ru) — что влито в `develop` (`88b226e..9a0ee29`)
 
@@ -55,7 +101,8 @@ fast-forward. **На бой цикл 23 НЕ выкачен.** Циклы 19 и 
   магазина). Новые enum: `OrderStatus` (`New, Accepted, Ready, Issued, Rejected, CancelledByCustomer,
   CancelledByShop, NotPickedUp`), `OrderAction`, `OrderActorKind`, `OrderEventKind`, `OrderProblemReason`,
   `OrderAcceptanceMode`, `ProductUnit`, `ShopCustomerMode`.
-- ⚠️ **Снимки `*.Designer.cs` обеих миграций сделаны раньше, чем в модель попали сущности цикла 20.** Их
+- 🛒23+ ✅ **Закрыто в `4ad9fa1` (C23-4): оба Designer-снимка пересобраны, текст ниже — состояние на `9a0ee29`.**
+  ⚠️ **Снимки `*.Designer.cs` обеих миграций сделаны раньше, чем в модель попали сущности цикла 20.** Их
   генерировали на ветке до мерджа `2951597`. Например, `PlatformNotice` в
   `20260929183743_AddShopOrders.Designer.cs` не встречается ни разу, а в `AppDbContextModelSnapshot.cs` — 9 раз.
   По таймстампам миграции цикла 20 (`20260929142013`, `…142045`) идут раньше, так что порядок
@@ -131,7 +178,7 @@ fast-forward. **На бой цикл 23 НЕ выкачен.** Циклы 19 и 
   редиректят на goods. На goods тоже показываются баннер уведомлений платформы цикла 20 и маршрут
   `/notices` (`7a2d30f`).
 
-**Д. Инфраструктура — что есть в репозитории и чего нет.** ✅ **Закрыто веткой `cycle/023-goods-deploy` (см. C23-1 в §9): текст ниже описывает состояние на `9a0ee29`, до этой ветки.** ⚠️ Работы DO-1/DO-2 из
+**Д. Инфраструктура — что есть в репозитории и чего нет.** ✅ **Закрыто веткой `cycle/023-goods-deploy` (см. C23-1 в §9): текст ниже описывает состояние на `9a0ee29`, до этой ветки; текущее состояние — блок 🛒23+ в начале документа.** ⚠️ Работы DO-1/DO-2 из
 `ARCHITECTURE_CYCLE23.md` §401/§403 **в репозитории не сделаны**. `deploy/nginx/goods.ezbook.conf` нет.
 В `deploy/nginx/ezbook.conf` нет `location ^~ /__goods/`. В `deploy/`, `.github/`, `DEPLOY.md` и
 `docker-compose.prod.yml` строки `goods` нет вообще. Оба deploy-workflow и CI-джоба `frontend` вызывают
@@ -153,13 +200,14 @@ LIM19-020. Один раз замечен неопознанный нестаб�
 `ShopRulesTests`, `SlugPolicyTests`, `PublicSiteLinksTests`, `CompanyKindTests`, `OrderQuantityRulesTests`,
 `SlugTransliteratorTests`. `Cycle22RouteTable.golden.txt` обновлён намеренно. Во фронте есть тесты
 `goods/src/**/*.test.ts(x)` (vitest `include` расширен), `LegalGuard.test.tsx`, `NoticeLink.test.tsx`.
-Команды запуска не изменились (§7). Тест-кейсы описаны в `TEST_CATALOG.md`, раздел «Цикл 23»
+🛒23+ Нестабильный тест опознан и исправлен (C23-7, `4ad9fa1`); числа тестов после `4ad9fa1` в репозитории не
+зафиксированы, новых тестов не добавлялось. Команды запуска не изменились (§7). Тест-кейсы описаны в `TEST_CATALOG.md`, раздел «Цикл 23»
 (стр. ~5913). Сквозного браузерного (e2e) набора по-прежнему нет.
 
 **Ж. Документация.** `API_DOCUMENTATION.md` §4.20 «Магазины и заказы на самовывоз (goods.ezbook.ru)»
 помечен «НЕ ВЫПУЩЕНО». (На `9a0ee29` он ошибочно был вторым §4.17 — перенумерован веткой `cycle/023-goods-deploy`.) `CHANGELOG.md`: сверху стоит раздел «Не выпущено — «Заказы» на
-goods.ezbook.ru…». Числа тестов в нём (юнит 1804, функциональные 888) сняты до мерджа циклов 19–20 и
-**устарели** относительно Е. В `README.md` обновлены «О проекте» и «Чего пока нет» (goods), а числа
+goods.ezbook.ru…». 🛒23+ Числа тестов в нём исправлены на 1951 / 934 / 918 (`5996589`); на `9a0ee29` там
+стояли устаревшие 1804 / 888. В `README.md` обновлены «О проекте» и «Чего пока нет» (goods), а числа
 лимитов сняты. Руководств про goods в `docs/` нет. ⚠️ Нумерация разделов снова пересекается:
 `ARCHITECTURE_CYCLE23.md` §386–§405 перекрывает `ARCHITECTURE_CYCLE19.md` §380–§396 и
 `ARCHITECTURE_CYCLE20.md` §400–§419, а `API_CONTRACT_CYCLE23.md` §406–§425 перекрывает контракты циклов
@@ -1902,7 +1950,8 @@ ServiceBooking.sln                  📜 7 проектов (+ папка Soluti
 │   ├── deploy.sh / deploy-remote.sh
 │   ├── ssh-deploy-wrapper.sh       🚀 форс-команда в authorized_keys пользователя ezbookdeploy:
 │   │                               закрытый allowlist upload-release/deploy/rollback/health
-│   ├── nginx/ezbook.conf           основной vhost (ezbook.ru)
+│   ├── nginx/ezbook.conf           основной vhost (ezbook.ru); 🛒23+ `/__goods/` → 404
+│   ├── nginx/goods.ezbook.conf     🛒23+ vhost goods.ezbook.ru (root current/__goods), DEPLOY.md §21
 │   ├── nginx/errors.ezbook.conf    🚀 vhost трекера ошибок (errors.ezbook.ru, basic-auth)
 │   ├── ci/smoke.sh                 смоук живого контейнера (health, регистрация, загрузка аватара)
 │   ├── backup/                     backup.sh + systemd .service/.timer (локальный бэкап, включая .env)
@@ -6568,8 +6617,8 @@ dotnet test ServiceBooking.Tests         # основной функционал
 
 cd frontend && npm ci && npm run lint && npx tsc --noEmit && npm run test:run
 # 🛒23 vitest `include` охватывает и goods/src/**/*.test.ts(x) — отдельной команды для goods нет.
-# `npx tsc --noEmit` проверяет только src/ (tsconfig.json); типы goods проверяются лишь внутри
-# `npm run build:goods` (tsc -p tsconfig.goods.json), которого в CI нет.
+# `npx tsc --noEmit` проверяет только src/ (tsconfig.json); типы goods — отдельной командой:
+cd frontend && npx tsc --noEmit -p tsconfig.goods.json   # 🛒23+ в CI это шаг «Type-check goods»
 ```
 
 Полезное при разборе красного прогона (подробности — `docs/testing-isolation.md`):
@@ -6888,7 +6937,9 @@ QA **до** реализации серверной части и фиксиру
    срабатывал — `1ae347f`). Идёт **до** юнит-тестов.
 2. **«Smoke test (favicon served from built dist)»** — `bash deploy/ci/smoke-frontend.sh` с
    `DIST_DIR=frontend/dist`, сразу после `npm run build`, то есть против того самого артефакта,
-   который джоб собирается выложить.
+   который джоб собирается выложить. 🛒23+ Теперь после `npm run build:release`; рядом второй шаг
+   «Smoke test (goods build in dist/__goods)» — тот же скрипт с `SMOKE_PROFILE=goods`,
+   `DIST_DIR=frontend/dist/__goods`, `PORT=4174`.
 
 **nginx (`deploy/nginx/ezbook.conf`):**
 - правило маскирования токена расширено на **трёхсегментную** форму вебхука
@@ -6988,7 +7039,7 @@ pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `t
 | Job | Что делает |
 |---|---|
 | `backend` | сервис-контейнер `postgres:16` c health-check; 🔬 `SERVICEBOOKING_TEST_CONNECTION` указывает на **сервер** (`Database=postgres`), базы прогон заводит свои — Docker-in-Docker не нужен; 🔬 шаг «Derive test run key» складывает `GITHUB_RUN_ID` с хешем `GITHUB_JOB` в 8 hex (`SERVICEBOOKING_TEST_RUN_KEY`), чтобы два джоба одной сборки не столкнулись на одинаковых именах баз; 🔬 `SERVICEBOOKING_TEST_MAX_PARALLEL_THREADS=2`; кеш `~/.nuget/packages`; `dotnet restore` → **`dotnet build … -c Release -warnaserror`** → `dotnet test ServiceBooking.UnitTests` (быстрый, без БД, идёт первым) → 🔬 `dotnet test ServiceBooking.Tests --no-build -c Release -- xUnit.MaxParallelThreads=2` → 🔬 `bash deploy/ci/check-image-pins.sh` |
-| `frontend` | Node 20 c npm-кешем; `npm ci` → ⭐ **`npm run lint`** (ESLint) → `npx tsc --noEmit` → `npm run test:run` → `npm run build` (с `VITE_SMARTCAPTCHA_SITEKEY` из **переменной репозитория**, не секрета — site-ключ публичен) → ⭐ **выгрузка артефакта `frontend-dist-<sha>`** (только для `master`/`release-candidate`/`develop` — веток, с которых деплоят; retention 30 дней) |
+| `frontend` | Node 20 c npm-кешем; `npm ci` → ⭐ **`npm run lint`** (ESLint) → `npx tsc --noEmit` → 🛒23+ `npx tsc --noEmit -p tsconfig.goods.json` → `npm run test:run` → 🛒23+ **`npm run build:release`** (ezbook в `dist/`, goods в `dist/__goods/`; с `VITE_SMARTCAPTCHA_SITEKEY` из **переменной репозитория**, не секрета — site-ключ публичен) → ⭐ **выгрузка артефакта `frontend-dist-<sha>`** (только для `master`/`release-candidate`/`develop` — веток, с которых деплоят; retention 30 дней) |
 | `docker-build` | ⭐ теперь **не только собирает, но и запускает**: `docker build` → поднимает `postgres:16-alpine` в отдельной docker-сети → запускает образ с `ASPNETCORE_ENVIRONMENT=Production` и полным набором переменных из `DEPLOY.md` → `deploy/ci/smoke.sh` → `docker logs` при любом исходе |
 
 Про `docker-build` важны две вещи, обе записаны комментариями прямо в workflow:
@@ -9835,7 +9886,7 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   компании, дополнительные сотрудники» больше нет, числа лимитов сняты (`c1a0e3a`). Пометок в документах
   цикла 13 и `LEGAL_REVIEW.md` §16 по-прежнему нет.
 
-### 🛒 Цикл 23 — C23-1…C23-9 (открыто на `9a0ee29`)
+### 🛒 Цикл 23 — C23-1…C23-9 (открыто на `9a0ee29`; 🛒23+ на `8d4e98d` закрыты C23-1, C23-4, C23-5, C23-7, частично C23-3, C23-8)
 
 - **C23-1. ✅ ЗАКРЫТО веткой `cycle/023-goods-deploy`:** `deploy/nginx/goods.ezbook.conf` и строка `/__goods/` в
   `ezbook.conf` в репозитории; CI и оба `deploy-*.yml` собирают `npm run build:release`; смоук goods в CI
@@ -9847,7 +9898,7 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   Утверждение `CHANGELOG.md` «`npm run build:release` собирает оба сайта… Смоук после деплоя проверяет и
   goods» кодом deploy/CI **не подтверждается**.
 - **C23-2. 🟠 Юрист по §8 L1–L8 не запускался** (`ARCHITECTURE_CYCLE23.md` §404). Что из этого следует:
-  `orderCheckoutNotice` отсутствует в `legal.json`, и фронт показывает fallback; `SellerInfoRequirements`
+  `OrderCheckoutNotice` (🛒23+ регистр исправлен в `4ad9fa1`) отсутствует в `legal.json`, и фронт показывает fallback; `SellerInfoRequirements`
   пуст; `OrderPersonalDataDays = 0`, так что правило `order-personalization` инертно и ПДн заказов не
   удаляются никогда; отдельных документов для покупателей нет.
 - **C23-3. Регистр — ✅ ЗАКРЫТО (`fix/cycle23-debts`): ключ теперь `OrderCheckoutNotice`, как у остальных.**
