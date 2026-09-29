@@ -147,3 +147,35 @@ describe('ClientBookingsPage — §305.2 reschedule explanation text (US-17-02, 
     expect(screen.queryByText('Перенести уже нельзя')).not.toBeInTheDocument()
   })
 })
+
+// API_CONTRACT_CYCLE20.md §435 (US-20-04) — the cancel-disallowed explanation must read the APPLIED
+// cancel window (`clientCancelMinHours`, capped at 24), never the reschedule window
+// (`clientRescheduleMinHours`, 0–168): a company can set a reschedule window far above 24 h, and
+// before this cycle the text below would have wrongly quoted that bigger number for cancellation.
+describe('ClientBookingsPage — §435 cancel explanation text uses clientCancelMinHours, not the reschedule window', () => {
+  it('quotes the applied cancel window even when the reschedule window is a different, larger number', async () => {
+    getClientBookings.mockResolvedValue([
+      makeBooking({ clientCancelAllowed: false, clientCancelMinHours: 24, clientRescheduleMinHours: 48 }),
+    ])
+    renderPage()
+    expect(
+      await screen.findByText('Отменить в приложении можно не позже чем за 24 ч до визита — чтобы отменить, свяжитесь с салоном'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/за 48 ч/)).not.toBeInTheDocument()
+  })
+
+  it('shows "уже нельзя" when the applied cancel window is 0', async () => {
+    getClientBookings.mockResolvedValue([makeBooking({ clientCancelAllowed: false, clientCancelMinHours: 0 })])
+    renderPage()
+    expect(await screen.findByText('Отменить в приложении уже нельзя — свяжитесь с салоном')).toBeInTheDocument()
+  })
+
+  it('shows no hint when clientCancelMinHours is absent (old cache), even if clientRescheduleMinHours is present', async () => {
+    getClientBookings.mockResolvedValue([
+      makeBooking({ clientCancelAllowed: false, clientRescheduleMinHours: 24 }),
+    ])
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Стрижка')).toBeInTheDocument())
+    expect(screen.queryByText(/Отменить в приложении/)).not.toBeInTheDocument()
+  })
+})

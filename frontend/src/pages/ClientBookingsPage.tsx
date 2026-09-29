@@ -224,14 +224,18 @@ export function ClientBookingsPage() {
                             (ст. 32 ЗоЗПП), и закрытая кнопка это право не отменяет: она ограничивает
                             интерфейс, а не договор. Поэтому текст обязан назвать живой способ
                             отменить, иначе ограничение читается как запрет. Условия — те же, что у
-                            переноса: `undefined` (старый кеш) ведёт себя как до цикла. */}
+                            переноса: `undefined` (старый кеш) ведёт себя как до цикла.
+                            API_CONTRACT_CYCLE20.md §435 (US-20-04): текст называет ПРИМЕНЁННОЕ число
+                            часов для отмены — `clientCancelMinHours` (≤ 24), а не окно переноса
+                            `clientRescheduleMinHours` (0–168), которое цикл 20 в этом месте больше не
+                            использует, даже если оно у записи меньше. */}
                         {b.clientCancelAllowed === false &&
-                          b.clientRescheduleMinHours != null &&
+                          b.clientCancelMinHours != null &&
                           (b.status === 'Pending' || b.status === 'Confirmed') && (
                             <p className="text-[12px] text-muted text-right max-w-[160px]">
-                              {b.clientRescheduleMinHours === 0
+                              {b.clientCancelMinHours === 0
                                 ? 'Отменить в приложении уже нельзя — свяжитесь с салоном'
-                                : `Отменить в приложении можно не позже чем за ${b.clientRescheduleMinHours} ч до визита — чтобы отменить, свяжитесь с салоном`}
+                                : `Отменить в приложении можно не позже чем за ${b.clientCancelMinHours} ч до визита — чтобы отменить, свяжитесь с салоном`}
                             </p>
                           )}
                         {b.status === 'Completed' && canReviewSet.has(b.id) && (
