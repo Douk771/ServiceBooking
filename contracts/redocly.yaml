@@ -12,6 +12,7 @@
 #     contracts/cycle18/openapi.yaml                           — свой контракт линтуется с рождения (§345 D2)
 #     contracts/cycle19/openapi.yaml                           — свой контракт линтуется с рождения (ARCHITECTURE_CYCLE19 §388.5)
 #     contracts/cycle20/openapi.yaml                           — свой контракт линтуется с рождения (ARCHITECTURE_CYCLE20 §413 D1)
+#     contracts/cycle23/openapi.yaml                           — свой контракт линтуется с рождения (ARCHITECTURE_CYCLE23 §401.4)
 #
 #   НЕ ЛИНТУЮТСЯ (пять спек): openapi-cycle6.yaml в корне, contracts/cycle7, cycle9, cycle10, cycle11.
 #   Причина — не лень: включение всех сразу почти наверняка даёт красный CI на предсуществующих
@@ -27,7 +28,8 @@
 #     ../contracts/cycle16/openapi.yaml \
 #     ../contracts/cycle18/openapi.yaml \
 #     ../contracts/cycle19/openapi.yaml \
-#     ../contracts/cycle20/openapi.yaml
+#     ../contracts/cycle20/openapi.yaml \
+#     ../contracts/cycle23/openapi.yaml
 
 extends:
   - minimal

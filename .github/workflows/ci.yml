@@ -167,7 +167,8 @@ jobs:
             ../contracts/cycle16/openapi.yaml \
             ../contracts/cycle18/openapi.yaml \
             ../contracts/cycle19/openapi.yaml \
-            ../contracts/cycle20/openapi.yaml
+            ../contracts/cycle20/openapi.yaml \
+            ../contracts/cycle23/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -181,6 +182,11 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      # ARCHITECTURE_CYCLE23.md §401.4 — goods.ezbook.ru is a second app in the same package with its own
+      # tsconfig; the ezbook tsconfig above does not include frontend/goods/.
+      - name: Type-check goods
+        run: npx tsc --noEmit -p tsconfig.goods.json
+
       # ARCHITECTURE_CYCLE17.md §310 п.4 / API_CONTRACT_CYCLE17.md §328 п.9 (долг C15-10).
       # Генераты лежат в репозитории, поэтому расходятся со схемой молча: контракт правят,
       # регенерацию забывают, и типы описывают вчерашний API. Именно это и случилось внутри
@@ -191,7 +197,8 @@ jobs:
           npm run types:api:cycle18
           npm run types:api:cycle19
           npm run types:api:cycle20
-          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts
+          npm run types:api:cycle23
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя
@@ -223,10 +230,12 @@ jobs:
       # Configure it once: repo Settings -> Secrets and variables -> Actions -> Variables ->
       # VITE_SMARTCAPTCHA_SITEKEY. Empty/unset is fine for CI's own tests (the captcha widget just won't
       # render), but the deployed build needs a real value or registration/booking forms show no captcha.
+      # ARCHITECTURE_CYCLE23.md §401.3 — one artifact for both sites: ezbook in dist/, goods in dist/__goods/
+      # (nginx serves goods.ezbook.ru from current/__goods), so deploy and rollback switch both at once.
       - name: Build
         env:
           VITE_SMARTCAPTCHA_SITEKEY: ${{ vars.VITE_SMARTCAPTCHA_SITEKEY }}
-        run: npm run build
+        run: npm run build:release
 
       # US-112 (ARCHITECTURE_CYCLE9.md §103.2): proves the tab icon is actually reachable over HTTP from
       # the built dist/ - a request, not a glance at frontend/public/ in source. Runs from the repo root
@@ -237,6 +246,14 @@ jobs:
         run: bash deploy/ci/smoke-frontend.sh
         env:
           DIST_DIR: frontend/dist
+
+      - name: Smoke test (goods build in dist/__goods)
+        working-directory: .
+        run: bash deploy/ci/smoke-frontend.sh
+        env:
+          DIST_DIR: frontend/dist/__goods
+          SMOKE_PROFILE: goods
+          PORT: "4174"
 
       # Frontend build moves off the production server entirely (T-D3, US-44, ARCHITECTURE.md §12.3):
       # deploy/deploy.sh downloads this artifact and ships it to the VPS instead of running `npm ci &&

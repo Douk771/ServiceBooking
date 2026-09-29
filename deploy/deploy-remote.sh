@@ -30,6 +30,10 @@ CURRENT_LINK="$WEB_ROOT/current"
 PREVIOUS_MARKER="$WEB_ROOT/.previous"
 KEEP_RELEASES=3
 READY_TIMEOUT_SECONDS=120
+# ARCHITECTURE_CYCLE23.md §401.3 — goods.ezbook.ru is served by its own nginx vhost from current/__goods.
+# GOODS_SMOKE=0 is the emergency off switch (e.g. the vhost is being reissued); it does NOT skip ezbook checks.
+GOODS_HOST="${GOODS_HOST:-goods.ezbook.ru}"
+GOODS_SMOKE="${GOODS_SMOKE:-1}"
 
 NEW_RELEASE_DIR="$RELEASES_DIR/$RELEASE_TS"
 [ -d "$NEW_RELEASE_DIR" ] || { echo "ERROR: $NEW_RELEASE_DIR does not exist — did deploy.sh finish uploading it?" >&2; exit 1; }
@@ -240,6 +244,36 @@ until code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5000/api/he
   sleep 2
 done
 echo "    ready OK"
+
+if [ "$GOODS_SMOKE" != "0" ]; then
+  # Through the LOCAL nginx (--resolve), so this checks the vhost + certificate + current/__goods on this
+  # machine, not DNS. Both requests must pass: the SPA shell and the API proxied by the goods vhost.
+  echo "==> goods smoke: https://$GOODS_HOST/ and /api/health/ready via local nginx"
+  [ -f "$CURRENT_LINK/__goods/index.html" ] || {
+    echo "ERROR: $CURRENT_LINK/__goods/index.html is missing — the release was built without goods (npm run build instead of build:release?)" >&2
+    rollback_hint
+    exit 1
+  }
+  goods_index=$(curl -sf --max-time 10 --resolve "$GOODS_HOST:443:127.0.0.1" "https://$GOODS_HOST/") || {
+    echo "ERROR: https://$GOODS_HOST/ did not answer 200 via local nginx — is the goods vhost installed and does it have a certificate? (DEPLOY.md §21)" >&2
+    rollback_hint
+    exit 1
+  }
+  grep -q '<div id="root">' <<<"$goods_index" || {
+    echo "ERROR: https://$GOODS_HOST/ answered, but not with the goods SPA shell (<div id=\"root\"> missing)" >&2
+    rollback_hint
+    exit 1
+  }
+  goods_ready=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$GOODS_HOST:443:127.0.0.1" "https://$GOODS_HOST/api/health/ready")
+  [ "$goods_ready" = "200" ] || {
+    echo "ERROR: https://$GOODS_HOST/api/health/ready returned $goods_ready via local nginx (expected 200)" >&2
+    rollback_hint
+    exit 1
+  }
+  echo "    goods OK"
+else
+  echo "==> goods smoke skipped (GOODS_SMOKE=0)"
+fi
 
 echo "==> Pruning old releases (keeping $KEEP_RELEASES most recent)"
 # shellcheck disable=SC2012

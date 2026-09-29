@@ -1988,6 +1988,51 @@ API невозможно, поэтому на следующих выкатах 
 
 ---
 
+## 21. goods.ezbook.ru — второй сайт (цикл 23, ARCHITECTURE_CYCLE23.md §401)
+
+`goods.ezbook.ru` — сайт предзаказов на самовывоз для магазинов и кафе. Это второй фронтенд того же
+продукта: тот же сервер, тот же API и та же база, отдельный nginx-vhost и отдельный сертификат.
+
+**Как устроен выкат.** Один релиз на оба сайта: CI и `deploy-*.yml` собирают `npm run build:release`,
+сборка goods лежит внутри релиза в `__goods/`. nginx отдаёт `goods.ezbook.ru` из
+`/var/www/ezbook/current/__goods`, поэтому переключение `current` и `deploy/rollback.sh` меняют оба сайта
+сразу. `ssh-deploy-wrapper.sh` и `rollback.sh` не менялись. На `ezbook.ru` путь `/__goods/` закрыт (404).
+
+**Один раз на машине — до первого деплоя с goods** (на боевой машине сделано руками 2026-09-30):
+
+1. DNS: A-запись `goods.ezbook.ru` на адрес сервера.
+2. vhost и сертификат:
+
+   ```bash
+   sudo cp /opt/ezbook/app/deploy/nginx/goods.ezbook.conf /etc/nginx/sites-available/goods.ezbook.conf
+   sudo ln -sf /etc/nginx/sites-available/goods.ezbook.conf /etc/nginx/sites-enabled/goods.ezbook.conf
+   sudo nginx -t && sudo systemctl reload nginx
+   sudo certbot --nginx -d goods.ezbook.ru
+   sudo certbot renew --dry-run
+   ```
+
+   Сертификат отдельный, а не расширение сертификата ezbook: продление независимое, сбой goods не
+   задевает ezbook.
+3. В `ezbook.conf` на машине должна быть строка `location ^~ /__goods/ { return 404; }` (есть в
+   `deploy/nginx/ezbook.conf`). Если серверный файл уже правлен certbot, не копируйте файл из
+   репозитория поверх — внесите строку руками рядом с `root /var/www/ezbook/current;`, затем
+   `sudo nginx -t && sudo systemctl reload nginx`.
+4. Консоль Yandex Cloud → SmartCaptcha → добавить домен `goods.ezbook.ru`. Иначе капча гостя на goods не
+   отрисуется, и гость не сможет оформить заказ.
+
+**Проверка после деплоя** — делает сам `deploy-remote.sh` после готовности API: через локальный nginx
+(`curl --resolve goods.ezbook.ru:443:127.0.0.1`) запрашивает `https://goods.ezbook.ru/` (ждёт
+`<div id="root">`) и `https://goods.ezbook.ru/api/health/ready` (ждёт 200), а также проверяет, что в релизе
+есть `__goods/index.html`. Провал — `ДЕПЛОЙ НЕУСПЕШЕН` и подсказка про откат. Переменные: `GOODS_HOST`
+(по умолчанию `goods.ezbook.ru`), `GOODS_SMOKE=0` — аварийно отключить только эту проверку.
+
+**Переустановка vhost.** Копирование `deploy/nginx/goods.ezbook.conf` поверх установленного файла стирает
+блок 443, дописанный certbot, — сразу после копирования снова `sudo certbot --nginx -d goods.ezbook.ru`
+(так же, как для `ezbook.conf`).
+
+**Новых переменных в боевом `.env` нет**: адреса сайтов (`PublicSites`) по умолчанию боевые и лежат в
+`appsettings.json`.
+
 ## Почему так сделано
 
 ### Docker не из snap

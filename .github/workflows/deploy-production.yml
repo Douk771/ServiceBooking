@@ -73,7 +73,8 @@ jobs:
         working-directory: frontend
         env:
           VITE_SMARTCAPTCHA_SITEKEY: ${{ vars.VITE_SMARTCAPTCHA_SITEKEY }}
-        run: npm run build
+        # ARCHITECTURE_CYCLE23.md §401.3 — ezbook in dist/ plus goods.ezbook.ru in dist/__goods/, one release.
+        run: npm run build:release
 
       - name: Set up deploy SSH key
         env:
