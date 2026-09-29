@@ -126,12 +126,13 @@ public class AdminController(
             || channel == SubjectRequestChannel.WebForm)
             return BadRequest("Канал должен быть Email или PostalMail.");
 
-        if (dto.ReceivedAt is null)
-            return BadRequest("Укажите дату поступления обращения.");
         var nowUtc = DateTime.UtcNow;
-        var receivedAtUtc = DateTime.SpecifyKind(dto.ReceivedAt.Value, DateTimeKind.Utc);
-        if (receivedAtUtc > nowUtc)
-            return BadRequest("Дата поступления не может быть в будущем.");
+        // Code-review finding (cycle 20) — see ManualSubjectRequestReceivedAt's own doc comment: the old
+        // `DateTime.SpecifyKind(dto.ReceivedAt.Value, DateTimeKind.Utc)` shifted the deadline by the
+        // server's local UTC offset whenever the caller supplied an explicit non-'Z' offset.
+        var (receivedAtUtcOrNull, receivedAtError) = ManualSubjectRequestReceivedAt.Validate(dto.ReceivedAt, nowUtc);
+        if (receivedAtError is not null) return BadRequest(receivedAtError);
+        var receivedAtUtc = receivedAtUtcOrNull!.Value;
 
         // §438: phone is OPTIONAL here (unlike the public form) — a postal letter may not carry one.
         // An empty/omitted value is stored as "" (SubjectRequest.SubjectPhone is non-nullable), matching
