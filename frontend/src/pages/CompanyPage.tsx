@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fmtDate } from '../utils/dateFormat'
@@ -69,17 +69,24 @@ export function CompanyPage() {
     enabled: !!slug,
   })
 
+  // Cycle 23 (ARCHITECTURE_CYCLE23.md §389.3-1): a goods shop has no booking page here — this address is only
+  // ever reached through an old link, so send the visitor to the shop's own page on goods.
+  const isShop = company?.kind === 'Orders'
+  useEffect(() => {
+    if (isShop && company?.publicUrl) window.location.replace(company.publicUrl)
+  }, [isShop, company?.publicUrl])
+
   const { data: services, isLoading: servicesLoading } = useQuery({
     queryKey: ['services', company?.id],
     queryFn: () => servicesApi.getByCompany(company!.id),
-    enabled: !!company,
+    enabled: !!company && !isShop,
   })
 
   const [reviewsPage, setReviewsPage] = useState(1)
   const { data: reviewsData } = useQuery({
     queryKey: ['company-reviews', company?.id, reviewsPage],
     queryFn: () => reviewsApi.getForCompany(company!.id, reviewsPage),
-    enabled: !!company,
+    enabled: !!company && !isShop,
   })
   const reviews = reviewsData?.items
 
@@ -104,6 +111,21 @@ export function CompanyPage() {
   }
 
   if (!company) return <div className="text-center py-24 text-muted">Компания не найдена</div>
+
+  if (isShop) {
+    return (
+      <div className="text-center py-24 text-muted" role="status">
+        Переходим на страницу магазина…
+        {company.publicUrl && (
+          <p className="mt-2">
+            <a href={company.publicUrl} className="text-gold hover:text-gold-dark">
+              Открыть вручную
+            </a>
+          </p>
+        )}
+      </div>
+    )
+  }
 
   // Online self-service booking (this page's flow) requires an active paid plan — on the Free plan
   // it's blocked for guests AND authenticated clients alike (only staff manual bookings work there).

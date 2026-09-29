@@ -1,6 +1,7 @@
 import type { components as Cycle9Components } from './api-cycle9.generated'
 import type { components as Cycle13Components } from './api-cycle13.generated'
 import type { components as Cycle14Components } from './api-cycle14.generated'
+import type { components as Cycle23Components } from './api-cycle23.generated'
 
 // ── Cycle 13 (ARCHITECTURE_CYCLE13.md §208/§211, API_CONTRACT_CYCLE13.md §232): read straight off
 // the generated schema, same convention as the cycle 9 aliases above (§118 п. 1).
@@ -38,10 +39,18 @@ export type PhoneVerificationSessionStatus = Cycle14Components['schemas']['Phone
 /** Sent back to the server at registration / change-phone time to redeem a completed session. */
 export type PhoneVerificationRef = Cycle14Components['schemas']['PhoneVerificationRef']
 
+// ── Cycle 23 (API_CONTRACT_CYCLE23.md §408.1): companies now come in two kinds. Read off the generated schema.
+export type CompanyKind = Cycle23Components['schemas']['CompanyKind']
+export type CompanyKindsSummary = Cycle23Components['schemas']['CompanyKindsSummaryDto']
+
 export interface Company {
   id: string
   name: string
   slug: string
+  /** Cycle 23 — `Services` (salon) or `Orders` (goods.ezbook.ru shop). Absent on older servers = `Services`. */
+  kind?: CompanyKind
+  /** Cycle 23 — canonical public address of this company on its own site; ezbook redirects `Orders` here. */
+  publicUrl?: string
   description?: string
   logoUrl?: string
   address?: string

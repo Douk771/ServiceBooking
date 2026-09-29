@@ -276,3 +276,36 @@ describe('CompanyMapLinks — §305.5, independent of the address field', () => 
     expect(await screen.findByRole('link', { name: /Открыть в Яндекс Картах/ })).toBeInTheDocument()
   })
 })
+
+describe('CompanyPage — goods shop (cycle 23, ARCHITECTURE_CYCLE23.md §389.3-1)', () => {
+  it('redirects a shop to its public goods address and loads no salon data', async () => {
+    const replace = vi.fn()
+    const original = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, replace } })
+    try {
+      getBySlug.mockResolvedValue(makeCompany({ kind: 'Orders', publicUrl: 'https://goods.ezbook.ru/gvozd' }))
+      renderWithProviders(<CompanyPage />)
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('https://goods.ezbook.ru/gvozd'))
+      expect(getByCompany).not.toHaveBeenCalled()
+      expect(getForCompany).not.toHaveBeenCalled()
+      expect(screen.getByRole('status')).toHaveTextContent('Переходим на страницу магазина')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original })
+    }
+  })
+
+  it('does not redirect a salon', async () => {
+    const replace = vi.fn()
+    const original = window.location
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...original, replace } })
+    try {
+      getBySlug.mockResolvedValue(makeCompany({ kind: 'Services', publicUrl: 'https://ezbook.ru/company/gvozd' }))
+      getForCompany.mockResolvedValue({ items: [], page: 1, pageSize: 10, total: 0, hasNext: false })
+      renderWithProviders(<CompanyPage />)
+      await waitFor(() => expect(getByCompany).toHaveBeenCalled())
+      expect(replace).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original })
+    }
+  })
+})

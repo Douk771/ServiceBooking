@@ -22,6 +22,7 @@ import { NotificationsSection } from './owner/NotificationsSection'
 import { MasterClientsPage } from './MasterClientsPage'
 import { notificationChannelsApi } from '../api/notificationChannels'
 import { ChannelBreachBanner } from '../components/notifications/ChannelBreachBanner'
+import { GoodsShopsNotice } from '../components/company/GoodsShopsNotice'
 import { getChannelBannerKind } from '../utils/channelBanner'
 import { useAuthStore } from '../store/authStore'
 import { getCreateCompanyErrorMessage } from '../utils/companyError'
@@ -648,6 +649,7 @@ export function CabinetPage() {
   return (
     <div className="max-w-[1080px] mx-auto px-8 pt-11 pb-24">
       <h1 className="font-serif text-[30px] font-medium text-ink mb-6">Кабинет</h1>
+      <GoodsShopsNotice />
       {brokenChannels.length > 0 && (
         <div className="flex flex-col gap-3 mb-6">
           {brokenChannels.map((c) => (

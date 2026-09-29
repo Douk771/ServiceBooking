@@ -24,7 +24,7 @@ export function EmbedPage() {
   const { data: services, isLoading: servicesLoading } = useQuery({
     queryKey: ['services', company?.id],
     queryFn: () => servicesApi.getByCompany(company!.id),
-    enabled: !!company,
+    enabled: !!company && company.kind !== 'Orders',
   })
 
   if (companyLoading) {
@@ -40,6 +40,11 @@ export function EmbedPage() {
 
   if (!company) {
     return <div className="text-center py-16 text-muted">Компания не найдена</div>
+  }
+
+  // Cycle 23 (§389.3-2): a shop has no booking widget — an empty block instead of a widget that cannot work.
+  if (company.kind === 'Orders') {
+    return <div className="text-center py-16 text-muted">У этой компании нет онлайн-записи</div>
   }
 
   return (

@@ -29,6 +29,9 @@ export interface AdminCompany {
   id: string
   name: string
   slug: string
+  /** Cycle 23 (API_CONTRACT_CYCLE23.md §408.6). */
+  kind?: 'Services' | 'Orders'
+  publicUrl?: string
   email?: string
   phone?: string
   isActive: boolean
@@ -74,8 +77,8 @@ export const adminApi = {
   getUsers: (search?: string, page = 1, pageSize = 20) =>
     api.get<Paged<AdminUser>>('/admin/users', { params: { search, page, pageSize } }).then((r) => r.data),
   updateUserRoles: (id: string, roles: string[]) => api.put(`/admin/users/${id}/roles`, roles),
-  getCompanies: (search?: string, page = 1, pageSize = 20) =>
-    api.get<Paged<AdminCompany>>('/admin/companies', { params: { search, page, pageSize } }).then((r) => r.data),
+  getCompanies: (search?: string, page = 1, pageSize = 20, kind?: 'Services' | 'Orders') =>
+    api.get<Paged<AdminCompany>>('/admin/companies', { params: { search, page, pageSize, kind } }).then((r) => r.data),
   // updateSubscription removed — PUT /admin/owners/{id}/subscription is 410 Gone in cycle 7
   // (API_CONTRACT_CYCLE7.md §54). Replacement: adminBillingApi.assignSubscription (billing-accounts).
   updateCompany: (id: string, data: { name: string; isActive: boolean; allowSelfBooking: boolean }) =>

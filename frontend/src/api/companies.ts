@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Company } from '../types'
+import type { Company, CompanyKindsSummary } from '../types'
 
 /** contracts/cycle9/openapi.yaml — PagedCompanyDto (US-115). */
 interface PagedCompanyDto {
@@ -108,6 +108,8 @@ export const companiesApi = {
     api.get<PagedCompanyDto>('/companies/public', { params }).then((r) => r.data),
   getBySlug: (slug: string) => api.get<Company>(`/companies/${slug}`).then((r) => r.data),
   getMy: () => api.get<Company[]>('/companies/my').then((r) => r.data),
+  /** API_CONTRACT_CYCLE23.md §408.3 — how many salons/shops the caller belongs to, with each site's URL. */
+  getKindsSummary: () => api.get<CompanyKindsSummary>('/companies/kinds-summary').then((r) => r.data),
   getMemberOf: () => api.get<Company[]>('/companies/member').then((r) => r.data),
   create: (data: CreateCompanyPayload) => api.post<CreateCompanyResponse>('/companies', data).then((r) => r.data),
   update: (id: string, data: UpdateCompanyPayload) => api.put<Company>(`/companies/${id}`, data).then((r) => r.data),

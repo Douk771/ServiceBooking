@@ -21,6 +21,7 @@ import { getCompanyAdminErrorMessage } from '../utils/companyAdminError'
 import { formatPhone } from '../utils/phone'
 import { formatBookingServiceNames } from '../utils/bookingServices'
 import { formatRub } from '../utils/money'
+import { COMPANY_KIND_FILTERS, companyKindLabel, kindParam, type CompanyKindFilter } from '../utils/companyKind'
 
 // ── Stats tab ─────────────────────────────────────────────────────────────────
 
@@ -201,9 +202,11 @@ function CompaniesTab() {
   const [page, setPage] = useState(1)
   const [changeOwnerFor, setChangeOwnerFor] = useState<AdminCompany | null>(null)
   const [blockingCompany, setBlockingCompany] = useState<AdminCompany | null>(null)
+  // Cycle 23 (US-23-28): «Все / Салоны / Магазины» — «Все» sends no ?kind=.
+  const [kindFilter, setKindFilter] = useState<CompanyKindFilter>('all')
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-companies', search, page],
-    queryFn: () => adminApi.getCompanies(search || undefined, page),
+    queryKey: ['admin-companies', search, page, kindFilter],
+    queryFn: () => adminApi.getCompanies(search || undefined, page, 20, kindParam(kindFilter)),
   })
   // Typing a new search always restarts at page 1 — otherwise "page 3" of the old, wider result set
   // could be past the end of a narrower one and render nothing with no indication why.
@@ -216,12 +219,28 @@ function CompaniesTab() {
     <div>
       {changeOwnerFor && <ChangeOwnerModal company={changeOwnerFor} onClose={() => setChangeOwnerFor(null)} />}
       {blockingCompany && <BlockCompanyModal company={blockingCompany} onClose={() => setBlockingCompany(null)} />}
-      <div className="mb-4">
+      <div className="mb-4 flex flex-col gap-3">
         <Input
           placeholder="Поиск по названию или email..."
           value={search}
           onChange={(e) => handleSearch(e.target.value)}
         />
+        <div className="flex gap-1 bg-cream-deep p-1 rounded-full w-fit" role="group" aria-label="Тип компании">
+          {COMPANY_KIND_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              aria-pressed={kindFilter === f.value}
+              onClick={() => {
+                setKindFilter(f.value)
+                setPage(1)
+              }}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${kindFilter === f.value ? 'bg-white text-ink shadow-soft' : 'text-ink-soft'}`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
       {isLoading ? (
         <div className="grid gap-3">
@@ -229,6 +248,8 @@ function CompaniesTab() {
             <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
           ))}
         </div>
+      ) : (data?.items ?? []).length === 0 ? (
+        <Card className="p-8 text-center text-muted">Компаний не найдено</Card>
       ) : (
         <div className="grid gap-3">
           {(data?.items ?? []).map((c) => (
@@ -240,6 +261,9 @@ function CompaniesTab() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-ink">{c.name}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-white border border-line text-ink-soft">
+                      {companyKindLabel(c.kind)}
+                    </span>
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.planConfigId ? 'bg-info-bg text-info' : 'bg-cream-deep text-ink-soft'}`}
                     >
@@ -259,7 +283,18 @@ function CompaniesTab() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {c.publicUrl && (
+                  <a
+                    href={c.publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-4 py-2 text-xs font-semibold text-ink hover:bg-cream-deep"
+                  >
+                    Открыть
+                    <Icon name="external-link" size={12} />
+                  </a>
+                )}
                 <Button variant={c.isActive ? 'danger' : 'secondary'} size="sm" onClick={() => setBlockingCompany(c)}>
                   {c.isActive ? 'Заблокировать' : 'Разблокировать'}
                 </Button>
