@@ -32,6 +32,7 @@ export type IconName =
   | 'image'
   | 'copy'
   | 'external-link'
+  | 'printer'
 
 /**
  * Minimal line-icon set for the premium redesign (see design_handoff_site_redesign/README.md).
@@ -179,6 +180,15 @@ const paths: Record<IconName, JSX.Element> = {
       <path d="M14 4h6v6" />
       <path d="M10 14L20 4" />
       <path d="M18 13.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5.5" />
+    </>
+  ),
+  // Cycle 20 — health-consent-form print page (US-20-01), hand-authored in the same style since the
+  // mockups didn't cover it.
+  printer: (
+    <>
+      <path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" />
+      <rect x="3" y="9" width="18" height="8" rx="2" />
+      <path d="M6 14h12v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-7z" />
     </>
   ),
 }
