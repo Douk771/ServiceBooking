@@ -23,11 +23,19 @@ public class AdminNoticesController(AppDbContext db, PlatformNoticePublisher pub
 {
     [HttpGet]
     public async Task<ActionResult<PagedResult<AdminPlatformNoticeDto>>> GetNotices(
-        [FromQuery] PlatformNoticeKind? kind, [FromQuery] int? page, [FromQuery] int? pageSize)
+        [FromQuery] string? kind, [FromQuery] int? page, [FromQuery] int? pageSize)
     {
+        // Contract check finding (cycle 20 QA pass) — see PlatformNoticeQueryFilters' own doc comment:
+        // `kind` used to be bound as `PlatformNoticeKind?` directly, so an unrecognized value never
+        // reached this method at all and 400'd with a generic framework message instead of one naming
+        // `kind`.
+        if (!PlatformNoticeQueryFilters.TryParseKind(kind, out var kindFilter))
+            return BadRequest($"Неизвестное значение kind '{kind}'. Ожидается одно из: " +
+                               string.Join(", ", Enum.GetNames<PlatformNoticeKind>()) + ".");
+
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.PlatformNotices.AsNoTracking().AsQueryable();
-        if (kind is not null) query = query.Where(n => n.Kind == kind);
+        if (kindFilter is not null) query = query.Where(n => n.Kind == kindFilter);
 
         var total = await query.CountAsync();
         var rows = await query.OrderByDescending(n => n.PublishedAtUtc)
