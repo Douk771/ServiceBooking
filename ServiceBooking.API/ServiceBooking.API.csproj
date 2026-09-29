@@ -52,6 +52,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- ARCHITECTURE_CYCLE23.md §390: the map of goods.ezbook.ru routes and the shop-address policy (slug
+         pattern, reserved words) has ONE source — contracts/cycle23/goods-routes.json — read here as an
+         embedded resource (SlugPolicy), by the goods frontend test and by QA. The Docker build context is the
+         repository root (COPY . .), so the file is available there. -->
+    <EmbeddedResource Include="..\contracts\cycle23\goods-routes.json" LogicalName="goods-routes.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Lets ServiceBooking.UnitTests exercise ImageProcessor's internal pure helpers (orientation,
          crop, resize) directly with synthetic bitmaps, instead of hand-crafting real EXIF bytes just to
          reach them through the public Process() entry point (see ImageProcessor.ApplyOrigin doc). -->
