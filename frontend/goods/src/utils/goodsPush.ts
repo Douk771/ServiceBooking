@@ -37,3 +37,30 @@ export function goodsPushMessage(reason: PushUnavailableReason, audience: PushAu
 export function orderPushStorageKey(token: string): string {
   return `goods-order-push:${token}`
 }
+
+const ORDER_PUSH_AT_PREFIX = 'goods-order-push-at:'
+const ORDER_PUSH_KEY_PREFIX = 'goods-order-push:'
+/** The server deletes an order subscription after 7 days; the remembered endpoint has no use after that. */
+export const ORDER_PUSH_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+export function orderPushStoredAtKey(token: string): string {
+  return `${ORDER_PUSH_AT_PREFIX}${token}`
+}
+
+/** Removes remembered endpoints (and their timestamps) older than the TTL; entries without a timestamp (legacy) are removed too. */
+export function pruneOrderPushStorage(storage: Pick<Storage, 'length' | 'key' | 'getItem' | 'removeItem'>, now: number): void {
+  const keys: string[] = []
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i)
+    if (k) keys.push(k)
+  }
+  for (const k of keys) {
+    if (!k.startsWith(ORDER_PUSH_KEY_PREFIX)) continue
+    const token = k.slice(ORDER_PUSH_KEY_PREFIX.length)
+    const at = Number(storage.getItem(orderPushStoredAtKey(token)))
+    if (!Number.isFinite(at) || at <= 0 || now - at > ORDER_PUSH_STORAGE_TTL_MS) {
+      storage.removeItem(k)
+      storage.removeItem(orderPushStoredAtKey(token))
+    }
+  }
+}

@@ -6,10 +6,20 @@
 // a stale build, which is what makes `skipWaiting()` + `clients.claim()` safe. CI greps this file for the
 // disallowed tokens (.github/workflows/ci.yml, job `frontend`).
 //
-// Payload contract (API_CONTRACT_CYCLE24.md §486): { title, body, tag, url }; `url` is a RELATIVE path —
-// the browser resolves it against this origin, so the server can never smuggle a cross-origin URL in.
+// Payload contract (API_CONTRACT_CYCLE24.md §486): { title, body, tag, url }.
+// `url` is expected to be a relative path, but that is enforced by the worker, not assumed: safeUrl() below
+// falls back to the default when the resolved origin differs from this one.
 // No `pushsubscriptionchange` listener: the JWT lives in localStorage, a worker cannot reach it (§105.9);
 // reconciliation happens in useWebPush on the next open.
+
+function safeUrl(url, fallback) {
+  try {
+    const u = new URL(url, self.location.origin)
+    return u.origin === self.location.origin ? u.pathname + u.search + u.hash : fallback
+  } catch {
+    return fallback
+  }
+}
 
 self.addEventListener('install', () => {
   self.skipWaiting()
@@ -32,7 +42,7 @@ self.addEventListener('push', (event) => {
       body: data.body || '',
       // `tag` collapses repeats for the same order (`o-<orderId>`, `co-<orderId>`) into one notification.
       tag: data.tag,
-      data: { url: data.url || '/cabinet' },
+      data: { url: safeUrl(data.url, '/cabinet') },
     }),
   )
 })
@@ -40,7 +50,7 @@ self.addEventListener('push', (event) => {
 // Clicking focuses an already-open tab instead of always opening a new one.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = event.notification.data?.url || '/cabinet'
+  const url = safeUrl(event.notification.data?.url, '/cabinet')
 
   event.waitUntil(
     (async () => {

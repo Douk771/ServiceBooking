@@ -24,6 +24,7 @@ import {
   optionRulesToForm,
   optionRulesToPayload,
   ordersPlanPayload,
+  ordersPlanLimitsError,
   type PlanForm,
 } from './planForm'
 import { PRICE_CHANGE_SUPERADMIN_HINT } from '../../legal/staffNotices'
@@ -87,6 +88,7 @@ export function PlansTab() {
   const [form, setForm] = useState<PlanForm>(defaultForm)
   const [editingPlan, setEditingPlan] = useState<PlanConfig | null>(null)
   const [highlightsError, setHighlightsError] = useState('')
+  const [limitsError, setLimitsError] = useState('')
   // Cycle 24: which line's plans are listed. Salons («Записи») first — the screen opens exactly as it did before.
   const [lineFilter, setLineFilter] = useState<PlanLine>('Services')
 
@@ -829,6 +831,7 @@ export function PlansTab() {
               />
             </div>
 
+            {limitsError && <p className="text-sm text-danger">{limitsError}</p>}
             {(editingPlan ? updateMut.isError : createMut.isError) && (
               <p className="text-sm text-danger">
                 {getPlanErrorMessage(editingPlan ? updateMut.error : createMut.error, 'Не удалось сохранить тариф.')}
@@ -842,7 +845,13 @@ export function PlansTab() {
               <Button
                 className="flex-1"
                 loading={editingPlan ? updateMut.isPending : createMut.isPending}
-                onClick={() => (editingPlan ? updateMut.mutate() : createMut.mutate())}
+                onClick={() => {
+                  const err = ordersPlanLimitsError(form)
+                  setLimitsError(err ?? '')
+                  if (err) return
+                  if (editingPlan) updateMut.mutate()
+                  else createMut.mutate()
+                }}
               >
                 {editingPlan ? 'Сохранить' : 'Создать'}
               </Button>

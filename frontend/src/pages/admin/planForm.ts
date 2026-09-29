@@ -96,6 +96,15 @@ export function optionRulesToPayload(rules: PlanForm['optionRules']): PlanOption
     }))
 }
 
+/** Empty is allowed («без ограничения»); anything else must be a whole number >= 0, otherwise parseInt yields NaN -> null and the limit silently vanishes. */
+export function ordersPlanLimitsError(form: Pick<PlanForm, 'line' | 'maxProductsPerShop' | 'maxOrdersPerMonth'>): string | null {
+  if (form.line !== 'Orders') return null
+  const bad = (v: string) => v.trim() !== '' && !/^\d+$/.test(v.trim())
+  if (bad(form.maxProductsPerShop)) return 'Лимит товаров: введите целое число или оставьте поле пустым.'
+  if (bad(form.maxOrdersPerMonth)) return 'Лимит заказов в месяц: введите целое число или оставьте поле пустым.'
+  return null
+}
+
 /** The extra input fields of a plan of the «Заказы» line; a salon plan sends NOTHING new, so its body is exactly what it was. */
 export function ordersPlanPayload(form: Pick<PlanForm, 'line' | 'maxProductsPerShop' | 'maxOrdersPerMonth' | 'allowOrders'>, isEditing: boolean) {
   if (form.line !== 'Orders') return {}

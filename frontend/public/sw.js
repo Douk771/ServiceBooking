@@ -10,6 +10,15 @@
 // Scope is `/` (Vite copies `public/` into `dist` verbatim, so this is served from `/sw.js`), no
 // build-time hashing, no extra headers beyond `Cache-Control: no-cache` on the nginx side (deploy/nginx).
 
+function safeUrl(url, fallback) {
+  try {
+    const u = new URL(url, self.location.origin)
+    return u.origin === self.location.origin ? u.pathname + u.search + u.hash : fallback
+  } catch {
+    return fallback
+  }
+}
+
 self.addEventListener('install', () => {
   self.skipWaiting()
 })
@@ -18,8 +27,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
-// API_CONTRACT_CYCLE9.md §115.6 — payload shape: { title, body, tag, url }. `url` is a relative path;
-// this worker adds the origin itself, so the server can never smuggle an absolute cross-origin URL in.
+// API_CONTRACT_CYCLE9.md §115.6 — payload shape: { title, body, tag, url }.
+// `url` is expected to be a relative path, but that is enforced by the worker, not assumed: safeUrl() below
+// falls back to the default when the resolved origin differs from this one.
 self.addEventListener('push', (event) => {
   // §115.6 default: no bookingId is known yet, so we can only land the master on the bookings list.
   // `/my-bookings` (ProtectedRoute roles Master/CompanyOwner/SuperAdmin, frontend/src/App.tsx) is the
@@ -41,7 +51,7 @@ self.addEventListener('push', (event) => {
       body: data.body || '',
       // §115.6 — `tag` collapses repeat notifications for the same booking (`b-<bookingId>`) into one.
       tag: data.tag,
-      data: { url: data.url || '/my-bookings' },
+      data: { url: safeUrl(data.url, '/my-bookings') },
     }),
   )
 })
@@ -50,7 +60,7 @@ self.addEventListener('push', (event) => {
 // opening a new one.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = event.notification.data?.url || '/my-bookings'
+  const url = safeUrl(event.notification.data?.url, '/my-bookings')
 
   event.waitUntil(
     (async () => {

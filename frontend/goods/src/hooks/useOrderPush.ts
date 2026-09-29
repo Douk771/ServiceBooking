@@ -4,7 +4,7 @@ import { describeDevice } from '@/hooks/useWebPush'
 import { arrayBufferToBase64Url, urlBase64ToUint8Array } from '@/utils/webPushEncoding'
 import { detectIosEnvironment, getPushUnavailableReason, type PushUnavailableReason } from '@/utils/pushAvailability'
 import { getGoodsErrorMessage } from '../utils/orderError'
-import { orderPushStorageKey } from '../utils/goodsPush'
+import { orderPushStorageKey, orderPushStoredAtKey, pruneOrderPushStorage } from '../utils/goodsPush'
 
 interface Options {
   token: string
@@ -22,6 +22,7 @@ function readPermission(): NotificationPermission | 'unsupported' {
 
 function readStored(token: string): string | null {
   try {
+    pruneOrderPushStorage(window.localStorage, Date.now())
     return window.localStorage.getItem(orderPushStorageKey(token))
   } catch {
     return null
@@ -97,6 +98,7 @@ export function useOrderPush({ token, publicKey }: Options) {
       })
       try {
         window.localStorage.setItem(orderPushStorageKey(token), sub.endpoint)
+        window.localStorage.setItem(orderPushStoredAtKey(token), String(Date.now()))
       } catch {
         // storage blocked — the subscription still works, the button just cannot remember it
       }
@@ -116,6 +118,7 @@ export function useOrderPush({ token, publicKey }: Options) {
       if (endpoint) await orderPushApi.unsubscribe(token, endpoint)
       try {
         window.localStorage.removeItem(orderPushStorageKey(token))
+        window.localStorage.removeItem(orderPushStoredAtKey(token))
       } catch {
         // ignore
       }
