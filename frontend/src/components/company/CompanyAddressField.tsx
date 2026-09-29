@@ -14,7 +14,7 @@ interface Props {
 }
 
 /**
- * ARCHITECTURE_CYCLE19.md §388.3 (formerly `AddressVerifyField`, cycle 13). The geocoder is gone —
+ * ARCHITECTURE_CYCLE19.md §388.3 (formerly `AddressVerifyField`, cycle 13). Automatic address checking is gone —
  * this is an ordinary address field with one obligation left over from cycle 13: the public-address
  * notice gate (§220/§242 unchanged) fires on every save, not just the first.
  */

@@ -544,6 +544,10 @@ git grep -n -i -E "geocod|AddressVerification:|ADDRESSVERIFICATION|yandex-geocod
 3. `ServiceBooking.Tests/Tests/CompanyAddressTests.cs` — **только** один массив-константа
    `LegacyAddressVerificationSettings` (старые ключи, намеренно подаваемые в ADDR-001/ADDR-030) и
    ссылки на него.
+4. `frontend/src/types/api-cycle19.generated.ts` — генерат из `contracts/cycle19/openapi.yaml`: контракт
+   намеренно описывает снятый маршрут `address/lookup` (404 при любой конфигурации, §415 п. 4) и
+   удалённые поля, их текст и `operationId` попадают в генерат. Правится только через контракт.
+   *(Добавлено при интеграции 2026-09-30: список выше этого не учитывал.)*
 
 Всё остальное — дефект. Отдельно (US-19-06, конвенция §6 🎯 п. 9) до объявления готовности грепом
 проверяется, что **нужное на месте**: `HttpPut("{id:guid}/address")` и `HttpPost("address/notice")` в

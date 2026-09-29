@@ -13,7 +13,7 @@ interface SaveCompanyAddressResult {
 export const companyAddressApi = {
   /**
    * `PUT /api/companies/{id}/address` — writes the address. ARCHITECTURE_CYCLE19.md §388.2/§413.2:
-   * `verify` is no longer sent — the geocoder is gone, and the route never wrote the five
+   * `verify` is no longer sent — automatic address checking was removed in cycle 19, and the route never wrote the five
    * verification columns for anything this component controls. An empty `address` erases it
    * (§234, unchanged) — pass `''`, not `undefined`, to do that.
    */

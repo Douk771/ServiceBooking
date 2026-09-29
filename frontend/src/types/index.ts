@@ -2,7 +2,7 @@ import type { components as Cycle9Components } from './api-cycle9.generated'
 import type { components as Cycle19Components } from './api-cycle19.generated'
 import type { components as Cycle14Components } from './api-cycle14.generated'
 
-// ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): geocoder removed,
+// ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
 // only the notice-acknowledgement result survives from cycle 13's address types. Read straight off
 // the generated schema, same convention as the cycle 9 aliases below (§118 п. 1).
 export type AddressNoticeResultDto = Cycle19Components['schemas']['AddressNoticeResultDto']

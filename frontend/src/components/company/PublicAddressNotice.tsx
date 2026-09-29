@@ -15,7 +15,7 @@ interface Props {
 
 /**
  * ARCHITECTURE_CYCLE13.md §220.2 (US by LEGAL_REVIEW.md §16.4). Shown before saving the address, on
- * first fill AND on every edit, on both screens where an address is entered. The geocoder this used
+ * first fill AND on every edit, on both screens where an address is entered. The automatic address check this used
  * to be independent of was removed in cycle 19 (ARCHITECTURE_CYCLE19.md §388) — this gate is
  * unrelated to it either way.
  *
