@@ -1,9 +1,11 @@
 import { api } from './client'
 import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
+import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
 
 type Schemas = components['schemas']
 type Cycle18 = Cycle18Schemas['schemas']
+type Cycle20 = Cycle20Schemas['schemas']
 
 export type TrialAccountFilter = Cycle18['TrialAccountFilter']
 export type AdminAccountTrialDto = Cycle18['AdminAccountTrialDto']
@@ -17,9 +19,15 @@ export type AdminBillingAccount = Schemas['AdminBillingAccountDto'] & Cycle18['A
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
 export type AdminAccountCompany = Schemas['AdminAccountCompanyDto']
 export type AdminAccountChannel = Schemas['AdminAccountChannelDto']
-export type AssignSubscriptionInput = Schemas['AssignSubscriptionInput']
+/** Cycle 20 (US-20-02, API_CONTRACT_CYCLE20.md §433.1) adds `reasonCode`/`reasonDetails` in the
+ *  request body — same `AssignOptionInput`/log shapes otherwise. */
+export type AssignSubscriptionInput = Cycle20['AssignSubscriptionInput']
 export type AssignOptionInput = Schemas['AssignOptionInput']
-export type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto']
+export type SubscriptionChangeReason = Cycle20['SubscriptionChangeReason']
+export type SubscriptionChangeReasonDto = Cycle20['SubscriptionChangeReasonDto']
+/** History item — existing shape plus `reasonCode`/`reasonTitle`/`reasonDetails` (§433.2), always
+ *  `null` on rows that predate the cycle or weren't a manual hidden-plan assignment. */
+export type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto'] & Cycle20['SubscriptionHistoryItemReasonPatch']
 export type AdminSubscriptionRequest = Schemas['AdminSubscriptionRequestDto']
 export type SubscriptionStatus = Schemas['SubscriptionStatus']
 export type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
@@ -69,6 +77,13 @@ export const adminBillingApi = {
     api
       .get<{ items: SubscriptionChangeLog[] }>(`/admin/billing-accounts/${accountId}/subscription-history`)
       .then((r) => r.data.items),
+
+  /** GET /api/admin/subscription-change-reasons (§433.3, NEW) — closed list of reason codes; the
+   *  frontend must never hardcode its own titles/rules. Only `assignableManually: true` entries belong
+   *  in the assignment form's dropdown — `TrialReissue` is included ONLY so history rows sharing the
+   *  same code render with the same title, never as a selectable option there. */
+  getChangeReasons: () =>
+    api.get<{ items: SubscriptionChangeReasonDto[] }>('/admin/subscription-change-reasons').then((r) => r.data.items),
 
   listRequests: (params: { status?: SubscriptionRequestStatus; page?: number; pageSize?: number }) =>
     api.get<PagedResult<AdminSubscriptionRequest>>('/admin/subscription-requests', { params }).then((r) => r.data),
