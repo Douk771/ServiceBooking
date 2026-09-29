@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDate, fmtDateTime } from '../../utils/dateFormat'
 import {
   adminBillingApi,
   type AdminBillingAccount,
@@ -22,7 +21,6 @@ import { getAdminBillingErrorMessage as getBillingErrorMessage, isLimitOverflowC
 import { getTrialErrorMessage } from '../../utils/trialError'
 import {
   STATUS_BADGE_CLASS,
-  formatRub,
   computeExpectedTotal,
   buildAssignInput,
   isPaidUntilMissing,
@@ -31,14 +29,8 @@ import {
   type AssignOptionRow,
 } from './billingAccountsHelpers'
 import type { SubscriptionChangeReason } from '../../api/adminBilling'
-
-function fmtDate(d: string | null | undefined) {
-  return d ? format(parseISO(d), 'd MMM yyyy', { locale: ru }) : '—'
-}
-
-function fmtDateTime(d: string | null | undefined) {
-  return d ? format(parseISO(d), 'd MMM yyyy, HH:mm', { locale: ru }) : '—'
-}
+import { formatRubRounded } from '../../utils/money'
+import { formatMonthlyPrice } from '../../utils/pricingFormat'
 
 // Cycle-3 envelope is {items, page, pageSize, totalCount}; <Pagination> was built for the older
 // {total, hasNext} shape shared by the rest of the admin screens — adapted here rather than
@@ -170,7 +162,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
             <option value="">Free (снять тариф)</option>
             {activePlans.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} {p.pricePerMonth > 0 ? `— ${p.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : ''}
+                {p.name} {p.pricePerMonth > 0 ? `— ${formatMonthlyPrice(p.pricePerMonth)}` : ''}
               </option>
             ))}
           </select>
@@ -211,7 +203,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
                   <input type="checkbox" checked={r.selected} onChange={() => toggleRow(r.optionId)} className="w-4 h-4 accent-gold shrink-0" />
                   <span className="min-w-0">
                     <span className="text-sm text-ink truncate block">{r.name}</span>
-                    <span className="text-xs text-muted">{formatRub(r.pricePerMonth)}{r.kind === 'Quantity' ? ` / ${r.unitName ?? 'ед.'}` : '/мес'}</span>
+                    <span className="text-xs text-muted">{formatRubRounded(r.pricePerMonth)}{r.kind === 'Quantity' ? ` / ${r.unitName ?? 'ед.'}` : '/мес'}</span>
                   </span>
                 </label>
                 {r.kind === 'Quantity' && r.selected && (
@@ -267,7 +259,7 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
         {/* Invariant made visible, not implied: итог = цена тарифа + Σ опция × количество. */}
         <div className="rounded-xl bg-cream-deep px-4 py-3 flex items-center justify-between">
           <span className="text-sm text-ink-soft">Итог в месяц (тариф + опции)</span>
-          <span className="text-base font-semibold text-ink">{formatRub(expectedTotal)}</span>
+          <span className="text-base font-semibold text-ink">{formatRubRounded(expectedTotal)}</span>
         </div>
 
         <Input label="Сумма платежа (справочно)" type="number" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -531,7 +523,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
             <div className="rounded-xl border border-line divide-y divide-line">
               <div className="flex items-center justify-between px-3 py-2 text-sm">
                 <span className="text-ink-soft">{account.plan.name}</span>
-                <span className="text-ink">{formatRub(account.plan.pricePerMonth)}</span>
+                <span className="text-ink">{formatRubRounded(account.plan.pricePerMonth)}</span>
               </div>
               {(account.options ?? []).map((o) => (
                 <div key={o.optionId} className="flex items-center justify-between px-3 py-2 text-sm flex-wrap gap-1">
@@ -540,12 +532,12 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
                     {o.kind === 'Quantity' ? ` × ${o.quantity}` : ''}
                     <span className="text-xs text-muted ml-1.5">{o.statusText}</span>
                   </span>
-                  <span className="text-ink">{formatRub(o.pricePerMonth)}</span>
+                  <span className="text-ink">{formatRubRounded(o.pricePerMonth)}</span>
                 </div>
               ))}
               <div className="flex items-center justify-between px-3 py-2.5 bg-cream-deep font-semibold text-sm">
                 <span>Итог в месяц</span>
-                <span>{formatRub(account.totalMonthlyPrice)}</span>
+                <span>{formatRubRounded(account.totalMonthlyPrice)}</span>
               </div>
             </div>
             {account.grandfatheredEmployeeBonusText && (
@@ -626,7 +618,7 @@ function AccountDetail({ accountId, onClose }: { accountId: string; onClose: () 
                     )}
                     {h.newOptionsSummary && <span>{h.newOptionsSummary} </span>}
                     {h.newPaidUntil && <span>· до {fmtDate(h.newPaidUntil)}</span>}
-                    {h.amount != null && <span> · {formatRub(h.amount)}</span>}
+                    {h.amount != null && <span> · {formatRubRounded(h.amount)}</span>}
                   </div>
                   {/* §433.2 — reasonTitle is the server's own copy (SubscriptionChangeReasonTexts.cs);
                       the frontend never invents its own label for a reason code. */}
@@ -696,7 +688,7 @@ function AccountRow({ item, onOpen }: { item: AdminBillingAccountListItem; onOpe
           )}
         </div>
         <p className="text-xs text-muted mt-0.5">
-          {item.planName ?? 'Free'} · {formatRub(item.totalMonthlyPrice ?? 0)}/мес · оплачено до {fmtDate(item.paidUntil)}
+          {item.planName ?? 'Free'} · {formatRubRounded(item.totalMonthlyPrice ?? 0)}/мес · оплачено до {fmtDate(item.paidUntil)}
         </p>
         <p className="text-xs text-muted mt-0.5">
           {item.companiesUsed}/{item.companiesLimit ?? '∞'} компаний · {item.employeesUsed}/{item.employeesLimit ?? '∞'} сотр. ·{' '}
@@ -850,7 +842,7 @@ function RequestsQueueSection() {
                   {r.desiredPlanName && r.desiredPlanName !== r.currentPlanName ? ` → ${r.desiredPlanName}` : ''} ·{' '}
                   {r.items.map((i) => `${i.name} × ${i.quantity}`).join(', ') || 'без опций'}
                 </p>
-                <p className="text-xs text-muted mt-0.5">Итог: {formatRub(r.estimatedMonthlyPrice)}/мес · {r.companiesCount ?? 0} компаний</p>
+                <p className="text-xs text-muted mt-0.5">Итог: {formatRubRounded(r.estimatedMonthlyPrice)}/мес · {r.companiesCount ?? 0} компаний</p>
                 {r.comment && <p className="text-xs text-muted italic mt-0.5">«{r.comment}»</p>}
                 {loadErrorFor === r.id && <p className="text-xs text-danger mt-1">Не удалось загрузить аккаунт заявки.</p>}
               </div>

@@ -4,7 +4,6 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.Bookings;
-using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -281,7 +280,6 @@ public class NotificationMaxTransportTests(TestDatabaseFixture fixture) : ApiTes
             Id = Guid.NewGuid(), OwnerUserId = ownerUserId, BillingAccountId = billingAccountId,
             State = ChannelState.Connected, Transport = transport,
             PhoneNumber = UniquePhone().TrimStart('+'), ProviderInstanceId = Unique("instance"),
-            PaidFromUtc = DateTime.UtcNow.AddDays(-1), PaidUntilUtc = DateTime.UtcNow.AddDays(30),
             ConnectedAtUtc = DateTime.UtcNow.AddDays(-1), RiskAcceptedAtUtc = DateTime.UtcNow.AddDays(-1),
         };
         db.NotificationChannels.Add(channel);

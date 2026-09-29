@@ -27,6 +27,7 @@ import { useAuthStore } from '../store/authStore'
 import { getCreateCompanyErrorMessage } from '../utils/companyError'
 import { formatCityTimeZone } from '../utils/timezone'
 import type { City } from '../types'
+import { formatRub } from '../utils/money'
 
 function slugify(str: string) {
   return str
@@ -574,9 +575,9 @@ function ReportsTab() {
                     </div>
                     <div className="text-right text-[13px]">
                       <p className="text-ink-soft">
-                        Итого: <strong className="text-ink">{r.totalAmount.toLocaleString('ru-RU')} ₽</strong>
+                        Итого: <strong className="text-ink">{formatRub(r.totalAmount)}</strong>
                       </p>
-                      <p className="text-success mt-0.5">Мастеру: {r.masterEarnings.toLocaleString('ru-RU')} ₽</p>
+                      <p className="text-success mt-0.5">Мастеру: {formatRub(r.masterEarnings)}</p>
                     </div>
                   </div>
                 ))}
@@ -585,10 +586,10 @@ function ReportsTab() {
                 <span>Итого за период</span>
                 <div className="text-right text-[13px]">
                   <p className="text-ink font-semibold">
-                    {data.reduce((s, r) => s + r.totalAmount, 0).toLocaleString('ru-RU')} ₽ всего
+                    {formatRub(data.reduce((s, r) => s + r.totalAmount, 0))} всего
                   </p>
                   <p className="text-success">
-                    {data.reduce((s, r) => s + r.masterEarnings, 0).toLocaleString('ru-RU')} ₽ мастерам
+                    {formatRub(data.reduce((s, r) => s + r.masterEarnings, 0))} мастерам
                   </p>
                 </div>
               </div>

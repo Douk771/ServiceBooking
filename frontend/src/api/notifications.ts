@@ -11,7 +11,7 @@ import type {
   Paged,
 } from '../types'
 
-export interface NotificationLogFilters {
+interface NotificationLogFilters {
   page?: number
   pageSize?: number
   status?: string

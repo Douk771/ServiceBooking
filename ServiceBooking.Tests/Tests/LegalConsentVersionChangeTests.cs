@@ -5,7 +5,6 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Auth;
-using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Tests.Infrastructure;
 

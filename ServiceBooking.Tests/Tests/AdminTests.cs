@@ -4,8 +4,8 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
-using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.Core.Entities;
@@ -332,36 +332,35 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // removed rather than rewritten.
 
     [Fact, TestCase("ADM-048")]
-    public async Task LegacyOwnerSubscriptionEndpoint_ReturnsGoneWithReplacementRoute()
+    public async Task RemovedLegacyOwnerSubscriptionWrite_IsNoLongerRouted()
     {
-        // contracts/cycle7/openapi.yaml (legacyAssignOwnerSubscription, redaction 2.1): this route is retired in
-        // favor of PUT /admin/billing-accounts/{accountId}/subscription and must answer 410 Gone,
-        // unconditionally, without touching the body — regression coverage for AdminController's
-        // LegacyEndpointGone so a future change can't silently resurrect the old write behavior.
+        // CY22-01 (ARCHITECTURE_CYCLE22.md §372): the cycle-7 410 stub for
+        // PUT /api/admin/owners/{ownerUserId}/subscription (legacyAssignOwnerSubscription) was deleted in
+        // cycle 22 — the replacement is PUT /admin/billing-accounts/{accountId}/subscription. Guards
+        // against the old write behavior being silently resurrected. 405, not 404: the same path is still
+        // routed for GET (the US-63 subscription diagnostics endpoint), so ASP.NET Core routing answers
+        // Method Not Allowed for any other verb — no stub of our own is involved.
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
 
         var response = await adminClient.PutAsJsonAsync($"/api/admin/owners/{Guid.NewGuid()}/subscription",
             new { planConfigId = (Guid?)null, paidUntil = (DateTime?)null, isActive = true, comment = (string?)null });
 
-        response.StatusCode.Should().Be(HttpStatusCode.Gone);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("/admin/billing-accounts/{accountId}/subscription");
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact, TestCase("ADM-049")]
-    public async Task LegacyNotificationChannelPaymentEndpoint_ReturnsGoneWithReplacementRoute()
+    public async Task RemovedLegacyNotificationChannelPayment_IsNoLongerRouted()
     {
-        // Same retirement (contracts/cycle7/openapi.yaml, legacyChannelPayment) on the notification-channel side.
+        // CY22-01 (ARCHITECTURE_CYCLE22.md §372): same removal on the notification-channel side
+        // (POST /api/admin/notification-channels/{id}/payment, legacyChannelPayment).
         var admin = await LoginAsSuperAdminAsync();
         var adminClient = AuthedClient(admin.Token);
 
         var response = await adminClient.PostAsJsonAsync($"/api/admin/notification-channels/{Guid.NewGuid()}/payment",
             new { });
 
-        response.StatusCode.Should().Be(HttpStatusCode.Gone);
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("/admin/billing-accounts/{accountId}/subscription");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact, TestCase("ADM-018")]
@@ -721,8 +720,8 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     // ("UpdateSubscription_CalledTwice_UpdatesExistingRowRatherThanDuplicating") tested
     // AdminController.UpdateSubscription's own body-parsing/upsert behavior. That endpoint
     // (PUT /api/admin/owners/{ownerUserId}/subscription) is now contractually retired
-    // (contracts/cycle7/openapi.yaml, redaction 2.1) and answers 410 Gone unconditionally without touching its
-    // body — see ADM-048 below for coverage of the retirement itself. Its replacement
+    // (contracts/cycle7/openapi.yaml, redaction 2.1); its 410 stub was removed altogether in cycle 22
+    // (ARCHITECTURE_CYCLE22.md §372) — see ADM-048 below for coverage of the removal itself. Its replacement
     // (PUT /admin/billing-accounts/{accountId}/subscription) doesn't exist yet (cycle-07 backend
     // report), so there is currently no endpoint whose date-parsing/upsert behavior these two tests
     // could exercise; removed rather than kept red or rewritten against dead code. Re-add equivalent
@@ -1201,7 +1200,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         created.Highlights.Should().Equal("Было");
 
         var updateResponse = await adminClient.PutJsonAsync($"/api/admin/plans/{created.Id}",
-            ToUpdateDto(created, highlights: "Стало\nВторая строка", isPublic: true, sortOrder: 42));
+            ToUpdateDto(created, highlights: ["Стало", "Вторая строка"], isPublic: true, sortOrder: 42));
 
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await updateResponse.Content.ReadJsonAsync<AdminPlanDto>();
@@ -1265,13 +1264,13 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         // SubscriptionPlanConfigs.PricePerMonth is an unbounded `numeric` column, so an extreme value
         // doesn't overflow the DB the way SubscriptionOption's numeric(10,2) does — but it still must be
-        // rejected with a 400 (AdminController.MaxPlanPricePerMonth), because a denormalized plan price
+        // rejected with a 400 (AdminPlansController.MaxPlanPricePerMonth), because a denormalized plan price
         // is exactly the kind of value that turns a LATER addition/multiplication (BillingCalculator.
         // TotalMonthlyPrice) into an unhandled OverflowException — a 500 far away from where the bad
         // data was actually written.
         var admin = await LoginAsSuperAdminAsync();
         var plan = NewPlanConfig();
-        plan.PricePerMonth = AdminController.MaxPlanPricePerMonth + 1;
+        plan.PricePerMonth = AdminPlansController.MaxPlanPricePerMonth + 1;
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/plans", plan);
 
@@ -1283,12 +1282,12 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     {
         // SubscriptionOptions.PricePerMonth IS numeric(10,2) — above this ceiling, SaveChangesAsync
         // itself would throw a raw Npgsql "numeric field overflow" (an unhandled 500), which is exactly
-        // why AdminBillingController.ValidateOptionInput checks this BEFORE the row ever reaches the
-        // DbContext (AdminBillingController.MaxOptionPricePerMonth).
+        // why AdminOptionsController.ValidateOptionInput checks this BEFORE the row ever reaches the
+        // DbContext (AdminOptionsController.MaxOptionPricePerMonth).
         var admin = await LoginAsSuperAdminAsync();
         var input = new AdminOptionInput(
             Unique("opt-cap-"), "Слишком дорогая опция", null, "Toggle", null,
-            AdminBillingController.MaxOptionPricePerMonth + 1, null, null);
+            AdminOptionsController.MaxOptionPricePerMonth + 1, null, null);
 
         var response = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/options", input);
 
@@ -1325,22 +1324,24 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     }
 
     /// <summary>
-    /// Builds a PUT /api/admin/plans/{id} request body from a previously-fetched AdminPlanDto plus
-    /// explicit overrides — the request (UpdatePlanDto) and response (AdminPlanDto) shapes differ (most
-    /// notably: request Highlights is a single newline-joined string, response Highlights is a
-    /// List&lt;string&gt; — see the QA report's note on this being an AdminPlanInput/contract mismatch
-    /// worth a backend follow-up), so the response body can't just be echoed back as the next PUT's body.
+    /// Builds a PUT /api/admin/plans/{id} request body (AdminPlanInput) from a previously-fetched
+    /// AdminPlanDto plus explicit overrides — the request and response shapes differ (the response carries
+    /// Currency/IsSystemFree/SubscribedAccounts etc. that the request doesn't accept), so the response body
+    /// can't just be echoed back as the next PUT's body. IsPublic/SortOrder/Highlights/Options stay null
+    /// ("not specified — keep the current value") unless overridden. Cycle 22 (ARCHITECTURE_CYCLE22.md
+    /// §371): switched from a dead test-only plan DTO to the live AdminPlanInput.
     /// </summary>
-    private static UpdatePlanDto ToUpdateDto(AdminPlanDto plan,
+    private static AdminPlanInput ToUpdateDto(AdminPlanDto plan,
         string? name = null, decimal? pricePerMonth = null, int? maxEmployees = null, int? maxCompanies = null,
         bool? allowAnalytics = null, int? photoQuotaMb = null, PhotoRetention? photoRetention = null,
-        bool? isActive = null, string? highlights = null, bool? isPublic = null, int? sortOrder = null,
-        bool? isSystemFree = null) => new(
-            name ?? plan.Name, pricePerMonth ?? plan.PricePerMonth,
-            maxEmployees ?? plan.MaxEmployees, maxCompanies ?? plan.MaxCompanies,
-            plan.AllowOnlineBooking, plan.AllowMailing, allowAnalytics ?? plan.AllowAnalytics,
-            plan.AllowPublicListing, plan.AllowOnlinePayment,
-            photoQuotaMb ?? plan.PhotoQuotaMb, photoRetention ?? plan.PhotoRetention,
-            plan.Description, isActive ?? plan.IsActive, plan.NotifyDaysBefore,
-            highlights, isPublic, sortOrder, isSystemFree);
+        bool? isActive = null, List<string>? highlights = null, bool? isPublic = null, int? sortOrder = null) => new(
+            Name: name ?? plan.Name, Description: plan.Description, Highlights: highlights,
+            PricePerMonth: pricePerMonth ?? plan.PricePerMonth,
+            MaxEmployees: maxEmployees ?? plan.MaxEmployees, MaxCompanies: maxCompanies ?? plan.MaxCompanies,
+            AllowOnlineBooking: plan.AllowOnlineBooking, AllowMailing: plan.AllowMailing,
+            AllowAnalytics: allowAnalytics ?? plan.AllowAnalytics,
+            AllowPublicListing: plan.AllowPublicListing, AllowOnlinePayment: plan.AllowOnlinePayment,
+            PhotoQuotaMb: photoQuotaMb ?? plan.PhotoQuotaMb, PhotoRetention: photoRetention ?? plan.PhotoRetention,
+            NotifyDaysBefore: plan.NotifyDaysBefore,
+            IsPublic: isPublic, IsActive: isActive ?? plan.IsActive, SortOrder: sortOrder);
 }

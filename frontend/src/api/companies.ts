@@ -2,7 +2,7 @@ import { api } from './client'
 import type { Company } from '../types'
 
 /** contracts/cycle9/openapi.yaml — PagedCompanyDto (US-115). */
-export interface PagedCompanyDto {
+interface PagedCompanyDto {
   items: Company[]
   page: number
   pageSize: number
@@ -64,12 +64,12 @@ export interface CreateCompanyPayload {
 /** §42.1 — the response now carries a fresh token (claim `lco`) alongside the company. Without
  *  saving it immediately, the owner would get owner-gate 451 on their own just-created company until
  *  their next login. */
-export interface CreateCompanyResponse {
+interface CreateCompanyResponse {
   company: Company
   token: string
 }
 
-export interface UpdateCompanyPayload {
+interface UpdateCompanyPayload {
   name?: string
   description?: string
   address?: string
@@ -88,7 +88,7 @@ export interface UpdateCompanyPayload {
   bookingHorizonDays?: number
 }
 
-export interface CompanyPhotoUsage {
+interface CompanyPhotoUsage {
   companyId: string
   usedBytes: number
   photoCount: number
@@ -100,11 +100,9 @@ export interface CompanyPhotoUsage {
 }
 
 export const companiesApi = {
-  getAll: () => api.get<Company[]>('/companies').then((r) => r.data),
   /**
    * US-115 (contracts/cycle9/openapi.yaml GET /companies/public). Anonymous public catalog for the
-   * homepage. Filtering by cityId/search and paging happen server-side — never fetch getAll() and
-   * filter in the browser (SPEC §6/§9.17 regression).
+   * homepage. Filtering by cityId/search and paging happen server-side.
    */
   getPublic: (params: { cityId?: number; search?: string; page?: number; pageSize?: number } = {}) =>
     api.get<PagedCompanyDto>('/companies/public', { params }).then((r) => r.data),

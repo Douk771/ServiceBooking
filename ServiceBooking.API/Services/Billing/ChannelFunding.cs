@@ -13,8 +13,6 @@ public enum ChannelFundingState
     NotPaid,
 }
 
-public sealed record ChannelFundingResult(ChannelFundingState State, NotificationChannel? EarliestUnfundedBy);
-
 public static class ChannelFunding
 {
     /// <summary>

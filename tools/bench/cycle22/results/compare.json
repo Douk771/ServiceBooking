@@ -1,0 +1,226 @@
+{
+ "masters/clients p1": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients p60 (middle)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients search phone": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients search name": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "company stats 1 month": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": false,
+  "equal_ignoring_order": true
+ },
+ "company stats 1 year": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": false,
+  "equal_ignoring_order": true
+ },
+ "reports/masters 1 month": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "reports/masters 1 year": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "bookings/master 1 day": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "bookings/master 1 month": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "bookings/client (~150)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "bookings/{id} (master)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "bookings/availability 30d (anon)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "bookings/slots 1 day (anon)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "bookings/slots 1 day (client JWT)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "admin/companies p1": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "admin/bookings (no filter, top 500)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "admin/bookings company+month": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "admin/notification-channels p1": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": false,
+  "equal_ignoring_order": false
+ },
+ "profile (trivial auth, F20)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "legal/documents (anon baseline)": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients p2": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients p30": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients p120": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients p121": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients search partial phone": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "masters/clients search guest phone": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": true,
+  "equal_ignoring_order": true
+ },
+ "company stats 2y": {
+  "status": [
+   200,
+   200
+  ],
+  "equal_strict": false,
+  "equal_ignoring_order": true
+ }
+}

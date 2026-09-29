@@ -2,14 +2,14 @@ import { api } from './client'
 import type { AddressLookupResultDto, AddressNoticeResultDto, Company, CompanyAddressVerificationResultDto } from '../types'
 
 /** API_CONTRACT_CYCLE13.md §233. */
-export interface AddressLookupParams {
+interface AddressLookupParams {
   address: string
   cityId?: number | null
   companyId?: string | null
 }
 
 /** API_CONTRACT_CYCLE13.md §234 — `company` comes back as the full `CompanyDto`. */
-export interface SaveCompanyAddressResult {
+interface SaveCompanyAddressResult {
   company: Company
   verification: CompanyAddressVerificationResultDto
 }

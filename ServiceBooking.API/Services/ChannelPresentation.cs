@@ -1,4 +1,3 @@
-using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services;

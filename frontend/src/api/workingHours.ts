@@ -17,7 +17,7 @@ export interface BreakDto {
   endTime: string
 }
 
-export interface UpsertWorkingHoursPayload {
+interface UpsertWorkingHoursPayload {
   masterId: string
   companyId: string
   date: string // 'YYYY-MM-DD'

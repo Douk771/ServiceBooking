@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
+import { fmtDateTime } from '../utils/dateFormat'
 import { Link } from 'react-router-dom'
 import { consentsApi } from '../api/consents'
 import { Card } from '../components/ui/Card'
@@ -12,10 +11,6 @@ import { getLegalErrorMessage } from '../utils/legalError'
 import { useLegalText } from '../hooks/useLegalText'
 import { findSection, splitLegalSections } from '../utils/legalSections'
 import type { ConsentPurpose, ConsentRevokeEffects } from '../types'
-
-function fmt(iso: string) {
-  return format(parseISO(iso), 'd MMM yyyy, HH:mm', { locale: ru })
-}
 
 /**
  * API_CONTRACT_CYCLE20.md §432.9 / §441 item 6 (LG1, US-20-01) — `HealthData` is the one purpose this
@@ -218,7 +213,7 @@ export function ConsentsPage() {
                   <p className="text-sm font-medium text-ink">{p.title}</p>
                   {active ? (
                     <p className="text-xs text-success mt-1">
-                      Согласие дано {fmt(active.grantedAt)} · версия {active.version}
+                      Согласие дано {fmtDateTime(active.grantedAt)} · версия {active.version}
                     </p>
                   ) : isHealthData ? (
                     // §432.9 (Т20-03 п. 3) — never offered here: given on a paper form at the salon.
@@ -271,8 +266,8 @@ export function ConsentsPage() {
                   {h.purpose ? ` · ${h.purpose}` : ''} · {h.act} · {h.source}
                 </span>
                 <span>
-                  {fmt(h.grantedAt)} · версия {h.documentVersion}
-                  {h.revokedAt ? ` · отозвано ${fmt(h.revokedAt)}` : ''}
+                  {fmtDateTime(h.grantedAt)} · версия {h.documentVersion}
+                  {h.revokedAt ? ` · отозвано ${fmtDateTime(h.revokedAt)}` : ''}
                 </span>
               </div>
             ))}

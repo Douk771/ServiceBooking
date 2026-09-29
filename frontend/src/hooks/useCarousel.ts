@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Touc
  * Deliberately does NOT include a `setInterval`/`setTimeout` slide-advance of any kind — no
  * autoplay, ever (П9). `useCarousel.test.ts` asserts this with fake timers.
  */
-export interface UseCarouselResult {
+interface UseCarouselResult {
   /** Currently active slide, always `0 <= index < length` (except when `length === 0`). */
   index: number
   next: () => void

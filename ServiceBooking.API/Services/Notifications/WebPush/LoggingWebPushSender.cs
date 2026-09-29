@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging;
-
 namespace ServiceBooking.API.Services.Notifications.WebPush;
 
 /// <summary>

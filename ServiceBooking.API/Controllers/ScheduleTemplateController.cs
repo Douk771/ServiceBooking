@@ -14,7 +14,7 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
     [Authorize]
-    public async Task<IActionResult> Get([FromQuery] string masterId, [FromQuery] Guid companyId)
+    public async Task<IActionResult> Get([FromQuery] string masterId, [FromQuery] Guid companyId, CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(masterId, companyId, userId)) return Forbid();
@@ -30,7 +30,7 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
                 t.StartTime,
                 t.EndTime
             })
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(templates);
     }

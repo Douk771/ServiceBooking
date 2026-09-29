@@ -23,7 +23,7 @@ public class CitiesController(AppDbContext db) : ControllerBase
     /// still finds "Ростов-на-Дону" without every query paying for a substring scan. Deliberately no
     /// full-text/trigram index at this row count (§34.2) — do not "optimize" this without re-reading it.</summary>
     [HttpGet]
-    public async Task<ActionResult<CityListDto>> Search([FromQuery] string? search, [FromQuery] int? take)
+    public async Task<ActionResult<CityListDto>> Search([FromQuery] string? search, [FromQuery] int? take, CancellationToken ct)
     {
         var limit = take is null or <= 0 ? DefaultTake : Math.Min(take.Value, MaxTake);
         var query = CitySearch.Normalize(search);
@@ -32,13 +32,13 @@ public class CitiesController(AppDbContext db) : ControllerBase
         if (string.IsNullOrEmpty(query))
         {
             cities = await db.Cities.Where(c => c.IsActive)
-                .OrderBy(c => c.Name).Take(limit).ToListAsync();
+                .OrderBy(c => c.Name).Take(limit).ToListAsync(ct);
         }
         else
         {
             var prefixMatches = await db.Cities
                 .Where(c => c.IsActive && EF.Functions.ILike(c.SearchName, query + "%"))
-                .OrderBy(c => c.Name).Take(limit).ToListAsync();
+                .OrderBy(c => c.Name).Take(limit).ToListAsync(ct);
 
             if (prefixMatches.Count >= limit)
             {
@@ -51,7 +51,7 @@ public class CitiesController(AppDbContext db) : ControllerBase
                 var substringMatches = await db.Cities
                     .Where(c => c.IsActive && !alreadyFoundIds.Contains(c.Id) &&
                                 EF.Functions.ILike(c.SearchName, "%" + query + "%"))
-                    .OrderBy(c => c.Name).Take(remaining).ToListAsync();
+                    .OrderBy(c => c.Name).Take(remaining).ToListAsync(ct);
 
                 cities = [.. prefixMatches, .. substringMatches];
             }

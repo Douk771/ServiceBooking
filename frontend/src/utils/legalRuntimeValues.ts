@@ -29,17 +29,15 @@
 // `HealthConsentFormPrintPage.tsx`) — `null` there means "the value isn't on file", which the page
 // substitutes with a literal underline (`BLANK_LINE`) rather than an empty string, so the printed form
 // keeps a line for the client to fill in by hand (US-20-01) instead of silently collapsing the field.
-export const LEGAL_RUNTIME_VALUE_NAMES = [
-  'companyName',
-  'clientFullName',
-  'companyAddress',
-  'operatorFullName',
-  'operatorAddress',
-  'operatorInn',
-  'formId',
-  'formPrintedDate',
-] as const
-export type LegalRuntimeValueName = (typeof LEGAL_RUNTIME_VALUE_NAMES)[number]
+type LegalRuntimeValueName =
+  | 'companyName'
+  | 'clientFullName'
+  | 'companyAddress'
+  | 'operatorFullName'
+  | 'operatorAddress'
+  | 'operatorInn'
+  | 'formId'
+  | 'formPrintedDate'
 
 function escapeHtml(value: string): string {
   return value

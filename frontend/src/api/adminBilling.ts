@@ -8,34 +8,29 @@ type Cycle18 = Cycle18Schemas['schemas']
 type Cycle20 = Cycle20Schemas['schemas']
 
 export type TrialAccountFilter = Cycle18['TrialAccountFilter']
-export type AdminAccountTrialDto = Cycle18['AdminAccountTrialDto']
-export type AdminTrialGrantDto = Cycle18['AdminTrialGrantDto']
-export type TrialRegrantInput = Cycle18['TrialRegrantInput']
-export type TrialRefusalDto = Cycle18['TrialRefusalDto']
+type TrialRegrantInput = Cycle18['TrialRegrantInput']
 
 /** Cycle 7 shapes + cycle 18 `trial`/`trialState`/`trialEndsAt` (additive — §369, §372). */
 export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDto'] & Cycle18['AdminBillingAccountListItemTrialPatch']
 export type AdminBillingAccount = Schemas['AdminBillingAccountDto'] & Cycle18['AdminBillingAccountDtoTrialPatch']
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
-export type AdminAccountCompany = Schemas['AdminAccountCompanyDto']
-export type AdminAccountChannel = Schemas['AdminAccountChannelDto']
 /** Cycle 20 (US-20-02, API_CONTRACT_CYCLE20.md §433.1) adds `reasonCode`/`reasonDetails` in the
  *  request body — same `AssignOptionInput`/log shapes otherwise. */
 export type AssignSubscriptionInput = Cycle20['AssignSubscriptionInput']
 export type AssignOptionInput = Schemas['AssignOptionInput']
 export type SubscriptionChangeReason = Cycle20['SubscriptionChangeReason']
-export type SubscriptionChangeReasonDto = Cycle20['SubscriptionChangeReasonDto']
+type SubscriptionChangeReasonDto = Cycle20['SubscriptionChangeReasonDto']
 /** History item — existing shape plus `reasonCode`/`reasonTitle`/`reasonDetails` (§433.2), always
  *  `null` on rows that predate the cycle or weren't a manual hidden-plan assignment. */
-export type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto'] & Cycle20['SubscriptionHistoryItemReasonPatch']
+type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto'] & Cycle20['SubscriptionHistoryItemReasonPatch']
 export type AdminSubscriptionRequest = Schemas['AdminSubscriptionRequestDto']
 export type SubscriptionStatus = Schemas['SubscriptionStatus']
-export type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
+type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
 
 /** Cycle-3 pagination envelope (`page`/`pageSize`/`totalCount`) used by every /admin/billing-*
  *  list endpoint in this cycle — distinct from the older `total`/`hasNext` envelope elsewhere in
  *  the admin API, so it's adapted to the shared <Pagination> component's shape at the call site. */
-export interface PagedResult<T> {
+interface PagedResult<T> {
   items: T[]
   page: number
   pageSize: number

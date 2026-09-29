@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Core.Entities;
-using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.Infrastructure.Data;
 
@@ -257,6 +256,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // the product. Partial — only guest rows carry a value here, a registered client's Booking
             // row always has GuestPhone null — so the index stays a fraction of the table's size.
             e.HasIndex(b => b.GuestPhone).HasDatabaseName("IX_Bookings_GuestPhone").HasFilter("\"GuestPhone\" IS NOT NULL");
+            // ARCHITECTURE_CYCLE22.md §379 (F5): the most frequent booking read is "this master on this
+            // date / date range" (slots, the master's schedule, conflict checks). MasterId leads, so the
+            // same index also serves the Master FK — EF's ForeignKeyIndexConvention drops the separate
+            // IX_Bookings_MasterId once an index with MasterId as its prefix exists. No IncludeProperties
+            // (§379: extra size for little gain).
+            e.HasIndex(b => new { b.MasterId, b.Date });
         });
 
         builder.Entity<BookingService>(e =>

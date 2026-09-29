@@ -402,13 +402,17 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
     [Fact, TestCase("NTF-C015")]
     public async Task Replace_BlockedChannel_MovesPeriodAssignmentsAndPendingRows_NotExpired()
     {
-        var (owner, company, channel) = await CreateConnectedChannelAsync(paidUntilUtc: DateTime.UtcNow.AddDays(20));
-        var paidUntilBefore = channel.PaidUntilUtc;
+        var (owner, company, channel) = await CreateConnectedChannelAsync();
 
         Guid pendingId, expiredId;
+        DateTime? paidUntilBefore;
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            // Cycle 22 (§379, Р2): the paid period belongs to the account — here its WhatsApp option has
+            // no own PaidUntilUtc, so it rides the subscription's period (ChannelFundingReader).
+            paidUntilBefore = await db.AccountSubscriptions.Where(s => s.BillingAccountId == channel.BillingAccountId)
+                .Select(s => s.PaidUntil).SingleAsync();
             var tracked = await db.NotificationChannels.FirstAsync(c => c.Id == channel.Id);
             tracked.State = ChannelState.Blocked;
 
@@ -438,13 +442,6 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
             var oldChannel = await db.NotificationChannels.AsNoTracking().FirstAsync(c => c.Id == channel.Id);
             oldChannel.State.Should().Be(ChannelState.Replaced);
             oldChannel.ReplacedByChannelId.Should().Be(result.NewChannelId);
-            oldChannel.PaidUntilUtc.Should().BeNull("N6: the paid period must not double-count on the terminal row");
-
-            var newChannel = await db.NotificationChannels.AsNoTracking().FirstAsync(c => c.Id == result.NewChannelId);
-            // Tolerance, not equality: the expected value was read back through Postgres (microseconds)
-            // while the actual carries .NET ticks (100ns), so exact comparison drops a digit on CI's
-            // database and not on ours — the same trap as `result.PaidUntil` above.
-            newChannel.PaidUntilUtc.Should().BeCloseTo(paidUntilBefore!.Value, TimeSpan.FromMilliseconds(1));
 
             var assignment = await db.ChannelCompanyAssignments.AsNoTracking().SingleAsync(a => a.CompanyId == company.Id);
             assignment.ChannelId.Should().Be(result.NewChannelId);
@@ -543,7 +540,10 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         var db2 = scope2.ServiceProvider.GetRequiredService<AppDbContext>();
         var reloaded = await db2.NotificationChannels.AsNoTracking().FirstAsync(c => c.Id == channel.Id);
         reloaded.State.Should().Be(ChannelState.DisabledByOwner);
-        reloaded.PaidUntilUtc.Should().NotBeNull("US-56 п. 2: paid period survives a voluntary disconnect");
+        // US-56 п. 2: the paid period survives a voluntary disconnect — it is the account's funding
+        // (cycle 22, §379), which a disconnect does not touch.
+        var list = (await (await AuthedClient(owner.Token).GetAsync("/api/notification-channels")).Content.ReadJsonAsync<ChannelListDto>())!;
+        list.Channels.Single(c => c.Id == channel.Id).PaidUntil.Should().NotBeNull("US-56 п. 2: paid period survives a voluntary disconnect");
 
         var rows = await db2.OutboundNotifications.Where(n => n.ChannelId == channel.Id).ToListAsync();
         rows.Should().OnlyContain(r => r.Status == NotificationStatus.Cancelled);
@@ -576,12 +576,7 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
     {
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var channel = await db.NotificationChannels.FirstAsync(c => c.Id == channelId);
-        // Kept for compatibility with any assertion still reading these historical columns — no longer
-        // what makes the channel funded (ARCHITECTURE_CYCLE7.md §47.3).
-        channel.PaidFromUtc = DateTime.UtcNow.AddDays(-1);
-        channel.PaidUntilUtc = DateTime.UtcNow.AddDays(30);
-        await db.SaveChangesAsync();
+        var channel = await db.NotificationChannels.AsNoTracking().FirstAsync(c => c.Id == channelId);
 
         // Cycle 5, stage 3 (§47.1): funding now comes from the account's paid notifications.whatsapp
         // quantity — mark the OWNING account (not necessarily every account in the test) as paid for at

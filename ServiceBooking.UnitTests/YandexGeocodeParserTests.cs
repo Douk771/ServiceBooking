@@ -1,5 +1,4 @@
 using FluentAssertions;
-using ServiceBooking.API.Services.Geo;
 using ServiceBooking.API.Services.Geo.Yandex;
 using ServiceBooking.Core.Enums;
 

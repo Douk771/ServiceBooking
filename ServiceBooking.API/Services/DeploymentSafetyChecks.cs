@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Configuration;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.GreenApi;

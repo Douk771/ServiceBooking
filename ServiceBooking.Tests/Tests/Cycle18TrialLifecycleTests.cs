@@ -28,7 +28,7 @@ namespace ServiceBooking.Tests.Tests;
 /// in TEST_CATALOG.md's "Найденные баги" section (mailing-window start hook §336, the trial-lifecycle
 /// background task §337, and the trial phone registry's retention rule §343) are now implemented
 /// (commits d2fff69, b37b566, a7d2979). The developer who wrote them did not add functional coverage —
-/// this file closes that gap, written from ARCHITECTURE_CYCLE18.md §336/§337/§343 and SPEC.md decisions
+/// this file closes that gap, written from ARCHITECTURE_CYCLE18.md §336/§337/§343 and SPEC_CYCLE18_TRIAL_PLAN.md decisions
 /// Д5/Д16/Д18/Д19, independently of the implementation itself.
 ///
 /// Deliberately NOT in <c>Cycle18TrialPlanTests.cs</c> (untouched by this pass — backend-developer is

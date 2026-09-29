@@ -10,7 +10,6 @@ using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Legal;
 using ServiceBooking.API.DTOs.PhoneVerification;
-using ServiceBooking.API.Services.PhoneVerification.Max;
 using ServiceBooking.Tests.Infrastructure;
 
 namespace ServiceBooking.Tests.Tests;

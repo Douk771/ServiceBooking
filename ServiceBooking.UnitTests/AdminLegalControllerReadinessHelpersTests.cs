@@ -1,5 +1,4 @@
 using FluentAssertions;
-using ServiceBooking.API.Controllers;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Enums;
 

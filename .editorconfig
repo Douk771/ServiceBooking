@@ -35,6 +35,14 @@ dotnet_sort_system_directives_first = true
 # the IDE suggest it where a class with only public settable properties looks like it should have been one.
 csharp_style_prefer_top_level_statements = true:suggestion
 
+# Cycle 22 (ARCHITECTURE_CYCLE22.md §373, P6): unused usings are surfaced as a suggestion and were removed
+# once with `dotnet format style --diagnostics IDE0005`. EF migrations are generated code and keep
+# whatever the generator wrote — see the [**/Migrations/*.cs] section below.
+dotnet_diagnostic.IDE0005.severity = suggestion
+
+[**/Migrations/*.cs]
+dotnet_diagnostic.IDE0005.severity = none
+
 [*.{yml,yaml,json}]
 indent_size = 2
 

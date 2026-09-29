@@ -13,7 +13,6 @@
     "Password": "CHANGE_ME_MIN_8_CHARS"
   },
   "SmartCaptcha": {
-    "SecretKey": "",
-    "SiteKey": ""
+    "SecretKey": ""
   }
 }

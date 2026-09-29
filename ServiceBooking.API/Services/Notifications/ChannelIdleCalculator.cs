@@ -15,13 +15,17 @@ public static class ChannelIdleCalculator
     /// <summary>
     /// Recomputes <c>IdleSinceUtc</c> for one channel from the two things §30.3 reduces "is this channel
     /// idle" to — whether it has at least one active (not blocked/deactivated) assigned company, and
-    /// whether its paid period is currently live.
+    /// whether its paid period is currently live. Cycle 22 (ARCHITECTURE_CYCLE22.md §379, Р2): "paid
+    /// period live" is the channel's FUNDING (<see cref="ChannelFundingReader"/>: the account's WhatsApp
+    /// option, which already counts only while its own or the subscription's period runs), no longer the
+    /// channel's dropped PaidUntilUtc column.
     /// </summary>
     /// <param name="existingIdleSinceUtc">The channel's current <c>IdleSinceUtc</c> value.</param>
     /// <param name="activeCompanyCount">Count of companies assigned to the channel with
     /// <c>Company.IsActive == true</c> — both "blocked by superadmin" and "deactivated by owner" are the
     /// same field (§30.3), so this single count captures both causes.</param>
-    /// <param name="paidUntilUtc">The channel's paid-until date, or null if never paid.</param>
+    /// <param name="isFunded">Whether the channel is funded right now
+    /// (<see cref="Billing.ChannelFundingState.Funded"/>).</param>
     /// <param name="isSuspendedByAdmin">Whether the channel itself was suspended by a superadmin.</param>
     /// <param name="nowUtc">Current time.</param>
     /// <returns><see langword="null"/> when the channel has both an active company and a live paid
@@ -31,11 +35,11 @@ public static class ChannelIdleCalculator
     public static DateTime? Recompute(
         DateTime? existingIdleSinceUtc,
         int activeCompanyCount,
-        DateTime? paidUntilUtc,
+        bool isFunded,
         bool isSuspendedByAdmin,
         DateTime nowUtc)
     {
-        var periodIsLive = paidUntilUtc is { } paidUntil && paidUntil >= nowUtc && !isSuspendedByAdmin;
+        var periodIsLive = isFunded && !isSuspendedByAdmin;
         var hasActiveCompany = activeCompanyCount > 0;
 
         if (hasActiveCompany && periodIsLive) return null;

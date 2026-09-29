@@ -26,6 +26,18 @@ public class SubscriptionResolverOptionGatingTests
     }
 
     [Fact]
+    public void UsableSubscription_OwnPaidUntilExactlyNow_OptionCounted()
+    {
+        // Moved here in cycle 22 (§379) from ChannelIdleCalculatorTests.Recompute_PaidExactlyNow_CountsAsLive:
+        // a channel's paid period is its funding now, and the "paid through exactly now is still paid"
+        // boundary is decided here.
+        var result = SubscriptionResolver.IsOptionCurrentlyPaid(
+            subscriptionUsable: true, optionPaidUntilUtc: Now, currentPlanAvailability: OptionAvailability.Extra, Now);
+
+        result.Should().BeTrue();
+    }
+
+    [Fact]
     public void UsableSubscription_OwnPaidUntilInPast_OptionNotCounted()
     {
         var result = SubscriptionResolver.IsOptionCurrentlyPaid(

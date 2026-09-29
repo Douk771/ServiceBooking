@@ -39,7 +39,7 @@ export interface ProfileDto {
   phoneVerifiedAtUtc: string | null
 }
 
-export interface UpdateProfilePayload {
+interface UpdateProfilePayload {
   firstName: string
   lastName: string
 }
@@ -77,6 +77,6 @@ export const profileApi = {
     api.get<AccountDeletionPreviewDto>('/profile/delete-account/preview').then((r) => r.data),
 }
 
-export interface AccountDeletionPreviewDto {
+interface AccountDeletionPreviewDto {
   trialRegistryNotice: string | null
 }

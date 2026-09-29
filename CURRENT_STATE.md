@@ -1,5 +1,33 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
+🔀 **Слияние `origin/develop` в `cycle/020-legal-closure` (2026-09-30, синхронизация перед интеграцией).**
+В ветку цикла 20 влиты циклы 21 (📲, «На экран Домой» push, `a08c6ca`) и 22 (🧽, рефакторинг: мёртвый
+код, дублирование, тяжёлые запросы, `169534a`). Эта шапка — **не новая инвентаризация**: блоки ⚖️20
+(ветка цикла 20), 🧽 и 📲 (из `develop`) ниже сохранены как есть и описывают каждый свой диапазон.
+Что изменилось при слиянии:
+- код цикла 20 перенесён в места, куда его разрезал цикл 22 (§378): регистрации служб —
+  `Startup/ApplicationServicesExtensions.cs`; журнал гейта в выгрузке/удалении —
+  `Services/Subjects/SubjectDataExporter.cs` и `AccountDeletionService.cs` (TraceId передаётся
+  параметром); отзыв согласий (бумажное согласие на здоровье, US-20-01) —
+  `ProfileConsentsController.cs`; `GET /api/admin/guest-data-gate-events` и новые поля
+  `RetentionPolicyDto` — `AdminPlatformController.cs`; `clientCancelMinHours` —
+  `BookingEndpointHelpers.MapToDto`;
+- `Billing_AssignSubscriptionInput` цикла 20 → `AssignSubscriptionInput` (переименование цикла 22) с
+  полями `reasonCode`/`reasonDetails`;
+- корневой `SPEC.md` — спека цикла 20; спека цикла 22 сохранена в `SPEC_CYCLE22_REFACTORING_DEAD_CODE.md`
+  (цикл 21 — `SPEC_CYCLE21_IOS_HOME_SCREEN_PUSH.md`).
+- эталон маршрутов CY22-12 (`ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt`) дополнен
+  маршрутами цикла 20 (16 новых, `?reason` у удаления фото, `POST …/health-consent` → 410 без тела) —
+  все 20 строк расхождения принадлежат циклу 20, разрезание цикла 22 ничего не изменило;
+- миграции: у цикла 22 две (`20260928…` — индекс Bookings(MasterId, Date), удаление PaidFromUtc/
+  PaidUntilUtc каналов), у цикла 20 две (`20260929…`); порядок по времени верный, Designer-модели
+  миграций цикла 20 дополнены изменениями цикла 22, `has-pending-model-changes` чист.
+Проверка после слияния: unit 1754/1754, функциональные 852/852, фронтенд 732/732 (с починкой
+датозависимого `BookingCalendar.test.tsx` — «сегодня» зафиксировано на весь файл), `tsc`, `eslint` чисто.
+**Следующий diff отсчитывайте от merge-коммита этого слияния.**
+
+---
+
 **Актуально по состоянию на коммит: `e2e927b` (HEAD ветки `cycle/020-legal-closure` = `develop`
 `e3774c1` + один коммит документа `LEGAL_DECISIONS_CYCLE20.md`), дата: 2026-09-28.** Прошлая
 отметка была `91196aa` (ветка цикла 18 до мёржа). **Следующий diff отсчитывайте от `e3774c1`
@@ -27,7 +55,145 @@
 
 ---
 
-_Предыдущая редакция шапки (вход — `91196aa`):_ **коммит `91196aa` (HEAD ветки `cycle/018-trial-plan`),
+**Актуально по состоянию на ветку `cycle/022-refactoring-dead-code` (от `develop` = `a08c6ca`), дата:
+2026-09-28.** Прошлая отметка — блок 📲 ниже (ветка цикла 21, влита в `develop` = `a08c6ca`). Метка блоков
+цикла — 🧽.
+
+🧽 **Цикл 22 — рефакторинг: мёртвый код, дублирование, тяжёлые запросы. Точечное дополнение**, остальной
+документ заново не сканировался; старые блоки не переписаны и не сокращены — там, где они стали неверны,
+добавлены отметки 🧽. Источники: `SPEC.md` (цикл 22, решения Р1–Р6), `ARCHITECTURE_CYCLE22.md`
+§370–§385, тела коммитов `a08c6ca..HEAD` (по одному-несколько на пакет P1–P7).
+
+- **Главное для выката (🔴, это не рефакторинг, а исправление ошибки в проде).** До цикла
+  `ChannelHealthTask` считал простой канала по колонке `NotificationChannels.PaidUntilUtc`, которую с
+  цикла 7 никто не пишет, — то есть **каждый** канал был «не оплачен». Через `ChannelIdleDays` любой
+  канал помечался простаивающим, а его инстанс у провайдера удалялся (`NeedsReconnect`,
+  `IdleInstanceDeleted`) **даже при оплаченной опции и активной компании**. Теперь простой, статус и
+  дата оплаты канала читаются из **финансирования** (`ChannelFundingReader`: опция WhatsApp аккаунта,
+  иначе период подписки). **После выката проверить каналы в админке:** у оплаченных каналов с
+  активной компанией отметка простоя снимается первым же проходом `channel-health`; канал, чей
+  инстанс уже удалён, остаётся `NeedsReconnect` и требует повторной привязки по QR — сам он не
+  восстановится. На `ezbook.ru` каналы никому не предлагаются (§5.1 п. 3), поэтому затронутых там,
+  скорее всего, нет, — но проверить, а не предполагать.
+- **Что изменилось для пользователей и API (всё остальное — без изменений ответов):**
+  (1) админка каналов — `paidUntil`/`paymentState`, счётчики сводки `expiringIn7Days` (финансирован и
+  `paidUntil` в [сейчас, +7 дн.]) и `pendingRequests` (запрошен, **не** финансирован и **не
+  `Replaced`** — исключение `Replaced` добавлено циклом осознанно); настройки уведомлений компании —
+  `paymentState`/`paidUntil` и дата в тексте `NeedsReconnect`; ответ замены канала — `paidUntil`;
+  `ChannelPaymentLog.Old/NewPaidUntil` — из финансирования. (2) Поле `paidFrom` (всегда `null` с
+  цикла 7) удалено из `ChannelDto`/`AdminChannelDto`. (3) Заглушки `410` цикла 7 удалены:
+  `POST /api/admin/notification-channels/{id}/payment` → `404`, `PUT /api/admin/owners/{ownerUserId}/subscription`
+  → `405` (путь занят `GET`-диагностикой US-63). (4) Подписи статусов записи — одна таблица
+  `utils/bookingStatus.ts`: `StatusBadge` («Мои записи» клиента и мастера, список записей админки)
+  «Подтверждено/Отменено/Завершено» → **«Подтверждена/Отменена/Выполнена»**, фильтр статусов админки
+  «Подтверждено/Выполнено/Отменено» → то же. (5) Окно отзыва (`ReviewModal`) — на общем `<Modal>`:
+  закрывается по Esc, щелчку по подложке и крестику; у `<Modal>` появились `role="dialog"`,
+  `aria-modal`, `aria-labelledby`. `VerifyPhoneDialog` — на `useOverlayDismiss`. (6) В статистике
+  компании `popularServices[].serviceName` теперь `MAX` названий в группе, а не название первой строки —
+  расходится только если услугу переименовали между записями периода.
+- **Миграции — две:** `AddBookingsMasterDateIndex` (создаёт `IX_Bookings_MasterId_Date`, удаляет
+  `IX_Bookings_MasterId` — он префикс составного) и `DropChannelLegacyPaidPeriod` (`DROP COLUMN
+  NotificationChannels.PaidFromUtc`, `PaidUntilUtc`; `Down()` возвращает обе пустыми). Созданы
+  закреплённым `dotnet-ef` 8.0.11 (C15-3), проверки дрейфа снапшота зелёные. **Миграций стало 71**
+  (было 69; по `[Migration]`-атрибутам и `*.Designer.cs`); файлов `*.cs` без `Designer` в каталоге —
+  **72** вместе с `AppDbContextModelSnapshot.cs` (так же считалось «70» в блоке 📲). ⚠️ Команда
+  `ls …/*.cs | grep -v Designer | grep -v Snapshot` даёт 69 — она выбрасывает и две миграции с
+  `Snapshot` в имени (`AddBookingPriceSnapshot`, `AddBookingCommissionSnapshot`).
+- **Удалено (P1/P2, класс A аудита — «ссылок 0», проверено `grep` по каждому символу):** мёртвые DTO,
+  методы и параметры бэкенда (§371; тестовые формы десериализации переехали в
+  `ServiceBooking.Tests/Infrastructure/AdminBillingTestDtos.cs`, префиксы `Billing_` сняты), ключ
+  `SmartCaptcha:SiteKey` из `appsettings*` и `SmartCaptcha__SiteKey` из `docker-compose.prod.yml`
+  (бэкенд читает только `SecretKey`; фронт берёт site-key из переменной CI `VITE_SMARTCAPTCHA_SITEKEY`),
+  избыточные `PackageReference` (API, Infrastructure; `EF Design` в Tests **оставлен** — без него из
+  графа Tests выпадает 25 пакетов), неиспользуемые `using` в 106 файлах (P6; `.editorconfig`: IDE0005 —
+  `suggestion`, в `Migrations` — `none`). Фронт: `frontend/design_handoff_site_redesign/` целиком
+  (**§9.30 закрыт**), генераты `api-cycle{10,11,15,16,17}.generated.ts` с их скриптами и строками шагов
+  CI (контракты `contracts/cycleN/openapi.yaml` остаются — их читает `redocly lint`), неиспользуемые
+  методы API-клиента и типы, `export` с 54 символов, код «только для тестов». `knip` чист.
+- **Дедупликация (P1/P3):** бэкенд — `SubscriptionUsability` (8 копий «подписка действует»),
+  `PhoneNormalizer.ParseSearch`, `ScheduleFallbackPolicy`, `CompanyMembership.IsStaffRole`,
+  `Booking.TotalDurationMinutes()/ServiceNames()`, `CompanyDtoAssembler`, `BuildAdminPlanDtoAsync`,
+  `UserWindowPolicy`, `VisitStartResolver`, `TrialEligibility` (**C18-11 закрыт**); фронт —
+  `utils/dateFormat.ts`, `utils/money.ts` (`formatRub` точный, `formatRubRounded` — экран
+  биллинг-аккаунтов), `utils/bookingStatus.ts`, `NOTIFICATION_TYPE_LABELS`.
+- **Запросы (P3, F1–F24):** `masters/clients` — группировка в SQL, сводки и заметки только для
+  страницы (**§9.17 закрыт по существу**, см. отметку там); статистика компании — агрегаты в SQL
+  (**§9.19**); проверка токена — один запрос (**§9.21 закрыт**); `ChannelFundingReader` пакетно, N+1 в
+  каналах/удалении аккаунта убраны; `CancellationToken` во всех GET, работающих с EF.
+- **Числа.** Сборка — 0 предупреждений. Юнит **1558/1558** (было 1522), функциональные **815/815**
+  (было 797; +18 `CY22-`), фронт **640/640** (было 633). Разбор — `TEST_CATALOG.md`, «Цикл 22».
+- **Документы цикла:** корневой `SPEC.md` — **спека цикла 22**; `ARCHITECTURE_CYCLE22.md` (§370–§385);
+  отдельного `API_CONTRACT_CYCLE22.md` нет (изменения контракта — только удаления, §380 →
+  `API_DOCUMENTATION.md` §4.15 «Цикл 22»). Спека цикла 21 заархивирована как
+  `SPEC_CYCLE21_IOS_HOME_SCREEN_PUSH.md` (§10.5).
+
+🧽 **Новая структура бэкенда (P5, маршруты, коды и атрибуты те же — CY22-12 по 179 эндпоинтам;
+категории логгера сохранены через `ILogger<прежний контроллер>`).** Карта «где теперь то, на что
+ссылаются старые документы как `Файл.cs:строка`» (строки — в старых документах исторические, **C22-4**):
+
+| Было (строк на `a08c6ca`) | Стало (строк сейчас) |
+|---|---|
+| `AdminController` (1399) | `AdminController` 525 — пользователи, компании, записи, владельцы · `AdminPlansController` 483 — тарифы (`MapAdminPlanDto`, `SplitHighlights`, `ValidatePlanInput`, `BuildAdminPlanDtoAsync`) · `AdminChannelsController` 168 — `notification-channels` (список, сводка, suspend/resume, `SetSuspendedAsync`) · `AdminPlatformController` 292 — `scheduled-tasks`, `platform-settings`, `retention` |
+| `AdminBillingController` (982) | `AdminBillingController` 572 · `AdminOptionsController` 188 — опции, `option-capabilities` (`ValidateOptionInput`) · `AdminTrialController` 93 — `billing-accounts/{id}/trial[/regrant]`, `trial-terms/{version}` · общая карточка аккаунта — `Controllers/AdminAccountDtoBuilder` (internal static) |
+| `ProfileController` (1273) | `ProfileController` 445 · `ProfileConsentsController` 418 — `api/profile/consents…` · тело `GET export` → `Services/Subjects/SubjectDataExporter` · `POST delete-account` (+ preview) → `Services/Subjects/AccountDeletionService` |
+| `BookingsController` (1159) | `BookingsController` 589 · `BookingAvailabilityController` 208 — `occupied`, `slots`, `availability` · тело `POST /api/bookings` + проверка услуг (D3) → `Services/Bookings/BookingCreationService` · `IsBookableMoment`, `CanManageBookingAsync`, `MapToDto` → `Controllers/BookingEndpointHelpers` · длительность/названия визита → `Services/Bookings/BookingServiceExtensions` |
+| `CompaniesController` (1142) | `CompaniesController` 562 · `CompanyMembersController` 313 — members, provides-services, services, commission · `MapToDto` и пакетные помощники → `Services/Companies/CompanyDtoAssembler` (им же пользуется `CompanyAddressController`) · `GetStats` → `Services/Companies/CompanyStatsService` |
+| `NotificationChannelsController` (898) | 840, **не режется по решению** · `LoadFundingAsync`/`IsChannelFundedAsync` → `Services/Notifications/ChannelFundingReader` |
+| `Program.cs` (1309) | `Program.cs` 49 — только последовательность вызовов · `Startup/`: `DeploymentValidationExtensions` (fail-fast проверки, до и после `Build`), `AuthenticationExtensions` (JWT, `OnTokenValidated`), `RateLimitingExtensions` (политики, `IpWindowPolicy`/`UserWindowPolicy`), `NotificationServicesExtensions` (WhatsApp/MAX, реестры, Web Push), `ApplicationServicesExtensions` (БД, прикладные сервисы, проверка адреса и телефона, фоновые задачи), `ApiExtensions` (контроллеры и JSON, CORS, forwarded headers, обработчик исключений, Swagger, публичные загрузки), `LoggingExtensions` (Serilog/GlitchTip, `MaskSensitiveRequestPath`), `HealthEndpointsExtensions`, `StartupSeedingExtensions` (`MigrateAsync`, посев). Порядок регистраций и конвейера — построчно прежний |
+| копии в разных контроллерах | `Services/Billing/SubscriptionUsability`, `Services/Billing/TrialEligibility`, `Services/ScheduleFallbackPolicy`, `Services/Notifications/VisitStartResolver`, `PhoneNormalizer.ParseSearch` |
+
+**Закрыто циклом 22 (отметки стоят и в самих пунктах):** §9.17 (по существу — см. что осталось в
+памяти), §9.19, §9.21, §9.30, **C18-11**. **Исправлено в документе:** §5.1 п. 3 про
+`NotifyDaysBefore` (читается) и строка `ChannelPaymentLog` в §3 (строки пишутся при приостановке).
+**Новый долг:** §9 блок 🧽 **C22-L1, C22-1…C22-8**.
+
+🧽 **Замеры ДО/ПОСЛЕ — `BENCHMARK_CYCLE22.md`** (скрипты и сырые результаты — `tools/bench/cycle22/`).
+Данные: 1 компания, 8 мастеров, ~39 тыс. записей за 2 года, ~2,4 тыс. клиентов у одного мастера, 1,8 тыс.
+заметок; обе версии на одинаковых данных (сверено md5), ответы сравнены (28 случаев — совпадают, кроме
+неупорядоченного `masterStats` и удалённого `paidFrom`). p50 ДО → ПОСЛЕ: `masters/clients` 265 → 26 мс
+(−90 %, из БД 4,6 МБ → 0,25 МБ), статистика компании за год 812 → 50 мс (−94 %, 17,9 МБ → 14 КБ), отчёт
+по мастерам за год 268 → 30 мс (−89 %), слоты/доступность −27…−32 %, списки записей −12…−22 %,
+создание записи 44 → 39 SQL-команд. Индекс `IX_Bookings_MasterId_Date`: занятость на день 860 → 4 буфера,
+4,1 → 0,06 мс. **Хуже стало:** админский список каналов (+39 % p50, 4 → 10 команд — плата за настоящий
+`paidUntil`, **C22-6**); выигрыш F20 съедается там, где контроллер потом сам читает пользователя (**C22-7**).
+Оговорки: одна машина, `fsync=off`, параллельная нагрузка — разница < ~1 мс или ±10 % на лёгких
+эндпоинтах — шум.
+
+---
+
+**Актуально по состоянию на ветку `cycle/021-ios-home-screen-push` (от `develop` = `e3774c1`), дата:
+2026-09-28.** Прошлая отметка — `91196aa` (закрытие цикла 18). Метка блоков цикла — 📲.
+
+📲 **Цикл 21 — уведомления мастеру на iPhone через «На экран Домой». Точечное дополнение**, остальной
+документ не пересканировался и не переписывался.
+
+- **Что было не так (сверено по коду).** (1) `frontend/public/manifest.webmanifest` объявлял
+  `display: "browser"` (решение цикла 9, `ARCHITECTURE_CYCLE9.md` §103.2) — «На экран Домой» на iPhone
+  создавал закладку Safari, а Web Push на iOS 16.4+ есть только у приложения в режиме `standalone`.
+  (2) Во вкладке Safari нет `PushManager`, поэтому `getPushUnavailableReason` всегда возвращал
+  `unsupported-browser` и строка «про экран Домой» (§105.10) была недостижима.
+- **Что сделано.** Манифест — `display: standalone` (+ `id`, `scope`, `lang`); `index.html` —
+  `apple-mobile-web-app-*`; в `utils/pushAvailability.ts` проверки iOS первыми, вход
+  `isIosSafariNotInstalled` заменён на `ios: IosEnvironment` (`detectIosEnvironment`, standalone по
+  `navigator.standalone` или `display-mode`), новые причины `ios-version-too-old` (< 16.4) и
+  `ios-permission-denied`; `PushUnavailableNotice` показывает четыре шага установки, включая «войти
+  заново» (у приложения на iOS своё хранилище, `authStore` в `localStorage` не общий с Safari).
+  `deploy/ci/smoke-frontend.sh` проверяет отдаваемый манифест на `standalone`.
+- **Что НЕ менялось.** `public/sw.js` (ни строки, запрет на `fetch`/кеш — в силе), бэкенд, API, БД,
+  миграции (**70** файлов, как и было), сроки хранения. Новых эндпоинтов — 0.
+- **Тесты.** `CY21-01…CY21-15` (vitest), `TEST_CATALOG.md` раздел «Цикл 21». Полный `vitest run` —
+  633/633 после закрытия ✅ **C21-1** (датозависимый тест `BookingCalendar`, был красным и на `develop`).
+- **Условие выката (C21-2).** Apple отвергает VAPID `sub`, если это не настоящий `mailto:`/`https:`
+  (`403 BadJwtToken`); `DeploymentSafetyChecks` проверяет только непустоту `WEBPUSH_VAPID_SUBJECT` —
+  сверить значение на сервере. После выката — ручная проверка на iPhone (`ARCHITECTURE_CYCLE21.md` §365).
+- **Для пользователей:** старые ярлыки на экране Домой (созданные с `display: browser`) остаются
+  закладками — удалить и добавить заново (CHANGELOG, `docs/master.md`).
+- **Документы цикла:** `SPEC_CYCLE21_IOS_HOME_SCREEN_PUSH.md` (до цикла 22 — корневой `SPEC.md`), `ARCHITECTURE_CYCLE21.md`, спека цикла 18
+  заархивирована как `SPEC_CYCLE18_TRIAL_PLAN.md` (§10.5).
+
+---
+
+**Актуально по состоянию на коммит: `91196aa` (HEAD ветки `cycle/018-trial-plan`),
 дата: 2026-09-26.** Прошлая отметка была `9864b3c` (**та же ветка, редакция середины цикла** — она
 описывала цикл 18 до четырёх кругов ревью). Правка снята **на ветке цикла 18, до мёржа в
 `develop`** — ветки эта правка не трогает, мёрж делает devops-engineer. **Следующий diff
@@ -1303,7 +1469,7 @@ ServiceBooking.sln                  📜 7 проектов (+ папка Soluti
 │   │                               looksRussian), 🆕 timezone.ts, 🆕 channelBanner.ts,
 │   │                               🗓 +bookingHorizon.ts, +bookingServices.ts
 │   ├── eslint.config.js            ⭐ ESLint 9 flat-config + Prettier
-│   └── design_handoff_site_redesign/  HTML-макеты редизайна, не участвуют в сборке
+│   └── design_handoff_site_redesign/  HTML-макеты редизайна, не участвуют в сборке (🧽 УДАЛЁН в цикле 22, §9.30)
 ├── .editorconfig                   ⭐ описывает уже сложившийся C#-стиль; в CI НЕ проверяется
 ├── .github/workflows/
 │   ├── ci.yml                      CI: три job'а (backend, frontend, docker-build со смоук-прогоном образа)
@@ -1402,7 +1568,8 @@ ServiceBooking.sln                  📜 7 проектов (+ папка Soluti
   `Core/Enums/BookingEventKind.cs`, `BookingActorKind.cs`.
 - Фронтенд: `api/companyPhotos.ts`, `components/booking/BookingHistoryPanel.tsx`,
   `components/company/CompanyPhotoGallery.tsx`, `pages/owner/CompanyPhotosSection.tsx`,
-  `types/api-cycle10.generated.ts` (сгенерирован из `contracts/cycle10/openapi.yaml`).
+  `types/api-cycle10.generated.ts` (сгенерирован из `contracts/cycle10/openapi.yaml`; 🧽 удалён в
+  цикле 22 — не импортировался).
 - ⚠️ **Удалён** `frontend/src/components/booking/ManualBookingModal.tsx` (623 строки) вместе со
   своим тестом (`ManualBookingModal.test.tsx`, 179 строк). Его функции поглощены `BookingModal.tsx`
   — см. §4.5, §5.0-ter и §6.
@@ -1468,6 +1635,9 @@ ServiceBooking.sln                  📜 7 проектов (+ папка Soluti
 ### Точка входа и слои
 
 - Единственная точка входа приложения — `ServiceBooking.API/Program.cs` (🆕 вырос до **784 строк**).
+  🧽 **Цикл 22:** к `a08c6ca` файл дорос до 1309 строк и разобран на `Startup/*Extensions.cs` (девять
+  файлов); в `Program.cs` осталось 49 строк — последовательность вызовов в прежнем порядке. Карта —
+  шапка документа, блок 🧽.
   **Второй процесс** в том же
   хосте — `ScheduledTaskRunner` (`BackgroundService`), тикает раз в `ScheduledTasks:TickSeconds` (60 с);
   ⚖️ задач в нём теперь **четыре**, и раннер не менялся **ни в цикле 4, ни в цикле 5** — расширение
@@ -1582,7 +1752,7 @@ Blazor Server-шаблон из первого коммита удалён це�
 | **`NotificationChannel`** | Guid | `OwnerUserId` (владелец **аккаунта**, тот же ключ, что у `AccountSubscription`), `Transport`, `State`, `PhoneNumber?` (канонический), `ProviderInstanceId?` (**уникальный среди непустых**), `ProviderSecretCiphertext?` + `ProviderSecretKeyId?`, `OrphanedInstanceId?`, `RequestedAtUtc?`, `ContactEmail?` (**зарезервировано, в цикле 4 не используется — письма вырезаны**), `PaidFromUtc?`/`PaidUntilUtc?`, `IsSuspendedByAdmin`, `IdleSinceUtc?`/`IdleWarningSentAtUtc?`, `InstanceCreatedAtUtc?`, `ConnectedAtUtc?`, `LastStateCheckAtUtc?`, `LastStateReason?`, `ConsecutiveSendFailures`, `LastTestMessageAtUtc?`, `DisruptionNotifiedAtUtc?`, `RiskAcceptedAtUtc?`/`RiskAcceptedVersion?`, `ReplacedByChannelId?` | **один экземпляр провайдера = один номер = одна оплата**. Канал принадлежит аккаунту владельца, а **не** компании |
 | **`ChannelCompanyAssignment`** | Guid | `ChannelId`, `CompanyId` (**уникальный индекс** — компания не может быть на двух каналах), `AssignedAtUtc`, `AssignedByUserId` | назначение компаний на канал; правило держится **индексом**, а не проверкой в коде |
 | **`ChannelStateEvent`** | Guid | `ChannelId`, `FromState`, `ToState`, `Reason`, `Detail?`, `OccurredAtUtc` | история переходов состояния. `Detail` — техническая заметка, **никогда не секрет провайдера** |
-| **`ChannelPaymentLog`** | Guid | `ChannelId`, `ChangedByUserId`, `OldPaidUntil?`/`NewPaidUntil?`, `Amount?`, `Comment?`, `ChangedAtUtc` | журнал оплат канала суперадмином, по форме — копия `SubscriptionChangeLog` |
+| **`ChannelPaymentLog`** | Guid | `ChannelId`, `ChangedByUserId`, `OldPaidUntil?`/`NewPaidUntil?`, `Amount?`, `Comment?`, `ChangedAtUtc` | журнал оплат канала суперадмином, по форме — копия `SubscriptionChangeLog`. 🧽 **Фактическое поведение (цикл 22, SPEC §7):** вопреки `ARCHITECTURE_CYCLE7.md` («новые строки не пишутся») строки **пишутся** при приостановке и возобновлении канала суперадмином (`AdminChannelsController.SetSuspendedAsync`, комментарий `suspended`/`resumed`); с цикла 22 `OldPaidUntil`/`NewPaidUntil` — финансирование канала на момент операции (равны: приостановка его не меняет), `Amount` не заполняется |
 | **`CompanyNotificationSettings`** | **`CompanyId` (PK)** | `EnabledTypeMask` (битовая маска по `NotificationType`, дефолт — все биты), `ReminderLeadMinutes` (60..4320, дефолт 1440), `MinLeadMinutes` (0..720, дефолт 120), `UpdatedAt`, `UpdatedByUserId?` | настройки принадлежат **компании, а не каналу**. Отсутствие строки = дефолты, поэтому backfill существующим компаниям не нужен |
 | **`NotificationTemplate`** | Guid | `CompanyId`, `Type`, `Body` (≤1000), `UpdatedAt`, `UpdatedByUserId?` | переопределение платформенного текста. Нет строки или пустой `Body` = платформенный дефолт |
 | **`NotificationTemplateHistory`** | Guid | `CompanyId`, `Type`, `PreviousBody`, `ChangedByUserId`, `ChangedAtUtc` | снимок **предыдущего** текста при каждой правке |
@@ -4272,6 +4442,11 @@ SHA-256 считается по **шаблону** (до подстановки 
    - `SubscriptionPlanConfig.NotifyDaysBefore` сохраняется, редактируется в
      `pages/admin/PlansTab.tsx` и подписан «Уведомление за N дн. до деактивации» — но **никем не читается**
      в бизнес-логике (единственное использование в бэкенде — присваивание в `AdminController.UpdatePlan`).
+     🧽 **Неверно — исправлено циклом 22 (SPEC §7).** Поле **читается**: оно задаёт порог флага
+     `isExpiringSoon` в плане профиля (`ProfileController`, `GET /api/profile`) и в подписке владельца
+     (`Services/Billing/OwnerSubscriptionService`) — `BillingCalculator.IsExpiringSoon(PaidUntil,
+     NotifyDaysBefore, now)`. Верно другое: **уведомления** за N дней нет — подпись в редакторе тарифов
+     («Уведомление за N дн. до деактивации») обещает больше, чем делает продукт (§9 п. 27).
 
 4. **Самостоятельной покупки тарифа нет.** Подписку может выставить только SuperAdmin через
    `PUT /api/admin/owners/{ownerUserId}/subscription`. Экрана «оплатить тариф» на фронте нет —
@@ -4348,7 +4523,7 @@ SHA-256 считается по **шаблону** (до подстановки 
 | Файл | Состояние |
 |---|---|
 | `ServiceBooking.API/appsettings.Production.json.example` + `.env.production.example` | оба описывают один и тот же прод — два разных способа конфигурации (файл vs env), актуален второй (`docker-compose.prod.yml`) |
-| `frontend/design_handoff_site_redesign/` | 10 HTML-макетов редизайна, в сборку не идут |
+| `frontend/design_handoff_site_redesign/` | 10 HTML-макетов редизайна, в сборку не идут. 🧽 **Удалён в цикле 22** (§9.30 закрыт) |
 | `components/auth/` | пустой каталог (не убран и в цикле 3) |
 | ⭐ `Booking.ClientDeleted` во фронтенде | **фактически мёртвый флаг**: единственное упоминание во всём `frontend/src` — объявление поля в `types/index.ts:103` (проверено grep'ом). Ни одна страница его не показывает |
 
@@ -4628,7 +4803,7 @@ false`, `AdminPlanDto.IsSystemTrial`/`OptionCoverage`, `AdminPlatformSettingsDto
    в `TrialActivationService` (реальная активация) и в `TrialStateReader` (сухой прогон для экрана).
    Оба читают **один источник**, и ревью проверило, что на одном владельце они разойтись не могут; но
    **структурной гарантии нет** — она была бы при выносе гейта в чистую функцию, которую звали бы
-   оба. Решение отложено осознанно. **C18-11**.
+   оба. Решение отложено осознанно. **C18-11**. 🧽 ✅ Закрыто циклом 22 — `TrialEligibility` (§9 C18-11).
 3. **Юнит-тестами новая логика покрыта частично.** `TrialActivationService` и `TrialLifecycleTask`
    работают напрямую с `AppDbContext`, а **в проекте нет прецедента поднимать `DbContext` в
    юнит-тестах** — вся логика этого слоя исторически проверяется функциональными тестами (§7.1/§7.2).
@@ -4977,6 +5152,8 @@ false`, `AdminPlanDto.IsSystemTrial`/`OptionCoverage`, `AdminPlatformSettingsDto
    `npm run types:api:cycle10` из `contracts/cycle10/openapi.yaml` →
    `src/types/api-cycle10.generated.ts`. Прикладные типы в `types/index.ts` остаются ручными, как и
    раньше; сгенерированный файл — сверка формы, а не замена им.
+   🧽 Цикл 22: генераты циклов 10, 11, 15, 16, 17 удалены — ни один модуль их не импортировал (Р5,
+   см. C15-10); остались генераты 7, 9, 13, 14, 18.
 7. **Новый API-модуль фронта** — тонкая обёртка над общим `api` из `api/client.ts`, возвращающая
    `r.data` (см. `api/companyPhotos.ts`); заголовки `multipart/form-data` — только там, где реально
    грузится файл. Инвалидация кеша — через `queryClient` ключами существующих запросов.
@@ -6367,7 +6544,7 @@ pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `t
 |---|---|---|
 | `Migrations snapshot drift (US-17-11)` | `backend` | **авторитетная** проверка: `dotnet tool restore` → `dotnet dotnet-ef migrations add __DriftProbe` во временный каталог → `deploy/ci/check-drift-probe.py` требует **пустой `Up()`** → пробная миграция удаляется. Непустой `Up()` = `AppDbContextModelSnapshot.cs` разошёлся с моделью (именно это и поймало C15-4). Живая БД не нужна, только design-time модель |
 | `Designer snapshots are monotonic (C15-4)` | `backend` | дешёвая текстовая проверка `deploy/ci/check-migration-snapshots.sh`: свойство/сущность, появившиеся в модели, не должны пропадать из более позднего `*.Designer.cs` без соответствующего `DropColumn`. Указывает конкретную миграцию/сущность/свойство. ⚠️ Имеет константу `BASELINE_MIGRATION` — про неё и про исторические разрывы до неё см. §9 **C17-8** |
-| `Generated API types must match the contracts` | `frontend` | `npm run types:api:cycle15` + `types:api:cycle17` → `git diff --exit-code` по обоим генератам. Охватывает только циклы 15 и 17 (§9 **C17-1**) |
+| `Generated API types must match the contracts` | `frontend` | `npm run types:api:cycle15` + `types:api:cycle17` → `git diff --exit-code` по обоим генератам. Охватывает только циклы 15 и 17 (§9 **C17-1**). 🧽 С цикла 22 — только `types:api:cycle18` (генераты 15 и 17 удалены как неиспользуемые) |
 | `No placeholder legal copy` | `frontend` | `grep` по `ServiceBooking.API/Services/` на маркер `ТРЕБУЕТСЯ ТЕКСТ ОТ LEGAL-COUNSEL` — заглушка правового текста, видимая владельцу на экране, не должна молча доехать до `develop` (в цикле 15 ровно так и вышло) |
 
 ⚠️ **Находка ревью того же цикла, уже исправленная:** первая версия шага про миграции содержала
@@ -6678,6 +6855,8 @@ Serilog (`ServiceBooking.API/logs/**`), артефакты тестовых пр
    `…cycle16`) и валится на `git diff --exit-code -- src/types`. До этого шага ни контракты, ни
    сгенерированные типы не сверял **никто** — именно так вкладка «Тарифы» была сломана с цикла 7
    по цикл 15.
+   🧽 С цикла 22 шаг перегенерирует **четыре** файла — циклов 7, 9, 13, 14 (`types:api`, `types:api9`,
+   `…cycle13`, `…cycle14`); генераты 10, 11 и 16 удалены как неимпортируемые.
 2. **`Lint API contracts (TD-07)`** — `npx @redocly/cli lint --config ../contracts/redocly.yaml`.
    🔴 **Объём сознательно сужен до ЧЕТЫРЁХ спек** (`cycle8/servicebooking-invariant`, `cycle13`,
    `cycle14`, `cycle16`). **Не линтуются пять**: корневой `openapi-cycle6.yaml`, `contracts/cycle7`,
@@ -6772,6 +6951,7 @@ actions). Раннбука по включению чего-либо цикл н
 | 🔬 T8 | 8 | T8-1…T8-8 | после C |
 | ⚖️ L | 5 | L1…L6 | после T8 |
 | 🆕 P0-цикл-4 | 4 | A…E | после L |
+| 🧽 C22 | 22 | C22-L1, C22-1…C22-8 | в конце раздела, после 📲 C21 (перед §10) |
 | (без префикса) | 1–3 + первое развёртывание | **1…30**, сгруппированы P0/P1/P2/P3 | **в самом конце раздела** |
 
 Итого в реестре около **117 пунктов**. Закрытые помечены ✅ прямо в тексте пункта (например, AV5,
@@ -6811,6 +6991,13 @@ AV6, N9-9, V3, V4, V6, §9.14, блоки «Закрыто циклом 3» и �
   Рядом выросли `AdminController.cs` (**1230**), `ProfileController.cs` (**1139**),
   `BookingsController.cs` (**1015**), `NotificationChannelsController.cs` (**906**),
   `AdminBillingController.cs` (**791**). Всего в `ServiceBooking.API/Controllers` — 10 601 строка.
+  🧽 ✅ **Закрыт циклом 22 (P3 F3 + P5).** `GetStats` больше не грузит записи периода: счётчики по
+  статусам, выручка по мастерам и дням, популярные услуги, «новые клиенты» — агрегаты в SQL
+  (`Services/Companies/CompanyStatsService`); ответ посимвольно прежний (CY22-09/10), кроме
+  `popularServices[].serviceName` = `MAX` названий группы (разница — только если услугу переименовали
+  между записями). Пять контроллеров разрезаны: самый длинный из разрезанных теперь `BookingsController`
+  (589), `CompaniesController` — 562 (было 1142 на `a08c6ca`); `NotificationChannelsController` (840) не
+  резался по решению. Карта — шапка документа, блок 🧽.
 - 🔒 **§9.20 «логика прав размазана по приватным копиям `CanManageCompany`» — ЗАКРЫТ циклом 16
   (TD-11).** Единственная реализация — `ServiceBooking.API/Services/CompanyAccess.cs`; шесть
   контроллеров, где `CanManageCompany` ещё упоминается по имени, теперь **делегируют** в неё
@@ -6826,6 +7013,14 @@ AV6, N9-9, V3, V4, V6, §9.14, блоки «Закрыто циклом 3» и �
   LINQ-to-objects → `allClients.Skip(...).Take(...)`. Это прямо написано в комментарии US-49 в коде
   («already fully materialized above», «not a second SQL round trip»). ⚠️ Отметку «фактически
   закрыт» этому пункту ставить **нельзя** — расхождение было не в отсутствии отметки, а в чтении.
+  🧽 ✅ **Закрыт циклом 22 по существу, не дословно (P3 F1/F2).** Выгрузки всех записей мастера и всех
+  заметок компании больше нет: `GROUP BY` в SQL даёт **одну компактную строку на клиента** (`ClientId`
+  или `GuestPhone`, последняя дата, число визитов, имя/e-mail последнего гостевого визита); сводки записей
+  и заметки (прежнее окно `ROW_NUMBER`) читаются **только для клиентов страницы**. **Что осталось в
+  памяти, осознанно:** сортировка, поиск и `Skip/Take` по этим компактным строкам — чтобы сохранить
+  семантику .NET (тай-брейк — строковый компаратор .NET, поиск по имени — `OrdinalIgnoreCase`); `ORDER BY`/
+  `ILIKE` в Postgres зависят от collation базы и не гарантируют посимвольного совпадения ответа
+  (CY22-06…08). Объём в памяти — число клиентов мастера, а не число записей.
 - 🔒 **§9.16 — ПЕРЕФОРМУЛИРОВАН: «флаг мёртв» неверно, мёртв он только в UI.** `Booking.ClientDeleted`
   проставляется в `ProfileController.DeleteAccount` и является **рабочим** входом правила
   `Services/Retention/Rules/BookingPersonalizationRule.cs` — то есть на бэкенде это живой признак,
@@ -6845,6 +7040,8 @@ AV6, N9-9, V3, V4, V6, §9.14, блоки «Закрыто циклом 3» и �
   первичного конструктора (§6, п. 4). Остальные DTO проекта цикл не перебирал — утверждать, что
   валидация полна везде, оснований нет.
 - **§9.30 «`frontend/design_handoff_site_redesign/` внутри `frontend/`» — ОТКРЫТ**, каталог на месте.
+  🧽 ✅ **Закрыт циклом 22:** каталог удалён вместе с записями о нём в `eslint.config.js`, `.prettierignore` и
+  комментарием в `Icon.tsx`.
 - 🔒 **Дефект самого документа: блок 📸 D (цикл 10) физически продублирован ЦЕЛИКОМ, дважды.**
   Два одинаковых заголовка «📸 D — долг, ограничения и сознательные решения цикла 10» и оба набора
   пунктов **D1…D6** лежат в этом разделе в разных местах. Это не две редакции и не опечатка в
@@ -6993,6 +7190,10 @@ LG5, C15-2, §9.16, §9.17, §9.20, §9.26, §9.29, T8-1, T8-5.
 проверило, что на одном владельце они разойтись не могут; **структурной** гарантии нет — она
 появилась бы при выносе гейта в чистую функцию, которую звали бы оба. Отложено осознанно.
 §5.1-bis п. 2.
+🧽 ✅ **Закрыт циклом 22 (D11):** чистая `Services/Billing/TrialEligibility.Evaluate(TrialEligibilityFacts)`
+держит единый упорядоченный набор проверок §335.2 (`TrialNotOffered → TrialAlreadyActive →
+AlreadyOnPaidPlan → TrialAlreadyUsed → гейт телефона`); её зовут и `TrialActivationService.GrantAsync`, и
+сухой прогон `TrialStateReader`. Коды и тексты прежние; юнит-тесты `TrialEligibilityTests` (11).
 
 **C18-12. Юнит-тестов на новую логику нет — и это следование конвенции, а не пропуск.**
 `TrialActivationService` и `TrialLifecycleTask` работают напрямую с `AppDbContext`, а прецедента
@@ -7027,6 +7228,7 @@ LG5, C15-2, §9.16, §9.17, §9.20, §9.26, §9.29, T8-1, T8-5.
 §310, риск Р-17-7): вероятность, что они уже разошлись со своими генератами, высока, и красный CI
 на старом расхождении заблокировал бы цикл, к этим контрактам отношения не имеющий. Кто будет
 добавлять их в шаг — добавляйте по одному и чините расхождение в том же коммите.
+🧽 **Цикл 22:** генераты `api-cycle{10,11,15,16,17}.generated.ts` **удалены** вместе со скриптами `types:api:cycle{10,11,15,16,17}` и строками шагов сверки в CI — ни один модуль их не импортировал (Р5); контракты `contracts/cycleN/openapi.yaml` остались (их читает `redocly lint`). В дереве остаются генераты циклов 7, 9, 13, 14 (шаг «API types must match committed contracts») и 18 (шаг «Generated API types must match the contracts»).
 🎯 **Цикл 18 сузил пункт на один контракт:** шаг сверки типов теперь перегенерирует ещё и
 `api-cycle18.generated.ts`, а `redocly lint` линтует пять спек вместо четырёх. Контракты
 **7, 9, 10, 11, 13, 14** по-прежнему не охвачены — пункт открыт.
@@ -7378,6 +7580,8 @@ minHours)` — **один конец окна**, в отличие от пере
 в `frontend/package.json` **нет скрипта `types:api:cycle15`** (последний — `cycle14`), файла
 `frontend/src/types/api-cycle15.generated.ts` в дереве нет, и все новые поля описаны **вручную**
 в `frontend/src/types/index.ts`. Хуже, чем §9 **V6** у цикла 14: там скрипт хотя бы настроен.
+🧽 **Цикл 22 закрыл вопрос удалением, а не связью:** неиспользуемые генераты 15 и 17 (со скриптами и
+шагом сверки) удалены (Р5); ручные типы `types/index.ts` остаются источником правды для фронта.
 ⚠️ Сверка «форма реализации против контракта» из `ARCHITECTURE_CYCLE15.md` §263 (prism-мок,
 schemathesis, пустой diff типов) в дереве следов не оставила.
 
@@ -8665,6 +8869,9 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     Признано приемлемым ревьюером (список ограничен одной компанией) и **задокументировано
     комментарием в коде** — но с ростом базы клиентов это первый кандидат на деградацию.
     Остальные три выборки (`admin/users`, `admin/companies`, публичные отзывы) пагинируются в БД.
+    🧽 ✅ **Закрыт циклом 22 по существу** — группировка в SQL, сводки и заметки только для страницы;
+    сортировка/поиск/срез компактных строк клиентов остались в памяти осознанно (см. отметку к §9.17 в
+    блоке перепроверки выше).
 18. **Фронтенд покрыт точечно, но заметно лучше.** 🗓 **283 теста Vitest в 43 файлах** (было 181 в
     32 после цикла 5 и 100 после цикла 4). 🗓 **Прирост цикла 6 (+102) закрыл главный пробел,
     который этот пункт называл годами: экраны записи.** `BookingModal`, `ManualBookingModal`,
@@ -8687,6 +8894,8 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
 19. **`CompaniesController` — 635 строк** (было 571) и 16 эндпоинтов, включая логику подписок,
     загрузку файлов, квоту фото и целиком сборку статистики (`GetStats`, ~70 строк агрегаций
     **в памяти** после `ToListAsync()`). Контроллер продолжает расти.
+    🧽 ✅ **Закрыт циклом 22:** агрегаты `GetStats` — в SQL (`CompanyStatsService`), контроллер разрезан
+    (`CompaniesController` 562 + `CompanyMembersController` 313 + `CompanyDtoAssembler`).
 20. **Логика прав по-прежнему размазана по приватным копиям** `CanManageCompany`/`CanManage`, хотя их
     «членская» половина унифицирована через `CompanyMembership`. `MailingController` **до сих пор**
     не переведён на общий хелпер — единственное оставшееся исключение.
@@ -8694,6 +8903,11 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     `OnTokenValidated`) — дополнительный запрос к БД на каждый аутентифицированный вызов без кеша.
     Цикл 3 добавил туда же чтение состояния согласия (claim'ы `consent_*` сверяются с актуальной
     версией документа), то есть путь на каждом запросе стал длиннее, а не короче.
+    🧽 ✅ **Закрыт циклом 22 (P3 F20):** `OnTokenValidated` (теперь `Startup/AuthenticationExtensions.cs`)
+    читает `SecurityStamp` и имена ролей **одним** запросом (`AsNoTracking`, подзапрос
+    `UserRoles⋈Roles`) вместо `FindByIdAsync` + `GetRolesAsync`. Кеша по-прежнему нет — сознательно: отзыв
+    роли действует на следующем запросе (SEC-050, CY22-11), смена пароля отзывает токен. Сверка согласий
+    цикла 3 не менялась.
 22. **Шаг сетки слотов по-прежнему захардкожен 30 минутами** (`SlotCalculator.StepMinutes`).
     🗓 Цикл 6 этого не менял, хотя работал ровно в этом файле; после US-67 пункт стал острее —
     см. C3 выше.
@@ -8708,6 +8922,9 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
 24. **Ограничитель `PermitLimit` читается из конфигурации на каждый запрос** через
     `ctx.RequestServices.GetRequiredService<IConfiguration>()` — приём из цикла 2 сохранён и
     распространён на четыре новые политики.
+    🧽 Цикл 22 **сохранил** чтение на запрос (D9 сознательно не меняла поведение): пять одинаковых
+    пользовательских политик свёрнуты в `UserWindowPolicy` рядом с `IpWindowPolicy`, всё это теперь в
+    `Startup/RateLimitingExtensions.cs` (ссылка `Program.cs:632` выше — историческая). Пункт открыт.
 
 🆕 **P2, добавленное циклом 4:**
 
@@ -8795,7 +9012,9 @@ framing-заголовков на `/embed/`. Чек-лист `DEPLOY.md` §16 �
     ~36 папок компаний с реальными JPEG. На свежем клоне ссылки из дампа БД будут битыми.
 29. **Валидация DTO неполна** (`Slug`, `Bio`, `Comment`, `SendMailDto.Message`), нет запрета удалять
     последнего владельца, нет проверки статуса в `MarkPaid` — явно отложено как некритичное.
-30. **`frontend/design_handoff_site_redesign/`** (10 HTML-макетов) лежит внутри `frontend/`, в сборку
+30. 🧽 ✅ **Макеты — ЗАКРЫТО циклом 22** (каталог удалён; про пустой `components/auth/` и два
+    `.example` — см. отметки цикла 16 выше, цикл 22 их не трогал). Прежний текст:
+    **`frontend/design_handoff_site_redesign/`** (10 HTML-макетов) лежит внутри `frontend/`, в сборку
     не идёт; **пустой каталог `frontend/src/components/auth/`** всё ещё на месте; два `.example`-файла
     прод-конфига (`ServiceBooking.API/appsettings.Production.json.example` и `.env.production.example`)
     описывают один и тот же прод двумя способами, актуален второй.
@@ -8927,6 +9146,70 @@ V1 (в частности, `consents/revoke-preview` как оракул чуж�
 описаны корректно — устарели именно **вердикты прогона**.
 
 ---
+
+### 📲 Цикл 21 — C21-1…C21-2
+
+- ✅ **C21-1 (закрыт в цикле 21). `frontend/src/components/booking/BookingCalendar.test.tsx` › «retries with a clamped `to`…»
+  зависел от текущей даты** и красный на `develop` (`e3774c1`) 2026-09-28: ближе к концу месяца горизонт
+  записи уже не короче остатка месяца, повторного запроса не происходит, ожидание «2 вызова» не
+  выполняется. Лечится фиксацией времени в тесте (`vi.useFakeTimers` / `vi.setSystemTime`). Продуктовый
+  код не затронут; к циклу 19 не относится.
+- **C21-2. Проверка VAPID `sub` слабее, чем требует Apple.** `DeploymentSafetyChecks` проверяет только
+  непустоту `WEBPUSH_VAPID_SUBJECT`; Apple Push отвечает `403 BadJwtToken` на заглушки
+  (`mailto:…@localhost` и т. п.). До ужесточения проверки — сверять значение при выкате
+  (`ARCHITECTURE_CYCLE21.md` §364).
+
+
+### 🧽 Цикл 22 — C22-L1, C22-1…C22-8
+
+Закрыто циклом 22 (отметки — в самих пунктах): **§9.17** (по существу), **§9.19**, **§9.21**, **§9.30**,
+**C18-11**. Долг, который цикл называет сознательно (`ARCHITECTURE_CYCLE22.md` §384) и нашёл по ходу:
+
+- **C22-L1 (правовой, к legal-counsel — не решать в коде без его ответа).** Версии принятых текстов —
+  `NotificationChannel.RiskAcceptedVersion` и `Booking.GuardianConfirmationVersion` — **не попадают в
+  выгрузку данных субъекта** (`GET /api/profile/export`, с цикла 22 — `Services/Subjects/SubjectDataExporter`).
+  Вопрос о полноте выгрузки (SPEC §6). Колонки остаются — они правовые (SPEC §3).
+- **C22-1. Восемь навигационных свойств без единой ссылки в коде.** Удаление отложено: польза мала, а
+  правка модели рискует дрейфом снапшота миграций (SPEC §4). Перечень — отчёт аудита бэкенда на входе
+  в цикл.
+- **C22-2. Разбор ошибок axios не унифицирован** — 21 файл `frontend/src/utils/*Error.ts` повторяет
+  одну и ту же обвязку (~3 строки на файл). Единый помощник отложен как малополезный (SPEC §4).
+- **C22-3. F16 не сделан** — ключи идемпотентности уведомлений при создании записи проверяются не
+  одним запросом. Выигрыш ничтожен, путь создания записи — горячий и рискованный (§375).
+- **C22-4. Старые документы ссылаются на `Контроллер.cs:строка`, которых больше нет.** Разрезание P5
+  перенесло код из `AdminController`, `AdminBillingController`, `ProfileController`, `BookingsController`,
+  `CompaniesController` и `Program.cs` в новые файлы; ссылки в `ARCHITECTURE_CYCLE*.md`,
+  `API_CONTRACT_CYCLE*.md`, `TEST_CATALOG.md` и в старых блоках этого документа **исторические** и не
+  переписывались (правило документа). Где что теперь — карта в шапке, блок 🧽.
+- **C22-5. Два источника «сейчас» у финансирования канала.** `ChannelFundingReader` брал
+  `DateTime.UtcNow`, а `ChannelHealthTask` живёт по `INotificationClock` (в тестах — `FakeClock`).
+  ✅ **Закрыто для фильтра опции (ревью цикла 22):** `LoadAsync(…, nowUtc)` принимает «сейчас»
+  вызывающего (по умолчанию — `DateTime.UtcNow`), `ChannelHealthTask` передаёт `clock.UtcNow`; какая
+  строка опции `notifications.whatsapp` даёт «оплачено до» — решают часы задачи (тест CY22-04b).
+  **Остаётся открытым:** само состояние финансирования (ранжирование по оплаченным номерам тарифа —
+  то, что читает расчёт простоя) идёт через `SubscriptionResolver.GetEffectivePlansForAccountsAsync`,
+  который «сейчас» не принимает и живёт по реальным часам. Поэтому тест, двигающий `FakeClock` мимо
+  срока опции, по-прежнему видит канал финансированным (CY22-04b это фиксирует). Лечится передачей
+  `now` в резолвер — отдельная правка, в рамки ревью не входит.
+- **C22-6. Админский список каналов стал медленнее (замер `BENCHMARK_CYCLE22.md`).** Пагинация ушла в
+  SQL, но `ChannelFundingReader` добавил 6 запросов на страницу: 4 → 10 SQL-команд, p50 5,2 → 7,3 мс на
+  250 каналах. Цена того, что `paidUntil`/статус оплаты теперь настоящие (Р2). Резерв: сократить
+  запросы читателя (сиблинги и опции одним запросом, резолвер тарифов пакетнее).
+- **C22-7. F20 (проверка токена одним запросом) не даёт выигрыша там, где контроллер сам читает
+  пользователя.** Раньше `FindByIdAsync` в `OnTokenValidated` оставлял пользователя в change tracker, и
+  последующий `userManager.FindByIdAsync` в контроллере брал его без запроса; теперь проверка
+  `AsNoTracking`, контроллер делает свой SELECT. `/api/profile`: 3 → 3 команды; создание записи: запросов к
+  `AspNetUsers` 4 → 5. На эндпоинтах без повторного чтения пользователя — минус одна команда.
+- **C22-8. `masters/clients`: сортировка, поиск и срез страницы — в памяти по ~N компактных строк
+  клиентов** (осознанно — порядок и поиск .NET, см. §9.17). Страница 1 и страница 60 стоят одинаково;
+  при десятках тысяч клиентов у одного мастера — вернуться к SQL-пагинации с явной коллацией.
+- **Попутно, не цикла 22 (найдено ревью):** владелец в `ChannelDto` видит канал «оплаченным», даже если
+  администратор его приостановил, а админка и настройки компании (`ChannelPaymentState.Of`) показывают
+  «приостановлен». Так было и до цикла; решение за продуктом.
+
+Попутно, **не долг, а осознанный остаток:** `frontend/src/types/api-cycle9.generated.ts` по-прежнему
+объявляет `paidFrom` у каналов — это исторический сгенерированный контракт цикла 9, его сверяет шаг CI с
+`contracts/cycle9/openapi.yaml`; рукописные типы фронта поле больше не содержат, бэкенд его не отдаёт.
 
 ## 10. Что уже существует в документации и тест-кейсах
 
@@ -9318,6 +9601,7 @@ FAQ отставал **на два цикла** и утверждал две н�
 🧹 **Обе оговорки выше сняты циклом 17** (частично — см. §9 C15-10/C15-9): скрипт
 `types:api:cycle15` заведён, генерат `frontend/src/types/api-cycle15.generated.ts` лежит в дереве и
 сторожится шагом CI от расхождения со схемой (**в коде не используется**);
+🧽 цикл 22 этот генерат удалил вместе со скриптом и шагом (Р5), контракт `contracts/cycle15/openapi.yaml` остался;
 `API_DOCUMENTATION.md` приведён в соответствие с кодом.
 
 🧹 **Контракт цикла 17** — `API_CONTRACT_CYCLE17.md` (316 строк, **§320–§329**) и
@@ -9648,9 +9932,17 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 ⚠️ **Каталога `docs/history/` по-прежнему нет**, соглашение об архиве не заведено — переносить
 документы цикла 17 некуда, они лежат в корне рядом с предыдущими.
 
+🧽 **Корень после цикла 22:** корневой `SPEC.md` — **спека цикла 22** (рефакторинг); спека цикла 21
+заархивирована первым коммитом цикла как `SPEC_CYCLE21_IOS_HOME_SCREEN_PUSH.md`, ссылки из
+`ARCHITECTURE_CYCLE21.md`, `TEST_CATALOG.md` и этого документа перенаправлены (§9 **C5**). Строки 🧽 —
+первыми в таблице ниже.
+
 | 🎯 Документ цикла 18 | Размер | Что это |
 |---|---|---|
-| 🎯 **`SPEC.md`** (корневой — занят циклом 18) | 789 строк | **ЦИКЛ 18** «системный тариф Триал», истории **US-18-01…US-18-14**, решения заказчика **Д1–Д21** (Д1/Д1-бис — два пути активации и аварийная перевыдача, Д3 — деградация = заморозка, Д6 — fail-closed проверка однократности, Д9, Д10 — «долга не остаётся», Д14–Д17 — правовая квалификация реестра и формулировка цели, Д19 — снапшот обещанных чисел, Д20 — отдельный файл текстов, Д21 — что цикл называет, но не закрывает). Следующий цикл, занимая корень, обязан заархивировать этот файл под `SPEC_CYCLE18_*` и перенаправить ссылки — §9 **C5** |
+| 🧽 **`SPEC.md`** (корневой; 196 строк) | — | **ЦИКЛ 22** «рефакторинг: мёртвый код, дублирование, тяжёлые запросы», истории **US-22-01…US-22-08-bis**, решения заказчика **Р1–Р6** (Р2 — индекс записей и удаление `PaidFromUtc`/`PaidUntilUtc` с переводом чтений на финансирование канала; Р3 — удаление заглушек 410; Р4 — разрезание пяти контроллеров и `Program.cs`; Р5 — удаление пяти генератов; Р6 — удаление `paidFrom`), базовая линия прогона, НФТ (правовые колонки не удаляются), §6 — находка для legal-counsel (**C22-L1**). Архивировать при следующем цикле под именем вида `SPEC_CYCLE22_REFACTORING.md` |
+| 🧽 **`ARCHITECTURE_CYCLE22.md`** | 226 строк, **§370–§385** | Решения цикла. Точки входа: **§370** порядок пакетов P1–P7, §371 перечень удалённых символов бэкенда, §372 заглушки 410, §373 пакеты и `using`, **§374 что выглядит мёртвым, но остаётся** (правовые/аудиторские колонки), **§375 оптимизации F1–F24**, §376 удаления фронта (+ исключения `knip`), §377 дедупликация D1–D11, **§378 швы разрезания**, **§379 финансирование канала вместо `PaidUntilUtc`**, §380 изменения контракта (только удаления), §381–§382 тесты и таблица маршрутов, §384 долг C22-* . Отдельного `API_CONTRACT_CYCLE22.md` нет |
+| 📲 **`SPEC_CYCLE21_IOS_HOME_SCREEN_PUSH.md`** (130 строк; до архивирования циклом 22 — корневой `SPEC.md`) | — | **ЦИКЛ 21** «уведомления мастеру на iPhone через «На экран Домой»», истории **US-21-01…US-21-03**, решения **Р1–Р4** (Р1 — Q13 цикла 9 перерешён: поддерживаем; Р2 — только режим открытия, офлайна нет). Архитектура — `ARCHITECTURE_CYCLE21.md` §360–§366; API-контракта у цикла нет (бэкенд не меняется). Заархивирован первым коммитом цикла 22 |
+| 🎯 **`SPEC_CYCLE18_TRIAL_PLAN.md`** (789 строк; до архивирования циклом 21 — корневой `SPEC.md`) | — | **ЦИКЛ 18** «системный тариф Триал», истории **US-18-01…US-18-14**, решения заказчика **Д1–Д21** (Д1/Д1-бис — два пути активации и аварийная перевыдача, Д3 — деградация = заморозка, Д6 — fail-closed проверка однократности, Д9, Д10 — «долга не остаётся», Д14–Д17 — правовая квалификация реестра и формулировка цели, Д19 — снапшот обещанных чисел, Д20 — отдельный файл текстов, Д21 — что цикл называет, но не закрывает). Заархивирован первым коммитом цикла 21, ссылки из документов, кода и тестов цикла 18 перенаправлены |
 | 🎯 **`ARCHITECTURE_CYCLE18.md`** | 1649 строк, **§330–§356** | Решения цикла. Точки входа: **§330** (главное в семи строках), §331 (ни одной новой зависимости), **§332 модель данных** (§332.1 флаг, §332.2 `MailingUntilUtc`, §332.3 14 колонок, §332.4 `TrialGrant` + доказательство Т1, §332.5 реестр номеров, §332.7 миграции — 🎯 в документе их **три**, третья про `GrantedByTrial`), **§333 почему триала нет в резолвере** (ответ на R8), §334 три замка одноразовости, §335 активация и таблица отказов, §336 окно рассылок, §337 истечение и **§337.3 инвариант Т4**, §338 тексты, §339 админка, §341 структура файлов, §342 конфигурация и секреты, §343 ПДн/ключ/ретенция (**§343.1 К1–К3**), §344 что цикл сознательно не делает, §346 тесты, **§351 инварианты для ревью**, **§352 чек-лист приёмки** (в нём девять маршрутов), §355 долг, который цикл называет и не закрывает, §356 остаточные риски заказчика. 🎯 **§336.1, §337 и §343.2 описывают код, который в дереве теперь ЕСТЬ** (прежнее расхождение снято реализацией), а §332.2/§333.1/§333.3 и R8 приведены в соответствие с тем, что конец триала читается из `TrialEndsAtUtc`, и с материализацией строки опции — §4.28, §5.1-bis |
 | 🎯 **`API_CONTRACT_CYCLE18.md`** + **`contracts/cycle18/openapi.yaml`** | 808 строк + 1428 строк YAML | Контракт цикла, **§360–§379** — подробно в §10.3 |
 | 🎯 **`LEGAL_REVIEW_CYCLE18.md`** | 909 строк | **Отдельный правовой разбор цикла** (в отличие от цикла 17, где его не было). Точки входа: §2.6 и вставка «Г» (что внести в комплект и предусловие **О15**), **§5 — пять условий Т1–Т5**, на которых держится правомерность единственного канала оповещения, таблица квалификаций (в т. ч. «окончание пробного периода — не одностороннее изменение условий»), готовые тексты пп. 1.1.25/6.16/6.13.17 Соглашения и 5.6.7 Политики, таблица требований **О1–О15** по ролям, §789 — про обещанный e-mail, которого нет (**C18-8**). `LEGAL_REVIEW.md` цикл 18 правил только в части перенаправленных ссылок |

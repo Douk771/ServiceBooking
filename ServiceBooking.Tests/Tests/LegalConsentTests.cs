@@ -4,7 +4,6 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.Controllers;
-using ServiceBooking.API.DTOs.Auth;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.Tests.Infrastructure;
 

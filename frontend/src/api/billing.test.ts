@@ -39,16 +39,6 @@ describe('billingApi.cancelRequest', () => {
 })
 
 // Cycle 18 (API_CONTRACT_CYCLE18.md §362–§363.1)
-describe('billingApi.getTrial', () => {
-  it('resolves to the TrialStateDto body', async () => {
-    const body = { state: 'Available', message: 'x', mailingWindow: { state: 'NotStarted', text: 'y' } }
-    vi.mocked(api.get).mockResolvedValueOnce({ data: body })
-
-    await expect(billingApi.getTrial()).resolves.toEqual(body)
-    expect(api.get).toHaveBeenCalledWith('/billing/trial')
-  })
-})
-
 describe('billingApi.activateTrial', () => {
   it('sends exactly {termsVersion} — no field the caller could use to ask for a different duration/составе', async () => {
     const body = { currency: 'RUB', status: 'Active' }

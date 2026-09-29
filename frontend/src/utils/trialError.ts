@@ -50,12 +50,3 @@ export function isTrialTermsVersionMismatch(error: unknown): boolean {
   const data = ax.response?.data as TrialRefusalDto | undefined
   return data?.code === 'TrialTermsVersionMismatch'
 }
-
-/** Machine-readable refusal code, when present — lets callers branch (e.g. deciding whether a
- *  "выдать повторно" admin action makes sense) without parsing `message`. */
-export function getTrialRefusalCode(error: unknown): TrialRefusalDto['code'] | null {
-  const ax = error as AxiosError
-  if (ax?.response?.status !== 409) return null
-  const data = ax.response?.data as TrialRefusalDto | undefined
-  return data?.code ?? null
-}

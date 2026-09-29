@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
-using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Entities;
@@ -137,45 +136,29 @@ public class TrialStateReader(
         var windowDays = await platformSettings.GetTrialMailingWindowDaysAsync(ct);
         var thresholds = await platformSettings.GetTrialWarningThresholdsDaysAsync(ct);
 
-        string? refusalCode = null;
-        string message;
-        if (plan is null || !plan.IsActive || !plan.IsPublic || durationDays is null || windowDays is null || windowDays > durationDays)
-        {
-            refusalCode = "TrialNotOffered";
-            message = TrialLegalNotices.TrialRefusedPlanUnavailable;
-        }
-        else if (subUsable && sub!.PlanConfig is { PricePerMonth: > 0 })
-        {
-            refusalCode = "AlreadyOnPaidPlan";
-            message = string.Format(TrialLegalNotices.TrialRefusedActivePaidSubscription, sub.PaidUntil?.ToString("dd.MM.yyyy"));
-        }
-        else
-        {
-            var verifiedPhone = await db.VerifiedPhones.AsNoTracking()
-                .AnyAsync(v => v.UserId == account.OwnerUserId, ct);
-            if (!verifiedPhone)
-            {
-                // Mirrors TrialActivationService.GrantAsync's R7 gate exactly (ChangePhoneGateOutcome's
-                // own shape): a verified phone would have satisfied this check regardless of the
-                // subsystem's state, so the subsystem is only asked about when there ISN'T one.
-                var maxAdapter = phoneVerificationRegistry.Get(PhoneVerificationMethod.MaxBot);
-                if (!maxAdapter.Enabled)
-                {
-                    refusalCode = "PhoneVerificationUnavailable";
-                    message = TrialLegalNotices.TrialRefusedPhoneVerificationUnavailable;
-                }
-                else
-                {
-                    refusalCode = "PhoneNotVerified";
-                    message = TrialLegalNotices.TrialRefusedPhoneNotVerified;
-                }
-            }
-            else
-            {
-                message = plan is null ? string.Empty
-                    : TrialTermsRegistry.RenderCurrent(plan.Name, durationDays!.Value, now.AddDays(durationDays.Value), windowDays!.Value);
-            }
-        }
+        // Cycle 22 D11 (closes C18-11): the same TrialEligibility.Evaluate GrantAsync calls. This path is
+        // only reached when there is no active trial (onTrialNow) and no trial was ever started
+        // (everHadTrial) — both passed as they are. The reader keeps its own trial-end aware
+        // subUsable (see above) and, as before, does not consult TrialGrants.
+        var hasVerifiedPhone = await db.VerifiedPhones.AsNoTracking()
+            .AnyAsync(v => v.UserId == account.OwnerUserId, ct);
+        var refusal = TrialEligibility.Evaluate(new TrialEligibilityFacts(
+            Offered: !(plan is null || !plan.IsActive || !plan.IsPublic || durationDays is null || windowDays is null || windowDays > durationDays),
+            SubscriptionUsable: subUsable,
+            OnTrialPlan: onTrialNow,
+            OnPaidPlan: sub?.PlanConfig is { PricePerMonth: > 0 },
+            SubscriptionPaidUntil: sub?.PaidUntil,
+            AlreadyUsed: everHadTrial,
+            TrialStartedAtUtc: account.TrialStartedAtUtc,
+            HasVerifiedPhone: hasVerifiedPhone,
+            PhoneVerificationEnabled: phoneVerificationRegistry.Get(PhoneVerificationMethod.MaxBot).Enabled,
+            CanBypass: false));
+
+        var refusalCode = refusal?.Code;
+        var message = refusal is not null
+            ? refusal.Message
+            : plan is null ? string.Empty
+                : TrialTermsRegistry.RenderCurrent(plan.Name, durationDays!.Value, now.AddDays(durationDays.Value), windowDays!.Value);
 
         var available = refusalCode is null;
         var endsAtPreview = available ? now.AddDays(durationDays!.Value) : (DateTime?)null;

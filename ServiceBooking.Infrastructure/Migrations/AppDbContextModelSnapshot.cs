@@ -543,9 +543,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasDatabaseName("IX_Bookings_GuestPhone")
                         .HasFilter("\"GuestPhone\" IS NOT NULL");
 
-                    b.HasIndex("MasterId");
-
                     b.HasIndex("ServiceId");
+
+                    b.HasIndex("MasterId", "Date");
 
                     b.ToTable("Bookings");
                 });
@@ -1473,12 +1473,6 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<string>("OwnerUserId")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("PaidFromUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("PaidUntilUtc")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PhoneNumber")
                         .HasColumnType("text");

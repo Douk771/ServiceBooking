@@ -28,12 +28,12 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
 
     [HttpGet("preferences")]
     [Authorize]
-    public async Task<ActionResult<NotificationPreferencesDto>> GetPreferences()
+    public async Task<ActionResult<NotificationPreferencesDto>> GetPreferences(CancellationToken ct)
     {
         var phone = await CallerCanonicalPhoneAsync();
         if (phone is null) return Ok(new NotificationPreferencesDto(true));
 
-        var optedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone);  // SUBJECT-PHONE-GATE: not-account-scoped — reads only the CALLER's own opt-out status for their own phone (CallerCanonicalPhoneAsync), never another subject's data (ARCHITECTURE_CYCLE16.md §245.3)
+        var optedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — reads only the CALLER's own opt-out status for their own phone (CallerCanonicalPhoneAsync), never another subject's data (ARCHITECTURE_CYCLE16.md §245.3)
         return Ok(new NotificationPreferencesDto(!optedOut));
     }
 
@@ -51,11 +51,11 @@ public class NotificationsController(AppDbContext db, IOptions<NotificationOptio
     // ── Public unsubscribe link ──────────────────────────────────────────────────────────────────
 
     [HttpGet("unsubscribe/{token}")]
-    public async Task<ActionResult<UnsubscribePageDto>> GetUnsubscribePage(string token)
+    public async Task<ActionResult<UnsubscribePageDto>> GetUnsubscribePage(string token, CancellationToken ct)
     {
         if (!TryReadToken(token, out var phone)) return NotFound();
 
-        var alreadyOptedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone);  // SUBJECT-PHONE-GATE: not-account-scoped — anonymous unsubscribe link, phone comes from a signed one-time token, not from any caller account (ARCHITECTURE_CYCLE16.md §245.3)
+        var alreadyOptedOut = await db.NotificationOptOuts.AsNoTracking().AnyAsync(o => o.Phone == phone, ct);  // SUBJECT-PHONE-GATE: not-account-scoped — anonymous unsubscribe link, phone comes from a signed one-time token, not from any caller account (ARCHITECTURE_CYCLE16.md §245.3)
         return Ok(new UnsubscribePageDto(PhoneDisplayMask.Mask(phone), alreadyOptedOut));
     }
 

@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
 import { BookingModal } from '../components/booking/BookingModal'
 import type { Service } from '../types'
+import { formatRub } from '../utils/money'
 
 export function EmbedPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -79,7 +80,7 @@ export function EmbedPage() {
                   <span className="flex items-center gap-1">
                     <Icon name="clock" size={13} strokeWidth={1.7} /> {s.durationMinutes} мин
                   </span>
-                  <span className="font-semibold text-gold-dark">{s.price.toLocaleString('ru-RU')} ₽</span>
+                  <span className="font-semibold text-gold-dark">{formatRub(s.price)}</span>
                 </div>
               </div>
               {company.allowSelfBooking ? (
