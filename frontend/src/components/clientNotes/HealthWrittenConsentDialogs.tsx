@@ -39,8 +39,9 @@ export function MarkWrittenConsentDialog({
   const [error, setError] = useState('')
   const [outdated, setOutdated] = useState(false)
 
+  const formIdMissing = !ownForm && formId.length === 0
   const formIdInvalid = !ownForm && formId.length > 0 && !FORM_ID_PATTERN.test(formId)
-  const canSubmit = confirmed && !formIdInvalid
+  const canSubmit = confirmed && !formIdMissing && !formIdInvalid
 
   const submit = async () => {
     setLoading(true)
@@ -84,6 +85,11 @@ export function MarkWrittenConsentDialog({
               className="rounded-xl border border-line px-3 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink font-mono"
             />
             {formIdInvalid && <p className="text-xs text-danger">Формат номера — HD- и 8 символов, как на распечатанном бланке.</p>}
+            {formIdMissing && (
+              <p className="text-xs text-danger">
+                Укажите номер бланка или отметьте «Использован собственный бланк салона» выше.
+              </p>
+            )}
             <Link to={healthConsentFormPrintPath(companyId, clientKey)} className="text-xs text-gold-dark underline w-fit">
               Распечатать бланк заново
             </Link>
