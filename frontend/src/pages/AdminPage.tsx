@@ -9,6 +9,7 @@ import { NotificationsAdminTab } from './admin/NotificationsAdminTab'
 import { BillingAccountsAdminTab } from './admin/BillingAccountsAdminTab'
 import { SubjectRequestsTab } from './admin/SubjectRequestsTab'
 import { LegalReadinessTab } from './admin/LegalReadinessTab'
+import { NoticesAdminTab } from './admin/NoticesAdminTab'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
@@ -17,6 +18,7 @@ import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
 import { Pagination } from '../components/ui/Pagination'
 import { getCompanyAdminErrorMessage } from '../utils/companyAdminError'
+import { getChangeOwnerErrorMessage } from '../utils/companyOwnerError'
 import { formatPhone } from '../utils/phone'
 import { formatBookingServiceNames } from '../utils/bookingServices'
 
@@ -118,7 +120,10 @@ function ChangeOwnerModal({ company, onClose }: { company: AdminCompany; onClose
           ))}
           {candidates.length === 0 && <p className="text-sm text-muted text-center py-4">Пользователи не найдены</p>}
         </div>
-        {mut.isError && <p className="text-sm text-danger">Не удалось сменить владельца</p>}
+        {/* API_CONTRACT_CYCLE20.md §437.3 (US-20-07, LG6) — server text shown verbatim, in particular
+            the new 409 "не связан с аккаунтом" case; see utils/companyOwnerError.ts for why this
+            replaced the old hardcoded generic message. */}
+        {mut.isError && <p className="text-sm text-danger">{getChangeOwnerErrorMessage(mut.error)}</p>}
         <div className="flex gap-3 pt-1">
           <Button variant="secondary" className="flex-1" onClick={onClose}>
             Отмена
@@ -522,6 +527,7 @@ type Tab =
   | 'notifications'
   | 'subject-requests'
   | 'legal'
+  | 'notices'
 
 export function AdminPage() {
   const [tab, setTab] = useState<Tab>('stats')
@@ -536,6 +542,7 @@ export function AdminPage() {
     { key: 'notifications', label: 'Каналы уведомлений' },
     { key: 'subject-requests', label: 'Обращения субъектов' },
     { key: 'legal', label: 'Правовые документы' },
+    { key: 'notices', label: 'Уведомления' },
   ]
 
   return (
@@ -565,6 +572,7 @@ export function AdminPage() {
         {tab === 'notifications' && <NotificationsAdminTab />}
         {tab === 'subject-requests' && <SubjectRequestsTab />}
         {tab === 'legal' && <LegalReadinessTab />}
+        {tab === 'notices' && <NoticesAdminTab />}
       </ErrorBoundary>
     </div>
   )
