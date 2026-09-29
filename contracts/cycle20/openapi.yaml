@@ -1,0 +1,2376 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 20
+# (закрытие правовых вопросов: бумажное согласие на сведения о здоровье, основание ручного назначения
+#  тарифа, уведомления в кабинете с фиксацией ознакомления, предел 24 ч для отмены, сроки хранения и
+#  журнал гейта, «только свои компании», ручная регистрация обращений).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл и правила — API_CONTRACT_CYCLE20.md (§430–§445),
+# решения — ARCHITECTURE_CYCLE20.md (§400–§419), требования — SPEC_CYCLE20_LEGAL_CLOSURE.md (§12 —
+# приоритетный) и LEGAL_REVIEW_CYCLE20.md §2 (Т20-01…Т20-13). При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle20/openapi.yaml --port 4020
+#             npm run types:api:cycle20   (openapi-typescript -> src/types/api-cycle20.generated.ts)
+#   QA        schemathesis run contracts/cycle20/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle20/openapi.yaml
+#             npm run types:api:cycle20 && git diff --exit-code src/types/api-cycle20.generated.ts
+#
+# Здесь описаны ТОЛЬКО маршруты, которые цикл 20 добавляет или меняет. Остальной API —
+# в API_DOCUMENTATION.md и контрактах циклов 3–18.
+#
+# У изменённых ответов, где цикл ДОБАВЛЯЕТ поля к большому существующему DTO (карточка биллинг-
+# аккаунта, BookingDto, RetentionPolicyDto, CompanyTransferPreviewDto, выгрузка профиля), схема
+# описывает ТОЛЬКО новые и значимые поля и стоит с additionalProperties: true — «форма прежняя плюс
+# вот это», без второй расходящейся копии DTO.
+
+info:
+  title: ServiceBooking API — цикл 20 (закрытие правовых вопросов)
+  version: "20.0.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase в JSON; enum — строками (имена членов C#); DateTime — ISO-8601 UTC; DateOnly — yyyy-MM-dd;
+      * тела осознанных ошибок 400/402/409/410/429 — ГОЛАЯ СТРОКА (text/plain) по-русски;
+      * 401 и 403 — ПУСТОЕ тело; ProblemDetails не используется;
+      * 404 без явного тела — ПУСТОЕ тело (SuppressMapClientErrors = true);
+      * 451 — «требуется принять новую редакцию документов». Новые маршруты закрыты гейтом, КРОМЕ
+        /api/legal/notices* — они под префиксом /api/legal/, который уже в allow-list (Т20-02 п. 4:
+        приостановленный владелец и не принявший редакцию обязаны прочитать уведомление);
+      * 503 со строкой — снимок правовых документов не загружен.
+
+    Сохраняемые исключения из «4xx — строка» (новых нет):
+      * RequiredConsentDto — 400 JSON у PUT …/health-note (цикл 5);
+      * TrialRefusalDto — 409 JSON у PUT …/subscription для тарифа-триала (цикл 18).
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, КОТОРЫЕ СХЕМА ЗАКРЕПЛЯЕТ ФОРМОЙ:
+    1. Поле «здоровье» открывает ТОЛЬКО отметка о бумажном согласии (LG1). Электронное согласие
+       поле не открывает; POST …/health-consent — 410 Gone.
+    2. Паспортных данных нет ни в одном запросе и ответе. Сгенерированный бланк не хранится.
+    3. Причина ручного назначения скрытого тарифа — код из закрытого списка, а не свободная строка.
+    4. Опубликованное уведомление не редактируется (нет PUT), только отзывается. Ознакомление
+       идемпотентно и append-only.
+    5. В журнале гейта нет IP, User-Agent, телефона и счётчиков — полей нет.
+    6. Текст отмены называет ПРИМЕНЁННОЕ число часов (≤ 24) — поле clientCancelMinHours.
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4020
+    description: prism mock по этой схеме (фронт до появления бэкенда)
+
+tags:
+  - name: health-consent
+    description: Бумажное согласие на сведения о здоровье — поле, бланк, отметка, снятие (US-20-01).
+  - name: billing-owner
+    description: Реквизиты оператора ПДн для бланка на биллинг-аккаунте (Т20-04 п. 3).
+  - name: profile
+    description: Согласия клиента в профиле и выгрузка — изменения цикла 20.
+  - name: admin-billing
+    description: Основание ручного назначения тарифа и история подписки (US-20-02).
+  - name: notices
+    description: Уведомления в кабинете для адресата — список, ознакомление, вложение (US-20-03).
+  - name: admin-notices
+    description: Публикация, предпросмотр, отзыв уведомлений и счётчики (US-20-03).
+  - name: company-photos
+    description: Удаление фото компании суперадмином по обращению изображённого (Т20-07).
+  - name: bookings
+    description: Предел 24 ч для отмены записи клиентом (US-20-04).
+  - name: admin-retention
+    description: Сроки хранения и журнал срабатываний гейта гостевых данных (US-20-05).
+  - name: admin-companies
+    description: «Только свои компании» — перенос и смена владельца (US-20-07).
+  - name: admin-subject-requests
+    description: Ручная регистрация обращений субъектов, пришедших по почте (US-20-09).
+  - name: legal
+    description: Тексты интерфейса из правового манифеста — пять новых ключей (Т20-08).
+
+paths:
+
+  # ── US-20-01 ─────────────────────────────────────────────────────────────────────────────────────
+
+  /api/companies/{companyId}/clients/{clientKey}/health-note:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+      - $ref: "#/components/parameters/ClientKey"
+    get:
+      tags: [health-consent]
+      operationId: getHealthNote
+      summary: Заметка о здоровье клиента — открыта только при отметке о бумажном согласии
+      description: |
+        Без активной отметки value, updatedAt, updatedBy — ВСЕГДА null (даже если строка в БД есть),
+        consentRequired = true. Электронное согласие (салонная форма HealthDataConsent,
+        PdnConsent/HealthData) поле НЕ открывает. writtenConsent приходит всегда.
+        SuperAdmin → 403 всегда (недоступность суперадмину не ослабляется).
+      responses:
+        "200":
+          description: Состояние поля.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthNoteDto"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не сотрудник компании или SuperAdmin. Тело пустое.
+        "404":
+          description: Клиент не связан с компанией или ключ неверен. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+    put:
+      tags: [health-consent]
+      operationId: putHealthNote
+      summary: Записать заметку о здоровье (только при отметке)
+      description: |
+        [RequiresOwnerTerms] — как было. Без отметки → 400 RequiredConsentDto (JSON) с
+        requiredTextKey = HealthDataWrittenConsentForm. Фронт различает два 400 по Content-Type.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateHealthNoteInput"
+      responses:
+        "200":
+          description: Записано. Тело пустое.
+        "400":
+          description: Пустое значение / длиннее 2000 (строка) либо нет отметки (RequiredConsentDto).
+          content:
+            text/plain:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequiredConsentDto"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не сотрудник компании или SuperAdmin. Тело пустое.
+        "404":
+          description: Клиент не связан с компанией. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов (в т. ч. TermsOwner).
+    delete:
+      tags: [health-consent]
+      operationId: deleteHealthNote
+      summary: Удалить заметку о здоровье (разрешено и без отметки)
+      description: |
+        Не меняется: идемпотентно 200. Работает И БЕЗ отметки — удаление уменьшает обработку
+        спецкатегории (ARCHITECTURE_CYCLE20.md §402.3).
+      responses:
+        "200":
+          description: Удалено или удалять было нечего. Тело пустое.
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не сотрудник компании или SuperAdmin. Тело пустое.
+        "404":
+          description: Клиент не связан с компанией. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /api/companies/{companyId}/clients/{clientKey}/health-consent-form:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+      - $ref: "#/components/parameters/ClientKey"
+    get:
+      tags: [health-consent]
+      operationId: getHealthConsentForm
+      summary: Значения для печати бланка письменного согласия (НОВЫЙ)
+      description: |
+        Текст бланка — GET /api/legal/texts/HealthDataWrittenConsentForm; этот маршрут отдаёт только
+        рантайм-значения для data-legal-value и номер бланка. formId новый на каждый запрос и на
+        сервере НЕ хранится до отметки. null в runtimeValues = «в системе нет»: фронт печатает линию.
+        Паспортных полей нет. Ответ с Cache-Control: no-store.
+      responses:
+        "200":
+          description: Значения для печати.
+          headers:
+            Cache-Control:
+              description: Всегда no-store.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthConsentFormDto"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не сотрудник компании или SuperAdmin. Тело пустое.
+        "404":
+          description: Клиент не связан с компанией. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+        "503":
+          description: Правовые документы временно недоступны. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/companies/{companyId}/clients/{clientKey}/health-written-consent:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+      - $ref: "#/components/parameters/ClientKey"
+    post:
+      tags: [health-consent]
+      operationId: markWrittenHealthConsent
+      summary: Отметить «письменное согласие получено» (НОВЫЙ)
+      description: |
+        Строка журнала ConsentRecord: DocumentKey = HealthDataWrittenConsentForm, Source = PaperForm,
+        автор — сотрудник, без IP и User-Agent. [RequiresOwnerTerms].
+        Идемпотентность: живая отметка с тем же formId и той же версией → 200, новой строки нет.
+        textVersion ≠ текущей версии бланка → 409 (распечатать заново).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WrittenHealthConsentInput"
+      responses:
+        "200":
+          description: Отметка стоит.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WrittenHealthConsentStateDto"
+        "400":
+          description: confirmed не true либо formId неверного формата. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не сотрудник компании или SuperAdmin. Тело пустое.
+        "404":
+          description: Клиент не связан с компанией. Тело пустое.
+        "409":
+          description: Текст бланка обновлён — распечатать и отметить заново. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "451":
+          description: Требуется принять новую редакцию документов (в т. ч. TermsOwner).
+        "503":
+          description: Правовые документы временно недоступны. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/companies/{companyId}/clients/{clientKey}/health-written-consent/revoke:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+      - $ref: "#/components/parameters/ClientKey"
+    post:
+      tags: [health-consent]
+      operationId: revokeWrittenHealthConsent
+      summary: Снять отметку о бумажном согласии и удалить заметку (НОВЫЙ)
+      description: |
+        Снимает ВСЕ живые отметки клиента в этой компании и в той же транзакции удаляет его заметку о
+        здоровье в этой компании. Идемпотентно: снимать нечего → 200, revoked = 0.
+        [RequiresOwnerTerms] НЕТ — снятие уменьшает обработку.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WrittenHealthConsentRevokeInput"
+      responses:
+        "200":
+          description: Результат снятия.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WrittenHealthConsentRevokeResultDto"
+        "400":
+          description: Неизвестная причина. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не сотрудник компании или SuperAdmin. Тело пустое.
+        "404":
+          description: Клиент не связан с компанией. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /api/companies/{companyId}/clients/{clientKey}/health-consent:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+      - $ref: "#/components/parameters/ClientKey"
+    post:
+      tags: [health-consent]
+      operationId: postSalonHealthConsentGone
+      summary: Салонная электронная форма согласия на здоровье — выведена (410)
+      deprecated: true
+      description: |
+        LG1: согласие на сведения о здоровье — только письменное, на бумажном бланке. Маршрут отвечает
+        410 Gone со строкой-заменой, тело запроса не читается.
+      responses:
+        "401":
+          description: Нет токена. Тело пустое.
+        "410":
+          description: Маршрут выведен. Тело — строка с указанием нового порядка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /api/billing/operator-details:
+    get:
+      tags: [billing-owner]
+      operationId: getConsentOperatorDetails
+      summary: Реквизиты оператора ПДн для бланка (НОВЫЙ)
+      description: |
+        Только держатель биллинг-аккаунта. missing = fullName или address не заполнены (ИНН
+        необязателен). Заполнять не обязательно: бланк печатается и без реквизитов.
+      responses:
+        "200":
+          description: Реквизиты.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsentOperatorDetailsDto"
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Биллинг-аккаунта нет. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+    put:
+      tags: [billing-owner]
+      operationId: updateConsentOperatorDetails
+      summary: Сохранить реквизиты оператора ПДн (НОВЫЙ)
+      description: |
+        Пустая строка = null. ФИО — полностью, инициалы не принимаются (ч. 4 ст. 9 152-ФЗ). ИНН — 10
+        или 12 цифр.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsentOperatorDetailsInput"
+      responses:
+        "200":
+          description: Сохранено.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsentOperatorDetailsDto"
+        "400":
+          description: Инициалы в ФИО, неверный ИНН, превышение длины. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Биллинг-аккаунта нет. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /api/profile/consents:
+    post:
+      tags: [profile]
+      operationId: submitProfileConsentsCycle20
+      summary: Выдать согласие PdnConsent — цель HealthData больше не принимается
+      description: |
+        Существующий маршрут цикла 5 (allow-list 451). Новое: HealthData в purposes → 400 «согласие
+        даётся в салоне на бумажном бланке». Цель в манифесте остаётся ради отзыва ранее данных.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitConsentInput"
+      responses:
+        "200":
+          description: Состояние согласий (форма прежняя).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Не PdnConsent, неизвестная цель или цель HealthData. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "409":
+          description: Документ обновлён — перечитать. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "503":
+          description: Правовые документы временно недоступны. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/profile/consents/revoke:
+    post:
+      tags: [profile]
+      operationId: revokeProfileConsentCycle20
+      summary: Отозвать согласие — теперь и отметку о бумажном согласии
+      description: |
+        Существующий маршрут (allow-list 451). documentKey принимает HealthDataWrittenConsentForm
+        (companyId обязателен). Отзыв HealthDataConsent в компании снимает и отметки там же; отзыв
+        PdnConsent целиком или цели HealthData снимает отметки во всех компаниях. Гейт цикла 16
+        действует: без подтверждённого номера отметки по телефону не трогаются (для салонных ключей —
+        прежний 400). Ответ не раскрывает, существовали ли данные.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeConsentInput"
+      responses:
+        "200":
+          description: Результат отзыва.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevokeConsentResponseDto"
+        "400":
+          description: Неизвестный ключ/цель, нет companyId, номер не подтверждён. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+
+  /api/profile/export:
+    get:
+      tags: [profile]
+      operationId: exportProfileCycle20
+      summary: Выгрузка данных субъекта — explanation гейта из манифеста
+      description: |
+        Существующий маршрут, форма прежняя. guestDataGate.explanation — ПЛОСКИЙ текст раздела «Текст»
+        uiText GuestDataGateNotice (абзацы через \n\n, без HTML и без служебной справки юриста).
+        Журнал срабатываний гейта в выгрузку НЕ попадает.
+      responses:
+        "200":
+          description: Выгрузка.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileExportGatePatch"
+        "401":
+          description: Нет токена. Тело пустое.
+
+  # ── US-20-02 ─────────────────────────────────────────────────────────────────────────────────────
+
+  /api/admin/billing-accounts/{accountId}/subscription:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    put:
+      tags: [admin-billing]
+      operationId: assignSubscriptionWithReason
+      summary: Назначить тариф/опции — основание обязательно для скрытого тарифа ≠ текущего
+      description: |
+        Порядок проверок (часть контракта): существующие → тариф-триал → 409 TrialRefusalDto
+        (TrialPlanNotAssignableHere) ПЕРВЫМ при любой причине → ManualPlanAssignmentPolicy
+        (причина обязательна, когда целевой тариф isPublic = false и отличается от текущего, П3;
+        TrialReissue этой ручкой → 400; OperatorErrorCorrection без reasonDetails → 400) →
+        прочие существующие. Причина там, где не обязательна, принимается и пишется в журнал.
+        ЛОМАЮЩЕЕ для админского фронта.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignSubscriptionInput"
+      responses:
+        "200":
+          description: Карточка биллинг-аккаунта (форма прежняя).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          description: Нет основания, недопустимое основание, нет описания ошибки, прежние поводы. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Аккаунта нет (пустое тело) или «Тариф не найден.» (строка).
+          content:
+            text/plain:
+              schema:
+                type: string
+        "409":
+          description: |
+            Тариф-триал (JSON TrialRefusalDto, code = TrialPlanNotAssignableHere); заявка уже
+            обработана, опция недоступна, превышение лимита (строка).
+          content:
+            text/plain:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialRefusalDto"
+
+  /api/admin/billing-accounts/{accountId}/subscription-history:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      tags: [admin-billing]
+      operationId: getSubscriptionHistoryWithReason
+      summary: История подписки — основание назначения
+      description: |
+        Существующий маршрут, конверт { items }. Элемент получает reasonCode, reasonTitle,
+        reasonDetails (null у записей без причины). Повторная выдача триала — TrialReissue.
+      responses:
+        "200":
+          description: История.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SubscriptionHistoryItemReasonPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Аккаунта нет. Тело пустое.
+
+  /api/admin/subscription-change-reasons:
+    get:
+      tags: [admin-billing]
+      operationId: getSubscriptionChangeReasons
+      summary: Закрытый список оснований ручного назначения (НОВЫЙ)
+      description: |
+        Источник подписей для выпадающего списка и истории. В выпадающем списке экрана назначения —
+        только assignableManually = true.
+      responses:
+        "200":
+          description: Список оснований.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionChangeReasonListDto"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  # ── US-20-03 ─────────────────────────────────────────────────────────────────────────────────────
+
+  /api/legal/notices:
+    get:
+      tags: [notices]
+      operationId: getMyNotices
+      summary: Уведомления сервиса для вызывающего (НОВЫЙ)
+      description: |
+        В allow-list 451 по префиксу /api/legal/ — читается до принятия новой редакции и в период
+        приостановления. Не зависит от тарифа и активности компании. pending — источник баннера
+        (один запрос при входе); all — раздел /notices и блок в «Ваша подписка» (включая прочитанные
+        и отозванные). Адресат вычисляется при чтении: владельческие виды — держателю аккаунта,
+        AllClients — любому, кроме SuperAdmin.
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          description: pending (по умолчанию) — непрочитанные; all — все видимые.
+          schema:
+            type: string
+            enum: [pending, all]
+            default: pending
+      responses:
+        "200":
+          description: Уведомления и тексты кнопки.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformNoticeListDto"
+        "400":
+          description: Неизвестный scope. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+
+  /api/legal/notices/{id}/acknowledge:
+    parameters:
+      - $ref: "#/components/parameters/NoticeId"
+    post:
+      tags: [notices]
+      operationId: acknowledgeNotice
+      summary: «Я ознакомился» (НОВЫЙ)
+      description: |
+        Записывает ознакомление (userId, биллинг-аккаунт для владельческих видов, время UTC).
+        Идемпотентно: повтор → 200, acknowledgedAt не двигается, новой записи нет.
+      responses:
+        "200":
+          description: Уведомление с acknowledged = true.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformNoticeDto"
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Нет уведомления, срок видимости вышел или вызывающий не адресат (не различаются). Тело пустое.
+        "409":
+          description: Уведомление отозвано. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/legal/notices/{id}/attachment:
+    parameters:
+      - $ref: "#/components/parameters/NoticeId"
+    get:
+      tags: [notices]
+      operationId: getNoticeAttachment
+      summary: Снимок будущей редакции документа (НОВЫЙ)
+      description: |
+        Только адресату. text/html с CSP sandbox. Фронт показывает ТОЛЬКО в <iframe sandbox="" srcdoc>.
+      responses:
+        "200":
+          description: HTML снимка.
+          headers:
+            Content-Security-Policy:
+              description: "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+              schema:
+                type: string
+            X-Content-Type-Options:
+              description: nosniff
+              schema:
+                type: string
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "404":
+          description: Нет вложения, не адресат или срок вышел. Тело пустое.
+
+  /api/admin/notices:
+    get:
+      tags: [admin-notices]
+      operationId: getAdminNotices
+      summary: Список уведомлений со счётчиками адресатов и ознакомившихся (НОВЫЙ)
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          description: Отбор по виду.
+          schema:
+            $ref: "#/components/schemas/PlatformNoticeKind"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Страница уведомлений.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedAdminPlatformNotices"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+    post:
+      tags: [admin-notices]
+      operationId: publishNotice
+      summary: Опубликовать уведомление (НОВЫЙ)
+      description: |
+        Опубликованное не редактируется. Матрица видов — API_CONTRACT_CYCLE20.md §434.5: PriceChange —
+        ≥ сегодня(МСК)+30, тело собирает сервер; TermsChange — ≥ +15 (владельцы) / ≥ +10 (AllClients),
+        attachment обязательно, для TermsClient/Privacy до утверждения шаблона юристом → 400;
+        Suspension — только BillingAccount; PhotoRemoved — только системой (400). Параметры чужого
+        вида → 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformNoticeCreateInput"
+      responses:
+        "201":
+          description: Опубликовано.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPlatformNoticeDto"
+        "400":
+          description: Нарушение матрицы видов, срока, адресатов, длины. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  /api/admin/notices/preview:
+    post:
+      tags: [admin-notices]
+      operationId: previewNotice
+      summary: Предпросмотр уведомления без записи (НОВЫЙ)
+      description: Тот же валидатор, что у публикации. Ничего не пишет.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformNoticeCreateInput"
+      responses:
+        "200":
+          description: Как будет выглядеть уведомление.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformNoticePreviewDto"
+        "400":
+          description: Те же ошибки, что при публикации. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  /api/admin/notices/{id}/revoke:
+    parameters:
+      - $ref: "#/components/parameters/NoticeId"
+    post:
+      tags: [admin-notices]
+      operationId: revokeNotice
+      summary: Отозвать уведомление (НОВЫЙ)
+      description: Однократно, с автором и причиной. Ознакомления не удаляются.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoticeRevokeInput"
+      responses:
+        "200":
+          description: Уведомление после отзыва.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminPlatformNoticeDto"
+        "400":
+          description: Пустая или слишком длинная причина. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Уведомления нет. Тело пустое.
+        "409":
+          description: Уже отозвано. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/admin/notices/{id}/attachment:
+    parameters:
+      - $ref: "#/components/parameters/NoticeId"
+    get:
+      tags: [admin-notices]
+      operationId: getAdminNoticeAttachment
+      summary: Вложение уведомления для суперадмина (НОВЫЙ)
+      responses:
+        "200":
+          description: HTML снимка (те же заголовки, что у адресата).
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Нет уведомления или вложения. Тело пустое.
+
+  /api/companies/{id}/photos/{photoId}:
+    delete:
+      tags: [company-photos]
+      operationId: deleteCompanyPhotoWithReason
+      summary: Удалить фото компании — по обращению изображённого с уведомлением владельцу
+      description: |
+        Существующий маршрут (IsOwnerOrSuperAdmin, rate limit uploads). reason учитывается ТОЛЬКО у
+        SuperAdmin: после коммита удаления публикуется уведомление PhotoRemoved адресату
+        BillingAccount компании. Ошибка публикации удаление не откатывает.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Идентификатор компании.
+          schema:
+            type: string
+            format: uuid
+        - name: photoId
+          in: path
+          required: true
+          description: Идентификатор фото.
+          schema:
+            type: string
+            format: uuid
+        - name: reason
+          in: query
+          required: false
+          description: Причина удаления суперадмином.
+          schema:
+            $ref: "#/components/schemas/PhotoRemovalReason"
+      responses:
+        "204":
+          description: Удалено.
+        "400":
+          description: Неизвестное значение reason. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не владелец и не SuperAdmin. Тело пустое.
+        "404":
+          description: Нет компании или фото. Тело пустое.
+        "429":
+          description: Слишком много запросов. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  # ── US-20-04 ─────────────────────────────────────────────────────────────────────────────────────
+
+  /api/bookings/client:
+    get:
+      tags: [bookings]
+      operationId: getClientBookingsCycle20
+      summary: Записи клиента — применённый предел отмены
+      description: |
+        Существующий маршрут. BookingDto получает clientCancelMinHours = min(окно компании, 24) —
+        ПРИМЕНЁННОЕ число; clientCancelAllowed считается с тем же числом. Текст «Отменить можно не
+        позже чем за N ч» строится по clientCancelMinHours, не по clientRescheduleMinHours.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: upcoming, Pending, Confirmed, Cancelled, Completed, NoShow.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Записи клиента.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingDtoCancelPatch"
+        "400":
+          description: Неизвестный фильтр. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  /api/bookings/{id}/cancel:
+    patch:
+      tags: [bookings]
+      operationId: cancelBookingCycle20
+      summary: Отменить запись — предел 24 ч для клиента
+      description: |
+        Форма прежняя. Для клиента-владельца записи 409 называет ПРИМЕНЁННОЕ число часов (≤ 24).
+        Персонал окном не ограничен.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Идентификатор записи.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: string
+              nullable: true
+              maxLength: 300
+      responses:
+        "204":
+          description: Отменено.
+        "400":
+          description: Причина длиннее 300. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не персонал и не клиент записи. Тело пустое.
+        "404":
+          description: Записи нет. Тело пустое.
+        "409":
+          description: До визита меньше применённого предела. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "451":
+          description: Требуется принять новую редакцию документов.
+
+  # ── US-20-05 ─────────────────────────────────────────────────────────────────────────────────────
+
+  /api/admin/retention/policy:
+    get:
+      tags: [admin-retention]
+      operationId: getRetentionPolicyCycle20
+      summary: Сроки хранения — три новых срока
+      responses:
+        "200":
+          description: Действующие сроки хранения.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionPolicyDtoPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  /api/admin/guest-data-gate-events:
+    get:
+      tags: [admin-retention]
+      operationId: getGuestDataGateEvents
+      summary: Журнал срабатываний гейта гостевых данных (НОВЫЙ)
+      description: |
+        Только оператору. Хранится 365 дней. Полей IP, User-Agent, телефона, счётчиков и id компаний
+        НЕТ. В выгрузку субъекта не попадает.
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          description: Отбор по пользователю.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          description: Не раньше (UTC).
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Не позже (UTC).
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Страница журнала.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedGuestDataGateEvents"
+        "400":
+          description: from позже to. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  # ── US-20-07 ─────────────────────────────────────────────────────────────────────────────────────
+
+  /api/admin/companies/{companyId}/transfer/preview:
+    get:
+      tags: [admin-companies]
+      operationId: previewCompanyTransferCycle20
+      summary: Превью переноса компании — нужен ли новый ответственный
+      description: |
+        Без newOwnerUserId и при текущем владельце, не связанном с принимающим аккаунтом:
+        canTransfer = false, blockReason с текстом, ownerChangeRequired = true.
+      parameters:
+        - $ref: "#/components/parameters/CompanyIdPlain"
+        - name: targetBillingAccountId
+          in: query
+          required: true
+          description: Принимающий биллинг-аккаунт.
+          schema:
+            type: string
+            format: uuid
+        - name: newOwnerUserId
+          in: query
+          required: false
+          description: Новый ответственный (необязательно).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Превью.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyTransferPreviewDtoPatch"
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Нет компании или аккаунта. Тело пустое.
+
+  /api/admin/companies/{companyId}/transfer:
+    post:
+      tags: [admin-companies]
+      operationId: transferCompanyCycle20
+      summary: Перенести компанию — с обязательным подтверждением перехода прав
+      description: |
+        confirmRightsTransfer обязан быть true (проверяется первым), иначе 400. Перенос без смены
+        владельца, чей владелец не связан с принимающим аккаунтом, → 409. Подтверждение пишется в
+        журналы.
+      parameters:
+        - $ref: "#/components/parameters/CompanyIdPlain"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyTransferInput"
+      responses:
+        "204":
+          description: Перенесено.
+        "400":
+          description: Нет подтверждения; новый владелец не найден/удалён. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "402":
+          description: Лимит компаний принимающего аккаунта. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Нет компании или аккаунта. Тело пустое.
+        "409":
+          description: Владелец не связан с аккаунтом; прочие существующие поводы. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/admin/companies/{id}/owner:
+    put:
+      tags: [admin-companies]
+      operationId: updateCompanyOwnerCycle20
+      summary: Сменить ответственного — только на связанного с аккаунтом компании
+      description: |
+        Новое: 409, если у компании есть биллинг-аккаунт и новый владелец не держатель и не сотрудник
+        ни одной компании этого аккаунта (сотрудник этой компании — связан).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Идентификатор компании.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCompanyOwnerInput"
+      responses:
+        "204":
+          description: Сменён.
+        "400":
+          description: Пользователь не найден или удалён. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+        "404":
+          description: Компании нет. Тело пустое.
+        "409":
+          description: Новый ответственный не связан с аккаунтом компании. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  # ── US-20-09 ─────────────────────────────────────────────────────────────────────────────────────
+
+  /api/admin/subject-requests:
+    get:
+      tags: [admin-subject-requests]
+      operationId: getAdminSubjectRequestsCycle20
+      summary: Обращения субъектов — канал и кто зарегистрировал
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Received, InProgress, Answered, Rejected.
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          description: Вид обращения.
+          schema:
+            $ref: "#/components/schemas/SubjectRequestKind"
+        - name: dueState
+          in: query
+          required: false
+          description: Overdue, DueSoon, OnTime.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Страница обращений.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedSubjectRequests"
+        "400":
+          description: Неизвестный dueState. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+    post:
+      tags: [admin-subject-requests]
+      operationId: registerSubjectRequestManually
+      summary: Зарегистрировать обращение, пришедшее по почте (НОВЫЙ)
+      description: |
+        Та же таблица SubjectRequests. dueAt считается от receivedAt по виду обращения. channel —
+        только Email или PostalMail. Сигнал GlitchTip — как у публичной формы.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSubjectRequestInput"
+      responses:
+        "201":
+          description: Зарегистрировано.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubjectRequestDto"
+        "400":
+          description: Неверный вид/канал, дата в будущем, неверный телефон, пустой контакт/текст. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Нет токена. Тело пустое.
+        "403":
+          description: Не SuperAdmin. Тело пустое.
+
+  # ── Т20-08 ───────────────────────────────────────────────────────────────────────────────────────
+
+  /api/legal/texts/{key}:
+    get:
+      tags: [legal]
+      operationId: getLegalUiTextCycle20
+      summary: Текст интерфейса из манифеста — пять новых ключей
+      description: |
+        Существующий публичный маршрут. Новые ключи: GuestDataGateNotice, GuestDataGateDeleteNotice,
+        GuestDataGateRevokeNotice, HealthDataWrittenConsentForm, CompanyPhotoPeopleNotice. До коммита А
+        они отвечают 404.
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: Ключ uiText (LegalTextKey).
+          schema:
+            type: string
+          examples:
+            healthForm:
+              value: HealthDataWrittenConsentForm
+            gate:
+              value: GuestDataGateNotice
+      responses:
+        "200":
+          description: Текст.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegalUiTextDto"
+        "404":
+          description: Ключа нет в манифесте. Тело пустое.
+        "503":
+          description: Правовые документы временно недоступны. Тело — строка.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      description: Идентификатор компании.
+      schema:
+        type: string
+        format: uuid
+    CompanyIdPlain:
+      name: companyId
+      in: path
+      required: true
+      description: Идентификатор компании.
+      schema:
+        type: string
+        format: uuid
+    ClientKey:
+      name: clientKey
+      in: path
+      required: true
+      description: userId зарегистрированного клиента или phone:<номер> гостя.
+      schema:
+        type: string
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      description: Идентификатор биллинг-аккаунта.
+      schema:
+        type: string
+        format: uuid
+    NoticeId:
+      name: id
+      in: path
+      required: true
+      description: Идентификатор уведомления.
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Номер страницы (с 1).
+      schema:
+        type: integer
+        minimum: 1
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: Размер страницы.
+      schema:
+        type: integer
+        minimum: 1
+
+  schemas:
+
+    # ── US-20-01 ──
+
+    WrittenHealthConsentStateDto:
+      type: object
+      additionalProperties: false
+      required: [granted, currentFormVersion]
+      description: |
+        Состояние отметки о бумажном согласии клиента в этой компании. При granted = false все поля,
+        кроме currentFormVersion, — null.
+      properties:
+        granted:
+          type: boolean
+        recordId:
+          type: string
+          format: uuid
+          nullable: true
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        confirmedByName:
+          type: string
+          nullable: true
+        formId:
+          type: string
+          nullable: true
+          description: Номер бланка HD-XXXXXXXX; null — собственный бланк салона.
+        formVersion:
+          type: string
+          nullable: true
+          description: Версия бланка, по которой поставлена отметка.
+        currentFormVersion:
+          type: string
+          description: Текущая версия uiText HealthDataWrittenConsentForm.
+
+    HealthNoteDto:
+      type: object
+      additionalProperties: false
+      required: [consentRequired, writtenConsent]
+      properties:
+        value:
+          type: string
+          nullable: true
+          description: Всегда null без активной отметки.
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        consentRequired:
+          type: boolean
+          description: true — отметки нет; электронное согласие это поле больше не снимает.
+        writtenConsent:
+          $ref: "#/components/schemas/WrittenHealthConsentStateDto"
+
+    UpdateHealthNoteInput:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        value:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    RequiredConsentDto:
+      type: object
+      additionalProperties: false
+      required: [message, requiredTextKey]
+      description: Существующее исключение цикла 5 из «4xx — строка».
+      properties:
+        message:
+          type: string
+        requiredTextKey:
+          type: string
+          description: С цикла 20 — HealthDataWrittenConsentForm.
+
+    HealthConsentFormRuntimeValues:
+      type: object
+      additionalProperties: false
+      required: [clientFullName, companyName, companyAddress, operatorFullName, operatorAddress, operatorInn, formId, formPrintedDate]
+      description: |
+        Ключи = data-legal-value файла 17. null = «в системе нет» — фронт подставляет BLANK_LINE.
+        Полей паспорта НЕТ.
+      properties:
+        clientFullName:
+          type: string
+          nullable: true
+        companyName:
+          type: string
+          nullable: true
+        companyAddress:
+          type: string
+          nullable: true
+        operatorFullName:
+          type: string
+          nullable: true
+        operatorAddress:
+          type: string
+          nullable: true
+        operatorInn:
+          type: string
+          nullable: true
+        formId:
+          type: string
+        formPrintedDate:
+          type: string
+          description: Дата печати для бланка, dd.MM.yyyy.
+
+    HealthConsentFormDto:
+      type: object
+      additionalProperties: false
+      required: [textKey, textVersion, formId, formPrintedDate, runtimeValues, operatorDetailsMissing]
+      properties:
+        textKey:
+          type: string
+          enum: [HealthDataWrittenConsentForm]
+        textVersion:
+          type: string
+          description: Текущая версия бланка — её фронт отправляет при отметке.
+        formId:
+          type: string
+          pattern: "^HD-[0-9A-HJKMNP-TV-Z]{8}$"
+          description: Новый на каждый запрос, не хранится до отметки.
+        formPrintedDate:
+          type: string
+          format: date
+          description: Дата по Europe/Moscow.
+        runtimeValues:
+          $ref: "#/components/schemas/HealthConsentFormRuntimeValues"
+        operatorDetailsMissing:
+          type: boolean
+          description: ФИО или адрес оператора на биллинг-аккаунте не заполнены.
+
+    WrittenHealthConsentInput:
+      type: object
+      additionalProperties: false
+      required: [textVersion, confirmed]
+      properties:
+        textVersion:
+          type: string
+          minLength: 1
+          description: textVersion из GET …/health-consent-form; иная → 409.
+        formId:
+          type: string
+          nullable: true
+          pattern: "^HD-[0-9A-HJKMNP-TV-Z]{8}$"
+          description: null — собственный бланк салона.
+        confirmed:
+          type: boolean
+          description: «Подписанный оригинал у нас»; не true → 400.
+
+    WrittenHealthConsentRevokeReason:
+      type: string
+      description: SubjectWithdrew — клиент отозвал письменно; MarkedByMistake — отметка ошибочна.
+      enum: [SubjectWithdrew, MarkedByMistake]
+
+    WrittenHealthConsentRevokeInput:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          $ref: "#/components/schemas/WrittenHealthConsentRevokeReason"
+
+    WrittenHealthConsentRevokeResultDto:
+      type: object
+      additionalProperties: false
+      required: [revoked, healthNotesDeleted, writtenConsent]
+      properties:
+        revoked:
+          type: integer
+          minimum: 0
+        healthNotesDeleted:
+          type: integer
+          minimum: 0
+        writtenConsent:
+          $ref: "#/components/schemas/WrittenHealthConsentStateDto"
+
+    ConsentOperatorDetailsDto:
+      type: object
+      additionalProperties: false
+      required: [missing]
+      properties:
+        fullName:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        inn:
+          type: string
+          nullable: true
+        missing:
+          type: boolean
+          description: fullName или address не заполнены.
+
+    ConsentOperatorDetailsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        fullName:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: Полностью, без инициалов.
+        address:
+          type: string
+          nullable: true
+          maxLength: 500
+        inn:
+          type: string
+          nullable: true
+          maxLength: 12
+          description: 10 или 12 цифр (пустая строка = null).
+
+    SubmitConsentInput:
+      type: object
+      additionalProperties: false
+      required: [documentKey, version]
+      properties:
+        documentKey:
+          type: string
+          description: Только PdnConsent.
+        version:
+          type: string
+        purposes:
+          type: array
+          nullable: true
+          description: ProviderDelivery, WorkPhotos, ChannelOffer. HealthData → 400 с цикла 20.
+          items:
+            type: string
+
+    RevokeConsentDocumentKey:
+      type: string
+      description: HealthDataWrittenConsentForm — новое значение цикла 20.
+      enum: [PdnConsent, PhotoConsent, HealthDataConsent, HealthDataWrittenConsentForm]
+
+    RevokeConsentInput:
+      type: object
+      additionalProperties: false
+      required: [documentKey]
+      properties:
+        documentKey:
+          $ref: "#/components/schemas/RevokeConsentDocumentKey"
+        purpose:
+          type: string
+          nullable: true
+          description: Только для PdnConsent.
+        reason:
+          type: string
+          nullable: true
+        companyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Обязателен для PhotoConsent, HealthDataConsent, HealthDataWrittenConsentForm.
+
+    RevokeEffectsDto:
+      type: object
+      additionalProperties: false
+      required: [photosDeleted, healthNotesDeleted, profileFieldsCleared, queuedNotificationsCancelled]
+      properties:
+        photosDeleted:
+          type: integer
+        healthNotesDeleted:
+          type: integer
+        profileFieldsCleared:
+          type: array
+          items:
+            type: string
+        queuedNotificationsCancelled:
+          type: integer
+
+    RevokeConsentResponseDto:
+      type: object
+      additionalProperties: false
+      required: [revoked, effects]
+      properties:
+        revoked:
+          type: integer
+        effects:
+          $ref: "#/components/schemas/RevokeEffectsDto"
+
+    ExportGuestDataGateDto:
+      type: object
+      additionalProperties: false
+      required: [applied]
+      properties:
+        applied:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        explanation:
+          type: string
+          nullable: true
+          description: С цикла 20 — плоский текст раздела «Текст» uiText GuestDataGateNotice.
+        subjectRequestPath:
+          type: string
+          nullable: true
+
+    ProfileExportGatePatch:
+      type: object
+      additionalProperties: true
+      description: Существующая выгрузка; описано только изменённое поле.
+      properties:
+        guestDataGate:
+          $ref: "#/components/schemas/ExportGuestDataGateDto"
+
+    # ── US-20-02 ──
+
+    SubscriptionChangeReason:
+      type: string
+      description: |
+        Закрытый append-only список. OperatorErrorCorrection — исправление ошибки оператора;
+        TrialReissue — перевыдача пробного периода (только через regrant).
+      enum: [OperatorErrorCorrection, TrialReissue]
+
+    AssignOptionLineInput:
+      type: object
+      additionalProperties: false
+      required: [optionId, quantity]
+      properties:
+        optionId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+        paidUntil:
+          type: string
+          format: date
+          nullable: true
+
+    AssignSubscriptionInput:
+      type: object
+      additionalProperties: false
+      required: [isActive]
+      description: Существующее Billing_AssignSubscriptionInput плюс reasonCode и reasonDetails в конец.
+      properties:
+        planId:
+          type: string
+          format: uuid
+          nullable: true
+        isActive:
+          type: boolean
+        paidUntil:
+          type: string
+          format: date
+          nullable: true
+        options:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/AssignOptionLineInput"
+        amount:
+          type: number
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        requestId:
+          type: string
+          format: uuid
+          nullable: true
+        confirmLimitOverflow:
+          type: boolean
+          default: false
+        reasonCode:
+          allOf:
+            - $ref: "#/components/schemas/SubscriptionChangeReason"
+          nullable: true
+          description: Обязателен, когда целевой тариф isPublic = false и отличается от текущего.
+        reasonDetails:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: Обязательно непустое для OperatorErrorCorrection.
+
+    TrialRefusalDto:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      description: Существующее исключение цикла 18; здесь code = TrialPlanNotAssignableHere.
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+    SubscriptionHistoryItemReasonPatch:
+      type: object
+      additionalProperties: true
+      description: Существующий элемент истории плюс три поля.
+      properties:
+        reasonCode:
+          allOf:
+            - $ref: "#/components/schemas/SubscriptionChangeReason"
+          nullable: true
+        reasonTitle:
+          type: string
+          nullable: true
+        reasonDetails:
+          type: string
+          nullable: true
+
+    SubscriptionChangeReasonDto:
+      type: object
+      additionalProperties: false
+      required: [code, title, detailsRequired, assignableManually]
+      properties:
+        code:
+          $ref: "#/components/schemas/SubscriptionChangeReason"
+        title:
+          type: string
+        detailsRequired:
+          type: boolean
+        assignableManually:
+          type: boolean
+          description: Показывать в выпадающем списке экрана назначения.
+
+    SubscriptionChangeReasonListDto:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubscriptionChangeReasonDto"
+
+    # ── US-20-03 ──
+
+    PlatformNoticeKind:
+      type: string
+      description: Append-only. PhotoRemoved создаётся только системой.
+      enum: [PriceChange, TermsChange, Suspension, NewProcessor, PhotoRemoved, Other]
+
+    PlatformNoticeCreatableKind:
+      type: string
+      description: Виды, которые может опубликовать суперадмин (без PhotoRemoved).
+      enum: [PriceChange, TermsChange, Suspension, NewProcessor, Other]
+
+    NoticeAudienceType:
+      type: string
+      description: |
+        AllOwners — держатели всех биллинг-аккаунтов; OwnersOnPlans — держатели аккаунтов на тарифах
+        из planIds; BillingAccount — держатель одного аккаунта; AllClients — все пользователи, кроме
+        SuperAdmin. Управляющим владельческие уведомления не показываются.
+      enum: [AllOwners, OwnersOnPlans, BillingAccount, AllClients]
+
+    NoticeAttachmentRefDto:
+      type: object
+      additionalProperties: false
+      required: [title, sha256]
+      properties:
+        title:
+          type: string
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+
+    PlatformNoticeDto:
+      type: object
+      additionalProperties: false
+      required: [id, kind, title, body, publishedAt, visibleUntil, acknowledged]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/PlatformNoticeKind"
+        title:
+          type: string
+        body:
+          type: string
+          description: Плоский текст — снимок того, что видит адресат. Печатается дословно.
+        linkUrl:
+          type: string
+          nullable: true
+          description: Относительный путь.
+        effectiveFrom:
+          type: string
+          format: date
+          nullable: true
+        publishedAt:
+          type: string
+          format: date-time
+        visibleUntil:
+          type: string
+          format: date-time
+        attachment:
+          allOf:
+            - $ref: "#/components/schemas/NoticeAttachmentRefDto"
+          nullable: true
+        acknowledged:
+          type: boolean
+        acknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PlatformNoticeListDto:
+      type: object
+      additionalProperties: false
+      required: [acknowledgeButtonText, acknowledgeCaption, items]
+      properties:
+        acknowledgeButtonText:
+          type: string
+          description: «Я ознакомился» — из PlatformNoticeTexts, печатается дословно.
+        acknowledgeCaption:
+          type: string
+          description: Подпись под кнопкой (Т20-02 п. 6), печатается дословно.
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformNoticeDto"
+
+    NoticeAudienceInput:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          $ref: "#/components/schemas/NoticeAudienceType"
+        planIds:
+          type: array
+          nullable: true
+          description: Только для OwnersOnPlans, непустой.
+          items:
+            type: string
+            format: uuid
+        billingAccountId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Только для BillingAccount.
+
+    PriceChangeParamsInput:
+      type: object
+      additionalProperties: false
+      required: [planId, oldPricePerMonth, newPricePerMonth]
+      properties:
+        planId:
+          type: string
+          format: uuid
+        oldPricePerMonth:
+          type: number
+          minimum: 0
+        newPricePerMonth:
+          type: number
+          minimum: 0
+
+    TermsChangeDocumentType:
+      type: string
+      description: |
+        TermsOwner — только владельческие адресаты; TermsClient — только AllClients; Privacy — любые.
+        Шаблон тела для TermsClient/Privacy — от legal-counsel (L3); до его утверждения → 400.
+      enum: [TermsOwner, TermsClient, Privacy]
+
+    TermsChangeParamsInput:
+      type: object
+      additionalProperties: false
+      required: [documentType, changesSummary]
+      properties:
+        documentType:
+          $ref: "#/components/schemas/TermsChangeDocumentType"
+        changesSummary:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Подставляется в {перечень} шаблона.
+
+    NoticeAttachmentInput:
+      type: object
+      additionalProperties: false
+      required: [title, html]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        html:
+          type: string
+          minLength: 1
+          maxLength: 1000000
+          description: Снимок новой редакции (LegalKit publish --out во временный каталог).
+
+    PlatformNoticeCreateInput:
+      type: object
+      additionalProperties: false
+      required: [kind, audience]
+      description: Матрица видов — API_CONTRACT_CYCLE20.md §434.5. Параметры чужого вида → 400.
+      properties:
+        kind:
+          $ref: "#/components/schemas/PlatformNoticeCreatableKind"
+        audience:
+          $ref: "#/components/schemas/NoticeAudienceInput"
+        effectiveFrom:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Обязательна для PriceChange (≥ +30) и TermsChange (≥ +15 для владельческих адресатов,
+            ≥ +10 для AllClients). Для NewProcessor обязательна и ≥ +15, если адресат владельческий
+            (AllOwners/OwnersOnPlans/BillingAccount) — D3 п. 11.9.5; для AllClients срок не проверяется.
+        title:
+          type: string
+          nullable: true
+          maxLength: 200
+          description: Только для Suspension, NewProcessor, Other.
+        body:
+          type: string
+          nullable: true
+          maxLength: 4000
+          description: Только для Suspension, NewProcessor, Other.
+        linkUrl:
+          type: string
+          nullable: true
+          maxLength: 500
+          pattern: "^/(?!/).*$"
+        priceChange:
+          allOf:
+            - $ref: "#/components/schemas/PriceChangeParamsInput"
+          nullable: true
+        termsChange:
+          allOf:
+            - $ref: "#/components/schemas/TermsChangeParamsInput"
+          nullable: true
+        attachment:
+          allOf:
+            - $ref: "#/components/schemas/NoticeAttachmentInput"
+          nullable: true
+          description: Обязательно для TermsChange; запрещено для Suspension.
+
+    PlatformNoticePreviewDto:
+      type: object
+      additionalProperties: false
+      required: [title, body, visibleUntil, audienceCount]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        templateVersion:
+          type: string
+          nullable: true
+        effectiveFrom:
+          type: string
+          format: date
+          nullable: true
+        visibleUntil:
+          type: string
+          format: date-time
+        audienceCount:
+          type: integer
+          minimum: 0
+        attachmentSha256:
+          type: string
+          nullable: true
+
+    AdminPlatformNoticeDto:
+      type: object
+      additionalProperties: false
+      required: [id, kind, title, body, publishedAt, visibleUntil, audienceType, createdByName, audienceCount, acknowledgedCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/PlatformNoticeKind"
+        title:
+          type: string
+        body:
+          type: string
+        linkUrl:
+          type: string
+          nullable: true
+        effectiveFrom:
+          type: string
+          format: date
+          nullable: true
+        publishedAt:
+          type: string
+          format: date-time
+        visibleUntil:
+          type: string
+          format: date-time
+        attachment:
+          allOf:
+            - $ref: "#/components/schemas/NoticeAttachmentRefDto"
+          nullable: true
+        audienceType:
+          $ref: "#/components/schemas/NoticeAudienceType"
+        audiencePlanIds:
+          type: array
+          nullable: true
+          items:
+            type: string
+            format: uuid
+        targetBillingAccountId:
+          type: string
+          format: uuid
+          nullable: true
+        templateVersion:
+          type: string
+          nullable: true
+        createdByName:
+          type: string
+          description: «Система» для PhotoRemoved.
+        audienceCount:
+          type: integer
+          minimum: 0
+          description: ТЕКУЩЕЕ число адресатов (вычисляется при чтении).
+        acknowledgedCount:
+          type: integer
+          minimum: 0
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedByName:
+          type: string
+          nullable: true
+        revokeReason:
+          type: string
+          nullable: true
+
+    PagedAdminPlatformNotices:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminPlatformNoticeDto"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        hasNext:
+          type: boolean
+
+    NoticeRevokeInput:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    PhotoRemovalReason:
+      type: string
+      description: Учитывается только у SuperAdmin — публикует уведомление PhotoRemoved.
+      enum: [DepictedPersonRequest]
+
+    # ── US-20-04 ──
+
+    BookingDtoCancelPatch:
+      type: object
+      additionalProperties: true
+      description: Существующий BookingDto; описаны поля окна.
+      properties:
+        clientRescheduleMinHours:
+          type: integer
+          nullable: true
+          description: Окно ПЕРЕНОСА (0–168), не меняется.
+        clientRescheduleAllowed:
+          type: boolean
+          nullable: true
+        clientCancelAllowed:
+          type: boolean
+          nullable: true
+          description: Считается с применённым пределом (≤ 24).
+        clientCancelMinHours:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 24
+          description: НОВОЕ. Применённое число часов для отмены; только в GET /api/bookings/client.
+
+    # ── US-20-05 ──
+
+    RetentionPolicyDtoPatch:
+      type: object
+      additionalProperties: true
+      description: Существующий RetentionPolicyDto плюс три срока в конец.
+      required: [bookingEventDays, guestDataGateEventDays, platformNoticeDays]
+      properties:
+        bookingEventDays:
+          type: integer
+          description: 1095 (п. 13.2 Политики — «3 года»).
+        guestDataGateEventDays:
+          type: integer
+          description: 365 (п. 13.2 Политики — «1 год»).
+        platformNoticeDays:
+          type: integer
+          description: 1095 от конца видимости уведомления.
+        dryRun:
+          type: boolean
+
+    GuestDataGateOperation:
+      type: string
+      enum: [Export, DeleteAccount, Revoke, RevokePreview]
+
+    GuestDataGateOutcome:
+      type: string
+      enum: [Applied]
+
+    GuestDataGateEventDto:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, eventCode, userId, operation, outcome]
+      description: Ни IP, ни User-Agent, ни телефона, ни счётчиков, ни id компаний — полей нет.
+      properties:
+        id:
+          type: integer
+          format: int64
+        occurredAt:
+          type: string
+          format: date-time
+        eventCode:
+          type: string
+          enum: [guest-data-gate.applied]
+        userId:
+          type: string
+        operation:
+          $ref: "#/components/schemas/GuestDataGateOperation"
+        outcome:
+          $ref: "#/components/schemas/GuestDataGateOutcome"
+        traceId:
+          type: string
+          nullable: true
+
+    PagedGuestDataGateEvents:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuestDataGateEventDto"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        hasNext:
+          type: boolean
+
+    # ── US-20-07 ──
+
+    CompanyTransferPreviewDtoPatch:
+      type: object
+      additionalProperties: true
+      description: Существующий CompanyTransferPreviewDto плюс ownerChangeRequired в конец.
+      required: [canTransfer, ownerChangeRequired]
+      properties:
+        canTransfer:
+          type: boolean
+        blockReason:
+          type: string
+          nullable: true
+        ownerChangeRequired:
+          type: boolean
+          description: Текущий владелец не связан с принимающим аккаунтом — нужен новый ответственный.
+
+    CompanyTransferInput:
+      type: object
+      additionalProperties: false
+      required: [targetBillingAccountId, confirmRightsTransfer]
+      properties:
+        targetBillingAccountId:
+          type: string
+          format: uuid
+        newOwnerUserId:
+          type: string
+          nullable: true
+        confirmSeatOverflow:
+          type: boolean
+          default: false
+        comment:
+          type: string
+          nullable: true
+        confirmRightsTransfer:
+          type: boolean
+          description: НОВОЕ. Обязан быть true — права на компанию переходят к принимающему абоненту.
+
+    UpdateCompanyOwnerInput:
+      type: object
+      additionalProperties: false
+      required: [newOwnerUserId]
+      properties:
+        newOwnerUserId:
+          type: string
+
+    # ── US-20-09 ──
+
+    SubjectRequestKind:
+      type: string
+      enum: [Access, Rectification, Erasure, ConsentWithdrawal, Complaint]
+
+    SubjectRequestChannel:
+      type: string
+      description: Append-only. WebForm — только публичная форма.
+      enum: [WebForm, Email, PostalMail]
+
+    ManualSubjectRequestChannel:
+      type: string
+      description: Каналы ручной регистрации.
+      enum: [Email, PostalMail]
+
+    AdminSubjectRequestInput:
+      type: object
+      additionalProperties: false
+      required: [kind, channel, receivedAt, contactValue, message]
+      properties:
+        kind:
+          $ref: "#/components/schemas/SubjectRequestKind"
+        channel:
+          $ref: "#/components/schemas/ManualSubjectRequestChannel"
+        receivedAt:
+          type: string
+          format: date-time
+          description: Дата поступления, не в будущем; от неё считается dueAt.
+        phone:
+          type: string
+          nullable: true
+        contactValue:
+          type: string
+          minLength: 1
+          maxLength: 200
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+
+    SubjectRequestDto:
+      type: object
+      additionalProperties: false
+      required: [id, reference, kind, status, phoneMasked, contactValue, message, receivedAt, dueAt, dueState, channel]
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+        phoneMasked:
+          type: string
+          description: Пустая строка у обращения без телефона.
+        contactValue:
+          type: string
+        message:
+          type: string
+        receivedAt:
+          type: string
+          format: date-time
+        dueAt:
+          type: string
+          format: date-time
+        dueState:
+          type: string
+          enum: [Overdue, DueSoon, OnTime]
+        answeredAt:
+          type: string
+          format: date-time
+          nullable: true
+        handlerName:
+          type: string
+          nullable: true
+        resolution:
+          type: string
+          nullable: true
+        channel:
+          $ref: "#/components/schemas/SubjectRequestChannel"
+        registeredByName:
+          type: string
+          nullable: true
+          description: null у веб-формы.
+
+    PagedSubjectRequests:
+      type: object
+      additionalProperties: false
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubjectRequestDto"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        hasNext:
+          type: boolean
+
+    # ── Т20-08 ──
+
+    LegalUiTextDto:
+      type: object
+      additionalProperties: false
+      required: [key, version, isDraft, contentHtml]
+      properties:
+        key:
+          type: string
+        version:
+          type: string
+        isDraft:
+          type: boolean
+        contentHtml:
+          type: string

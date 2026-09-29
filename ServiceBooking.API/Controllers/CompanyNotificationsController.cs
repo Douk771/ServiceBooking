@@ -308,6 +308,8 @@ public class CompanyNotificationsController(
         if (type.HasValue) query = query.Where(n => n.Type == type);
         // ARCHITECTURE_CYCLE9.md §114.3 (US-120) — additive ?transport= filter.
         if (transport.HasValue) query = query.Where(n => n.Transport == transport);
+        from = QueryDateTime.ToUtc(from);
+        to = QueryDateTime.ToUtc(to);
         if (from.HasValue) query = query.Where(n => n.CreatedAt >= from);
         if (to.HasValue) query = query.Where(n => n.CreatedAt <= to);
 

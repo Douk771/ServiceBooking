@@ -177,28 +177,19 @@ public class CompanyMembersController(
                 : await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id);
             if (seatsUsed >= plan.AccountMaxEmployees.Value)
             {
-                // §53.4 breakdown: how much of the summed limit is "included in the plan" vs
-                // "purchased as an option" vs "grandfathered bonus" — the plan's own included quantity
-                // is whatever's left after subtracting the bonus and every option's contribution from
-                // the already-resolved total (both are 0 when there's no billing account at all, the
-                // pre-cycle-5-backfill edge case).
-                var bonus = billingAccountId.HasValue
-                    ? await db.BillingAccounts.Where(a => a.Id == billingAccountId.Value).Select(a => a.GrandfatheredEmployeeBonus).FirstOrDefaultAsync()
-                    : 0;
+                // ARCHITECTURE_CYCLE19.md §384.3/§411: the limit shown is the resolver's own number
+                // (tariff field + bonus, AccountLimitFormula) — no more "purchased" breakdown, so all
+                // this needs is the current (or fallback Free) plan's name.
                 var sub = billingAccountId.HasValue
                     ? await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == billingAccountId.Value)
                     : null;
                 // NB-1: must use the SAME "is this subscription usable right now" gate as the limit
                 // itself (SubscriptionResolver.Resolve) — otherwise an expired subscription's raw plan
-                // name/quantity leaks into the 402 text (e.g. "8 included") while the limit that was
-                // actually enforced came from Free (1).
+                // name leaks into the 402 text while the limit that was actually enforced came from Free.
                 var subUsableNow = SubscriptionUsability.IsUsable(sub, DateTime.UtcNow)
                     && sub.PlanConfig is { IsActive: true };
-                var planIncluded = subUsableNow ? sub!.PlanConfig!.MaxEmployees ?? EffectivePlan.Free.AccountMaxEmployees!.Value
-                    : EffectivePlan.Free.AccountMaxEmployees!.Value;
-                var purchased = Math.Max(0, plan.AccountMaxEmployees.Value - planIncluded - bonus);
                 var planName = subUsableNow ? sub!.PlanConfig!.Name : "Бесплатный";
-                return StatusCode(402, BillingTexts.SeatLimitReached(seatsUsed, planName, planIncluded, purchased, bonus));
+                return StatusCode(402, BillingTexts.SeatLimitReached(seatsUsed, planName, plan.AccountMaxEmployees.Value));
             }
         }
 

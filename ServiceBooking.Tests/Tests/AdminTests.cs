@@ -388,8 +388,16 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
     public async Task UpdateCompanyOwner_AsSuperAdmin_ReassignsOwnerAndGrantsManagementAccess()
     {
         var admin = await LoginAsSuperAdminAsync();
-        var (_, company) = await CreateOwnerWithCompanyAsync();
+        var (currentOwner, company) = await CreateOwnerWithCompanyAsync();
         var newOwner = await RegisterAsync(); // starts as a plain Client, not yet a member of this company
+
+        // ARCHITECTURE_CYCLE20.md §407.2/§437.3 (US-20-07, LG6, cycle 20) — PUT .../owner now requires
+        // the new owner to already be linked to the company's billing account; make them a member of
+        // this company first (orthogonal to what this test exercises: reassignment + the resulting
+        // management access, which the assertions below already re-verify via the actual member grant).
+        var addResponse = await AuthedClient(currentOwner.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
+            new { phone = newOwner.Phone, firstName = newOwner.FirstName, lastName = newOwner.LastName, role = "Master", bio = (string?)null, email = (string?)null });
+        addResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await AuthedClient(admin.Token).PutAsJsonAsync(
             $"/api/admin/companies/{company.Id}/owner", new UpdateCompanyOwnerDto(newOwner.UserId));
@@ -534,6 +542,13 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
             .Content.ReadFromJsonAsync<List<CompanyDto>>())!.Single(c => c.Id == company.Id);
 
         var newOwner = await RegisterAsync(); // no subscription of their own — would be Free alone
+
+        // ARCHITECTURE_CYCLE20.md §407.2/§437.3 (US-20-07, LG6, cycle 20) — PUT .../owner now requires
+        // the new owner to already be linked to the company's billing account; make them a member of
+        // this company first (orthogonal to what this test exercises — billing/channel/log staying put).
+        var addResponse = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
+            new { phone = newOwner.Phone, firstName = newOwner.FirstName, lastName = newOwner.LastName, role = "Master", bio = (string?)null, email = (string?)null });
+        addResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var response = await AuthedClient(admin.Token).PutAsJsonAsync(
             $"/api/admin/companies/{company.Id}/owner", new UpdateCompanyOwnerDto(newOwner.UserId));

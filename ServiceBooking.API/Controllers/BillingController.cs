@@ -103,6 +103,10 @@ public class BillingController(
             if (line.Quantity < 1) return BadRequest("Количество должно быть не меньше 1.");
             var option = options.FirstOrDefault(o => o.Id == line.OptionId);
             if (option is null) return BadRequest($"Опция {line.OptionId} не найдена.");
+            // ARCHITECTURE_CYCLE19.md §408/§414 — a retired limit option can no longer be requested;
+            // nothing is saved, the previous pending request (if any) stays as it was.
+            if (RetiredLimitOptions.IsRetired(option))
+                return BadRequest(BillingTexts.RetiredOptionRejected(option.Name));
             if (option.Kind == OptionKind.Toggle && line.Quantity != 1)
                 return BadRequest($"Опция «{option.Name}» — переключатель, количество может быть только 1.");
         }
@@ -168,4 +172,48 @@ public class BillingController(
 
         return NoContent();
     }
+
+    // ARCHITECTURE_CYCLE20.md §402.5, API_CONTRACT_CYCLE20.md §432.8 (US-20-01, Т20-04 п. 3, D1 П-13) —
+    // the PDn operator details printed on the health-consent paper form. Access is the billing account
+    // HOLDER only (not a company manager) — same rule as every other /api/billing/* endpoint here.
+
+    [HttpGet("operator-details")]
+    public async Task<ActionResult<ConsentOperatorDetailsDto>> GetOperatorDetails()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var account = await ownerSubscriptionService.FindAccountForOwnerAsync(userId);
+        if (account is null) return NotFound();
+
+        return Ok(BuildOperatorDetailsDto(account));
+    }
+
+    [HttpPut("operator-details")]
+    public async Task<ActionResult<ConsentOperatorDetailsDto>> PutOperatorDetails([FromBody] UpdateConsentOperatorDetailsDto dto)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var account = await ownerSubscriptionService.FindAccountForOwnerAsync(userId);
+        if (account is null) return NotFound();
+
+        var fullName = ConsentOperatorDetailsValidator.Normalize(dto.FullName);
+        var address = ConsentOperatorDetailsValidator.Normalize(dto.Address);
+        var inn = ConsentOperatorDetailsValidator.Normalize(dto.Inn);
+
+        var error = ConsentOperatorDetailsValidator.Validate(fullName, address, inn);
+        if (error is not null) return BadRequest(error);
+
+        account.ConsentOperatorFullName = fullName;
+        account.ConsentOperatorAddress = address;
+        account.ConsentOperatorInn = inn;
+        account.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        return Ok(BuildOperatorDetailsDto(account));
+    }
+
+    private static ConsentOperatorDetailsDto BuildOperatorDetailsDto(BillingAccount account) => new(
+        account.ConsentOperatorFullName, account.ConsentOperatorAddress, account.ConsentOperatorInn,
+        ConsentOperatorDetailsValidator.IsMissing(account.ConsentOperatorFullName, account.ConsentOperatorAddress));
 }
+
+public record ConsentOperatorDetailsDto(string? FullName, string? Address, string? Inn, bool Missing);
+public record UpdateConsentOperatorDetailsDto(string? FullName, string? Address, string? Inn);

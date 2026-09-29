@@ -8,7 +8,28 @@ import { Button } from '../components/ui/Button'
 import { Modal } from '../components/ui/Modal'
 import { Icon } from '../components/ui/Icon'
 import { getLegalErrorMessage } from '../utils/legalError'
+import { useLegalText } from '../hooks/useLegalText'
+import { findSection, splitLegalSections } from '../utils/legalSections'
 import type { ConsentPurpose, ConsentRevokeEffects } from '../types'
+
+/**
+ * API_CONTRACT_CYCLE20.md §432.9 / §441 item 6 (LG1, US-20-01) — `HealthData` is the one purpose this
+ * screen must never offer a checkbox for: consent for it is given on paper at the salon
+ * (`POST /api/profile/consents` rejects it with 400 since this cycle). A LIVE grant (from before the
+ * cycle, or migrated) still needs "Отозвать" — it still works exactly like any other purpose — plus
+ * the "Текст для клиента" section so the person can read what it actually covers.
+ */
+function HealthDataClientText() {
+  const { data: text } = useLegalText('HealthDataConsent')
+  const section = text ? findSection(splitLegalSections(text.contentHtml), 'Текст для клиента') : null
+  if (!section) return null
+  return (
+    <details className="mt-1.5 text-xs text-ink-soft">
+      <summary className="cursor-pointer text-muted">Текст для клиента</summary>
+      <div className="mt-1.5 [&_p]:mb-1.5 [&_p:last-child]:mb-0" dangerouslySetInnerHTML={{ __html: section.html }} />
+    </details>
+  )
+}
 
 type NumericEffectKey = Exclude<keyof ConsentRevokeEffects, 'profileFieldsCleared'>
 
@@ -185,6 +206,7 @@ export function ConsentsPage() {
         <div className="flex flex-col gap-4">
           {data.document.purposes.map((p) => {
             const active = activeByPurpose.get(p.key)
+            const isHealthData = p.key === 'HealthData'
             return (
               <div key={p.key} className="flex items-start justify-between gap-4 border-b border-line last:border-0 pb-4 last:pb-0">
                 <div className="min-w-0">
@@ -193,6 +215,9 @@ export function ConsentsPage() {
                     <p className="text-xs text-success mt-1">
                       Согласие дано {fmtDateTime(active.grantedAt)} · версия {active.version}
                     </p>
+                  ) : isHealthData ? (
+                    // §432.9 (Т20-03 п. 3) — never offered here: given on a paper form at the salon.
+                    <p className="text-xs text-muted mt-1">Согласие даётся в салоне на бумажном бланке.</p>
                   ) : (
                     <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
                       <input
@@ -206,6 +231,7 @@ export function ConsentsPage() {
                       <span className="text-xs text-muted">Согласие не дано</span>
                     </label>
                   )}
+                  {isHealthData && active && <HealthDataClientText />}
                 </div>
                 {active && (
                   <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setRevokingPurpose({ key: p.key, title: p.title })}>

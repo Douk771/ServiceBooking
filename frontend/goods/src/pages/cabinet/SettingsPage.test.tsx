@@ -14,7 +14,7 @@ vi.mock('../../api/shops', () => ({
   shopsApi: { updateSettings: (...a: unknown[]) => (failWith ? Promise.reject(failWith) : updateSettings(...a)), updateSeller: vi.fn() },
 }))
 vi.mock('@/api/companies', () => ({ companiesApi: { update: vi.fn(), uploadLogo: vi.fn() } }))
-vi.mock('@/components/company/AddressVerifyField', () => ({ AddressVerifyField: () => <div>address-field</div> }))
+vi.mock('@/components/company/CompanyAddressField', () => ({ CompanyAddressField: () => <div>address-field</div> }))
 
 const shop = (over: Partial<ShopManageDto> = {}): ShopManageDto =>
   ({

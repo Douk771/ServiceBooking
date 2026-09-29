@@ -43,6 +43,7 @@ type IconName =
   | 'qr-code'
   | 'bell'
   | 'eye-off'
+  | 'printer'
 
 /**
  * Minimal line-icon set for the premium redesign.
@@ -239,6 +240,15 @@ const paths: Record<IconName, JSX.Element> = {
     <>
       <path d="M3 12s3.5-6.5 9-6.5c1.7 0 3.2.6 4.5 1.4M21 12s-3.5 6.5-9 6.5c-1.7 0-3.2-.6-4.5-1.4" />
       <path d="M4 4l16 16" />
+    </>
+  ),
+  // Cycle 20 — health-consent-form print page (US-20-01), hand-authored in the same style since the
+  // mockups didn't cover it.
+  printer: (
+    <>
+      <path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" />
+      <rect x="3" y="9" width="18" height="8" rx="2" />
+      <path d="M6 14h12v7a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-7z" />
     </>
   ),
 }

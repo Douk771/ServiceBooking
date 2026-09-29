@@ -1,6 +1,8 @@
 import { api } from './client'
 import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
+import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
+import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
 
 /**
  * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
@@ -16,8 +18,16 @@ import type { components as Cycle18Schemas } from '../types/api-cycle18.generate
 type Schemas = components['schemas']
 
 export type AvailableOptionDto = Schemas['AvailableOptionDto']
-type SubscriptionRequestDto = Schemas['SubscriptionRequestDto']
-export type OwnerSubscriptionDto = Schemas['OwnerSubscriptionDto']
+// ARCHITECTURE_CYCLE19.md §388.5/FE-4, API_CONTRACT_CYCLE19.md §408 — `items[].retired` and
+// `retiredOptionsNotice` are new (breaking-additive) fields on the request DTO; read straight off
+// the cycle19 schema rather than the cycle7 one (N22 convention).
+type Cycle19 = Cycle19Schemas['schemas']
+export type SubscriptionRequestDto = Cycle19['SubscriptionRequestDto']
+/** `OwnerSubscriptionDto` (cycle 7) with `pendingRequest` overridden to the cycle19 shape — the
+ *  cycle7 schema's own nested `pendingRequest` type predates `retired`/`retiredOptionsNotice`. */
+export type OwnerSubscriptionDto = Omit<Schemas['OwnerSubscriptionDto'], 'pendingRequest'> & {
+  pendingRequest?: SubscriptionRequestDto | null
+}
 type SubscriptionRequestInput = Schemas['SubscriptionRequestInput']
 
 // ── Cycle 18 (trial plan) — API_CONTRACT_CYCLE18.md §362–§363. Types come from the generated
@@ -61,4 +71,19 @@ export const billingApi = {
     api
       .post<TrialStateDto>('/billing/trial/terms-acknowledgement', { termsVersion } satisfies TrialTermsAcknowledgementInput)
       .then((r) => r.data),
+
+  /** GET /api/billing/operator-details (§432.8, NEW) — held-account only; 404 = no billing account
+   *  at all (same "not an error state" convention as `getSubscription`/`getTrial` above). */
+  getOperatorDetails: (): Promise<ConsentOperatorDetailsDto> =>
+    api.get<ConsentOperatorDetailsDto>('/billing/operator-details').then((r) => r.data),
+
+  /** PUT /api/billing/operator-details — empty string / whitespace-only is sent through as-is; the
+   *  server treats it as `null` (§432.8), so the caller doesn't need to pre-convert. */
+  updateOperatorDetails: (input: ConsentOperatorDetailsInput): Promise<ConsentOperatorDetailsDto> =>
+    api.put<ConsentOperatorDetailsDto>('/billing/operator-details', input).then((r) => r.data),
 }
+
+// ── Cycle 20 (US-20-01, Т20-04 п. 3) — operator-of-record details for the paper consent form. ──────
+type Cycle20 = Cycle20Schemas['schemas']
+export type ConsentOperatorDetailsDto = Cycle20['ConsentOperatorDetailsDto']
+export type ConsentOperatorDetailsInput = Cycle20['ConsentOperatorDetailsInput']

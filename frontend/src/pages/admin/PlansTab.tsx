@@ -24,6 +24,7 @@ import {
   optionRulesToPayload,
   type PlanForm,
 } from './planForm'
+import { PRICE_CHANGE_SUPERADMIN_HINT } from '../../legal/staffNotices'
 import { formatMonthlyPrice } from '../../utils/pricingFormat'
 
 const RETENTION_LABELS: Record<PhotoRetention, string> = {
@@ -527,29 +528,49 @@ export function PlansTab() {
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
             <div className="grid grid-cols-3 gap-3">
-              <Input
-                label="Цена/мес (₽)"
-                type="number"
-                min={0}
-                value={form.pricePerMonth}
-                onChange={(e) => setForm((f) => ({ ...f, pricePerMonth: e.target.value }))}
-              />
-              <Input
-                label="Макс. сотрудников суммарно (∞)"
-                type="number"
-                min={1}
-                value={form.maxEmployees}
-                onChange={(e) => setForm((f) => ({ ...f, maxEmployees: e.target.value }))}
-                placeholder="∞"
-              />
-              <Input
-                label="Макс. компаний суммарно (∞)"
-                type="number"
-                min={1}
-                value={form.maxCompanies}
-                onChange={(e) => setForm((f) => ({ ...f, maxCompanies: e.target.value }))}
-                placeholder="∞"
-              />
+              <div className="flex flex-col gap-1">
+                <Input
+                  label="Цена/мес (₽)"
+                  type="number"
+                  min={0}
+                  value={form.pricePerMonth}
+                  onChange={(e) => setForm((f) => ({ ...f, pricePerMonth: e.target.value }))}
+                />
+                {/* ARCHITECTURE_CYCLE20.md §404.3 (US-20-03) — reminder only for an EXISTING plan
+                    (one that may already have active subscribers); a brand-new plan has none yet. No
+                    automatic link to a PlatformNotice of kind PriceChange exists (out of scope), so
+                    this is the only thing standing between a superadmin and a silent price bump. */}
+                {editingPlan && <p className="text-[11px] text-muted leading-snug">{PRICE_CHANGE_SUPERADMIN_HINT}</p>}
+              </div>
+              <div>
+                <Input
+                  label="Макс. сотрудников суммарно (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxEmployees}
+                  onChange={(e) => setForm((f) => ({ ...f, maxEmployees: e.target.value }))}
+                  placeholder="∞"
+                />
+                {/* ARCHITECTURE_CYCLE19.md FE-5 — the limit lives ONLY here since cycle 19: the
+                    "Дополнительные сотрудники"/"Дополнительная компания" option rows no longer
+                    exist in the catalog; the options matrix below has no filter of its own (§386.2). */}
+                <p className="text-[11px] text-muted mt-1">
+                  Лимит задаётся только здесь; опций для докупки сотрудников и компаний нет.
+                </p>
+              </div>
+              <div>
+                <Input
+                  label="Макс. компаний суммарно (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxCompanies}
+                  onChange={(e) => setForm((f) => ({ ...f, maxCompanies: e.target.value }))}
+                  placeholder="∞"
+                />
+                <p className="text-[11px] text-muted mt-1">
+                  Лимит задаётся только здесь; опций для докупки сотрудников и компаний нет.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -620,7 +641,7 @@ export function PlansTab() {
                   code cannot validate free-text meaning, so this is a reminder for the admin editing
                   the trial plan's showcase copy, not a form validation. */}
               {editingPlan?.isSystemTrial && (
-                <p className="text-xs text-warning bg-[#FBF3E3] border border-warning rounded-lg px-3 py-2 mb-2">
+                <p className="text-xs text-warning bg-warning-bg border border-warning rounded-lg px-3 py-2 mb-2">
                   Для тарифа пробного периода в пунктах обязаны быть указаны: продолжительность,
                   однократное предоставление одному абоненту, отдельный (более короткий) срок бесплатных рассылок и
                   переход на бесплатный тариф без удаления данных по окончании.

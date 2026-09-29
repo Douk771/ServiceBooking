@@ -23,7 +23,13 @@ export const companyPhotosApi = {
       .then((r) => r.data)
   },
 
-  remove: (companyId: string, photoId: string) => api.delete(`/companies/${companyId}/photos/${photoId}`),
+  /** API_CONTRACT_CYCLE20.md §434.8 (Т20-07 п. 2) — `reason` is a NEW, optional query param, the only
+   *  accepted value is `DepictedPersonRequest`. It's used ONLY when the server checks the caller is
+   *  SuperAdmin — the owner's own removal is unaffected either way, so it's fine to just never send it
+   *  from the owner's flow rather than have the server ignore it. When set, the server publishes a
+   *  `PhotoRemoved` platform notice to the company's billing account after the commit. */
+  remove: (companyId: string, photoId: string, reason?: 'DepictedPersonRequest') =>
+    api.delete(`/companies/${companyId}/photos/${photoId}`, { params: reason ? { reason } : undefined }),
 
   /** §128.2 — `photoIds` must be a full permutation of the company's current photos; first = cover. */
   reorder: (companyId: string, photoIds: string[]) =>

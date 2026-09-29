@@ -1,21 +1,37 @@
 import { api } from './client'
 import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
+import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
+import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
+import type { SubscriptionRequestDto } from './billing'
 
 type Schemas = components['schemas']
 type Cycle18 = Cycle18Schemas['schemas']
+type Cycle19 = Cycle19Schemas['schemas']
+type Cycle20 = Cycle20Schemas['schemas']
 
 export type TrialAccountFilter = Cycle18['TrialAccountFilter']
 type TrialRegrantInput = Cycle18['TrialRegrantInput']
 
-/** Cycle 7 shapes + cycle 18 `trial`/`trialState`/`trialEndsAt` (additive — §369, §372). */
+/** Cycle 7 shapes + cycle 18 `trial`/`trialState`/`trialEndsAt` (additive — §369, §372) + cycle 19
+ *  `pendingRequest` overridden to the cycle19 shape (`items[].retired`/`retiredOptionsNotice`,
+ *  API_CONTRACT_CYCLE19.md §407). */
 export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDto'] & Cycle18['AdminBillingAccountListItemTrialPatch']
-export type AdminBillingAccount = Schemas['AdminBillingAccountDto'] & Cycle18['AdminBillingAccountDtoTrialPatch']
+export type AdminBillingAccount = Omit<Schemas['AdminBillingAccountDto'], 'pendingRequest'> &
+  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null }
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
-export type AssignSubscriptionInput = Schemas['AssignSubscriptionInput']
+/** Cycle 20 (US-20-02, API_CONTRACT_CYCLE20.md §433.1) adds `reasonCode`/`reasonDetails` in the
+ *  request body — same `AssignOptionInput`/log shapes otherwise. */
+export type AssignSubscriptionInput = Cycle20['AssignSubscriptionInput']
 export type AssignOptionInput = Schemas['AssignOptionInput']
-type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto']
-export type AdminSubscriptionRequest = Schemas['AdminSubscriptionRequestDto']
+export type SubscriptionChangeReason = Cycle20['SubscriptionChangeReason']
+type SubscriptionChangeReasonDto = Cycle20['SubscriptionChangeReasonDto']
+/** History item — existing shape plus `reasonCode`/`reasonTitle`/`reasonDetails` (§433.2), always
+ *  `null` on rows that predate the cycle or weren't a manual hidden-plan assignment. */
+type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto'] & Cycle20['SubscriptionHistoryItemReasonPatch']
+// ARCHITECTURE_CYCLE19.md FE-3, API_CONTRACT_CYCLE19.md §407 — `items[].retired` and
+// `retiredOptionsNotice` are new; read straight off the cycle19 schema (N22 convention).
+export type AdminSubscriptionRequest = Cycle19['AdminSubscriptionRequestDtoCycle19']
 export type SubscriptionStatus = Schemas['SubscriptionStatus']
 type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
 
@@ -64,6 +80,13 @@ export const adminBillingApi = {
     api
       .get<{ items: SubscriptionChangeLog[] }>(`/admin/billing-accounts/${accountId}/subscription-history`)
       .then((r) => r.data.items),
+
+  /** GET /api/admin/subscription-change-reasons (§433.3, NEW) — closed list of reason codes; the
+   *  frontend must never hardcode its own titles/rules. Only `assignableManually: true` entries belong
+   *  in the assignment form's dropdown — `TrialReissue` is included ONLY so history rows sharing the
+   *  same code render with the same title, never as a selectable option there. */
+  getChangeReasons: () =>
+    api.get<{ items: SubscriptionChangeReasonDto[] }>('/admin/subscription-change-reasons').then((r) => r.data.items),
 
   listRequests: (params: { status?: SubscriptionRequestStatus; page?: number; pageSize?: number }) =>
     api.get<PagedResult<AdminSubscriptionRequest>>('/admin/subscription-requests', { params }).then((r) => r.data),

@@ -25,15 +25,26 @@ public static class LegalTextKey
     // LegalDocumentType (doesn't gate the 451 flow), read-only reference text like the other six.
     public const string PublicAddressNotice = "PublicAddressNotice";
 
+    // ARCHITECTURE_CYCLE20.md §411, §412 (Т20-08) — five new keys added by the cycle 20 commit A, together
+    // with the matching legal-drafts/*.html files and the legal.json manifest entries. Same convention as
+    // the other members: read-only reference texts, none of them gate the 451 flow.
+    public const string GuestDataGateNotice = "GuestDataGateNotice";
+    public const string GuestDataGateDeleteNotice = "GuestDataGateDeleteNotice";
+    public const string GuestDataGateRevokeNotice = "GuestDataGateRevokeNotice";
+    public const string HealthDataWrittenConsentForm = "HealthDataWrittenConsentForm";
+    public const string CompanyPhotoPeopleNotice = "CompanyPhotoPeopleNotice";
     // ARCHITECTURE_CYCLE23.md §398.3 — the line under the "Заказать" button on goods. A constant, but
-    // DELIBERATELY NOT in All (the guestDataGateNotice precedent, cycle 16): All feeds LegalDocumentProvider's
-    // fail-fast, which would block the deploy until legal-counsel supplies the text. The frontend reads
+    // DELIBERATELY NOT in All: All feeds LegalDocumentProvider's fail-fast, which would block the deploy until
+    // legal-counsel supplies the text (cycle 20 moved GuestDataGateNotice into All once its text existed —
+    // do the same here when the lawyer's text lands). The frontend reads
     // GET /api/legal/texts/orderCheckoutNotice and shows a neutral fallback on 404.
     public const string OrderCheckoutNotice = "orderCheckoutNotice";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,
-        PublicAddressNotice
+        PublicAddressNotice,
+        GuestDataGateNotice, GuestDataGateDeleteNotice, GuestDataGateRevokeNotice, HealthDataWrittenConsentForm,
+        CompanyPhotoPeopleNotice
     };
 }

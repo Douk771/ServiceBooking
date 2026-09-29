@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { PhoneInput } from '@/components/ui/PhoneInput'
-import { AddressVerifyField } from '@/components/company/AddressVerifyField'
+import { CompanyAddressField } from '@/components/company/CompanyAddressField'
 import { getLogoErrorMessage } from '@/utils/companyManageError'
 import { shopsApi } from '../../api/shops'
 import { useShopContext } from '../../hooks/useShop'
@@ -139,11 +139,11 @@ function ProfileSection({ shop }: { shop: ShopManageDto }) {
       </form>
 
       <div className="mt-6 pt-5 border-t border-line">
-        <AddressVerifyField
+        {/* Cycle 19 removed the geocoder: CompanyAddressField (formerly AddressVerifyField) is a plain field
+            that keeps the public-address notice gate. */}
+        <CompanyAddressField
           companyId={shop.id}
           initialAddress={shop.address ?? ''}
-          cityId={shop.cityId}
-          addressVerification={null}
           onSaved={() => refresh.refetch()}
         />
         <p className="text-xs text-muted mt-2">Адрес виден покупателям на странице магазина{shop.cityName ? `. Город: ${shop.cityName}` : ''}.</p>

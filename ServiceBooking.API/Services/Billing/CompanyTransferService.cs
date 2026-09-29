@@ -18,6 +18,16 @@ public enum TransferFailureKind
     NewOwnerNotLinkedToTargetAccount,
     CompanyLimitExceeded,
     SeatOverflowConfirmationRequired,
+    // ARCHITECTURE_CYCLE20.md §407.2 (US-20-07, Т20-09, LG6) — a transfer WITHOUT an owner change,
+    // where the company's CURRENT owner has no link to the receiving account. Distinct from
+    // NewOwnerNotLinkedToTargetAccount above (that one is about a newOwnerUserId the caller supplied;
+    // this one fires when no new owner was supplied at all, and the existing owner would otherwise stay
+    // in place, unlinked, "closing LG6" — no path may leave a company owned by someone unconnected to
+    // the account paying for it).
+    CurrentOwnerNotLinkedToTargetAccount,
+    // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.2 (Т20-09 п. 1) — ConfirmRightsTransfer
+    // was not true. Checked FIRST, before any calculation (§437.2's own ordering).
+    RightsTransferNotConfirmed,
 }
 
 public sealed record TransferFailure(TransferFailureKind Kind, string Message);
@@ -80,6 +90,27 @@ public class CompanyTransferService(
         return (newOwner, null);
     }
 
+    /// <summary>ARCHITECTURE_CYCLE20.md §407.1/§407.2 (US-20-07, LG6) — the same linkage rule
+    /// <see cref="ValidateNewOwnerAsync"/> applies to a REQUESTED new owner, applied instead to the
+    /// company's EXISTING owner for a transfer that doesn't ask to change it. Deliberately does not
+    /// re-check <c>DeletedAtUtc</c> — an already-tombstoned current owner is a pre-existing state this
+    /// transfer isn't introducing, and is not this check's job to catch.</summary>
+    private async Task<TransferFailure?> ValidateCurrentOwnerLinkedAsync(Company company, Guid targetBillingAccountId)
+    {
+        var currentOwnerId = company.OwnerUserId;
+        var isHolder = await db.BillingAccounts.AnyAsync(a => a.Id == targetBillingAccountId && a.OwnerUserId == currentOwnerId);
+        var isMember = await db.CompanyMembers
+            .Where(cm => cm.UserId == currentOwnerId)
+            .Join(db.Companies, cm => cm.CompanyId, c => c.Id, (cm, c) => c.BillingAccountId)
+            .AnyAsync(accountId => accountId == targetBillingAccountId);
+
+        if (CompanyTransferCalculator.IsNewOwnerLinkedToTargetAccount(isHolder, isMember))
+            return null;
+
+        return new TransferFailure(
+            TransferFailureKind.CurrentOwnerNotLinkedToTargetAccount, BillingTexts.TransferRejectedCurrentOwnerUnlinked(company.Name));
+    }
+
     /// <summary>
     /// Read-only preview (§51.2): what would happen to the receiving account's limits if this transfer
     /// went ahead. Does not take locks or write anything.
@@ -104,6 +135,14 @@ public class CompanyTransferService(
             if (failure is not null) return new TransferPreviewResult(false, failure, null);
             var isAlreadyMember = await db.CompanyMembers.AnyAsync(cm => cm.CompanyId == companyId && cm.UserId == newOwner!.Id);
             newOwnerAddsSeat = !isAlreadyMember;
+        }
+        else
+        {
+            // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.1 (US-20-07, LG6) — no new
+            // owner requested: the company's EXISTING owner must be linked to the receiving account, or
+            // it would keep an owner unconnected to whoever is about to pay for it.
+            var currentOwnerFailure = await ValidateCurrentOwnerLinkedAsync(company, targetBillingAccountId);
+            if (currentOwnerFailure is not null) return new TransferPreviewResult(false, currentOwnerFailure, null);
         }
 
         var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, ownerWillChange: !string.IsNullOrEmpty(newOwnerUserId));
@@ -130,8 +169,17 @@ public class CompanyTransferService(
     /// §51.3 — the transfer itself, one transaction, ordered exactly as the architecture spells out.
     /// </summary>
     public async Task<TransferResult> TransferAsync(
-        Guid companyId, Guid targetBillingAccountId, string? newOwnerUserId, bool confirmSeatOverflow, string changedByUserId)
+        Guid companyId, Guid targetBillingAccountId, string? newOwnerUserId, bool confirmSeatOverflow, string changedByUserId,
+        bool confirmRightsTransfer = false)
     {
+        // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.2 (Т20-09 п. 1) — checked FIRST,
+        // before the company/account even get looked up: the contract's own ordering ("Проверка
+        // confirmRightsTransfer — первой, до расчётов").
+        if (!confirmRightsTransfer)
+            return TransferResult.Fail(
+                TransferFailureKind.RightsTransferNotConfirmed,
+                "Подтвердите, что права на компанию переходят к принимающему абоненту.");
+
         var company = await db.Companies.FindAsync(companyId);
         if (company is null)
             return TransferResult.Fail(TransferFailureKind.CompanyNotFound, "Компания не найдена");
@@ -173,6 +221,14 @@ public class CompanyTransferService(
 
             var isAlreadyMember = await db.CompanyMembers.AnyAsync(cm => cm.CompanyId == companyId && cm.UserId == newOwner!.Id);
             newOwnerAddsSeat = !isAlreadyMember;
+        }
+        else
+        {
+            // ARCHITECTURE_CYCLE20.md §407.2 (US-20-07, LG6) — mirrors PreviewAsync's own check, applied
+            // again here (not just trusted from a prior preview call) because the caller may never have
+            // called preview, and because state can change between the two calls.
+            var currentOwnerFailure = await ValidateCurrentOwnerLinkedAsync(company, targetBillingAccountId);
+            if (currentOwnerFailure is not null) return new TransferResult(false, currentOwnerFailure);
         }
 
         var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, newOwner is not null);
@@ -251,7 +307,9 @@ public class CompanyTransferService(
         {
             oldOwnerUserId = await companyOwnerWriter.ChangeOwnerAsync(
                 company, newOwner.Id, changedByUserId, withTransfer: true,
-                comment: "Перенос компании между биллинг-аккаунтами");
+                // ARCHITECTURE_CYCLE20.md §407.2 (Т20-09 п. 1) — the confirmation fact recorded here too,
+                // not only on the two SubscriptionChangeLog rows below.
+                comment: "Перенос компании между биллинг-аккаунтами; подтверждено: права на компанию переходят к принимающему абоненту");
         }
 
         // Step 9: save, then IdentityRoleSync inside the same transaction.
@@ -270,7 +328,12 @@ public class CompanyTransferService(
         var now = DateTime.UtcNow;
         var ownerChanged = newOwner is not null;
         var targetOwnerName = await GetDisplayNameAsync(targetAccount.OwnerUserId);
-        var ownershipSuffix = ownerChanged ? $"; ответственный сменился на {targetOwnerName}" : "; ответственный не менялся";
+        // §413 П-7's own SQL LIKE '%ответственный не менялся%' matches the un-changed branch — kept
+        // verbatim; the confirmation note below is a separate, always-present trailing clause on BOTH
+        // branches (ARCHITECTURE_CYCLE20.md §407.2, Т20-09 п. 1: "факт подтверждения пишется в обе
+        // строки SubscriptionChangeLog").
+        var ownershipSuffix = (ownerChanged ? $"; ответственный сменился на {targetOwnerName}" : "; ответственный не менялся")
+            + "; подтверждено: права на компанию переходят к принимающему абоненту";
 
         // NB-8 (cycle-07 backend report): sourceOwnerName is computed once here and reused below for
         // the target-account log row's comment — the previous code re-issued FindAsync(sourceBillingAccountId)

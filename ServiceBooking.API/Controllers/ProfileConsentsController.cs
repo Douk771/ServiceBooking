@@ -23,7 +23,9 @@ namespace ServiceBooking.API.Controllers;
 public class ProfileConsentsController(
     UserManager<AppUser> userManager, AppDbContext db, FileStorage storage,
     LegalDocumentProvider legalProvider, ConsentLedger ledger,
-    SubjectScopeResolver subjectScopeResolver, ILogger<ProfileController> logger)
+    SubjectScopeResolver subjectScopeResolver, ILogger<ProfileController> logger,
+    // ARCHITECTURE_CYCLE20.md §406.2 (US-20-05) and §402.4 (US-20-01).
+    GuestDataGateJournal guestDataGateJournal, WrittenHealthConsentRevoker writtenHealthConsentRevoker)
     : ControllerBase
 {
     // ── Consents (ARCHITECTURE_CYCLE5.md §41, API_CONTRACT_CYCLE5.md §41) ──────────────────────────
@@ -68,6 +70,11 @@ public class ProfileConsentsController(
         {
             if (!Enum.TryParse<ConsentPurpose>(key, ignoreCase: true, out var purpose) || doc.Purposes.All(p => p.Key != purpose))
                 return BadRequest($"Неизвестная цель '{key}'.");
+            // ARCHITECTURE_CYCLE20.md §402.7, API_CONTRACT_CYCLE20.md §432.9 (US-20-01, LG1) — HealthData
+            // is no longer grantable through the profile; it stays a valid ENUM member (and a valid
+            // target for revocation below) purely so a previously-given grant can still be withdrawn.
+            if (purpose == ConsentPurpose.HealthData)
+                return BadRequest(WrittenHealthConsentTexts.ProfileHealthDataPurposeGoneMessage);
             parsedPurposes.Add(purpose);
         }
 
@@ -107,6 +114,13 @@ public class ProfileConsentsController(
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
+        // Code-review finding (cycle 20): `dto.Reason` used to reach ConsentRecord.RevokeReason
+        // (HasMaxLength(256), AppDbContext) unchecked — a reason longer than the column gave a 500
+        // (DbUpdateException) instead of a 400, on every branch below (PdnConsent, PhotoConsent,
+        // HealthDataConsent, HealthDataWrittenConsentForm all share this one column).
+        if (dto.Reason is { Length: > 256 })
+            return BadRequest("Причина не должна превышать 256 символов.");
+
         // Code review В3: §44.4 describes a revoke mechanism for the SALON-recorded PhotoConsent/
         // HealthDataConsent rows too (ClientConsentsController's PostPhotoConsent/PostHealthConsent) —
         // until now this endpoint only ever accepted PdnConsent, so a person had no way to withdraw a
@@ -114,12 +128,14 @@ public class ProfileConsentsController(
         // (ConsentSubject.ForPhoneInCompany), not user scoped, so a companyId is required to say WHICH
         // salon's record is being withdrawn — deliberately a separate branch from PdnConsent below
         // rather than one that silently reinterprets `purpose`, which has no meaning for these two keys.
-        if (dto.DocumentKey is LegalTextKey.PhotoConsent or LegalTextKey.HealthDataConsent)
+        // ARCHITECTURE_CYCLE20.md §402.4/§402.9 (US-20-01) — HealthDataWrittenConsentForm joins the
+        // salon-scoped branch: the same phone+company scoping PhotoConsent/HealthDataConsent already use.
+        if (dto.DocumentKey is LegalTextKey.PhotoConsent or LegalTextKey.HealthDataConsent or LegalTextKey.HealthDataWrittenConsentForm)
             return await RevokeSalonConsentAsync(userId, dto);
 
         if (dto.DocumentKey != LegalDocumentType.PdnConsent.ToString())
             return BadRequest($"Через этот вызов отзывается только '{LegalDocumentType.PdnConsent}', " +
-                               $"'{LegalTextKey.PhotoConsent}' или '{LegalTextKey.HealthDataConsent}'.");
+                               $"'{LegalTextKey.PhotoConsent}', '{LegalTextKey.HealthDataConsent}' или '{LegalTextKey.HealthDataWrittenConsentForm}'.");
 
         ConsentPurpose? purpose = null;
         if (dto.Purpose is not null)
@@ -135,9 +151,9 @@ public class ProfileConsentsController(
         // or never-granted purpose), and the cascade below still runs against whatever it finds (which,
         // for an already-clean subject, is nothing — also legitimate, not an error).
         var revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose, dto.Reason);
-        var effects = await ApplyOrPreviewRevokeEffectsAsync(userId, purpose, apply: true);
+        var (effects, additionalRevoked) = await ApplyOrPreviewRevokeEffectsAsync(userId, purpose, apply: true);
 
-        return Ok(new RevokeConsentResponseDto(revoked, effects));
+        return Ok(new RevokeConsentResponseDto(revoked + additionalRevoked, effects));
     }
 
     /// <summary>The salon-scoped half of RevokeConsent (code review В3) — withdraws a PhotoConsent or
@@ -174,6 +190,7 @@ public class ProfileConsentsController(
         {
             // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
             logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/consents/revoke");
+            await guestDataGateJournal.RecordAsync(userId, GuestDataGateOperation.Revoke, HttpContext.TraceIdentifier);
         }
 
         // 🔴 TD-03-ter (LEGAL_REVIEW_CYCLE16.md находка Н1). Запись в ConsentLedger гейтится ТОЖЕ, а не
@@ -191,40 +208,74 @@ public class ProfileConsentsController(
                 "через форму обращения.");
 
         var subject = ConsentSubject.ForPhoneInCompany(guestMatchPhone, dto.CompanyId.Value);
-        var revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
 
+        int revoked;
         var photosDeleted = 0;
         var healthNotesDeleted = 0;
-        if (dto.DocumentKey == LegalTextKey.PhotoConsent)
+        var photoPathsToDelete = new List<(string Full, string Thumb)>();
+
+        // Code-review finding (cycle 20): the HealthDataConsent branch used to run `ledger.RevokeAsync`
+        // and `writtenHealthConsentRevoker.RevokeAsync` as two INDEPENDENT transactions — if the second
+        // failed, the electronic consent ended up revoked while the paper mark/health note survived it.
+        // One ambient transaction for the whole method now (ConsentLedger.RevokeAsync and
+        // WrittenHealthConsentRevoker.RevokeAsync are both composable under one, per their own doc
+        // comments), same "row goes first" convention as ApplyOrPreviewRevokeEffectsAsync: photo files are
+        // only actually deleted from disk AFTER this commits.
+        await using (var transaction = await db.Database.BeginTransactionAsync())
         {
-            var photos = await db.ClientNotePhotos.Include(p => p.ClientNote)
-                .Where(p => p.CompanyId == dto.CompanyId
-                            && (p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-                .ToListAsync();
-            photosDeleted = photos.Count;
-            if (photos.Count > 0)
+            // ConsentLedger.RevokeAsync and WrittenHealthConsentRevoker.RevokeAsync both skip their OWN
+            // advisory-lock acquisition once an ambient transaction is already open (that's what makes them
+            // composable here) — so with this method now opening that ambient transaction, THIS call site
+            // must take the locks they would otherwise have taken, or the mutual exclusion those locks
+            // exist for (ConsentLedger.GrantAsync racing a concurrent grant; PutHealthNote racing a
+            // concurrent written-consent revoke, code review finding, cycle 20) silently stops applying.
+            // Acquiring both unconditionally (rather than per-branch) keeps this correct even if a future
+            // branch is added without updating this list; pg_advisory_xact_lock is safely re-entrant.
+            await AdvisoryLock.AcquireAsync(db, subject.LockKey);
+            await AdvisoryLock.AcquireAsync(db, $"consent:health-written:{guestMatchPhone}");
+
+            if (dto.DocumentKey == LegalTextKey.PhotoConsent)
             {
-                var paths = photos.Select(p => (p.StoragePath, p.ThumbnailPath)).ToList();
-                db.ClientNotePhotos.RemoveRange(photos);
-                await db.SaveChangesAsync();
-                foreach (var (full, thumb) in paths)
+                revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
+
+                var photos = await db.ClientNotePhotos.Include(p => p.ClientNote)
+                    .Where(p => p.CompanyId == dto.CompanyId
+                                && (p.ClientNote.ClientId == userId || (guestMatchPhone != null && p.ClientNote.GuestPhone == guestMatchPhone)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+                    .ToListAsync();
+                photosDeleted = photos.Count;
+                if (photos.Count > 0)
                 {
-                    storage.DeletePrivate(full);
-                    storage.DeletePrivate(thumb);
+                    photoPathsToDelete.AddRange(photos.Select(p => (p.StoragePath, p.ThumbnailPath)));
+                    db.ClientNotePhotos.RemoveRange(photos);
+                    await db.SaveChangesAsync();
                 }
             }
-        }
-        else // HealthDataConsent
-        {
-            var healthNotes = await db.ClientHealthNotes
-                .Where(n => n.CompanyId == dto.CompanyId && (n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone)))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-                .ToListAsync();
-            healthNotesDeleted = healthNotes.Count;
-            if (healthNotes.Count > 0)
+            else if (dto.DocumentKey == LegalTextKey.HealthDataConsent)
             {
-                db.ClientHealthNotes.RemoveRange(healthNotes);
-                await db.SaveChangesAsync();
+                // API_CONTRACT_CYCLE20.md §432.9 — withdraws the salon's OWN electronic record AND every
+                // live paper-form mark in this company, deleting the health note exactly once (the shared
+                // cascade below already covers it; no separate ClientHealthNotes query is needed any more).
+                revoked = await ledger.RevokeAsync(subject, dto.DocumentKey, purpose: null, dto.Reason);
+                var cascade = await writtenHealthConsentRevoker.RevokeAsync(
+                    guestMatchPhone, dto.CompanyId.Value, dto.Reason ?? WrittenHealthConsentTexts.RevokedFromProfile, revokedByUserId: null, userId);
+                revoked += cascade.Revoked;
+                healthNotesDeleted = cascade.HealthNotesDeleted;
             }
+            else // LegalTextKey.HealthDataWrittenConsentForm (cycle 20, US-20-01)
+            {
+                var cascade = await writtenHealthConsentRevoker.RevokeAsync(
+                    guestMatchPhone, dto.CompanyId.Value, dto.Reason ?? WrittenHealthConsentTexts.RevokedFromProfile, revokedByUserId: null, userId);
+                revoked = cascade.Revoked;
+                healthNotesDeleted = cascade.HealthNotesDeleted;
+            }
+
+            await transaction.CommitAsync();
+        }
+
+        foreach (var (full, thumb) in photoPathsToDelete)
+        {
+            storage.DeletePrivate(full);
+            storage.DeletePrivate(thumb);
         }
 
         var effects = new RevokeEffectsDto(photosDeleted, healthNotesDeleted, [], 0);
@@ -243,7 +294,7 @@ public class ProfileConsentsController(
         }
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var effects = await ApplyOrPreviewRevokeEffectsAsync(userId, parsedPurpose, apply: false);
+        var (effects, _) = await ApplyOrPreviewRevokeEffectsAsync(userId, parsedPurpose, apply: false);
         return Ok(effects);
     }
 
@@ -251,13 +302,17 @@ public class ProfileConsentsController(
     /// The cascade table from ARCHITECTURE_CYCLE5.md §47.1, computed once for both the real revoke and
     /// its preview. `purpose: null` means "the whole PdnConsent document" — every cascade below applies,
     /// plus the optional profile fields (§47.1's fourth row). A specific purpose applies only its own row.
+    /// The second tuple element (ARCHITECTURE_CYCLE20.md §402.4/§402.9, US-20-01) is the count of
+    /// HealthDataWrittenConsentForm marks additionally revoked by the HealthData branch — always 0 when
+    /// <paramref name="apply"/> is false (preview writes/revokes nothing).
     /// </summary>
-    private async Task<RevokeEffectsDto> ApplyOrPreviewRevokeEffectsAsync(string userId, ConsentPurpose? purpose, bool apply)
+    private async Task<(RevokeEffectsDto Effects, int WrittenConsentRecordsRevoked)> ApplyOrPreviewRevokeEffectsAsync(string userId, ConsentPurpose? purpose, bool apply)
     {
         var wholeDocument = purpose is null;
         var photosDeleted = 0;
         var healthNotesDeleted = 0;
         var queuedNotificationsCancelled = 0;
+        var writtenConsentRecordsRevoked = 0;
         var profileFieldsCleared = new List<string>();
         // TD-03 (ARCHITECTURE_CYCLE16.md §245.2 row 4 — a place the spec itself did not name). Before
         // this gate an unverified account could both DESTROY a stranger's health notes (apply: true)
@@ -276,6 +331,8 @@ public class ProfileConsentsController(
             logger.LogInformation(
                 "guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId,
                 apply ? "profile/consents/revoke" : "profile/consents/revoke-preview");
+            await guestDataGateJournal.RecordAsync(
+                userId, apply ? GuestDataGateOperation.Revoke : GuestDataGateOperation.RevokePreview, HttpContext.TraceIdentifier);
         }
 
         // Code review, "заодно": the four sections below used to run as four independent SaveChangesAsync
@@ -292,6 +349,14 @@ public class ProfileConsentsController(
         // whole transaction roll back.
         var photoPathsToDelete = new List<(string Full, string Thumb)>();
         string? avatarUrlToDelete = null;
+
+        // Code-review finding (cycle 20, closing the same gap as RevokeSalonConsentAsync above): the
+        // HealthData branch below can call WrittenHealthConsentRevoker.RevokeAsync, which skips its own
+        // "consent:health-written:{phone}" advisory lock once it sees this method's ambient transaction —
+        // so PutHealthNote's matching lock (ClientConsentsController) would otherwise have nothing to
+        // synchronize against when the revoke comes through THIS endpoint instead of the staff-facing one.
+        if (apply && guestMatchPhone is not null)
+            await AdvisoryLock.AcquireAsync(db, $"consent:health-written:{guestMatchPhone}");
 
         if (wholeDocument || purpose == ConsentPurpose.WorkPhotos)
         {
@@ -310,14 +375,35 @@ public class ProfileConsentsController(
 
         if (wholeDocument || purpose == ConsentPurpose.HealthData)
         {
-            var healthNotes = await db.ClientHealthNotes
-                .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
-                .ToListAsync();
-            healthNotesDeleted = healthNotes.Count;
-            if (apply && healthNotes.Count > 0)
+            var healthNotesQuery = db.ClientHealthNotes
+                .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone));  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
+            healthNotesDeleted = await healthNotesQuery.CountAsync();
+
+            if (apply)
             {
-                db.ClientHealthNotes.RemoveRange(healthNotes);
-                await db.SaveChangesAsync();
+                // ARCHITECTURE_CYCLE20.md §402.4/§402.9 (US-20-01) — withdrawing PdnConsent/HealthData
+                // wholesale also lifts every live HealthDataWrittenConsentForm mark ACROSS EVERY company
+                // (companyId: null) and deletes the matching health notes — the shared cascade replaces
+                // this branch's own former RemoveRange, per §402.4's "существующее удаление заметок …
+                // заменяется вызовом сервиса". Composable with the ambient transaction this method already
+                // opened above (WrittenHealthConsentRevoker.RevokeAsync's own doc comment).
+                if (guestMatchPhone is not null)
+                {
+                    var cascade = await writtenHealthConsentRevoker.RevokeAsync(
+                        guestMatchPhone, companyId: null, WrittenHealthConsentTexts.RevokedFromProfile, revokedByUserId: null, userId);
+                    healthNotesDeleted = cascade.HealthNotesDeleted;
+                    writtenConsentRecordsRevoked = cascade.Revoked;
+                }
+                else if (healthNotesDeleted > 0)
+                {
+                    // TD-03: no confirmed phone to scope a cross-company MARK revocation by — the
+                    // account-keyed notes are still this account's own data and are deleted directly,
+                    // exactly as before cycle 20 (no written-consent marks exist to lift without a phone
+                    // to match them by, so there is nothing the cascade above could have done here anyway).
+                    var healthNotes = await healthNotesQuery.ToListAsync();
+                    db.ClientHealthNotes.RemoveRange(healthNotes);
+                    await db.SaveChangesAsync();
+                }
             }
         }
 
@@ -367,7 +453,7 @@ public class ProfileConsentsController(
         }
         if (avatarUrlToDelete is not null) storage.DeletePublic(avatarUrlToDelete);
 
-        return new RevokeEffectsDto(photosDeleted, healthNotesDeleted, profileFieldsCleared, queuedNotificationsCancelled);
+        return (new RevokeEffectsDto(photosDeleted, healthNotesDeleted, profileFieldsCleared, queuedNotificationsCancelled), writtenConsentRecordsRevoked);
     }
 
     private async Task<ConsentsDto> BuildConsentsDtoAsync(string userId, LegalDocument pdnDoc)

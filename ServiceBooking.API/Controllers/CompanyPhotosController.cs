@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Companies;
+using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 
@@ -26,7 +27,8 @@ namespace ServiceBooking.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/companies")]
-public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUploadService, FileStorage storage)
+public class CompanyPhotosController(
+    AppDbContext db, ImageUploadService imageUploadService, FileStorage storage, PlatformNoticePublisher noticePublisher)
     : ControllerBase
 {
     [HttpGet("{id:guid}/photos")]
@@ -136,11 +138,18 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
     [HttpDelete("{id:guid}/photos/{photoId:guid}")]
     [Authorize]
     [EnableRateLimiting("uploads")]
-    public async Task<IActionResult> Delete(Guid id, Guid photoId)
+    public async Task<IActionResult> Delete(Guid id, Guid photoId, [FromQuery] string? reason)
     {
+        // ARCHITECTURE_CYCLE20.md §404.7, API_CONTRACT_CYCLE20.md §434.8 (US-20-06/Т20-07) — the only
+        // accepted value is the literal below; anything else (a typo, a future value the frontend doesn't
+        // know about yet) is a 400, not silently ignored.
+        if (reason is not null && reason != "DepictedPersonRequest")
+            return BadRequest($"Неизвестное значение reason '{reason}'. Ожидается DepictedPersonRequest.");
+
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
-        if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
+        var isSuperAdmin = User.IsInRole("SuperAdmin");
+        if (!isSuperAdmin && !await IsOwnerOrSuperAdmin(id)) return Forbid();
         // §389.2: the photo gallery is salon-only in cycle 1 (rights first, kind second).
         if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
@@ -167,6 +176,13 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
 
         storage.DeletePublic(url);
         storage.DeletePublic(thumbnailUrl);
+
+        // §404.7 — the parameter only ever means anything for SuperAdmin; an owner deleting their own
+        // photo with this query string on it (accidentally or otherwise) gets the ordinary 204, no notice.
+        // A publish failure must not undo the deletion above — PublishPhotoRemovedAsync itself never
+        // throws (its own doc comment), so no try/catch is needed at this call site.
+        if (isSuperAdmin && reason == "DepictedPersonRequest")
+            await noticePublisher.PublishPhotoRemovedAsync(company);
 
         return NoContent();
     }

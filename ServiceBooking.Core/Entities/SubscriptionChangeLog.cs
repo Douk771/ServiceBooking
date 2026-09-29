@@ -34,4 +34,12 @@ public class SubscriptionChangeLog
     // сотрудники ×3") — read by admins resolving a dispute, not reconstructed by code (§43.4).
     public string? OldOptionsSummary { get; set; }
     public string? NewOptionsSummary { get; set; }
+
+    // ARCHITECTURE_CYCLE20.md §403.1 (US-20-02, migration M1, D3 п. 6.13.15.4). Populated only for a
+    // manual assignment that ManualPlanAssignmentPolicy required a reason for, plus the trial regrant
+    // path (TrialActivationService writes ReasonCode = TrialReissue). Both null for the ordinary paths
+    // (owner self-service, the automatic trial→Free transition) — that is what "not a manual
+    // assignment" looks like in this table, not a third enum member.
+    public SubscriptionChangeReason? ReasonCode { get; set; }
+    public string? ReasonDetails { get; set; }
 }

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Companies;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -31,7 +32,8 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/companies/{companyId:guid}/clients/{clientKey}")]
 [Authorize]
 public class ClientConsentsController(
-    AppDbContext db, LegalDocumentProvider legalProvider, ConsentLedger ledger, HealthNoteProtector healthNoteProtector)
+    AppDbContext db, LegalDocumentProvider legalProvider, ConsentLedger ledger, HealthNoteProtector healthNoteProtector,
+    WrittenHealthConsentRevoker writtenHealthConsentRevoker)
     : ControllerBase
 {
     // ── Resolution shared by every endpoint below ───────────────────────────────────────────────────
@@ -86,7 +88,7 @@ public class ClientConsentsController(
     public async Task<ActionResult<SalonConsentDto>> PostPhotoConsent(Guid companyId, string clientKey, [FromBody] SubmitSalonConsentDto dto) =>
         await PostSalonConsentAsync(companyId, clientKey, LegalTextKey.PhotoConsent, ConsentSource.PhotoForm, dto);
 
-    // ── Health note (US-77, T5-B6) ──────────────────────────────────────────────────────────────────
+    // ── Health note (US-77, T5-B6; cycle 20 US-20-01 — gated ONLY by the paper written-consent mark) ──
 
     [HttpGet("health-note")]
     public async Task<IActionResult> GetHealthNote(Guid companyId, string clientKey, CancellationToken ct)
@@ -101,12 +103,16 @@ public class ClientConsentsController(
         var resolved = await ResolveClientAsync(companyId, clientKey);
         if (resolved is null) return NotFound();
 
+        var formText = legalProvider.Current?.GetText(LegalTextKey.HealthDataWrittenConsentForm);
+        if (formText is null) return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+
+        var writtenState = await CurrentWrittenConsentAsync(companyId, resolved.Value);
+        var writtenConsent = await BuildWrittenConsentStateDtoAsync(writtenState, formText.Version);
+        var hasConsent = writtenState is not null;
+
         var row = await FindHealthNoteRowAsync(companyId, resolved.Value);
         if (row is null)
-        {
-            var hasConsent = await HasHealthConsentAsync(companyId, resolved.Value);
-            return Ok(new HealthNoteDto(null, null, null, ConsentRequired: !hasConsent));
-        }
+            return Ok(new HealthNoteDto(null, null, null, ConsentRequired: !hasConsent, writtenConsent));
 
         var value = healthNoteProtector.Unprotect(row.Ciphertext, companyId, SubjectKey(resolved.Value));
         string? updatedByName = null;
@@ -119,9 +125,9 @@ public class ClientConsentsController(
         // A decrypt failure (rotated/lost key, corrupted row — never expected in normal operation) must
         // not read as "no note was ever written"; §48.1 promises a distinct, honest answer instead.
         if (value is null)
-            return Ok(new HealthNoteDto("(данные недоступны, обратитесь к платформе)", row.UpdatedAt, updatedByName, ConsentRequired: false));
+            return Ok(new HealthNoteDto("(данные недоступны, обратитесь к платформе)", row.UpdatedAt, updatedByName, ConsentRequired: false, writtenConsent));
 
-        return Ok(new HealthNoteDto(value, row.UpdatedAt, updatedByName, ConsentRequired: false));
+        return Ok(new HealthNoteDto(value, row.UpdatedAt, updatedByName, ConsentRequired: false, writtenConsent));
     }
 
     [HttpPut("health-note")]
@@ -141,16 +147,27 @@ public class ClientConsentsController(
         if (dto.Value.Length > 2000)
             return BadRequest("Значение не должно превышать 2000 символов.");
 
-        // §45.2 / §48.3: blocks ONLY this field's write — the salon-scoped HealthDataConsent form, OR
-        // the account holder's own PdnConsent/HealthData purpose, either satisfies it.
-        if (!await HasHealthConsentAsync(companyId, resolved.Value))
-            return BadRequest(new RequiredConsentDto(
-                "Для заполнения этого поля нужно согласие клиента на обработку сведений о состоянии здоровья.",
-                LegalTextKey.HealthDataConsent));
-
         var subjectKey = SubjectKey(resolved.Value);
         var ciphertext = healthNoteProtector.Protect(dto.Value, companyId, subjectKey);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+        // Code-review finding (cycle 20): WrittenHealthConsentRevoker takes an advisory lock scoped to
+        // "consent:health-written:{phone}" before deleting the note and revoking the mark, but this
+        // endpoint used to check-then-act with NO lock at all — a revoke could commit strictly between
+        // the consent check above and the SaveChangesAsync below, leaving a health note on file with no
+        // live consent behind it (exactly the invariant LG1 exists to protect). Taking the SAME lock here,
+        // then re-checking the mark inside it, makes the two operations mutually exclusive: whichever
+        // request acquires the lock first fully completes (commit or the 400 below) before the other's
+        // check can run.
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"consent:health-written:{resolved.Value.Phone}");
+
+        // ARCHITECTURE_CYCLE20.md §402.3 (US-20-01) — ONLY the paper written-consent mark satisfies this
+        // gate from now on; the salon-scoped electronic HealthDataConsent form and the account holder's
+        // own PdnConsent/HealthData purpose no longer count.
+        if (await CurrentWrittenConsentAsync(companyId, resolved.Value) is null)
+            return BadRequest(new RequiredConsentDto(
+                WrittenHealthConsentTexts.ConfirmationRequiredMessage, LegalTextKey.HealthDataWrittenConsentForm));
 
         var row = await FindHealthNoteRowAsync(companyId, resolved.Value);
         if (row is null)
@@ -168,6 +185,7 @@ public class ClientConsentsController(
         row.UpdatedAt = DateTime.UtcNow;
         row.UpdatedByUserId = userId;
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         return Ok();
     }
@@ -195,9 +213,135 @@ public class ClientConsentsController(
         return Ok();
     }
 
+    // ARCHITECTURE_CYCLE20.md §402.3, API_CONTRACT_CYCLE20.md §432.7 (US-20-01, LG1) — the salon's
+    // electronic health consent is withdrawn wholesale, replaced by the paper-form endpoints below. No
+    // rights check runs before the 410 — the route is retired outright, same convention as a cycle-7
+    // sunset route.
     [HttpPost("health-consent")]
-    public async Task<ActionResult<SalonConsentDto>> PostHealthConsent(Guid companyId, string clientKey, [FromBody] SubmitSalonConsentDto dto) =>
-        await PostSalonConsentAsync(companyId, clientKey, LegalTextKey.HealthDataConsent, ConsentSource.HealthForm, dto);
+    public IActionResult PostHealthConsentGone(Guid companyId, string clientKey) =>
+        StatusCode(StatusCodes.Status410Gone, WrittenHealthConsentTexts.LegacyElectronicConsentGoneMessage);
+
+    // ── Written health consent (paper form) — US-20-01, §402.5/§402.4 ───────────────────────────────
+
+    [HttpGet("health-consent-form")]
+    public async Task<IActionResult> GetHealthConsentForm(Guid companyId, string clientKey)
+    {
+        if (User.IsInRole("SuperAdmin")) return Forbid();
+        if (!await IsStaffAsync(companyId)) return Forbid();
+
+        var resolved = await ResolveClientAsync(companyId, clientKey);
+        if (resolved is null) return NotFound();
+
+        var text = legalProvider.Current?.GetText(LegalTextKey.HealthDataWrittenConsentForm);
+        if (text is null) return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
+        if (company is null) return NotFound();
+
+        string? clientFullName;
+        if (resolved.Value.UserId is not null)
+        {
+            var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == resolved.Value.UserId);
+            clientFullName = user is null ? null : $"{user.FirstName} {user.LastName}".Trim();
+        }
+        else
+        {
+            // §402.5: "гость — GuestName последней записи в этой компании" — same "last booking" ordering
+            // convention as MastersController/ProfileController (Date desc, then StartTime desc).
+            clientFullName = await db.Bookings.AsNoTracking()
+                .Where(b => b.CompanyId == companyId && b.ClientId == null && b.GuestPhone == resolved.Value.Phone)  // SUBJECT-PHONE-GATE: staff-scoped — company staff resolving a client WITHIN their own company by a key staff itself supplied (ARCHITECTURE_CYCLE16.md §245.3), same reasoning as ResolveClientAsync above
+                .OrderByDescending(b => b.Date).ThenByDescending(b => b.StartTime)
+                .Select(b => b.GuestName)
+                .FirstOrDefaultAsync();
+        }
+
+        BillingAccount? billingAccount = company.BillingAccountId is null
+            ? null
+            : await db.BillingAccounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == company.BillingAccountId);
+
+        var formId = HealthConsentFormId.New();
+        var formPrintedDateMsk = PlatformNoticeRules.TodayMoscow(DateTime.UtcNow);
+
+        var runtimeValues = new HealthConsentFormRuntimeValuesDto(
+            string.IsNullOrWhiteSpace(clientFullName) ? null : clientFullName,
+            company.Name, company.Address,
+            billingAccount?.ConsentOperatorFullName, billingAccount?.ConsentOperatorAddress, billingAccount?.ConsentOperatorInn,
+            formId, formPrintedDateMsk.ToString("dd.MM.yyyy"));
+
+        var operatorDetailsMissing = ConsentOperatorDetailsValidator.IsMissing(
+            billingAccount?.ConsentOperatorFullName, billingAccount?.ConsentOperatorAddress);
+
+        Response.Headers.CacheControl = "no-store";
+        return Ok(new HealthConsentFormDto(
+            LegalTextKey.HealthDataWrittenConsentForm, text.Version, formId, formPrintedDateMsk, runtimeValues, operatorDetailsMissing));
+    }
+
+    [HttpPost("health-written-consent")]
+    [RequiresOwnerTerms]
+    public async Task<IActionResult> PostHealthWrittenConsent(Guid companyId, string clientKey, [FromBody] WrittenHealthConsentInputDto dto)
+    {
+        if (User.IsInRole("SuperAdmin")) return Forbid();
+        if (!await IsStaffAsync(companyId)) return Forbid();
+
+        if (!dto.Confirmed) return BadRequest("Подтверждение обязательно.");
+        if (dto.FormId is not null && !HealthConsentFormId.IsValid(dto.FormId))
+            return BadRequest("Неверный формат номера бланка.");
+
+        var resolved = await ResolveClientAsync(companyId, clientKey);
+        if (resolved is null) return NotFound();
+
+        var text = legalProvider.Current?.GetText(LegalTextKey.HealthDataWrittenConsentForm);
+        if (text is null) return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
+        if (dto.TextVersion != text.Version)
+            return Conflict(WrittenHealthConsentTexts.TextVersionOutdatedMessage);
+
+        var subject = ConsentSubject.ForPhoneInCompany(resolved.Value.Phone, companyId);
+
+        // §402.2's own idempotency rule — a LIVE mark with the SAME FormId and the SAME DocumentVersion
+        // is a double-click/retry, not a new event, regardless of how long ago it was recorded (this is
+        // deliberately NOT the generic 5-second window ConsentLedger.GrantAsync applies to every other
+        // document key).
+        var existing = await ledger.CurrentAsync(subject, LegalTextKey.HealthDataWrittenConsentForm, purpose: null);
+        if (existing is not null && existing.FormId == dto.FormId && existing.DocumentVersion == text.Version)
+            return Ok(await BuildWrittenConsentStateDtoAsync(existing, text.Version));
+
+        var staffUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        await ledger.GrantAsync(new ConsentGrant(
+            subject, LegalTextKey.HealthDataWrittenConsentForm, text.Version, text.ContentHash, Purpose: null,
+            ConsentAct.Confirmed, ConsentSource.PaperForm, IpAddress: null, UserAgent: null,
+            RecordedByUserId: staffUserId, FormId: dto.FormId));
+
+        var state = await ledger.CurrentAsync(subject, LegalTextKey.HealthDataWrittenConsentForm, purpose: null);
+        return Ok(await BuildWrittenConsentStateDtoAsync(state, text.Version));
+    }
+
+    [HttpPost("health-written-consent/revoke")]
+    public async Task<IActionResult> RevokeHealthWrittenConsent(Guid companyId, string clientKey, [FromBody] WrittenHealthConsentRevokeInputDto dto)
+    {
+        if (User.IsInRole("SuperAdmin")) return Forbid();
+        if (!await IsStaffAsync(companyId)) return Forbid();
+
+        var reasonText = dto.Reason switch
+        {
+            "SubjectWithdrew" => WrittenHealthConsentTexts.RevokedByStaffSubjectWithdrew,
+            "MarkedByMistake" => WrittenHealthConsentTexts.RevokedByStaffMarkedByMistake,
+            _ => (string?)null,
+        };
+        if (reasonText is null) return BadRequest($"Неизвестное значение reason '{dto.Reason}'.");
+
+        var resolved = await ResolveClientAsync(companyId, clientKey);
+        if (resolved is null) return NotFound();
+
+        var staffUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var result = await writtenHealthConsentRevoker.RevokeAsync(
+            resolved.Value.Phone, companyId, reasonText, staffUserId, resolved.Value.UserId);
+
+        var text = legalProvider.Current?.GetText(LegalTextKey.HealthDataWrittenConsentForm);
+        var currentFormVersion = text?.Version ?? "";
+        var writtenConsent = new WrittenHealthConsentStateDto(false, null, null, null, null, null, currentFormVersion);
+
+        return Ok(new WrittenHealthConsentRevokeResultDto(result.Revoked, result.HealthNotesDeleted, writtenConsent));
+    }
 
     // ── Shared plumbing ──────────────────────────────────────────────────────────────────────────────
 
@@ -270,18 +414,33 @@ public class ClientConsentsController(
             ? db.ClientHealthNotes.FirstOrDefaultAsync(n => n.CompanyId == companyId && n.ClientId == resolved.UserId)
             : db.ClientHealthNotes.FirstOrDefaultAsync(n => n.CompanyId == companyId && n.GuestPhone == resolved.Phone);  // SUBJECT-PHONE-GATE: staff-scoped — company staff resolving THEIR OWN company's client, key already validated by ResolveClientAsync (ARCHITECTURE_CYCLE16.md §245.3)
 
-    /// <summary>Consent for THIS field is satisfied by either the salon-scoped HealthDataConsent form
-    /// (recorded here, by a staff member, phone+company-keyed) OR the account holder's own
-    /// PdnConsent/HealthData purpose grant (recorded in their profile, user-keyed) — §48.3: "либо".</summary>
-    private async Task<bool> HasHealthConsentAsync(Guid companyId, ResolvedClient resolved)
+    /// <summary>ARCHITECTURE_CYCLE20.md §402.3 (US-20-01) — replaces the old <c>HasHealthConsentAsync</c>:
+    /// only the paper written-consent mark (Source = PaperForm) counts from now on. The salon-scoped
+    /// electronic HealthDataConsent form and the account holder's own PdnConsent/HealthData purpose no
+    /// longer satisfy this gate.</summary>
+    private Task<ConsentState?> CurrentWrittenConsentAsync(Guid companyId, ResolvedClient resolved)
     {
-        var salonSubject = ConsentSubject.ForPhoneInCompany(resolved.Phone, companyId);
-        if (await ledger.CurrentAsync(salonSubject, LegalTextKey.HealthDataConsent, purpose: null) is not null)
-            return true;
+        var subject = ConsentSubject.ForPhoneInCompany(resolved.Phone, companyId);
+        return ledger.CurrentAsync(subject, LegalTextKey.HealthDataWrittenConsentForm, purpose: null);
+    }
 
-        if (resolved.UserId is null) return false;
-        var accountSubject = ConsentSubject.ForUser(resolved.UserId);
-        return await ledger.CurrentAsync(accountSubject, LegalDocumentType.PdnConsent.ToString(), ConsentPurpose.HealthData) is not null;
+    /// <summary>§432.1's <c>writtenConsent</c> object — present in EVERY response, `granted: false` with
+    /// every field but <c>currentFormVersion</c> null when there is no live mark.</summary>
+    private async Task<WrittenHealthConsentStateDto> BuildWrittenConsentStateDtoAsync(ConsentState? state, string currentFormVersion)
+    {
+        if (state is null) return new WrittenHealthConsentStateDto(false, null, null, null, null, null, currentFormVersion);
+
+        string? confirmedByName = null;
+        var recordedByUserId = await db.ConsentRecords.AsNoTracking()
+            .Where(r => r.Id == state.Id).Select(r => r.RecordedByUserId).FirstOrDefaultAsync();
+        if (recordedByUserId is not null)
+        {
+            var staff = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == recordedByUserId);
+            confirmedByName = staff is not null ? $"{staff.FirstName} {staff.LastName}".Trim() : null;
+        }
+
+        return new WrittenHealthConsentStateDto(
+            true, state.Id, state.GrantedAtUtc, confirmedByName, state.FormId, state.DocumentVersion, currentFormVersion);
     }
 
     private static string SubjectKey(ResolvedClient resolved) => resolved.UserId ?? $"phone:{resolved.Phone}";
@@ -289,6 +448,22 @@ public class ClientConsentsController(
 
 public record SalonConsentDto(bool Granted, DateTime? GrantedAt, string? Version, string? ConfirmedBy, bool TextVersionOutdated, string? Source);
 public record SubmitSalonConsentDto(string TextVersion, bool Confirmed);
-public record HealthNoteDto(string? Value, DateTime? UpdatedAt, string? UpdatedBy, bool ConsentRequired);
+public record HealthNoteDto(string? Value, DateTime? UpdatedAt, string? UpdatedBy, bool ConsentRequired, WrittenHealthConsentStateDto WrittenConsent);
 public record UpdateHealthNoteDto(string? Value);
 public record RequiredConsentDto(string Message, string RequiredTextKey);
+
+// ARCHITECTURE_CYCLE20.md §402.5/§402.4, API_CONTRACT_CYCLE20.md §432.4-§432.6 (US-20-01, NEW).
+public record WrittenHealthConsentStateDto(
+    bool Granted, Guid? RecordId, DateTime? ConfirmedAt, string? ConfirmedByName, string? FormId, string? FormVersion, string CurrentFormVersion);
+
+public record HealthConsentFormRuntimeValuesDto(
+    string? ClientFullName, string? CompanyName, string? CompanyAddress,
+    string? OperatorFullName, string? OperatorAddress, string? OperatorInn, string FormId, string FormPrintedDate);
+
+public record HealthConsentFormDto(
+    string TextKey, string TextVersion, string FormId, DateOnly FormPrintedDate,
+    HealthConsentFormRuntimeValuesDto RuntimeValues, bool OperatorDetailsMissing);
+
+public record WrittenHealthConsentInputDto(string TextVersion, string? FormId, bool Confirmed);
+public record WrittenHealthConsentRevokeInputDto(string Reason);
+public record WrittenHealthConsentRevokeResultDto(int Revoked, int HealthNotesDeleted, WrittenHealthConsentStateDto WrittenConsent);

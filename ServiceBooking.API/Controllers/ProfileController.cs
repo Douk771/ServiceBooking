@@ -56,7 +56,7 @@ public class ProfileController(
     public async Task<IActionResult> Export(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var export = await subjectDataExporter.ExportAsync(userId, HttpContext.RequestAborted, ct);
+        var export = await subjectDataExporter.ExportAsync(userId, HttpContext.TraceIdentifier, HttpContext.RequestAborted, ct);
         if (export is null) return NotFound();
 
         Response.Headers.ContentDisposition =
@@ -228,7 +228,7 @@ public class ProfileController(
     public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var result = await accountDeletionService.DeleteAsync(userId, dto.CurrentPassword, HttpContext.RequestAborted);
+        var result = await accountDeletionService.DeleteAsync(userId, dto.CurrentPassword, HttpContext.TraceIdentifier, HttpContext.RequestAborted);
         return result.Status switch
         {
             AccountDeletionStatus.UserNotFound => NotFound(),
@@ -301,7 +301,9 @@ public class ProfileController(
         var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
         var usage = (await usageReader.GetAsync([account.Id])).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
 
-        var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
+        // ARCHITECTURE_CYCLE19.md §386.1/§410 — OptionCount/totalMonthlyPrice below exclude retired
+        // limit options.
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id)
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
             .ToListAsync();

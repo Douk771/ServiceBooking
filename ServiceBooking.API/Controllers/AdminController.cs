@@ -20,6 +20,8 @@ namespace ServiceBooking.API.Controllers;
 public class AdminController(
     AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager,
     CompanyOwnerWriter companyOwnerWriter, SubscriptionResolver subscriptionResolver,
+    // ARCHITECTURE_CYCLE20.md §407.2 (LG6) and §410 (manual subject requests' background signal).
+    CompanyTransferService companyTransferService, ILogger<AdminController> logger,
     ServiceBooking.API.Services.PublicSites.PublicSiteLinks siteLinks) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
@@ -89,13 +91,131 @@ public class AdminController(
             : await db.Users.Where(u => handlerIds.Contains(u.Id))
                 .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim(), ct);
 
+        // ARCHITECTURE_CYCLE20.md §410 (US-20-09) — RegisteredByUserId is set only for a manually
+        // registered (Email/PostalMail) row; batched the same way HandlerName already is above.
+        var registeredByIds = rows.Where(r => r.RegisteredByUserId is not null).Select(r => r.RegisteredByUserId!).Distinct().ToList();
+        var registeredByNames = registeredByIds.Count == 0 ? new Dictionary<string, string>()
+            : await db.Users.Where(u => registeredByIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim(), ct);
+
         var items = rows.Select(r => new SubjectRequestDto(
             r.Id, r.Reference, r.Kind.ToString(), r.Status.ToString(), PhoneDisplayMask.Mask(r.SubjectPhone),
             r.ContactValue, r.Message, r.ReceivedAtUtc, r.DueAtUtc, ComputeDueState(r, nowUtc),
             r.AnsweredAtUtc, r.HandlerUserId is not null ? handlerNames.GetValueOrDefault(r.HandlerUserId) : null,
-            r.Resolution)).ToList();
+            r.Resolution, r.Channel.ToString(),
+            r.RegisteredByUserId is not null ? registeredByNames.GetValueOrDefault(r.RegisteredByUserId) : null)).ToList();
 
         return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
+    }
+
+    // ARCHITECTURE_CYCLE20.md §410, API_CONTRACT_CYCLE20.md §438 (US-20-09, Т20-13) — the manual
+    // registration counterpart to SubjectRequestsController.Submit (the public, anonymous form), which
+    // this action deliberately does NOT touch or reuse: no captcha, no rate limit (admin-only route),
+    // and Channel is never WebForm here.
+    [HttpPost("subject-requests")]
+    public async Task<ActionResult<SubjectRequestDto>> RegisterSubjectRequest(
+        [FromBody] RegisterSubjectRequestDto dto,
+        [FromServices] Microsoft.Extensions.Options.IOptions<SubjectRequestOptions> options,
+        [FromServices] Services.Signals.IGlitchTipSignalService signals)
+    {
+        if (!Enum.TryParse<SubjectRequestKind>(dto.Kind, ignoreCase: true, out var kind))
+            return BadRequest("Укажите тип обращения.");
+
+        if (!Enum.TryParse<SubjectRequestChannel>(dto.Channel, ignoreCase: true, out var channel)
+            || channel == SubjectRequestChannel.WebForm)
+            return BadRequest("Канал должен быть Email или PostalMail.");
+
+        var nowUtc = DateTime.UtcNow;
+        // Code-review finding (cycle 20) — see ManualSubjectRequestReceivedAt's own doc comment: the old
+        // `DateTime.SpecifyKind(dto.ReceivedAt.Value, DateTimeKind.Utc)` shifted the deadline by the
+        // server's local UTC offset whenever the caller supplied an explicit non-'Z' offset.
+        var (receivedAtUtcOrNull, receivedAtError) = ManualSubjectRequestReceivedAt.Validate(dto.ReceivedAt, nowUtc);
+        if (receivedAtError is not null) return BadRequest(receivedAtError);
+        var receivedAtUtc = receivedAtUtcOrNull!.Value;
+
+        // §438: phone is OPTIONAL here (unlike the public form) — a postal letter may not carry one.
+        // An empty/omitted value is stored as "" (SubjectRequest.SubjectPhone is non-nullable), matching
+        // §438's "для обращения без телефона phoneMasked — пустая строка".
+        var canonicalPhone = "";
+        if (!string.IsNullOrWhiteSpace(dto.Phone))
+        {
+            if (!PhoneNormalizer.TryNormalize(dto.Phone, out canonicalPhone))
+                return BadRequest("Укажите корректный номер телефона.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.ContactValue))
+            return BadRequest("Укажите контакт для ответа.");
+        if (dto.ContactValue.Length > 200)
+            return BadRequest("Контакт для ответа не должен превышать 200 символов.");
+        if (string.IsNullOrWhiteSpace(dto.Message))
+            return BadRequest("Опишите обращение.");
+        if (dto.Message.Length > 4000)
+            return BadRequest("Текст обращения не должен превышать 4000 символов.");
+
+        // §410: DueAtUtc is computed from receivedAtUtc (the date the request actually arrived), not
+        // from "now" (the date a superadmin got around to typing it in) — the deadline the customer
+        // deserves under 152-ФЗ does not move just because logging it was delayed.
+        var (dueAtUtc, _) = SubjectRequestDeadline.For(kind, receivedAtUtc, options.Value);
+        var registeredByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        SubjectRequest? created = null;
+        for (var attempt = 0; attempt < 5 && created is null; attempt++)
+        {
+            var reference = SubjectRequestReference.Generate();
+            if (await db.SubjectRequests.AnyAsync(r => r.Reference == reference)) continue;
+
+            created = new SubjectRequest
+            {
+                Id = Guid.NewGuid(),
+                Reference = reference,
+                Kind = kind,
+                SubjectPhone = canonicalPhone,
+                ContactValue = dto.ContactValue,
+                Message = dto.Message,
+                Status = SubjectRequestStatus.Received,
+                ReceivedAtUtc = receivedAtUtc,
+                DueAtUtc = dueAtUtc,
+                Channel = channel,
+                RegisteredByUserId = registeredByUserId,
+            };
+            db.SubjectRequests.Add(created);
+            await db.SaveChangesAsync();
+        }
+
+        if (created is null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Не удалось зарегистрировать обращение, попробуйте ещё раз.");
+
+        // §410 — the same intake signal the public form sends, fire-and-forget after the row is durably
+        // committed, for the same reason (a GlitchTip outage must not affect whether the request was
+        // recorded). No phone, no message text — same composition as the public form's own signal.
+        var signalMessage = $"Новое обращение субъекта: вид={kind}, референс={created.Reference}, срок={dueAtUtc:yyyy-MM-dd}";
+        _ = SendSubjectRequestSignalInBackgroundAsync(signals, signalMessage, created.Reference);
+
+        string? registeredByName = null;
+        if (registeredByUserId is not null)
+        {
+            var registeredByUser = await userManager.FindByIdAsync(registeredByUserId);
+            registeredByName = registeredByUser is null ? null : $"{registeredByUser.FirstName} {registeredByUser.LastName}".Trim();
+        }
+        var responseDto = new SubjectRequestDto(
+            created.Id, created.Reference, created.Kind.ToString(), created.Status.ToString(),
+            PhoneDisplayMask.Mask(created.SubjectPhone), created.ContactValue, created.Message,
+            created.ReceivedAtUtc, created.DueAtUtc, ComputeDueState(created, nowUtc),
+            created.AnsweredAtUtc, null, created.Resolution, created.Channel.ToString(), registeredByName);
+
+        return CreatedAtAction(nameof(GetSubjectRequests), null, responseDto);
+    }
+
+    private async Task SendSubjectRequestSignalInBackgroundAsync(Services.Signals.IGlitchTipSignalService signals, string message, string reference)
+    {
+        try
+        {
+            await signals.SendAsync(message, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "GlitchTip intake signal failed to send for manually registered subject request {Reference}.", reference);
+        }
     }
 
     [HttpPost("subject-requests/{id:guid}/status")]
@@ -425,6 +545,22 @@ public class AdminController(
         // permanently locked out, phone/email scrubbed. Without this check SuperAdmin could hand a
         // company to an account nobody can ever log into again.
         if (newOwner.DeletedAtUtc is not null) return BadRequest("User account has been deleted");
+
+        // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.3 (US-20-07, LG6) — same rule and
+        // same source (CompanyTransferService.ValidateNewOwnerAsync) as CompanyTransferController's own
+        // owner-change branch, "один источник правила". Skipped when the company has no billing account
+        // at all (BillingAccountId is null) — nothing to be linked to.
+        if (company.BillingAccountId is { } billingAccountId)
+        {
+            var (_, failure) = await companyTransferService.ValidateNewOwnerAsync(dto.NewOwnerUserId, billingAccountId);
+            if (failure is not null)
+                return new ContentResult
+                {
+                    StatusCode = StatusCodes.Status409Conflict,
+                    Content = "Новый ответственный не связан с биллинг-аккаунтом компании: он должен быть держателем аккаунта или сотрудником одной из его компаний.",
+                    ContentType = "text/plain; charset=utf-8",
+                };
+        }
 
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");

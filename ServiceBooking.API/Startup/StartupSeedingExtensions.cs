@@ -26,6 +26,11 @@ internal static class StartupSeedingExtensions
 
         await db.Database.MigrateAsync();
 
+        // ARCHITECTURE_CYCLE19.md §385.5 — second line of defence behind the deploy-time gate; never
+        // blocks startup, just makes an otherwise-invisible impossible state loud.
+        await ServiceBooking.API.Services.Billing.RetiredLimitOptionsStartupReport.LogAsync(
+            db, scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+
         string[] roles = ["Client", "Master", "CompanyOwner", "SuperAdmin"];
         foreach (var role in roles)
             if (!await roleManager.RoleExistsAsync(role))

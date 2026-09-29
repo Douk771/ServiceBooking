@@ -16,9 +16,10 @@
     "format": "prettier --write .",
     "types:api": "openapi-typescript ../contracts/cycle7/openapi.yaml -o src/types/api-cycle7.generated.ts",
     "types:api9": "openapi-typescript ../contracts/cycle9/openapi.yaml -o src/types/api-cycle9.generated.ts",
-    "types:api:cycle13": "openapi-typescript ../contracts/cycle13/openapi.yaml -o src/types/api-cycle13.generated.ts",
     "types:api:cycle14": "openapi-typescript ../contracts/cycle14/openapi.yaml -o src/types/api-cycle14.generated.ts",
     "types:api:cycle18": "openapi-typescript ../contracts/cycle18/openapi.yaml -o src/types/api-cycle18.generated.ts",
+    "types:api:cycle19": "openapi-typescript ../contracts/cycle19/openapi.yaml -o src/types/api-cycle19.generated.ts",
+    "types:api:cycle20": "openapi-typescript ../contracts/cycle20/openapi.yaml -o src/types/api-cycle20.generated.ts",
     "types:api:cycle23": "openapi-typescript ../contracts/cycle23/openapi.yaml -o src/types/api-cycle23.generated.ts"
   },
   "dependencies": {

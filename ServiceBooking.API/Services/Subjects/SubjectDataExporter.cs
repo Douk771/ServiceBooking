@@ -19,12 +19,15 @@ namespace ServiceBooking.API.Services.Subjects;
 /// </summary>
 public sealed class SubjectDataExporter(
     UserManager<AppUser> userManager, AppDbContext db, ConsentLedger ledger, SubjectScopeResolver subjectScopeResolver,
-    HealthNoteProtector healthNoteProtector, LegalDocumentProvider legalProvider, ILogger<ProfileController> logger)
+    HealthNoteProtector healthNoteProtector, LegalDocumentProvider legalProvider, ILogger<ProfileController> logger,
+    GuestDataGateJournal guestDataGateJournal)
 {
     /// <summary>The export for <paramref name="userId"/>, or null when the account does not exist (404).
     /// <paramref name="requestAborted"/> is what the scope resolver was always given
-    /// (<c>HttpContext.RequestAborted</c>); <paramref name="ct"/> is the action's own token.</summary>
-    public async Task<ProfileExportDto?> ExportAsync(string userId, CancellationToken requestAborted, CancellationToken ct)
+    /// (<c>HttpContext.RequestAborted</c>); <paramref name="ct"/> is the action's own token.
+    /// <paramref name="traceId"/> is the request's <c>HttpContext.TraceIdentifier</c>, written to the
+    /// guest-data-gate journal (ARCHITECTURE_CYCLE20.md §406.2).</summary>
+    public async Task<ProfileExportDto?> ExportAsync(string userId, string? traceId, CancellationToken requestAborted, CancellationToken ct)
     {
         var user = await userManager.FindByIdAsync(userId);
         if (user is null) return null;
@@ -194,6 +197,8 @@ public sealed class SubjectDataExporter(
         {
             // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
             logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/export");
+            // ARCHITECTURE_CYCLE20.md §406.2 (US-20-05) — before this method opens any unit of work.
+            await guestDataGateJournal.RecordAsync(userId, GuestDataGateOperation.Export, traceId);
         }
 
         // ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49: "признаны результатом работы салона"

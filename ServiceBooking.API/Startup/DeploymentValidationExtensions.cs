@@ -62,10 +62,8 @@ internal static class DeploymentValidationExtensions
     // outside a developer environment, or Production silently starts with either "no protection at all"
     // or "every activation permanently 409s". Same "fail loud outside dev" convention as the checks above.
     DeploymentSafetyChecks.ValidateTrialSecrets(builder.Configuration, builder.Environment.EnvironmentName);
-    // ARCHITECTURE_CYCLE13.md §206/§209.2 — own secret (Yandex Geocoder API key), own provider switch, own
-    // unconditional check (CacheHours ≤ 720 is a licence ceiling, checked in every environment, not just
-    // outside Development — see the method's own doc comment).
-    DeploymentSafetyChecks.ValidateAddressVerification(builder.Configuration, builder.Environment.EnvironmentName);
+    // ARCHITECTURE_CYCLE19.md §388.1/§388.4 — the geocoder (and its startup check) is removed in cycle 19;
+    // address saving and the публичный правовой гейт stay (see CompanyAddressController).
     // ARCHITECTURE_CYCLE14.md §150.2 — own secret set (PHONEVERIFY_*), own provider switch
     // (PhoneVerification:Provider), checked unconditionally (even in Development — an unrecognized
     // provider value is a config-correctness bug there too, unlike the secrets themselves).

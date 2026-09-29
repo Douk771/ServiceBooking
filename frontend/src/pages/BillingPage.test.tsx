@@ -7,6 +7,10 @@ import { BillingPage } from './BillingPage'
 import type { OwnerSubscriptionDto } from '../api/billing'
 
 const getSubscription = vi.fn()
+// Cycle 20 (§432.8) — OperatorDetailsSection queries this unconditionally from BillingPage; 404 is
+// its own "nothing to show yet" state (same convention as getSubscription/getTrial), same as every
+// other test in this file not caring about the trial-specific calls TrialCard/TrialBanner make.
+const getOperatorDetails = vi.fn().mockRejectedValue({ isAxiosError: true, response: { status: 404 } })
 
 vi.mock('../api/billing', async () => {
   const actual = await vi.importActual<typeof import('../api/billing')>('../api/billing')
@@ -16,12 +20,22 @@ vi.mock('../api/billing', async () => {
       getSubscription: (...args: unknown[]) => getSubscription(...args),
       submitRequest: vi.fn(),
       cancelRequest: vi.fn(),
+      getOperatorDetails: (...args: unknown[]) => getOperatorDetails(...args),
+      updateOperatorDetails: vi.fn(),
     },
   }
 })
 
+// BillingNoticesSummary (US-20-03) queries this unconditionally alongside the subscription itself.
+const getNotices = vi.fn()
+vi.mock('../api/platformNotices', () => ({
+  platformNoticesApi: { getNotices: (...args: unknown[]) => getNotices(...args) },
+}))
+
 beforeEach(() => {
   getSubscription.mockReset()
+  getOperatorDetails.mockReset().mockRejectedValue({ isAxiosError: true, response: { status: 404 } })
+  getNotices.mockReset().mockResolvedValue({ acknowledgeButtonText: 'Я ознакомился', acknowledgeCaption: '', items: [] })
 })
 
 function renderWithProviders(ui: ReactElement) {
@@ -115,5 +129,50 @@ describe('BillingPage — pendingRequest.irreversibilityNotice (§325.1)', () =>
 
     await screen.findByText('Заявка на рассмотрении')
     expect(screen.queryByText(/невозможно/)).not.toBeInTheDocument()
+  })
+})
+
+// ARCHITECTURE_CYCLE19.md FE-4, API_CONTRACT_CYCLE19.md §408 — a pending request submitted before
+// the rollout may still carry опция-лимит lines; the owner must see the server-composed notice and
+// a "выведена" mark on those lines, not a silent price mismatch.
+describe('BillingPage — pendingRequest.retiredOptionsNotice (cycle 19)', () => {
+  it('shows the server-composed notice and marks the retired line, when present', async () => {
+    getSubscription.mockResolvedValueOnce(
+      makeSubscription({
+        pendingRequest: {
+          estimatedMonthlyPrice: 1500,
+          options: [],
+          items: [
+            { optionId: 'o1', name: 'Доп. сотрудники', quantity: 3, retired: true },
+            { optionId: 'o2', name: 'WhatsApp', quantity: 1, retired: false },
+          ],
+          retiredOptionsNotice: 'В заявке есть опции, которые больше не подключаются: «Доп. сотрудники».',
+        } as OwnerSubscriptionDto['pendingRequest'],
+      }),
+    )
+    renderWithProviders(<BillingPage />)
+
+    expect(
+      await screen.findByText('В заявке есть опции, которые больше не подключаются: «Доп. сотрудники».'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('выведена')).toBeInTheDocument()
+  })
+
+  it('shows nothing extra when retiredOptionsNotice is null', async () => {
+    getSubscription.mockResolvedValueOnce(
+      makeSubscription({
+        pendingRequest: {
+          estimatedMonthlyPrice: 1500,
+          options: [],
+          items: [{ optionId: 'o2', name: 'WhatsApp', quantity: 1, retired: false }],
+          retiredOptionsNotice: null,
+        } as OwnerSubscriptionDto['pendingRequest'],
+      }),
+    )
+    renderWithProviders(<BillingPage />)
+
+    await screen.findByText('Заявка на рассмотрении')
+    expect(screen.queryByText('выведена')).not.toBeInTheDocument()
+    expect(screen.queryByText(/больше не подключаются/)).not.toBeInTheDocument()
   })
 })

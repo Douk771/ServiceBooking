@@ -12,7 +12,6 @@ builder.AddAuth();
 builder.AddServiceBookingCors();
 builder.AddServiceBookingApplicationServices();
 builder.AddNotifications();
-builder.AddAddressVerification();
 builder.AddPhoneVerification();
 builder.AddServiceBookingForwardedHeaders();
 builder.AddServiceBookingRateLimiting();

@@ -56,44 +56,35 @@ public class BillingTextsTests
         }
     }
 
+    // ARCHITECTURE_CYCLE19.md §411/§414 — SeatLimitReached no longer breaks the limit down into
+    // plan-included/purchased/bonus; `limit` is the caller-computed total (AccountLimitFormula), and the
+    // text never mentions an option to buy any more.
     [Fact]
     public void SeatLimitReached_MentionsUsedAndLimit()
     {
-        var text = BillingTexts.SeatLimitReached(used: 8, planName: "Базовый", planIncluded: 5, purchased: 3, bonus: 0);
+        var text = BillingTexts.SeatLimitReached(used: 8, planName: "Базовый", limit: 8);
 
         text.Should().Contain("8").And.Contain("Лимит общий на все ваши точки.");
     }
 
     [Fact]
-    public void SeatLimitReached_BreaksDownPlanIncludedVsPurchased_PerSample53_4()
+    public void SeatLimitReached_NamesPlanAndTotalLimit_PerContract411()
     {
-        // §53.4's own sample text: "Занято 8 из 8 мест: 5 включено в тариф «Базовый», 3 докуплено."
-        var text = BillingTexts.SeatLimitReached(used: 8, planName: "Базовый", planIncluded: 5, purchased: 3, bonus: 0);
+        // §411's own sample text: "Занято {used} из {limit} мест — столько включено в тариф «{planName}»."
+        var text = BillingTexts.SeatLimitReached(used: 8, planName: "Базовый", limit: 8);
 
         text.Should().Contain("8 из 8 мест");
-        text.Should().Contain("5 включено в тариф «Базовый»");
-        text.Should().Contain("3 докуплено");
-        text.Should().Contain("подключите опцию «Дополнительные сотрудники»");
+        text.Should().Contain("включено в тариф «Базовый»");
+        text.Should().Contain("выберите тариф с большим лимитом");
     }
 
     [Fact]
-    public void SeatLimitReached_NoPurchasedOptions_OmitsTheDokuplenoClause()
+    public void SeatLimitReached_NeverMentionsBuyingAnOption()
     {
-        var text = BillingTexts.SeatLimitReached(used: 5, planName: "Базовый", planIncluded: 5, purchased: 0, bonus: 0);
+        var text = BillingTexts.SeatLimitReached(used: 5, planName: "Базовый", limit: 5);
 
         text.Should().NotContain("докуплено");
-        text.Should().Contain("5 включено в тариф «Базовый»");
-    }
-
-    [Fact]
-    public void SeatLimitReached_GrandfatheredBonus_FoldedIntoIncludedFigure_NeverNamedByItself()
-    {
-        // The bonus is an internal migration artifact (§54.4) never surfaced to the owner by name —
-        // it silently widens "included in the plan" instead of appearing as its own line item.
-        var text = BillingTexts.SeatLimitReached(used: 6, planName: "Базовый", planIncluded: 5, purchased: 0, bonus: 1);
-
-        text.Should().Contain("6 включено в тариф «Базовый»");
-        text.Should().NotContain("бонус");
+        text.Should().NotContain("подключите опцию");
     }
 
     // ── §51.1/§51.2 transfer texts ────────────────────────────────────────────
@@ -110,8 +101,10 @@ public class BillingTextsTests
     [Fact]
     public void TransferRejectedCompanyLimit_NamesPlanUsedAndLimit()
     {
+        // ARCHITECTURE_CYCLE19.md §411/§414 — no more option to buy; the fix is a bigger tariff.
         var text = BillingTexts.TransferRejectedCompanyLimit("Базовый", used: 2, limit: 2);
 
-        text.Should().Contain("Базовый").And.Contain("2").And.Contain("Дополнительная компания");
+        text.Should().Contain("Базовый").And.Contain("2").And.Contain("тариф с большим лимитом компаний");
+        text.Should().NotContain("Дополнительная компания");
     }
 }

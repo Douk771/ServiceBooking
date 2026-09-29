@@ -65,8 +65,16 @@ describe('GoodsApp legal routes vs contracts/cycle11/legal-routes.json', () => {
     }
   })
 
-  it('has a redirect for every alias', () => {
+  it('has a redirect for every alias — except a self-mapped alias, which must be a real <Route> instead', () => {
+    // Same rule as src/legalRoutes.test.ts (ARCHITECTURE_CYCLE20.md §411/§412.6): `/data-request` maps to
+    // itself because it is a real route that legal texts link to, not a redirect.
     for (const [alias, target] of Object.entries(legal.aliases)) {
+      if (alias === target) {
+        expect(goodsSource, `expected a real <Route> for the self-mapped alias ${alias}`).toMatch(
+          new RegExp(`<Route\\s+path="${esc(alias)}"`),
+        )
+        continue
+      }
       expect(goodsSource).toMatch(new RegExp(`<Route\\s+path="${esc(alias)}"[\\s\\S]*?to="${esc(target)}"`))
     }
   })

@@ -4,6 +4,8 @@ import {
   computeExpectedTotal,
   buildAssignInput,
   isPaidUntilMissing,
+  isManualReasonRequired,
+  manualReasonValidationError,
   type AssignOptionRow,
 } from './billingAccountsHelpers'
 
@@ -138,3 +140,88 @@ describe('buildAssignInput — free plan never carries an expiry', () => {
     expect(input.paidUntil).toBe('2026-01-01')
   })
 })
+
+// API_CONTRACT_CYCLE20.md §433.1 (US-20-02, П3) / ARCHITECTURE_CYCLE20.md §403.2 — client-side mirror
+// of `ManualPlanAssignmentPolicy.RequiresReason`/`.Validate`. The server re-checks everything; these
+// tests just pin the UI hint to the same six cases CY20-U-02 pins on the backend.
+describe('isManualReasonRequired', () => {
+  it('requires a reason for a hidden plan different from the current one', () => {
+    expect(isManualReasonRequired('plan-current', 'plan-hidden', false)).toBe(true)
+  })
+
+  it('does not require a reason for the SAME hidden plan (renewal)', () => {
+    expect(isManualReasonRequired('plan-hidden', 'plan-hidden', false)).toBe(false)
+  })
+
+  it('does not require a reason for a public plan', () => {
+    expect(isManualReasonRequired('plan-current', 'plan-public', true)).toBe(false)
+  })
+
+  it('does not require a reason for Free (no target plan)', () => {
+    expect(isManualReasonRequired('plan-current', null, undefined)).toBe(false)
+  })
+
+  it('treats a plan not yet loaded (isPublic undefined) as not hidden — no reason demanded before data arrives', () => {
+    expect(isManualReasonRequired('plan-current', 'plan-x', undefined)).toBe(false)
+  })
+})
+
+describe('manualReasonValidationError', () => {
+  it('demands a reason code when one is required and none was picked', () => {
+    expect(manualReasonValidationError('', '', true)).toMatch(/основание/)
+  })
+
+  it('is satisfied when a reason is required and OperatorErrorCorrection has details', () => {
+    expect(manualReasonValidationError('OperatorErrorCorrection', 'опечатка в счёте', true)).toBeNull()
+  })
+
+  it('rejects OperatorErrorCorrection without details, even when not otherwise required', () => {
+    expect(manualReasonValidationError('OperatorErrorCorrection', '  ', false)).toMatch(/опишите/i)
+  })
+
+  it('rejects TrialReissue outright — this form never assigns the trial plan', () => {
+    expect(manualReasonValidationError('TrialReissue', 'что угодно', true)).toMatch(/выдать повторно/i)
+  })
+
+  it('rejects details longer than 1000 characters', () => {
+    expect(manualReasonValidationError('OperatorErrorCorrection', 'а'.repeat(1001), true)).toMatch(/1000/)
+  })
+
+  it('allows an empty reason when none is required', () => {
+    expect(manualReasonValidationError('', '', false)).toBeNull()
+  })
+})
+
+describe('buildAssignInput — reason fields (US-20-02)', () => {
+  it('leaves reasonCode/reasonDetails undefined when neither is given, so JSON.stringify omits them (unchanged wire shape)', () => {
+    const input = buildAssignInput({
+      planId: 'plan-1',
+      isActive: true,
+      paidUntil: '2026-01-01',
+      rows: [],
+      amount: '',
+      comment: '',
+      confirmLimitOverflow: false,
+    })
+    expect(input.reasonCode).toBeUndefined()
+    expect(input.reasonDetails).toBeUndefined()
+    expect(JSON.stringify(input)).not.toMatch(/reason/)
+  })
+
+  it('carries reasonCode and trims reasonDetails through to the request body', () => {
+    const input = buildAssignInput({
+      planId: 'plan-1',
+      isActive: true,
+      paidUntil: '2026-01-01',
+      rows: [],
+      amount: '',
+      comment: '',
+      confirmLimitOverflow: false,
+      reasonCode: 'OperatorErrorCorrection',
+      reasonDetails: '  оплата не применилась из-за сбоя импорта  ',
+    })
+    expect(input.reasonCode).toBe('OperatorErrorCorrection')
+    expect(input.reasonDetails).toBe('оплата не применилась из-за сбоя импорта')
+  })
+})
+

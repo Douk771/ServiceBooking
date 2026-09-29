@@ -84,5 +84,15 @@ public class BillingAccount
     public DateTime? TrialExpiredHandledAtUtc { get; set; }
     public int? TrialWarnedAtThresholdDays { get; set; }        // closest threshold already crossed
     public DateTime? TrialMailingClosureLoggedAtUtc { get; set; }
+
+    // ── Cycle 20: written health-consent form operator details (US-20-01, Т20-04 п. 3, migration M1) ──
+    // Filled in by the account holder (GET|PUT /api/billing/operator-details) so the printed paper form
+    // (§402.5) can show who the subject is consenting to, rather than a blank line every time. Optional
+    // by customer decision: the form prints fine without them (a blank line for the client to fill by
+    // hand). ConsentOperatorFullName must be a full name, no initials, when present
+    // (ConsentOperatorDetailsValidator) — ч. 4 ст. 9 152-ФЗ.
+    public string? ConsentOperatorFullName { get; set; }
+    public string? ConsentOperatorAddress { get; set; }
+    public string? ConsentOperatorInn { get; set; }
 }
 

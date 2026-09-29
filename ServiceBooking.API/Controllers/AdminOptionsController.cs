@@ -22,7 +22,10 @@ public class AdminOptionsController(AppDbContext db, PricingCatalogCache pricing
     [HttpGet("options")]
     public async Task<IActionResult> GetOptions(CancellationToken ct)
     {
-        var options = await db.SubscriptionOptions.OrderBy(o => o.SortOrder).ThenBy(o => o.Name).ToListAsync(ct);
+        // ARCHITECTURE_CYCLE19.md §386.1/§402 — retired limit options never appear in the catalog, at
+        // any IsActive/IsPublic/price combination.
+        var options = await db.SubscriptionOptions.WhereNotRetired()
+            .OrderBy(o => o.SortOrder).ThenBy(o => o.Name).ToListAsync(ct);
         var counts = await GetOptionSubscriberCountsAsync(options.Select(o => o.Id));
         return Ok(new { options = options.Select(o => MapOptionDto(o, counts.GetValueOrDefault(o.Id))).ToList() });
     }
@@ -62,6 +65,12 @@ public class AdminOptionsController(AppDbContext db, PricingCatalogCache pricing
     {
         var option = await db.SubscriptionOptions.FindAsync(id);
         if (option is null) return NotFound();
+
+        // ARCHITECTURE_CYCLE19.md §403: 409 on an already-retired option comes BEFORE the code-immutable
+        // 400 — an admin trying to edit "Дополнительные сотрудники" needs to know it's retired, not that
+        // its code can't change.
+        if (RetiredLimitOptions.IsRetired(option))
+            return Conflict(BillingTexts.RetiredOptionNotEditable(option.Name));
 
         if (dto.Code != option.Code)
             return BadRequest("Код опции менять нельзя.");
@@ -121,6 +130,10 @@ public class AdminOptionsController(AppDbContext db, PricingCatalogCache pricing
 
     internal static IActionResult? ValidateOptionInput(AdminOptionInput dto)
     {
+        // ARCHITECTURE_CYCLE19.md §403/§414 — new first check: "employees"/"companies" can no longer be
+        // sold as an option's capability, on both POST and PUT.
+        if (RetiredLimitOptions.IsRetiredCapability(dto.CapabilityKey))
+            return new BadRequestObjectResult(BillingTexts.LimitCapabilityNotSellable);
         if (string.IsNullOrWhiteSpace(dto.Code) || !CodePattern.IsMatch(dto.Code))
             return new BadRequestObjectResult("Код опции обязателен и должен соответствовать формату ^[a-z0-9.-]{2,64}$.");
         if (string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Length > 100)

@@ -58,14 +58,25 @@ public sealed class RetentionPeriods
     /// on its own). Default 1095.</summary>
     public int ConsentRecordDays { get; set; } = 1095;
 
-    /// <summary>ARCHITECTURE_CYCLE10.md §107 (Q2). Age of a <see cref="Core.Entities.BookingEvent"/>
-    /// since <c>OccurredAtUtc</c>. Default 0, read by <see cref="Rules.BookingEventRule"/> as "срок не
-    /// задан" — legal-counsel hasn't given a number yet, so at 0 the rule deletes nothing and says so in
-    /// its summary line rather than guessing a cutoff. NOT fail-fast-checked at startup, unlike
-    /// <see cref="ConsentRecordDays"/>/<see cref="TemplateHistoryDays"/> above: those guard a KNOWN legal
-    /// minimum, this one's minimum is the open question — refusing to start the app over it would block
-    /// the whole cycle's release on legal's timeline, which the spec doesn't ask for.</summary>
-    public int BookingEventDays { get; set; } = 0;
+    /// <summary>ARCHITECTURE_CYCLE10.md §107 (Q2), raised to a real number by ARCHITECTURE_CYCLE20.md
+    /// §406.1 (US-20-05, Т20-06): legal-counsel named 3 years (п. 13.2 D1 — "журнал изменений записи на
+    /// услугу … 3 года с даты действия"). Age of a <see cref="Core.Entities.BookingEvent"/> since
+    /// <c>OccurredAtUtc</c>. Default 1095 (was 0 — "срок не задан" — before this cycle).
+    /// 🔴 Fail-fast minimum 1 day (<see cref="DeploymentSafetyChecks"/>, CY20-U-10): unlike before this
+    /// cycle, the number IS now a known legal commitment, not an open question, so a misconfigured 0
+    /// must refuse to start rather than silently keep everything forever.</summary>
+    public int BookingEventDays { get; set; } = 1095;
+
+    /// <summary>ARCHITECTURE_CYCLE20.md §406.2 (US-20-05, Т20-06, LEGAL_REVIEW_CYCLE16.md §6.4). Age of
+    /// a <see cref="Core.Entities.GuestDataGateEvent"/> since <c>OccurredAtUtc</c>. Default 365 (1 year —
+    /// п. 13.2 D1). 🔴 Fail-fast minimum 1 day, same reasoning as <see cref="BookingEventDays"/>.</summary>
+    public int GuestDataGateEventDays { get; set; } = 365;
+
+    /// <summary>ARCHITECTURE_CYCLE20.md §404.6 (US-20-03, О-3). Age of a
+    /// <see cref="Core.Entities.PlatformNotice"/> since <c>VisibleUntilUtc</c> — deletes the notice AND
+    /// (cascade) its acknowledgements together, once both have been out of the visibility window this
+    /// long. Default 1095 (3 years — SPEC's own assumption, "как у согласий").</summary>
+    public int PlatformNoticeDays { get; set; } = 1095;
 
     /// <summary>ARCHITECTURE_CYCLE23.md §398.5 (L5). Age of a finished <see cref="Core.Entities.Order"/> since <c>CompletedAtUtc</c> after
     /// which the customer's personal data on it is erased. Default 0, read by <see cref="Rules.OrderPersonalizationRule"/> as "срок не

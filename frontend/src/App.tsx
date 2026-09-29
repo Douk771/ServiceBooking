@@ -21,9 +21,11 @@ import { PricingPage } from './pages/PricingPage'
 import { BillingPage } from './pages/BillingPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
 import { DeleteAccountPage } from './pages/DeleteAccountPage'
+import { HealthConsentFormPrintPage } from './pages/HealthConsentFormPrintPage'
 import { Footer } from './components/layout/Footer'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { LegalGuard } from './components/legal/LegalGuard'
+import { NoticesPage } from './pages/NoticesPage'
 import { OwnerTermsGateModal } from './components/legal/OwnerTermsGateModal'
 import { useAuthStore } from './store/authStore'
 
@@ -88,7 +90,7 @@ export default function App() {
             element={
               <div className="min-h-screen bg-cream font-sans text-ink">
                 <Navbar />
-                <LegalGuard bypassPaths={CONSENT_GATE_BYPASS_PATHS}>
+                <LegalGuard bypassPaths={CONSENT_GATE_BYPASS_PATHS} showPlatformNotices>
                   {/* Wraps only the page routes, not Navbar — a page-level render crash (e.g. an
                       unprotected field on a stale API response, §100.2) must not take the shell
                       down with it (§103.1). Keyed by pathname (RouteErrorBoundary below) so it
@@ -130,6 +132,18 @@ export default function App() {
                         element={
                           <ProtectedRoute roles={['CompanyOwner', 'SuperAdmin']}>
                             <CompanyManagePage />
+                          </ProtectedRoute>
+                        }
+                      />
+                      {/* API_CONTRACT_CYCLE20.md §432 — SuperAdmin is 403 on every health-consent
+                          route (§48.2 cycle 5 not weakened by this cycle); `SuperAdmin` deliberately
+                          excluded from `roles` here, same as `HealthNoteCard` not even rendering for
+                          that role in `MasterClientsPage`. */}
+                      <Route
+                        path="/companies/:companyId/clients/:clientKey/health-consent-form"
+                        element={
+                          <ProtectedRoute roles={['Master', 'CompanyOwner']}>
+                            <HealthConsentFormPrintPage />
                           </ProtectedRoute>
                         }
                       />
@@ -176,6 +190,14 @@ export default function App() {
                         }
                       />
                       <Route path="/data-request" element={<SubjectRequestPage />} />
+                      <Route
+                        path="/notices"
+                        element={
+                          <ProtectedRoute>
+                            <NoticesPage />
+                          </ProtectedRoute>
+                        }
+                      />
                       <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
                       <Route path="/terms" element={<LegalDocumentPage type="TermsClient" />} />
                       <Route path="/terms-owner" element={<LegalDocumentPage type="TermsOwner" />} />

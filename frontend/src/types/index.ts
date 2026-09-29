@@ -1,16 +1,12 @@
 import type { components as Cycle9Components } from './api-cycle9.generated'
-import type { components as Cycle13Components } from './api-cycle13.generated'
+import type { components as Cycle19Components } from './api-cycle19.generated'
 import type { components as Cycle14Components } from './api-cycle14.generated'
 import type { components as Cycle23Components } from './api-cycle23.generated'
 
-// ── Cycle 13 (ARCHITECTURE_CYCLE13.md §208/§211, API_CONTRACT_CYCLE13.md §232): read straight off
-// the generated schema, same convention as the cycle 9 aliases above (§118 п. 1).
-export type GeoPointDto = Cycle13Components['schemas']['GeoPointDto']
-export type AddressCandidateDto = Cycle13Components['schemas']['AddressCandidateDto']
-export type AddressLookupResultDto = Cycle13Components['schemas']['AddressLookupResultDto']
-export type CompanyAddressVerificationDto = Cycle13Components['schemas']['CompanyAddressVerificationDto']
-export type CompanyAddressVerificationResultDto = Cycle13Components['schemas']['CompanyAddressVerificationResultDto']
-export type AddressNoticeResultDto = Cycle13Components['schemas']['AddressNoticeResultDto']
+// ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
+// only the notice-acknowledgement result survives from cycle 13's address types. Read straight off
+// the generated schema, same convention as the cycle 9 aliases below (§118 п. 1).
+export type AddressNoticeResultDto = Cycle19Components['schemas']['AddressNoticeResultDto']
 
 // ── Cycle 9 (ARCHITECTURE_CYCLE9.md §104, API_CONTRACT_CYCLE9.md §112): these two enums are read
 // straight off the generated schema instead of being retyped as string literals here, so a future
@@ -123,19 +119,6 @@ export interface Company {
    * `GET /api/companies/{slug}` (the public page) fills this in, on purpose (§109.3 performance).
    */
   photos?: CompanyPhoto[] | null
-  /**
-   * API_CONTRACT_CYCLE13.md §232 — filled in only where the caller MANAGES the company (owner,
-   * SuperAdmin); `null`/absent means "not computed for this caller" (anonymous, client, catalog,
-   * older server), the same convention as `photos`/`historyEventCount` — NOT "unverified". Never
-   * shown on the public page even to the owner (MVP decision, §208).
-   */
-  addressVerification?: CompanyAddressVerificationDto | null
-  /**
-   * API_CONTRACT_CYCLE13.md §232 — only on `GET /api/companies/{slug}`, and only `null`-free when
-   * coordinate storage is licensed AND the address is `Verified` at `House` precision. `null` in the
-   * product's default configuration; map links then search by text instead of centring on a point.
-   */
-  addressPoint?: GeoPointDto | null
   /**
    * API_CONTRACT_CYCLE15.md §282 — a URL the owner pasted themselves, saved and returned byte for
    * byte (never built or rewritten by the server). `null`/absent = not filled in → the interface
@@ -508,6 +491,12 @@ export interface Booking {
    * doesn't require `company.allowSelfBooking` or a plan's online-booking permission.
    */
   clientCancelAllowed?: boolean | null
+  /** API_CONTRACT_CYCLE20.md §435 (US-20-04) — computed ONLY on `GET /bookings/client`, same
+   *  nullability convention as `clientCancelAllowed`. The APPLIED cancel window in hours, i.e.
+   *  `min(company's window, 24)` — the server-side hard cap (`ClientRescheduleWindow.EffectiveCancelHours`).
+   *  The "Отменить можно не позже чем за N ч" text must read THIS field, never
+   *  `clientRescheduleMinHours` (that one is the reschedule window, 0–168, unrelated since cycle 20). */
+  clientCancelMinHours?: number | null
 }
 
 export type BookingStatus = 'Pending' | 'Confirmed' | 'Cancelled' | 'Completed' | 'NoShow'
@@ -571,6 +560,13 @@ export type LegalTextKey =
    *  publishes the key server-side, `GuestDataGateNotice.tsx` renders a neutral fallback instead of
    *  leaving the screen empty. */
   | 'GuestDataGateNotice'
+  /** API_CONTRACT_CYCLE20.md §439 (Т20-08) — cycle 20, four more keys. Until commit A (L1) lands on
+   *  the branch, `GET /api/legal/texts/{key}` answers 404 for all five (existing 503/404-tolerant
+   *  call sites already handle that the same way as any other missing key). */
+  | 'GuestDataGateDeleteNotice'
+  | 'GuestDataGateRevokeNotice'
+  | 'HealthDataWrittenConsentForm'
+  | 'CompanyPhotoPeopleNotice'
 export type ConsentPurpose = 'ProviderDelivery' | 'WorkPhotos' | 'HealthData' | 'ChannelOffer'
 type ConsentAct = 'Acknowledged' | 'Accepted' | 'Consented' | 'Confirmed'
 export type ConsentSource =
@@ -715,12 +711,33 @@ export interface PhotoConsentStatus {
   source: ConsentSource | null
 }
 
-/** §45.1 — `GET /api/companies/{id}/clients/{key}/health-note`. */
+/** API_CONTRACT_CYCLE20.md §432.1 — state of the written (paper-form) consent that now GATES the
+ *  health note field exclusively (LG1). `granted: false` ⇒ every other field is `null` except
+ *  `currentFormVersion`, which is always the live uiText version. */
+export interface WrittenHealthConsentStateDto {
+  granted: boolean
+  recordId?: string | null
+  confirmedAt?: string | null
+  confirmedByName?: string | null
+  /** `HD-XXXXXXXX`; `null` — the salon used its own paper form (D3 п. 8.6.1). */
+  formId?: string | null
+  /** Version of the uiText the form was printed from when the mark was recorded. */
+  formVersion?: string | null
+  currentFormVersion: string
+}
+
+/** §45.1 / API_CONTRACT_CYCLE20.md §432.1 — `GET /api/companies/{id}/clients/{key}/health-note`.
+ *  Since cycle 20, `consentRequired` reflects ONLY the written-consent mark (`writtenConsent.granted`)
+ *  — the salon's electronic `HealthDataConsent` no longer opens this field at all (LG1). `value` is
+ *  ALWAYS `null` without an active mark, even if a row exists in the DB (race-condition guard). */
 export interface HealthNoteDto {
   value: string | null
   updatedAt?: string
   updatedBy?: string
   consentRequired?: boolean
+  /** Present since cycle 20 (always an object, never `null`, per the contract) — optional here only
+   *  so cached responses from before the cycle don't break existing call sites at compile time. */
+  writtenConsent?: WrittenHealthConsentStateDto
 }
 
 // ── Cycle 5: subject requests (§48) ─────────────────────────────────────────────────────────────────
@@ -739,6 +756,12 @@ export interface SubjectRequestDto {
   answeredAt: string | null
   handlerName: string | null
   resolution: string | null
+  /** API_CONTRACT_CYCLE20.md §438 (US-20-09) — `WebForm` for the existing public form, `Email`/
+   *  `PostalMail` for manually registered requests. Optional so a stale cached list (pre-cycle-20)
+   *  doesn't need a hand-written default — `SubjectRequestsTab` treats an absent value as `WebForm`. */
+  channel?: 'WebForm' | 'Email' | 'PostalMail'
+  /** `null` for the public web form; the SuperAdmin who registered a manually-received request otherwise. */
+  registeredByName?: string | null
 }
 
 // ── Cycle 11: legal publication readiness — GET /api/admin/legal/readiness ─────────────────────────

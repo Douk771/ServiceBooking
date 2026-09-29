@@ -117,49 +117,20 @@ internal static class ApplicationServicesExtensions
     // TD-03 (ARCHITECTURE_CYCLE16.md §245.4) — the single gate for "does this account get the
     // phone-matching branch of its own guest-recorded data". Scoped: wraps one AppDbContext query.
     builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectScopeResolver>();
+    // ARCHITECTURE_CYCLE20.md §406.2 (US-20-05) — the single writer for GuestDataGateEvent.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.GuestDataGateJournal>();
+    // ARCHITECTURE_CYCLE20.md §404.3/§404.7 (US-20-03/US-20-07) — platform notices: builds/validates/saves
+    // PlatformNotice rows (AdminNoticesController, CompanyPhotosController's PhotoRemoved) and counts the
+    // CURRENT audience for the admin list/preview/publish responses.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Legal.PlatformNoticePublisher>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Legal.NoticeAudienceCounter>();
+    // ARCHITECTURE_CYCLE20.md §402.4 (US-20-01) — the one cascade shared by every entry point that lifts a
+    // written-health-consent mark.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Legal.WrittenHealthConsentRevoker>();
     // Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the bodies of GET /api/profile/export and
     // POST /api/profile/delete-account (+ preview), moved out of ProfileController unchanged.
     builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectDataExporter>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.AccountDeletionService>();
-    }
-
-    public static void AddAddressVerification(this WebApplicationBuilder builder)
-    {
-    // ── Проверка адреса по карте (ARCHITECTURE_CYCLE13.md §206–§209, §215) ─────────────────────────────
-    // Own section, own Provider switch, own secret — independent of the WhatsApp/MAX switch above, same
-    // pattern the Web Push block just followed. "logging" (default, safe everywhere) never makes a network
-    // call at all (LoggingAddressGeocoder) — that IS the intended production state until a licence is bought
-    // (P2), not a placeholder.
-    builder.Services.Configure<ServiceBooking.API.Services.Geo.GeoOptions>(
-        builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName));
-
-    // The "yandex-geocoder" named client (§206): request/URL logging silenced at the category level, same
-    // rung-1 defence as "green-api"/"web-push" — the query string carries `apikey`. Registered
-    // unconditionally, not inside the switch below, for the same "changing Provider needs no different DI
-    // graph" reason green-api's own client is registered unconditionally.
-    builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.LogicalHandler", LogLevel.None);
-    builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.ClientHandler", LogLevel.None);
-    builder.Services.AddHttpClient("yandex-geocoder", client =>
-        {
-            var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
-                .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
-            client.Timeout = TimeSpan.FromSeconds(geoOptions.Yandex.TimeoutSeconds);
-        })
-        .ConfigurePrimaryHttpMessageHandler(() =>
-        {
-            var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
-                .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
-            return ServiceBooking.API.Services.Geo.GeoHandlerFactory.Create(geoOptions.Yandex);
-        });
-
-    builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>();
-    builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>();
-    var addressVerificationProvider = builder.Configuration["AddressVerification:Provider"];
-    builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.IAddressGeocoder>(sp =>
-        string.Equals(addressVerificationProvider, "yandex", StringComparison.OrdinalIgnoreCase)
-            ? sp.GetRequiredService<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>()
-            : sp.GetRequiredService<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>());
-    builder.Services.AddScoped<ServiceBooking.API.Services.Geo.AddressLookupService>();
     }
 
     public static void AddPhoneVerification(this WebApplicationBuilder builder)
@@ -297,6 +268,11 @@ internal static class ApplicationServicesExtensions
     // the date of grant (Д16) plus destruction on HMAC key rotation (К3).
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.TrialPhoneRegistrationRule>();
+    // ARCHITECTURE_CYCLE20.md §406.2/§404.6 (US-20-05, US-20-03) — the 20th and 21st rules.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.GuestDataGateEventRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.PlatformNoticeRule>();
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
     builder.Services.AddHostedService<ScheduledTaskRunner>();
