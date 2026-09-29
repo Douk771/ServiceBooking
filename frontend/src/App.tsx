@@ -88,11 +88,13 @@ function LegalGuard({ children }: { children: ReactNode }) {
     <>
       {status?.showBanner && !requiresAcceptance && <LegalUpdateBanner status={status} />}
       {/* US-20-03 (Т20-02) — next to LegalUpdateBanner, per ARCHITECTURE_CYCLE20.md §404.5. Only for
-          an authenticated caller (own query is `enabled: !!token`, but gating the mount here too
-          avoids a doomed 401 request on every anonymous page load). §404.5 explicitly does NOT build
-          a bypass for this under a pending ConsentGate (the `requiresAcceptance` branch above returns
-          early without reaching this component at all) — the backend route stays reachable via API
-          regardless, this is a frontend simplification the architecture accepted. */}
+          an authenticated caller: `usePlatformNotices` (shared with NoticesPage/BillingNoticesSummary,
+          both reachable only from already-authenticated routes) has no `enabled` guard of its own, so
+          gating the mount here is what avoids a doomed 401 request on every anonymous page load.
+          §404.5 explicitly does NOT build a bypass for this under a pending ConsentGate (the
+          `requiresAcceptance` branch above returns early without reaching this component at all) — the
+          backend route stays reachable via API regardless, this is a frontend simplification the
+          architecture accepted. */}
       {!!token && <PlatformNoticeBanner />}
       {children}
     </>
