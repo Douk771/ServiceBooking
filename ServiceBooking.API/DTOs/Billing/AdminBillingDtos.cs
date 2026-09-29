@@ -63,8 +63,8 @@ public record AdminAccountCompanyDto(Guid CompanyId, string CompanyName, string 
 public record AdminAccountChannelDto(Guid ChannelId, string? PhoneMasked, string State, string FundingState, DateTime CreatedAt, int AssignedCompanies);
 
 public record AssignSubscriptionInput(
-    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<AssignOptionInput> Options,
-    decimal? Amount, string? Comment, Guid? RequestId, bool ConfirmLimitOverflow = false);
+    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<AssignOptionInput>? Options = null,
+    decimal? Amount = null, string? Comment = null, Guid? RequestId = null, bool ConfirmLimitOverflow = false);
 
 public record AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
 

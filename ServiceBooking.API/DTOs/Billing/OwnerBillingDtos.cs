@@ -57,7 +57,7 @@ public record AvailableOptionDto(
     decimal? PricePerMonth, int? MaxQuantity, string Availability, string AvailabilityText, bool CanRequest);
 
 // ── Requests (US-70, §49) ───────────────────────────────────────────────────────
-public record SubscriptionRequestInputDto(Guid? PlanId, List<RequestedOptionInputDto> Options, string? Comment);
+public record SubscriptionRequestInputDto(Guid? PlanId, List<RequestedOptionInputDto>? Options = null, string? Comment = null);
 
 public record RequestedOptionInputDto(Guid OptionId, int Quantity);
 

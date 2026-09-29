@@ -1008,7 +1008,7 @@ public record Billing_AssignOptionInput(Guid OptionId, int Quantity, DateOnly? P
 public record Billing_RegrantTrialInput(string Reason);
 
 public record Billing_AssignSubscriptionInput(
-    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<Billing_AssignOptionInput> Options,
-    decimal? Amount, string? Comment, Guid? RequestId, bool ConfirmLimitOverflow = false);
+    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<Billing_AssignOptionInput>? Options = null,
+    decimal? Amount = null, string? Comment = null, Guid? RequestId = null, bool ConfirmLimitOverflow = false);
 
 public record RejectRequestDto(string? Comment);
