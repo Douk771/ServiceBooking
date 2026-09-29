@@ -848,7 +848,7 @@ public class AdminBillingController(
 
     private async Task<string?> BuildOptionsSummaryAsync(Guid accountId)
     {
-        var rows = await db.AccountSubscriptionOptions.Include(o => o.Option)
+        var rows = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => o.BillingAccountId == accountId && (o.EndsAtUtc == null || o.EndsAtUtc > DateTime.UtcNow)).ToListAsync();
         return rows.Count == 0 ? null : string.Join(", ", rows.Select(r => $"{r.Option.Name} ×{r.Quantity}"));
     }
