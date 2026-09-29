@@ -238,20 +238,14 @@ public class LegalController(
             return BadRequest($"Неизвестное значение scope '{scope}'. Ожидается pending или all.");
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"));
 
         var nowUtc = DateTime.UtcNow;
         var visible = await db.PlatformNotices.AsNoTracking().Where(n => n.VisibleUntilUtc > nowUtc).ToListAsync();
 
         // The system-free plan is only ever needed to resolve an OwnersOnPlans match for an account with
         // no subscription row — looked up lazily so an account/kind mix that never needs it costs nothing.
-        if (facts.HeldBillingAccountId is not null && facts.HeldPlanConfigId is null
-            && visible.Any(n => n.AudienceType == NoticeAudienceType.OwnersOnPlans))
-        {
-            var systemFreePlanId = await db.SubscriptionPlanConfigs.AsNoTracking()
-                .Where(p => p.IsSystemFree).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
-            facts = facts with { SystemFreePlanConfigId = systemFreePlanId };
-        }
+        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"),
+            needsFreePlan: visible.Any(n => n.AudienceType == NoticeAudienceType.OwnersOnPlans));
 
         var matched = visible.Where(n => NoticeAudience.Matches(n, facts)).ToList();
 
@@ -284,13 +278,8 @@ public class LegalController(
         // cases share one 404 so a caller can never probe for a notice they aren't the addressee of.
         if (notice is null || notice.VisibleUntilUtc <= nowUtc) return NotFound();
 
-        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"));
-        if (facts.HeldBillingAccountId is not null && facts.HeldPlanConfigId is null && notice.AudienceType == NoticeAudienceType.OwnersOnPlans)
-        {
-            var systemFreePlanId = await db.SubscriptionPlanConfigs.AsNoTracking()
-                .Where(p => p.IsSystemFree).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
-            facts = facts with { SystemFreePlanConfigId = systemFreePlanId };
-        }
+        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"),
+            needsFreePlan: notice.AudienceType == NoticeAudienceType.OwnersOnPlans);
         if (!NoticeAudience.Matches(notice, facts)) return NotFound();
 
         if (notice.RevokedAtUtc is not null) return Conflict("Уведомление отозвано.");
@@ -339,7 +328,8 @@ public class LegalController(
         var nowUtc = DateTime.UtcNow;
         if (notice is null || notice.VisibleUntilUtc <= nowUtc || notice.AttachmentHtml is null) return NotFound();
 
-        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"));
+        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"),
+            needsFreePlan: notice.AudienceType == NoticeAudienceType.OwnersOnPlans);
         if (!NoticeAudience.Matches(notice, facts)) return NotFound();
 
         Response.Headers.CacheControl = "no-store";
@@ -348,10 +338,17 @@ public class LegalController(
         return Content(notice.AttachmentHtml, "text/html; charset=utf-8");
     }
 
-    /// <summary>§404.2's "CallerFacts — держатель каких аккаунтов, на каких тарифах, суперадмин ли".
-    /// Does NOT resolve <see cref="NoticeCallerFacts.SystemFreePlanConfigId"/> — that lookup is only worth
-    /// doing when an OwnersOnPlans notice is actually in play, so each call site adds it lazily.</summary>
-    private async Task<NoticeCallerFacts> LoadCallerFactsAsync(string userId, bool isSuperAdmin)
+    /// <summary>§404.2's "CallerFacts — держатель каких аккаунтов, на каких тарифах, суперадмин ли". The
+    /// single place all three notice endpoints (list, acknowledge, attachment) resolve caller facts from —
+    /// previously duplicated three times, which let <c>GetNoticeAttachment</c> drift out of sync (code
+    /// review finding, cycle 20: an owner with no <see cref="Core.Entities.AccountSubscription"/> row —
+    /// i.e. on the implicit system-free plan — matched an <c>OwnersOnPlans</c> notice that lists Free in
+    /// its <c>GetNotices</c>/<c>AcknowledgeNotice</c>, but got 404 on the attachment because this lookup was
+    /// skipped there). <paramref name="needsFreePlan"/> resolves
+    /// <see cref="NoticeCallerFacts.SystemFreePlanConfigId"/> only when the caller actually might need it
+    /// (an <c>OwnersOnPlans</c> notice is in play) — the lookup is otherwise skipped to keep the cheap path
+    /// cheap.</summary>
+    private async Task<NoticeCallerFacts> LoadCallerFactsAsync(string userId, bool isSuperAdmin, bool needsFreePlan)
     {
         var heldAccountId = await db.BillingAccounts.AsNoTracking()
             .Where(a => a.OwnerUserId == userId).Select(a => (Guid?)a.Id).FirstOrDefaultAsync();
@@ -363,7 +360,14 @@ public class LegalController(
                 .Where(s => s.BillingAccountId == accountId).Select(s => s.PlanConfigId).FirstOrDefaultAsync();
         }
 
-        return new NoticeCallerFacts(isSuperAdmin, heldAccountId, heldPlanConfigId, SystemFreePlanConfigId: null);
+        Guid? systemFreePlanConfigId = null;
+        if (needsFreePlan && heldAccountId is not null && heldPlanConfigId is null)
+        {
+            systemFreePlanConfigId = await db.SubscriptionPlanConfigs.AsNoTracking()
+                .Where(p => p.IsSystemFree).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
+        }
+
+        return new NoticeCallerFacts(isSuperAdmin, heldAccountId, heldPlanConfigId, systemFreePlanConfigId);
     }
 
     private static PlatformNoticeDto MapToNoticeDto(PlatformNotice n, IReadOnlyDictionary<Guid, DateTime> acknowledgedAt)
