@@ -80,8 +80,11 @@ public static class PricingCatalogBuilder
             // ARCHITECTURE_CYCLE11.md §102.10 (Q11): an option whose legal precondition isn't met
             // (its required document missing or still a draft) is silently excluded too — from the
             // buyer's side it just looks like the option doesn't exist, not like an error.
+            // ARCHITECTURE_CYCLE19.md §386.1/§409 — a retired limit option never shows up on the
+            // storefront, no matter its IsActive/IsPublic/PricePerMonth combination.
             .Where(o => o.IsActive && o.IsPublic && o.PricePerMonth is not null
-                        && LegalOptionGuards.IsPubliclySellable(o.Code, legalSnapshot))
+                        && LegalOptionGuards.IsPubliclySellable(o.Code, legalSnapshot)
+                        && !RetiredLimitOptions.IsRetired(o))
             .OrderBy(o => o.SortOrder)
             .ThenBy(o => o.PricePerMonth)
             .Select(ToOptionDto)

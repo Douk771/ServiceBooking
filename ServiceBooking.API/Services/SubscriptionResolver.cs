@@ -68,33 +68,16 @@ public class SubscriptionResolver(AppDbContext db)
     public const string WhatsAppOptionCode = "notifications.whatsapp";
 
     /// <summary>
-    /// Pure plan-resolution rule: no DB access, "now" is passed in so it can be unit-tested.
-    /// <paramref name="grandfatheredEmployeeBonus"/> is <see cref="BillingAccount.GrandfatheredEmployeeBonus"/>
-    /// — added to the seat limit regardless of subscription state (it survives a downgrade to Free by
-    /// design, §54.4/§44.3 p.8) but never surfaced as money.
-    ///
-    /// Convenience overload for callers resolving a plan with no purchased extra-seat/extra-company
-    /// options in hand (equivalent to the 6-argument overload with both extras at 0). No product code
-    /// calls this directly as of this cycle — <see cref="GetEffectivePlanForAccountAsync"/> always has
-    /// the extras available and calls the 6-argument overload — but it's kept as a deliberately small
-    /// public entry point for exactly that case, and unit tests exercise it directly.
+    /// ARCHITECTURE_CYCLE19.md §384.2/§400 — pure plan-resolution rule: no DB access, "now" is passed
+    /// in so it can be unit-tested. <paramref name="grandfatheredEmployeeBonus"/> is
+    /// <see cref="BillingAccount.GrandfatheredEmployeeBonus"/> — added to the seat limit regardless of
+    /// subscription state (it survives a downgrade to Free by design, §54.4/§44.3 p.8) but never
+    /// surfaced as money. Purchased "extra-*" options are never read here (cycle 19 removed the
+    /// 6-argument overload that summed them in) — the whole limit is
+    /// <see cref="AccountLimitFormula.Compute"/> over the base plan's fields and the bonus.
     /// </summary>
     public static EffectivePlan Resolve(
-        AccountSubscription? sub, int grandfatheredEmployeeBonus, int paidNotificationNumbers, DateTime nowUtc) =>
-        Resolve(sub, grandfatheredEmployeeBonus, extraEmployees: 0, extraCompanies: 0, paidNotificationNumbers, nowUtc);
-
-    /// <summary>
-    /// ARCHITECTURE_CYCLE7.md §44.3 п.6: employees = plan.MaxEmployees + Σ quantity of options whose
-    /// CapabilityKey is <see cref="CapabilityKeys.Employees"/> + grandfathered bonus; companies =
-    /// plan.MaxCompanies + Σ quantity of options whose CapabilityKey is
-    /// <see cref="CapabilityKeys.Companies"/>. <paramref name="extraEmployees"/>
-    /// and <paramref name="extraCompanies"/> must already be pre-filtered by the caller to options that
-    /// are currently paid (own PaidUntilUtc, or riding the subscription's own paid period) — this pure
-    /// method only applies the arithmetic, it does not re-derive "is this option still paid".
-    /// </summary>
-    public static EffectivePlan Resolve(
-        AccountSubscription? sub, int grandfatheredEmployeeBonus, int extraEmployees, int extraCompanies,
-        int paidNotificationNumbers, DateTime nowUtc)
+        AccountSubscription? sub, int grandfatheredEmployeeBonus, int paidNotificationNumbers, DateTime nowUtc)
     {
         var usable = sub is not null && sub.IsActive && (!sub.PaidUntil.HasValue || sub.PaidUntil >= nowUtc);
         // A plan an admin has deactivated (SubscriptionPlanConfig.IsActive == false, e.g. discontinued)
@@ -104,20 +87,9 @@ public class SubscriptionResolver(AppDbContext db)
             ? EffectivePlan.FromConfig(sub.PlanConfig)
             : EffectivePlan.Free;
 
-        var employeeBonus = grandfatheredEmployeeBonus + Math.Max(extraEmployees, 0);
-        var plan = employeeBonus <= 0
-            ? basePlan
-            : basePlan with
-            {
-                AccountMaxEmployees = basePlan.AccountMaxEmployees is { } max ? max + employeeBonus : null,
-            };
-
-        plan = extraCompanies <= 0
-            ? plan
-            : plan with
-            {
-                AccountMaxCompanies = plan.AccountMaxCompanies is { } maxC ? maxC + extraCompanies : null,
-            };
+        var (employees, companies) = AccountLimitFormula.Compute(
+            basePlan.AccountMaxEmployees, basePlan.AccountMaxCompanies, grandfatheredEmployeeBonus);
+        var plan = basePlan with { AccountMaxEmployees = employees, AccountMaxCompanies = companies };
 
         plan = paidNotificationNumbers <= 0 ? plan : plan with { PaidNotificationNumbers = paidNotificationNumbers };
 
@@ -194,13 +166,14 @@ public class SubscriptionResolver(AppDbContext db)
             .Select(a => new { a.Id, a.GrandfatheredEmployeeBonus })
             .ToListAsync();
 
-        // Cycle 7 (§44.1-§44.3): every option row still in force (own PaidUntilUtc still in the future,
-        // or none — meaning "rides the subscription's own paid period" — and not EndsAtUtc'd), grouped
-        // by CapabilityKey. This is the one place an option's quantity turns into a plan effect —
-        // adding a new "extra-*" catalog row (US-76) needs no code change here.
+        // ARCHITECTURE_CYCLE19.md §384.2 — after cycle 19 the only purchased option this batch load
+        // still needs is notifications.whatsapp (how many numbers are paid for). Employee/company
+        // "extra-*" rows are never read as a limit contributor any more (AccountLimitFormula), so this
+        // query got lighter, not heavier, per SPEC §5.
         var activeOptions = await db.AccountSubscriptionOptions
             .Include(o => o.Option)
             .Where(o => ids.Contains(o.BillingAccountId))
+            .Where(o => o.Option.Code == WhatsAppOptionCode)
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
             .ToListAsync();
 
@@ -230,13 +203,10 @@ public class SubscriptionResolver(AppDbContext db)
                 return IsOptionCurrentlyPaid(subUsable, o.PaidUntilUtc, availability, now) ? o.Quantity : 0;
             }
 
-            var accountOptions = activeOptions.Where(o => o.BillingAccountId == id).ToList();
-            var extraEmployees = accountOptions.Where(o => o.Option.CapabilityKey == CapabilityKeys.Employees).Sum(PaidQuantity);
-            var extraCompanies = accountOptions.Where(o => o.Option.CapabilityKey == CapabilityKeys.Companies).Sum(PaidQuantity);
-            var whatsapp = accountOptions.FirstOrDefault(o => o.Option.Code == WhatsAppOptionCode);
+            var whatsapp = activeOptions.FirstOrDefault(o => o.BillingAccountId == id && o.Option.Code == WhatsAppOptionCode);
             var paidNumbers = whatsapp is null ? 0 : PaidQuantity(whatsapp);
 
-            result[id] = Resolve(sub, bonus, extraEmployees, extraCompanies, paidNumbers, now);
+            result[id] = Resolve(sub, bonus, paidNumbers, now);
         }
         return result;
     }

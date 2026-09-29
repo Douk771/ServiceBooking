@@ -103,6 +103,10 @@ public class BillingController(
             if (line.Quantity < 1) return BadRequest("Количество должно быть не меньше 1.");
             var option = options.FirstOrDefault(o => o.Id == line.OptionId);
             if (option is null) return BadRequest($"Опция {line.OptionId} не найдена.");
+            // ARCHITECTURE_CYCLE19.md §408/§414 — a retired limit option can no longer be requested;
+            // nothing is saved, the previous pending request (if any) stays as it was.
+            if (RetiredLimitOptions.IsRetired(option))
+                return BadRequest(BillingTexts.RetiredOptionRejected(option.Name));
             if (option.Kind == OptionKind.Toggle && line.Quantity != 1)
                 return BadRequest($"Опция «{option.Name}» — переключатель, количество может быть только 1.");
         }

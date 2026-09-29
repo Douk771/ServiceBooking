@@ -493,8 +493,8 @@ public class AdminController(
     {
         var plans = await db.SubscriptionPlanConfigs.OrderBy(p => p.PricePerMonth).ToListAsync();
         var subscriberCounts = await GetActiveSubscriberCountsAsync(plans.Select(p => p.Id));
-        var rules = await db.PlanOptionRules.Where(r => plans.Select(p => p.Id).Contains(r.PlanConfigId)).ToListAsync();
-        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
+        var rules = await db.PlanOptionRules.WhereNotRetired().Where(r => plans.Select(p => p.Id).Contains(r.PlanConfigId)).ToListAsync();
+        var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().CountAsync();
         return Ok(new AdminPlansListDto(plans.Select(p =>
             MapAdminPlanDto(p, subscriberCounts.GetValueOrDefault(p.Id), rules.Where(r => r.PlanConfigId == p.Id).ToList(), totalOptionsInCatalog)).ToList()));
     }
@@ -549,8 +549,8 @@ public class AdminController(
         // A brand-new plan has no subscribers yet — no need for the AccountSubscriptions round trip
         // GetActiveSubscriberCountsAsync does for the list/update endpoints.
         // Contract (API_CONTRACT_CYCLE7.md) documents 201 Created for a successful create, not 200.
-        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync();
-        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
+        var rules = await db.PlanOptionRules.WhereNotRetired().Where(r => r.PlanConfigId == plan.Id).ToListAsync();
+        var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().CountAsync();
         return StatusCode(StatusCodes.Status201Created, MapAdminPlanDto(plan, subscribedAccounts: 0, rules, totalOptionsInCatalog));
     }
 
@@ -630,8 +630,8 @@ public class AdminController(
         }
         pricingCatalogCache.Invalidate();
         var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
-        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
+        var rules = await db.PlanOptionRules.WhereNotRetired().Where(r => r.PlanConfigId == id).ToListAsync();
+        var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().CountAsync();
         return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog));
     }
 
@@ -650,8 +650,8 @@ public class AdminController(
         if (plan.IsSystemFree == dto.IsSystemFree)
         {
             var unchangedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
-            var unchangedRules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-            return Ok(MapAdminPlanDto(plan, unchangedAccounts, unchangedRules, await db.SubscriptionOptions.CountAsync()));
+            var unchangedRules = await db.PlanOptionRules.WhereNotRetired().Where(r => r.PlanConfigId == id).ToListAsync();
+            return Ok(MapAdminPlanDto(plan, unchangedAccounts, unchangedRules, await db.SubscriptionOptions.WhereNotRetired().CountAsync()));
         }
 
         if (!dto.IsSystemFree && plan.IsSystemFree)
@@ -697,8 +697,8 @@ public class AdminController(
         }
         pricingCatalogCache.Invalidate();
         var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
-        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
-        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, await db.SubscriptionOptions.CountAsync()));
+        var rules = await db.PlanOptionRules.WhereNotRetired().Where(r => r.PlanConfigId == id).ToListAsync();
+        return Ok(MapAdminPlanDto(plan, subscribedAccounts, rules, await db.SubscriptionOptions.WhereNotRetired().CountAsync()));
     }
 
     /// <summary>
@@ -714,8 +714,8 @@ public class AdminController(
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
 
-        var totalOptionsInCatalog = await db.SubscriptionOptions.CountAsync();
-        var rules = await db.PlanOptionRules.Where(r => r.PlanConfigId == id).ToListAsync();
+        var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().CountAsync();
+        var rules = await db.PlanOptionRules.WhereNotRetired().Where(r => r.PlanConfigId == id).ToListAsync();
         var subscribedAccounts = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
 
         // Idempotent — same value is a no-op 200 (§366).
@@ -877,14 +877,23 @@ public class AdminController(
         }
 
         var optionIds = desiredList.Select(d => d.OptionId).ToList();
-        var knownOptionIds = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).Select(o => o.Id).ToListAsync();
-        var unknown = optionIds.Except(knownOptionIds).ToList();
+        var knownOptions = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).ToListAsync();
+        var unknown = optionIds.Except(knownOptions.Select(o => o.Id)).ToList();
         if (unknown.Count > 0)
             return new BadRequestObjectResult($"Опция(и) не найдены: {string.Join(", ", unknown)}.");
 
-        var existing = await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync();
+        // ARCHITECTURE_CYCLE19.md §405/§386.1 (LIM19-005/006) — a retired limit option exists (so it
+        // never trips the "not found" check above) but is silently dropped from what gets written:
+        // element in the request is discarded, and a previously saved rule for it is never deleted even
+        // when it's absent from `desiredList` (a stale cached "Тарифы" tab that submits the whole matrix
+        // without it must not erase the row §385.4's report needs).
+        var requestRetiredOptionIds = knownOptions.Where(RetiredLimitOptions.IsRetired).Select(o => o.Id).ToHashSet();
+        desiredList = desiredList.Where(d => !requestRetiredOptionIds.Contains(d.OptionId)).ToList();
 
-        foreach (var row in existing.Where(e => desiredList.All(d => d.OptionId != e.OptionId)))
+        var existing = await db.PlanOptionRules.Include(r => r.Option).Where(r => r.PlanConfigId == planId).ToListAsync();
+
+        foreach (var row in existing.Where(e =>
+            desiredList.All(d => d.OptionId != e.OptionId) && !RetiredLimitOptions.IsRetired(e.Option)))
             db.PlanOptionRules.Remove(row);
 
         foreach (var d in desiredList)

@@ -92,7 +92,10 @@ public class AdminBillingController(
     [HttpGet("options")]
     public async Task<IActionResult> GetOptions()
     {
-        var options = await db.SubscriptionOptions.OrderBy(o => o.SortOrder).ThenBy(o => o.Name).ToListAsync();
+        // ARCHITECTURE_CYCLE19.md §386.1/§402 — retired limit options never appear in the catalog, at
+        // any IsActive/IsPublic/price combination.
+        var options = await db.SubscriptionOptions.WhereNotRetired()
+            .OrderBy(o => o.SortOrder).ThenBy(o => o.Name).ToListAsync();
         var counts = await GetOptionSubscriberCountsAsync(options.Select(o => o.Id));
         return Ok(new { options = options.Select(o => MapOptionDto(o, counts.GetValueOrDefault(o.Id))).ToList() });
     }
@@ -132,6 +135,12 @@ public class AdminBillingController(
     {
         var option = await db.SubscriptionOptions.FindAsync(id);
         if (option is null) return NotFound();
+
+        // ARCHITECTURE_CYCLE19.md §403: 409 on an already-retired option comes BEFORE the code-immutable
+        // 400 — an admin trying to edit "Дополнительные сотрудники" needs to know it's retired, not that
+        // its code can't change.
+        if (RetiredLimitOptions.IsRetired(option))
+            return Conflict(BillingTexts.RetiredOptionNotEditable(option.Name));
 
         if (dto.Code != option.Code)
             return BadRequest("Код опции менять нельзя.");
@@ -191,6 +200,10 @@ public class AdminBillingController(
 
     internal static IActionResult? ValidateOptionInput(Billing_AdminOptionInput dto, string? existingCode)
     {
+        // ARCHITECTURE_CYCLE19.md §403/§414 — new first check: "employees"/"companies" can no longer be
+        // sold as an option's capability, on both POST and PUT.
+        if (RetiredLimitOptions.IsRetiredCapability(dto.CapabilityKey))
+            return new BadRequestObjectResult(BillingTexts.LimitCapabilityNotSellable);
         if (string.IsNullOrWhiteSpace(dto.Code) || !CodePattern.IsMatch(dto.Code))
             return new BadRequestObjectResult("Код опции обязателен и должен соответствовать формату ^[a-z0-9.-]{2,64}$.");
         if (string.IsNullOrWhiteSpace(dto.Name) || dto.Name.Length > 100)
@@ -355,7 +368,9 @@ public class AdminBillingController(
         // option's price, not just the bare plan. Batched (§46) — one query for every account's options,
         // one for every account's registered-channel count, not one per row — and now scoped to just
         // this page's account ids rather than every account in the system.
-        var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
+        // ARCHITECTURE_CYCLE19.md §386.1 — retired limit options never contribute to totalMonthlyPrice
+        // or the "options" surfaces shown here.
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => accountIds.Contains(o.BillingAccountId))
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
             .ToListAsync();
@@ -434,7 +449,7 @@ public class AdminBillingController(
         var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
         var usage = (await usageReader.GetAsync([account.Id])).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
 
-        var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id).Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now).ToListAsync();
         var planRules = sub?.PlanConfigId is { } planId ? await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync() : [];
 
@@ -658,6 +673,12 @@ public class AdminBillingController(
         if (options.Count != optionIds.Distinct().Count())
             return BadRequest("Одна или несколько опций не найдены.");
 
+        // ARCHITECTURE_CYCLE19.md §406 п.8 — a retired limit option in the request is rejected outright;
+        // nothing is saved. Checked before quantity/rule validation, as the contract's ordered list requires.
+        var retiredInRequest = options.FirstOrDefault(RetiredLimitOptions.IsRetired);
+        if (retiredInRequest is not null)
+            return BadRequest(BillingTexts.RetiredOptionRejected(retiredInRequest.Name));
+
         foreach (var line in optionLines)
         {
             if (line.Quantity < 1)
@@ -682,28 +703,19 @@ public class AdminBillingController(
         var now = DateTime.UtcNow;
 
         // Limit-overflow guard (US-67's last acceptance criterion): if the newly assigned plan's
-        // summed limits are lower than what's already occupied, refuse without confirmLimitOverflow.
-        // N17: must account for the options being assigned IN THIS SAME REQUEST too — an admin handing
-        // out "plan + 10 extra seats" to an account already at 12 employees must not see a false 409
-        // just because the check only looked at the bare plan's own limit.
-        var extraEmployeesInRequest = optionLines
-            .Where(l => options.First(o => o.Id == l.OptionId).CapabilityKey == CapabilityKeys.Employees)
-            .Sum(l => l.Quantity);
-        var extraCompaniesInRequest = optionLines
-            .Where(l => options.First(o => o.Id == l.OptionId).CapabilityKey == CapabilityKeys.Companies)
-            .Sum(l => l.Quantity);
+        // limit is lower than what's already occupied, refuse without confirmLimitOverflow.
+        // ARCHITECTURE_CYCLE19.md §384.3/§406 — options in the request never contribute to the limit any
+        // more (they can't be retired limit options at this point, §406 п.8), so the one formula is used.
         var basePlan = plan is not null ? EffectivePlan.FromConfig(plan) : EffectivePlan.Free;
-        var newEffectivePlan = basePlan with
-        {
-            AccountMaxEmployees = basePlan.AccountMaxEmployees is { } maxE ? maxE + extraEmployeesInRequest : null,
-            AccountMaxCompanies = basePlan.AccountMaxCompanies is { } maxC ? maxC + extraCompaniesInRequest : null,
-        };
+        var (newMaxEmployees, newMaxCompanies) = AccountLimitFormula.Compute(
+            basePlan.AccountMaxEmployees, basePlan.AccountMaxCompanies, account.GrandfatheredEmployeeBonus);
+        var newEffectivePlan = basePlan with { AccountMaxEmployees = newMaxEmployees, AccountMaxCompanies = newMaxCompanies };
         var usage = (await usageReader.GetAsync([accountId])).GetValueOrDefault(accountId) ?? new AccountUsage(accountId, 0, 0);
         if (!dto.ConfirmLimitOverflow)
         {
             if (newEffectivePlan.AccountMaxCompanies is { } maxCompanies && usage.CompaniesUsed > maxCompanies)
                 return Conflict($"На новом тарифе доступно {maxCompanies} компаний, занято {usage.CompaniesUsed}. Подтвердите превышение лимита, чтобы продолжить.");
-            if (newEffectivePlan.AccountMaxEmployees is { } maxEmployees && usage.SeatsUsed > maxEmployees + account.GrandfatheredEmployeeBonus)
+            if (newEffectivePlan.AccountMaxEmployees is { } maxEmployees && usage.SeatsUsed > maxEmployees)
                 return Conflict($"На новом тарифе доступно {maxEmployees} мест, занято {usage.SeatsUsed}. Подтвердите превышение лимита, чтобы продолжить.");
         }
 
@@ -735,7 +747,11 @@ public class AdminBillingController(
         sub.PaidUntil = ToUtc(dto.PaidUntil);
         sub.UpdatedAt = now;
 
-        var existingOptions = await db.AccountSubscriptionOptions.Where(o => o.BillingAccountId == accountId).ToListAsync();
+        // ARCHITECTURE_CYCLE19.md §383.2/§386.1 — retired limit option rows are excluded here so this
+        // endpoint never creates, updates or closes them, even via the "options not in the request end"
+        // loop below.
+        var existingOptions = await db.AccountSubscriptionOptions.WhereNotRetired()
+            .Where(o => o.BillingAccountId == accountId).ToListAsync();
         foreach (var line in optionLines)
         {
             var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
@@ -910,9 +926,24 @@ public class AdminBillingController(
         var items = page1.Select(a =>
         {
             var lines = OwnerSubscriptionService.DeserializeOptionLines(a.RequestedOptionsJson);
-            var itemDtos = lines.Select(l => new { optionId = l.OptionId, name = allOptions.FirstOrDefault(o => o.Id == l.OptionId)?.Name ?? "—", quantity = l.Quantity }).ToList();
+            // ARCHITECTURE_CYCLE19.md §407/§408 — a request submitted before the cycle 19 rollout may
+            // still name a retired limit option; it is marked `retired` on read (never rewritten) and
+            // excluded from the price estimate and the approval-window notice.
+            var itemDtos = lines.Select(l =>
+            {
+                var opt = allOptions.FirstOrDefault(o => o.Id == l.OptionId);
+                return new
+                {
+                    optionId = l.OptionId,
+                    name = opt?.Name ?? "—",
+                    quantity = l.Quantity,
+                    retired = opt is not null && RetiredLimitOptions.IsRetired(opt),
+                };
+            }).ToList();
+            var retiredNames = itemDtos.Where(i => i.retired).Select(i => i.name).Distinct().ToList();
             var sub = subs.FirstOrDefault(s => s.BillingAccountId == a.Id);
-            var estimated = (sub?.PlanConfig?.PricePerMonth ?? 0m) + lines.Sum(l => (allOptions.FirstOrDefault(o => o.Id == l.OptionId)?.PricePerMonth ?? 0m) * l.Quantity);
+            var estimated = (sub?.PlanConfig?.PricePerMonth ?? 0m) + itemDtos.Where(i => !i.retired)
+                .Sum(i => (allOptions.FirstOrDefault(o => o.Id == i.optionId)?.PricePerMonth ?? 0m) * i.quantity);
             return new
             {
                 id = a.Id,
@@ -928,6 +959,7 @@ public class AdminBillingController(
                 estimatedMonthlyPrice = estimated,
                 comment = a.RequestedComment,
                 companiesCount = companyCounts.GetValueOrDefault(a.Id, 0),
+                retiredOptionsNotice = retiredNames.Count == 0 ? null : BillingTexts.RetiredOptionsInRequestNotice(retiredNames),
             };
         }).ToList();
 

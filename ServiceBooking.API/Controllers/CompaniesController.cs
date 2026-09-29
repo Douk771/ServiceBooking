@@ -4,13 +4,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Companies;
-using ServiceBooking.API.Services.Geo;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -25,8 +23,8 @@ public class CompaniesController(
     ServiceBooking.API.Services.Billing.BillingAccountProvisioner billingAccountProvisioner,
     ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader,
     ImageUploadService imageUploadService, FileStorage storage,
-    LegalDocumentProvider legalProvider, ConsentLedger ledger, TokenService tokenService,
-    IOptions<GeoOptions> geoOptions) : ControllerBase
+    LegalDocumentProvider legalProvider, ConsentLedger ledger, TokenService tokenService
+) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<List<CompanyDto>>> GetAll()
@@ -50,7 +48,7 @@ public class CompaniesController(
             .Where(c => c.ShowInPublicListing && plans[c.Id].AllowPublicListing)
             .Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
                 c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
-                geoOptions.Value, covers.GetValueOrDefault(c.Id))));
+                covers.GetValueOrDefault(c.Id))));
     }
 
     // GET /api/companies/public — US-115 (API_CONTRACT_CYCLE9.md §113.2). Anonymous; replaces GET
@@ -122,7 +120,7 @@ public class CompaniesController(
 
         var items = pageItems.Select(c => MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
             c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
-            geoOptions.Value, covers.GetValueOrDefault(c.Id))).ToList();
+            covers.GetValueOrDefault(c.Id))).ToList();
 
         return Ok(ServiceBooking.API.DTOs.Common.Pagination.Create(items, normalizedPage, normalizedPageSize, total));
     }
@@ -149,7 +147,7 @@ public class CompaniesController(
                 cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
                 employeeCounts.GetValueOrDefault(cm.CompanyId),
                 cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null,
-                geoOptions.Value, covers.GetValueOrDefault(cm.CompanyId), canManage: true)));
+                covers.GetValueOrDefault(cm.CompanyId), canManage: true)));
     }
 
     // Returns all companies where the current user is a member (any role)
@@ -177,7 +175,7 @@ public class CompaniesController(
                 cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
                 employeeCounts.GetValueOrDefault(cm.CompanyId),
                 cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null,
-                geoOptions.Value, covers.GetValueOrDefault(cm.CompanyId),
+                covers.GetValueOrDefault(cm.CompanyId),
                 canManage: isSuperAdmin || cm.Role == UserRole.CompanyOwner)));
     }
 
@@ -199,8 +197,8 @@ public class CompaniesController(
         var photos = await GetPhotosOrderedAsync(c.Id);
         var cover = photos.Count > 0 ? (photos[0].Url, photos[0].ThumbnailUrl) : ((string, string)?)null;
         // Reachable anonymously (no [Authorize]) — same §46.2 treatment as GetAll: no usage computed.
-        return Ok(MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null, geoOptions.Value,
-            cover, photos, includeAddressPoint: true));
+        return Ok(MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null,
+            cover, photos));
     }
 
     // Public: list masters for a company, optionally filtered by serviceId
@@ -477,7 +475,7 @@ public class CompaniesController(
         // instead of assuming Free.
         // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
         var createUsage = accountId != Guid.Empty ? await accountUsageReader.GetAsync([accountId]) : new Dictionary<Guid, AccountUsage>();
-        var companyDto = MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId), geoOptions.Value, canManage: true);
+        var companyDto = MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId), canManage: true);
         return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, new CreateCompanyResponseDto(companyDto, token));
     }
 
@@ -576,7 +574,7 @@ public class CompaniesController(
         return Ok(MapToDto(company, plan, averageRating, reviewCount, city,
             updateEmployeeCounts.GetValueOrDefault(company.Id),
             company.BillingAccountId.HasValue ? updateUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
-            geoOptions.Value, updateCovers.GetValueOrDefault(company.Id), canManage: true));
+            updateCovers.GetValueOrDefault(company.Id), canManage: true));
     }
 
     // Uploads/replaces the company's logo. US-25 p.6: moved onto the same ImageUploadService every other
@@ -624,7 +622,7 @@ public class CompaniesController(
         return Ok(MapToDto(company, plan, averageRating, reviewCount, city,
             logoEmployeeCounts.GetValueOrDefault(company.Id),
             company.BillingAccountId.HasValue ? logoUsageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
-            geoOptions.Value, logoCovers.GetValueOrDefault(company.Id), canManage: true));
+            logoCovers.GetValueOrDefault(company.Id), canManage: true));
     }
 
     // US-24 p.4 / US-19 p.7: the only place a company's client-photo storage usage is exposed. NOT
@@ -702,29 +700,20 @@ public class CompaniesController(
                 : await db.CompanyMembers.CountAsync(cm => cm.CompanyId == id);
             if (seatsUsed >= plan.AccountMaxEmployees.Value)
             {
-                // §53.4 breakdown: how much of the summed limit is "included in the plan" vs
-                // "purchased as an option" vs "grandfathered bonus" — the plan's own included quantity
-                // is whatever's left after subtracting the bonus and every option's contribution from
-                // the already-resolved total (both are 0 when there's no billing account at all, the
-                // pre-cycle-5-backfill edge case).
-                var bonus = billingAccountId.HasValue
-                    ? await db.BillingAccounts.Where(a => a.Id == billingAccountId.Value).Select(a => a.GrandfatheredEmployeeBonus).FirstOrDefaultAsync()
-                    : 0;
+                // ARCHITECTURE_CYCLE19.md §384.3/§411: the limit shown is the resolver's own number
+                // (tariff field + bonus, AccountLimitFormula) — no more "purchased" breakdown, so all
+                // this needs is the current (or fallback Free) plan's name.
                 var sub = billingAccountId.HasValue
                     ? await db.AccountSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == billingAccountId.Value)
                     : null;
                 // NB-1: must use the SAME "is this subscription usable right now" gate as the limit
                 // itself (SubscriptionResolver.Resolve) — otherwise an expired subscription's raw plan
-                // name/quantity leaks into the 402 text (e.g. "8 included") while the limit that was
-                // actually enforced came from Free (1).
+                // name leaks into the 402 text while the limit that was actually enforced came from Free.
                 var subUsableNow = sub is not null && sub.IsActive
                     && (!sub.PaidUntil.HasValue || sub.PaidUntil >= DateTime.UtcNow)
                     && sub.PlanConfig is { IsActive: true };
-                var planIncluded = subUsableNow ? sub!.PlanConfig!.MaxEmployees ?? EffectivePlan.Free.AccountMaxEmployees!.Value
-                    : EffectivePlan.Free.AccountMaxEmployees!.Value;
-                var purchased = Math.Max(0, plan.AccountMaxEmployees.Value - planIncluded - bonus);
                 var planName = subUsableNow ? sub!.PlanConfig!.Name : "Бесплатный";
-                return StatusCode(402, BillingTexts.SeatLimitReached(seatsUsed, planName, planIncluded, purchased, bonus));
+                return StatusCode(402, BillingTexts.SeatLimitReached(seatsUsed, planName, plan.AccountMaxEmployees.Value));
             }
         }
 
@@ -959,24 +948,13 @@ public class CompaniesController(
     // same shape without a second, drifting copy of this mapping.
     internal static CompanyDto MapToDto(
         Company c, EffectivePlan plan, double? averageRating, int reviewCount, City? city,
-        int employeeCount, AccountUsage? usage, GeoOptions geoOptions,
+        int employeeCount, AccountUsage? usage,
         // ARCHITECTURE_CYCLE10.md §109.3/API_CONTRACT_CYCLE10.md §129: cover is a single (Url,
         // ThumbnailUrl) pair resolved by the caller (batched via GetCoversAsync for list endpoints, or a
         // single lookup for the others) — null when the company has no photos yet. `photos` stays null
         // everywhere except GET /api/companies/{slug} (GetBySlug), which is the only caller that passes
         // the full ordered list.
         (string Url, string ThumbnailUrl)? cover = null, List<CompanyPhotoDto>? photos = null,
-        // ARCHITECTURE_CYCLE13.md §208/API_CONTRACT_CYCLE13.md §232 — true only for GetBySlug, the one
-        // endpoint that may expose a point at all.
-        bool includeAddressPoint = false,
-        // ARCHITECTURE_CYCLE13.md §208/API_CONTRACT_CYCLE13.md §232/§237: "available" (and the whole
-        // addressVerification block) must reflect "does THIS caller manage THIS company" — NOT "did the
-        // caller pass a non-null usage". `usage` alone conflates two different things: GetMemberOf passes
-        // usage for every membership role (so a Master would get a non-null addressVerification if this
-        // gated on `usage is null`), and a company with no BillingAccountId yet gets `usage: null` from
-        // GetUsageAsync even for its own owner (so addressVerification would silently vanish for the one
-        // caller §237 is written for). Review finding (cycle 13 review, blocking #2) — every call site
-        // below passes this explicitly rather than leaving it to infer from `usage`.
         bool canManage = false)
     {
         TimeZoneOffset.TryGetUtcOffsetMinutes(c.TimeZoneId, DateTime.UtcNow, out var utcOffsetMinutes);
@@ -985,28 +963,6 @@ public class CompaniesController(
         var canAddEmployee = usage is null
             ? (bool?)null
             : !plan.AccountMaxEmployees.HasValue || usage.SeatsUsed < plan.AccountMaxEmployees.Value;
-
-        // ARCHITECTURE_CYCLE13.md §208/§232: gated on the explicit `canManage` flag, not on `usage`
-        // (see that parameter's doc comment above) — `available` additionally requires the switch itself
-        // to be on (Provider != "logging").
-        var addressVerification = !canManage
-            ? null
-            : new CompanyAddressVerificationDto(
-                Available: !string.Equals(geoOptions.Provider, "logging", StringComparison.OrdinalIgnoreCase),
-                Status: AddressVerificationState.Status(c).ToString(),
-                VerifiedAt: c.AddressVerifiedAt,
-                Precision: c.AddressPrecision?.ToString());
-
-        // §208: a point is only ever exposed on GetBySlug, and only when it is BOTH stored (StoreResults
-        // — extended licence, §209.2) AND the address is currently Verified — gating on Verified here
-        // (not just "columns are non-null") stops a stale point surviving an address edit that hasn't
-        // been re-verified yet (§203/§235: editing Address never clears these columns, it just makes the
-        // computed status fall back to Unverified).
-        var addressPoint = includeAddressPoint && geoOptions.StoreResults &&
-                            c.AddressLatitude.HasValue && c.AddressLongitude.HasValue &&
-                            AddressVerificationState.Status(c) == AddressVerificationStatus.Verified
-            ? new GeoPointDto(c.AddressLatitude.Value, c.AddressLongitude.Value)
-            : null;
 
         return new(
             c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email,
@@ -1030,7 +986,6 @@ public class CompaniesController(
             c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes,
             BookingHorizon.Normalize(c.BookingHorizonDays),
             cover?.Url, cover?.ThumbnailUrl, photos,
-            addressVerification, addressPoint,
             c.YandexMapsUrl, c.TwoGisUrl, ClientRescheduleWindow.Normalize(c.ClientRescheduleMinHours));
     }
 

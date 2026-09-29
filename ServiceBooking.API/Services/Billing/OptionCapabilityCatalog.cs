@@ -9,11 +9,11 @@ public static class OptionCapabilityCatalog
     public sealed record Capability(string Key, string Kind, string Name);
 
     // notifications.whatsapp is Numeric (Р6: the unit of payment is "how many numbers", not a flag).
+    // ARCHITECTURE_CYCLE19.md §386.1/§404 — "companies"/"employees" removed: those limits are set by
+    // the tariff's own fields only (AccountLimitFormula), never by a purchasable option.
     public static readonly IReadOnlyList<Capability> Known =
     [
         new(CapabilityKeys.NotificationsWhatsApp, "Numeric", "Номера для рассылок WhatsApp"),
-        new(CapabilityKeys.Companies, "Numeric", "Дополнительные компании"),
-        new(CapabilityKeys.Employees, "Numeric", "Дополнительные сотрудники"),
         new("analytics", "Boolean", "Аналитика"),
         new("online-payment", "Boolean", "Онлайн-оплата"),
     ];

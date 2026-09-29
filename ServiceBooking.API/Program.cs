@@ -136,10 +136,8 @@ DeploymentSafetyChecks.ValidateStaffPushSecrets(builder.Configuration, builder.E
 // outside a developer environment, or Production silently starts with either "no protection at all"
 // or "every activation permanently 409s". Same "fail loud outside dev" convention as the checks above.
 DeploymentSafetyChecks.ValidateTrialSecrets(builder.Configuration, builder.Environment.EnvironmentName);
-// ARCHITECTURE_CYCLE13.md §206/§209.2 — own secret (Yandex Geocoder API key), own provider switch, own
-// unconditional check (CacheHours ≤ 720 is a licence ceiling, checked in every environment, not just
-// outside Development — see the method's own doc comment).
-DeploymentSafetyChecks.ValidateAddressVerification(builder.Configuration, builder.Environment.EnvironmentName);
+// ARCHITECTURE_CYCLE19.md §388.1/§388.4 — the geocoder (and its startup check) is removed in cycle 19;
+// address saving and the публичный правовой гейт stay (see CompanyAddressController).
 // ARCHITECTURE_CYCLE14.md §150.2 — own secret set (PHONEVERIFY_*), own provider switch
 // (PhoneVerification:Provider), checked unconditionally (even in Development — an unrecognized
 // provider value is a config-correctness bug there too, unlike the secrets themselves).
@@ -544,41 +542,9 @@ builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.
         ? sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LibWebPushSender>()
         : sp.GetRequiredService<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>());
 
-// ── Проверка адреса по карте (ARCHITECTURE_CYCLE13.md §206–§209, §215) ─────────────────────────────
-// Own section, own Provider switch, own secret — independent of the WhatsApp/MAX switch above, same
-// pattern the Web Push block just followed. "logging" (default, safe everywhere) never makes a network
-// call at all (LoggingAddressGeocoder) — that IS the intended production state until a licence is bought
-// (P2), not a placeholder.
-builder.Services.Configure<ServiceBooking.API.Services.Geo.GeoOptions>(
-    builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName));
-
-// The "yandex-geocoder" named client (§206): request/URL logging silenced at the category level, same
-// rung-1 defence as "green-api"/"web-push" — the query string carries `apikey`. Registered
-// unconditionally, not inside the switch below, for the same "changing Provider needs no different DI
-// graph" reason green-api's own client is registered unconditionally.
-builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.LogicalHandler", LogLevel.None);
-builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.ClientHandler", LogLevel.None);
-builder.Services.AddHttpClient("yandex-geocoder", client =>
-    {
-        var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
-            .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
-        client.Timeout = TimeSpan.FromSeconds(geoOptions.Yandex.TimeoutSeconds);
-    })
-    .ConfigurePrimaryHttpMessageHandler(() =>
-    {
-        var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
-            .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
-        return ServiceBooking.API.Services.Geo.GeoHandlerFactory.Create(geoOptions.Yandex);
-    });
-
-builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>();
-builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>();
-var addressVerificationProvider = builder.Configuration["AddressVerification:Provider"];
-builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.IAddressGeocoder>(sp =>
-    string.Equals(addressVerificationProvider, "yandex", StringComparison.OrdinalIgnoreCase)
-        ? sp.GetRequiredService<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>()
-        : sp.GetRequiredService<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>());
-builder.Services.AddScoped<ServiceBooking.API.Services.Geo.AddressLookupService>();
+// ARCHITECTURE_CYCLE19.md §388.1 — the "проверка адреса по карте" geocoder (ARCHITECTURE_CYCLE13.md
+// §206–§209) is removed целиком in cycle 19: no more GeoOptions, yandex-geocoder HttpClient, provider
+// switch or AddressLookupService. Saving the address and the правовой гейт (below) are unaffected.
 
 // ── Подтверждение телефона через MAX (ARCHITECTURE_CYCLE14.md §140-§158) ──────────────────────────────
 // R5/§144.1: a PLATFORM subsystem, deliberately with NO reference anywhere in this block to
@@ -750,11 +716,9 @@ builder.Services.AddRateLimiter(o =>
         });
     });
 
-    // address-verify: ARCHITECTURE_CYCLE13.md §210/§238 — the tenth named policy, "30/час на
-    // пользователя". Keyed by user id only, same shape as data-export/push-subscribe above: all three
-    // routes it guards require [Authorize], there is no anonymous case. Applied to all three
-    // CompanyAddressController routes — two can reach the paid geocoder, the third writes journal rows —
-    // and one budget covers all three on purpose (§210: "один и тот же бюджет одного и того же человека").
+    // address-verify: ARCHITECTURE_CYCLE19.md §388.2 — сохранение адреса и правовой гейт публичности
+    // адреса. Имя и значения по умолчанию (30/час на пользователя) не меняются с цикла 13, хотя
+    // геокодер, который был третьим потребителем этого бюджета, в цикле 19 удалён.
     o.AddPolicy("address-verify", ctx =>
     {
         var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
@@ -859,7 +823,8 @@ builder.Services.AddRateLimiter(o =>
             "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
             "notifications-webhook" => "Too many requests.",
             "push-subscribe" => "Слишком много подписок устройств. Повторите позже.",
-            "address-verify" => "Слишком много обращений к проверке адреса. Повторите позже.",
+            // ARCHITECTURE_CYCLE19.md §388.2/§414 — новый текст: адрес больше не "проверяется", только сохраняется.
+            "address-verify" => "Слишком много попыток изменить адрес. Повторите позже.",
             "phone-verify-start" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyStartAttempts,
             "phone-change" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyChangePhoneAttempts,
             "phone-verify-webhook" => "Too many requests.",
@@ -1230,6 +1195,11 @@ using (var scope = app.Services.CreateScope())
     var consentLedger = scope.ServiceProvider.GetRequiredService<ConsentLedger>();
 
     await db.Database.MigrateAsync();
+
+    // ARCHITECTURE_CYCLE19.md §385.5 — second line of defence behind the deploy-time gate; never
+    // blocks startup, just makes an otherwise-invisible impossible state loud.
+    await ServiceBooking.API.Services.Billing.RetiredLimitOptionsStartupReport.LogAsync(
+        db, scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
 
     string[] roles = ["Client", "Master", "CompanyOwner", "SuperAdmin"];
     foreach (var role in roles)

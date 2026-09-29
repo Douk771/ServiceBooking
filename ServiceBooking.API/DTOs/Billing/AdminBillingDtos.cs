@@ -77,4 +77,9 @@ public record AdminSubscriptionChangeLogDto(
 public record AdminSubscriptionRequestDto(
     Guid Id, Guid BillingAccountId, string? AccountName, string RequestedByName, string? RequestedByPhoneMasked,
     DateTime CreatedAt, string Status, string? CurrentPlanName, string? DesiredPlanName,
-    IReadOnlyList<SubscriptionRequestItemDto> Items, decimal EstimatedMonthlyPrice, string? Comment, int CompaniesCount);
+    IReadOnlyList<SubscriptionRequestItemDto> Items, decimal EstimatedMonthlyPrice, string? Comment, int CompaniesCount,
+    // ARCHITECTURE_CYCLE19.md §407/§414 — same wording/null convention as SubscriptionRequestDto's own
+    // RetiredOptionsNotice (OwnerBillingDtos.cs); AdminBillingController builds this shape as an
+    // anonymous object today (contracts/cycle19/openapi.yaml's AdminSubscriptionRequestDtoCycle19), this
+    // record documents it.
+    string? RetiredOptionsNotice = null);
