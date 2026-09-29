@@ -19,6 +19,9 @@
 > **Цикл 23 (заказы, `goods.ezbook.ru`; НЕ ВЫПУЩЕНО):** новый раздел §4.20 — магазины, каталог, витрина, заказы на самовывоз;
 > у компаний появились `kind`/`publicUrl`, у списков «мои компании» — `?kind=` (по умолчанию `Services`), маршруты записи
 > отвечают магазину 409. Всё помечено как ещё не выпущенное до релиза цикла 23.
+>
+> **Цикл 24 (время, приём, уведомления, тарифы магазинов; НЕ ВЫПУЩЕНО):** дополнение к §4.20 — часы работы и пауза, слоты и предзаказы,
+> меню на дату, push, мессенджер, линейка тарифов «Заказы» (`line`), `site` у push-подписок.
 
 ## Содержание
 
@@ -4086,6 +4089,54 @@ curl "http://localhost:5000/api/companies/$COMPANY_ID/clients/phone:79991234567/
 `storefront` — 120/мин на IP; `order-create` — 20/час на IP анонимно, 60/час на пользователя (429 `«Слишком много заказов подряд —
 попробуйте через несколько минут»`); лимит по телефону — 5 активных заказов в магазине и 20 за сутки на платформе (429 `«Слишком много
 заказов на этот номер — дождитесь выдачи текущих или позвоните в магазин»`); `order-public` — 120/мин на IP; `order-board` — 120/мин на пользователя.
+
+#### Дополнение цикла 24 — время, приём, доступность по датам, уведомления, тарифы магазинов — **НЕ ВЫПУЩЕНО: доступно с ветки `cycle/024-goods-orders-time-notify`**
+
+Форма — `contracts/cycle24/openapi.yaml` (источник истины), порядок проверок и тексты — `API_CONTRACT_CYCLE24.md`, решения — `ARCHITECTURE_CYCLE24.md`.
+Здесь — то, что реально работает сейчас. Все новые входные поля необязательны и без них дают поведение цикла 23 (`pickup` — «как можно скорее»,
+`scope` — «до отмены», `availableWeekdays` — все дни, `site`/`line` — «Записи»/ezbook). Время суток — строка `"HH:mm"` (местное время магазина, шаг 5 минут);
+моменты — UTC; тексты времени собирает сервер.
+
+**Уточнения реализации (расхождений по форме с контрактом нет):**
+* `line` в `OwnerSubscriptionDto` и `SubscriptionRequestDto` — строка с именем перечисления (`"Services"`/`"Orders"`).
+* `PickupSchedule.Validate` для персонала на дату вне горизонта отвечает «Это время недоступно — выберите другое».
+* Тело push пишется JSON без `\uXXXX`-экранирования кириллицы; название магазина в теле обрезается до 60 символов.
+* `Topic` push: `o-<orderId>` / `co-<orderId>` / `l-<id>` обрезаны до 32 символов; у записей прежний `b-<bookingId>`.
+* «Сегодня» для витрины, слотов, меню и «закончилось на сегодня» — текущий рабочий день (интервал через полночь относится ко дню начала).
+
+**Время и приём** (`/api/shops/{id}/…`):
+* `GET|PUT working-hours` — недельные часы (PUT — владелец, полная замена). Часы не заданы — магазин не принимает заказы (`NoWorkingHours`).
+* `GET special-days?from&to`, `PUT|DELETE special-days/{date}` (владелец): выходной или свои интервалы, горизонт 90 дней. Конфликт с заказами — 409 `CatalogConflictDto{code: ScheduleConflictsWithOrders}`, повтор с `confirmConflicts: true`.
+* `PUT pickup-settings` (владелец) — `asapEnabled/scheduledEnabled/slotStepMinutes(15|30|60)/preorderDays(0–14)/minPrepMinutes(0–180)`.
+* `PUT acceptance` (владелец и сотрудник) — `{mode: Accepting|Paused|Stopped, pause?: Minutes15|Minutes30|Hour1|EndOfDay}`; пауза снимается вычислением.
+* `GET ordering-status` (`order-board`), `GET pickup-slots?date=` — слоты для персонала.
+* `GET /api/shops/{id}` — добавочно `pickupSettings, workingHoursSet, acceptance, openState, notAcceptingCode, setupChecklist, orderLimit, productLimit`.
+* Правило приёма: `Blocked → NoWorkingHours → Stopped → Paused → NotAllowedByPlan → MonthlyLimitReached → NoPickupTimeAvailable`. «Закрыто сейчас» блокирует только «как можно скорее».
+
+**Витрина и оформление:**
+* `GET /api/storefront/{slug}?date=` — добавочно `date, dateNotice, openState, workingHours, pickup, customerNotifications, notAcceptingCode`; товары, не продающиеся в дату, не отдаются.
+* `GET /api/storefront/{slug}/pickup-slots?date=` (400 без даты); `POST quote` — `pickup`, `pickupDate`, `pickupProblem`, причина `NotAvailableOnDate`.
+* `POST /api/storefront/{slug}/orders` — `pickup`, `notifyByMessenger`. Порядок: модель, магазин, идемпотентность (200), правило приёма (409 `ShopNotAcceptingOrders` + `notAcceptingCode`), корзина, время (409 `PickupTimeUnavailable`), строгий режим, капча/телефон, лимит по телефону, транзакция (позиции на дату выдачи, счётчик месяца, номер в пределах дня выдачи).
+
+**Заказ:** `PublicOrderDto`/`MyOrderSummaryDto` и карточки персонала — `pickup{kind,date,startUtc,endUtc,dueUtc,text,isPreorder,isOverdue}`; `PublicOrderDto.notifications`; у персонала `notifyByMessenger`, `messenger{...}`. `order-board`: колонки по `pickup.startUtc`, `preorders[]`, `acceptance`. `PUT orders/{oid}/pickup` (`New/Accepted`, `expectedVersion`) — смена времени; при смене даты новый номер, событие `PickupChanged`, уведомление покупателю.
+
+**Каталог и меню:** `ProductInput.availableWeekdays`, `ProductDto.availableWeekdays/weekdaysLabel/soldOut`; `PUT products/{id}/sold-out {isSoldOut, scope?}`; `PUT categories/{id}/weekdays`; `GET daily-menus`, `GET|PUT|DELETE daily-menus/{date}`, `POST daily-menus/{date}/copy`. Лимит товаров по тарифу «Заказов» — 409 `ProductLimitReached`.
+
+**Уведомления:**
+* `GET|PUT /api/shops/{id}/notification-settings` (GET — персонал, PUT — владелец). `POST /api/notification-channels/{id}/companies` теперь разрешён магазину.
+* `GET /api/push/config?site=`, `GET|POST /api/push/subscriptions` — `site` (`Services` по умолчанию, goods шлёт `Orders`); потолок 10 внутри пары (пользователь, сайт).
+* `POST /api/orders/public/{token}/push-subscription` и `…/remove` (анонимно, `order-push` 20/ч на IP): 404 на неизвестный токен; 409 строкой — web-push выключен магазином / заказ завершён / выключен на платформе; до 5 подписок на заказ; `remove` — 204 идемпотентно.
+* Сообщения в мессенджер идут через общий диспетчер (`OutboundNotification.OrderId`), устаревают через 2 часа (`OrderMessageOutdated`).
+* Фоновые задачи: `customer-order-push-dispatch`, `staff-push-dispatch` (период 10 с). Правила хранения: `order-push-subscriptions` (7 дней после конечного статуса), `customer-order-push-notifications` (90 дней).
+
+**Тарифы линейки «Заказы»:**
+* `GET /api/billing/subscription?line=Orders` — плюс `line`, `orders{...}`, `availablePlans[]`; без `line` ответ прежний плюс `line: "Services"`.
+* `POST /api/billing/subscription/request` — `line`; тариф другой линейки — 400; заявка на аккаунт по-прежнему одна.
+* Админка: `/api/admin/plans` — `line`, `maxProductsPerShop`, `maxOrdersPerMonth`, `allowOrders`; `system-free` — по одному на линейку; `system-trial` для «Заказов» — 409; `PUT /api/admin/billing-accounts/{id}/subscription` + `line`; карточка аккаунта — `ordersSubscription`. `GET /api/pricing` — только «Записи».
+* Лимиты считаются внутри линейки; месячный лимит заказов жёсткий, 80 %/100 % — push владельцу.
+* Номер для сообщений оплачен, если опцию допускает тариф хотя бы одной линейки.
+
+**Персональные данные:** `GET /api/profile/export` — у заказа `pickup`, `notifyByMessenger`, согласие, `webPushSubscriptions{count,createdAtUtc[]}`; `POST /api/profile/delete-account` удаляет push-подписки обезличиваемых заказов.
 
 ---
 
