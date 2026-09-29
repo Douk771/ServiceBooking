@@ -143,7 +143,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ARCHITECTURE_CYCLE16.md §248.2 (TD-07). Regenerate the generated files of cycles 7/9/13/14
+      # ARCHITECTURE_CYCLE16.md §248.2 (TD-07). Regenerate the generated files of cycles 7/9/14 (cycle 13's was deleted in cycle 19, §388.5)
       # (cycle 18 — in the step below) and fail if the regeneration doesn't match what's committed, so
       # a contract edit that forgot to run `npm run types:api*` is caught here instead of surfacing as
       # a silently broken screen. Cycle 22 (ARCHITECTURE_CYCLE22.md §376): the unused generated files
@@ -151,7 +151,7 @@ jobs:
       - name: API types must match committed contracts (TD-07)
         run: |
           npm run types:api && npm run types:api9 \
-            && npm run types:api:cycle13 && npm run types:api:cycle14
+            && npm run types:api:cycle14
           git diff --exit-code -- src/types \
             || { echo "::error::src/types/*.generated.ts разошлись с contracts/**/openapi.yaml. Запустите npm run types:api* и закоммитьте результат (ARCHITECTURE_CYCLE16.md §248.2)"; exit 1; }
 
@@ -166,6 +166,7 @@ jobs:
             ../contracts/cycle14/openapi.yaml \
             ../contracts/cycle16/openapi.yaml \
             ../contracts/cycle18/openapi.yaml \
+            ../contracts/cycle19/openapi.yaml \
             ../contracts/cycle20/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
@@ -188,8 +189,9 @@ jobs:
       - name: Generated API types must match the contracts
         run: |
           npm run types:api:cycle18
+          npm run types:api:cycle19
           npm run types:api:cycle20
-          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle20.generated.ts
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя
