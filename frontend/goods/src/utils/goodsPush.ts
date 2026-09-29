@@ -40,8 +40,8 @@ export function orderPushStorageKey(token: string): string {
 
 const ORDER_PUSH_AT_PREFIX = 'goods-order-push-at:'
 const ORDER_PUSH_KEY_PREFIX = 'goods-order-push:'
-/** The server deletes an order subscription after 7 days; the remembered endpoint has no use after that. */
-export const ORDER_PUSH_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+/** Client-side approximation: the server deletes a subscription N days after the order reaches a FINAL status (not after subscribing), so this local TTL can expire early for long-open orders; margin is 14 days. */
+export const ORDER_PUSH_STORAGE_TTL_MS = 14 * 24 * 60 * 60 * 1000
 
 export function orderPushStoredAtKey(token: string): string {
   return `${ORDER_PUSH_AT_PREFIX}${token}`

@@ -205,6 +205,7 @@ export function PlansTab() {
     createMut.reset()
     updateMut.reset()
     setHighlightsError('')
+    setLimitsError('')
   }
 
   const openCreate = () => {
@@ -213,6 +214,7 @@ export function PlansTab() {
     createMut.reset()
     updateMut.reset()
     setHighlightsError('')
+    setLimitsError('')
     setShowCreate(true)
   }
 
@@ -220,6 +222,7 @@ export function PlansTab() {
     createMut.reset()
     updateMut.reset()
     setHighlightsError('')
+    setLimitsError('')
     setForm({
       name: plan.name,
       pricePerMonth: String(plan.pricePerMonth),
@@ -254,6 +257,7 @@ export function PlansTab() {
       return
     }
     setHighlightsError('')
+    setLimitsError('')
     setForm((f) => ({ ...f, highlights: [...f.highlights, ''] }))
   }
 
@@ -263,11 +267,13 @@ export function PlansTab() {
       return
     }
     setHighlightsError('')
+    setLimitsError('')
     setForm((f) => ({ ...f, highlights: f.highlights.map((h, i) => (i === index ? value : h)) }))
   }
 
   const removeHighlight = (index: number) => {
     setHighlightsError('')
+    setLimitsError('')
     setForm((f) => ({ ...f, highlights: f.highlights.filter((_, i) => i !== index) }))
   }
 

@@ -11,6 +11,7 @@
 // build-time hashing, no extra headers beyond `Cache-Control: no-cache` on the nginx side (deploy/nginx).
 
 function safeUrl(url, fallback) {
+  if (typeof url !== 'string' || !url) return fallback
   try {
     const u = new URL(url, self.location.origin)
     return u.origin === self.location.origin ? u.pathname + u.search + u.hash : fallback

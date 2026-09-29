@@ -13,6 +13,7 @@
 // reconciliation happens in useWebPush on the next open.
 
 function safeUrl(url, fallback) {
+  if (typeof url !== 'string' || !url) return fallback
   try {
     const u = new URL(url, self.location.origin)
     return u.origin === self.location.origin ? u.pathname + u.search + u.hash : fallback
