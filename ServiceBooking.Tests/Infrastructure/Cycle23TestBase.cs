@@ -21,13 +21,16 @@ public abstract class Cycle23TestBase(TestDatabaseFixture fixture) : ApiTestBase
     }
 
     protected async Task<ShopCtx> CreateShopAsync(
-        string? slug = null, string? name = null, ShopSettingsInput? settings = null, bool paidPlan = true)
+        string? slug = null, string? name = null, ShopSettingsInput? settings = null, bool paidPlan = true, bool openAllDay = true)
     {
         var owner = await RegisterAsync();
         var (token, shop) = await CreateShopForAsync(owner.Token, slug, name);
         // Пользователь с токеном "владельца" — новый токен из ответа POST /api/shops (claim роли).
         var ctx = new ShopCtx(owner, token, shop);
         if (paidPlan) await GiveActivePaidPlanAsync(owner.UserId);
+        // Цикл 24 (ARCHITECTURE_CYCLE24.md §449.5): магазин без часов работы не принимает заказы — тесты цикла 23 проверяют заказы,
+        // а не часы, поэтому по умолчанию открываем магазин «круглосуточно» (см. OpenShopAllDayAsync). Тесты цикла 24 передают openAllDay: false.
+        if (openAllDay) await OpenShopAllDayAsync(ctx);
         if (settings is not null)
         {
             var r = await AuthedClient(token).PutJsonAsync($"/api/shops/{shop.Id}/settings", settings);
@@ -35,6 +38,20 @@ public abstract class Cycle23TestBase(TestDatabaseFixture fixture) : ApiTestBase
             ctx = ctx with { Shop = (await r.Content.ReadJsonAsync<ShopManageDto>())! };
         }
         return ctx;
+    }
+
+    /// <summary>
+    /// Часы «почти круглосуточно» (каждый день 04:05 → 04:00 следующего дня — 5-минутная щель неизбежна: интервалы не могут соприкасаться) и
+    /// время приготовления 0 мин, чтобы «как можно скорее» было доступно в любой момент прогона, кроме этой щели. Только подготовка данных.
+    /// </summary>
+    protected async Task OpenShopAllDayAsync(ShopCtx shop)
+    {
+        var client = AuthedClient(shop.OwnerToken);
+        var days = Enum.GetValues<DayOfWeek>().Select(d => new WorkingDayInput(d, [new TimeIntervalInput("04:05", "04:00")])).ToList();
+        var hours = await client.PutJsonAsync($"/api/shops/{shop.Id}/working-hours", new WorkingHoursInput(days));
+        hours.StatusCode.Should().Be(HttpStatusCode.OK, await hours.Content.ReadAsStringAsync());
+        var pickup = await client.PutJsonAsync($"/api/shops/{shop.Id}/pickup-settings", new PickupSettingsDto(true, false, 15, 0, 0));
+        pickup.StatusCode.Should().Be(HttpStatusCode.OK, await pickup.Content.ReadAsStringAsync());
     }
 
     protected async Task<(string Token, ShopManageDto Shop)> CreateShopForAsync(string token, string? slug = null, string? name = null)

@@ -720,7 +720,7 @@ public class Cycle18TrialPlanTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var freePlan = await db.SubscriptionPlanConfigs.FirstAsync(p => p.IsSystemFree);
+            var freePlan = await db.SubscriptionPlanConfigs.FirstAsync(p => p.IsSystemFree && p.Line == CompanyKind.Services);
             freePlan.MaxCompanies = 0;
             var account = await db.BillingAccounts.FirstAsync(a => a.OwnerUserId == owner.UserId);
             db.AccountSubscriptions.Add(new AccountSubscription

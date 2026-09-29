@@ -1069,7 +1069,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var adminClient = AuthedClient(admin.Token);
         var before = (await (await adminClient.GetAsync("/api/admin/plans")).Content
             .ReadJsonAsync<AdminPlansListDto>())!.Plans;
-        var firstId = before.Should().ContainSingle(p => p.IsSystemFree).Subject.Id;
+        var firstId = before.Should().ContainSingle(p => p.IsSystemFree && p.Line == CompanyKind.Services).Subject.Id;
 
         var second = NewPlanConfig();
         second.PricePerMonth = 0;
@@ -1123,7 +1123,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var adminClient = AuthedClient(admin.Token);
         var plans = (await (await adminClient.GetAsync("/api/admin/plans")).Content
             .ReadJsonAsync<AdminPlansListDto>())!.Plans;
-        var systemFreeId = plans.Should().ContainSingle(p => p.IsSystemFree).Subject.Id;
+        var systemFreeId = plans.Should().ContainSingle(p => p.IsSystemFree && p.Line == CompanyKind.Services).Subject.Id;
 
         var response = await adminClient.PutJsonAsync($"/api/admin/plans/{systemFreeId}/system-free",
             new { IsSystemFree = false });
@@ -1229,7 +1229,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
         var adminClient = AuthedClient(admin.Token);
         var before = (await (await adminClient.GetAsync("/api/admin/plans")).Content
             .ReadJsonAsync<AdminPlansListDto>())!.Plans;
-        var originalSystemFreeId = before.Should().ContainSingle(p => p.IsSystemFree).Subject.Id;
+        var originalSystemFreeId = before.Should().ContainSingle(p => p.IsSystemFree && p.Line == CompanyKind.Services).Subject.Id;
 
         var planX = NewPlanConfig();
         planX.PricePerMonth = 0;
@@ -1250,7 +1250,7 @@ public class AdminTests(TestDatabaseFixture fixture) : ApiTestBase(fixture)
 
         var reread = (await (await adminClient.GetAsync("/api/admin/plans")).Content
             .ReadJsonAsync<AdminPlansListDto>())!.Plans;
-        reread.Should().ContainSingle(p => p.IsSystemFree).Which.Id.Should().Be(originalSystemFreeId,
+        reread.Should().ContainSingle(p => p.IsSystemFree && p.Line == CompanyKind.Services).Which.Id.Should().Be(originalSystemFreeId,
             "exactly one plan must be system-free after the race, and it must still be the original one — no double, no zero");
 
         await adminClient.DeleteAsync($"/api/admin/plans/{createdX.Id}");

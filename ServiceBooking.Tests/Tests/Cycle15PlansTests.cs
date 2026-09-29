@@ -10,6 +10,8 @@ using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 using ServiceBooking.Tests.Infrastructure;
 
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
@@ -164,7 +166,7 @@ public class Cycle15PlansTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
         using var scope = Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         // 20260922121140_SeedBillingCatalog seeds exactly one system-free plan into every fresh DB.
-        var systemFree = await db.SubscriptionPlanConfigs.FirstAsync(p => p.IsSystemFree);
+        var systemFree = await db.SubscriptionPlanConfigs.FirstAsync(p => p.IsSystemFree && p.Line == CompanyKind.Services);
         scope.Dispose();
 
         var admin = await LoginAsSuperAdminAsync();

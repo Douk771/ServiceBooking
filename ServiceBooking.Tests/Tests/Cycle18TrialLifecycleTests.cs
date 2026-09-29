@@ -637,7 +637,7 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
 
         var sub = await ReloadSubscriptionAsync(accountId);
         sub.MailingUntilUtc.Should().BeNull("§337.3: expiry clears MailingUntilUtc");
-        var freePlanId = await DbAsync(db => db.SubscriptionPlanConfigs.Where(p => p.IsSystemFree).Select(p => p.Id).FirstAsync());
+        var freePlanId = await DbAsync(db => db.SubscriptionPlanConfigs.Where(p => p.IsSystemFree && p.Line == CompanyKind.Services).Select(p => p.Id).FirstAsync());
         sub.PlanConfigId.Should().Be(freePlanId);
         sub.PaidUntil.Should().BeNull();
     }
@@ -659,7 +659,7 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
             sub.PaidUntil = DateTime.UtcNow.AddDays(-1);
         });
 
-        var freePlanId = await DbAsync(db => db.SubscriptionPlanConfigs.Where(p => p.IsSystemFree).Select(p => p.Id).FirstAsync());
+        var freePlanId = await DbAsync(db => db.SubscriptionPlanConfigs.Where(p => p.IsSystemFree && p.Line == CompanyKind.Services).Select(p => p.Id).FirstAsync());
         try
         {
             await RunInDbAsync(async db =>
@@ -766,7 +766,7 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
         var reloadedAccount = await ReloadAccountAsync(accountId);
         reloadedAccount.TrialExpiredHandledAtUtc.Should().NotBeNull("the transition must actually have happened for this test to prove anything");
 
-        var freePlanId = await DbAsync(db => db.SubscriptionPlanConfigs.Where(p => p.IsSystemFree).Select(p => p.Id).FirstAsync());
+        var freePlanId = await DbAsync(db => db.SubscriptionPlanConfigs.Where(p => p.IsSystemFree && p.Line == CompanyKind.Services).Select(p => p.Id).FirstAsync());
         var sub = await ReloadSubscriptionAsync(accountId);
         sub.PlanConfigId.Should().Be(freePlanId, "the ONLY thing §337.3 permits changing on the subscription is the plan/dates");
         sub.PaidUntil.Should().BeNull();
@@ -1154,7 +1154,7 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
         // Accounts A, C and D: unaffected by B's poisoned iteration, transitioned normally in the SAME
         // pass. Н4: accountD is the one GUARANTEED to be processed strictly AFTER accountB (see this
         // test's own doc comment) — its own correctness is the actual proof this test set out to give.
-        var freePlanId = await DbAsync(d => d.SubscriptionPlanConfigs.Where(p => p.IsSystemFree).Select(p => p.Id).FirstAsync());
+        var freePlanId = await DbAsync(d => d.SubscriptionPlanConfigs.Where(p => p.IsSystemFree && p.Line == CompanyKind.Services).Select(p => p.Id).FirstAsync());
         foreach (var accountId in new[] { accountA, accountC, accountD })
         {
             var account = await DbAsync(d => d.BillingAccounts.AsNoTracking().FirstAsync(a => a.Id == accountId));
@@ -1437,7 +1437,7 @@ public class Cycle18TrialLifecycleTaskTests(TestDatabaseFixture fixture) : Cycle
         // accountY: unaffected by the race staged around it, transitioned normally in the SAME pass — the
         // sanity check that the race actually targeted the right moment rather than corrupting Y itself.
         var subYAfter = await DbAsync(d => d.AccountSubscriptions.AsNoTracking().FirstAsync(s => s.BillingAccountId == accountY));
-        var freePlanId = await DbAsync(d => d.SubscriptionPlanConfigs.Where(p => p.IsSystemFree).Select(p => p.Id).FirstAsync());
+        var freePlanId = await DbAsync(d => d.SubscriptionPlanConfigs.Where(p => p.IsSystemFree && p.Line == CompanyKind.Services).Select(p => p.Id).FirstAsync());
         subYAfter.PlanConfigId.Should().Be(freePlanId);
         var accountYLogRows = await DbAsync(d => d.SubscriptionChangeLogs
             .CountAsync(l => l.BillingAccountId == accountY && l.ChangeKind == SubscriptionChangeKind.TrialExpired));

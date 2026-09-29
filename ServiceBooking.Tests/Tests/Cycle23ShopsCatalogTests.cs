@@ -149,15 +149,19 @@ public class Cycle23ShopsCatalogTests(TestDatabaseFixture fixture) : Cycle23Test
     }
 
     [Fact, TestCase("CY23-07")]
-    public async Task CompanyLimit_CountsSalonsAndShopsTogether()
+    public async Task CompanyLimit_IsCountedWithinTheLine_ShopDoesNotTakeASalonPlace()
     {
-        // Free-аккаунт без подписки: 1 компания. Салон + магазин в одном аккаунте — второй отклоняется (Q5).
+        // Цикл 24 (Q-24-7, меняет Q5 цикла 23): лимиты считаются внутри линейки. Free-аккаунт с салоном (лимит «Записей» — 1) открывает
+        // ПЕРВЫЙ магазин (лимит бесплатного уровня «Заказов» — 1 магазин); второй магазин — 402 с текстом тарифа «Заказов».
         var (owner, _) = await CreateOwnerWithCompanyAsync(attachPlan: false);
-        var r = await AuthedClient(owner.Token).PostJsonAsync("/api/shops", new CreateShopInput(
+        async Task<HttpResponseMessage> OpenShopAsync() => await AuthedClient(owner.Token).PostJsonAsync("/api/shops", new CreateShopInput(
             "Магазин", Unique("shop-"), await AnyCityIdAsync(), null, null, null, null, null,
             new ShopOwnerTermsInput(CurrentOwnerTermsDto().Version)));
-        r.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
-        (await r.Content.ReadAsStringAsync()).Should().NotBeNullOrWhiteSpace("причина лимита объясняется текстом");
+
+        (await OpenShopAsync()).StatusCode.Should().Be(HttpStatusCode.Created, "магазин не занимает место салона");
+        var second = await OpenShopAsync();
+        second.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+        (await second.Content.ReadAsStringAsync()).Should().Contain("Заказы · Бесплатно", "причина лимита объясняется текстом с названием тарифа");
     }
 
     [Fact, TestCase("CY23-08")]

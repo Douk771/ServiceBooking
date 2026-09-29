@@ -61,7 +61,7 @@ public class Cycle23StaffOrdersTests(TestDatabaseFixture fixture) : Cycle23TestB
         after.Changed.Should().BeTrue("изменение статуса видно на следующем опросе");
         after.Accepted!.Single().Number.Should().Be(first.Order.Number);
         after.NewOrders!.Single().Number.Should().Be(second.Order.Number);
-        card.AvailableActions.Should().BeEquivalentTo([OrderAction.Accept, OrderAction.Reject, OrderAction.Edit]);
+        card.AvailableActions.Should().BeEquivalentTo([OrderAction.Accept, OrderAction.Reject, OrderAction.Edit, OrderAction.ChangePickup]); // цикл 24: + ChangePickup у New/Accepted
 
         // покупатель отменил — доска тоже меняется
         await AnonymousClient().PostAsync($"/api/orders/public/{second.Order.Token}/cancel", null);
@@ -99,11 +99,11 @@ public class Cycle23StaffOrdersTests(TestDatabaseFixture fixture) : Cycle23TestB
         var p = await CreateProductAsync(shop);
         var placed = await PlaceOrderAsync(shop.Slug, Guest([Line(p, 2)]));
         var o = await GetStaffOrderAsync(shop, placed.Order.Token, staff.Token);
-        o.AvailableActions.Should().BeEquivalentTo([OrderAction.Accept, OrderAction.Reject, OrderAction.Edit]);
+        o.AvailableActions.Should().BeEquivalentTo([OrderAction.Accept, OrderAction.Reject, OrderAction.Edit, OrderAction.ChangePickup]); // цикл 24: + ChangePickup у New/Accepted
 
         o = await ActOkAsync(shop, o, "accept", staff.Token);
         (await GetPublicOrderAsync(placed.Order.Token)).StatusText.Should().Be("Принят");
-        o.AvailableActions.Should().BeEquivalentTo([OrderAction.MarkReady, OrderAction.Cancel, OrderAction.Edit]);
+        o.AvailableActions.Should().BeEquivalentTo([OrderAction.MarkReady, OrderAction.Cancel, OrderAction.Edit, OrderAction.ChangePickup]);
         o = await ActOkAsync(shop, o, "ready", staff.Token);
         var pubReady = await GetPublicOrderAsync(placed.Order.Token);
         pubReady.StatusText.Should().Be("Готов к выдаче");

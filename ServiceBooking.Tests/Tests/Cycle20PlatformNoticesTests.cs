@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.Infrastructure.Data;
 using ServiceBooking.Tests.Infrastructure;
 
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
@@ -276,7 +278,7 @@ public class Cycle20PlatformNoticesTests(TestDatabaseFixture fixture) : ApiTestB
         using (var scope = Factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            systemFreePlanId = await db.SubscriptionPlanConfigs.Where(p => p.IsSystemFree).Select(p => p.Id).FirstAsync();
+            systemFreePlanId = await db.SubscriptionPlanConfigs.Where(p => p.IsSystemFree && p.Line == CompanyKind.Services).Select(p => p.Id).FirstAsync();
         }
 
         var publish = await AuthedClient(admin.Token).PostAsJsonAsync("/api/admin/notices", new
