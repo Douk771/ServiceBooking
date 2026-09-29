@@ -488,6 +488,20 @@ public class NotificationChannelsTests(TestDatabaseFixture apiFixture) : Notific
         }
 
         var newOwnerRegistered = await RegisterAsync();
+        // ARCHITECTURE_CYCLE20.md §407.2/§437.3 (US-20-07, LG6, cycle 20) — PUT .../owner now requires
+        // the new owner to already be linked to the company's billing account; make them a member of
+        // this same company first (orthogonal to what this test actually exercises — the channel
+        // assignment staying put across an owner change).
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.CompanyMembers.Add(new CompanyMember
+            {
+                Id = Guid.NewGuid(), CompanyId = company.Id, UserId = newOwnerRegistered.UserId, Role = UserRole.Master,
+            });
+            await db.SaveChangesAsync();
+        }
+
         var admin = await LoginAsSuperAdminAsync();
         var changeResponse = await AuthedClient(admin.Token).PutAsJsonAsync(
             $"/api/admin/companies/{company.Id}/owner", new { newOwnerUserId = newOwnerRegistered.UserId });

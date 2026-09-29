@@ -23,7 +23,8 @@ namespace ServiceBooking.API.Controllers;
 public class AdminController(
     AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager,
     PricingCatalogCache pricingCatalogCache, CompanyOwnerWriter companyOwnerWriter,
-    SubscriptionResolver subscriptionResolver, ILogger<AdminController> logger) : ControllerBase
+    SubscriptionResolver subscriptionResolver, CompanyTransferService companyTransferService,
+    ILogger<AdminController> logger) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -537,6 +538,22 @@ public class AdminController(
         // permanently locked out, phone/email scrubbed. Without this check SuperAdmin could hand a
         // company to an account nobody can ever log into again.
         if (newOwner.DeletedAtUtc is not null) return BadRequest("User account has been deleted");
+
+        // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.3 (US-20-07, LG6) — same rule and
+        // same source (CompanyTransferService.ValidateNewOwnerAsync) as CompanyTransferController's own
+        // owner-change branch, "один источник правила". Skipped when the company has no billing account
+        // at all (BillingAccountId is null) — nothing to be linked to.
+        if (company.BillingAccountId is { } billingAccountId)
+        {
+            var (_, failure) = await companyTransferService.ValidateNewOwnerAsync(dto.NewOwnerUserId, billingAccountId);
+            if (failure is not null)
+                return new ContentResult
+                {
+                    StatusCode = StatusCodes.Status409Conflict,
+                    Content = "Новый ответственный не связан с биллинг-аккаунтом компании: он должен быть держателем аккаунта или сотрудником одной из его компаний.",
+                    ContentType = "text/plain; charset=utf-8",
+                };
+        }
 
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
