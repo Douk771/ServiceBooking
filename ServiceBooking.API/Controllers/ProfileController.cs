@@ -27,7 +27,7 @@ public class ProfileController(
     LegalDocumentProvider legalProvider, ConsentLedger ledger, HealthNoteProtector healthNoteProtector,
     GuestBookingLookup guestBookingLookup, IPhoneVerificationMethodRegistry phoneVerificationRegistry,
     PhoneVerificationWriter phoneVerificationWriter, IOptions<PhoneVerificationOptions> phoneVerificationOptions,
-    SubjectScopeResolver subjectScopeResolver, ILogger<ProfileController> logger)
+    SubjectScopeResolver subjectScopeResolver, GuestDataGateJournal guestDataGateJournal, ILogger<ProfileController> logger)
     : ControllerBase
 {
     [HttpGet]
@@ -217,6 +217,8 @@ public class ProfileController(
         {
             // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
             logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/export");
+            // ARCHITECTURE_CYCLE20.md §406.2 (US-20-05) — before this method opens any unit of work.
+            await guestDataGateJournal.RecordAsync(userId, GuestDataGateOperation.Export, HttpContext.TraceIdentifier);
         }
 
         // ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49: "признаны результатом работы салона"
@@ -431,6 +433,7 @@ public class ProfileController(
         {
             // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
             logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/delete-account");
+            await guestDataGateJournal.RecordAsync(userId, GuestDataGateOperation.DeleteAccount, HttpContext.TraceIdentifier);
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync();
@@ -951,6 +954,7 @@ public class ProfileController(
         {
             // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
             logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/consents/revoke");
+            await guestDataGateJournal.RecordAsync(userId, GuestDataGateOperation.Revoke, HttpContext.TraceIdentifier);
         }
 
         // 🔴 TD-03-ter (LEGAL_REVIEW_CYCLE16.md находка Н1). Запись в ConsentLedger гейтится ТОЖЕ, а не
@@ -1053,6 +1057,8 @@ public class ProfileController(
             logger.LogInformation(
                 "guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId,
                 apply ? "profile/consents/revoke" : "profile/consents/revoke-preview");
+            await guestDataGateJournal.RecordAsync(
+                userId, apply ? GuestDataGateOperation.Revoke : GuestDataGateOperation.RevokePreview, HttpContext.TraceIdentifier);
         }
 
         // Code review, "заодно": the four sections below used to run as four independent SaveChangesAsync

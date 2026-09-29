@@ -368,6 +368,8 @@ builder.Services.AddScoped<HealthNoteProtector>();
 // TD-03 (ARCHITECTURE_CYCLE16.md §245.4) — the single gate for "does this account get the
 // phone-matching branch of its own guest-recorded data". Scoped: wraps one AppDbContext query.
 builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectScopeResolver>();
+// ARCHITECTURE_CYCLE20.md §406.2 (US-20-05) — the single writer for GuestDataGateEvent.
+builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.GuestDataGateJournal>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
@@ -1005,6 +1007,11 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
 // the date of grant (Д16) plus destruction on HMAC key rotation (К3).
 builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
     ServiceBooking.API.Services.Retention.Rules.TrialPhoneRegistrationRule>();
+// ARCHITECTURE_CYCLE20.md §406.2/§404.6 (US-20-05, US-20-03) — the 20th and 21st rules.
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.GuestDataGateEventRule>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+    ServiceBooking.API.Services.Retention.Rules.PlatformNoticeRule>();
 builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
 builder.Services.AddHostedService<ScheduledTaskRunner>();

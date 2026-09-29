@@ -310,6 +310,26 @@ public static class DeploymentSafetyChecks
                 $"Retention:ConsentRecordDays is {consentRecordDays}, below the 1095-day (3-year) minimum " +
                 "(general limitation period, ст. 196 ГК — the operator must be able to prove consent, " +
                 "ч. 1 ст. 9, LEGAL_REVIEW.md §13.5). Set RETENTION__CONSENTRECORDDAYS to at least 1095.");
+
+        // ARCHITECTURE_CYCLE20.md §406.1/§406.2 (US-20-05, Т20-06, CY20-U-10). Unlike the two checks
+        // above (a MINIMUM the operator must not go below), these two guard against a plain
+        // misconfigured 0/negative — п. 13.2 D1 now names an exact number for both (3 years / 1 year),
+        // so "not set" must refuse to start rather than silently retain BookingEvents/GuestDataGateEvents
+        // forever (the pre-cycle-20 behavior for BookingEventDays, when the number was still an open
+        // legal question and 0 legitimately meant "no rule yet").
+        var bookingEventDays = section.GetValue<int?>("BookingEventDays")
+                                ?? new ServiceBooking.API.Services.Retention.RetentionPeriods().BookingEventDays;
+        if (bookingEventDays < 1)
+            throw new InvalidOperationException(
+                $"Retention:BookingEventDays is {bookingEventDays} — установите 1095 (п. 13.2 Политики). " +
+                "Set RETENTION__BOOKINGEVENTDAYS to at least 1.");
+
+        var guestDataGateEventDays = section.GetValue<int?>("GuestDataGateEventDays")
+                                      ?? new ServiceBooking.API.Services.Retention.RetentionPeriods().GuestDataGateEventDays;
+        if (guestDataGateEventDays < 1)
+            throw new InvalidOperationException(
+                $"Retention:GuestDataGateEventDays is {guestDataGateEventDays} — установите 365 (п. 13.2 Политики). " +
+                "Set RETENTION__GUESTDATAGATEEVENTDAYS to at least 1.");
     }
 
     private static void ValidateEncryptionKeyFormat(string? keyBase64)
