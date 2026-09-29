@@ -52,6 +52,23 @@ function preCycle7Plan(overrides: Record<string, unknown> = {}): PlanConfig {
   } as unknown as PlanConfig
 }
 
+// ARCHITECTURE_CYCLE19.md FE-5 — the plan form's Max employees/Max companies fields are the only
+// place the limit is set since cycle 19; the hint must say so directly under both fields.
+describe('PlansTab — retired-limit-options hint (cycle 19)', () => {
+  beforeEach(() => {
+    listPlans.mockResolvedValue([])
+    listOptions.mockResolvedValue([])
+  })
+
+  it('shows the hint under both limit fields when creating a plan', async () => {
+    renderTab()
+    await userEvent.click(await screen.findByText('Создать тариф'))
+
+    const hints = screen.getAllByText('Лимит задаётся только здесь; опций для докупки сотрудников и компаний нет.')
+    expect(hints).toHaveLength(2)
+  })
+})
+
 function renderTab() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(

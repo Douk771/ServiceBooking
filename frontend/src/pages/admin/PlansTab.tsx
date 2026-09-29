@@ -533,22 +533,35 @@ export function PlansTab() {
                 value={form.pricePerMonth}
                 onChange={(e) => setForm((f) => ({ ...f, pricePerMonth: e.target.value }))}
               />
-              <Input
-                label="Макс. сотрудников суммарно (∞)"
-                type="number"
-                min={1}
-                value={form.maxEmployees}
-                onChange={(e) => setForm((f) => ({ ...f, maxEmployees: e.target.value }))}
-                placeholder="∞"
-              />
-              <Input
-                label="Макс. компаний суммарно (∞)"
-                type="number"
-                min={1}
-                value={form.maxCompanies}
-                onChange={(e) => setForm((f) => ({ ...f, maxCompanies: e.target.value }))}
-                placeholder="∞"
-              />
+              <div>
+                <Input
+                  label="Макс. сотрудников суммарно (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxEmployees}
+                  onChange={(e) => setForm((f) => ({ ...f, maxEmployees: e.target.value }))}
+                  placeholder="∞"
+                />
+                {/* ARCHITECTURE_CYCLE19.md FE-5 — the limit lives ONLY here since cycle 19: the
+                    "Дополнительные сотрудники"/"Дополнительная компания" option rows no longer
+                    exist in the catalog; the options matrix below has no filter of its own (§386.2). */}
+                <p className="text-[11px] text-muted mt-1">
+                  Лимит задаётся только здесь; опций для докупки сотрудников и компаний нет.
+                </p>
+              </div>
+              <div>
+                <Input
+                  label="Макс. компаний суммарно (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxCompanies}
+                  onChange={(e) => setForm((f) => ({ ...f, maxCompanies: e.target.value }))}
+                  placeholder="∞"
+                />
+                <p className="text-[11px] text-muted mt-1">
+                  Лимит задаётся только здесь; опций для докупки сотрудников и компаний нет.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
