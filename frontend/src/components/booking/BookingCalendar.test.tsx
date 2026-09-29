@@ -33,22 +33,24 @@ function renderCalendar() {
   )
 }
 
+// Every test here builds its fixture from "today" and expects it inside the displayed month
+// (today + 3 days for the horizon retry, "tomorrow" for the day-off cells). On the real calendar that
+// breaks near a month boundary — on the last day of a month "tomorrow" is not in the grid at all, and
+// from the ~28th today + 3 already spills over (CURRENT_STATE.md §9 C21-1). So "today" is pinned for the
+// whole file to the middle of a month, at noon (the lastFreeSlotStart test needs time already past
+// 00:00). Only Date is faked, so waitFor's own timers keep running.
 beforeEach(() => {
   getAvailability.mockReset()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 8, 15, 12, 0, 0))
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('BookingCalendar — short booking horizon (defect fix)', () => {
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
   it('retries with a clamped `to` instead of crashing when the horizon is shorter than the displayed month', async () => {
-    // Pin "today" early in a month: on the real date, from the ~28th on, today + 3 days already spills
-    // into the next month, the horizon is no longer shorter than the displayed month and no retry
-    // happens — the test was red on those days (CURRENT_STATE.md §9 C21-1). Only Date is faked, so
-    // waitFor's own timers keep running.
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date(2026, 8, 10, 12, 0, 0))
     const today = new Date()
     const horizonDays = 3 // company set a horizon far shorter than "rest of this month"
     const horizonLastDate = new Date(today)
