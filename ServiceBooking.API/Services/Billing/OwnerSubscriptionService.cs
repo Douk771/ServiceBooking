@@ -31,7 +31,9 @@ public class OwnerSubscriptionService(
             .FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
         var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
 
-        var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
+        // ARCHITECTURE_CYCLE19.md §386.1 — retired limit options never show up as "subscribed" for the
+        // owner either, regardless of any leftover row.
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id)
             .Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now)
             .ToListAsync();
@@ -108,14 +110,18 @@ public class OwnerSubscriptionService(
         // can never ask to buy MORE of something they already have (e.g. one more WhatsApp number).
         // The current quantity, if any, is already visible in `optionDtos` (Options[]) by OptionId;
         // this list only ever answers "can I request this option at all right now".
-        var allOptions = await db.SubscriptionOptions.Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
+        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
         var availableOptions = allOptions
             .Select(o => ToAvailableOptionDto(o, planRules))
             .ToList(); // Unavailable options ARE shown too (§70 п.2) — no filter beyond IsActive/priced above.
 
+        // ARCHITECTURE_CYCLE19.md §386.1/§388: unlike `allOptions`/`subscribedOptions` above,
+        // `knownOptions` for the pending-request DTO is loaded WITHOUT the retired filter — a request
+        // submitted before the cycle 19 rollout can still name a retired option, and the owner's screen
+        // needs its real name to explain what won't be applied on approval, not "—".
+        var requestKnownOptions = await db.SubscriptionOptions.ToListAsync();
         var pendingRequest = BuildPendingRequestDto(
-            account, allOptions.Concat(subscribedOptions.Select(o => o.Option)).DistinctBy(o => o.Id).ToList(),
-            planDto.PricePerMonth, currentPlanWithdrawn, sub?.PlanConfigId);
+            account, requestKnownOptions, planDto.PricePerMonth, currentPlanWithdrawn, sub?.PlanConfigId);
 
         var lastRejectedRequest = account.LastRejectionReason is not null && account.LastRejectedAtUtc.HasValue
             ? new RejectedRequestDto(account.LastRejectionReason, account.LastRejectedAtUtc.Value)
@@ -345,20 +351,27 @@ public class OwnerSubscriptionService(
         if (account.RequestedAtUtc is null) return null;
 
         var lines = DeserializeOptionLines(account.RequestedOptionsJson);
+        // ARCHITECTURE_CYCLE19.md §407/§408 — a line whose option is a retired limit option is marked
+        // `retired` rather than dropped: the request itself (RequestedOptionsJson) is never rewritten,
+        // only how it reads back changes.
         var items = lines.Select(l =>
         {
             var option = knownOptions.FirstOrDefault(o => o.Id == l.OptionId);
-            return new SubscriptionRequestItemDto(l.OptionId, option?.Name ?? "—", l.Quantity);
+            var retired = option is not null && RetiredLimitOptions.IsRetired(option);
+            return new SubscriptionRequestItemDto(l.OptionId, option?.Name ?? "—", l.Quantity, retired);
         }).ToList();
 
         // Estimated total: base plan price is either the requested new plan's price (if a plan change
-        // was requested) or the current one, plus the full price of every requested option (§49's
-        // snapshot is illustrative — an admin recomputes the real total on assignment).
-        var estimated = currentPlanPrice + lines.Sum(l =>
+        // was requested) or the current one, plus the full price of every requested NON-RETIRED option
+        // (§49's snapshot is illustrative — an admin recomputes the real total on assignment; a retired
+        // option is never applied on approval, so it contributes nothing to the estimate either).
+        var estimated = currentPlanPrice + items.Where(i => !i.Retired).Sum(i =>
         {
-            var option = knownOptions.FirstOrDefault(o => o.Id == l.OptionId);
-            return (option?.PricePerMonth ?? 0m) * l.Quantity;
+            var option = knownOptions.FirstOrDefault(o => o.Id == i.OptionId);
+            return (option?.PricePerMonth ?? 0m) * i.Quantity;
         });
+        var retiredNames = items.Where(i => i.Retired).Select(i => i.Name).Distinct().ToList();
+        var retiredOptionsNotice = retiredNames.Count == 0 ? null : BillingTexts.RetiredOptionsInRequestNotice(retiredNames);
 
         // ARCHITECTURE_CYCLE17.md §307.1 — all three conditions at once: an active subscription exists
         // (`currentPlanWithdrawn` is already false without one, computed by the caller from `sub`),
@@ -373,7 +386,7 @@ public class OwnerSubscriptionService(
             // Deterministic pseudo-id derived from the account (there's no separate request row to key
             // off — see the entity's own remarks); stable for the lifetime of one pending request.
             account.Id, "Pending", account.RequestedAtUtc.Value, account.RequestedPlanId, account.RequestedPlan?.Name,
-            estimated, items, account.RequestedComment, irreversibilityNotice);
+            estimated, items, account.RequestedComment, irreversibilityNotice, retiredOptionsNotice);
     }
 
     public static List<RequestedOptionLine> DeserializeOptionLines(string? json) =>

@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { format } from 'date-fns'
 import { companiesApi, type CreateCompanyPayload } from '../api/companies'
-import { companyAddressApi } from '../api/companyAddress'
 import { PublicAddressNotice } from '../components/company/PublicAddressNotice'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { legalApi } from '../api/legal'
@@ -149,13 +148,6 @@ export function MyCompaniesTab() {
       // saving it immediately, the owner gets owner-scope 451 on the company they just created,
       // a second after creating it, until their next login.
       if (user && token) setAuth(user, res.token)
-      // ARCHITECTURE_CYCLE13.md §211/§235 — `POST /api/companies` gained no new fields; a brand-new
-      // company's address always starts `Unverified`. If the owner typed an address, make the one
-      // extra verification call right after creation. Best-effort: a 404 here (switch off, the
-      // default) is expected and not an error worth surfacing — the company itself was created fine.
-      if (res.company.address) {
-        companyAddressApi.saveAddress(res.company.id, res.company.address, true).catch(() => {})
-      }
       qc.invalidateQueries({ queryKey: ['my-companies'] })
       setShowCreate(false)
       setCity(null)

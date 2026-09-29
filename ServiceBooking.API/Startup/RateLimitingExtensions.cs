@@ -95,11 +95,9 @@ internal static class RateLimitingExtensions
         // IP, which a shared salon computer would make the wrong partition key for).
         o.AddPolicy("push-subscribe", ctx => UserWindowPolicy(ctx, "push-subscribe", defaultPermitLimit: 20, defaultWindowMinutes: 60));
 
-        // address-verify: ARCHITECTURE_CYCLE13.md §210/§238 — the tenth named policy, "30/час на
-        // пользователя". Keyed by user id only, same shape as data-export/push-subscribe above: all three
-        // routes it guards require [Authorize], there is no anonymous case. Applied to all three
-        // CompanyAddressController routes — two can reach the paid geocoder, the third writes journal rows —
-        // and one budget covers all three on purpose (§210: "один и тот же бюджет одного и того же человека").
+        // address-verify: ARCHITECTURE_CYCLE19.md §388.2 — сохранение адреса и правовой гейт публичности
+        // адреса. Имя и значения по умолчанию (30/час на пользователя) не меняются с цикла 13, хотя
+        // геокодер, который был третьим потребителем этого бюджета, в цикле 19 удалён.
         o.AddPolicy("address-verify", ctx => UserWindowPolicy(ctx, "address-verify", defaultPermitLimit: 30, defaultWindowMinutes: 60));
 
         // ARCHITECTURE_CYCLE14.md §150.4 (Q8) — three new policies, twelve total.
@@ -174,7 +172,8 @@ internal static class RateLimitingExtensions
                 "subject-request" => "Слишком много обращений с этого адреса. Повторите позже.",
                 "notifications-webhook" => "Too many requests.",
                 "push-subscribe" => "Слишком много подписок устройств. Повторите позже.",
-                "address-verify" => "Слишком много обращений к проверке адреса. Повторите позже.",
+                // ARCHITECTURE_CYCLE19.md §388.2/§414 — новый текст: адрес больше не "проверяется", только сохраняется.
+                "address-verify" => "Слишком много попыток изменить адрес. Повторите позже.",
                 "phone-verify-start" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyStartAttempts,
                 "phone-change" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyChangePhoneAttempts,
                 "phone-verify-webhook" => "Too many requests.",

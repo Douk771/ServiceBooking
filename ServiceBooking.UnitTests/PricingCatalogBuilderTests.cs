@@ -283,4 +283,20 @@ public class PricingCatalogBuilderTests
 
         result.Options.Should().ContainSingle();
     }
+
+    // ARCHITECTURE_CYCLE19.md §391.1 (PricingCatalogBuilderTests) — a retired limit option never
+    // appears on the storefront, even active, public and priced.
+    [Theory]
+    [InlineData("employees")]
+    [InlineData("companies")]
+    [InlineData(" Companies ")]
+    public void Build_ExcludesRetiredLimitOption_EvenActivePublicAndPriced(string capabilityKey)
+    {
+        var option = Option(name: "Дополнительные сотрудники", isActive: true, isPublic: true, price: 490);
+        option.CapabilityKey = capabilityKey;
+
+        var result = PricingCatalogBuilder.Build("v1", [], [option], legalNotice: null);
+
+        result.Options.Should().BeEmpty();
+    }
 }

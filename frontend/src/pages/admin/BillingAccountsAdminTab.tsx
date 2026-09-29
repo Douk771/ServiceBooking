@@ -152,6 +152,13 @@ function AssignSubscriptionModal({ target, onClose }: { target: AssignTarget; on
             Одобрение заявки от {fmtDateTime(request.createdAt)}: состав ниже предзаполнен желаемым.
           </p>
         )}
+        {/* ARCHITECTURE_CYCLE19.md FE-3, API_CONTRACT_CYCLE19.md §407 — shown BEFORE the confirm
+            button: rows built from `GET /api/admin/options` never include опции-лимиты, so approving
+            silently drops them from the composition below — the superadmin needs to know that up
+            front, not discover it after saving. */}
+        {request?.retiredOptionsNotice && (
+          <p className="text-xs font-medium text-warning bg-warning-bg rounded-xl px-3 py-2">{request.retiredOptionsNotice}</p>
+        )}
         <div>
           <label className="text-sm font-medium text-ink-soft block mb-1">Тарифный план</label>
           <select
@@ -840,9 +847,22 @@ function RequestsQueueSection() {
                 <p className="text-xs text-muted mt-0.5">
                   {r.currentPlanName ?? 'Free'}
                   {r.desiredPlanName && r.desiredPlanName !== r.currentPlanName ? ` → ${r.desiredPlanName}` : ''} ·{' '}
-                  {r.items.map((i) => `${i.name} × ${i.quantity}`).join(', ') || 'без опций'}
+                  {r.items.length > 0
+                    ? r.items.map((i, idx) => (
+                        <span key={i.optionId}>
+                          {idx > 0 && ', '}
+                          <span className={i.retired ? 'line-through' : undefined}>
+                            {i.name} × {i.quantity}
+                          </span>
+                          {i.retired && ' (выведена)'}
+                        </span>
+                      ))
+                    : 'без опций'}
                 </p>
                 <p className="text-xs text-muted mt-0.5">Итог: {formatRubRounded(r.estimatedMonthlyPrice)}/мес · {r.companiesCount ?? 0} компаний</p>
+                {/* ARCHITECTURE_CYCLE19.md FE-3 — in the queue card, before the superadmin even
+                    opens the approval modal. */}
+                {r.retiredOptionsNotice && <p className="text-xs text-warning mt-0.5">{r.retiredOptionsNotice}</p>}
                 {r.comment && <p className="text-xs text-muted italic mt-0.5">«{r.comment}»</p>}
                 {loadErrorFor === r.id && <p className="text-xs text-danger mt-1">Не удалось загрузить аккаунт заявки.</p>}
               </div>

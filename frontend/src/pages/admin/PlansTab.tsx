@@ -542,22 +542,35 @@ export function PlansTab() {
                     this is the only thing standing between a superadmin and a silent price bump. */}
                 {editingPlan && <p className="text-[11px] text-muted leading-snug">{PRICE_CHANGE_SUPERADMIN_HINT}</p>}
               </div>
-              <Input
-                label="Макс. сотрудников суммарно (∞)"
-                type="number"
-                min={1}
-                value={form.maxEmployees}
-                onChange={(e) => setForm((f) => ({ ...f, maxEmployees: e.target.value }))}
-                placeholder="∞"
-              />
-              <Input
-                label="Макс. компаний суммарно (∞)"
-                type="number"
-                min={1}
-                value={form.maxCompanies}
-                onChange={(e) => setForm((f) => ({ ...f, maxCompanies: e.target.value }))}
-                placeholder="∞"
-              />
+              <div>
+                <Input
+                  label="Макс. сотрудников суммарно (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxEmployees}
+                  onChange={(e) => setForm((f) => ({ ...f, maxEmployees: e.target.value }))}
+                  placeholder="∞"
+                />
+                {/* ARCHITECTURE_CYCLE19.md FE-5 — the limit lives ONLY here since cycle 19: the
+                    "Дополнительные сотрудники"/"Дополнительная компания" option rows no longer
+                    exist in the catalog; the options matrix below has no filter of its own (§386.2). */}
+                <p className="text-[11px] text-muted mt-1">
+                  Лимит задаётся только здесь; опций для докупки сотрудников и компаний нет.
+                </p>
+              </div>
+              <div>
+                <Input
+                  label="Макс. компаний суммарно (∞)"
+                  type="number"
+                  min={1}
+                  value={form.maxCompanies}
+                  onChange={(e) => setForm((f) => ({ ...f, maxCompanies: e.target.value }))}
+                  placeholder="∞"
+                />
+                <p className="text-[11px] text-muted mt-1">
+                  Лимит задаётся только здесь; опций для докупки сотрудников и компаний нет.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -628,7 +641,7 @@ export function PlansTab() {
                   code cannot validate free-text meaning, so this is a reminder for the admin editing
                   the trial plan's showcase copy, not a form validation. */}
               {editingPlan?.isSystemTrial && (
-                <p className="text-xs text-warning bg-[#FBF3E3] border border-warning rounded-lg px-3 py-2 mb-2">
+                <p className="text-xs text-warning bg-warning-bg border border-warning rounded-lg px-3 py-2 mb-2">
                   Для тарифа пробного периода в пунктах обязаны быть указаны: продолжительность,
                   однократное предоставление одному абоненту, отдельный (более короткий) срок бесплатных рассылок и
                   переход на бесплатный тариф без удаления данных по окончании.

@@ -42,16 +42,16 @@ public class BillingCatalogSeedKeysTests
     }
 
     [Fact]
-    public void OptionCapabilityCatalog_StillKnowsTheThreeKeysSeedBillingCatalogUses()
+    public void OptionCapabilityCatalog_NoLongerOffersTheRetiredLimitKeys()
     {
-        // OptionCapabilityCatalog.Known is the admin-facing "known keys" list keyed by CapabilityKey
-        // (§44.2) — it isn't read by the resolver itself, but if a future edit here drops one of these
-        // three, it is a strong signal that CapabilityKeys is being renamed too and the migration needs
-        // to move with it.
+        // ARCHITECTURE_CYCLE19.md §386.1/§404 — "companies"/"employees" are deliberately removed from
+        // the admin-facing dropdown: after cycle 19 nothing may be sold under either capability (the
+        // limit is tariff-only, AccountLimitFormula). The migration's already-seeded rows are untouched
+        // (§383.2) — this only stops NEW options from being created with these keys.
         var knownKeys = OptionCapabilityCatalog.Known.Select(c => c.Key).ToList();
 
-        knownKeys.Should().Contain(CapabilityKeys.Companies);
-        knownKeys.Should().Contain(CapabilityKeys.Employees);
+        knownKeys.Should().NotContain(CapabilityKeys.Companies);
+        knownKeys.Should().NotContain(CapabilityKeys.Employees);
         knownKeys.Should().Contain(CapabilityKeys.NotificationsWhatsApp);
     }
 }

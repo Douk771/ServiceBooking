@@ -2,11 +2,9 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Companies;
-using ServiceBooking.API.Services.Geo;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -15,67 +13,23 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Controllers;
 
 /// <summary>
-/// Address verification against a map, and the public-address-notice acknowledgement
-/// (ARCHITECTURE_CYCLE13.md §207, §209, §220; API_CONTRACT_CYCLE13.md §233/§234/§242). A deliberately
-/// separate controller from <see cref="CompaniesController"/> (already the largest in the project, same
-/// reasoning that split <see cref="CompanyPhotosController"/> out in cycle 10) — reuses
-/// <see cref="CompanyMembership"/> and <see cref="CompanyDtoAssembler"/> rather than a second,
-/// drifting copy of "who can manage this company"/"what a CompanyDto looks like".
+/// ARCHITECTURE_CYCLE19.md §388.1/§388.2/§413 — company address and the public-address-notice legal
+/// gate. Before cycle 19 this controller also verified the address against a map (a licensed geocoder,
+/// ARCHITECTURE_CYCLE13.md §207/§209/§220); that whole capability is removed here, `lookup` no longer
+/// exists (404 unconditionally, §413.3), and saving no longer writes the five now-shadow address-check
+/// columns (§383.3).
 ///
-/// All three routes require <see cref="AuthorizeAttribute"/> and share the <c>address-verify</c> rate
-/// limit (§210/§238) — the first two can reach the paid geocoder, the third writes a consent-journal row,
-/// and none of the three is free for an automated caller.
+/// Both routes require <see cref="AuthorizeAttribute"/> and share the <c>address-verify</c> rate limit
+/// (§388.2) — kept under its previous name so a production override of
+/// <c>RATELIMITS__ADDRESS-VERIFY__*</c> keeps working without a config change.
 /// </summary>
 [ApiController]
 [Route("api/companies")]
 public class CompanyAddressController(
-    AppDbContext db, AddressLookupService lookupService, IOptions<GeoOptions> geoOptions,
-    CompanyDtoAssembler companyDtoAssembler,
+    AppDbContext db, CompanyDtoAssembler companyDtoAssembler,
     LegalDocumentProvider legalProvider, ConsentLedger ledger) : ControllerBase
 {
-    // ── POST /api/companies/address/lookup (§233) ───────────────────────────────────────────────────
-
-    [HttpPost("address/lookup")]
-    [Authorize]
-    [EnableRateLimiting("address-verify")]
-    public async Task<ActionResult<AddressLookupResultDto>> Lookup([FromBody] LookupAddressDto dto)
-    {
-        // §233: "рубильник проверки выключен — функции нет", not "есть и ничего не делает". The
-        // interface is expected to never reach this (company.addressVerification.available gates the
-        // button), but a direct call still gets the honest answer.
-        if (string.Equals(geoOptions.Value.Provider, "logging", StringComparison.OrdinalIgnoreCase))
-            return NotFound();
-
-        var address = dto.Address ?? "";
-        var trimmed = address.Trim();
-        if (trimmed.Length == 0) return BadRequest("Укажите адрес");
-        if (trimmed.Length > 300) return BadRequest("Адрес не должен превышать 300 символов");
-
-        Company? company = null;
-        if (dto.CompanyId is { } companyId)
-        {
-            company = await db.Companies.FindAsync(companyId);
-            // Existence of a company the caller doesn't manage is never confirmed (§233): a missing
-            // company and a company the caller can't manage answer identically.
-            if (company is null || !await CanManageCompanyAsync(companyId)) return NotFound();
-        }
-
-        City? city = null;
-        if (dto.CityId is { } cityId)
-        {
-            city = await db.Cities.FindAsync(cityId);
-            if (city is null || !city.IsActive) return BadRequest("Город не найден");
-        }
-        else if (company?.CityId is { } companyCityId)
-        {
-            city = await db.Cities.FindAsync(companyCityId);
-        }
-
-        var result = await lookupService.LookupAsync(new AddressQuery(trimmed, city?.Name), HttpContext.RequestAborted);
-        return Ok(BuildLookupResult(result, city?.Name, geoOptions.Value));
-    }
-
-    // ── PUT /api/companies/{id}/address (§234) ──────────────────────────────────────────────────────
+    // ── PUT /api/companies/{id}/address (§413.2) ────────────────────────────────────────────────────
 
     [HttpPut("{id:guid}/address")]
     [Authorize]
@@ -89,78 +43,20 @@ public class CompanyAddressController(
         var address = dto.Address ?? "";
         if (address.Length > 300) return BadRequest("Адрес не должен превышать 300 символов");
 
-        // §234: written EXACTLY as the client sent it, byte for byte — never trimmed, never normalized,
-        // never replaced with the geocoder's own wording (§209.1's central rule, R18). Empty string
-        // clears the address (distinct from PUT /api/companies/{id}, where null/absent means "don't
-        // touch" — this endpoint's `address` field is never optional).
+        // §413.2: written EXACTLY as the client sent it, byte for byte — never trimmed, never
+        // normalized. Empty string clears the address (distinct from PUT /api/companies/{id}, where
+        // null/absent means "don't touch" — this endpoint's `address` field is never optional).
+        // `dto.Verify` is accepted and ignored (there is no geocoder to verify against any more); the
+        // five address-check columns are shadow properties this route never writes (§383.3).
         company.Address = address.Length == 0 ? null : address;
-
-        // Every save starts from "not verified" — only a successful House-precision check below sets
-        // these back. §203: editing the address through ANY path already makes the computed status fall
-        // back to Unverified; clearing the raw columns here additionally stops a stale point/precision
-        // surviving a save that didn't (or couldn't) re-verify.
-        company.AddressVerifiedAt = null;
-        company.AddressVerifiedInputKey = null;
-        company.AddressPrecision = null;
-        company.AddressLatitude = null;
-        company.AddressLongitude = null;
-
-        var outcome = GeocodeOutcome.Ok; // §234 table, row "verify:false" — no external call, no failure
-        IReadOnlyList<AddressWarning> warnings = [];
-        var attribution = ""; // §234: "" whenever the map wasn't reached — verify:false, or Disabled below
-
-        if (dto.Verify && !string.IsNullOrEmpty(company.Address))
-        {
-            var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
-            var result = await lookupService.LookupAsync(
-                new AddressQuery(company.Address, city?.Name), HttpContext.RequestAborted);
-            outcome = result.Outcome;
-            attribution = result.Attribution ?? "";
-
-            var best = result.Candidates.Count > 0 ? result.Candidates[0] : null;
-            if (outcome == GeocodeOutcome.Ok && best is { Precision: AddressPrecision.House })
-            {
-                // §209.1: verified means "по этому тексту карта нашла строение" — the OWNER'S OWN text
-                // is what gets keyed and stamped, never anything from `best` (R18).
-                company.AddressVerifiedInputKey = AddressNormalization.Key(company.Address);
-                company.AddressVerifiedAt = DateTime.UtcNow;
-                company.AddressPrecision = AddressPrecision.House;
-
-                // §209.2/P3: coordinates are written ONLY when the extended licence's own flag is on.
-                if (geoOptions.Value.StoreResults && best.Point is { } point)
-                {
-                    company.AddressLatitude = point.Latitude;
-                    company.AddressLongitude = point.Longitude;
-                }
-            }
-            else if (outcome == GeocodeOutcome.Ok && best is not null)
-            {
-                warnings = BuildCandidateWarnings(best.Precision, best.CityName, city?.Name);
-            }
-            else if (outcome == GeocodeOutcome.Empty)
-            {
-                warnings = [AddressWarnings.NotFound];
-            }
-            else if (outcome == GeocodeOutcome.Unavailable)
-            {
-                warnings = [AddressWarnings.Unavailable];
-            }
-            // Disabled: no warnings — §209.1's outcome table says the owner sees nothing extra here,
-            // same as an ordinary save with verify:false.
-        }
 
         await db.SaveChangesAsync();
 
-        var status = AddressVerificationState.Status(company);
-        var verification = new AddressVerificationResultDto(
-            outcome.ToString(), status.ToString(), company.AddressVerifiedAt, company.AddressPrecision?.ToString(),
-            warnings.Select(w => w.ToDto()).ToList(), attribution);
-
         var companyDto = await BuildCompanyDtoAsync(company);
-        return Ok(new CompanyAddressUpdateResultDto(companyDto, verification));
+        return Ok(new CompanyAddressUpdateResultDto(companyDto));
     }
 
-    // ── POST /api/companies/address/notice (§242, §220) ─────────────────────────────────────────────
+    // ── POST /api/companies/address/notice (§413.1) ─────────────────────────────────────────────────
 
     [HttpPost("address/notice")]
     [Authorize]
@@ -195,49 +91,13 @@ public class CompanyAddressController(
     private Task<bool> CanManageCompanyAsync(Guid companyId) =>
         CompanyAccess.CanManageCompanyAsync(db, User, companyId);
 
-    // Takes `geoOptions` explicitly (review finding — cycle 13 review, blocking #1): §209.2/P3's
-    // coordinate switch has to reach every place a GeocodeCandidate becomes an AddressCandidateDto, and
-    // this was the one that didn't, so `point` leaked real coordinates regardless of StoreResults.
-    private static AddressLookupResultDto BuildLookupResult(GeocodeResult result, string? companyCityName, GeoOptions geoOptions)
-    {
-        IReadOnlyList<AddressWarning> topLevel = result.Outcome switch
-        {
-            GeocodeOutcome.Empty => [AddressWarnings.NotFound],
-            GeocodeOutcome.Unavailable => [AddressWarnings.Unavailable],
-            _ => [],
-        };
-
-        var candidates = result.Candidates
-            .Select(c => c.ToDto(BuildCandidateWarnings(c.Precision, c.CityName, companyCityName), geoOptions.StoreResults))
-            .ToList();
-
-        return new AddressLookupResultDto(
-            result.Outcome.ToString(), result.QueriedAddress, candidates,
-            topLevel.Select(w => w.ToDto()).ToList(), result.Attribution ?? "");
-    }
-
-    private static IReadOnlyList<AddressWarning> BuildCandidateWarnings(
-        AddressPrecision precision, string? candidateCityName, string? companyCityName)
-    {
-        var warnings = new List<AddressWarning>();
-        var precisionWarning = AddressWarnings.ForPrecision(precision);
-        if (precisionWarning is not null) warnings.Add(precisionWarning);
-        var cityWarning = AddressWarnings.ForCityMismatch(candidateCityName, companyCityName);
-        if (cityWarning is not null) warnings.Add(cityWarning);
-        return warnings;
-    }
-
-    /// <summary>Builds the exact same "full CompanyDto, as PUT /api/companies/{id} would" shape §234
-    /// promises — cycle 22 P5 (§378): through the SAME <see cref="CompanyDtoAssembler.MapManagedCompanyToDtoAsync"/>
-    /// Update/UploadLogo use (plan, review aggregate, seat usage, cover, then <see cref="CompanyDtoAssembler.MapToDto"/>),
-    /// instead of this controller's former hand-copied sequence of the same four reads, so the two endpoints
-    /// can never quietly return differently-shaped companies.</summary>
+    /// <summary>Builds the exact same "full CompanyDto, as PUT /api/companies/{id} would" shape §413.2
+    /// promises — through the SAME <see cref="CompanyDtoAssembler.MapManagedCompanyToDtoAsync"/>
+    /// Update/UploadLogo use (cycle 22 P5, §378), so the endpoints can never return differently-shaped
+    /// companies. Reached only after SaveAddress's own CanManageCompanyAsync check passed.</summary>
     private async Task<CompanyDto> BuildCompanyDtoAsync(Company company)
     {
         var city = company.CityId.HasValue ? await db.Cities.FindAsync(company.CityId.Value) : null;
-
-        // §234: reached only after SaveAddress's own CanManageCompanyAsync check passed, so this caller
-        // always manages the company (review finding, cycle 13 review, blocking #2) — canManage: true.
         return await companyDtoAssembler.MapManagedCompanyToDtoAsync(company, city);
     }
 }

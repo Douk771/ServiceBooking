@@ -25,7 +25,9 @@ internal static class AdminAccountDtoBuilder
         var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
         var usage = (await usageReader.GetAsync([account.Id])).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
 
-        var subscribedOptions = await db.AccountSubscriptionOptions.Include(o => o.Option)
+        // ARCHITECTURE_CYCLE19.md §386.1 — retired limit options never contribute to totalMonthlyPrice
+        // or the "options" surfaces shown here.
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
             .Where(o => o.BillingAccountId == account.Id).Where(o => o.EndsAtUtc == null || o.EndsAtUtc > now).ToListAsync();
         var planRules = sub?.PlanConfigId is { } planId ? await db.PlanOptionRules.Where(r => r.PlanConfigId == planId).ToListAsync() : [];
 

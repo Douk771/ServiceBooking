@@ -114,11 +114,18 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(c => new { c.ShowInPublicListing, c.Name, c.Id })
                 .HasDatabaseName("IX_Companies_PublicListing_Default")
                 .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
-            // Cycle 13 (ARCHITECTURE_CYCLE13.md §202): the only "own data" column that needs a length
-            // cap — it's a normalized copy of the owner's own address text, same 300-char ceiling as the
-            // lookup/save DTOs enforce (API_CONTRACT_CYCLE13.md §233/§234). No index: nobody filters or
-            // sorts by it (§202's own remarks — Address itself keeps its existing partial indexes).
-            e.Property(c => c.AddressVerifiedInputKey).HasMaxLength(300);
+            // ARCHITECTURE_CYCLE19.md §383.3: five columns from the cycle-13 address-verification
+            // geocoder (removed целиком in cycle 19, §388.1). Kept as EF SHADOW properties — no CLR
+            // property on Company any more — purely so `dotnet ef migrations add` generates no
+            // DropColumn (ломающие миграции запрещены с 25.09.2026). Code never reads or writes them.
+            // Types match the applied migration/snapshot exactly. Do NOT turn these back into CLR
+            // properties; physical removal is a separate, later cycle's decision after production data
+            // is checked (§393).
+            e.Property<string?>("AddressVerifiedInputKey").HasMaxLength(300);
+            e.Property<DateTime?>("AddressVerifiedAt");
+            e.Property<int?>("AddressPrecision");
+            e.Property<double?>("AddressLatitude");
+            e.Property<double?>("AddressLongitude");
             // ARCHITECTURE_CYCLE15.md §252 — owner-pasted map links, stored byte-for-byte. 500 gives a
             // 3x margin over the ~150-char real links in 0-bis П2 while still being a boundary the
             // server rejects at, rather than silently truncating (MapLinkValidation.MaxLength).

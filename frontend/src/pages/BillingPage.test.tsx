@@ -131,3 +131,48 @@ describe('BillingPage — pendingRequest.irreversibilityNotice (§325.1)', () =>
     expect(screen.queryByText(/невозможно/)).not.toBeInTheDocument()
   })
 })
+
+// ARCHITECTURE_CYCLE19.md FE-4, API_CONTRACT_CYCLE19.md §408 — a pending request submitted before
+// the rollout may still carry опция-лимит lines; the owner must see the server-composed notice and
+// a "выведена" mark on those lines, not a silent price mismatch.
+describe('BillingPage — pendingRequest.retiredOptionsNotice (cycle 19)', () => {
+  it('shows the server-composed notice and marks the retired line, when present', async () => {
+    getSubscription.mockResolvedValueOnce(
+      makeSubscription({
+        pendingRequest: {
+          estimatedMonthlyPrice: 1500,
+          options: [],
+          items: [
+            { optionId: 'o1', name: 'Доп. сотрудники', quantity: 3, retired: true },
+            { optionId: 'o2', name: 'WhatsApp', quantity: 1, retired: false },
+          ],
+          retiredOptionsNotice: 'В заявке есть опции, которые больше не подключаются: «Доп. сотрудники».',
+        } as OwnerSubscriptionDto['pendingRequest'],
+      }),
+    )
+    renderWithProviders(<BillingPage />)
+
+    expect(
+      await screen.findByText('В заявке есть опции, которые больше не подключаются: «Доп. сотрудники».'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('выведена')).toBeInTheDocument()
+  })
+
+  it('shows nothing extra when retiredOptionsNotice is null', async () => {
+    getSubscription.mockResolvedValueOnce(
+      makeSubscription({
+        pendingRequest: {
+          estimatedMonthlyPrice: 1500,
+          options: [],
+          items: [{ optionId: 'o2', name: 'WhatsApp', quantity: 1, retired: false }],
+          retiredOptionsNotice: null,
+        } as OwnerSubscriptionDto['pendingRequest'],
+      }),
+    )
+    renderWithProviders(<BillingPage />)
+
+    await screen.findByText('Заявка на рассмотрении')
+    expect(screen.queryByText('выведена')).not.toBeInTheDocument()
+    expect(screen.queryByText(/больше не подключаются/)).not.toBeInTheDocument()
+  })
+})

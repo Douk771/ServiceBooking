@@ -6,23 +6,14 @@ namespace ServiceBooking.API.Services.Billing;
 /// the OWNER, not an admin.</summary>
 public static class BillingTexts
 {
-    /// <summary>402 body for <c>CompaniesController.AddMember</c> (§46.4/§53.4) — the seat limit is
-    /// summed across every company on the account, and the breakdown of WHY the limit is what it is
-    /// (plan-included vs purchased vs grandfathered bonus) is spelled out explicitly, with a call to
-    /// action to buy the "extra employees" option, rather than leaving the owner to guess why a company
-    /// with 2 staff hit an 8-seat cap. <paramref name="bonus"/> is never mentioned by name to the owner
-    /// (it is an internal migration artifact, §54.4) — it is folded into the "included in the plan"
-    /// figure silently instead.</summary>
-    public static string SeatLimitReached(int used, string planName, int planIncluded, int purchased, int bonus)
-    {
-        var limit = planIncluded + purchased + bonus;
-        var included = planIncluded + bonus;
-        var breakdown = purchased > 0
-            ? $"{included} включено в тариф «{planName}», {purchased} докуплено."
-            : $"{included} включено в тариф «{planName}».";
-        return $"Занято {used} из {limit} мест: {breakdown} Лимит общий на все ваши точки. " +
-            "Чтобы добавить сотрудника, подключите опцию «Дополнительные сотрудники».";
-    }
+    /// <summary>402 body for <c>CompaniesController.AddMember</c> (ARCHITECTURE_CYCLE19.md §384.3/
+    /// §411/§414) — the seat limit is summed across every company on the account. After cycle 19 there
+    /// is no "purchased" component and no call to action to buy an option (limits come only from the
+    /// tariff), so this text no longer breaks the number down — <paramref name="limit"/> already
+    /// includes the grandfathered bonus, which stays unnamed to the owner (§54.4, unchanged).</summary>
+    public static string SeatLimitReached(int used, string planName, int limit) =>
+        $"Занято {used} из {limit} мест — столько включено в тариф «{planName}». Лимит общий на все " +
+        "ваши точки. Чтобы добавить сотрудника, выберите тариф с большим лимитом в разделе «Ваша подписка».";
 
     public static string CompanyLimitReached(int used, int limit) =>
         $"Открыто {used} из {limit} точек, доступных на вашем тарифе.";
@@ -44,10 +35,40 @@ public static class BillingTexts
         $"Ответственный за компанию {companyName} не связан с принимающим аккаунтом. Укажите нового " +
         "ответственного из этого аккаунта.";
 
-    /// <summary>§51.2's 402 body — the transfer is rejected outright, nothing is written.</summary>
+    /// <summary>§51.2's 402 body — the transfer is rejected outright, nothing is written. After cycle 19
+    /// (ARCHITECTURE_CYCLE19.md §411/§414) there is no option to buy — the fix is a bigger tariff.</summary>
     public static string TransferRejectedCompanyLimit(string planName, int used, int limit) =>
         $"На тарифе «{planName}» — {limit} {CompaniesWord(limit)}, занято {used}. Чтобы принять ещё " +
-        "одну, подключите опцию «Дополнительная компания».";
+        "одну, назначьте принимающему аккаунту тариф с большим лимитом компаний.";
+
+    /// <summary>ARCHITECTURE_CYCLE19.md §403/§414 — 400 on POST/PUT of an option whose capabilityKey
+    /// (trimmed, lowercased) is "employees" or "companies": those capabilities can no longer be sold as
+    /// an option because the limit formula (<see cref="AccountLimitFormula"/>) never reads purchases.</summary>
+    public const string LimitCapabilityNotSellable =
+        "Возможности «employees» и «companies» нельзя продавать опцией: лимиты сотрудников и компаний " +
+        "задаются только полями тарифа «Макс. сотрудников» и «Макс. компаний».";
+
+    /// <summary>ARCHITECTURE_CYCLE19.md §403/§414 — 409 on PUT of an option that is already a retired
+    /// limit option (<see cref="RetiredLimitOptions"/>): its row stays in the catalog for the deploy
+    /// report but can no longer be edited.</summary>
+    public static string RetiredOptionNotEditable(string name) =>
+        $"Опция «{name}» выведена из оборота: лимиты сотрудников и компаний задаются только тарифом. " +
+        "Изменить её нельзя.";
+
+    /// <summary>ARCHITECTURE_CYCLE19.md §406/§408/§414 — 400 when a retired limit option is submitted
+    /// in a subscription assignment or an owner's request; used for both surfaces with the same
+    /// wording.</summary>
+    public static string RetiredOptionRejected(string name) =>
+        $"Опция «{name}» больше не подключается: лимиты сотрудников и компаний задаются только тарифом.";
+
+    /// <summary>ARCHITECTURE_CYCLE19.md §408/§414 — non-null only when a pending request (submitted
+    /// before the cycle 19 rollout) still names retired limit options; <paramref name="names"/> is the
+    /// distinct, order-preserving list of such options' <see cref="ServiceBooking.Core.Entities.SubscriptionOption.Name"/>.</summary>
+    public static string RetiredOptionsInRequestNotice(IReadOnlyList<string> names) =>
+        "В заявке есть опции, которые больше не подключаются: " +
+        string.Join(", ", names.Select(n => $"«{n}»")) +
+        ". Лимиты сотрудников и компаний задаются только тарифом, поэтому при одобрении заявки эти " +
+        "опции применены не будут.";
 
     private static string CompaniesWord(int n)
     {

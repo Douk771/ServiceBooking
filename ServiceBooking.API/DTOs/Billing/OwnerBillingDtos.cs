@@ -57,7 +57,7 @@ public record AvailableOptionDto(
     decimal? PricePerMonth, int? MaxQuantity, string Availability, string AvailabilityText, bool CanRequest);
 
 // ── Requests (US-70, §49) ───────────────────────────────────────────────────────
-public record SubscriptionRequestInputDto(Guid? PlanId, List<RequestedOptionInputDto> Options, string? Comment);
+public record SubscriptionRequestInputDto(Guid? PlanId, List<RequestedOptionInputDto>? Options = null, string? Comment = null);
 
 public record RequestedOptionInputDto(Guid OptionId, int Quantity);
 
@@ -71,9 +71,17 @@ public record SubscriptionRequestDto(
     // (snapshot off sale), and this request asks for a PLAN CHANGE (not options-only). Text is
     // composed server-side by legal-counsel's wording (п. 6.13.15.3 03-terms-owner.html) — the
     // frontend prints it as-is, never sourcing its own placeholder.
-    string? IrreversibilityNotice = null);
+    string? IrreversibilityNotice = null,
+    // ARCHITECTURE_CYCLE19.md §408/§414 — non-null only when Items contains at least one retired limit
+    // option (a request submitted before the cycle 19 rollout); appended at the end, same convention
+    // as IrreversibilityNotice above.
+    string? RetiredOptionsNotice = null);
 
-public record SubscriptionRequestItemDto(Guid OptionId, string Name, int Quantity);
+public record SubscriptionRequestItemDto(
+    Guid OptionId, string Name, int Quantity,
+    // ARCHITECTURE_CYCLE19.md §407/§408 — true when OptionId names a retired limit option
+    // (RetiredLimitOptions); appended at the end so existing positional constructors keep compiling.
+    bool Retired = false);
 
 // Line stored inside BillingAccount.RequestedOptionsJson (see BillingAccount's own remarks for why
 // there's no separate table this stage).

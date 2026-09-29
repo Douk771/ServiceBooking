@@ -3585,7 +3585,44 @@ curl http://localhost:5000/api/health/ready
   меняются задним числом.
 * `DELETE /api/admin/plans/{id}` — новый повод для существующего 409: тариф-триал удалить нельзя.
 
-#### Добавления цикла 20 (US-20-02, US-20-05, US-20-07, US-20-09)
+### Опции-лимиты выведены из оборота — **новое в цикле 19**
+
+Источник — `ARCHITECTURE_CYCLE19.md` §380–§395, `API_CONTRACT_CYCLE19.md` §400–§416 и
+`contracts/cycle19/openapi.yaml`. С этого цикла лимит сотрудников и компаний аккаунта — это **только**
+поля тарифа (`maxEmployees`/`maxCompanies` + `GrandfatheredEmployeeBonus`), докупка мест опциями
+`extra-employees`/`extra-companies` больше не действует. Сами опции, их правила в матрице тарифа и уже
+сделанные покупки **не удаляются** — они просто перестают читаться как действующие (`IsActive = false`
+после миграции цикла, плюс серверный фильтр по `capabilityKey`).
+
+* `items[].retired` (`bool`) — новое поле у строк заявки владельца (`GET /api/billing/subscription`,
+  `POST /api/billing/subscription/request`)
+  и у строк заявки в очереди/карточке аккаунта админки. `true` только у строк, поданных **до** выката
+  этого цикла по опции, которая на момент чтения оказалась опцией-лимитом; для всех новых строк и всех
+  остальных опций — `false`.
+* `retiredOptionsNotice` (`string?`) — новое поле рядом с `pendingRequest`/заявкой в очереди. Непусто
+  **только** когда в заявке есть хотя бы одна строка с `retired == true`; в этом случае сервер отдаёт
+  готовый текст, что делать с этими строками (они не учитываются в оценке цены и не будут применены при
+  одобрении). Фронт печатает текст как есть, как и прочие серверные правовые/биллинговые тексты этого
+  проекта (см. правило выше для триала).
+* `POST /api/billing/subscription/request` и `PUT /api/admin/billing-accounts/{accountId}/subscription` —
+  запрос, содержащий опцию с `capabilityKey ∈ {employees, companies}` (после `trim`+`lower`), отвечает
+  **400** и ничего не меняет ни в подписке, ни в существующих строках опций.
+* `POST/PUT /api/admin/options` — создание новой опции с таким `capabilityKey` отвечает **400**; правка
+  уже существующей выведенной опции отвечает **409**.
+* `PUT /api/admin/plans/{id}` с правилом `extra-*` в присланной матрице отвечает **200**, но само
+  правило в БД не меняется; матрица в ответе и `optionCoverage` эту опцию не содержат. Если правило
+  `extra-*` было сохранено раньше и в новом запросе просто отсутствует — оно тоже **не удаляется**
+  (обычные «неприсланные правила удаляются» сюда не относится).
+* `GET /api/admin/options`, `GET /api/admin/option-capabilities`, витрина (`GET /api/pricing`,
+  `GET /api/admin/pricing/preview`) — опции-лимиты и возможности `employees`/`companies` в ответах
+  больше не появляются.
+* Геокодер (проверка адреса по карте, цикл 13) удалён целиком: маршрута `POST
+  /api/companies/address/lookup` больше нет (404 при любой конфигурации), `CompanyDto` лишился полей
+  `addressVerification`/`addressPoint`. `PUT /api/companies/{id}/address` принимает и игнорирует поле
+  `verify` (было — включало проверку), отвечает `{ company }` без `verification`. Правовой гейт
+  `POST /api/companies/address/notice` и его лимит (`address-verify`, 30/ч) не изменились.
+
+### Добавления цикла 20 (US-20-02, US-20-05, US-20-07, US-20-09)
 
 * `PUT /api/admin/billing-accounts/{accountId}/subscription` — тело получило `reasonCode` и
   `reasonDetails` (оба необязательные, `SubscriptionChangeReason`: `OperatorErrorCorrection` |

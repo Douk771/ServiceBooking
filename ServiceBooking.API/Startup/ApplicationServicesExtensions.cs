@@ -111,45 +111,6 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.AccountDeletionService>();
     }
 
-    public static void AddAddressVerification(this WebApplicationBuilder builder)
-    {
-    // ── Проверка адреса по карте (ARCHITECTURE_CYCLE13.md §206–§209, §215) ─────────────────────────────
-    // Own section, own Provider switch, own secret — independent of the WhatsApp/MAX switch above, same
-    // pattern the Web Push block just followed. "logging" (default, safe everywhere) never makes a network
-    // call at all (LoggingAddressGeocoder) — that IS the intended production state until a licence is bought
-    // (P2), not a placeholder.
-    builder.Services.Configure<ServiceBooking.API.Services.Geo.GeoOptions>(
-        builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName));
-
-    // The "yandex-geocoder" named client (§206): request/URL logging silenced at the category level, same
-    // rung-1 defence as "green-api"/"web-push" — the query string carries `apikey`. Registered
-    // unconditionally, not inside the switch below, for the same "changing Provider needs no different DI
-    // graph" reason green-api's own client is registered unconditionally.
-    builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.LogicalHandler", LogLevel.None);
-    builder.Logging.AddFilter("System.Net.Http.HttpClient.yandex-geocoder.ClientHandler", LogLevel.None);
-    builder.Services.AddHttpClient("yandex-geocoder", client =>
-        {
-            var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
-                .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
-            client.Timeout = TimeSpan.FromSeconds(geoOptions.Yandex.TimeoutSeconds);
-        })
-        .ConfigurePrimaryHttpMessageHandler(() =>
-        {
-            var geoOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Geo.GeoOptions.SectionName)
-                .Get<ServiceBooking.API.Services.Geo.GeoOptions>() ?? new();
-            return ServiceBooking.API.Services.Geo.GeoHandlerFactory.Create(geoOptions.Yandex);
-        });
-
-    builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>();
-    builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>();
-    var addressVerificationProvider = builder.Configuration["AddressVerification:Provider"];
-    builder.Services.AddSingleton<ServiceBooking.API.Services.Geo.IAddressGeocoder>(sp =>
-        string.Equals(addressVerificationProvider, "yandex", StringComparison.OrdinalIgnoreCase)
-            ? sp.GetRequiredService<ServiceBooking.API.Services.Geo.Yandex.YandexAddressGeocoder>()
-            : sp.GetRequiredService<ServiceBooking.API.Services.Geo.LoggingAddressGeocoder>());
-    builder.Services.AddScoped<ServiceBooking.API.Services.Geo.AddressLookupService>();
-    }
-
     public static void AddPhoneVerification(this WebApplicationBuilder builder)
     {
     // ── Подтверждение телефона через MAX (ARCHITECTURE_CYCLE14.md §140-§158) ──────────────────────────────

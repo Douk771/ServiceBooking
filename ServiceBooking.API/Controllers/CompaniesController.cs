@@ -4,13 +4,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
 using ServiceBooking.API.Services.Companies;
-using ServiceBooking.API.Services.Geo;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -25,7 +23,6 @@ public class CompaniesController(
     ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader,
     ImageUploadService imageUploadService, FileStorage storage,
     LegalDocumentProvider legalProvider, ConsentLedger ledger, TokenService tokenService,
-    IOptions<GeoOptions> geoOptions,
     CompanyDtoAssembler companyDtoAssembler, CompanyStatsService companyStatsService) : ControllerBase
 {
     // Cycle 22 P5 (§378): the member endpoints moved to CompanyMembersController, the DTO assembly to
@@ -54,7 +51,7 @@ public class CompaniesController(
             .Where(c => plans[c.Id].AllowPublicListing)
             .Select(c => CompanyDtoAssembler.MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
                 c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
-                geoOptions.Value, covers.GetValueOrDefault(c.Id))));
+                covers.GetValueOrDefault(c.Id))));
     }
 
     // GET /api/companies/public — US-115 (API_CONTRACT_CYCLE9.md §113.2). Anonymous; replaces GET
@@ -127,7 +124,7 @@ public class CompaniesController(
 
         var items = pageItems.Select(c => CompanyDtoAssembler.MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
             c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
-            geoOptions.Value, covers.GetValueOrDefault(c.Id))).ToList();
+            covers.GetValueOrDefault(c.Id))).ToList();
 
         return Ok(ServiceBooking.API.DTOs.Common.Pagination.Create(items, normalizedPage, normalizedPageSize, total));
     }
@@ -184,8 +181,8 @@ public class CompaniesController(
         var photos = await companyDtoAssembler.GetPhotosOrderedAsync(c.Id);
         var cover = photos.Count > 0 ? (photos[0].Url, photos[0].ThumbnailUrl) : ((string, string)?)null;
         // Reachable anonymously (no [Authorize]) — same §46.2 treatment as GetAll: no usage computed.
-        return Ok(CompanyDtoAssembler.MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null, geoOptions.Value,
-            cover, photos, includeAddressPoint: true));
+        return Ok(CompanyDtoAssembler.MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null,
+            cover, photos));
     }
 
     // Public: list masters for a company, optionally filtered by serviceId
@@ -365,7 +362,7 @@ public class CompaniesController(
         // instead of assuming Free.
         // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
         var createUsage = accountId != Guid.Empty ? await accountUsageReader.GetAsync([accountId]) : new Dictionary<Guid, AccountUsage>();
-        var companyDto = CompanyDtoAssembler.MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId), geoOptions.Value, canManage: true);
+        var companyDto = CompanyDtoAssembler.MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId), canManage: true);
         return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, new CreateCompanyResponseDto(companyDto, token));
     }
 

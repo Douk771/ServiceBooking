@@ -1,9 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
-using ServiceBooking.API.Services.Geo;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 
@@ -16,8 +14,7 @@ namespace ServiceBooking.API.Services.Companies;
 /// <c>CompaniesController</c> and <c>CompanyAddressController</c> build the exact same shape from one place.
 /// </summary>
 public sealed class CompanyDtoAssembler(
-    AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader accountUsageReader,
-    IOptions<GeoOptions> geoOptions)
+    AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader accountUsageReader)
 {
     /// <summary>
     /// Cycle 22 (D7; moved here from CompaniesController in P5, §378): the batched enrichment
@@ -38,7 +35,7 @@ public sealed class CompanyDtoAssembler(
                 cm.Company.CityId.HasValue ? cities.GetValueOrDefault(cm.Company.CityId.Value) : null,
                 employeeCounts.GetValueOrDefault(cm.CompanyId),
                 cm.Company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(cm.Company.BillingAccountId.Value) : null,
-                geoOptions.Value, covers.GetValueOrDefault(cm.CompanyId), canManage: canManage(cm)))
+                covers.GetValueOrDefault(cm.CompanyId), canManage: canManage(cm)))
             .ToList();
     }
 
@@ -57,7 +54,7 @@ public sealed class CompanyDtoAssembler(
         return MapToDto(company, plan, averageRating, reviewCount, city,
             employeeCounts.GetValueOrDefault(company.Id),
             company.BillingAccountId.HasValue ? usageByAccount.GetValueOrDefault(company.BillingAccountId.Value) : null,
-            geoOptions.Value, covers.GetValueOrDefault(company.Id), canManage: true);
+            covers.GetValueOrDefault(company.Id), canManage: true);
     }
 
     // Single source of truth for building a CompanyDto from an entity + its resolved plan, so the
@@ -75,24 +72,15 @@ public sealed class CompanyDtoAssembler(
     // same shape without a second, drifting copy of this mapping.
     public static CompanyDto MapToDto(
         Company c, EffectivePlan plan, double? averageRating, int reviewCount, City? city,
-        int employeeCount, AccountUsage? usage, GeoOptions geoOptions,
+        int employeeCount, AccountUsage? usage,
         // ARCHITECTURE_CYCLE10.md §109.3/API_CONTRACT_CYCLE10.md §129: cover is a single (Url,
         // ThumbnailUrl) pair resolved by the caller (batched via GetCoversAsync for list endpoints, or a
         // single lookup for the others) — null when the company has no photos yet. `photos` stays null
         // everywhere except GET /api/companies/{slug} (GetBySlug), which is the only caller that passes
         // the full ordered list.
         (string Url, string ThumbnailUrl)? cover = null, List<CompanyPhotoDto>? photos = null,
-        // ARCHITECTURE_CYCLE13.md §208/API_CONTRACT_CYCLE13.md §232 — true only for GetBySlug, the one
-        // endpoint that may expose a point at all.
-        bool includeAddressPoint = false,
-        // ARCHITECTURE_CYCLE13.md §208/API_CONTRACT_CYCLE13.md §232/§237: "available" (and the whole
-        // addressVerification block) must reflect "does THIS caller manage THIS company" — NOT "did the
-        // caller pass a non-null usage". `usage` alone conflates two different things: GetMemberOf passes
-        // usage for every membership role (so a Master would get a non-null addressVerification if this
-        // gated on `usage is null`), and a company with no BillingAccountId yet gets `usage: null` from
-        // GetUsageAsync even for its own owner (so addressVerification would silently vanish for the one
-        // caller §237 is written for). Review finding (cycle 13 review, blocking #2) — every call site
-        // below passes this explicitly rather than leaving it to infer from `usage`.
+        // ARCHITECTURE_CYCLE19.md §388.1/§413: the geocoder is gone, so addressVerification/addressPoint
+        // no longer exist on CompanyDto. `canManage` is kept (call sites pass it) but no longer read here.
         bool canManage = false)
     {
         TimeZoneOffset.TryGetUtcOffsetMinutes(c.TimeZoneId, DateTime.UtcNow, out var utcOffsetMinutes);
@@ -101,28 +89,6 @@ public sealed class CompanyDtoAssembler(
         var canAddEmployee = usage is null
             ? (bool?)null
             : !plan.AccountMaxEmployees.HasValue || usage.SeatsUsed < plan.AccountMaxEmployees.Value;
-
-        // ARCHITECTURE_CYCLE13.md §208/§232: gated on the explicit `canManage` flag, not on `usage`
-        // (see that parameter's doc comment above) — `available` additionally requires the switch itself
-        // to be on (Provider != "logging").
-        var addressVerification = !canManage
-            ? null
-            : new CompanyAddressVerificationDto(
-                Available: !string.Equals(geoOptions.Provider, "logging", StringComparison.OrdinalIgnoreCase),
-                Status: AddressVerificationState.Status(c).ToString(),
-                VerifiedAt: c.AddressVerifiedAt,
-                Precision: c.AddressPrecision?.ToString());
-
-        // §208: a point is only ever exposed on GetBySlug, and only when it is BOTH stored (StoreResults
-        // — extended licence, §209.2) AND the address is currently Verified — gating on Verified here
-        // (not just "columns are non-null") stops a stale point surviving an address edit that hasn't
-        // been re-verified yet (§203/§235: editing Address never clears these columns, it just makes the
-        // computed status fall back to Unverified).
-        var addressPoint = includeAddressPoint && geoOptions.StoreResults &&
-                            c.AddressLatitude.HasValue && c.AddressLongitude.HasValue &&
-                            AddressVerificationState.Status(c) == AddressVerificationStatus.Verified
-            ? new GeoPointDto(c.AddressLatitude.Value, c.AddressLongitude.Value)
-            : null;
 
         return new(
             c.Id, c.Name, c.Slug, c.Description, c.LogoUrl, c.Address, c.Phone, c.Email,
@@ -146,7 +112,6 @@ public sealed class CompanyDtoAssembler(
             c.CityId, city?.Name, city?.Region, c.TimeZoneId, c.TimeZoneIsManual, utcOffsetMinutes,
             BookingHorizon.Normalize(c.BookingHorizonDays),
             cover?.Url, cover?.ThumbnailUrl, photos,
-            addressVerification, addressPoint,
             c.YandexMapsUrl, c.TwoGisUrl, ClientRescheduleWindow.Normalize(c.ClientRescheduleMinHours));
     }
 
