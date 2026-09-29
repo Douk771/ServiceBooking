@@ -1,0 +1,2440 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 24
+# («Заказы», цикл 2: время получения, часы и приём, доступность по датам, уведомления, тарифы магазинов).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE24.md
+# (§470–§494), решения — ARCHITECTURE_CYCLE24.md (§446–§469), требования — SPEC.md цикла 24.
+# При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Рядом: contracts/cycle24/pickup-schedule-vectors.json — эталон часов/слотов/правила приёма.
+#
+#   frontend  npx @stoplight/prism mock contracts/cycle24/openapi.yaml --port 4024
+#             npm run types:api:cycle24   (openapi-typescript -> src/types/api-cycle24.generated.ts)
+#   QA        schemathesis run contracts/cycle24/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle24/openapi.yaml
+#
+# Здесь описаны маршруты, которые цикл 24 ДОБАВЛЯЕТ, и существующие, у которых меняется форма запроса/ответа.
+# DTO goods, изменённые циклом (StorefrontDto, ProductDto, PublicOrderDto, StaffOrderCardDto, OrderBoardDto, …),
+# описаны ЦЕЛИКОМ — фронт goods берёт их типы из генерата cycle24. Большие существующие DTO ezbook (подписка,
+# админка, push) описаны только новыми полями с additionalProperties: true.
+# Действия персонала над заказом (accept/reject/ready/issue/…) по форме не меняются, но отвечают StaffOrderDto ЭТОГО
+# файла (с pickup) — пути повторно не описаны.
+
+info:
+  title: ServiceBooking API — цикл 24 (Заказы, время и уведомления)
+  version: "24.1.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта без изменений: camelCase; enum — строкой; DateTime — ISO-8601 UTC; DateOnly — "YYYY-MM-DD";
+    время суток — "HH:mm" (локальное время магазина, шаг 5 минут); 400/402/429 — голая строка; 401/403 — пустое тело;
+    404 — пустое тело, не оракул; 409 домена заказов — JSON с code/message (OrderRefusalDto, OrderConflictDto,
+    CatalogConflictDto); 409 не-заказных маршрутов (push, биллинг) — строка. Текст, который видит человек, собирает сервер.
+
+    ГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:
+      1. Слоты, «как можно скорее», «открыто/закрыто» и доступность на дату считает СЕРВЕР. Фронт показывает.
+      2. Выбор времени — PickupSelectionInput; slotStartUtc обязан точно совпасть с началом слота из pickup-slots.
+      3. Все новые входные поля необязательны; их отсутствие даёт поведение цикла 23.
+      4. Номер заказа уникален в пределах дня ВЫДАЧИ (pickup.date), а не дня создания.
+      5. Тело push (контракт с service worker) — { title, body, tag, url }, url относительный (API_CONTRACT_CYCLE24.md §486).
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4024
+    description: prism mock по этой схеме
+
+tags:
+  - name: shop-schedule
+    description: Часы работы, особые дни, время получения, пауза и выключатель, статус приёма, слоты для персонала.
+  - name: shop-availability
+    description: Дни недели товаров, «закончилось» со сроком, меню на дату.
+  - name: shop-notifications
+    description: Уведомления магазина — push сотрудникам, web-push и мессенджер покупателям.
+  - name: storefront
+    description: Витрина на дату, слоты, проверка корзины и оформление с временем получения.
+  - name: orders-public
+    description: Заказ глазами покупателя — время получения, web-push в этом браузере.
+  - name: orders-staff
+    description: Экран заказов (предзаказы, состояние приёма), карточка, смена времени.
+  - name: push
+    description: Подписки устройств на push — сайт ezbook или goods.
+  - name: billing
+    description: Подписка владельца по линейке («Записи» / «Заказы») и заявка.
+  - name: admin
+    description: Тарифы по линейкам, подписка «Заказов» аккаунта, заявки.
+  - name: channels
+    description: Назначение номера уведомлений магазину.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ShopId:
+      name: shopId
+      in: path
+      required: true
+      description: Id магазина (Company.Id компании типа Orders).
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DatePath:
+      name: date
+      in: path
+      required: true
+      description: Дата по часовому поясу магазина.
+      schema: { type: string, format: date }
+    DateQueryRequired:
+      name: date
+      in: query
+      required: true
+      description: Дата выдачи по часовому поясу магазина.
+      schema: { type: string, format: date }
+    FromQuery:
+      name: from
+      in: query
+      required: false
+      schema: { type: string, format: date }
+    ToQuery:
+      name: to
+      in: query
+      required: false
+      schema: { type: string, format: date }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    OrderToken:
+      name: token
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    SiteQuery:
+      name: site
+      in: query
+      required: false
+      description: Сайт устройства. НЕ передан → Services (ezbook). goods всегда шлёт Orders.
+      schema: { $ref: '#/components/schemas/CompanyKind' }
+    LineQuery:
+      name: line
+      in: query
+      required: false
+      description: Линейка подписки. НЕ передана → Services («Записи»), ответ как до цикла 24.
+      schema: { $ref: '#/components/schemas/CompanyKind' }
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PlanId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ChannelId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    PlainTextConflict:
+      description: 409 не-заказного маршрута — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет или недействителен токен. Тело пустое.
+    Forbidden:
+      description: Нет прав. Тело пустое.
+    NotFound:
+      description: Не найдено (в том числе компания другого типа). Тело пустое.
+    NoContent:
+      description: Выполнено, тела нет.
+    LegalGate:
+      description: Требуется принять новую редакцию правовых документов.
+      content:
+        text/plain:
+          schema: { type: string }
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    TooManyRequests:
+      description: Превышен лимит частоты — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    CatalogConflict:
+      description: Отказ в каталоге/настройках магазина с машиночитаемым кодом.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CatalogConflictDto' }
+    OrderConflict:
+      description: Действие над заказом не применено — код, текст и актуальный заказ.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/OrderConflictDto' }
+
+  schemas:
+    # ─────────────────────────────── перечисления ───────────────────────────────
+    CompanyKind:
+      type: string
+      description: 'Тип компании; здесь же — сайт push-подписки (Services = ezbook, Orders = goods) и линейка тарифа («Записи» / «Заказы»).'
+      enum: [Services, Orders]
+    ShopRole:
+      type: string
+      enum: [Owner, Staff, SuperAdmin]
+    DayOfWeek:
+      type: string
+      enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+    PickupKind:
+      type: string
+      description: Asap — «как можно скорее»; Slot — ко времени (слот на дату).
+      enum: [Asap, Slot]
+    ShopAcceptanceMode:
+      type: string
+      description: 'Accepting — принимаем; Paused — пауза до pausedUntilUtc (истекшая пауза отдаётся как Accepting); Stopped — «не принимаем, пока не включу».'
+      enum: [Accepting, Paused, Stopped]
+    PauseDuration:
+      type: string
+      enum: [Minutes15, Minutes30, Hour1, EndOfDay]
+    SoldOutScope:
+      type: string
+      description: 'Today — «нет на сегодня» (снимается сама в начале следующего дня магазина); UntilCancelled — «нет до отмены».'
+      enum: [Today, UntilCancelled]
+    ShopNotAcceptingCode:
+      type: string
+      description: Почему магазин сейчас не принимает заказы (первое сработавшее условие, ARCHITECTURE_CYCLE24.md §450).
+      enum: [Blocked, NoWorkingHours, Stopped, Paused, NotAllowedByPlan, MonthlyLimitReached, NoPickupTimeAvailable]
+    OrderLimitWarningLevel:
+      type: string
+      enum: [None, Warning80, Reached]
+    StorefrontUnavailableReason:
+      type: string
+      enum: [SoldOut, InsufficientStock, ShopNotAccepting]
+    ShopCustomerMode:
+      type: string
+      enum: [Anyone, VerifiedPhoneOnly]
+    OrderAcceptanceMode:
+      type: string
+      enum: [Manual, Auto]
+    ProductUnit:
+      type: string
+      enum: [Piece, Weight]
+    OrderStatus:
+      type: string
+      enum: [New, Accepted, Ready, Issued, Rejected, CancelledByCustomer, CancelledByShop, NotPickedUp]
+    OrderAction:
+      type: string
+      description: Действие персонала, доступное над заказом прямо сейчас (вычисляет сервер). ChangePickup — добавлено в цикле 24.
+      enum: [Accept, Reject, MarkReady, Issue, NotPickedUp, Cancel, Edit, ChangePickup]
+    OrderEventKind:
+      type: string
+      enum: [Created, Accepted, Rejected, MarkedReady, Issued, NotPickedUp, CancelledByCustomer, CancelledByShop, Edited, PickupChanged]
+    OrderActorKind:
+      type: string
+      enum: [Customer, Guest, Staff, SuperAdmin, System]
+    OrderProblemReason:
+      type: string
+      enum: [NotFound, Unpublished, SoldOut, CategoryHidden, InsufficientStock, BelowMinimum, InvalidQuantity, PriceChanged, NotAvailableOnDate]
+    OrderRefusalCode:
+      type: string
+      enum: [ShopNotAcceptingOrders, LoginRequired, PhoneVerificationRequired, PhoneVerificationUnavailable, EmptyCart, TooManyLines, PriceChanged, ItemsUnavailable, PickupTimeUnavailable]
+    OrderConflictCode:
+      type: string
+      enum: [VersionMismatch, InvalidTransition, CancelNotAllowed, AlreadyReady, InsufficientStock, LastItemCannotBeRemoved, InvalidQuantity, ProductUnavailable, PickupTimeUnavailable]
+    CatalogConflictCode:
+      type: string
+      enum: [SlugTaken, SlugReserved, SlugInvalid, CategoryNotEmpty, UnitChangeNotAllowed, ProductLimitReached, CategoryLimitReached, PhoneVerificationUnavailable, ScheduleConflictsWithOrders, MessengerUnavailable]
+    NotificationTransport:
+      type: string
+      enum: [WhatsApp, Max]
+    NotificationDeliveryMode:
+      type: string
+      enum: [PriorityChannel, AllChannels]
+    NotificationStatus:
+      type: string
+      description: Существующее перечисление журнала доставки.
+      enum: [Pending, Sent, Delivered, Failed, Expired, Skipped, Cancelled]
+
+    # ─────────────────────────────── общие ───────────────────────────────
+    CatalogConflictDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/CatalogConflictCode' }
+        message: { type: string }
+        conflictingOrders:
+          type: array
+          nullable: true
+          description: Только ScheduleConflictsWithOrders — активные заказы вне новых часов.
+          items: { $ref: '#/components/schemas/ScheduleConflictOrderDto' }
+    ScheduleConflictOrderDto:
+      type: object
+      required: [orderId, number, pickupText, statusText]
+      properties:
+        orderId: { type: string, format: uuid }
+        number: { type: integer }
+        pickupText: { type: string }
+        statusText: { type: string }
+        customerName: { type: string, nullable: true }
+        customerPhone: { type: string, nullable: true, description: Полный номер для звонка (видит только персонал). }
+    FoodInfoDto:
+      type: object
+      properties:
+        compositionAndAllergens: { type: string, nullable: true, maxLength: 2000 }
+
+    # ─────────────────────────────── часы и приём ───────────────────────────────
+    TimeIntervalInput:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][05]$', example: '09:00' }
+        end: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][05]$', description: 'end ≤ start — интервал через полночь (относится ко дню начала); "00:00" — до полуночи.', example: '21:00' }
+    TimeIntervalDto:
+      type: object
+      required: [start, end, crossesMidnight]
+      properties:
+        start: { type: string, example: '18:00' }
+        end: { type: string, example: '03:00' }
+        crossesMidnight: { type: boolean }
+    WorkingDayInput:
+      type: object
+      required: [dayOfWeek, intervals]
+      properties:
+        dayOfWeek: { $ref: '#/components/schemas/DayOfWeek' }
+        intervals:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/TimeIntervalInput' }
+    WorkingHoursInput:
+      type: object
+      required: [days]
+      properties:
+        days:
+          type: array
+          maxItems: 7
+          description: Не переданный день — выходной.
+          items: { $ref: '#/components/schemas/WorkingDayInput' }
+    WorkingDayDto:
+      type: object
+      required: [dayOfWeek, dayLabel, intervals, text]
+      properties:
+        dayOfWeek: { $ref: '#/components/schemas/DayOfWeek' }
+        dayLabel: { type: string, example: 'пн' }
+        intervals:
+          type: array
+          items: { $ref: '#/components/schemas/TimeIntervalDto' }
+        text: { type: string, example: '09:00–14:00, 15:00–21:00' }
+    WorkingHoursDto:
+      type: object
+      required: [isSet, days]
+      properties:
+        isSet: { type: boolean, description: 'false — часы не заданы, магазин не принимает заказы.' }
+        days:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items: { $ref: '#/components/schemas/WorkingDayDto' }
+    SpecialDayInput:
+      type: object
+      required: [isClosed]
+      properties:
+        isClosed: { type: boolean }
+        intervals:
+          type: array
+          nullable: true
+          maxItems: 3
+          items: { $ref: '#/components/schemas/TimeIntervalInput' }
+        confirmConflicts: { type: boolean, default: false, description: 'true — сохранить, несмотря на заказы вне новых часов (после показа списка).' }
+    SpecialDayDto:
+      type: object
+      required: [date, label, isClosed, intervals, text]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string, example: 'пт 2 окт' }
+        isClosed: { type: boolean }
+        intervals:
+          type: array
+          items: { $ref: '#/components/schemas/TimeIntervalDto' }
+        text: { type: string, example: 'выходной' }
+    PickupSettingsDto:
+      type: object
+      required: [asapEnabled, scheduledEnabled, slotStepMinutes, preorderDays, minPrepMinutes]
+      properties:
+        asapEnabled: { type: boolean }
+        scheduledEnabled: { type: boolean }
+        slotStepMinutes: { type: integer, enum: [15, 30, 60] }
+        preorderDays: { type: integer, minimum: 0, maximum: 14 }
+        minPrepMinutes: { type: integer, minimum: 0, maximum: 180 }
+    PickupSettingsInput:
+      allOf: [ { $ref: '#/components/schemas/PickupSettingsDto' } ]
+    AcceptanceInput:
+      type: object
+      required: [mode]
+      properties:
+        mode: { $ref: '#/components/schemas/ShopAcceptanceMode' }
+        pause:
+          allOf: [ { $ref: '#/components/schemas/PauseDuration' } ]
+          nullable: true
+          description: Обязательна при mode = Paused.
+    ShopAcceptanceDto:
+      type: object
+      required: [mode, statusText]
+      properties:
+        mode: { $ref: '#/components/schemas/ShopAcceptanceMode' }
+        pausedUntilUtc: { type: string, format: date-time, nullable: true }
+        statusText: { type: string, example: 'Пауза до 13:30' }
+        changedAtUtc: { type: string, format: date-time, nullable: true }
+        changedByName: { type: string, nullable: true }
+        changedText: { type: string, nullable: true, example: 'Изменено: Анна, 12:58' }
+    ShopOpenStateDto:
+      type: object
+      required: [isOpen, text]
+      properties:
+        isOpen: { type: boolean }
+        text: { type: string, example: 'Открыто до 21:00' }
+        opensAtUtc: { type: string, format: date-time, nullable: true }
+        closesAtUtc: { type: string, format: date-time, nullable: true }
+    AsapOptionDto:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean }
+        readyAtUtc: { type: string, format: date-time, nullable: true, description: 'Ориентир готовности = сейчас + время приготовления.' }
+        text: { type: string, nullable: true, example: '≈ к 13:20' }
+    OrderLimitDto:
+      type: object
+      required: [used, monthLabel, warningLevel]
+      properties:
+        used: { type: integer, minimum: 0 }
+        limit: { type: integer, nullable: true, description: 'null — без ограничения.' }
+        monthLabel: { type: string, example: 'октябрь 2026' }
+        warningLevel: { $ref: '#/components/schemas/OrderLimitWarningLevel' }
+        text: { type: string, nullable: true, example: 'Заказов в этом месяце: 120 из 150' }
+    SetupChecklistItemDto:
+      type: object
+      required: [code, text, done]
+      properties:
+        code: { type: string, example: WorkingHours }
+        text: { type: string, example: 'Задайте часы работы' }
+        done: { type: boolean }
+    ShopOrderingStatusDto:
+      type: object
+      required: [acceptingOrders, openState, acceptance, scheduledAvailable, orderLimit, workingHoursSet]
+      properties:
+        acceptingOrders: { type: boolean }
+        notAcceptingCode:
+          allOf: [ { $ref: '#/components/schemas/ShopNotAcceptingCode' } ]
+          nullable: true
+        customerText: { type: string, nullable: true, description: 'Что сейчас видит покупатель.' }
+        ownerText: { type: string, nullable: true, description: 'Точная причина для персонала.' }
+        openState: { $ref: '#/components/schemas/ShopOpenStateDto' }
+        acceptance: { $ref: '#/components/schemas/ShopAcceptanceDto' }
+        asap:
+          allOf: [ { $ref: '#/components/schemas/AsapOptionDto' } ]
+          nullable: true
+        scheduledAvailable: { type: boolean }
+        orderLimit: { $ref: '#/components/schemas/OrderLimitDto' }
+        workingHoursSet: { type: boolean }
+
+    # ─────────────────────────────── магазин ───────────────────────────────
+    ShopSettingsDto:
+      type: object
+      required: [customerMode, acceptanceMode, allowCustomerCancel, trackStock]
+      properties:
+        customerMode: { $ref: '#/components/schemas/ShopCustomerMode' }
+        acceptanceMode: { $ref: '#/components/schemas/OrderAcceptanceMode' }
+        allowCustomerCancel: { type: boolean }
+        trackStock: { type: boolean }
+        updatedAtUtc: { type: string, format: date-time, nullable: true }
+    SellerInfoDto:
+      type: object
+      additionalProperties: true
+      required: [isComplete, requiredFields]
+      properties:
+        legalForm: { type: string, nullable: true }
+        legalName: { type: string, nullable: true }
+        inn: { type: string, nullable: true }
+        ogrn: { type: string, nullable: true }
+        legalAddress: { type: string, nullable: true }
+        isComplete: { type: boolean }
+        requiredFields:
+          type: array
+          items: { type: string }
+    ShopManageDto:
+      type: object
+      description: ShopManageDto цикла 23 + поля цикла 24 (API_CONTRACT_CYCLE24.md §472).
+      required: [id, name, slug, isActive, publicUrl, myRole, settings, seller, acceptingOrders, phoneVerificationAvailable, timeZoneId,
+                 pickupSettings, workingHoursSet, acceptance, openState, setupChecklist, orderLimit, productLimit]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        cityId: { type: integer, nullable: true }
+        cityName: { type: string, nullable: true }
+        timeZoneId: { type: string }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        isActive: { type: boolean }
+        publicUrl: { type: string }
+        myRole: { $ref: '#/components/schemas/ShopRole' }
+        settings: { $ref: '#/components/schemas/ShopSettingsDto' }
+        seller: { $ref: '#/components/schemas/SellerInfoDto' }
+        acceptingOrders: { type: boolean, description: Итог ShopOrderingGate v2. }
+        notAcceptingReason: { type: string, nullable: true, description: 'Текст для владельца/персонала (§473.5).' }
+        notAcceptingCode:
+          allOf: [ { $ref: '#/components/schemas/ShopNotAcceptingCode' } ]
+          nullable: true
+        phoneVerificationAvailable: { type: boolean }
+        productCount: { type: integer, minimum: 0 }
+        pickupSettings: { $ref: '#/components/schemas/PickupSettingsDto' }
+        workingHoursSet: { type: boolean }
+        acceptance: { $ref: '#/components/schemas/ShopAcceptanceDto' }
+        openState: { $ref: '#/components/schemas/ShopOpenStateDto' }
+        setupChecklist:
+          type: array
+          items: { $ref: '#/components/schemas/SetupChecklistItemDto' }
+        orderLimit: { $ref: '#/components/schemas/OrderLimitDto' }
+        productLimit: { type: integer, description: 'Действующий лимит товаров: min(тариф, 1000).' }
+
+    # ─────────────────────────────── каталог и доступность ───────────────────────────────
+    StockDto:
+      type: object
+      required: [onHand, reserved, free]
+      properties:
+        onHand: { type: integer, nullable: true }
+        reserved: { type: integer, minimum: 0 }
+        free: { type: integer, nullable: true }
+    SoldOutDto:
+      type: object
+      required: [scope, text]
+      properties:
+        scope: { $ref: '#/components/schemas/SoldOutScope' }
+        date: { type: string, format: date, nullable: true, description: 'Только Today — день магазина, на который поставлена отметка.' }
+        text: { type: string, example: 'нет на сегодня' }
+    ProductDto:
+      type: object
+      required: [id, name, unit, price, position, isPublished, isSoldOut, foodInfo, stock, availableToCustomers, availableWeekdays]
+      properties:
+        id: { type: string, format: uuid }
+        categoryId: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        imageUrl: { type: string, nullable: true }
+        thumbnailUrl: { type: string, nullable: true }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        price: { type: number }
+        portionText: { type: string, nullable: true }
+        weightStepGrams: { type: integer, nullable: true }
+        minQuantity: { type: integer }
+        maxQuantity: { type: integer }
+        position: { type: integer }
+        isPublished: { type: boolean }
+        isSoldOut: { type: boolean, description: 'Действует ли отметка «закончилось» СЕЙЧАС (истекшая «на сегодня» → false).' }
+        soldOut:
+          allOf: [ { $ref: '#/components/schemas/SoldOutDto' } ]
+          nullable: true
+        foodInfo: { $ref: '#/components/schemas/FoodInfoDto' }
+        stock: { $ref: '#/components/schemas/StockDto' }
+        availableToCustomers: { type: boolean, description: 'Доступен покупателю на СЕГОДНЯ.' }
+        availableWeekdays:
+          type: array
+          items: { $ref: '#/components/schemas/DayOfWeek' }
+        weekdaysLabel: { type: string, nullable: true, description: '«пн, ср, пт»; null — все дни; «только по меню» — пустой набор.' }
+    ProductInput:
+      type: object
+      required: [name, unit, price, isPublished]
+      properties:
+        categoryId: { type: string, format: uuid, nullable: true }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, nullable: true, maxLength: 2000 }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        price: { type: number, minimum: 0.01, maximum: 1000000 }
+        portionText: { type: string, nullable: true, maxLength: 50 }
+        weightStepGrams: { type: integer, nullable: true, minimum: 10, maximum: 5000 }
+        minQuantityGrams: { type: integer, nullable: true, minimum: 10, maximum: 10000 }
+        isPublished: { type: boolean }
+        foodInfo: { $ref: '#/components/schemas/FoodInfoDto' }
+        availableWeekdays:
+          type: array
+          nullable: true
+          maxItems: 7
+          description: 'Не передан/null — все 7 дней (как в цикле 23). Пустой массив — только по меню на дату.'
+          items: { $ref: '#/components/schemas/DayOfWeek' }
+    SoldOutInput:
+      type: object
+      required: [isSoldOut]
+      properties:
+        isSoldOut: { type: boolean }
+        scope:
+          allOf: [ { $ref: '#/components/schemas/SoldOutScope' } ]
+          nullable: true
+          description: 'Не передан при isSoldOut = true → UntilCancelled (совместимость с циклом 23). Фронт goods шлёт всегда.'
+    CategoryWeekdaysInput:
+      type: object
+      required: [weekdays]
+      properties:
+        weekdays:
+          type: array
+          maxItems: 7
+          items: { $ref: '#/components/schemas/DayOfWeek' }
+    DailyMenuDayDto:
+      type: object
+      required: [date, label, hasMenu, productCount]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string }
+        hasMenu: { type: boolean }
+        productCount: { type: integer, minimum: 0, description: 'Товаров в меню; без меню — по правилу дней недели.' }
+    DailyMenuCalendarDto:
+      type: object
+      required: [from, to, days]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        days:
+          type: array
+          items: { $ref: '#/components/schemas/DailyMenuDayDto' }
+    DailyMenuProductDto:
+      type: object
+      required: [productId, name, isPublished, inMenu, allowedByWeekdays]
+      properties:
+        productId: { type: string, format: uuid }
+        name: { type: string }
+        categoryName: { type: string, nullable: true }
+        isPublished: { type: boolean }
+        inMenu: { type: boolean, description: 'exists = false → предзаполнено по дням недели (Q-24-6).' }
+        allowedByWeekdays: { type: boolean }
+    DailyMenuDto:
+      type: object
+      required: [date, label, exists, productIds, products]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string }
+        exists: { type: boolean, description: 'false — меню на дату нет, действует правило дней недели; productIds — предзаполнение.' }
+        productIds:
+          type: array
+          items: { type: string, format: uuid }
+        products:
+          type: array
+          items: { $ref: '#/components/schemas/DailyMenuProductDto' }
+    DailyMenuInput:
+      type: object
+      required: [productIds]
+      properties:
+        productIds:
+          type: array
+          maxItems: 1000
+          items: { type: string, format: uuid }
+    DailyMenuCopyInput:
+      type: object
+      required: [sourceDate]
+      properties:
+        sourceDate: { type: string, format: date }
+
+    # ─────────────────────────────── уведомления магазина ───────────────────────────────
+    ShopChannelStatusDto:
+      type: object
+      required: [channelId, transport, stateText, isConnected, funded, fundingText]
+      properties:
+        channelId: { type: string, format: uuid }
+        transport: { $ref: '#/components/schemas/NotificationTransport' }
+        phoneMasked: { type: string, nullable: true }
+        stateText: { type: string }
+        isConnected: { type: boolean }
+        funded: { type: boolean }
+        fundingText: { type: string }
+    ShopNotificationSettingsDto:
+      type: object
+      required: [staffPushEnabled, customerWebPushEnabled, customerMessengerEnabled, deliveryMode, priorityTransport, messengerAvailable, platformPushEnabled, channels]
+      properties:
+        staffPushEnabled: { type: boolean, description: 'Push сотрудникам о новых заказах (CompanyNotificationSettings.StaffPushEnabled магазина).' }
+        customerWebPushEnabled: { type: boolean }
+        customerMessengerEnabled: { type: boolean }
+        deliveryMode: { $ref: '#/components/schemas/NotificationDeliveryMode' }
+        priorityTransport: { $ref: '#/components/schemas/NotificationTransport' }
+        messengerAvailable: { type: boolean, description: 'Есть назначенный магазину и оплаченный номер.' }
+        messengerUnavailableText: { type: string, nullable: true }
+        platformPushEnabled: { type: boolean, description: 'Push включён на платформе (VAPID). false — кнопки push объясняют недоступность.' }
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/ShopChannelStatusDto' }
+    ShopNotificationSettingsInput:
+      type: object
+      required: [staffPushEnabled, customerWebPushEnabled, customerMessengerEnabled]
+      properties:
+        staffPushEnabled: { type: boolean }
+        customerWebPushEnabled: { type: boolean }
+        customerMessengerEnabled: { type: boolean }
+        deliveryMode:
+          allOf: [ { $ref: '#/components/schemas/NotificationDeliveryMode' } ]
+          nullable: true
+        priorityTransport:
+          allOf: [ { $ref: '#/components/schemas/NotificationTransport' } ]
+          nullable: true
+
+    # ─────────────────────────────── время получения ───────────────────────────────
+    PickupDateDto:
+      type: object
+      required: [date, label, hasSlots]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string, example: 'Завтра' }
+        hasSlots: { type: boolean }
+        reasonText: { type: string, nullable: true, example: 'Сегодня уже не успеем приготовить — выберите другой день' }
+    PickupOptionsDto:
+      type: object
+      required: [asapEnabled, scheduledEnabled, dates]
+      properties:
+        asapEnabled: { type: boolean }
+        scheduledEnabled: { type: boolean }
+        asap:
+          allOf: [ { $ref: '#/components/schemas/AsapOptionDto' } ]
+          nullable: true
+          description: null — «как можно скорее» выключено магазином.
+        dates:
+          type: array
+          description: 'От текущего рабочего дня до сегодня + preorderDays; при scheduledEnabled = false — пустой список; выходные не входят.'
+          items: { $ref: '#/components/schemas/PickupDateDto' }
+    PickupSlotDto:
+      type: object
+      required: [startUtc, endUtc, label]
+      properties:
+        startUtc: { type: string, format: date-time }
+        endUtc: { type: string, format: date-time }
+        label: { type: string, example: '12:00–12:15' }
+    PickupSlotsDto:
+      type: object
+      required: [date, label, slots]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string }
+        slots:
+          type: array
+          items: { $ref: '#/components/schemas/PickupSlotDto' }
+        asap:
+          allOf: [ { $ref: '#/components/schemas/AsapOptionDto' } ]
+          nullable: true
+          description: Только для текущего рабочего дня.
+        reasonText: { type: string, nullable: true, description: 'Почему слотов нет.' }
+    PickupSelectionInput:
+      type: object
+      required: [kind]
+      properties:
+        kind: { $ref: '#/components/schemas/PickupKind' }
+        date: { type: string, format: date, nullable: true, description: 'Обязательна для Slot — рабочий день магазина.' }
+        slotStartUtc: { type: string, format: date-time, nullable: true, description: 'Обязательно для Slot — точно startUtc одного из слотов date.' }
+    OrderPickupDto:
+      type: object
+      required: [kind, date, startUtc, dueUtc, text, isPreorder, isOverdue]
+      properties:
+        kind: { $ref: '#/components/schemas/PickupKind' }
+        date: { type: string, format: date, description: 'День выдачи — номер заказа уникален в пределах этой даты.' }
+        startUtc: { type: string, format: date-time, description: 'Начало слота или ориентир «как можно скорее».' }
+        endUtc: { type: string, format: date-time, nullable: true }
+        dueUtc: { type: string, format: date-time, description: 'endUtc ?? startUtc — после этого момента активный заказ «Просрочен».' }
+        text: { type: string, example: 'К 12:30', description: '«Как можно скорее (≈ 13:20)», «К 12:30», «Завтра, к 12:30», «пт 2 окт, к 12:30».' }
+        isPreorder: { type: boolean }
+        isOverdue: { type: boolean, description: 'На момент ответа.' }
+    PickupProblemDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/OrderRefusalCode' }
+        message: { type: string }
+
+    # ─────────────────────────────── витрина ───────────────────────────────
+    PublicSellerInfoDto:
+      type: object
+      properties:
+        legalForm: { type: string, nullable: true }
+        legalName: { type: string, nullable: true }
+        inn: { type: string, nullable: true }
+        ogrn: { type: string, nullable: true }
+        legalAddress: { type: string, nullable: true }
+    StorefrontProductDto:
+      type: object
+      required: [id, name, unit, price, minQuantity, maxQuantity, foodInfo, available]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        imageUrl: { type: string, nullable: true }
+        thumbnailUrl: { type: string, nullable: true }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        price: { type: number }
+        portionText: { type: string, nullable: true }
+        weightStepGrams: { type: integer, nullable: true }
+        minQuantity: { type: integer }
+        maxQuantity: { type: integer }
+        foodInfo: { $ref: '#/components/schemas/FoodInfoDto' }
+        available: { type: boolean }
+        unavailableReason:
+          allOf: [ { $ref: '#/components/schemas/StorefrontUnavailableReason' } ]
+          nullable: true
+    StorefrontCategoryDto:
+      type: object
+      required: [name, products]
+      properties:
+        id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        products:
+          type: array
+          items: { $ref: '#/components/schemas/StorefrontProductDto' }
+    WorkingHoursSummaryLineDto:
+      type: object
+      required: [dayLabel, text]
+      properties:
+        dayLabel: { type: string, example: 'пн–пт' }
+        text: { type: string, example: '09:00–21:00' }
+    StorefrontDto:
+      type: object
+      required: [slug, name, isAvailable, acceptingOrders, customerMode, allowCustomerCancel, categories, publicUrl,
+                 date, openState, workingHours, pickup, customerNotifications]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        publicUrl: { type: string }
+        logoUrl: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        cityName: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        isAvailable: { type: boolean }
+        acceptingOrders: { type: boolean }
+        notAcceptingReason: { type: string, nullable: true, description: Текст покупателю (§473.5). }
+        notAcceptingCode:
+          allOf: [ { $ref: '#/components/schemas/ShopNotAcceptingCode' } ]
+          nullable: true
+        customerMode: { $ref: '#/components/schemas/ShopCustomerMode' }
+        allowCustomerCancel: { type: boolean }
+        seller:
+          allOf: [ { $ref: '#/components/schemas/PublicSellerInfoDto' } ]
+          nullable: true
+        date: { type: string, format: date, description: 'Дата выдачи, для которой отдан ассортимент.' }
+        dateNotice: { type: string, nullable: true, description: 'Запрошенная дата недоступна — показан ассортимент на сегодня.' }
+        openState: { $ref: '#/components/schemas/ShopOpenStateDto' }
+        workingHours:
+          type: object
+          required: [lines]
+          properties:
+            lines:
+              type: array
+              items: { $ref: '#/components/schemas/WorkingHoursSummaryLineDto' }
+        pickup: { $ref: '#/components/schemas/PickupOptionsDto' }
+        customerNotifications:
+          type: object
+          required: [webPushOffered, messengerOffered]
+          properties:
+            webPushOffered: { type: boolean }
+            messengerOffered: { type: boolean, description: 'Показывать ли галочку «Присылать статус в MAX/WhatsApp» при оформлении.' }
+        categories:
+          type: array
+          description: 'Товары, не продающиеся в эту дату (меню/дни недели), не отдаются вовсе.'
+          items: { $ref: '#/components/schemas/StorefrontCategoryDto' }
+    CartLineInput:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 10000 }
+    QuoteInput:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CartLineInput' }
+        pickup:
+          allOf: [ { $ref: '#/components/schemas/PickupSelectionInput' } ]
+          nullable: true
+          description: Не передан — Asap.
+    OrderProblemDto:
+      type: object
+      required: [productId, name, reason, message]
+      properties:
+        productId: { type: string, format: uuid }
+        name: { type: string }
+        reason: { $ref: '#/components/schemas/OrderProblemReason' }
+        message: { type: string }
+        currentUnitPrice: { type: number, nullable: true }
+        availableQuantity: { type: integer, nullable: true }
+    QuoteLineDto:
+      type: object
+      required: [productId, name, unit, unitPrice, quantity, lineTotal, isApproximate]
+      properties:
+        productId: { type: string, format: uuid }
+        name: { type: string }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        unitPrice: { type: number }
+        portionText: { type: string, nullable: true }
+        quantity: { type: integer }
+        lineTotal: { type: number }
+        isApproximate: { type: boolean }
+        problem:
+          allOf: [ { $ref: '#/components/schemas/OrderProblemDto' } ]
+          nullable: true
+    QuoteDto:
+      type: object
+      required: [lines, total, isApproximate, hasProblems, acceptingOrders, pickupDate]
+      properties:
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/QuoteLineDto' }
+        total: { type: number }
+        isApproximate: { type: boolean }
+        hasProblems: { type: boolean, description: 'true при проблеме любой строки ИЛИ pickupProblem.' }
+        acceptingOrders: { type: boolean }
+        notAcceptingReason: { type: string, nullable: true }
+        pickupDate: { type: string, format: date, description: 'Дата, на которую проверена доступность.' }
+        pickupProblem:
+          allOf: [ { $ref: '#/components/schemas/PickupProblemDto' } ]
+          nullable: true
+    OrderLineInput:
+      type: object
+      required: [productId, quantity, expectedUnitPrice]
+      properties:
+        productId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 10000 }
+        expectedUnitPrice: { type: number }
+    CreateOrderInput:
+      type: object
+      required: [idempotencyKey, items, customerName]
+      properties:
+        idempotencyKey: { type: string, format: uuid }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/OrderLineInput' }
+        customerName: { type: string, minLength: 1, maxLength: 100 }
+        customerPhone: { type: string, nullable: true, maxLength: 30 }
+        comment: { type: string, nullable: true, maxLength: 500 }
+        captchaToken: { type: string, nullable: true }
+        pickup:
+          allOf: [ { $ref: '#/components/schemas/PickupSelectionInput' } ]
+          nullable: true
+          description: Не передан — Asap.
+        notifyByMessenger: { type: boolean, default: false, description: '[legal L9] Галочка «Присылать статус заказа в MAX/WhatsApp». Учитывается, только если магазин её предлагает.' }
+    OrderRefusalDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/OrderRefusalCode' }
+        message: { type: string }
+        notAcceptingCode:
+          allOf: [ { $ref: '#/components/schemas/ShopNotAcceptingCode' } ]
+          nullable: true
+          description: Только ShopNotAcceptingOrders.
+        problems:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/OrderProblemDto' }
+    CreateOrderResponse:
+      type: object
+      required: [order, orderUrl]
+      properties:
+        order: { $ref: '#/components/schemas/PublicOrderDto' }
+        orderUrl: { type: string }
+
+    # ─────────────────────────────── заказ у покупателя ───────────────────────────────
+    PublicOrderItemDto:
+      type: object
+      required: [name, unit, unitPrice, quantityOrdered, lineTotal, isApproximate]
+      properties:
+        name: { type: string }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        unitPrice: { type: number }
+        portionText: { type: string, nullable: true }
+        quantityOrdered: { type: integer }
+        quantityActual: { type: integer, nullable: true }
+        lineTotal: { type: number }
+        isApproximate: { type: boolean }
+    OrderTimelineStepDto:
+      type: object
+      required: [status, title, reached]
+      properties:
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        title: { type: string }
+        reached: { type: boolean }
+        reachedAtUtc: { type: string, format: date-time, nullable: true }
+    OrderChangeLineDto:
+      type: object
+      required: [name, text]
+      properties:
+        name: { type: string }
+        before: { type: string, nullable: true }
+        after: { type: string, nullable: true }
+        text: { type: string }
+    OrderShopChangeDto:
+      type: object
+      required: [occurredAtUtc, changes, totalBefore, totalAfter]
+      properties:
+        occurredAtUtc: { type: string, format: date-time }
+        comment: { type: string, nullable: true }
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/OrderChangeLineDto' }
+        totalBefore: { type: number }
+        totalAfter: { type: number }
+    OrderShopInfoDto:
+      type: object
+      required: [name, slug, publicUrl]
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        publicUrl: { type: string }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        cityName: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+    OrderWebPushInfoDto:
+      type: object
+      required: [available]
+      properties:
+        available: { type: boolean, description: 'false — магазин выключил web-push, push выключен на платформе или заказ завершён.' }
+        publicKey: { type: string, nullable: true, description: 'VAPID public key — единственный анонимный путь ключа в браузер.' }
+        unavailableText: { type: string, nullable: true }
+    OrderCustomerNotificationsDto:
+      type: object
+      required: [webPush, messengerRequested]
+      properties:
+        webPush: { $ref: '#/components/schemas/OrderWebPushInfoDto' }
+        messengerRequested: { type: boolean }
+    PublicOrderDto:
+      type: object
+      required: [token, number, businessDate, createdAtUtc, status, statusText, timeline, items, total, totalIsApproximate,
+                 customerName, customerPhoneMasked, shop, canCancel, shopChanges, version, isGuest, pickup, notifications]
+      properties:
+        token: { type: string }
+        number: { type: integer, description: 'Номер в пределах дня выдачи (pickup.date).' }
+        businessDate: { type: string, format: date, description: 'День СОЗДАНИЯ заказа по поясу магазина.' }
+        createdAtUtc: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        statusText: { type: string }
+        timeline:
+          type: array
+          items: { $ref: '#/components/schemas/OrderTimelineStepDto' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicOrderItemDto' }
+        total: { type: number }
+        totalIsApproximate: { type: boolean }
+        comment: { type: string, nullable: true }
+        customerName: { type: string, nullable: true }
+        customerPhoneMasked: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        canCancel: { type: boolean }
+        shop: { $ref: '#/components/schemas/OrderShopInfoDto' }
+        shopChanges:
+          type: array
+          items: { $ref: '#/components/schemas/OrderShopChangeDto' }
+        version: { type: integer }
+        isGuest: { type: boolean }
+        pickup: { $ref: '#/components/schemas/OrderPickupDto' }
+        notifications: { $ref: '#/components/schemas/OrderCustomerNotificationsDto' }
+    MyOrderSummaryDto:
+      type: object
+      required: [orderUrl, token, number, businessDate, shopName, status, statusText, total, totalIsApproximate, createdAtUtc, isActive, pickup]
+      properties:
+        orderUrl: { type: string }
+        token: { type: string }
+        number: { type: integer }
+        businessDate: { type: string, format: date }
+        shopName: { type: string }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        statusText: { type: string }
+        total: { type: number }
+        totalIsApproximate: { type: boolean }
+        createdAtUtc: { type: string, format: date-time }
+        isActive: { type: boolean }
+        pickup: { $ref: '#/components/schemas/OrderPickupDto' }
+    PushKeysInput:
+      type: object
+      required: [p256dh, auth]
+      properties:
+        p256dh: { type: string, maxLength: 200 }
+        auth: { type: string, maxLength: 100 }
+    OrderPushSubscribeInput:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string, maxLength: 500 }
+        keys: { $ref: '#/components/schemas/PushKeysInput' }
+        deviceLabel: { type: string, nullable: true, maxLength: 100 }
+    OrderPushUnsubscribeInput:
+      type: object
+      required: [endpoint]
+      properties:
+        endpoint: { type: string, maxLength: 500 }
+    OrderPushStateDto:
+      type: object
+      required: [subscribed, subscriptionCount]
+      properties:
+        subscribed: { type: boolean }
+        subscriptionCount: { type: integer, minimum: 0, maximum: 5 }
+
+    # ─────────────────────────────── заказ у персонала ───────────────────────────────
+    StaffOrderItemDto:
+      type: object
+      required: [id, name, unit, unitPrice, quantityOrdered, lineTotal, isApproximate]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        unitPrice: { type: number }
+        portionText: { type: string, nullable: true }
+        weightStepGrams: { type: integer, nullable: true }
+        quantityOrdered: { type: integer }
+        quantityActual: { type: integer, nullable: true }
+        lineTotal: { type: number }
+        isApproximate: { type: boolean }
+    OrderMessengerStatusDto:
+      type: object
+      required: [requested]
+      properties:
+        requested: { type: boolean, description: 'Покупатель выбрал мессенджер.' }
+        status:
+          allOf: [ { $ref: '#/components/schemas/NotificationStatus' } ]
+          nullable: true
+        statusText: { type: string, nullable: true, example: 'доставлено' }
+        attemptedAtUtc: { type: string, format: date-time, nullable: true }
+    StaffOrderCardDto:
+      type: object
+      required: [id, number, businessDate, createdAtUtc, status, statusText, customerKind, items, total, totalIsApproximate,
+                 isModified, hasWeightItems, version, availableActions, pickup, notifyByMessenger]
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: integer }
+        businessDate: { type: string, format: date }
+        createdAtUtc: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        statusText: { type: string }
+        customerName: { type: string, nullable: true }
+        customerPhone: { type: string, nullable: true }
+        customerKind: { $ref: '#/components/schemas/OrderActorKind' }
+        customerPhoneVerified: { type: boolean }
+        comment: { type: string, nullable: true }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StaffOrderItemDto' }
+        total: { type: number }
+        totalIsApproximate: { type: boolean }
+        isModified: { type: boolean }
+        hasWeightItems: { type: boolean }
+        reason: { type: string, nullable: true }
+        completedAtUtc: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+        availableActions:
+          type: array
+          items: { $ref: '#/components/schemas/OrderAction' }
+        pickup: { $ref: '#/components/schemas/OrderPickupDto' }
+        notifyByMessenger: { type: boolean }
+        messenger:
+          allOf: [ { $ref: '#/components/schemas/OrderMessengerStatusDto' } ]
+          nullable: true
+          description: P1 (US-24-23) — статус последнего сообщения покупателю в мессенджер.
+    OrderEventDto:
+      type: object
+      required: [kind, occurredAtUtc, actorKind, text]
+      properties:
+        kind: { $ref: '#/components/schemas/OrderEventKind' }
+        occurredAtUtc: { type: string, format: date-time }
+        actorKind: { $ref: '#/components/schemas/OrderActorKind' }
+        actorName: { type: string, nullable: true }
+        fromStatus:
+          allOf: [ { $ref: '#/components/schemas/OrderStatus' } ]
+          nullable: true
+        toStatus:
+          allOf: [ { $ref: '#/components/schemas/OrderStatus' } ]
+          nullable: true
+        reason: { type: string, nullable: true }
+        comment: { type: string, nullable: true }
+        changes:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/OrderChangeLineDto' }
+        totalBefore: { type: number, nullable: true }
+        totalAfter: { type: number, nullable: true }
+        text: { type: string }
+    StaffOrderDto:
+      allOf:
+        - $ref: '#/components/schemas/StaffOrderCardDto'
+        - type: object
+          required: [events]
+          properties:
+            events:
+              type: array
+              items: { $ref: '#/components/schemas/OrderEventDto' }
+    PreorderGroupDto:
+      type: object
+      required: [date, label, orders]
+      properties:
+        date: { type: string, format: date }
+        label: { type: string, example: 'пт 2 окт' }
+        orders:
+          type: array
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+    OrderBoardDto:
+      type: object
+      required: [revision, changed, businessDate, serverTimeUtc, acceptance]
+      properties:
+        revision: { type: integer, format: int64 }
+        changed: { type: boolean }
+        businessDate: { type: string, format: date }
+        serverTimeUtc: { type: string, format: date-time }
+        acceptance: { $ref: '#/components/schemas/ShopAcceptanceDto' }
+        newOrders:
+          type: array
+          nullable: true
+          description: Все New, включая предзаказы (у них pickup.isPreorder = true).
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+        accepted:
+          type: array
+          nullable: true
+          description: Accepted с pickup.date ≤ сегодня.
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+        ready:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+        preorders:
+          type: array
+          nullable: true
+          description: Accepted с pickup.date > сегодня, группы по датам по возрастанию.
+          items: { $ref: '#/components/schemas/PreorderGroupDto' }
+        completedToday:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+    ChangePickupInput:
+      type: object
+      required: [expectedVersion, pickup]
+      properties:
+        expectedVersion: { type: integer }
+        pickup: { $ref: '#/components/schemas/PickupSelectionInput' }
+        comment: { type: string, nullable: true, maxLength: 500 }
+    OrderConflictDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/OrderConflictCode' }
+        message: { type: string }
+        order:
+          allOf: [ { $ref: '#/components/schemas/StaffOrderDto' } ]
+          nullable: true
+        publicOrder:
+          allOf: [ { $ref: '#/components/schemas/PublicOrderDto' } ]
+          nullable: true
+        problems:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/OrderProblemDto' }
+
+    # ─────────────────────────────── push (существующие маршруты, добавочные поля) ───────────────────────────────
+    PushSubscribeInputCycle24:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint: { type: string, maxLength: 500 }
+        keys: { $ref: '#/components/schemas/PushKeysInput' }
+        deviceLabel: { type: string, nullable: true, maxLength: 100 }
+        site:
+          allOf: [ { $ref: '#/components/schemas/CompanyKind' } ]
+          nullable: true
+          description: Не передан — Services (ezbook).
+    PushSubscriptionDto:
+      type: object
+      required: [id, deviceLabel, createdAtUtc, isCurrent]
+      properties:
+        id: { type: string, format: uuid }
+        deviceLabel: { type: string }
+        createdAtUtc: { type: string, format: date-time }
+        lastSuccessAtUtc: { type: string, format: date-time, nullable: true }
+        isCurrent: { type: boolean }
+    PushSubscriptionListDto:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PushSubscriptionDto' }
+    PushConfigCompanyDto:
+      type: object
+      additionalProperties: true
+      required: [companyId, companyName, staffPushEnabled]
+      properties:
+        companyId: { type: string, format: uuid }
+        companyName: { type: string }
+        staffPushEnabled: { type: boolean }
+    PushConfigDtoCycle24:
+      type: object
+      additionalProperties: true
+      required: [enabled, maxSubscriptionsPerUser, companies, site]
+      properties:
+        enabled: { type: boolean }
+        publicKey: { type: string, nullable: true }
+        maxSubscriptionsPerUser: { type: integer }
+        companies:
+          type: array
+          description: Только компании типа site, где вызывающий — участник.
+          items: { $ref: '#/components/schemas/PushConfigCompanyDto' }
+        site: { $ref: '#/components/schemas/CompanyKind' }
+
+    # ─────────────────────────────── биллинг ───────────────────────────────
+    OrdersUsageDto:
+      type: object
+      required: [ordersThisMonth, monthLabel, warningLevel, allowOrders]
+      properties:
+        ordersThisMonth: { type: integer, minimum: 0 }
+        ordersLimit: { type: integer, nullable: true }
+        monthLabel: { type: string }
+        text: { type: string, nullable: true, example: 'Заказов в этом месяце: 120 из 150' }
+        warningLevel: { $ref: '#/components/schemas/OrderLimitWarningLevel' }
+        productsPerShopLimit: { type: integer, nullable: true }
+        allowOrders: { type: boolean }
+    AvailablePlanDto:
+      type: object
+      required: [planId, name, pricePerMonth, limitsText]
+      properties:
+        planId: { type: string, format: uuid }
+        name: { type: string }
+        pricePerMonth: { type: number }
+        description: { type: string, nullable: true }
+        highlights:
+          type: array
+          items: { type: string }
+        limitsText: { type: string, example: 'до 3 магазинов · до 10 участников · до 1000 товаров · заказы без ограничения' }
+    OwnerSubscriptionDtoCycle24:
+      type: object
+      additionalProperties: true
+      description: 'Существующий OwnerSubscriptionDto (цикл 7/18) + поля цикла 24. Для line = Services orders/availablePlans = null.'
+      required: [line, status, statusText, plan, options, totalMonthlyPrice, usage]
+      properties:
+        line: { $ref: '#/components/schemas/CompanyKind' }
+        status: { type: string }
+        statusText: { type: string }
+        plan: { type: object, additionalProperties: true }
+        options:
+          type: array
+          items: { type: object, additionalProperties: true }
+        totalMonthlyPrice: { type: number }
+        usage: { type: object, additionalProperties: true }
+        orders:
+          allOf: [ { $ref: '#/components/schemas/OrdersUsageDto' } ]
+          nullable: true
+        availablePlans:
+          type: array
+          nullable: true
+          description: '[legal L14] Только для line = Orders; видны только вошедшему владельцу аккаунта.'
+          items: { $ref: '#/components/schemas/AvailablePlanDto' }
+    SubscriptionRequestInputCycle24:
+      type: object
+      properties:
+        planId: { type: string, format: uuid, nullable: true }
+        options:
+          type: array
+          nullable: true
+          items:
+            type: object
+            required: [optionId, quantity]
+            properties:
+              optionId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 0 }
+        comment: { type: string, nullable: true, maxLength: 1000 }
+        line:
+          allOf: [ { $ref: '#/components/schemas/CompanyKind' } ]
+          nullable: true
+          description: Не передана — Services.
+    SubscriptionRequestDtoCycle24:
+      type: object
+      additionalProperties: true
+      required: [line]
+      properties:
+        line: { $ref: '#/components/schemas/CompanyKind' }
+
+    # ─────────────────────────────── админка ───────────────────────────────
+    AdminPlanInputCycle24:
+      type: object
+      additionalProperties: true
+      description: 'Существующий AdminPlanInput + поля цикла 24.'
+      required: [name, pricePerMonth]
+      properties:
+        name: { type: string }
+        pricePerMonth: { type: number, minimum: 0 }
+        maxEmployees: { type: integer, nullable: true, description: 'Для Orders — «Макс. участников» (включая владельца).' }
+        maxCompanies: { type: integer, nullable: true, description: 'Для Orders — «Макс. магазинов».' }
+        line:
+          allOf: [ { $ref: '#/components/schemas/CompanyKind' } ]
+          nullable: true
+          description: 'Задаётся при создании (по умолчанию Services); смена при PUT → 409.'
+        maxProductsPerShop: { type: integer, nullable: true, minimum: 1 }
+        maxOrdersPerMonth: { type: integer, nullable: true, minimum: 1, description: 'null — без ограничения.' }
+        allowOrders: { type: boolean, nullable: true, description: 'Не передан — true.' }
+    AdminPlanDtoCycle24:
+      type: object
+      additionalProperties: true
+      required: [id, name, line, allowOrders]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        line: { $ref: '#/components/schemas/CompanyKind' }
+        maxProductsPerShop: { type: integer, nullable: true }
+        maxOrdersPerMonth: { type: integer, nullable: true }
+        allowOrders: { type: boolean }
+    AdminPlansListDtoCycle24:
+      type: object
+      additionalProperties: true
+      description: Существующий AdminPlansListDto — поле plans.
+      required: [plans]
+      properties:
+        plans:
+          type: array
+          items: { $ref: '#/components/schemas/AdminPlanDtoCycle24' }
+    AssignSubscriptionInputCycle24:
+      type: object
+      additionalProperties: true
+      description: 'Существующий AssignSubscriptionInput (циклы 7/18/20) + line.'
+      required: [isActive]
+      properties:
+        planId: { type: string, format: uuid, nullable: true }
+        isActive: { type: boolean }
+        paidUntil: { type: string, format: date, nullable: true }
+        line:
+          allOf: [ { $ref: '#/components/schemas/CompanyKind' } ]
+          nullable: true
+          description: Не передана — Services (подписка «Записей», как было).
+    AdminOrdersSubscriptionDto:
+      type: object
+      required: [planName, isActive, isFreeTier, shopsUsed, seatsUsed, ordersThisMonth]
+      properties:
+        planId: { type: string, format: uuid, nullable: true }
+        planName: { type: string }
+        paidUntil: { type: string, format: date-time, nullable: true }
+        isActive: { type: boolean }
+        isFreeTier: { type: boolean }
+        shopsUsed: { type: integer }
+        shopsLimit: { type: integer, nullable: true }
+        seatsUsed: { type: integer }
+        seatsLimit: { type: integer, nullable: true }
+        ordersThisMonth: { type: integer }
+        ordersLimit: { type: integer, nullable: true }
+    AdminBillingAccountDtoCycle24:
+      type: object
+      additionalProperties: true
+      required: [ordersSubscription]
+      properties:
+        ordersSubscription: { $ref: '#/components/schemas/AdminOrdersSubscriptionDto' }
+    AdminSubscriptionRequestPageCycle24:
+      type: object
+      additionalProperties: true
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [line]
+            properties:
+              line: { $ref: '#/components/schemas/CompanyKind' }
+    AssignChannelCompanyInput:
+      type: object
+      additionalProperties: true
+      required: [companyId]
+      properties:
+        companyId: { type: string, format: uuid, description: 'Салон или (с цикла 24) магазин аккаунта.' }
+        warningAcknowledged: { type: boolean, default: false }
+
+paths:
+  # ═══════════════════════════════ shop-schedule ═══════════════════════════════
+  /api/shops/{shopId}:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-schedule]
+      operationId: getShopCycle24
+      summary: Магазин для кабинета — с временем получения, приёмом, статусом, чек-листом и лимитами
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: ShopManageDto цикла 24.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/working-hours:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-schedule]
+      operationId: getWorkingHours
+      summary: Часы работы по дням недели
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Семь дней от понедельника.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkingHoursDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [shop-schedule]
+      operationId: putWorkingHours
+      summary: Задать часы работы (владелец) — полная замена недели
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkingHoursInput' }
+      responses:
+        '200':
+          description: Сохранено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkingHoursDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/special-days:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-schedule]
+      operationId: listSpecialDays
+      summary: Особые дни в диапазоне (P1) — по умолчанию сегодня … +90 дней
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - $ref: '#/components/parameters/FromQuery'
+        - $ref: '#/components/parameters/ToQuery'
+      responses:
+        '200':
+          description: Особые дни по возрастанию даты.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SpecialDayDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/special-days/{date}:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/DatePath'
+    put:
+      tags: [shop-schedule]
+      operationId: putSpecialDay
+      summary: Задать особый день (владелец, P1) — выходной или свои интервалы
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SpecialDayInput' }
+      responses:
+        '200':
+          description: Сохранено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpecialDayDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+    delete:
+      tags: [shop-schedule]
+      operationId: deleteSpecialDay
+      summary: Убрать особый день (владелец, P1) — дата возвращается к недельному расписанию
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/pickup-settings:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    put:
+      tags: [shop-schedule]
+      operationId: putPickupSettings
+      summary: Варианты времени получения (владелец) — действуют на новые заказы
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PickupSettingsInput' }
+      responses:
+        '200':
+          description: Обновлённый магазин.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/acceptance:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    put:
+      tags: [shop-schedule]
+      operationId: putAcceptance
+      summary: Принимаем / пауза / не принимаем (владелец и сотрудник)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptanceInput' }
+      responses:
+        '200':
+          description: Новое состояние приёма.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopAcceptanceDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/ordering-status:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-schedule]
+      operationId: getOrderingStatus
+      summary: Лёгкий статус приёма для экрана заказов (опрос раз в 60 с)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Итог правила приёма, открыт/закрыт, пауза, лимит месяца.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopOrderingStatusDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/shops/{shopId}/pickup-slots:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-schedule]
+      operationId: getStaffPickupSlots
+      summary: Слоты на дату для персонала (без времени приготовления и паузы) — для смены времени заказа
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - $ref: '#/components/parameters/DateQueryRequired'
+      responses:
+        '200':
+          description: Слоты рабочего дня, чей конец позже «сейчас».
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PickupSlotsDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═══════════════════════════════ shop-notifications ═══════════════════════════════
+  /api/shops/{shopId}/notification-settings:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-notifications]
+      operationId: getShopNotificationSettings
+      summary: Уведомления магазина — push сотрудникам, web-push и мессенджер покупателям, каналы магазина
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Настройки и состояние каналов.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopNotificationSettingsDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [shop-notifications]
+      operationId: putShopNotificationSettings
+      summary: Изменить уведомления магазина (владелец)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShopNotificationSettingsInput' }
+      responses:
+        '200':
+          description: Сохранено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopNotificationSettingsDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ═══════════════════════════════ shop-availability ═══════════════════════════════
+  /api/shops/{shopId}/products:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-availability]
+      operationId: listProductsCycle24
+      summary: Товары магазина — с днями недели и отметкой «закончилось» со сроком
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Все неудалённые товары.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProductDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [shop-availability]
+      operationId: createProductCycle24
+      summary: Создать товар (владелец) — лимит тарифа, дни недели
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '201':
+          description: Создан.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/products/{productId}:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/ProductId'
+    put:
+      tags: [shop-availability]
+      operationId: updateProductCycle24
+      summary: Изменить товар (владелец) — полная замена, availableWeekdays не передан = все дни
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '200':
+          description: Сохранено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/products/{productId}/sold-out:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/ProductId'
+    put:
+      tags: [shop-availability]
+      operationId: setSoldOutCycle24
+      summary: «Закончилось» на сегодня или до отмены (владелец и сотрудник)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SoldOutInput' }
+      responses:
+        '200':
+          description: Товар с новой отметкой.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/categories/{categoryId}/weekdays:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/CategoryId'
+    put:
+      tags: [shop-availability]
+      operationId: setCategoryWeekdays
+      summary: Применить дни недели ко всем товарам категории (владелец, P1)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryWeekdaysInput' }
+      responses:
+        '200':
+          description: Товары категории после изменения.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/daily-menus:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shop-availability]
+      operationId: getDailyMenuCalendar
+      summary: Календарь меню на даты (сегодня … сегодня + max(предзаказ, 7))
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - $ref: '#/components/parameters/FromQuery'
+        - $ref: '#/components/parameters/ToQuery'
+      responses:
+        '200':
+          description: Даты с признаком «есть меню».
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyMenuCalendarDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/daily-menus/{date}:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/DatePath'
+    get:
+      tags: [shop-availability]
+      operationId: getDailyMenu
+      summary: Меню на дату — существующее или предзаполненное по дням недели
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Состав меню (exists = false — предзаполнение).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyMenuDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [shop-availability]
+      operationId: putDailyMenu
+      summary: Сохранить меню на дату — полный список товаров (владелец и сотрудник)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DailyMenuInput' }
+      responses:
+        '200':
+          description: Сохранено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyMenuDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [shop-availability]
+      operationId: deleteDailyMenu
+      summary: Удалить меню на дату — дата возвращается к правилу дней недели
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/daily-menus/{date}/copy:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/DatePath'
+    post:
+      tags: [shop-availability]
+      operationId: copyDailyMenu
+      summary: Скопировать меню с другой даты (P1)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DailyMenuCopyInput' }
+      responses:
+        '200':
+          description: Меню целевой даты после копирования.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyMenuDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═══════════════════════════════ orders-staff ═══════════════════════════════
+  /api/shops/{shopId}/order-board:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [orders-staff]
+      operationId: getOrderBoardCycle24
+      summary: Экран заказов — колонки по времени получения, «Предзаказы», состояние приёма в каждом ответе
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: sinceRevision
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+        - name: businessDate
+          in: query
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Доска или «без изменений» (acceptance есть всегда).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderBoardDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/shops/{shopId}/orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [orders-staff]
+      operationId: getStaffOrderCycle24
+      summary: Карточка заказа с временем получения, статусом мессенджера и журналом
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Заказ и журнал.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/orders/{orderId}/pickup:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    put:
+      tags: [orders-staff]
+      operationId: changeOrderPickup
+      summary: Изменить время получения по просьбе покупателя (P1, статусы New/Accepted)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePickupInput' }
+      responses:
+        '200':
+          description: Заказ с новым временем (и, при смене даты, новым номером).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+
+  # ═══════════════════════════════ storefront ═══════════════════════════════
+  /api/storefront/{slug}:
+    parameters: [ { $ref: '#/components/parameters/Slug' } ]
+    get:
+      tags: [storefront]
+      operationId: getStorefrontCycle24
+      summary: Страница магазина на дату выдачи — ассортимент дня, часы, выбор времени
+      security: []
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: 'Дата выдачи; не передана — сегодня. Недоступная дата → ассортимент на сегодня + dateNotice.'
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Магазин и ассортимент на дату.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorefrontDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/storefront/{slug}/pickup-slots:
+    parameters: [ { $ref: '#/components/parameters/Slug' } ]
+    get:
+      tags: [storefront]
+      operationId: getPickupSlots
+      summary: Слоты получения на дату (и «как можно скорее» для текущего рабочего дня)
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/DateQueryRequired'
+      responses:
+        '200':
+          description: Слоты; пустые — с reasonText.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PickupSlotsDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/storefront/{slug}/quote:
+    parameters: [ { $ref: '#/components/parameters/Slug' } ]
+    post:
+      tags: [storefront]
+      operationId: quoteCartCycle24
+      summary: Проверить корзину на дату выдачи и время получения
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteInput' }
+      responses:
+        '200':
+          description: Построчный расчёт; проблемы строк и времени.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/storefront/{slug}/orders:
+    parameters: [ { $ref: '#/components/parameters/Slug' } ]
+    post:
+      tags: [storefront]
+      operationId: createOrderCycle24
+      summary: Оформить заказ со временем получения и выбором мессенджера
+      security: [ {}, { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderInput' }
+      responses:
+        '201':
+          description: Заказ создан.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateOrderResponse' }
+        '200':
+          description: Повтор с тем же idempotencyKey — ранее созданный заказ (проверяется раньше правила приёма).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateOrderResponse' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Заказ не создан — код, текст, причина неприёма/проблемные позиции.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderRefusalDto' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ═══════════════════════════════ orders-public ═══════════════════════════════
+  /api/orders/public/{token}:
+    parameters: [ { $ref: '#/components/parameters/OrderToken' } ]
+    get:
+      tags: [orders-public]
+      operationId: getPublicOrderCycle24
+      summary: Заказ по ссылке — с временем получения и уведомлениями
+      security: []
+      responses:
+        '200':
+          description: Заказ глазами покупателя.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicOrderDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/orders/public/{token}/cancel:
+    parameters: [ { $ref: '#/components/parameters/OrderToken' } ]
+    post:
+      tags: [orders-public]
+      operationId: cancelPublicOrderCycle24
+      summary: Отменить заказ покупателем (форма ответа — PublicOrderDto цикла 24)
+      security: []
+      responses:
+        '200':
+          description: Заказ в статусе CancelledByCustomer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicOrderDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/orders/public/{token}/push-subscription:
+    parameters: [ { $ref: '#/components/parameters/OrderToken' } ]
+    post:
+      tags: [orders-public]
+      operationId: subscribeOrderPush
+      summary: Уведомлять о статусе этого заказа в этом браузере (web-push без аккаунта)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderPushSubscribeInput' }
+      responses:
+        '201':
+          description: Подписка создана.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderPushStateDto' }
+        '200':
+          description: Тот же endpoint уже подписан — ключи обновлены.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderPushStateDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/orders/public/{token}/push-subscription/remove:
+    parameters: [ { $ref: '#/components/parameters/OrderToken' } ]
+    post:
+      tags: [orders-public]
+      operationId: unsubscribeOrderPush
+      summary: Отключить уведомления о заказе в этом браузере (идемпотентно; браузерную подписку не отзывать)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderPushUnsubscribeInput' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/orders/my:
+    get:
+      tags: [orders-public]
+      operationId: listMyOrdersCycle24
+      summary: Мои заказы — с временем получения
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Список, активные сверху.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MyOrderSummaryDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ═══════════════════════════════ push ═══════════════════════════════
+  /api/push/config:
+    get:
+      tags: [push]
+      operationId: getPushConfigCycle24
+      summary: Конфигурация push для сайта (ezbook по умолчанию, goods — site=Orders)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - $ref: '#/components/parameters/SiteQuery'
+      responses:
+        '200':
+          description: Включён ли push, публичный ключ, компании сайта.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushConfigDtoCycle24' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/push/subscriptions:
+    get:
+      tags: [push]
+      operationId: listPushSubscriptionsCycle24
+      summary: Мои устройства на сайте (по умолчанию ezbook)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: currentEndpoint
+          in: query
+          required: false
+          schema: { type: string, maxLength: 500 }
+        - $ref: '#/components/parameters/SiteQuery'
+      responses:
+        '200':
+          description: Устройства вызывающего на этом сайте.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushSubscriptionListDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [push]
+      operationId: createPushSubscriptionCycle24
+      summary: Подписать это устройство (site в теле; потолок — внутри пользователя и сайта)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushSubscribeInputCycle24' }
+      responses:
+        '201':
+          description: Создана.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushSubscriptionDto' }
+        '200':
+          description: Обновлена (тот же endpoint).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushSubscriptionDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ═══════════════════════════════ channels ═══════════════════════════════
+  /api/notification-channels/{id}/companies:
+    parameters: [ { $ref: '#/components/parameters/ChannelId' } ]
+    post:
+      tags: [channels]
+      operationId: assignChannelCompanyCycle24
+      summary: Назначить номер компании аккаунта — с цикла 24 и магазину
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignChannelCompanyInput' }
+      responses:
+        '201':
+          description: Назначено (ChannelDto существующей формы).
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ═══════════════════════════════ billing ═══════════════════════════════
+  /api/billing/subscription:
+    get:
+      tags: [billing]
+      operationId: getOwnerSubscriptionCycle24
+      summary: Моя подписка по линейке («Записи» по умолчанию, «Заказы» — line=Orders)
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - $ref: '#/components/parameters/LineQuery'
+      responses:
+        '200':
+          description: Подписка линейки.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OwnerSubscriptionDtoCycle24' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/billing/subscription/request:
+    post:
+      tags: [billing]
+      operationId: submitSubscriptionRequestCycle24
+      summary: Заявка на смену тарифа линейки (на аккаунт — одна заявка)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionRequestInputCycle24' }
+      responses:
+        '200':
+          description: Заявка сохранена.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubscriptionRequestDtoCycle24' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+
+  # ═══════════════════════════════ admin ═══════════════════════════════
+  /api/admin/plans:
+    get:
+      tags: [admin]
+      operationId: getAdminPlansCycle24
+      summary: Тарифы обеих линеек
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Список тарифов (line у каждого).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPlansListDtoCycle24' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [admin]
+      operationId: createAdminPlanCycle24
+      summary: Создать тариф линейки
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPlanInputCycle24' }
+      responses:
+        '201':
+          description: Создан.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPlanDtoCycle24' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+  /api/admin/plans/{id}:
+    parameters: [ { $ref: '#/components/parameters/PlanId' } ]
+    put:
+      tags: [admin]
+      operationId: updateAdminPlanCycle24
+      summary: Изменить тариф (линейку менять нельзя)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminPlanInputCycle24' }
+      responses:
+        '200':
+          description: Сохранено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPlanDtoCycle24' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+  /api/admin/billing-accounts/{accountId}:
+    parameters: [ { $ref: '#/components/parameters/AccountId' } ]
+    get:
+      tags: [admin]
+      operationId: getAdminBillingAccountCycle24
+      summary: Карточка аккаунта — с подпиской «Заказов»
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Существующая карточка + ordersSubscription.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBillingAccountDtoCycle24' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/billing-accounts/{accountId}/subscription:
+    parameters: [ { $ref: '#/components/parameters/AccountId' } ]
+    put:
+      tags: [admin]
+      operationId: assignSubscriptionCycle24
+      summary: Назначить подписку линейки аккаунту (line = Orders — подписка «Заказов»)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignSubscriptionInputCycle24' }
+      responses:
+        '200':
+          description: Назначено (карточка аккаунта).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBillingAccountDtoCycle24' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/PlainTextConflict' }
+  /api/admin/subscription-requests:
+    get:
+      tags: [admin]
+      operationId: getSubscriptionRequestsCycle24
+      summary: Заявки владельцев — с линейкой
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+        - name: pageSize
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Страница заявок.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminSubscriptionRequestPageCycle24' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }

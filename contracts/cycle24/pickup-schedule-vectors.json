@@ -1,0 +1,239 @@
+{
+  "_comment": "Эталонные векторы времени магазина цикла 24 (ARCHITECTURE_CYCLE24.md §449–§450, API_CONTRACT_CYCLE24.md §473–§477). Читает юнит-тест бэкенда PickupScheduleVectorsTests (как order-money-vectors.json цикла 23): для каждого случая строит ShopScheduleSnapshot + PickupSettings + вход ShopOrderingGate и сверяет ВСЕ поля expect. Фронт слоты не считает — этот файл ему не нужен. Правка правила = правка этого файла в том же коммите.",
+  "_conventions": {
+    "time": "workingHours/specialDays — локальное время магазина \"HH:mm\"; end ≤ start — интервал через полночь, относится ко дню начала. Моменты — UTC.",
+    "weekdays": "Ключи workingHours — DayOfWeek (Monday…Sunday); нет ключа — выходной; workingHours = null — часы не заданы.",
+    "calendar": "2026-09-30 — среда. Europe/Moscow = UTC+3, перехода на летнее время нет.",
+    "defaults": "Не указанные в случае поля берутся из defaults.",
+    "slots": "expect.slots[date]: count — число слотов покупателя (start ≥ now + minPrep, слот целиком в интервале, сетка от начала интервала с шагом slotStepMinutes); first/last — [startUtc, endUtc].",
+    "dates": "expect.dates — даты, предлагаемые покупателю (PickupOptionsDto.dates): при scheduledEnabled = false — пустой список; выходные и закрытые особые дни не входят; идущий «хвост» интервала через полночь делает его рабочий день первой датой.",
+    "pauseEndOfDayUtc": "Результат PickupSchedule.PauseEndOfDay(now): конец последнего интервала текущего рабочего дня, если он ещё впереди (в том числе в перерыве и в «хвосте» через полночь); иначе — ближайшая локальная полночь."
+  },
+  "defaults": {
+    "timeZoneId": "Europe/Moscow",
+    "companyIsActive": true,
+    "settings": { "asapEnabled": true, "scheduledEnabled": true, "slotStepMinutes": 15, "preorderDays": 1, "minPrepMinutes": 15 },
+    "workingHours": {
+      "Monday": [["09:00", "21:00"]], "Tuesday": [["09:00", "21:00"]], "Wednesday": [["09:00", "21:00"]],
+      "Thursday": [["09:00", "21:00"]], "Friday": [["09:00", "21:00"]]
+    },
+    "specialDays": {},
+    "acceptance": { "stopped": false, "pausedUntilUtc": null },
+    "plan": { "allowOrders": true, "maxOrdersPerMonth": null },
+    "ordersThisMonth": 0
+  },
+  "cases": [
+    {
+      "id": "V01-open-asap-and-slots",
+      "nowUtc": "2026-09-30T07:00:00Z",
+      "expect": {
+        "accepting": true, "notAcceptingCode": null, "customerText": null,
+        "openState": { "isOpen": true, "text": "Открыто до 21:00" },
+        "asap": { "available": true, "readyAtUtc": "2026-09-30T07:15:00Z", "pickupDate": "2026-09-30", "text": "≈ к 10:15" },
+        "dates": ["2026-09-30", "2026-10-01"],
+        "slots": {
+          "2026-09-30": { "count": 43, "first": ["2026-09-30T07:15:00Z", "2026-09-30T07:30:00Z"], "last": ["2026-09-30T17:45:00Z", "2026-09-30T18:00:00Z"] },
+          "2026-10-01": { "count": 48, "first": ["2026-10-01T06:00:00Z", "2026-10-01T06:15:00Z"], "last": ["2026-10-01T17:45:00Z", "2026-10-01T18:00:00Z"] }
+        },
+        "pauseEndOfDayUtc": "2026-09-30T18:00:00Z"
+      }
+    },
+    {
+      "id": "V02-prep-past-closing-tomorrow-available",
+      "nowUtc": "2026-09-30T17:50:00Z",
+      "expect": {
+        "accepting": true, "notAcceptingCode": null,
+        "openState": { "isOpen": true, "text": "Открыто до 21:00" },
+        "asap": { "available": false, "text": "Сегодня уже не успеем приготовить заказ" },
+        "dates": ["2026-09-30", "2026-10-01"],
+        "datesWithoutSlots": { "2026-09-30": "Сегодня уже не успеем приготовить — выберите другой день" },
+        "slots": {
+          "2026-09-30": { "count": 0 },
+          "2026-10-01": { "count": 48, "first": ["2026-10-01T06:00:00Z", "2026-10-01T06:15:00Z"] }
+        }
+      }
+    },
+    {
+      "id": "V03-overnight-interval-belongs-to-start-day",
+      "nowUtc": "2026-10-02T22:00:00Z",
+      "settings": { "asapEnabled": true, "scheduledEnabled": true, "slotStepMinutes": 15, "preorderDays": 0, "minPrepMinutes": 15 },
+      "workingHours": {
+        "Monday": [["09:00", "21:00"]], "Tuesday": [["09:00", "21:00"]], "Wednesday": [["09:00", "21:00"]],
+        "Thursday": [["09:00", "21:00"]], "Friday": [["18:00", "03:00"]]
+      },
+      "expect": {
+        "accepting": true, "notAcceptingCode": null,
+        "openState": { "isOpen": true, "text": "Открыто до 3:00" },
+        "asap": { "available": true, "readyAtUtc": "2026-10-02T22:15:00Z", "pickupDate": "2026-10-02", "text": "≈ к 1:15" },
+        "dates": ["2026-10-02"],
+        "slots": {
+          "2026-10-02": { "count": 7, "first": ["2026-10-02T22:15:00Z", "2026-10-02T22:30:00Z"], "last": ["2026-10-02T23:45:00Z", "2026-10-03T00:00:00Z"] }
+        },
+        "pauseEndOfDayUtc": "2026-10-03T00:00:00Z"
+      }
+    },
+    {
+      "id": "V04-paused-until-13-30",
+      "nowUtc": "2026-09-30T09:00:00Z",
+      "acceptance": { "stopped": false, "pausedUntilUtc": "2026-09-30T10:30:00Z" },
+      "expect": {
+        "accepting": false, "notAcceptingCode": "Paused",
+        "customerText": "Магазин временно не принимает заказы — до 13:30",
+        "ownerText": "Пауза до 13:30",
+        "openState": { "isOpen": true, "text": "Открыто до 21:00" },
+        "acceptanceMode": "Paused"
+      }
+    },
+    {
+      "id": "V05-pause-expired-resumes-by-itself",
+      "nowUtc": "2026-09-30T09:00:00Z",
+      "acceptance": { "stopped": false, "pausedUntilUtc": "2026-09-30T08:59:00Z" },
+      "expect": { "accepting": true, "notAcceptingCode": null, "acceptanceMode": "Accepting" }
+    },
+    {
+      "id": "V06-stopped",
+      "nowUtc": "2026-09-30T09:00:00Z",
+      "acceptance": { "stopped": true, "pausedUntilUtc": null },
+      "expect": {
+        "accepting": false, "notAcceptingCode": "Stopped",
+        "customerText": "Магазин временно не принимает заказы", "ownerText": "Приём заказов выключен",
+        "acceptanceMode": "Stopped"
+      }
+    },
+    {
+      "id": "V07-no-working-hours",
+      "nowUtc": "2026-09-30T09:00:00Z",
+      "workingHours": null,
+      "expect": {
+        "accepting": false, "notAcceptingCode": "NoWorkingHours",
+        "customerText": "Магазин пока не принимает заказы",
+        "ownerText": "Задайте часы работы — без них магазин не принимает заказы",
+        "openState": { "isOpen": false, "text": "Часы работы не заданы" }
+      }
+    },
+    {
+      "id": "V08-closed-saturday-asap-only",
+      "nowUtc": "2026-10-03T09:00:00Z",
+      "settings": { "asapEnabled": true, "scheduledEnabled": false, "slotStepMinutes": 15, "preorderDays": 0, "minPrepMinutes": 15 },
+      "expect": {
+        "accepting": false, "notAcceptingCode": "NoPickupTimeAvailable",
+        "customerText": "Закрыто, откроемся в пн в 9:00",
+        "openState": { "isOpen": false, "text": "Закрыто, откроемся в пн в 9:00" },
+        "asap": { "available": false, "text": "Закрыто, откроемся в пн в 9:00" },
+        "dates": []
+      }
+    },
+    {
+      "id": "V09-closed-saturday-preorder-for-monday",
+      "nowUtc": "2026-10-03T09:00:00Z",
+      "settings": { "asapEnabled": true, "scheduledEnabled": true, "slotStepMinutes": 15, "preorderDays": 2, "minPrepMinutes": 15 },
+      "expect": {
+        "accepting": true, "notAcceptingCode": null,
+        "openState": { "isOpen": false, "text": "Закрыто, откроемся в пн в 9:00" },
+        "asap": { "available": false, "text": "Закрыто, откроемся в пн в 9:00" },
+        "dates": ["2026-10-05"],
+        "slots": { "2026-10-05": { "count": 48, "first": ["2026-10-05T06:00:00Z", "2026-10-05T06:15:00Z"] } }
+      }
+    },
+    {
+      "id": "V10-special-day-closed-nothing-left",
+      "nowUtc": "2026-09-30T17:50:00Z",
+      "specialDays": { "2026-10-01": { "isClosed": true } },
+      "expect": {
+        "accepting": false, "notAcceptingCode": "NoPickupTimeAvailable",
+        "customerText": "Сегодня уже не успеем приготовить заказ",
+        "dates": ["2026-09-30"],
+        "slots": { "2026-09-30": { "count": 0 } }
+      }
+    },
+    {
+      "id": "V11-break-between-intervals",
+      "nowUtc": "2026-09-30T10:30:00Z",
+      "workingHours": {
+        "Monday": [["09:00", "13:00"], ["14:00", "21:00"]], "Tuesday": [["09:00", "13:00"], ["14:00", "21:00"]],
+        "Wednesday": [["09:00", "13:00"], ["14:00", "21:00"]], "Thursday": [["09:00", "13:00"], ["14:00", "21:00"]],
+        "Friday": [["09:00", "13:00"], ["14:00", "21:00"]]
+      },
+      "expect": {
+        "accepting": true, "notAcceptingCode": null,
+        "openState": { "isOpen": false, "text": "Перерыв до 14:00" },
+        "asap": { "available": false, "text": "Перерыв до 14:00" },
+        "slots": {
+          "2026-09-30": { "count": 28, "first": ["2026-09-30T11:00:00Z", "2026-09-30T11:15:00Z"], "last": ["2026-09-30T17:45:00Z", "2026-09-30T18:00:00Z"] }
+        },
+        "pauseEndOfDayUtc": "2026-09-30T18:00:00Z"
+      }
+    },
+    {
+      "id": "V12-step-30-unaligned-interval-start",
+      "nowUtc": "2026-09-30T05:00:00Z",
+      "settings": { "asapEnabled": true, "scheduledEnabled": true, "slotStepMinutes": 30, "preorderDays": 0, "minPrepMinutes": 15 },
+      "workingHours": { "Wednesday": [["09:05", "10:00"]] },
+      "expect": {
+        "accepting": true, "notAcceptingCode": null,
+        "openState": { "isOpen": false, "text": "Закрыто, откроемся в 9:05" },
+        "asap": { "available": false, "text": "Закрыто, откроемся в 9:05" },
+        "dates": ["2026-09-30"],
+        "slots": { "2026-09-30": { "count": 1, "first": ["2026-09-30T06:05:00Z", "2026-09-30T06:35:00Z"], "last": ["2026-09-30T06:05:00Z", "2026-09-30T06:35:00Z"] } }
+      }
+    },
+    {
+      "id": "V13-monthly-limit-reached",
+      "nowUtc": "2026-09-30T07:00:00Z",
+      "plan": { "allowOrders": true, "maxOrdersPerMonth": 150 },
+      "ordersThisMonth": 150,
+      "expect": {
+        "accepting": false, "notAcceptingCode": "MonthlyLimitReached",
+        "customerText": "Магазин временно не принимает заказы",
+        "ownerText": "Лимит заказов на сентябрь исчерпан (150 из 150). Новые заказы примутся с 1 октября или после смены тарифа"
+      }
+    },
+    {
+      "id": "V14-monthly-limit-not-yet-reached",
+      "nowUtc": "2026-09-30T07:00:00Z",
+      "plan": { "allowOrders": true, "maxOrdersPerMonth": 150 },
+      "ordersThisMonth": 149,
+      "expect": { "accepting": true, "notAcceptingCode": null }
+    },
+    {
+      "id": "V15-plan-disallows-orders",
+      "nowUtc": "2026-09-30T07:00:00Z",
+      "plan": { "allowOrders": false, "maxOrdersPerMonth": null },
+      "expect": {
+        "accepting": false, "notAcceptingCode": "NotAllowedByPlan",
+        "customerText": "Магазин временно не принимает заказы", "ownerText": "Ваш тариф не включает приём заказов"
+      }
+    },
+    {
+      "id": "V16-closed-tonight-opens-tomorrow",
+      "nowUtc": "2026-09-30T18:30:00Z",
+      "settings": { "asapEnabled": true, "scheduledEnabled": false, "slotStepMinutes": 15, "preorderDays": 0, "minPrepMinutes": 15 },
+      "expect": {
+        "accepting": false, "notAcceptingCode": "NoPickupTimeAvailable",
+        "customerText": "Закрыто, откроемся завтра в 9:00",
+        "openState": { "isOpen": false, "text": "Закрыто, откроемся завтра в 9:00" },
+        "dates": [],
+        "pauseEndOfDayUtc": "2026-09-30T21:00:00Z"
+      }
+    },
+    {
+      "id": "V17-blocked-by-admin-wins-over-everything",
+      "nowUtc": "2026-09-30T07:00:00Z",
+      "companyIsActive": false,
+      "acceptance": { "stopped": true, "pausedUntilUtc": null },
+      "expect": { "accepting": false, "notAcceptingCode": "Blocked", "customerText": "Магазин недоступен" }
+    },
+    {
+      "id": "V18-special-day-with-own-hours",
+      "nowUtc": "2026-09-30T17:50:00Z",
+      "specialDays": { "2026-10-01": { "isClosed": false, "intervals": [["12:00", "15:00"]] } },
+      "expect": {
+        "accepting": true, "notAcceptingCode": null,
+        "dates": ["2026-09-30", "2026-10-01"],
+        "slots": {
+          "2026-10-01": { "count": 12, "first": ["2026-10-01T09:00:00Z", "2026-10-01T09:15:00Z"], "last": ["2026-10-01T11:45:00Z", "2026-10-01T12:00:00Z"] }
+        }
+      }
+    }
+  ]
+}
