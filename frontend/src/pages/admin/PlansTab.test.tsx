@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PlansTab } from './PlansTab'
-import type { PlanConfig } from '../../api/plans'
+import type { AdminOptionDto, PlanConfig } from '../../api/plans'
 
 // ARCHITECTURE_CYCLE9.md §100.2/§103.1 — the white screen on the stand: `PlansTab.tsx` indexed
 // `plan.highlights.length`/`.map` without the `?? []` guard its sibling fields already had, so a
@@ -66,6 +66,66 @@ describe('PlansTab — retired-limit-options hint (cycle 19)', () => {
 
     const hints = screen.getAllByText('Лимит задаётся только здесь; опций для докупки сотрудников и компаний нет.')
     expect(hints).toHaveLength(2)
+  })
+})
+
+// ARCHITECTURE_CYCLE19.md §386.2 / SPEC §391.1 (risk Р19-3) — the options matrix must render
+// exactly what the catalog endpoint returns and must not apply any client-side filter of its own
+// (e.g. hiding extra-employees/extra-companies rows), because a frontend build shipped ahead of a
+// backend that has not yet retired those rows would otherwise silently drop the ability to edit
+// them. This asserts the round trip: a catalog option shows up as a row, and toggling it to
+// "Включена" with a quantity is present verbatim in the PUT body.
+describe('PlansTab — options matrix renders exactly the catalog, no client-side filter (§391.1)', () => {
+  const employeesOption: AdminOptionDto = {
+    id: 'option-employees',
+    code: 'extra-employees',
+    name: 'Дополнительные сотрудники',
+    kind: 'Quantity',
+    capabilityKey: 'employees',
+    capabilityKnown: true,
+    pricePerMonth: 100,
+    currency: 'RUB',
+    unitName: 'сотрудник',
+    maxQuantity: null,
+    isPublic: true,
+    isActive: true,
+  } as unknown as AdminOptionDto
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listPlans.mockResolvedValue([preCycle7Plan({ highlights: [], options: [], isSystemFree: false })])
+    listOptions.mockResolvedValue([employeesOption])
+    updatePlan.mockResolvedValue(preCycle7Plan({}))
+  })
+
+  it('renders a row for every catalog option, with no filtering by capabilityKey', async () => {
+    renderTab()
+    await waitFor(() => expect(screen.getByText('Basic')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: /Редактировать/ }))
+
+    expect(await screen.findByText('Дополнительные сотрудники')).toBeInTheDocument()
+  })
+
+  it('sends the option availability set in the matrix verbatim in the PUT body', async () => {
+    renderTab()
+    await waitFor(() => expect(screen.getByText('Basic')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: /Редактировать/ }))
+    await screen.findByText('Дополнительные сотрудники')
+
+    const select = screen
+      .getAllByRole('combobox')
+      .find((el) => within(el as HTMLSelectElement).queryByText('Включена'))!
+    await userEvent.selectOptions(select, 'Включена')
+    const quantityInput = await screen.findByPlaceholderText('кол-во')
+    await userEvent.type(quantityInput, '3')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => expect(updatePlan).toHaveBeenCalled())
+    const [, payload] = updatePlan.mock.calls[0]
+    expect(payload.options).toEqual([
+      { optionId: 'option-employees', availability: 'Included', includedQuantity: 3 },
+    ])
   })
 })
 

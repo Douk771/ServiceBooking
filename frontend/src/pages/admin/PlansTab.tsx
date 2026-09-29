@@ -632,7 +632,7 @@ export function PlansTab() {
                   code cannot validate free-text meaning, so this is a reminder for the admin editing
                   the trial plan's showcase copy, not a form validation. */}
               {editingPlan?.isSystemTrial && (
-                <p className="text-xs text-warning bg-[#FBF3E3] border border-warning rounded-lg px-3 py-2 mb-2">
+                <p className="text-xs text-warning bg-warning-bg border border-warning rounded-lg px-3 py-2 mb-2">
                   Для тарифа пробного периода в пунктах обязаны быть указаны: продолжительность,
                   однократное предоставление одному абоненту, отдельный (более короткий) срок бесплатных рассылок и
                   переход на бесплатный тариф без удаления данных по окончании.

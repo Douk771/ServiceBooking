@@ -213,7 +213,7 @@ export function BillingPage() {
       {trialError && <p className="text-sm text-danger mb-6">{trialError}</p>}
 
       {data.warning && (
-        <Card className={`p-5 mb-6 border ${data.warning.kind === 'Expired' ? 'border-danger bg-danger-bg' : 'border-warning bg-[#FBF3E3]'}`}>
+        <Card className={`p-5 mb-6 border ${data.warning.kind === 'Expired' ? 'border-danger bg-danger-bg' : 'border-warning bg-warning-bg'}`}>
           <p className="text-sm font-semibold text-ink mb-1">{data.warning.text}</p>
           {data.warning.affected.length > 0 && (
             <ul className="text-xs text-ink-soft list-disc list-inside">
@@ -226,7 +226,7 @@ export function BillingPage() {
       )}
 
       {data.usage.overLimitText && (
-        <Card className="p-5 mb-6 border border-warning bg-[#FBF3E3]">
+        <Card className="p-5 mb-6 border border-warning bg-warning-bg">
           <p className="text-sm font-semibold text-ink">{data.usage.overLimitText}</p>
         </Card>
       )}
@@ -289,9 +289,11 @@ export function BillingPage() {
           {data.pendingRequest.items && data.pendingRequest.items.length > 0 && (
             <ul className="grid gap-1 mb-3 text-sm">
               {data.pendingRequest.items.map((i) => (
-                <li key={i.optionId} className={i.retired ? 'text-muted line-through' : 'text-ink-soft'}>
-                  {i.name} × {i.quantity}
-                  {i.retired && <span className="ml-1.5 text-xs no-underline text-warning">выведена</span>}
+                <li key={i.optionId} className={i.retired ? 'text-muted' : 'text-ink-soft'}>
+                  <span className={i.retired ? 'line-through' : undefined}>
+                    {i.name} × {i.quantity}
+                  </span>
+                  {i.retired && <span className="ml-1.5 text-xs text-warning">выведена</span>}
                 </li>
               ))}
             </ul>
@@ -303,7 +305,7 @@ export function BillingPage() {
               printed verbatim, shown whenever the pending request has at least one retired
               (opция-лимит) line, i.e. it was submitted before this cycle's rollout. */}
           {data.pendingRequest.retiredOptionsNotice && (
-            <p className="text-sm font-semibold text-warning bg-[#FBF3E3] border border-warning rounded-xl px-3.5 py-2.5 mb-4">
+            <p className="text-sm font-semibold text-warning bg-warning-bg border border-warning rounded-xl px-3.5 py-2.5 mb-4">
               {data.pendingRequest.retiredOptionsNotice}
             </p>
           )}
@@ -311,7 +313,7 @@ export function BillingPage() {
               both right after submitting a request (the mutation invalidates and refetches this same
               query) and on every later open of this screen, since it lives on `pendingRequest`. */}
           {data.pendingRequest.irreversibilityNotice && (
-            <p className="text-sm font-semibold text-warning bg-[#FBF3E3] border border-warning rounded-xl px-3.5 py-2.5 mb-4">
+            <p className="text-sm font-semibold text-warning bg-warning-bg border border-warning rounded-xl px-3.5 py-2.5 mb-4">
               {data.pendingRequest.irreversibilityNotice}
             </p>
           )}
@@ -371,7 +373,7 @@ export function BillingPage() {
               {/* О9 (§365, §371 п.13) — must be shown BEFORE confirming a request for a paid plan
                   while a trial is active: activating this request forfeits the trial's remainder. */}
               {data.trial?.planChangeNotice && (
-                <p className="text-sm font-semibold text-warning bg-[#FBF3E3] border border-warning rounded-xl px-3.5 py-2.5 mb-4">
+                <p className="text-sm font-semibold text-warning bg-warning-bg border border-warning rounded-xl px-3.5 py-2.5 mb-4">
                   {data.trial.planChangeNotice}
                 </p>
               )}
