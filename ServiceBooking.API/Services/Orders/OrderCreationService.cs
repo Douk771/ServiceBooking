@@ -385,7 +385,9 @@ public class OrderCreationService(
     {
         settings ??= await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shop.Id, ct) ?? new ShopSettings { CompanyId = shop.Id };
         var cityName = shop.CityId is null ? null : await db.Cities.AsNoTracking().Where(c => c.Id == shop.CityId).Select(c => c.Name).FirstOrDefaultAsync(ct);
-        return new CreateOrderResponse(mapper.ToPublic(order, shop, cityName, notificationsBuilder.Build(order, settings)), links.OrderPageUrl(order.PublicToken));
+        var pickupContext = await gates.PickupContextAsync(shop, settings, DateTime.UtcNow, ct);
+        return new CreateOrderResponse(
+            mapper.ToPublic(order, shop, cityName, notificationsBuilder.Build(order, settings), pickupContext), links.OrderPageUrl(order.PublicToken));
     }
 
     private static bool TryNormalizePhone(string? raw, out string canonical, out string? error)

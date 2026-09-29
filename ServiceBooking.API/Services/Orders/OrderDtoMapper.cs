@@ -7,14 +7,19 @@ using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Orders;
 
-/// <summary>The shop's clock as the pickup texts need it: its time zone and "now" (one value for a whole response).</summary>
-public sealed record OrderPickupContext(TimeZoneInfo Zone, DateTime NowUtc)
+/// <summary>
+/// The shop's clock as the pickup texts need it: its time zone, "now" (one value for a whole response) and — when the caller loaded the
+/// shop's hours — the current WORKING day (<see cref="Shops.PickupSchedule.CurrentWorkingDay"/>). In the after-midnight tail of an
+/// overnight interval the working day is yesterday's date; the storefront labels "Сегодня"/"Завтра" from it, so the order's
+/// "pre-order" flag and pickup text must count from the same day (CY24-35). Without it (lists of many shops) the calendar date is used.
+/// </summary>
+public sealed record OrderPickupContext(TimeZoneInfo Zone, DateTime NowUtc, DateOnly? WorkingDay = null)
 {
     public static OrderPickupContext For(Company shop, DateTime nowUtc) =>
         new(TimeZoneInfo.FindSystemTimeZoneById(shop.TimeZoneId), nowUtc);
 
-    /// <summary>The shop's calendar date now — what "today", "tomorrow" and "pre-order" are counted from.</summary>
-    public DateOnly Today => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(
+    /// <summary>What "today", "tomorrow" and "pre-order" are counted from: the working day when known, else the shop's calendar date.</summary>
+    public DateOnly Today => WorkingDay ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(
         NowUtc.Kind == DateTimeKind.Utc ? NowUtc : DateTime.SpecifyKind(NowUtc, DateTimeKind.Utc), Zone));
 }
 
@@ -66,14 +71,15 @@ public sealed class OrderDtoMapper(PublicSiteLinks links)
     {
         var due = endUtc ?? startUtc;
         return new OrderPickupDto(
-            kind, date, startUtc, endUtc, due, PickupSchedule.PickupText(kind, date, startUtc, ctx.Zone, ctx.NowUtc),
+            kind, date, startUtc, endUtc, due, PickupSchedule.PickupText(kind, date, startUtc, ctx.Zone, ctx.NowUtc, ctx.Today),
             IsPreorder: kind == PickupKind.Slot && date > ctx.Today,
             IsOverdue: OrderStateMachine.IsActive(status) && ctx.NowUtc > due);
     }
 
     // ── Customer ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public PublicOrderDto ToPublic(Order order, Company shop, string? cityName, OrderCustomerNotificationsDto notifications)
+    public PublicOrderDto ToPublic(
+        Order order, Company shop, string? cityName, OrderCustomerNotificationsDto notifications, OrderPickupContext? pickupContext = null)
     {
         var items = order.Items.OrderBy(i => i.Position).Select(i => new PublicOrderItemDto(
             i.NameSnapshot, i.Unit, i.UnitPrice, i.PortionTextSnapshot, i.QuantityOrdered, i.QuantityActual,
@@ -94,7 +100,7 @@ public sealed class OrderDtoMapper(PublicSiteLinks links)
             order.CustomerPhone is null ? null : PhoneDisplayMask.Mask(order.CustomerPhone), order.StatusReason,
             OrderStateMachine.CanCustomerCancel(order.Status, order.AllowCustomerCancelSnapshot),
             ToShopInfo(shop, cityName), shopChanges, order.Version, order.CustomerKind == OrderActorKind.Guest,
-            ToPickup(order, OrderPickupContext.For(shop, DateTime.UtcNow)), notifications);
+            ToPickup(order, pickupContext ?? OrderPickupContext.For(shop, DateTime.UtcNow)), notifications);
     }
 
     public OrderShopInfoDto ToShopInfo(Company shop, string? cityName) => new(
@@ -155,7 +161,7 @@ public sealed class OrderDtoMapper(PublicSiteLinks links)
     private static List<OrderChangeLineDto>? ToPickupLines(PickupChangeLog? log, OrderPickupContext ctx)
     {
         if (log is null) return null;
-        string Text(PickupSide s) => PickupSchedule.PickupText(s.Kind, s.Date, s.StartUtc, ctx.Zone, ctx.NowUtc);
+        string Text(PickupSide s) => PickupSchedule.PickupText(s.Kind, s.Date, s.StartUtc, ctx.Zone, ctx.NowUtc, ctx.Today);
         var before = Text(log.Before);
         var after = Text(log.After);
         var lines = new List<OrderChangeLineDto> { new("Время получения", before, after, $"Время получения: {before} → {after}") };

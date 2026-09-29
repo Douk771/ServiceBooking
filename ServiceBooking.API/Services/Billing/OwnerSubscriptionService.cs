@@ -15,7 +15,7 @@ namespace ServiceBooking.API.Services.Billing;
 /// request. Every text is assembled here (§41 п. 8) — the frontend prints strings as-is.</summary>
 public class OwnerSubscriptionService(
     AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    TrialStateReader trialStateReader, OrdersPlanResolver ordersPlans, IOptions<OrdersOptions> ordersOptions)
+    TrialStateReader trialStateReader, IOptions<OrdersOptions> ordersOptions)
 {
     public async Task<BillingAccount?> FindAccountForOwnerAsync(string ownerUserId) =>
         await db.BillingAccounts.Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);

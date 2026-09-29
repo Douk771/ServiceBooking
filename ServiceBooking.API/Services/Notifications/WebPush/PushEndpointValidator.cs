@@ -12,7 +12,7 @@ public static class PushEndpointValidator
 
     private static readonly string[] InternalSuffixes = [".localhost", ".local", ".internal", ".intranet", ".lan", ".home", ".corp", ".localdomain"];
 
-    public static bool IsValid(string? endpoint)
+    public static bool IsValid([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint) || endpoint.Length > MaxLength) return false;
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)) return false;

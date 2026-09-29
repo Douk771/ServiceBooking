@@ -280,15 +280,20 @@ public sealed class PickupSchedule(ShopScheduleSnapshot schedule, PickupSettings
         return lines;
     }
 
-    /// <summary>The text of a pickup on an order or in the journal: "Как можно скорее (≈ 13:20)", "К 12:30", "Завтра, к 12:30", "пт 2 окт, к 12:30".</summary>
-    public static string PickupText(PickupKind kind, DateOnly pickupDate, DateTime startUtc, TimeZoneInfo zone, DateTime nowUtc)
+    /// <summary>
+    /// The text of a pickup on an order or in the journal: "Как можно скорее (≈ 13:20)", "К 12:30", "Завтра, к 12:30", "пт 2 окт, к 12:30".
+    /// <paramref name="today"/> is the current WORKING day when the caller knows it (CY24-35: in the after-midnight tail of an overnight
+    /// interval it is yesterday's date, as on the storefront); otherwise the shop's calendar date.
+    /// </summary>
+    public static string PickupText(
+        PickupKind kind, DateOnly pickupDate, DateTime startUtc, TimeZoneInfo zone, DateTime nowUtc, DateOnly? today = null)
     {
         var local = TimeZoneInfo.ConvertTimeFromUtc(AsUtc(startUtc), zone);
         var clock = ShopTimeTexts.Clock(local.Hour * 60 + local.Minute);
         if (kind == PickupKind.Asap) return $"Как можно скорее (≈ {clock})";
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(AsUtc(nowUtc), zone));
-        if (pickupDate == today) return $"К {clock}";
-        if (pickupDate == today.AddDays(1)) return $"Завтра, к {clock}";
+        var day = today ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(AsUtc(nowUtc), zone));
+        if (pickupDate == day) return $"К {clock}";
+        if (pickupDate == day.AddDays(1)) return $"Завтра, к {clock}";
         return $"{ShopTimeTexts.DateShort(pickupDate)}, к {clock}";
     }
 }

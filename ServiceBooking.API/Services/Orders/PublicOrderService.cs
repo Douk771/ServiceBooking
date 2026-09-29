@@ -18,7 +18,7 @@ namespace ServiceBooking.API.Services.Orders;
 /// </summary>
 public class PublicOrderService(
     AppDbContext db, OrderDtoMapper mapper, OrderEventLog eventLog, OrderActorResolver actorResolver, PublicSiteLinks links,
-    CustomerOrderNotificationsBuilder notificationsBuilder)
+    CustomerOrderNotificationsBuilder notificationsBuilder, Shops.ShopGateLoader gates)
 {
     public async Task<PublicOrderDto?> GetAsync(string token, CancellationToken ct)
     {
@@ -118,7 +118,8 @@ public class PublicOrderService(
         var shop = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == order.CompanyId, ct);
         var cityName = shop.CityId is null ? null : await db.Cities.AsNoTracking().Where(c => c.Id == shop.CityId).Select(c => c.Name).FirstOrDefaultAsync(ct);
         var settings = await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shop.Id, ct) ?? new ShopSettings { CompanyId = shop.Id };
-        return mapper.ToPublic(order, shop, cityName, notificationsBuilder.Build(order, settings));
+        var pickupContext = await gates.PickupContextAsync(shop, settings, DateTime.UtcNow, ct);
+        return mapper.ToPublic(order, shop, cityName, notificationsBuilder.Build(order, settings), pickupContext);
     }
 
     private async Task<(ActionResult? Error, PublicOrderDto? Order)> ConflictAsync(

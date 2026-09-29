@@ -65,6 +65,20 @@ public class ShopGateLoader(AppDbContext db, OrdersPlanResolver plans)
             .Where(u => u.BillingAccountId == billingAccountId && u.Month == monthStart)
             .Select(u => (int?)u.Count).FirstOrDefaultAsync(ct) ?? 0;
 
+    /// <summary>
+    /// The pickup context of ONE shop with its current working day (CY24-35): order DTOs built with it agree with the storefront's
+    /// "Сегодня"/"Завтра" in the after-midnight tail of an overnight interval.
+    /// </summary>
+    public async Task<ServiceBooking.API.Services.Orders.OrderPickupContext> PickupContextAsync(
+        Company shop, ShopSettings settings, DateTime nowUtc, CancellationToken ct = default)
+    {
+        var zone = ZoneOf(shop);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(AsUtc(nowUtc), zone));
+        var schedule = await LoadScheduleAsync(shop, settings, zone, today, ct);
+        var workingDay = new PickupSchedule(schedule, ShopOrderingGate.PickupSettingsOf(settings)).CurrentWorkingDay(nowUtc);
+        return new ServiceBooking.API.Services.Orders.OrderPickupContext(zone, AsUtc(nowUtc), workingDay);
+    }
+
     public static DateOnly MonthStart(DateOnly date) => new(date.Year, date.Month, 1);
 
     public static TimeZoneInfo ZoneOf(Company shop) => TimeZoneInfo.FindSystemTimeZoneById(shop.TimeZoneId);

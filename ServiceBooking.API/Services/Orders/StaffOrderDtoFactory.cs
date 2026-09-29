@@ -9,12 +9,14 @@ namespace ServiceBooking.API.Services.Orders;
 /// ARCHITECTURE_CYCLE24.md §453, §481 — builds what staff see of an order, in ONE place: the pickup as text, the "overdue" mark at the moment of
 /// the answer, and (P1, US-24-23) the status of the last messenger message about the order. The last message of MANY orders comes from one query.
 /// </summary>
-public class StaffOrderDtoFactory(AppDbContext db)
+public class StaffOrderDtoFactory(AppDbContext db, Shops.ShopGateLoader gates)
 {
     public async Task<StaffOrderDto> BuildAsync(Order order, Company shop, CancellationToken ct = default)
     {
         var statuses = order.NotifyByMessenger ? await MessengerStatusesAsync([order.Id], ct) : [];
-        return OrderDtoMapper.ToStaff(order, OrderPickupContext.For(shop, DateTime.UtcNow), statuses.GetValueOrDefault(order.Id));
+        var settings = await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shop.Id, ct) ?? new ShopSettings { CompanyId = shop.Id };
+        var pickupContext = await gates.PickupContextAsync(shop, settings, DateTime.UtcNow, ct);
+        return OrderDtoMapper.ToStaff(order, pickupContext, statuses.GetValueOrDefault(order.Id));
     }
 
     public async Task<List<StaffOrderCardDto>> BuildCardsAsync(IReadOnlyCollection<Order> orders, OrderPickupContext ctx, CancellationToken ct = default)

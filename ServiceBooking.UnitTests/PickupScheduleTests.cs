@@ -208,5 +208,8 @@ public class PickupScheduleTests
         PickupSchedule.PickupText(PickupKind.Slot, Today, start, Moscow, Noon).Should().Be("К 12:30");
         PickupSchedule.PickupText(PickupKind.Slot, Today.AddDays(1), start.AddDays(1), Moscow, Noon).Should().Be("Завтра, к 12:30");
         PickupSchedule.PickupText(PickupKind.Slot, new DateOnly(2026, 10, 2), start.AddDays(2), Moscow, Noon).Should().Be("пт 2 окт, к 12:30");
+        // CY24-35: with the working day passed explicitly (after-midnight tail → yesterday), "today"/"tomorrow" count from it.
+        PickupSchedule.PickupText(PickupKind.Slot, Today, start, Moscow, Noon, Today.AddDays(-1)).Should().Be("Завтра, к 12:30");
+        PickupSchedule.PickupText(PickupKind.Slot, Today.AddDays(-1), start, Moscow, Noon, Today.AddDays(-1)).Should().Be("К 12:30");
     }
 }

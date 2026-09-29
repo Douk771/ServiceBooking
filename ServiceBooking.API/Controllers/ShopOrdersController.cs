@@ -23,7 +23,7 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class ShopOrdersController(
     AppDbContext db, ShopAccessResolver access, OrderTransitionService transitions, OrderEditService editing,
-    StaffOrderDtoFactory staffDtos) : ControllerBase
+    StaffOrderDtoFactory staffDtos, Services.Shops.ShopGateLoader gates) : ControllerBase
 {
     private const int CompletedTodayLimit = 500;
 
@@ -46,7 +46,7 @@ public class ShopOrdersController(
         var settings = await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shopId, ct) ?? new ShopSettings { CompanyId = shopId };
         var revision = settings.OrdersRevision;
         var nowUtc = DateTime.UtcNow;
-        var pickupContext = OrderPickupContext.For(shop, nowUtc);
+        var pickupContext = await gates.PickupContextAsync(shop, settings, nowUtc, ct);
         var today = ShopClock.BusinessDate(shop.TimeZoneId, nowUtc);
         var acceptance = ShopScheduleMapper.ToDto(ShopAcceptanceRules.State(settings, nowUtc, pickupContext.Zone));
         if (sinceRevision == revision && businessDate == today)

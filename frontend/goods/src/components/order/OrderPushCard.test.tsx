@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { OrderPushCard } from './OrderPushCard'
-import { orderPushStorageKey } from '../../utils/goodsPush'
+import { orderPushStorageKey, orderPushStoredAtKey } from '../../utils/goodsPush'
 
 const subscribe = vi.fn()
 const unsubscribe = vi.fn()
@@ -83,6 +83,8 @@ describe('OrderPushCard', () => {
     const sub: FakeSub = { endpoint: 'https://push.example/abc', getKey: () => rawKey(1), unsubscribe: vi.fn() }
     existing = sub
     window.localStorage.setItem(orderPushStorageKey('tok'), sub.endpoint)
+    // Since the stale-key pruning (e0310aa) an entry without its timestamp counts as legacy and is dropped — store it as the hook does.
+    window.localStorage.setItem(orderPushStoredAtKey('tok'), String(Date.now()))
     const user = userEvent.setup()
     render(<OrderPushCard token="tok" info={info()} />)
     await user.click(await screen.findByRole('button', { name: 'Отключить' }))
