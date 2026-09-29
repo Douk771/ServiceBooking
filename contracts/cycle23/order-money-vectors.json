@@ -1,0 +1,39 @@
+{
+  "_comment": "Эталонные векторы денежной арифметики заказа (ARCHITECTURE_CYCLE23.md §396.4, SPEC §6 «Деньги»). Читают ОБА набора тестов: ServiceBooking.UnitTests (OrderMoneyTests против Services/Orders/OrderMoney.cs) и vitest фронта (goods/src/utils/orderMoney.test.ts против goods/src/utils/orderMoney.ts). Правило одно и нормативно в копейках: штучный — lineKop = priceKop × quantity; весовой (quantity в граммах, price за 1 кг) — lineKop = floor((priceKop × grams + 500) / 1000), что для положительных чисел совпадает с Math.Round(price × grams / 1000, 2, MidpointRounding.AwayFromZero). Итог = сумма строк. Правка правила без правки этого файла — красный тест с обеих сторон.",
+
+  "lines": [
+    { "unit": "Piece",  "price": 150.00,  "quantity": 2,     "expected": 300.00 },
+    { "unit": "Piece",  "price": 99.99,   "quantity": 3,     "expected": 299.97 },
+    { "unit": "Piece",  "price": 0.01,    "quantity": 99,    "expected": 0.99 },
+    { "unit": "Weight", "price": 540.00,  "quantity": 1000,  "expected": 540.00 },
+    { "unit": "Weight", "price": 540.00,  "quantity": 500,   "expected": 270.00 },
+    { "unit": "Weight", "price": 540.00,  "quantity": 540,   "expected": 291.60 },
+    { "unit": "Weight", "price": 999.99,  "quantity": 333,   "expected": 333.00 },
+    { "unit": "Weight", "price": 123.45,  "quantity": 150,   "expected": 18.52 },
+    { "unit": "Weight", "price": 0.01,    "quantity": 500,   "expected": 0.01 },
+    { "unit": "Weight", "price": 10.10,   "quantity": 250,   "expected": 2.53 },
+    { "unit": "Weight", "price": 1.00,    "quantity": 10,    "expected": 0.01 },
+    { "unit": "Weight", "price": 1.00,    "quantity": 14,    "expected": 0.01 },
+    { "unit": "Weight", "price": 1.00,    "quantity": 15,    "expected": 0.02 },
+    { "unit": "Weight", "price": 2345.67, "quantity": 10000, "expected": 23456.70 }
+  ],
+
+  "totals": [
+    {
+      "lines": [
+        { "unit": "Piece",  "price": 150.00, "quantity": 2 },
+        { "unit": "Weight", "price": 540.00, "quantity": 540 }
+      ],
+      "expected": 591.60,
+      "isApproximate": true
+    },
+    {
+      "lines": [
+        { "unit": "Piece", "price": 99.99, "quantity": 3 },
+        { "unit": "Piece", "price": 0.01,  "quantity": 99 }
+      ],
+      "expected": 300.96,
+      "isApproximate": false
+    }
+  ]
+}

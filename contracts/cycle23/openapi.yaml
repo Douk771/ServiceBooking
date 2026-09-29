@@ -1,0 +1,1869 @@
+openapi: 3.0.3
+
+# ServiceBooking — машиночитаемый контракт ЦИКЛА 23
+# («Заказы», цикл 1 «Ядро»: самовывоз для магазинов и кафе на goods.ezbook.ru).
+#
+# ИСТОЧНИК ИСТИНЫ ПО ФОРМЕ интерфейса. Смысл, порядок проверок и тексты — API_CONTRACT_CYCLE23.md
+# (§406–§425), решения — ARCHITECTURE_CYCLE23.md (§386–§405), требования — SPEC.md цикла 23.
+# При расхождении по ФОРМЕ прав ЭТОТ файл.
+#
+# Рядом лежат ещё два машиночитаемых артефакта цикла:
+#   contracts/cycle23/goods-routes.json         — маршруты goods и политика адреса магазина (slug)
+#   contracts/cycle23/order-money-vectors.json  — эталонные векторы денежной арифметики
+#
+# Как пользоваться:
+#   frontend  npx @stoplight/prism mock contracts/cycle23/openapi.yaml --port 4023
+#             npm run types:api:cycle23   (openapi-typescript -> src/types/api-cycle23.generated.ts)
+#   QA        schemathesis run contracts/cycle23/openapi.yaml --base-url http://localhost:5000 --checks all
+#   CI        npx @redocly/cli lint --config ../contracts/redocly.yaml ../contracts/cycle23/openapi.yaml
+#             npm run types:api:cycle23 && git diff --exit-code src/types/api-cycle23.generated.ts
+#
+# Здесь описаны ТОЛЬКО маршруты, которые цикл 23 добавляет, и те существующие, у которых меняется
+# форма (добавочные поля/параметры). У изменённых ответов больших существующих DTO (CompanyDto,
+# AdminCompanyDto) схема описывает ТОЛЬКО новые и значимые поля и стоит с additionalProperties: true.
+# Изменение ПОВЕДЕНИЯ существующих маршрутов записи для магазина (409) — в API_CONTRACT_CYCLE23.md §421.
+
+info:
+  title: ServiceBooking API — цикл 23 (Заказы, ядро)
+  version: "23.1.0"
+  license:
+    name: Proprietary
+  description: |
+    Конвенции проекта, действующие БЕЗ ИЗМЕНЕНИЙ:
+      * camelCase в JSON; enum — строками (имена членов C#, PascalCase); DateTime — ISO-8601 UTC;
+        DateOnly — "YYYY-MM-DD"; decimal — число с двумя знаками;
+      * тела осознанных ошибок 400/402/429 — ГОЛАЯ СТРОКА (text/plain) по-русски;
+      * 401 и 403 — ПУСТОЕ тело; 404 без явного тела — ПУСТОЕ тело;
+      * 451 — «требуется принять новую редакцию документов» (глобальный гейт — text/plain,
+        владельческий — application/json); маршруты цикла в allow-list гейта НЕ добавлены;
+      * текст, который видит человек (статусы, причины, отказы), собирает СЕРВЕР.
+
+    НАМЕРЕННОЕ ИСКЛЮЧЕНИЕ ИЗ «4xx — СТРОКА» (прецеденты: TrialRefusalDto цикла 18,
+    PricingPublicationBlockedDto цикла 11): ВСЕ 409 домена заказов — JSON с машиночитаемым кодом
+    и готовым русским текстом (OrderRefusalDto при оформлении, OrderConflictDto у персонала,
+    CatalogConflictDto в каталоге). Фронт ветвится по code, печатает message.
+
+    ГЛАВНЫЕ ПРАВИЛА, КОТОРЫЕ СХЕМА ЗАКРЕПЛЯЕТ ФОРМОЙ:
+      1. Количество — ЦЕЛОЕ в базовой единице товара: штуки у Piece, ГРАММЫ у Weight.
+         Цена Weight — за 1 кг. Дробных количеств в API нет.
+      2. Сумму строки и итог считает СЕРВЕР по правилу order-money-vectors.json; фронт может
+         показывать предварительный расчёт по тому же правилу, но при расхождении прав сервер.
+      3. Покупатель НЕ видит точного остатка: на витрине только available: true/false.
+         Единственное место с числом — problems[].availableQuantity при отказе InsufficientStock.
+      4. Действия персонала над заказом несут expectedVersion; чужое изменение → 409 VersionMismatch
+         с актуальным заказом в теле, действие НЕ применяется.
+      5. Телефон покупателя по ссылке на заказ — только маской (customerPhoneMasked). Полный номер
+         видит только персонал магазина (StaffOrderCardDto.customerPhone).
+      6. Ссылка на заказ — токен не короче 43 символов base64url (256 бит). Неизвестный токен → 404
+         с пустым телом, неотличимый от «заказа не было».
+
+servers:
+  - url: http://localhost:5000
+    description: dev (dotnet run)
+  - url: http://localhost:4023
+    description: prism mock по этой схеме (фронт до появления бэкенда)
+
+tags:
+  - name: companies
+    description: Тип компании в общих эндпоинтах компаний — фильтр kind и добавочные поля.
+  - name: admin
+    description: Админка платформы — тип компании в списке и фильтр по типу.
+  - name: shops
+    description: Магазин владельца и сотрудника — создание, настройки, реквизиты продавца, адрес и QR.
+  - name: catalog
+    description: Каталог магазина — категории, товары, фото, «закончилось», остатки.
+  - name: storefront
+    description: Публичная витрина магазина — каталог, проверка корзины, оформление заказа.
+  - name: orders-public
+    description: Заказ глазами покупателя — страница по ссылке, отмена, «Мои заказы».
+  - name: orders-staff
+    description: Экран заказов и обработка — доска, карточка, переходы статусов, правка, выдача.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ShopId:
+      name: shopId
+      in: path
+      required: true
+      description: Id магазина (Company.Id компании типа Orders).
+      schema: { type: string, format: uuid }
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: Адрес магазина (contracts/cycle23/goods-routes.json → slugPattern).
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    OrderToken:
+      name: token
+      in: path
+      required: true
+      description: Неугадываемый токен заказа из ссылки /o/<token>.
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    KindQuery:
+      name: kind
+      in: query
+      required: false
+      description: |
+        Тип компаний в ответе. НЕ передан → Services (так ведёт себя фронт ezbook, который параметр
+        не шлёт: магазины из его кабинета исчезают без правки кода). Фронт goods шлёт Orders.
+      schema: { $ref: '#/components/schemas/CompanyKind' }
+
+  responses:
+    PlainTextError:
+      description: Осознанный отказ — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    Unauthorized:
+      description: Нет или недействителен токен. Тело пустое.
+    Forbidden:
+      description: Нет прав (не сотрудник/не владелец этого магазина). Тело пустое.
+    NotFound:
+      description: Не найдено (в том числе компания другого типа там, где ищется магазин). Тело пустое.
+    LegalGate:
+      description: Требуется принять новую редакцию правовых документов (глобальный или владельческий гейт).
+      content:
+        text/plain:
+          schema: { type: string }
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    TooManyRequests:
+      description: Превышен лимит частоты — голая строка по-русски.
+      content:
+        text/plain:
+          schema: { type: string }
+    CatalogConflict:
+      description: Отказ в каталоге с машиночитаемым кодом.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CatalogConflictDto' }
+    OrderConflict:
+      description: Действие над заказом не применено — код, текст и (для VersionMismatch) актуальный заказ.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/OrderConflictDto' }
+
+  schemas:
+    # ─────────────────────────────── перечисления ───────────────────────────────
+    CompanyKind:
+      type: string
+      description: Тип компании. Задаётся при создании и не меняется никогда. Services = 0 (все существующие), Orders = 1.
+      enum: [Services, Orders]
+    ShopRole:
+      type: string
+      description: Роль вызывающего в этом магазине. Staff — сотрудник (CompanyMember.Role = Master).
+      enum: [Owner, Staff, SuperAdmin]
+    ShopCustomerMode:
+      type: string
+      description: Кто может заказать. Anyone — любой по имени и телефону (гость — с капчей); VerifiedPhoneOnly — только вошедший с подтверждённым через MAX номером.
+      enum: [Anyone, VerifiedPhoneOnly]
+    OrderAcceptanceMode:
+      type: string
+      description: Manual — заказ создаётся в статусе New; Auto — сразу Accepted.
+      enum: [Manual, Auto]
+    ProductUnit:
+      type: string
+      description: Piece — цена за штуку, количество в штуках; Weight — цена за 1 кг, количество в граммах.
+      enum: [Piece, Weight]
+    OrderStatus:
+      type: string
+      description: New, Accepted, Ready — активные; Issued, Rejected, CancelledByCustomer, CancelledByShop, NotPickedUp — конечные.
+      enum: [New, Accepted, Ready, Issued, Rejected, CancelledByCustomer, CancelledByShop, NotPickedUp]
+    OrderAction:
+      type: string
+      description: Действие персонала, доступное над заказом прямо сейчас (вычисляет сервер).
+      enum: [Accept, Reject, MarkReady, Issue, NotPickedUp, Cancel, Edit]
+    OrderEventKind:
+      type: string
+      enum: [Created, Accepted, Rejected, MarkedReady, Issued, NotPickedUp, CancelledByCustomer, CancelledByShop, Edited]
+    OrderActorKind:
+      type: string
+      enum: [Customer, Guest, Staff, SuperAdmin, System]
+    OrderProblemReason:
+      type: string
+      description: Почему позиция корзины не может быть заказана как есть.
+      enum: [NotFound, Unpublished, SoldOut, CategoryHidden, InsufficientStock, BelowMinimum, InvalidQuantity, PriceChanged]
+    OrderRefusalCode:
+      type: string
+      description: Почему заказ не создан (409 при оформлении).
+      enum:
+        - ShopNotAcceptingOrders
+        - LoginRequired
+        - PhoneVerificationRequired
+        - PhoneVerificationUnavailable
+        - EmptyCart
+        - TooManyLines
+        - PriceChanged
+        - ItemsUnavailable
+    OrderConflictCode:
+      type: string
+      description: Почему действие над существующим заказом не применено (409).
+      enum:
+        - VersionMismatch
+        - InvalidTransition
+        - CancelNotAllowed
+        - AlreadyReady
+        - InsufficientStock
+        - LastItemCannotBeRemoved
+        - InvalidQuantity
+        - ProductUnavailable
+    CatalogConflictCode:
+      type: string
+      enum:
+        - SlugTaken
+        - SlugReserved
+        - SlugInvalid
+        - CategoryNotEmpty
+        - UnitChangeNotAllowed
+        - ProductLimitReached
+        - CategoryLimitReached
+        - PhoneVerificationUnavailable
+
+    # ─────────────────────────────── общие ───────────────────────────────
+    CatalogConflictDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/CatalogConflictCode' }
+        message: { type: string, description: Готовый русский текст. }
+    UuidList:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          maxItems: 1000
+          items: { type: string, format: uuid }
+    FoodInfoDto:
+      type: object
+      description: |
+        [legal L3] Пищевая информация о товаре. В цикле 1 — одно необязательное поле. Состав полей и их
+        обязательность уточняются заключением legal-counsel ДОБАВЛЕНИЕМ полей внутрь этого объекта —
+        форма запроса/ответа снаружи не меняется.
+      properties:
+        compositionAndAllergens:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: «Состав и аллергены», свободный текст.
+
+    # ─────────────────────────────── компании ───────────────────────────────
+    CompanyDtoCycle23:
+      type: object
+      description: Существующий CompanyDto + два добавочных поля цикла 23 (остальные поля — без изменений).
+      additionalProperties: true
+      required: [id, name, slug, kind, publicUrl]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        kind: { $ref: '#/components/schemas/CompanyKind' }
+        publicUrl:
+          type: string
+          description: Абсолютная ссылка на публичную страницу по типу компании — https://ezbook.ru/company/<slug> или https://goods.ezbook.ru/<slug>.
+    CompanyKindsSummaryDto:
+      type: object
+      description: Сколько компаний каждого типа у вызывающего (любая роль участника) и где ими управлять.
+      required: [services, orders]
+      properties:
+        services: { $ref: '#/components/schemas/CompanyKindSummaryItem' }
+        orders: { $ref: '#/components/schemas/CompanyKindSummaryItem' }
+    CompanyKindSummaryItem:
+      type: object
+      required: [count, siteUrl]
+      properties:
+        count: { type: integer, minimum: 0 }
+        siteUrl: { type: string, description: 'Базовый адрес сайта этого типа: https://ezbook.ru или https://goods.ezbook.ru.' }
+    AdminCompanyDtoCycle23:
+      type: object
+      additionalProperties: true
+      required: [id, name, slug, isActive, kind, publicUrl]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        isActive: { type: boolean }
+        kind: { $ref: '#/components/schemas/CompanyKind' }
+        publicUrl: { type: string }
+    AdminCompanyPage:
+      type: object
+      required: [items, page, pageSize, total, hasNext]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminCompanyDtoCycle23' }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        hasNext: { type: boolean }
+
+    # ─────────────────────────────── магазин ───────────────────────────────
+    CreateShopInput:
+      type: object
+      required: [name, slug, cityId, ownerTerms]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, minLength: 3, maxLength: 50, description: 'Политика — goods-routes.json (slugPattern, reservedSlugs).' }
+        cityId: { type: integer, description: 'Обязателен, как у салона.' }
+        timeZoneId: { type: string, nullable: true, description: Необязательная ручная зона; по умолчанию — зона города. }
+        description: { type: string, nullable: true, maxLength: 2000 }
+        address: { type: string, nullable: true, maxLength: 300, description: 'Необязателен; перед сохранением фронт показывает предупреждение о публичности (как в ezbook).' }
+        phone: { type: string, nullable: true, maxLength: 30, description: Телефон для покупателей. }
+        email: { type: string, nullable: true, maxLength: 200 }
+        ownerTerms:
+          type: object
+          required: [version]
+          properties:
+            version: { type: string, description: 'Версия соглашения с владельцем (TermsOwner), которую фронт показал.' }
+    CreateShopResponse:
+      type: object
+      required: [shop, token]
+      properties:
+        shop: { $ref: '#/components/schemas/ShopManageDto' }
+        token: { type: string, description: 'Новый JWT с claim «lco» (как у POST /api/companies) — фронт обязан заменить им старый.' }
+    SlugCheckDto:
+      type: object
+      required: [slug, available]
+      properties:
+        slug: { type: string, description: 'Проверенный адрес (если передан slug) либо предложенный из названия (если передан только name).' }
+        available: { type: boolean }
+        reason: { type: string, nullable: true, description: 'Почему недоступен — готовый текст; null, если доступен.' }
+        reasonCode:
+          allOf: [ { $ref: '#/components/schemas/CatalogConflictCode' } ]
+          nullable: true
+    ShopListItemDto:
+      type: object
+      required: [id, name, slug, isActive, publicUrl, myRole]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        logoUrl: { type: string, nullable: true }
+        isActive: { type: boolean }
+        publicUrl: { type: string }
+        myRole: { $ref: '#/components/schemas/ShopRole' }
+    ShopSettingsDto:
+      type: object
+      required: [customerMode, acceptanceMode, allowCustomerCancel, trackStock]
+      properties:
+        customerMode: { $ref: '#/components/schemas/ShopCustomerMode' }
+        acceptanceMode: { $ref: '#/components/schemas/OrderAcceptanceMode' }
+        allowCustomerCancel: { type: boolean }
+        trackStock: { type: boolean }
+        updatedAtUtc: { type: string, format: date-time, nullable: true }
+    ShopSettingsInput:
+      type: object
+      required: [customerMode, acceptanceMode, allowCustomerCancel, trackStock]
+      properties:
+        customerMode: { $ref: '#/components/schemas/ShopCustomerMode' }
+        acceptanceMode: { $ref: '#/components/schemas/OrderAcceptanceMode' }
+        allowCustomerCancel: { type: boolean }
+        trackStock: { type: boolean }
+    SellerInfoInput:
+      type: object
+      description: '[legal L2] Реквизиты продавца. В цикле 1 все поля необязательны; обязательность включается кодом (SellerInfoRequirements) по заключению legal-counsel.'
+      properties:
+        legalForm:
+          type: string
+          nullable: true
+          enum: [Ip, Company, SelfEmployed, null]
+          description: Существующее перечисление LegalEntityForm.
+        legalName: { type: string, nullable: true, maxLength: 300 }
+        inn: { type: string, nullable: true, maxLength: 12, description: 'Проверяется формально (InnValidator), как у заявки на канал.' }
+        ogrn: { type: string, nullable: true, maxLength: 15 }
+        legalAddress: { type: string, nullable: true, maxLength: 500 }
+    SellerInfoDto:
+      allOf:
+        - $ref: '#/components/schemas/SellerInfoInput'
+        - type: object
+          required: [isComplete, requiredFields]
+          properties:
+            isComplete: { type: boolean, description: 'Все поля из requiredFields заполнены. В цикле 1 requiredFields пуст → всегда true.' }
+            requiredFields:
+              type: array
+              items: { type: string }
+              description: 'Имена обязательных полей по текущему правилу (camelCase). В цикле 1 — [].'
+    PublicSellerInfoDto:
+      type: object
+      description: '[legal L2] Что показывается покупателю на витрине. null-поля не показываются.'
+      properties:
+        legalForm: { type: string, nullable: true }
+        legalName: { type: string, nullable: true }
+        inn: { type: string, nullable: true }
+        ogrn: { type: string, nullable: true }
+        legalAddress: { type: string, nullable: true }
+    ShopManageDto:
+      type: object
+      required: [id, name, slug, isActive, publicUrl, myRole, settings, seller, acceptingOrders, phoneVerificationAvailable, timeZoneId]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        cityId: { type: integer, nullable: true }
+        cityName: { type: string, nullable: true }
+        timeZoneId: { type: string }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        isActive: { type: boolean }
+        publicUrl: { type: string }
+        myRole: { $ref: '#/components/schemas/ShopRole' }
+        settings: { $ref: '#/components/schemas/ShopSettingsDto' }
+        seller: { $ref: '#/components/schemas/SellerInfoDto' }
+        acceptingOrders: { type: boolean, description: 'Итог ShopOrderingGate. В цикле 1 = isActive.' }
+        notAcceptingReason: { type: string, nullable: true }
+        phoneVerificationAvailable:
+          type: boolean
+          description: 'Включена ли подсистема подтверждения телефона (MAX). false → режим VerifiedPhoneOnly включить нельзя.'
+        productCount: { type: integer, minimum: 0 }
+    ShopSlugInput:
+      type: object
+      required: [slug]
+      properties:
+        slug: { type: string, minLength: 3, maxLength: 50 }
+
+    # ─────────────────────────────── каталог ───────────────────────────────
+    CategoryDto:
+      type: object
+      required: [id, name, position, isHidden, productCount]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        position: { type: integer }
+        isHidden: { type: boolean }
+        productCount: { type: integer, minimum: 0, description: 'Неудалённых товаров в категории.' }
+    CategoryInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        isHidden: { type: boolean, default: false }
+    StockDto:
+      type: object
+      description: 'Остаток товара в базовой единице (штуки или граммы).'
+      required: [onHand, reserved, free]
+      properties:
+        onHand: { type: integer, nullable: true, description: 'null — остаток у товара не учитывается.' }
+        reserved: { type: integer, minimum: 0, description: 'Сумма по активным заказам, созданным с резервом.' }
+        free: { type: integer, nullable: true, description: 'onHand − reserved (может быть < 0, если остаток правили вниз); null при onHand = null.' }
+    ProductDto:
+      type: object
+      required: [id, name, unit, price, position, isPublished, isSoldOut, foodInfo, stock, availableToCustomers]
+      properties:
+        id: { type: string, format: uuid }
+        categoryId: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        imageUrl: { type: string, nullable: true }
+        thumbnailUrl: { type: string, nullable: true }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        price: { type: number, description: 'За штуку (Piece) или за 1 кг (Weight).' }
+        portionText: { type: string, nullable: true, description: 'Только Piece: «300 г», «0,5 л».' }
+        weightStepGrams: { type: integer, nullable: true, description: 'Только Weight.' }
+        minQuantity: { type: integer, description: 'Piece — 1; Weight — минимальный вес в граммах.' }
+        maxQuantity: { type: integer, description: 'Piece — 99; Weight — 10000.' }
+        position: { type: integer }
+        isPublished: { type: boolean }
+        isSoldOut: { type: boolean }
+        foodInfo: { $ref: '#/components/schemas/FoodInfoDto' }
+        stock: { $ref: '#/components/schemas/StockDto' }
+        availableToCustomers: { type: boolean, description: 'Итог правила «доступный товар» SPEC §4 — то же значение, что увидит покупатель.' }
+    ProductInput:
+      type: object
+      required: [name, unit, price, isPublished]
+      properties:
+        categoryId: { type: string, format: uuid, nullable: true }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, nullable: true, maxLength: 2000 }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        price: { type: number, minimum: 0.01, maximum: 1000000, description: 'Два знака после запятой; больше — 400.' }
+        portionText: { type: string, nullable: true, maxLength: 50, description: 'Только Piece; у Weight — 400.' }
+        weightStepGrams: { type: integer, nullable: true, minimum: 10, maximum: 5000, description: 'Только Weight; по умолчанию 100.' }
+        minQuantityGrams: { type: integer, nullable: true, minimum: 10, maximum: 10000, description: 'Только Weight; по умолчанию = шаг; кратно шагу.' }
+        isPublished: { type: boolean }
+        foodInfo: { $ref: '#/components/schemas/FoodInfoDto' }
+    ProductOrderInput:
+      type: object
+      required: [productIds]
+      properties:
+        categoryId: { type: string, format: uuid, nullable: true, description: 'null — блок «Другое» (товары без категории).' }
+        productIds:
+          type: array
+          maxItems: 1000
+          items: { type: string, format: uuid }
+    SoldOutInput:
+      type: object
+      required: [isSoldOut]
+      properties:
+        isSoldOut: { type: boolean }
+    StockInput:
+      type: object
+      required: [onHand]
+      properties:
+        onHand: { type: integer, nullable: true, minimum: 0, maximum: 100000000, description: 'Штуки или граммы. null — перестать учитывать остаток у этого товара.' }
+
+    # ─────────────────────────────── витрина ───────────────────────────────
+    StorefrontProductDto:
+      type: object
+      required: [id, name, unit, price, minQuantity, maxQuantity, foodInfo, available]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        imageUrl: { type: string, nullable: true }
+        thumbnailUrl: { type: string, nullable: true }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        price: { type: number }
+        portionText: { type: string, nullable: true }
+        weightStepGrams: { type: integer, nullable: true }
+        minQuantity: { type: integer }
+        maxQuantity: { type: integer }
+        foodInfo: { $ref: '#/components/schemas/FoodInfoDto' }
+        available: { type: boolean, description: 'false — показывается серым с подписью «Закончилось», в корзину не добавляется.' }
+    StorefrontCategoryDto:
+      type: object
+      required: [name, products]
+      properties:
+        id: { type: string, format: uuid, nullable: true, description: 'null — последний блок «Другое» (товары без категории).' }
+        name: { type: string }
+        products:
+          type: array
+          items: { $ref: '#/components/schemas/StorefrontProductDto' }
+    StorefrontDto:
+      type: object
+      required: [slug, name, isAvailable, acceptingOrders, customerMode, allowCustomerCancel, categories, publicUrl]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        publicUrl: { type: string }
+        logoUrl: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        cityName: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+        isAvailable: { type: boolean, description: 'false — магазин заблокирован/деактивирован: «Магазин недоступен», каталог пуст.' }
+        acceptingOrders: { type: boolean }
+        notAcceptingReason: { type: string, nullable: true, description: 'Готовый текст «сейчас не принимает заказы …».' }
+        customerMode: { $ref: '#/components/schemas/ShopCustomerMode' }
+        allowCustomerCancel: { type: boolean }
+        seller:
+          allOf: [ { $ref: '#/components/schemas/PublicSellerInfoDto' } ]
+          nullable: true
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/StorefrontCategoryDto' }
+    CartLineInput:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 10000 }
+    QuoteInput:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CartLineInput' }
+    OrderProblemDto:
+      type: object
+      required: [productId, name, reason, message]
+      properties:
+        productId: { type: string, format: uuid }
+        name: { type: string, description: 'Название товара (или «Товар больше не продаётся», если удалён).' }
+        reason: { $ref: '#/components/schemas/OrderProblemReason' }
+        message: { type: string, description: 'Готовый текст для покупателя.' }
+        currentUnitPrice: { type: number, nullable: true, description: 'Только PriceChanged.' }
+        availableQuantity: { type: integer, nullable: true, description: 'Только InsufficientStock — сколько можно заказать сейчас.' }
+    QuoteLineDto:
+      type: object
+      required: [productId, name, unit, unitPrice, quantity, lineTotal, isApproximate]
+      properties:
+        productId: { type: string, format: uuid }
+        name: { type: string }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        unitPrice: { type: number }
+        portionText: { type: string, nullable: true }
+        quantity: { type: integer }
+        lineTotal: { type: number }
+        isApproximate: { type: boolean, description: 'true у Weight: «≈», сумма уточнится при выдаче.' }
+        problem:
+          allOf: [ { $ref: '#/components/schemas/OrderProblemDto' } ]
+          nullable: true
+    QuoteDto:
+      type: object
+      required: [lines, total, isApproximate, hasProblems, acceptingOrders]
+      properties:
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/QuoteLineDto' }
+        total: { type: number, description: 'Сумма по строкам без проблем.' }
+        isApproximate: { type: boolean }
+        hasProblems: { type: boolean }
+        acceptingOrders: { type: boolean }
+        notAcceptingReason: { type: string, nullable: true }
+    OrderLineInput:
+      type: object
+      required: [productId, quantity, expectedUnitPrice]
+      properties:
+        productId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 10000 }
+        expectedUnitPrice: { type: number, description: 'Цена, которую видел покупатель. Не совпала с текущей → 409 PriceChanged.' }
+    CreateOrderInput:
+      type: object
+      required: [idempotencyKey, items, customerName]
+      properties:
+        idempotencyKey: { type: string, format: uuid, description: 'Генерирует фронт на одну попытку оформления; повтор с тем же ключом возвращает уже созданный заказ.' }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/OrderLineInput' }
+        customerName: { type: string, minLength: 1, maxLength: 100 }
+        customerPhone: { type: string, nullable: true, maxLength: 30, description: 'Обязателен для гостя (российский формат). У вошедшего ИГНОРИРУЕТСЯ — заказ создаётся на номер аккаунта.' }
+        comment: { type: string, nullable: true, maxLength: 500 }
+        captchaToken: { type: string, nullable: true, description: 'Обязателен для гостя, когда капча включена (CaptchaService.IsEnforced).' }
+    OrderRefusalDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/OrderRefusalCode' }
+        message: { type: string }
+        problems:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/OrderProblemDto' }
+    CreateOrderResponse:
+      type: object
+      required: [order, orderUrl]
+      properties:
+        order: { $ref: '#/components/schemas/PublicOrderDto' }
+        orderUrl: { type: string, description: 'Абсолютная ссылка https://goods.ezbook.ru/o/<token>.' }
+
+    # ─────────────────────────────── заказ у покупателя ───────────────────────────────
+    PublicOrderItemDto:
+      type: object
+      required: [name, unit, unitPrice, quantityOrdered, lineTotal, isApproximate]
+      properties:
+        name: { type: string }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        unitPrice: { type: number }
+        portionText: { type: string, nullable: true }
+        quantityOrdered: { type: integer }
+        quantityActual: { type: integer, nullable: true, description: 'Фактический вес при выдаче (Weight); у Piece = quantityOrdered после выдачи.' }
+        lineTotal: { type: number }
+        isApproximate: { type: boolean }
+    OrderTimelineStepDto:
+      type: object
+      required: [status, title, reached]
+      properties:
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        title: { type: string }
+        reached: { type: boolean }
+        reachedAtUtc: { type: string, format: date-time, nullable: true }
+    OrderChangeLineDto:
+      type: object
+      required: [name, text]
+      properties:
+        name: { type: string }
+        before: { type: string, nullable: true, description: '«2 шт × 150 ₽»; null — позиция добавлена.' }
+        after: { type: string, nullable: true, description: 'null — позиция удалена.' }
+        text: { type: string, description: 'Готовая строка «было → стало».' }
+    OrderShopChangeDto:
+      type: object
+      required: [occurredAtUtc, changes, totalBefore, totalAfter]
+      properties:
+        occurredAtUtc: { type: string, format: date-time }
+        comment: { type: string, nullable: true }
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/OrderChangeLineDto' }
+        totalBefore: { type: number }
+        totalAfter: { type: number }
+    OrderShopInfoDto:
+      type: object
+      required: [name, slug, publicUrl]
+      properties:
+        name: { type: string }
+        slug: { type: string }
+        publicUrl: { type: string }
+        logoUrl: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        cityName: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        yandexMapsUrl: { type: string, nullable: true }
+        twoGisUrl: { type: string, nullable: true }
+    PublicOrderDto:
+      type: object
+      required: [token, number, businessDate, createdAtUtc, status, statusText, timeline, items, total, totalIsApproximate, customerName, customerPhoneMasked, shop, canCancel, shopChanges, version, isGuest]
+      properties:
+        token: { type: string }
+        number: { type: integer, description: 'Короткий номер «№ 27» — сквозной по магазину в пределах суток магазина.' }
+        businessDate: { type: string, format: date, description: 'Дата заказа по часовому поясу магазина — показывается рядом с номером.' }
+        createdAtUtc: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        statusText: { type: string }
+        timeline:
+          type: array
+          items: { $ref: '#/components/schemas/OrderTimelineStepDto' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PublicOrderItemDto' }
+        total: { type: number, description: 'До выдачи — предварительная сумма; после выдачи — к оплате.' }
+        totalIsApproximate: { type: boolean }
+        comment: { type: string, nullable: true }
+        customerName: { type: string, nullable: true, description: 'null — данные покупателя обезличены.' }
+        customerPhoneMasked: { type: string, nullable: true, description: '«+7 (9**) ***-**-67».' }
+        reason: { type: string, nullable: true, description: 'Причина отклонения/отмены магазином, если указана.' }
+        canCancel: { type: boolean }
+        shop: { $ref: '#/components/schemas/OrderShopInfoDto' }
+        shopChanges:
+          type: array
+          items: { $ref: '#/components/schemas/OrderShopChangeDto' }
+        version: { type: integer }
+        isGuest: { type: boolean, description: 'true — показать подсказку «сохраните ссылку, другого способа вернуться к заказу нет».' }
+    MyOrderSummaryDto:
+      type: object
+      required: [orderUrl, token, number, businessDate, shopName, status, statusText, total, totalIsApproximate, createdAtUtc, isActive]
+      properties:
+        orderUrl: { type: string }
+        token: { type: string }
+        number: { type: integer }
+        businessDate: { type: string, format: date }
+        shopName: { type: string }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        statusText: { type: string }
+        total: { type: number }
+        totalIsApproximate: { type: boolean }
+        createdAtUtc: { type: string, format: date-time }
+        isActive: { type: boolean }
+
+    # ─────────────────────────────── заказ у персонала ───────────────────────────────
+    StaffOrderItemDto:
+      type: object
+      required: [id, name, unit, unitPrice, quantityOrdered, lineTotal, isApproximate]
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        unit: { $ref: '#/components/schemas/ProductUnit' }
+        unitPrice: { type: number }
+        portionText: { type: string, nullable: true }
+        weightStepGrams: { type: integer, nullable: true }
+        quantityOrdered: { type: integer }
+        quantityActual: { type: integer, nullable: true }
+        lineTotal: { type: number }
+        isApproximate: { type: boolean }
+    StaffOrderCardDto:
+      type: object
+      required: [id, number, businessDate, createdAtUtc, status, statusText, customerKind, items, total, totalIsApproximate, isModified, hasWeightItems, version, availableActions]
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: integer }
+        businessDate: { type: string, format: date }
+        createdAtUtc: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        statusText: { type: string }
+        customerName: { type: string, nullable: true }
+        customerPhone: { type: string, nullable: true, description: 'Полный номер в каноническом виде (для tel:). null — обезличен.' }
+        customerKind: { $ref: '#/components/schemas/OrderActorKind' }
+        customerPhoneVerified: { type: boolean }
+        comment: { type: string, nullable: true }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/StaffOrderItemDto' }
+        total: { type: number }
+        totalIsApproximate: { type: boolean }
+        isModified: { type: boolean, description: 'Метка «изменён» — магазин правил состав.' }
+        hasWeightItems: { type: boolean }
+        reason: { type: string, nullable: true }
+        completedAtUtc: { type: string, format: date-time, nullable: true }
+        version: { type: integer }
+        availableActions:
+          type: array
+          items: { $ref: '#/components/schemas/OrderAction' }
+    OrderEventDto:
+      type: object
+      required: [kind, occurredAtUtc, actorKind, text]
+      properties:
+        kind: { $ref: '#/components/schemas/OrderEventKind' }
+        occurredAtUtc: { type: string, format: date-time }
+        actorKind: { $ref: '#/components/schemas/OrderActorKind' }
+        actorName: { type: string, nullable: true, description: 'Имя снимком (сотрудник) или «Покупатель»/«Гость».' }
+        fromStatus:
+          allOf: [ { $ref: '#/components/schemas/OrderStatus' } ]
+          nullable: true
+        toStatus:
+          allOf: [ { $ref: '#/components/schemas/OrderStatus' } ]
+          nullable: true
+        reason: { type: string, nullable: true }
+        comment: { type: string, nullable: true }
+        changes:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/OrderChangeLineDto' }
+        totalBefore: { type: number, nullable: true }
+        totalAfter: { type: number, nullable: true }
+        text: { type: string, description: 'Готовая строка журнала.' }
+    StaffOrderDto:
+      allOf:
+        - $ref: '#/components/schemas/StaffOrderCardDto'
+        - type: object
+          required: [events]
+          properties:
+            events:
+              type: array
+              items: { $ref: '#/components/schemas/OrderEventDto' }
+    OrderBoardDto:
+      type: object
+      required: [revision, changed, businessDate, serverTimeUtc]
+      properties:
+        revision: { type: integer, format: int64, description: 'Счётчик изменений заказов магазина. Передаётся обратно в sinceRevision.' }
+        changed: { type: boolean, description: 'false — с sinceRevision ничего не менялось; массивы ниже null (дешёвый пустой опрос).' }
+        businessDate: { type: string, format: date }
+        serverTimeUtc: { type: string, format: date-time, description: 'Для «N минут назад» без расхождения часов.' }
+        newOrders:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+        accepted:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+        ready:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+        completedToday:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/StaffOrderCardDto' }
+    VersionInput:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer }
+    ReasonInput:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer }
+        reason: { type: string, nullable: true, maxLength: 300, description: 'Необязательна; покупатель её видит.' }
+    ActualQuantityInput:
+      type: object
+      required: [itemId, quantity]
+      properties:
+        itemId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 100000, description: 'Граммы для Weight. Для Piece не передаётся (выдаётся заказанное).' }
+    IssueQuoteInput:
+      type: object
+      required: [actualQuantities]
+      properties:
+        actualQuantities:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/ActualQuantityInput' }
+    IssueInput:
+      type: object
+      required: [expectedVersion, actualQuantities]
+      properties:
+        expectedVersion: { type: integer }
+        actualQuantities:
+          type: array
+          maxItems: 50
+          description: 'Ровно по одной записи на каждую Weight-позицию; пусто, если весовых нет.'
+          items: { $ref: '#/components/schemas/ActualQuantityInput' }
+    IssueQuoteDto:
+      type: object
+      required: [lines, finalTotal]
+      properties:
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/StaffOrderItemDto' }
+        finalTotal: { type: number, description: 'Итог к оплате — то же число, что будет сохранено при выдаче.' }
+    EditOrderLineInput:
+      type: object
+      required: [quantity]
+      description: 'Существующая позиция — itemId; новая (замена или добавление) — productId по текущей цене каталога.'
+      properties:
+        itemId: { type: string, format: uuid, nullable: true }
+        productId: { type: string, format: uuid, nullable: true }
+        quantity: { type: integer, minimum: 1, maximum: 10000 }
+    EditOrderInput:
+      type: object
+      required: [expectedVersion, items]
+      properties:
+        expectedVersion: { type: integer }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: 'ПОЛНЫЙ желаемый состав. Позиции, которых нет в списке, удаляются.'
+          items: { $ref: '#/components/schemas/EditOrderLineInput' }
+        commentForCustomer: { type: string, nullable: true, maxLength: 500 }
+    OrderConflictDto:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/OrderConflictCode' }
+        message: { type: string }
+        order:
+          allOf: [ { $ref: '#/components/schemas/StaffOrderDto' } ]
+          nullable: true
+          description: 'Актуальное состояние заказа (для VersionMismatch и InvalidTransition у персонала).'
+        publicOrder:
+          allOf: [ { $ref: '#/components/schemas/PublicOrderDto' } ]
+          nullable: true
+          description: 'Актуальное состояние для покупателя (отказ в отмене по ссылке).'
+        problems:
+          type: array
+          nullable: true
+          items: { $ref: '#/components/schemas/OrderProblemDto' }
+
+paths:
+  # ═══════════════════════════════ существующие: companies / admin ═══════════════════════════════
+  /api/companies/my:
+    get:
+      tags: [companies]
+      operationId: getMyCompaniesCycle23
+      summary: Компании, где вызывающий — владелец (фильтр по типу, по умолчанию Services)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/KindQuery' } ]
+      responses:
+        '200':
+          description: Список компаний одного типа.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CompanyDtoCycle23' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/companies/member:
+    get:
+      tags: [companies]
+      operationId: getMemberCompaniesCycle23
+      summary: Компании, где вызывающий — участник любой роли (фильтр по типу, по умолчанию Services)
+      security: [ { bearerAuth: [] } ]
+      parameters: [ { $ref: '#/components/parameters/KindQuery' } ]
+      responses:
+        '200':
+          description: Список компаний одного типа.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CompanyDtoCycle23' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/companies/kinds-summary:
+    get:
+      tags: [companies]
+      operationId: getCompanyKindsSummary
+      summary: Сколько у меня компаний каждого типа и на каком сайте ими управлять
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Счётчики по типам и базовые адреса сайтов.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompanyKindsSummaryDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/admin/companies:
+    get:
+      tags: [admin]
+      operationId: adminListCompaniesCycle23
+      summary: Список компаний в админке — тип и фильтр по типу
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          description: 'Не передан — все типы (поведение админки по умолчанию не меняется).'
+          schema: { $ref: '#/components/schemas/CompanyKind' }
+        - { name: search, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer } }
+        - { name: pageSize, in: query, required: false, schema: { type: integer } }
+      responses:
+        '200':
+          description: Страница компаний.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCompanyPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ═══════════════════════════════ shops ═══════════════════════════════
+  /api/shops:
+    post:
+      tags: [shops]
+      operationId: createShop
+      summary: Создать магазин (компания типа Orders)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateShopInput' }
+      responses:
+        '201':
+          description: Магазин создан; вызывающий — владелец. В ответе новый токен.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateShopResponse' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402':
+          description: Превышен лимит компаний биллинг-аккаунта (салоны и магазины считаются вместе) — текст BillingTexts.CompanyLimitReached.
+          content:
+            text/plain:
+              schema: { type: string }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+        '503': { $ref: '#/components/responses/PlainTextError' }
+  /api/shops/my:
+    get:
+      tags: [shops]
+      operationId: listMyShops
+      summary: Магазины, где я владелец или сотрудник
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Список (заблокированные тоже — с isActive false).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ShopListItemDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/shops/slug-check:
+    get:
+      tags: [shops]
+      operationId: checkShopSlug
+      summary: Проверить адрес магазина или предложить его из названия
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: slug
+          in: query
+          required: false
+          schema: { type: string, maxLength: 100 }
+        - name: name
+          in: query
+          required: false
+          description: Если slug не передан — предложить свободный адрес из названия (транслитерация).
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Результат проверки/предложения.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SlugCheckDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/shops/{shopId}:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shops]
+      operationId: getShop
+      summary: Магазин для кабинета (владелец и сотрудник)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Магазин, настройки, реквизиты, роль вызывающего.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/settings:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    put:
+      tags: [shops]
+      operationId: updateShopSettings
+      summary: Правила приёма заказов (только владелец)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShopSettingsInput' }
+      responses:
+        '200':
+          description: Магазин с новыми настройками. Действуют только на новые заказы.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/seller:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    put:
+      tags: [shops]
+      operationId: updateShopSeller
+      summary: Реквизиты продавца (только владелец) — [legal L2]
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellerInfoInput' }
+      responses:
+        '200':
+          description: Магазин с обновлёнными реквизитами.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopManageDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/slug:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    put:
+      tags: [shops]
+      operationId: changeShopSlug
+      summary: Сменить адрес магазина (только владелец; старая ссылка и QR перестают работать)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShopSlugInput' }
+      responses:
+        '200':
+          description: Магазин с новым адресом и publicUrl.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopManageDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/qr:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [shops]
+      operationId: getShopQr
+      summary: QR-код ссылки на магазин (PNG для печати на A4)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: 'PNG ~2000×2000 px, коррекция ошибок Q, ссылка = publicUrl. Content-Disposition: attachment; filename="<slug>-qr.png".'
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═══════════════════════════════ catalog ═══════════════════════════════
+  /api/shops/{shopId}/categories:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [catalog]
+      operationId: listCategories
+      summary: Категории магазина в порядке показа (владелец и сотрудник)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Все категории, включая скрытые.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CategoryDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [catalog]
+      operationId: createCategory
+      summary: Создать категорию (только владелец) — встаёт последней
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '201':
+          description: Категория создана.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/category-order:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    put:
+      tags: [catalog]
+      operationId: reorderCategories
+      summary: Порядок категорий (только владелец) — полный список id
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UuidList' }
+      responses:
+        '200':
+          description: Категории в новом порядке.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CategoryDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/categories/{categoryId}:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/CategoryId'
+    put:
+      tags: [catalog]
+      operationId: updateCategory
+      summary: Переименовать или скрыть категорию (только владелец)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '200':
+          description: Обновлённая категория.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CategoryDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+    delete:
+      tags: [catalog]
+      operationId: deleteCategory
+      summary: Удалить пустую категорию (только владелец)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '204':
+          description: Удалена.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/products:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [catalog]
+      operationId: listProducts
+      summary: Товары магазина для кабинета и экрана заказов (владелец и сотрудник)
+      description: 'Ограниченная коллекция (≤ Orders:MaxProductsPerShop), отдаётся целиком, без PagedResult — осознанное исключение (ARCHITECTURE_CYCLE23.md §393.4).'
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema: { type: string, maxLength: 100 }
+        - name: categoryId
+          in: query
+          required: false
+          description: 'uuid категории; литерал "none" — товары без категории.'
+          schema: { type: string, maxLength: 40 }
+      responses:
+        '200':
+          description: Неудалённые товары, по категории и позиции.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [catalog]
+      operationId: createProduct
+      summary: Завести товар (только владелец) — встаёт последним в своей категории
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '201':
+          description: Товар создан.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/product-order:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    put:
+      tags: [catalog]
+      operationId: reorderProducts
+      summary: Порядок товаров внутри одной категории (только владелец)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductOrderInput' }
+      responses:
+        '200':
+          description: Товары категории в новом порядке.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/products/{productId}:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/ProductId'
+    put:
+      tags: [catalog]
+      operationId: updateProduct
+      summary: Изменить товар целиком (только владелец); единица не меняется
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '200':
+          description: Обновлённый товар. Уже созданные заказы не меняются.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CatalogConflict' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+    delete:
+      tags: [catalog]
+      operationId: deleteProduct
+      summary: Удалить товар из каталога (только владелец); заказы с ним не меняются
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '204':
+          description: Товар удалён из каталога (мягко — строка остаётся для заказов).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/products/{productId}/image:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/ProductId'
+    post:
+      tags: [catalog]
+      operationId: uploadProductImage
+      summary: Загрузить/заменить фото товара (только владелец) — существующий конвейер изображений
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: Товар с новым imageUrl/thumbnailUrl.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: Файл больше лимита. Тело пустое.
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+    delete:
+      tags: [catalog]
+      operationId: deleteProductImage
+      summary: Убрать фото товара (только владелец)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Товар без фото.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+  /api/shops/{shopId}/products/{productId}/sold-out:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/ProductId'
+    put:
+      tags: [catalog]
+      operationId: setProductSoldOut
+      summary: Отметить «закончилось» / вернуть (владелец и сотрудник)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SoldOutInput' }
+      responses:
+        '200':
+          description: Товар с новым isSoldOut. Действует сразу; заказы не меняются.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/products/{productId}/stock:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/ProductId'
+    put:
+      tags: [catalog]
+      operationId: setProductStock
+      summary: Задать остаток «на складе» (владелец и сотрудник); null — не учитывать
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockInput' }
+      responses:
+        '200':
+          description: Товар с новым остатком и пересчитанным free.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═══════════════════════════════ storefront ═══════════════════════════════
+  /api/storefront/{slug}:
+    parameters: [ { $ref: '#/components/parameters/Slug' } ]
+    get:
+      tags: [storefront]
+      operationId: getStorefront
+      summary: Страница магазина для покупателя (анонимно)
+      security: []
+      responses:
+        '200':
+          description: Магазин и каталог доступных к показу товаров. Заблокированный — isAvailable false, каталог пуст.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StorefrontDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/storefront/{slug}/quote:
+    parameters: [ { $ref: '#/components/parameters/Slug' } ]
+    post:
+      tags: [storefront]
+      operationId: quoteCart
+      summary: Проверить корзину — текущие цены, доступность, суммы (ничего не резервирует)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteInput' }
+      responses:
+        '200':
+          description: Построчный расчёт; проблемные строки — с problem (ответ всегда 200).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/storefront/{slug}/orders:
+    parameters: [ { $ref: '#/components/parameters/Slug' } ]
+    post:
+      tags: [storefront]
+      operationId: createOrder
+      summary: Оформить заказ (гость или вошедший — по настройке магазина)
+      security: [ {}, { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderInput' }
+      responses:
+        '201':
+          description: Заказ создан.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateOrderResponse' }
+        '200':
+          description: Повтор с тем же idempotencyKey — возвращён ранее созданный заказ.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateOrderResponse' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Заказ не создан — код, текст и проблемные позиции.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderRefusalDto' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '451': { $ref: '#/components/responses/LegalGate' }
+
+  # ═══════════════════════════════ orders-public ═══════════════════════════════
+  /api/orders/public/{token}:
+    parameters: [ { $ref: '#/components/parameters/OrderToken' } ]
+    get:
+      tags: [orders-public]
+      operationId: getPublicOrder
+      summary: Заказ по ссылке (анонимно; кто знает ссылку — видит заказ)
+      security: []
+      responses:
+        '200':
+          description: Заказ глазами покупателя.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicOrderDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/orders/public/{token}/cancel:
+    parameters: [ { $ref: '#/components/parameters/OrderToken' } ]
+    post:
+      tags: [orders-public]
+      operationId: cancelPublicOrder
+      summary: Отменить заказ покупателем (если разрешено для этого заказа и статус New/Accepted)
+      security: []
+      responses:
+        '200':
+          description: Заказ в статусе CancelledByCustomer, резерв возвращён.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicOrderDto' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/orders/my:
+    get:
+      tags: [orders-public]
+      operationId: listMyOrders
+      summary: Мои заказы — активные, затем завершённые за 30 дней (только заказы аккаунта, без гостевых)
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Список, активные сверху.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MyOrderSummaryDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ═══════════════════════════════ orders-staff ═══════════════════════════════
+  /api/shops/{shopId}/order-board:
+    parameters: [ { $ref: '#/components/parameters/ShopId' } ]
+    get:
+      tags: [orders-staff]
+      operationId: getOrderBoard
+      summary: Экран заказов — три колонки и «Завершённые сегодня»; дешёвый пустой опрос по revision
+      security: [ { bearerAuth: [] } ]
+      parameters:
+        - name: sinceRevision
+          in: query
+          required: false
+          description: 'revision из прошлого ответа. Совпал с текущим и businessDate тот же → changed false, массивы null.'
+          schema: { type: integer, format: int64 }
+        - name: businessDate
+          in: query
+          required: false
+          description: 'businessDate из прошлого ответа — смена суток магазина считается изменением.'
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Доска или «без изменений».
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderBoardDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /api/shops/{shopId}/orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [orders-staff]
+      operationId: getStaffOrder
+      summary: Карточка заказа с журналом
+      security: [ { bearerAuth: [] } ]
+      responses:
+        '200':
+          description: Заказ и журнал событий.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/shops/{shopId}/orders/{orderId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [orders-staff]
+      operationId: acceptOrder
+      summary: Новый → Принят
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionInput' }
+      responses:
+        '200':
+          description: Обновлённый заказ.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+  /api/shops/{shopId}/orders/{orderId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [orders-staff]
+      operationId: rejectOrder
+      summary: Новый → Отклонён (причина необязательна)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonInput' }
+      responses:
+        '200':
+          description: Обновлённый заказ.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+  /api/shops/{shopId}/orders/{orderId}/ready:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [orders-staff]
+      operationId: markOrderReady
+      summary: Принят → Готов к выдаче
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionInput' }
+      responses:
+        '200':
+          description: Обновлённый заказ.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+  /api/shops/{shopId}/orders/{orderId}/issue-quote:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [orders-staff]
+      operationId: quoteOrderIssue
+      summary: Итог к оплате по фактическому весу — до подтверждения выдачи (ничего не меняет)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueQuoteInput' }
+      responses:
+        '200':
+          description: Строки с фактическими количествами и итог.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssueQuoteDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+  /api/shops/{shopId}/orders/{orderId}/issue:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [orders-staff]
+      operationId: issueOrder
+      summary: Готов к выдаче → Выдан (фактический вес весовых позиций, списание остатка)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueInput' }
+      responses:
+        '200':
+          description: Выданный заказ с итогом к оплате.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+  /api/shops/{shopId}/orders/{orderId}/not-picked-up:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [orders-staff]
+      operationId: markOrderNotPickedUp
+      summary: Готов к выдаче → Не забран (вручную)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VersionInput' }
+      responses:
+        '200':
+          description: Обновлённый заказ; резерв возвращён.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+  /api/shops/{shopId}/orders/{orderId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [orders-staff]
+      operationId: cancelOrderByShop
+      summary: Принят/Готов → Отменён магазином (причина необязательна)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonInput' }
+      responses:
+        '200':
+          description: Обновлённый заказ; резерв возвращён.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }
+  /api/shops/{shopId}/orders/{orderId}/items:
+    parameters:
+      - $ref: '#/components/parameters/ShopId'
+      - $ref: '#/components/parameters/OrderId'
+    put:
+      tags: [orders-staff]
+      operationId: editOrderItems
+      summary: Правка состава заказа магазином (Новый/Принят/Готов)
+      security: [ { bearerAuth: [] } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EditOrderInput' }
+      responses:
+        '200':
+          description: Обновлённый заказ (isModified true, событие Edited в журнале).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffOrderDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/OrderConflict' }

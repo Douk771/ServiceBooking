@@ -1,0 +1,50 @@
+{
+  "_comment": "ЕДИНСТВЕННЫЙ источник карты маршрутов goods.ezbook.ru и политики адреса магазина (ARCHITECTURE_CYCLE23.md §390, §399). Читают трое: бэкенд (Services/Shops/SlugPolicy.cs — embedded resource, как contracts/cycle11/legal-routes.json), фронтенд goods (тест goods/src/goodsRoutes.test.ts против GoodsApp.tsx) и QA. Правка руками в любом из трёх мест вместо этого файла — дефект. Добавлять новый маршрут goods можно ТОЛЬКО вместе с новым словом в reservedSlugs — иначе он может совпасть с адресом уже существующего магазина.",
+
+  "slugPattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+  "slugMinLength": 3,
+  "slugMaxLength": 50,
+
+  "_shopPageComment": "Страница магазина — корневой сегмент: https://goods.ezbook.ru/<slug>. Страница заказа — /o/<token>.",
+  "shopPagePattern": "/:slug",
+  "orderPagePattern": "/o/:token",
+
+  "_spaRoutesComment": "Маршруты SPA goods, кроме /:slug. Первый сегмент каждого обязан быть в reservedSlugs (проверяет тест фронта и юнит-тест бэкенда).",
+  "spaRoutes": [
+    "/",
+    "/login",
+    "/register",
+    "/o/:token",
+    "/orders",
+    "/profile",
+    "/profile/consents",
+    "/cabinet",
+    "/cabinet/new",
+    "/cabinet/:shopId/orders",
+    "/cabinet/:shopId/catalog",
+    "/cabinet/:shopId/settings",
+    "/cabinet/:shopId/staff",
+    "/cabinet/:shopId/link",
+    "/privacy",
+    "/terms",
+    "/terms-owner",
+    "/pdn-consent",
+    "/channel-risk",
+    "/offer-channel",
+    "/payment-terms",
+    "/data-request"
+  ],
+
+  "_reservedComment": "Слова, которые нельзя занять адресом магазина. Включают все текущие маршруты goods, служебные пути nginx/API и слова, заранее занятые под циклы 2–3 (каталог по городу, помощь, тарифы). Короткие слова (<3 символов) недостижимы по длине, но перечислены, чтобы список читался как полная карта занятых первых сегментов.",
+  "reservedSlugs": [
+    "about", "account", "accounts", "admin", "api", "app", "assets", "auth",
+    "billing", "cabinet", "cart", "catalog", "channel-risk", "checkout", "cities", "city",
+    "company", "companies", "contacts", "data-request", "embed", "ezbook", "faq", "favicon",
+    "goods", "health", "help", "index", "legal", "login", "logout", "manifest",
+    "max", "me", "my", "new", "o", "offer-channel", "order", "orders",
+    "owner", "payment-terms", "pdn-consent", "pricing", "privacy", "profile", "register", "robots",
+    "s", "search", "settings", "shop", "shops", "signup", "sitemap", "static",
+    "status", "support", "sw", "terms", "terms-owner", "u", "uploads", "well-known",
+    "www"
+  ]
+}
