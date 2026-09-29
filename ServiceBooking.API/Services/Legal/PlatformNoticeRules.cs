@@ -153,6 +153,14 @@ public static class PlatformNoticeRules
     /// billingAccountId — для BillingAccount (и только для него)". Existence checks are the caller's job.</summary>
     public static string? ValidateAudienceShape(NoticeAudienceType type, Guid[]? planIds, Guid? billingAccountId)
     {
+        // Code-review finding (cycle 20): Program.cs's JsonStringEnumConverter accepts a raw out-of-range
+        // integer for any enum by default, so `"audience": {"type": 99, ...}` used to bind straight
+        // through and fall into every "else"/"default" branch below as if it were a recognized-but-narrow
+        // audience — for NewProcessor/Other (ValidateAudienceForKind returns null unconditionally) that
+        // meant a notice got saved addressed to nobody, silently, instead of a 400.
+        if (!Enum.IsDefined(type))
+            return $"Неизвестное значение audience.type '{type}'.";
+
         if (type == NoticeAudienceType.OwnersOnPlans)
         {
             if (planIds is not { Length: > 0 }) return "Для адресата OwnersOnPlans укажите непустой список тарифов.";
@@ -177,6 +185,16 @@ public static class PlatformNoticeRules
         if (linkUrl.Length > MaxLinkUrlLength) return $"Ссылка не должна превышать {MaxLinkUrlLength} символов.";
         if (!linkUrl.StartsWith('/') || linkUrl.StartsWith("//"))
             return "Ссылка должна быть относительным путём, начинающимся с одного /.";
+        // Code-review finding (cycle 20): "/\evil.example" passes the checks above (starts with one '/',
+        // not '//') but a browser treats a backslash exactly like a forward slash when resolving a URL, so
+        // react-router-dom's <Link to> renders it as a scheme-relative "//evil.example" — an open redirect
+        // off the platform (GHSA-wrjc-x8rr-h8h6, react-router-dom ^6.26.2, present in this project's own
+        // npm audit). Only SuperAdmin ever supplies this field, but there is no reason to accept a
+        // backslash (or any control character) in a same-origin relative path at all.
+        if (linkUrl.Contains('\\'))
+            return "Ссылка не должна содержать обратный слэш.";
+        if (linkUrl.Any(char.IsControl))
+            return "Ссылка не должна содержать управляющие символы.";
         return null;
     }
 

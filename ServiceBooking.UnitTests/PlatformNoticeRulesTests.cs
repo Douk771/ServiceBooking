@@ -256,6 +256,14 @@ public class PlatformNoticeRulesTests
     public void ValidateAudienceShape_AllOwnersWithBillingAccountId_Rejected() =>
         PlatformNoticeRules.ValidateAudienceShape(NoticeAudienceType.AllOwners, null, Guid.NewGuid()).Should().NotBeNull();
 
+    // Code-review finding (cycle 20): Program.cs's JsonStringEnumConverter accepts a raw out-of-range
+    // integer for any enum by default, so `"audience": {"type": 99}` used to bind straight through and,
+    // for NewProcessor/Other (ValidateAudienceForKind returns null unconditionally), reach the DB as a
+    // notice addressed to nobody instead of a 400.
+    [Fact]
+    public void ValidateAudienceShape_UndefinedType_Rejected() =>
+        PlatformNoticeRules.ValidateAudienceShape((NoticeAudienceType)99, null, null).Should().NotBeNull();
+
     // ── ValidateLinkUrl ──────────────────────────────────────────────────────────
 
     [Fact]
@@ -275,6 +283,20 @@ public class PlatformNoticeRulesTests
 
     [Fact]
     public void ValidateLinkUrl_TooLong_Rejected() => PlatformNoticeRules.ValidateLinkUrl("/" + new string('a', 500)).Should().NotBeNull();
+
+    // Code-review finding (cycle 20): a browser treats '\' exactly like '/' when resolving a URL, so
+    // "/\evil.example" (one leading '/', not '//') used to pass both checks above and render as a
+    // scheme-relative "//evil.example" via react-router-dom's <Link to> — an open redirect off the
+    // platform (GHSA-wrjc-x8rr-h8h6, react-router-dom ^6.26.2, per this project's own npm audit).
+    [Theory]
+    [InlineData("/\\evil.example")]
+    [InlineData("/legal\\..\\..\\evil")]
+    public void ValidateLinkUrl_ContainsBackslash_Rejected(string linkUrl) =>
+        PlatformNoticeRules.ValidateLinkUrl(linkUrl).Should().NotBeNull();
+
+    [Fact]
+    public void ValidateLinkUrl_ContainsControlCharacter_Rejected() =>
+        PlatformNoticeRules.ValidateLinkUrl("/legal/terms\r\nX-Injected: 1").Should().NotBeNull();
 
     // ── ComputeVisibleUntilUtc ───────────────────────────────────────────────────
 
