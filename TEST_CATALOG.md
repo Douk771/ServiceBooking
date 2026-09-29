@@ -5633,6 +5633,16 @@ backend-developer, но не использовалась ни одним тес
 - **CY19-13** — `GET /api/billing/subscription` (`AvailableOptions`/`Options`) никогда не содержит
   `extra-*` (US-19-04, зеркало CY19-07 на владельческом экране).
 
+### `Cycle19RetiredLimitGateParityTests.cs` (новый файл, 2 теста) — гейт выката (US-19-05, §385.2/§391, закрывает C19-3)
+
+| Кейс | Шаги | Ожидаемый результат | Критерий |
+|---|---|---|---|
+| **LIM19-020** | В одной транзакции реального Postgres: пустой набор; затем 14 строк `AccountSubscriptionOption` (опция-лимит `employees`/`companies` в разном регистре и с пробелами, не-лимитная опция, `CapabilityKey` null и «employee»; `EndsAtUtc` NULL/прошлое/будущее/ровно `now`; `PaidUntilUtc` NULL/прошлое/будущее/ровно `now`; строки на аккаунте с истёкшей подпиской). Выполнить `deploy/checks/cycle19-retired-limit-options-live.sql` через Npgsql и `RetiredLimitOptions.LiveRetiredRows(db, now)` | Пустой набор: обе формы пусты. Иначе обе формы возвращают одни и те же строки (все 7 столбцов) и ровно ожидаемое по §385.2 множество: `PaidUntilUtc == now` попадает, `EndsAtUtc == now` нет, истёкшая подписка не мешает. Файл гейта не содержит psql-метакоманд. | §385.2 |
+| **LIM19-020b** | Зафиксировать строки, выполнить `deploy/checks/cycle19-limit-options-report.sql` штатным `psql` внутри контейнера тестового Postgres (`docker exec`, `ON_ERROR_STOP=1`, как в `deploy-remote.sh`) | Код выхода 0, stderr без `ERROR`, в выводе завершающая строка отчёта, состояния `live`/`ended` и засеянная строка. Без docker-контейнера (внешний сервер) тест возвращается сразу с записью в консоль. | §385.4 |
+
+Время: `now()` в PostgreSQL неизменно в пределах транзакции, поэтому сид, SQL и LINQ идут в одной транзакции
+(откатывается), а LINQ получает ровно это `now()`. Граница «ровно сейчас» детерминирована, без гонки по часам.
+
 ### Числа
 
 `ServiceBooking.Tests`: **769 → 801** (+32: 20 в `CompanyAddressTests.cs`, восстанавливающих
