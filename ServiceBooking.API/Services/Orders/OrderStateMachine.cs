@@ -9,8 +9,8 @@ namespace ServiceBooking.API.Services.Orders;
 public static class OrderStateMachine
 {
     private static readonly OrderAction[] None = [];
-    private static readonly OrderAction[] ForNew = [OrderAction.Accept, OrderAction.Reject, OrderAction.Edit];
-    private static readonly OrderAction[] ForAccepted = [OrderAction.MarkReady, OrderAction.Cancel, OrderAction.Edit];
+    private static readonly OrderAction[] ForNew = [OrderAction.Accept, OrderAction.Reject, OrderAction.Edit, OrderAction.ChangePickup];
+    private static readonly OrderAction[] ForAccepted = [OrderAction.MarkReady, OrderAction.Cancel, OrderAction.Edit, OrderAction.ChangePickup];
     private static readonly OrderAction[] ForReady = [OrderAction.Issue, OrderAction.NotPickedUp, OrderAction.Cancel, OrderAction.Edit];
 
     /// <summary>New, Accepted, Ready — the order still holds its stock reserve and lives on the board.</summary>

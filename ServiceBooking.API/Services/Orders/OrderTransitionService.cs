@@ -19,7 +19,7 @@ public sealed record OrderActionResult(ActionResult? Error, StaffOrderDto? Order
 /// <see cref="OrderStateMachine"/>; the journal row and the board revision are written by <see cref="OrderEventLog"/> in the same transaction.
 /// </summary>
 public class OrderTransitionService(
-    AppDbContext db, OrderEventLog eventLog, OrderActorResolver actorResolver, StockLedger stockLedger)
+    AppDbContext db, OrderEventLog eventLog, OrderActorResolver actorResolver, StockLedger stockLedger, StaffOrderDtoFactory staffDtos)
 {
     public const string ReasonTooLong = "Причина — не длиннее 300 символов";
     public const string ActualWeightRequired = "Укажите фактический вес каждой весовой позиции";
@@ -37,9 +37,9 @@ public class OrderTransitionService(
         var order = await LoadTrackedAsync(shop.Id, orderId, ct);
         if (order is null) return new OrderActionResult(new NotFoundResult());
 
-        if (order.Version != expectedVersion) return await VersionMismatchAsync(order, ct);
+        if (order.Version != expectedVersion) return await VersionMismatchAsync(shop, order, ct);
         if (!OrderStateMachine.TryApply(order.Status, action, out var to))
-            return await ConflictAsync(order, OrderConflictCode.InvalidTransition, OrderTexts.InvalidTransition(order.Status), ct);
+            return await ConflictAsync(shop, order, OrderConflictCode.InvalidTransition, OrderTexts.InvalidTransition(order.Status), ct);
 
         var from = order.Status;
         var now = DateTime.UtcNow;
@@ -63,7 +63,7 @@ public class OrderTransitionService(
         await eventLog.AppendAsync(order, kind, await actorResolver.ResolveStaffAsync(user), from, to,
             reason: action is OrderAction.Reject or OrderAction.Cancel ? trimmedReason : null);
 
-        return await SaveAndRespondAsync(order, transaction, ct);
+        return await SaveAndRespondAsync(shop, order, transaction, ct);
     }
 
     // ── Issue ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ public class OrderTransitionService(
         if (order is null) return (new NotFoundResult(), null);
         if (order.Status != OrderStatus.Ready)
             return (Conflict(OrderConflictCode.InvalidTransition, OrderTexts.InvalidTransition(order.Status),
-                OrderDtoMapper.ToStaff(await LoadWithEventsAsync(order.Id, ct))), null);
+                await staffDtos.BuildAsync(await LoadWithEventsAsync(order.Id, ct), shop, ct)), null);
 
         var plan = PlanIssue(order, actuals);
         if (plan.Error is not null) return (new BadRequestObjectResult(plan.Error), null);
@@ -103,9 +103,9 @@ public class OrderTransitionService(
         var order = await LoadTrackedAsync(shop.Id, orderId, ct);
         if (order is null) return new OrderActionResult(new NotFoundResult());
 
-        if (order.Version != expectedVersion) return await VersionMismatchAsync(order, ct);
+        if (order.Version != expectedVersion) return await VersionMismatchAsync(shop, order, ct);
         if (!OrderStateMachine.TryApply(order.Status, OrderAction.Issue, out var to))
-            return await ConflictAsync(order, OrderConflictCode.InvalidTransition, OrderTexts.InvalidTransition(order.Status), ct);
+            return await ConflictAsync(shop, order, OrderConflictCode.InvalidTransition, OrderTexts.InvalidTransition(order.Status), ct);
 
         var plan = PlanIssue(order, actuals);
         if (plan.Error is not null) return new OrderActionResult(new BadRequestObjectResult(plan.Error));
@@ -139,7 +139,7 @@ public class OrderTransitionService(
             changesJson: writeOffs.Count > 0 ? OrderChangeLog.SerializeIssue(new IssueLog(writeOffs)) : null,
             totalBefore: before, totalAfter: plan.FinalTotal);
 
-        return await SaveAndRespondAsync(order, transaction, ct);
+        return await SaveAndRespondAsync(shop, order, transaction, ct);
     }
 
     private sealed record IssueLine(int Actual, decimal Total);
@@ -178,7 +178,7 @@ public class OrderTransitionService(
 
     /// <summary>Saves under the concurrency token; a lost race becomes a VersionMismatch with the current order, never an exception.</summary>
     private async Task<OrderActionResult> SaveAndRespondAsync(
-        Order order, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction, CancellationToken ct)
+        Company shop, Order order, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction, CancellationToken ct)
     {
         var orderId = order.Id;
         try
@@ -191,21 +191,21 @@ public class OrderTransitionService(
             await transaction.RollbackAsync(ct);
             db.ChangeTracker.Clear();
             var fresh = await LoadWithEventsAsync(orderId, ct);
-            return new OrderActionResult(Conflict(OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, OrderDtoMapper.ToStaff(fresh)));
+            return new OrderActionResult(Conflict(OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, await staffDtos.BuildAsync(fresh, shop, ct)));
         }
         db.ChangeTracker.Clear();
-        return new OrderActionResult(null, OrderDtoMapper.ToStaff(await LoadWithEventsAsync(orderId, ct)));
+        return new OrderActionResult(null, await staffDtos.BuildAsync(await LoadWithEventsAsync(orderId, ct), shop, ct));
     }
 
-    private async Task<OrderActionResult> VersionMismatchAsync(Order order, CancellationToken ct) =>
-        await ConflictAsync(order, OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, ct);
+    private async Task<OrderActionResult> VersionMismatchAsync(Company shop, Order order, CancellationToken ct) =>
+        await ConflictAsync(shop, order, OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, ct);
 
-    private async Task<OrderActionResult> ConflictAsync(Order order, OrderConflictCode code, string message, CancellationToken ct)
+    private async Task<OrderActionResult> ConflictAsync(Company shop, Order order, OrderConflictCode code, string message, CancellationToken ct)
     {
         // The order in the body must be the CURRENT one, with its journal — reloaded clean, not the half-changed tracked graph.
         var orderId = order.Id;
         db.ChangeTracker.Clear();
-        return new OrderActionResult(Conflict(code, message, OrderDtoMapper.ToStaff(await LoadWithEventsAsync(orderId, ct))));
+        return new OrderActionResult(Conflict(code, message, await staffDtos.BuildAsync(await LoadWithEventsAsync(orderId, ct), shop, ct)));
     }
 
     private static ConflictObjectResult Conflict(OrderConflictCode code, string message, StaffOrderDto? order) =>

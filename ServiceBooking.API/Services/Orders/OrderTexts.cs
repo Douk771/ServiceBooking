@@ -89,6 +89,7 @@ public static class OrderTexts
             OrderEventKind.CancelledByCustomer => "Заказ отменён покупателем",
             OrderEventKind.CancelledByShop => "Заказ отменён магазином",
             OrderEventKind.Edited => "Магазин изменил заказ",
+            OrderEventKind.PickupChanged => "Изменено время получения",
             _ => kind.ToString()
         };
         return string.IsNullOrWhiteSpace(reason) ? text : $"{text}. Причина: {reason}";
@@ -130,6 +131,7 @@ public static class OrderTexts
         OrderProblemReason.InsufficientStock => OnlyLeft(unit, availableQuantity ?? 0),
         OrderProblemReason.BelowMinimum => $"Минимальный заказ — {Quantity(unit, minQuantity ?? 1)}",
         OrderProblemReason.InvalidQuantity => InvalidQuantity,
+        OrderProblemReason.NotAvailableOnDate => "В этот день не продаётся",
         _ => ItemsUnavailable
     };
 }

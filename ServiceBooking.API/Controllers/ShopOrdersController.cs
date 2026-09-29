@@ -3,8 +3,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Orders;
+using ServiceBooking.API.DTOs.Shops;
 using ServiceBooking.API.Services.Orders;
 using ServiceBooking.API.Services.Shops;
+using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -20,13 +22,16 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/shops/{shopId:guid}")]
 [Authorize]
 public class ShopOrdersController(
-    AppDbContext db, ShopAccessResolver access, OrderTransitionService transitions, OrderEditService editing) : ControllerBase
+    AppDbContext db, ShopAccessResolver access, OrderTransitionService transitions, OrderEditService editing,
+    StaffOrderDtoFactory staffDtos) : ControllerBase
 {
     private const int CompletedTodayLimit = 500;
 
     /// <summary>
-    /// The board (§397.1). The cheap path: one primary-key read of the revision counter; if it and the business day match what the client
-    /// sent, the answer is <c>changed:false</c> with no arrays. Otherwise the full board: active orders (oldest first) and today's finished ones.
+    /// The board (§397.1, cycle 24: §453). The cheap path: one primary-key read of the settings row — the revision counter AND the acceptance state (pause /
+    /// stop live on the same row, so the state rides in EVERY answer at no extra query); if the revision and the business day match what the client sent, the
+    /// answer is <c>changed:false</c> with no arrays. Otherwise the full board: active orders ordered by pickup time, pre-orders grouped by date, and today's
+    /// finished ones. A pre-order becomes an ordinary "accepted" one on its pickup day by itself — the business day changes, the poll is "changed", no task.
     /// The revision is read BEFORE the data, so a change committed in between is picked up by the next poll (a newer revision), never missed.
     /// </summary>
     [HttpGet("order-board")]
@@ -38,26 +43,37 @@ public class ShopOrdersController(
         if (!result.Ok) return result.Error!;
         var shop = result.Shop!;
 
-        var revision = await db.ShopSettings.AsNoTracking().Where(s => s.CompanyId == shopId)
-            .Select(s => (long?)s.OrdersRevision).FirstOrDefaultAsync(ct) ?? 0;
+        var settings = await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shopId, ct) ?? new ShopSettings { CompanyId = shopId };
+        var revision = settings.OrdersRevision;
         var nowUtc = DateTime.UtcNow;
+        var pickupContext = OrderPickupContext.For(shop, nowUtc);
         var today = ShopClock.BusinessDate(shop.TimeZoneId, nowUtc);
+        var acceptance = ShopScheduleMapper.ToDto(ShopAcceptanceRules.State(settings, nowUtc, pickupContext.Zone));
         if (sinceRevision == revision && businessDate == today)
-            return Ok(new OrderBoardDto(revision, false, today, nowUtc, null, null, null, null));
+            return Ok(new OrderBoardDto(revision, false, today, nowUtc, acceptance, null, null, null, null, null));
 
         var active = await db.Orders.AsNoTracking().Include(o => o.Items)
             .Where(o => o.CompanyId == shopId && (o.Status == OrderStatus.New || o.Status == OrderStatus.Accepted || o.Status == OrderStatus.Ready))
-            .OrderBy(o => o.CreatedAtUtc).ThenBy(o => o.Number).ToListAsync(ct);
+            .OrderBy(o => o.PickupStartUtc).ThenBy(o => o.CreatedAtUtc).ThenBy(o => o.Number).ToListAsync(ct);
         var (dayStart, dayEnd) = ShopClock.DayBoundsUtc(shop.TimeZoneId, today);
         var completed = await db.Orders.AsNoTracking().Include(o => o.Items)
             .Where(o => o.CompanyId == shopId && o.CompletedAtUtc >= dayStart && o.CompletedAtUtc < dayEnd &&
                         o.Status != OrderStatus.New && o.Status != OrderStatus.Accepted && o.Status != OrderStatus.Ready)
             .OrderByDescending(o => o.CompletedAtUtc).Take(CompletedTodayLimit).ToListAsync(ct);
 
-        List<StaffOrderCardDto> Cards(OrderStatus status) => active.Where(o => o.Status == status).Select(OrderDtoMapper.ToCard).ToList();
+        // One batch of cards (one query for the messenger statuses), then split into the columns.
+        var cards = (await staffDtos.BuildCardsAsync([.. active, .. completed], pickupContext, ct)).ToDictionary(c => c.Id);
+        List<StaffOrderCardDto> Column(IEnumerable<Order> orders) => orders.Select(o => cards[o.Id]).ToList();
+
+        var preorders = active.Where(o => o.Status == OrderStatus.Accepted && o.PickupDate > today)
+            .GroupBy(o => o.PickupDate).OrderBy(g => g.Key)
+            .Select(g => new PreorderGroupDto(g.Key, ShopTimeTexts.DateShort(g.Key), Column(g))).ToList();
         return Ok(new OrderBoardDto(
-            revision, true, today, nowUtc, Cards(OrderStatus.New), Cards(OrderStatus.Accepted), Cards(OrderStatus.Ready),
-            completed.Select(OrderDtoMapper.ToCard).ToList()));
+            revision, true, today, nowUtc, acceptance,
+            Column(active.Where(o => o.Status == OrderStatus.New)),
+            Column(active.Where(o => o.Status == OrderStatus.Accepted && o.PickupDate <= today)),
+            Column(active.Where(o => o.Status == OrderStatus.Ready)),
+            preorders, Column(completed)));
     }
 
     /// <summary>The order card with its journal (§396.6). An order of another shop is a 404.</summary>
@@ -68,7 +84,7 @@ public class ShopOrdersController(
         if (!result.Ok) return result.Error!;
         var order = await db.Orders.AsNoTracking().Include(o => o.Items).Include(o => o.Events).AsSplitQuery()
             .FirstOrDefaultAsync(o => o.Id == orderId && o.CompanyId == shopId, ct);
-        return order is null ? NotFound() : Ok(OrderDtoMapper.ToStaff(order));
+        return order is null ? NotFound() : Ok(await staffDtos.BuildAsync(order, result.Shop!, ct));
     }
 
     [HttpPost("orders/{orderId:guid}/accept")]
@@ -117,6 +133,16 @@ public class ShopOrdersController(
         var result = await access.ResolveAsync(shopId, User, ShopPermission.ManageOrders, asNoTracking: true, ct: ct);
         if (!result.Ok) return result.Error!;
         var outcome = await editing.EditAsync(result.Shop!, orderId, input, User, ct);
+        return outcome.Error is not null ? outcome.Error : Ok(outcome.Order);
+    }
+
+    /// <summary>US-24-09 (P1) — staff move the pickup time (and maybe the pickup day, which gives the order a new number). Only New / Accepted (§481).</summary>
+    [HttpPut("orders/{orderId:guid}/pickup")]
+    public async Task<ActionResult<StaffOrderDto>> ChangePickup(Guid shopId, Guid orderId, ChangePickupInput input, CancellationToken ct)
+    {
+        var result = await access.ResolveAsync(shopId, User, ShopPermission.ManageOrders, asNoTracking: true, ct: ct);
+        if (!result.Ok) return result.Error!;
+        var outcome = await editing.ChangePickupAsync(result.Shop!, orderId, input, User, ct);
         return outcome.Error is not null ? outcome.Error : Ok(outcome.Order);
     }
 

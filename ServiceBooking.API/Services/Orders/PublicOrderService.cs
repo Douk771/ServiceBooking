@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Orders;
+using ServiceBooking.API.Services.Shops;
 using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -16,7 +17,8 @@ namespace ServiceBooking.API.Services.Orders;
 /// from "there was no such order".
 /// </summary>
 public class PublicOrderService(
-    AppDbContext db, OrderDtoMapper mapper, OrderEventLog eventLog, OrderActorResolver actorResolver, PublicSiteLinks links)
+    AppDbContext db, OrderDtoMapper mapper, OrderEventLog eventLog, OrderActorResolver actorResolver, PublicSiteLinks links,
+    CustomerOrderNotificationsBuilder notificationsBuilder)
 {
     public async Task<PublicOrderDto?> GetAsync(string token, CancellationToken ct)
     {
@@ -91,10 +93,12 @@ public class PublicOrderService(
             .Select(o => new
             {
                 o.PublicToken, o.Number, o.BusinessDate, o.Status, o.EstimatedTotal, o.FinalTotal, o.HasWeightItems,
-                o.CreatedAtUtc, o.CompletedAtUtc,
-                ShopName = db.Companies.Where(c => c.Id == o.CompanyId).Select(c => c.Name).FirstOrDefault()
+                o.CreatedAtUtc, o.CompletedAtUtc, o.PickupKind, o.PickupDate, o.PickupStartUtc, o.PickupEndUtc,
+                ShopName = db.Companies.Where(c => c.Id == o.CompanyId).Select(c => c.Name).FirstOrDefault(),
+                TimeZoneId = db.Companies.Where(c => c.Id == o.CompanyId).Select(c => c.TimeZoneId).FirstOrDefault()
             })
             .ToListAsync(ct);
+        var now = DateTime.UtcNow;
 
         return rows
             .OrderBy(r => OrderStateMachine.IsActive(r.Status) ? 0 : 1)
@@ -103,7 +107,9 @@ public class PublicOrderService(
             .Select(r => new MyOrderSummaryDto(
                 links.OrderPageUrl(r.PublicToken), r.PublicToken, r.Number, r.BusinessDate, r.ShopName ?? string.Empty, r.Status,
                 OrderTexts.StatusText(r.Status), r.Status == OrderStatus.Issued ? r.FinalTotal ?? r.EstimatedTotal : r.EstimatedTotal,
-                r.HasWeightItems && r.Status != OrderStatus.Issued, r.CreatedAtUtc, OrderStateMachine.IsActive(r.Status)))
+                r.HasWeightItems && r.Status != OrderStatus.Issued, r.CreatedAtUtc, OrderStateMachine.IsActive(r.Status),
+                OrderDtoMapper.ToPickup(r.PickupKind, r.PickupDate, r.PickupStartUtc, r.PickupEndUtc, r.Status,
+                    new OrderPickupContext(TimeZoneInfo.FindSystemTimeZoneById(r.TimeZoneId ?? "Europe/Moscow"), now))))
             .ToList();
     }
 
@@ -111,7 +117,8 @@ public class PublicOrderService(
     {
         var shop = await db.Companies.AsNoTracking().FirstAsync(c => c.Id == order.CompanyId, ct);
         var cityName = shop.CityId is null ? null : await db.Cities.AsNoTracking().Where(c => c.Id == shop.CityId).Select(c => c.Name).FirstOrDefaultAsync(ct);
-        return mapper.ToPublic(order, shop, cityName);
+        var settings = await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shop.Id, ct) ?? new ShopSettings { CompanyId = shop.Id };
+        return mapper.ToPublic(order, shop, cityName, notificationsBuilder.Build(order, settings));
     }
 
     private async Task<(ActionResult? Error, PublicOrderDto? Order)> ConflictAsync(

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Orders;
+using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -16,7 +17,9 @@ namespace ServiceBooking.API.Services.Orders;
 /// line's own reserve — under the shop's stock lock when tracking is on. The journal row records was → became, the totals and the
 /// comment for the customer; the order is marked modified and its version moves on.
 /// </summary>
-public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActorResolver actorResolver, StockLedger stockLedger)
+public class OrderEditService(
+    AppDbContext db, OrderEventLog eventLog, OrderActorResolver actorResolver, StockLedger stockLedger, StaffOrderDtoFactory staffDtos,
+    ShopGateLoader gates, OrderNumberAllocator numberAllocator)
 {
     public const string CompositionInvalid = "Состав заказа указан с ошибкой";
     public const string CommentTooLong = "Комментарий — не длиннее 500 символов";
@@ -35,13 +38,13 @@ public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActo
         if (order is null) return new OrderActionResult(new NotFoundResult());
 
         if (order.Version != input.ExpectedVersion)
-            return await ConflictAsync(order.Id, OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, null, ct);
+            return await ConflictAsync(shop, order.Id, OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, null, ct);
         if (!OrderStateMachine.IsAllowed(order.Status, OrderAction.Edit))
-            return await ConflictAsync(order.Id, OrderConflictCode.InvalidTransition, OrderTexts.InvalidTransition(order.Status), null, ct);
+            return await ConflictAsync(shop, order.Id, OrderConflictCode.InvalidTransition, OrderTexts.InvalidTransition(order.Status), null, ct);
 
         var lines = input.Items ?? [];
         if (lines.Count == 0)
-            return await ConflictAsync(order.Id, OrderConflictCode.LastItemCannotBeRemoved, OrderTexts.LastItemCannotBeRemoved, null, ct);
+            return await ConflictAsync(shop, order.Id, OrderConflictCode.LastItemCannotBeRemoved, OrderTexts.LastItemCannotBeRemoved, null, ct);
 
         // A line is either an existing one (itemId) or a new one (productId) — never both, never neither; itemIds are this order's, once each.
         var itemById = order.Items.ToDictionary(i => i.Id);
@@ -58,7 +61,7 @@ public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActo
         var products = await db.Products.AsNoTracking().Where(p => p.CompanyId == shop.Id && productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
         foreach (var line in lines.Where(l => l.ProductId is not null))
             if (!products.TryGetValue(line.ProductId!.Value, out var np) || np.DeletedAtUtc is not null)
-                return await ConflictAsync(order.Id, OrderConflictCode.ProductUnavailable, OrderTexts.ProductUnavailable, null, ct);
+                return await ConflictAsync(shop, order.Id, OrderConflictCode.ProductUnavailable, OrderTexts.ProductUnavailable, null, ct);
 
         // Quantity rules: by the snapshot's step for existing lines, the product's step for new ones.
         var problems = new List<OrderProblemDto>();
@@ -78,7 +81,7 @@ public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActo
             }
         }
         if (problems.Count > 0)
-            return await ConflictAsync(order.Id, OrderConflictCode.InvalidQuantity, OrderTexts.InvalidQuantity, problems, ct);
+            return await ConflictAsync(shop, order.Id, OrderConflictCode.InvalidQuantity, OrderTexts.InvalidQuantity, problems, ct);
 
         // Stock: only GROWTH is checked, against free stock + the line's own reserve; several lines of one product share what is free.
         var reserved = settings.TrackStock ? await stockLedger.GetReservedAsync(shop.Id, productIds, ct) : new Dictionary<Guid, int>();
@@ -116,7 +119,7 @@ public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActo
             }
         }
         if (problems.Count > 0)
-            return await ConflictAsync(order.Id, OrderConflictCode.InsufficientStock, OrderTexts.InsufficientStock, problems, ct);
+            return await ConflictAsync(shop, order.Id, OrderConflictCode.InsufficientStock, OrderTexts.InsufficientStock, problems, ct);
 
         // Apply. The change list is built from what really differs.
         var totalBefore = order.EstimatedTotal;
@@ -162,7 +165,7 @@ public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActo
         {
             await transaction.RollbackAsync(ct);
             db.ChangeTracker.Clear();
-            return new OrderActionResult(null, OrderDtoMapper.ToStaff(await LoadWithEventsAsync(order.Id, ct)));
+            return new OrderActionResult(null, await staffDtos.BuildAsync(await LoadWithEventsAsync(order.Id, ct), shop, ct));
         }
 
         order.EstimatedTotal = OrderMoney.Sum(order.Items.Select(i => i.LineTotalEstimated));
@@ -183,10 +186,80 @@ public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActo
             await transaction.RollbackAsync(ct);
             db.ChangeTracker.Clear();
             return new OrderActionResult(Conflict(OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, null,
-                OrderDtoMapper.ToStaff(await LoadWithEventsAsync(orderId, ct))));
+                await staffDtos.BuildAsync(await LoadWithEventsAsync(orderId, ct), shop, ct)));
         }
         db.ChangeTracker.Clear();
-        return new OrderActionResult(null, OrderDtoMapper.ToStaff(await LoadWithEventsAsync(orderId, ct)));
+        return new OrderActionResult(null, await staffDtos.BuildAsync(await LoadWithEventsAsync(orderId, ct), shop, ct));
+    }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE24.md §451.4 (US-24-09, P1) — staff move the pickup time at the customer's request. Only New / Accepted, with
+    /// <c>expectedVersion</c>. Staff may pick any slot of a working day inside the horizon that has not ended yet, or "as soon as possible" while the
+    /// shop is open — a pause and the preparation time do not stop them (they are a decision of the shop's people, not a rule for customers). If the
+    /// PICKUP DATE changes, the order gets the next NUMBER of the new day in the same transaction (numbers are unique within a pickup day); the journal
+    /// keeps both, and the customer is told the new number by the planner. A request that changes nothing writes nothing.
+    /// </summary>
+    public async Task<OrderActionResult> ChangePickupAsync(
+        Company shop, Guid orderId, ChangePickupInput input, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var comment = string.IsNullOrWhiteSpace(input.Comment) ? null : input.Comment.Trim();
+        if (comment is { Length: > 500 }) return new OrderActionResult(new BadRequestObjectResult(CommentTooLong));
+        if (input.Pickup is null || input.Pickup is { Kind: PickupKind.Slot } && (input.Pickup.Date is null || input.Pickup.SlotStartUtc is null))
+            return new OrderActionResult(new BadRequestObjectResult(OrderCreationService.PickupSelectionIncomplete));
+
+        var now = DateTime.UtcNow;
+        var context = await gates.LoadAsync(shop, now, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var order = await db.Orders.Include(o => o.Items).Include(o => o.Events).AsSplitQuery()
+            .FirstOrDefaultAsync(o => o.Id == orderId && o.CompanyId == shop.Id, ct);
+        if (order is null) return new OrderActionResult(new NotFoundResult());
+
+        if (order.Version != input.ExpectedVersion)
+            return await ConflictAsync(shop, order.Id, OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, null, ct);
+        if (!OrderStateMachine.IsAllowed(order.Status, OrderAction.ChangePickup))
+            return await ConflictAsync(shop, order.Id, OrderConflictCode.InvalidTransition, OrderTexts.InvalidTransition(order.Status), null, ct);
+
+        var verdict = context.Pickup.Validate(new PickupSelection(input.Pickup.Kind, input.Pickup.Date, input.Pickup.SlotStartUtc), now, forStaff: true);
+        if (!verdict.Ok)
+            return await ConflictAsync(shop, order.Id, OrderConflictCode.PickupTimeUnavailable, verdict.ProblemText!, null, ct);
+
+        var newKind = verdict.EndUtc is null ? PickupKind.Asap : PickupKind.Slot;
+        var unchanged = newKind == order.PickupKind && verdict.PickupDate == order.PickupDate &&
+                        (newKind == PickupKind.Asap || (verdict.StartUtc == order.PickupStartUtc && verdict.EndUtc == order.PickupEndUtc));
+        if (unchanged)
+        {
+            await transaction.RollbackAsync(ct);
+            db.ChangeTracker.Clear();
+            return new OrderActionResult(null, await staffDtos.BuildAsync(await LoadWithEventsAsync(order.Id, ct), shop, ct));
+        }
+
+        var before = new PickupSide(order.PickupKind, order.PickupDate, order.PickupStartUtc, order.PickupEndUtc, order.Number);
+        if (verdict.PickupDate != order.PickupDate)
+            order.Number = await numberAllocator.NextAsync(shop.Id, verdict.PickupDate, ct);
+        order.PickupKind = newKind;
+        order.PickupDate = verdict.PickupDate;
+        order.PickupStartUtc = verdict.StartUtc;
+        order.PickupEndUtc = verdict.EndUtc;
+        order.UpdatedAtUtc = now;
+        order.Version++;
+        var after = new PickupSide(order.PickupKind, order.PickupDate, order.PickupStartUtc, order.PickupEndUtc, order.Number);
+        await eventLog.AppendAsync(order, OrderEventKind.PickupChanged, await actorResolver.ResolveStaffAsync(user), order.Status, order.Status,
+            comment: comment, changesJson: OrderChangeLog.SerializePickup(new PickupChangeLog(before, after)));
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(ct);
+            db.ChangeTracker.Clear();
+            return new OrderActionResult(Conflict(OrderConflictCode.VersionMismatch, OrderTexts.VersionMismatch, null,
+                await staffDtos.BuildAsync(await LoadWithEventsAsync(orderId, ct), shop, ct)));
+        }
+        db.ChangeTracker.Clear();
+        return new OrderActionResult(null, await staffDtos.BuildAsync(await LoadWithEventsAsync(orderId, ct), shop, ct));
     }
 
     private static OrderProblemDto StockProblem(Product product, int maxQuantity, int? stepGrams)
@@ -205,11 +278,11 @@ public class OrderEditService(AppDbContext db, OrderEventLog eventLog, OrderActo
         await db.Orders.AsNoTracking().Include(o => o.Items).Include(o => o.Events).AsSplitQuery().FirstAsync(o => o.Id == orderId, ct);
 
     private async Task<OrderActionResult> ConflictAsync(
-        Guid orderId, OrderConflictCode code, string message, List<OrderProblemDto>? problems, CancellationToken ct)
+        Company shop, Guid orderId, OrderConflictCode code, string message, List<OrderProblemDto>? problems, CancellationToken ct)
     {
         // The body carries the CURRENT order (with its journal), reloaded clean — not the tracked graph this request touched.
         db.ChangeTracker.Clear();
-        return new OrderActionResult(Conflict(code, message, problems, OrderDtoMapper.ToStaff(await LoadWithEventsAsync(orderId, ct))));
+        return new OrderActionResult(Conflict(code, message, problems, await staffDtos.BuildAsync(await LoadWithEventsAsync(orderId, ct), shop, ct)));
     }
 
     private static ConflictObjectResult Conflict(OrderConflictCode code, string message, List<OrderProblemDto>? problems, StaffOrderDto? order) =>

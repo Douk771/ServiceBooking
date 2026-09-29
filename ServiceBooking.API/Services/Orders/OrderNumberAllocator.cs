@@ -6,14 +6,14 @@ using ServiceBooking.Infrastructure.Data;
 namespace ServiceBooking.API.Services.Orders;
 
 /// <summary>
-/// ARCHITECTURE_CYCLE23.md §396.5 — the next order number of a shop's business day, atomically:
+/// ARCHITECTURE_CYCLE23.md §396.5 — the next order number of a shop's day, atomically (cycle 24, §451.4: the day is the PICKUP day):
 /// one <c>INSERT … ON CONFLICT DO UPDATE … RETURNING</c> in the order's own transaction. The row lock of the counter
 /// serializes only the number hand-out; a rollback of the transaction rolls the number back too (no gaps except a rollback
-/// after the hand-out, which is acceptable). The unique index (CompanyId, BusinessDate, Number) on Orders is the safety net.
+/// after the hand-out, which is acceptable). The unique index (CompanyId, PickupDate, Number) on Orders is the safety net.
 /// </summary>
 public class OrderNumberAllocator(AppDbContext db)
 {
-    public async Task<int> NextAsync(Guid companyId, DateOnly businessDate, CancellationToken ct = default)
+    public async Task<int> NextAsync(Guid companyId, DateOnly pickupDate, CancellationToken ct = default)
     {
         var transaction = db.Database.CurrentTransaction
             ?? throw new InvalidOperationException("OrderNumberAllocator must run inside the order's transaction.");
@@ -23,12 +23,12 @@ public class OrderNumberAllocator(AppDbContext db)
         await using var command = connection.CreateCommand();
         command.Transaction = transaction.GetDbTransaction();
         command.CommandText = """
-            INSERT INTO "OrderDailyCounters" ("CompanyId", "BusinessDate", "LastNumber") VALUES (@company, @date, 1)
-            ON CONFLICT ("CompanyId", "BusinessDate") DO UPDATE SET "LastNumber" = "OrderDailyCounters"."LastNumber" + 1
+            INSERT INTO "OrderDailyCounters" ("CompanyId", "PickupDate", "LastNumber") VALUES (@company, @date, 1)
+            ON CONFLICT ("CompanyId", "PickupDate") DO UPDATE SET "LastNumber" = "OrderDailyCounters"."LastNumber" + 1
             RETURNING "LastNumber"
             """;
         AddParameter(command, "company", companyId);
-        AddParameter(command, "date", businessDate);
+        AddParameter(command, "date", pickupDate);
         var result = await command.ExecuteScalarAsync(ct);
         return Convert.ToInt32(result);
     }

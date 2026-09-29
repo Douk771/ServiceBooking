@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using ServiceBooking.API.DTOs.Orders;
+using ServiceBooking.API.DTOs.Shops;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.API.Services.Shops;
@@ -18,35 +19,46 @@ namespace ServiceBooking.API.Services.Orders;
 public sealed record OrderCreationResult(ActionResult? Error, CreateOrderResponse? Response = null, bool Created = false);
 
 /// <summary>
-/// ARCHITECTURE_CYCLE23.md §395 — the storefront quote and the creation of an order. The order of checks of
-/// <see cref="CreateAsync"/> is the contract's (API_CONTRACT_CYCLE23.md §413.1) and each step has a reason:
-/// cheap model checks first; the shop and its gate; the cart size; IDEMPOTENCY BEFORE captcha and limits (a repeat must not
-/// hit the one-shot captcha or the throttle); the customer rules; the per-phone throttle; then ONE transaction (lock, products,
-/// quantities, availability, stock, price, number, token, snapshots, journal+revision). An order is never created with
-/// other data than the customer confirmed: every problem is reported at once and nothing is written.
+/// ARCHITECTURE_CYCLE23.md §395 (cycle 24: §451.2, API_CONTRACT_CYCLE24.md §478.1) — the storefront quote and the creation of an order. The
+/// order of checks of <see cref="CreateAsync"/> is the contract's and each step has a reason: cheap model checks first; the shop; IDEMPOTENCY
+/// (a repeat of an already created order must answer 200 even while the shop is paused, and must not hit the one-shot captcha or the
+/// throttle); the acceptance rule; the cart size; the PICKUP TIME re-check (before the captcha, so a one-shot token is not burnt on a refusal
+/// about time); the customer rules; the per-phone throttle; then ONE transaction (stock lock, products on the pickup date, quantities,
+/// availability, stock, price, the MONTH counter, the number of the pickup day, snapshots, journal + revision + notifications). An order is
+/// never created with other data than the customer confirmed: every problem is reported at once and nothing is written.
 /// </summary>
 public class OrderCreationService(
     AppDbContext db, CaptchaService captcha, SubjectScopeResolver subjectScope, PhoneVerificationAvailability phoneVerification,
     OrderPhoneThrottle throttle, StockLedger stockLedger, OrderNumberAllocator numberAllocator, OrderEventLog eventLog,
-    OrderDtoMapper mapper, PublicSiteLinks links, LegalDocumentProvider legalProvider, IOptions<OrdersOptions> options)
+    OrderDtoMapper mapper, PublicSiteLinks links, LegalDocumentProvider legalProvider, IOptions<OrdersOptions> options,
+    ShopGateLoader gates, DailyMenuService menus, OrderMonthlyCounter monthlyCounter, OrderLimitWarner limitWarner,
+    CustomerOrderNotificationsBuilder notificationsBuilder, ShopChannelReader shopChannels)
 {
     private const string IdempotencyIndex = "IX_Orders_CompanyId_IdempotencyKey";
 
     // ── Quote ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>POST /api/storefront/{slug}/quote — prices, totals and problems of a cart. Reserves nothing; 200 for any cart (§412).</summary>
+    /// <summary>POST /api/storefront/{slug}/quote — prices, totals and problems of a cart ON the chosen pickup date. Reserves nothing; 200 for any cart (§412, §477.4).</summary>
     public async Task<(ActionResult? Error, QuoteDto? Quote)> QuoteAsync(string slug, QuoteInput input, CancellationToken ct)
     {
         var items = input.Items ?? [];
         if (items.Count > options.Value.MaxLines) return (new BadRequestObjectResult("В корзине не больше 50 позиций"), null);
         if (items.Select(i => i.ProductId).Distinct().Count() != items.Count) return (new BadRequestObjectResult("Товар в корзине повторяется"), null);
+        if (PickupSelectionError(input.Pickup) is { } pickupError) return (new BadRequestObjectResult(pickupError), null);
 
         var shop = await FindShopAsync(slug, ct);
         if (shop is null) return (new NotFoundResult(), null);
-        var settings = await LoadSettingsAsync(shop.Id, ct);
-        var gate = ShopOrderingGate.Evaluate(shop, settings, DateTime.UtcNow);
+        var now = DateTime.UtcNow;
+        var context = await gates.LoadAsync(shop, now, ct);
+        var gate = context.Gate;
 
-        var evaluation = await EvaluateAsync(shop, settings, items.Select(i => (i.ProductId, i.Quantity)).ToList(), null, ct);
+        var selection = ToSelection(input.Pickup);
+        var pickup = gate.Schedule.Validate(selection, now, forStaff: false);
+        // A refused time still gets its dates checked: the customer changes the date and expects the cart lines to be judged on THAT date.
+        var pickupDate = pickup.Ok ? pickup.PickupDate : selection.Kind == PickupKind.Slot && selection.Date is { } chosen ? chosen : gate.Schedule.CurrentWorkingDay(now);
+        var menu = await menus.LookupAsync(shop.Id, pickupDate, ct);
+
+        var evaluation = await EvaluateAsync(shop, context.Settings, items.Select(i => (i.ProductId, i.Quantity)).ToList(), null, pickupDate, menu, ct);
         var lines = new List<QuoteLineDto>();
         decimal total = 0;
         var approximate = false;
@@ -67,7 +79,10 @@ public class OrderCreationService(
             }
             lines.Add(new QuoteLineDto(p.Id, p.Name, p.Unit, p.Price, p.PortionText, line.Quantity, lineTotal, OrderMoney.IsApproximate(p.Unit), line.Problem));
         }
-        return (null, new QuoteDto(lines, OrderMoney.Sum([total]), approximate, lines.Any(l => l.Problem is not null), gate.Accepting, gate.ReasonText));
+        var pickupProblem = pickup.Ok ? null : new PickupProblemDto(OrderRefusalCode.PickupTimeUnavailable, pickup.ProblemText!);
+        return (null, new QuoteDto(
+            lines, OrderMoney.Sum([total]), approximate, lines.Any(l => l.Problem is not null) || pickupProblem is not null,
+            gate.Accepting, gate.ReasonText, pickupDate, pickupProblem));
     }
 
     // ── Create ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -83,24 +98,34 @@ public class OrderCreationService(
         var lines = dto.Items ?? [];
         if (lines.Select(l => l.ProductId).Distinct().Count() != lines.Count) return Bad("Товар в корзине повторяется");
         if (dto.IdempotencyKey == Guid.Empty) return Bad("Не указан ключ заказа");
+        if (PickupSelectionError(dto.Pickup) is { } pickupError) return Bad(pickupError);
 
-        // 2. The shop: none / a salon → 404; blocked → 409 ShopNotAcceptingOrders.
+        // 2. The shop: none / a salon → 404.
         var shop = await FindShopAsync(slug, ct);
         if (shop is null) return new OrderCreationResult(new NotFoundResult());
-        var settings = await LoadSettingsAsync(shop.Id, ct);
-        var gate = ShopOrderingGate.Evaluate(shop, settings, DateTime.UtcNow);
-        if (!gate.Accepting)
-            return Refuse(OrderRefusalCode.ShopNotAcceptingOrders, gate.ReasonText ?? OrderTexts.ShopNotAvailable);
 
-        // 3. Cart size.
+        // 3. Idempotency — a repeat with the same key returns the order that already exists (200), BEFORE the acceptance rule (a repeat of
+        //    an order created a second ago must not turn into a refusal because the shop paused since), the captcha and the limits.
+        var existing = await LoadOrderAsync(o => o.CompanyId == shop.Id && o.IdempotencyKey == dto.IdempotencyKey, ct);
+        if (existing is not null) return new OrderCreationResult(null, await BuildResponseAsync(existing, shop, null, ct), Created: false);
+
+        // 4. The acceptance rule (§450).
+        var now = DateTime.UtcNow;
+        var context = await gates.LoadAsync(shop, now, ct);
+        var settings = context.Settings;
+        var gate = context.Gate;
+        if (!gate.Accepting)
+            return Refuse(OrderRefusalCode.ShopNotAcceptingOrders, gate.ReasonText ?? OrderTexts.ShopNotAvailable, notAcceptingCode: gate.Code);
+
+        // 5. Cart size.
         if (lines.Count == 0) return Refuse(OrderRefusalCode.EmptyCart, OrderTexts.EmptyCart);
         if (lines.Count > options.Value.MaxLines) return Refuse(OrderRefusalCode.TooManyLines, OrderTexts.TooManyLines);
 
-        // 4. Idempotency — a repeat with the same key returns the order that already exists (200), before captcha and limits.
-        var existing = await LoadOrderAsync(o => o.CompanyId == shop.Id && o.IdempotencyKey == dto.IdempotencyKey, ct);
-        if (existing is not null) return new OrderCreationResult(null, await BuildResponseAsync(existing, shop, ct), Created: false);
+        // 6. The pickup time, re-checked NOW against the schedule (§451.2). An order is never created with another time than the one chosen.
+        var pickup = gate.Schedule.Validate(ToSelection(dto.Pickup), now, forStaff: false);
+        if (!pickup.Ok) return Refuse(OrderRefusalCode.PickupTimeUnavailable, pickup.ProblemText!);
 
-        // 5. The customer.
+        // 7. The customer.
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
         var account = userId is null ? null : await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
         var scope = account is null ? (SubjectScope?)null : await subjectScope.ForAccountAsync(account, ct);
@@ -140,15 +165,19 @@ public class OrderCreationService(
             customerKind = OrderActorKind.Guest;
         }
 
-        // 6. The per-phone throttle (the per-IP one is the "order-create" rate-limit policy).
-        if (await throttle.IsLimitedAsync(shop.Id, canonicalPhone, DateTime.UtcNow, ct))
+        // 8. The per-phone throttle (the per-IP one is the "order-create" rate-limit policy).
+        if (await throttle.IsLimitedAsync(shop.Id, canonicalPhone, now, ct))
             return new OrderCreationResult(new ObjectResult("Слишком много заказов на этот номер — дождитесь выдачи текущих или позвоните в магазин") { StatusCode = 429 });
 
-        // 7–10. One transaction. With stock tracking the shop's stock lock is held for the whole of it.
+        // [legal L9] The messenger choice counts only if the shop really offers it (a switched-on flag AND a funded number); otherwise it is silently off.
+        var notifyByMessenger = dto.NotifyByMessenger && settings.CustomerMessengerEnabled && await shopChannels.IsMessengerAvailableAsync(shop.Id, ct);
+
+        // 9–10. One transaction. With stock tracking the shop's stock lock is held for the whole of it.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (settings.TrackStock) await stockLedger.LockAsync(shop.Id);
 
-        var evaluated = await EvaluateAsync(shop, settings, lines.Select(l => (l.ProductId, l.Quantity)).ToList(), lines, ct);
+        var menu = await menus.LookupAsync(shop.Id, pickup.PickupDate, ct);
+        var evaluated = await EvaluateAsync(shop, settings, lines.Select(l => (l.ProductId, l.Quantity)).ToList(), lines, pickup.PickupDate, menu, ct);
         var problems = evaluated.Where(e => e.Problem is not null).Select(e => e.Problem!).ToList();
         if (problems.Count > 0)
         {
@@ -158,14 +187,30 @@ public class OrderCreationService(
                 : Refuse(OrderRefusalCode.ItemsUnavailable, OrderTexts.ItemsUnavailable, problems);
         }
 
-        var now = DateTime.UtcNow;
+        // The month counter (§459.4): one upsert whose row lock serializes the orders of the ACCOUNT; over the limit → the whole transaction rolls back.
         var businessDate = ShopClock.BusinessDate(shop.TimeZoneId, now);
+        var month = ShopGateLoader.MonthStart(businessDate);
+        MonthlyUsage? usage = null;
+        if (shop.BillingAccountId is { } billingAccountId)
+        {
+            usage = await monthlyCounter.IncrementAsync(billingAccountId, month, ct);
+            if (context.Plan.MaxOrdersPerMonth is { } monthlyLimit && usage.Count > monthlyLimit)
+                return Refuse(OrderRefusalCode.ShopNotAcceptingOrders, ShopOrderingGate.TemporarilyNotAccepting, notAcceptingCode: ShopNotAcceptingCode.MonthlyLimitReached);
+        }
+
         var order = new Order
         {
             Id = Guid.NewGuid(),
             CompanyId = shop.Id,
-            Number = await numberAllocator.NextAsync(shop.Id, businessDate, ct),
+            Number = await numberAllocator.NextAsync(shop.Id, pickup.PickupDate, ct),
             BusinessDate = businessDate,
+            PickupKind = pickup.EndUtc is null ? PickupKind.Asap : PickupKind.Slot,
+            PickupDate = pickup.PickupDate,
+            PickupStartUtc = pickup.StartUtc,
+            PickupEndUtc = pickup.EndUtc,
+            NotifyByMessenger = notifyByMessenger,
+            MessengerConsentVersion = notifyByMessenger ? legalProvider.Current?.GetText(LegalTextKey.OrderMessengerConsent)?.Version : null,
+            MessengerConsentAtUtc = notifyByMessenger ? now : null,
             PublicToken = PublicOrderToken.Generate(),
             Status = settings.AcceptanceMode == OrderAcceptanceMode.Auto ? OrderStatus.Accepted : OrderStatus.New,
             Version = 1,
@@ -219,6 +264,8 @@ public class OrderCreationService(
         db.Orders.Add(order);
         await eventLog.AppendAsync(order, OrderEventKind.Created,
             new OrderActor(customerKind, order.CustomerUserId, customerName), null, order.Status);
+        if (usage is not null && shop.BillingAccountId is { } accountId)
+            await limitWarner.AfterIncrementAsync(shop, accountId, month, usage, context.Plan, now, ct);
         try
         {
             await db.SaveChangesAsync(ct);
@@ -232,23 +279,35 @@ public class OrderCreationService(
             db.ChangeTracker.Clear();
             var winner = await LoadOrderAsync(o => o.CompanyId == shop.Id && o.IdempotencyKey == dto.IdempotencyKey, ct);
             if (winner is null) throw;
-            return new OrderCreationResult(null, await BuildResponseAsync(winner, shop, ct), Created: false);
+            return new OrderCreationResult(null, await BuildResponseAsync(winner, shop, null, ct), Created: false);
         }
 
-        return new OrderCreationResult(null, await BuildResponseAsync(order, shop, ct), Created: true);
+        return new OrderCreationResult(null, await BuildResponseAsync(order, shop, settings, ct), Created: true);
     }
+
+    // ── Pickup selection ─────────────────────────────────────────────────────────────────────────────────────────
+
+    public const string PickupSelectionIncomplete = "Укажите дату и время получения";
+
+    /// <summary>A Slot without a date or a start time is a malformed request (400); everything else about the time is the schedule's verdict (409).</summary>
+    private static string? PickupSelectionError(PickupSelectionInput? pickup) =>
+        pickup is { Kind: PickupKind.Slot } && (pickup.Date is null || pickup.SlotStartUtc is null) ? PickupSelectionIncomplete : null;
+
+    /// <summary>No <c>pickup</c> = "as soon as possible": the cycle-23 frontend in the roll-out window keeps working.</summary>
+    private static PickupSelection ToSelection(PickupSelectionInput? pickup) =>
+        pickup is null ? new PickupSelection(PickupKind.Asap, null, null) : new PickupSelection(pickup.Kind, pickup.Date, pickup.SlotStartUtc);
 
     // ── Evaluation (shared by quote and create) ──────────────────────────────────────────────────────────────────
 
     private sealed record EvaluatedLine(Guid ProductId, int Quantity, Product? Product, OrderProblemDto? Problem);
 
     /// <summary>
-    /// One verdict per cart line: not found / not published / hidden category / sold out / quantity rule / stock — and, when
+    /// One verdict per cart line: not found / not published / hidden category / not sold that DATE / sold out / quantity rule / stock — and, when
     /// <paramref name="orderLines"/> are given (creation), whether the price the customer saw is still the current one.
     /// </summary>
     private async Task<List<EvaluatedLine>> EvaluateAsync(
         Company shop, ShopSettings settings, IReadOnlyList<(Guid ProductId, int Quantity)> cart,
-        IReadOnlyList<OrderLineInput>? orderLines, CancellationToken ct)
+        IReadOnlyList<OrderLineInput>? orderLines, DateOnly pickupDate, DailyMenuLookup menu, CancellationToken ct)
     {
         var ids = cart.Select(c => c.ProductId).ToList();
         var products = await db.Products.AsNoTracking().Where(p => p.CompanyId == shop.Id && ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
@@ -260,7 +319,7 @@ public class OrderCreationService(
         foreach (var (productId, quantity) in cart)
         {
             products.TryGetValue(productId, out var product);
-            var problem = ProblemFor(productId, product, quantity, settings, categories, reserved.GetValueOrDefault(productId));
+            var problem = ProblemFor(productId, product, quantity, settings, categories, reserved.GetValueOrDefault(productId), pickupDate, menu);
             if (problem is null && expectedPrices is not null && product is not null && expectedPrices[productId] != product.Price)
                 problem = new OrderProblemDto(product.Id, product.Name, OrderProblemReason.PriceChanged,
                     OrderTexts.PriceWas(expectedPrices[productId], product.Price), CurrentUnitPrice: product.Price);
@@ -271,14 +330,14 @@ public class OrderCreationService(
 
     private static OrderProblemDto? ProblemFor(
         Guid productId, Product? product, int quantity, ShopSettings settings,
-        IReadOnlyDictionary<Guid, ProductCategory> categories, int reserved)
+        IReadOnlyDictionary<Guid, ProductCategory> categories, int reserved, DateOnly pickupDate, DailyMenuLookup menu)
     {
         if (product is null || product.DeletedAtUtc is not null)
             return new OrderProblemDto(productId, OrderTexts.ProductUnavailable, OrderProblemReason.NotFound, OrderTexts.ProductUnavailable);
 
         var category = product.CategoryId is { } cid ? categories.GetValueOrDefault(cid) : null;
         var free = StockLedger.Free(product.StockOnHand, reserved);
-        var verdict = CatalogAvailability.Evaluate(product, category, settings.TrackStock, free, shopAccepting: true);
+        var verdict = CatalogAvailability.Evaluate(product, category, settings.TrackStock, free, shopAccepting: true, pickupDate, menu);
         OrderProblemDto Problem(OrderProblemReason reason, int? available = null) => new(
             product.Id, product.Name, reason,
             OrderTexts.ProblemMessage(reason, product.Unit, available, OrderQuantityRules.MinQuantity(product.Unit, product.WeightStepGrams, product.MinQuantityGrams)),
@@ -288,6 +347,7 @@ public class OrderCreationService(
         {
             case ProductAvailability.Unpublished: return Problem(OrderProblemReason.Unpublished);
             case ProductAvailability.CategoryHidden: return Problem(OrderProblemReason.CategoryHidden);
+            case ProductAvailability.NotOnThisDate: return Problem(OrderProblemReason.NotAvailableOnDate);
             case ProductAvailability.SoldOut: return Problem(OrderProblemReason.SoldOut);
             case ProductAvailability.InsufficientStock: return StockProblem(product, free!.Value, Problem);
         }
@@ -318,16 +378,14 @@ public class OrderCreationService(
         return db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Slug == normalized && c.Kind == CompanyKind.Orders, ct);
     }
 
-    private async Task<ShopSettings> LoadSettingsAsync(Guid shopId, CancellationToken ct) =>
-        await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shopId, ct) ?? new ShopSettings { CompanyId = shopId };
-
     private Task<Order?> LoadOrderAsync(System.Linq.Expressions.Expression<Func<Order, bool>> predicate, CancellationToken ct) =>
         db.Orders.AsNoTracking().Include(o => o.Items).Include(o => o.Events).AsSplitQuery().FirstOrDefaultAsync(predicate, ct);
 
-    private async Task<CreateOrderResponse> BuildResponseAsync(Order order, Company shop, CancellationToken ct)
+    private async Task<CreateOrderResponse> BuildResponseAsync(Order order, Company shop, ShopSettings? settings, CancellationToken ct)
     {
+        settings ??= await db.ShopSettings.AsNoTracking().FirstOrDefaultAsync(s => s.CompanyId == shop.Id, ct) ?? new ShopSettings { CompanyId = shop.Id };
         var cityName = shop.CityId is null ? null : await db.Cities.AsNoTracking().Where(c => c.Id == shop.CityId).Select(c => c.Name).FirstOrDefaultAsync(ct);
-        return new CreateOrderResponse(mapper.ToPublic(order, shop, cityName), links.OrderPageUrl(order.PublicToken));
+        return new CreateOrderResponse(mapper.ToPublic(order, shop, cityName, notificationsBuilder.Build(order, settings)), links.OrderPageUrl(order.PublicToken));
     }
 
     private static bool TryNormalizePhone(string? raw, out string canonical, out string? error)
@@ -349,6 +407,7 @@ public class OrderCreationService(
 
     private static OrderCreationResult Bad(string message) => new(new BadRequestObjectResult(message));
 
-    private static OrderCreationResult Refuse(OrderRefusalCode code, string message, List<OrderProblemDto>? problems = null) =>
-        new(new ConflictObjectResult(new OrderRefusalDto(code, message, problems)));
+    private static OrderCreationResult Refuse(
+        OrderRefusalCode code, string message, List<OrderProblemDto>? problems = null, ShopNotAcceptingCode? notAcceptingCode = null) =>
+        new(new ConflictObjectResult(new OrderRefusalDto(code, message, problems, notAcceptingCode)));
 }
