@@ -597,6 +597,9 @@ public class NotificationChannelsController(
         if (channel.BillingAccountId is null || company.BillingAccountId is null)
             return Forbid();
 
+        // ARCHITECTURE_CYCLE23.md §389.2: notification channels serve salons only in cycle 1 (rights first, kind second).
+        if (ServiceBooking.API.Services.Companies.CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
+
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"channel-assignment:{id}");
 

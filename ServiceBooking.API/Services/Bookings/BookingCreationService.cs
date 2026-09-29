@@ -51,6 +51,8 @@ public sealed class BookingCreationService(
         // through to a 500 from a broken FK instead of a clean 404 (US-05).
         var company = await db.Companies.FindAsync(dto.CompanyId);
         if (company is null) return Fail(new NotFoundObjectResult("Company not found"));
+        // ARCHITECTURE_CYCLE23.md §389.2: a shop takes no bookings — refused right after the company is loaded.
+        if (Companies.CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return Fail(shopRefusal);
 
         // A booking is a "staff manual booking" when an authenticated caller who actually works in THIS
         // company supplies guest details to record a walk-in for a third party. Everything else is an

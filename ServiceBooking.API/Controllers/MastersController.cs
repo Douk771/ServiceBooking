@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.ClientNotes;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
@@ -34,6 +35,8 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
         // just come back empty for them. Matches the CompanyMembership convention used elsewhere.
         var isMember = await CompanyMembership.IsStaffAsync(db, companyId, userId);
         if (!isMember) return Forbid();
+        // §389.2: salon-only route (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
 
         // Needed once, up front: whether the CALLER (not the notes' authors) is this company's owner —
         // decides `canDelete` on every note and photo below (decision Q16).
@@ -238,6 +241,8 @@ public class MastersController(AppDbContext db, FileStorage storage) : Controlle
         // to match the CompanyMembership convention used everywhere else (US-07 p.2).
         var isStaff = await CompanyMembership.IsStaffAsync(db, request.CompanyId, userId);
         if (!isStaff) return Forbid();
+        // §389.2: salon-only route (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, request.CompanyId) is { } shopRefusal) return shopRefusal;
 
         if (string.IsNullOrWhiteSpace(request.Note))
             return BadRequest("Note text is required.");

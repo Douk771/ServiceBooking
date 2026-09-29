@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Services;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 
@@ -29,6 +30,8 @@ public class ServicesController(AppDbContext db, ImageUploadService imageUploadS
     public async Task<ActionResult<ServiceDto>> Create(CreateServiceDto dto)
     {
         if (!await CanManageCompany(dto.CompanyId)) return Forbid();
+        // §389.2: a shop has no services (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, dto.CompanyId) is { } shopRefusal) return shopRefusal;
 
         var service = new Service
         {
@@ -54,6 +57,7 @@ public class ServicesController(AppDbContext db, ImageUploadService imageUploadS
         var service = await db.Services.FindAsync(id);
         if (service is null) return NotFound();
         if (!await CanManageCompany(service.CompanyId)) return Forbid();
+        if (await CompanyKindGuard.RejectShopAsync(db, service.CompanyId) is { } shopRefusal) return shopRefusal;
 
         service.Name = dto.Name;
         service.Description = dto.Description;
@@ -73,6 +77,7 @@ public class ServicesController(AppDbContext db, ImageUploadService imageUploadS
         var service = await db.Services.FindAsync(id);
         if (service is null) return NotFound();
         if (!await CanManageCompany(service.CompanyId)) return Forbid();
+        if (await CompanyKindGuard.RejectShopAsync(db, service.CompanyId) is { } shopRefusal) return shopRefusal;
 
         service.IsActive = false;
         await db.SaveChangesAsync();
@@ -94,6 +99,7 @@ public class ServicesController(AppDbContext db, ImageUploadService imageUploadS
         var service = await db.Services.FindAsync(id);
         if (service is null) return NotFound();
         if (!await CanManageCompany(service.CompanyId)) return Forbid();
+        if (await CompanyKindGuard.RejectShopAsync(db, service.CompanyId) is { } shopRefusal) return shopRefusal;
 
         var validation = await imageUploadService.ReadAndProcessAsync(file, ImageProfile.ServiceImage);
         if (!validation.Success) return BadRequest(validation.ErrorMessage);

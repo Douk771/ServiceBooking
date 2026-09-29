@@ -107,7 +107,13 @@ public record CompanyDto(
     // ARCHITECTURE_CYCLE15.md §252.3/§282 — always the already-normalized value (never a raw/garbage
     // stored int), default 2. Public on every caller so the client UI can explain the rule before the
     // server ever applies it.
-    int ClientRescheduleMinHours = 2
+    int ClientRescheduleMinHours = 2,
+    // ARCHITECTURE_CYCLE23.md §388.1/§408.1, API_CONTRACT_CYCLE23.md §408.1 — additive, appended at the end
+    // with defaults (§115 convention). Kind is the company's product type; PublicUrl is the absolute link to
+    // its public page, built ONLY by PublicSiteLinks (salon → ezbook.ru/company/<slug>, shop →
+    // goods.ezbook.ru/<slug>). Filled for EVERY caller, anonymous ones included.
+    CompanyKind Kind = CompanyKind.Services,
+    string PublicUrl = ""
 );
 
 // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance of TermsOwner (D3) that gates company creation. Checked
@@ -195,3 +201,7 @@ public record CompanyPhotoUsageDto(
     double? PercentUsed, // null when QuotaMb is null
     PhotoRetention Retention
 );
+
+// ARCHITECTURE_CYCLE23.md §408.3 — GET /api/companies/kinds-summary.
+public record CompanyKindSummaryItemDto(int Count, string SiteUrl);
+public record CompanyKindsSummaryDto(CompanyKindSummaryItemDto Services, CompanyKindSummaryItemDto Orders);

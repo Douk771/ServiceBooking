@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.Core.Entities;
@@ -34,6 +35,8 @@ public class CompanyNotificationsController(
     public async Task<ActionResult<NotificationSettingsDto>> GetSettings(Guid companyId, CancellationToken ct)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
+        // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId, ct);
         if (company is null) return NotFound();
@@ -54,6 +57,8 @@ public class CompanyNotificationsController(
     public async Task<ActionResult<NotificationSettingsDto>> UpdateSettings(Guid companyId, [FromBody] UpdateNotificationSettingsDto dto)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
+        // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
         if (company is null) return NotFound();
@@ -131,6 +136,8 @@ public class CompanyNotificationsController(
     public async Task<ActionResult<TemplatesResponseDto>> GetTemplates(Guid companyId, CancellationToken ct)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
+        // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var rows = await db.NotificationTemplates.AsNoTracking().Where(t => t.CompanyId == companyId).ToListAsync(ct);
         var placeholders = TemplatePlaceholders.All
@@ -161,6 +168,8 @@ public class CompanyNotificationsController(
     public async Task<ActionResult<TemplateItemDto>> UpdateTemplate(Guid companyId, string type, [FromBody] TemplateBodyDto dto)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
+        // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
         if (!TryParseCustomizableType(type, out var parsedType)) return NotFound();
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
@@ -260,6 +269,8 @@ public class CompanyNotificationsController(
     public async Task<ActionResult<TemplatePreviewDto>> PreviewTemplate(Guid companyId, string type, [FromBody] TemplateBodyDto dto)
     {
         if (!await CanManageCompanyAsync(companyId)) return Forbid();
+        // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
         if (!TryParseCustomizableType(type, out var parsedType)) return NotFound();
 
         var validation = NotificationTemplateValidator.Validate(dto.Body, parsedType);
@@ -288,6 +299,8 @@ public class CompanyNotificationsController(
         CancellationToken ct)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         var query = db.OutboundNotifications.AsNoTracking().Where(n => n.CompanyId == companyId);
@@ -320,6 +333,8 @@ public class CompanyNotificationsController(
     public async Task<ActionResult<NotificationSummaryDto>> GetSummary(Guid companyId, [FromQuery] int? days, CancellationToken ct)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: notifications belong to booking events — shops get them in cycle 2 (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var window = days is > 0 ? days.Value : 30;
         var sinceUtc = DateTime.UtcNow.AddDays(-window);

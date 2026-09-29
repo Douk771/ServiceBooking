@@ -17,7 +17,7 @@ namespace ServiceBooking.API.Services.Companies;
 /// </summary>
 public sealed class CompanyDtoAssembler(
     AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader accountUsageReader,
-    IOptions<GeoOptions> geoOptions)
+    IOptions<GeoOptions> geoOptions, PublicSites.PublicSiteLinks siteLinks)
 {
     /// <summary>
     /// Cycle 22 (D7; moved here from CompaniesController in P5, §378): the batched enrichment
@@ -60,6 +60,8 @@ public sealed class CompanyDtoAssembler(
             geoOptions.Value, covers.GetValueOrDefault(company.Id), canManage: true);
     }
 
+    // ARCHITECTURE_CYCLE23.md §391: an instance method since cycle 23 — the public link (PublicUrl) comes from
+    // PublicSiteLinks, the one place that knows the two sites' base addresses.
     // Single source of truth for building a CompanyDto from an entity + its resolved plan, so the
     // combined flags (OnlineBookingEnabled, PublicListingEnabled, PrepaymentEnabled) can't drift between
     // the seven call sites that return a CompanyDto. `city` is the resolved City row for c.CityId, or
@@ -73,7 +75,7 @@ public sealed class CompanyDtoAssembler(
     // PUT /api/companies/{id}" — internal (not private) so CompanyAddressController, a deliberately
     // separate controller (§207's own "тот уже самый большой в проекте" precedent), can build the exact
     // same shape without a second, drifting copy of this mapping.
-    public static CompanyDto MapToDto(
+    public CompanyDto MapToDto(
         Company c, EffectivePlan plan, double? averageRating, int reviewCount, City? city,
         int employeeCount, AccountUsage? usage, GeoOptions geoOptions,
         // ARCHITECTURE_CYCLE10.md §109.3/API_CONTRACT_CYCLE10.md §129: cover is a single (Url,
@@ -147,7 +149,8 @@ public sealed class CompanyDtoAssembler(
             BookingHorizon.Normalize(c.BookingHorizonDays),
             cover?.Url, cover?.ThumbnailUrl, photos,
             addressVerification, addressPoint,
-            c.YandexMapsUrl, c.TwoGisUrl, ClientRescheduleWindow.Normalize(c.ClientRescheduleMinHours));
+            c.YandexMapsUrl, c.TwoGisUrl, ClientRescheduleWindow.Normalize(c.ClientRescheduleMinHours),
+            c.Kind, siteLinks.CompanyPageUrl(c));
     }
 
     // ARCHITECTURE_CYCLE10.md §109.3: one batched query for the whole page's cover photos (Position ==

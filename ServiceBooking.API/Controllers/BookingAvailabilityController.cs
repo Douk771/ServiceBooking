@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Bookings;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -40,6 +41,12 @@ public class BookingAvailabilityController(
                 db.CompanyMembers.Any(m => m.UserId == masterId && m.CompanyId == cm.CompanyId), ct);
         if (!canView) return Forbid();
 
+        // §389.2: this route has no companyId, so "is it a shop?" is asked of the master instead — a person
+        // who works only in shops has no bookings by construction (rights first, kind second).
+        var worksInShop = await db.CompanyMembers.AnyAsync(cm => cm.UserId == masterId && cm.Company.Kind == CompanyKind.Orders, ct);
+        if (worksInShop && !await db.CompanyMembers.AnyAsync(cm => cm.UserId == masterId && cm.Company.Kind == CompanyKind.Services, ct))
+            return Conflict(CompanyKindGuard.ShopRefusalText);
+
         // Occupancy is deliberately NOT scoped by company: a master who works for two businesses is
         // still one person, so a booking made in company A must block the same time in company B.
         // Working hours ARE scoped by company (a master can keep different schedules) — the asymmetry
@@ -63,6 +70,9 @@ public class BookingAvailabilityController(
         [FromQuery] Guid? excludeBookingId = null,
         CancellationToken ct = default)
     {
+        // §389.2: anonymous public route — no rights to check first, the shop refusal comes straight away.
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
+
         // `manual` is client-supplied, so only honor it once we've independently verified the caller
         // actually works in THIS company — same trust bar BookingsController.Create uses for
         // isStaffManualBooking. Anyone else gets the regular schedule-gated grid, same as a guest
@@ -172,6 +182,7 @@ public class BookingAvailabilityController(
 
         var company = await db.Companies.FindAsync([companyId], ct);
         if (company is null) return NotFound("Company not found");
+        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var isStaff = userId is not null &&

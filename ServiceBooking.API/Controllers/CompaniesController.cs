@@ -26,16 +26,18 @@ public class CompaniesController(
     ImageUploadService imageUploadService, FileStorage storage,
     LegalDocumentProvider legalProvider, ConsentLedger ledger, TokenService tokenService,
     IOptions<GeoOptions> geoOptions,
-    CompanyDtoAssembler companyDtoAssembler, CompanyStatsService companyStatsService) : ControllerBase
+    CompanyDtoAssembler companyDtoAssembler, CompanyStatsService companyStatsService,
+    ServiceBooking.API.Services.PublicSites.PublicSiteLinks siteLinks) : ControllerBase
 {
     // Cycle 22 P5 (§378): the member endpoints moved to CompanyMembersController, the DTO assembly to
     // CompanyDtoAssembler and the stats body to CompanyStatsService — all unchanged.
+    // Cycle 23 (§389.2): the salon directory lists salons only — shops live on goods.ezbook.ru.
     [HttpGet]
     public async Task<ActionResult<List<CompanyDto>>> GetAll(CancellationToken ct)
     {
         // §375 F21: the owner's own opt-in (ShowInPublicListing, see below) is a plain column — filtered
         // in SQL, so opted-out companies are never loaded, nor resolved/rated/covered below.
-        var companies = await db.Companies.AsNoTracking().Where(c => c.IsActive && c.ShowInPublicListing).ToListAsync(ct);
+        var companies = await db.Companies.AsNoTracking().Where(c => c.IsActive && c.ShowInPublicListing && c.Kind == CompanyKind.Services).ToListAsync(ct);
         var plans = await subscriptionResolver.GetEffectivePlansAsync(companies.Select(c => c.Id));
         var ratings = await companyDtoAssembler.GetReviewAggregatesAsync(companies.Select(c => c.Id));
         var cities = await companyDtoAssembler.GetCitiesAsync(companies.Select(c => c.CityId));
@@ -52,7 +54,7 @@ public class CompaniesController(
         // accountSeatsLimit/canAddEmployee cost this endpoint exactly zero extra queries.
         return Ok(companies
             .Where(c => plans[c.Id].AllowPublicListing)
-            .Select(c => CompanyDtoAssembler.MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
+            .Select(c => companyDtoAssembler.MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
                 c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
                 geoOptions.Value, covers.GetValueOrDefault(c.Id))));
     }
@@ -92,7 +94,7 @@ public class CompaniesController(
         // AllowPublicListing rule, see that method's remarks) — are applied in SQL, so filtering and
         // paging never require materializing the full candidate set (ARCHITECTURE_CYCLE9.md §103.5).
         var query = db.Companies
-            .Where(c => c.IsActive && c.ShowInPublicListing)
+            .Where(c => c.IsActive && c.ShowInPublicListing && c.Kind == CompanyKind.Services)
             .WhereAllowsPublicListing(db, DateTime.UtcNow);
 
         if (cityId.HasValue) query = query.Where(c => c.CityId == cityId.Value);
@@ -125,7 +127,7 @@ public class CompaniesController(
         var cities = await companyDtoAssembler.GetCitiesAsync(pageItems.Select(c => c.CityId));
         var covers = await companyDtoAssembler.GetCoversAsync(pageItems.Select(c => c.Id));
 
-        var items = pageItems.Select(c => CompanyDtoAssembler.MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
+        var items = pageItems.Select(c => companyDtoAssembler.MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
             c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
             geoOptions.Value, covers.GetValueOrDefault(c.Id))).ToList();
 
@@ -134,12 +136,15 @@ public class CompaniesController(
 
     [HttpGet("my")]
     [Authorize]
-    public async Task<ActionResult<List<CompanyDto>>> GetMy(CancellationToken ct)
+    public async Task<ActionResult<List<CompanyDto>>> GetMy([FromQuery] string? kind, CancellationToken ct)
     {
+        // Cycle 23 (§389.2, §408.2): not passed → Services, so the ezbook frontend (which never sends it)
+        // stops seeing shops in its cabinet without a single frontend change.
+        if (!CompanyKindQuery.TryParse(kind, out var wantedKind)) return BadRequest(CompanyKindQuery.UnknownKindText);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var memberships = await db.CompanyMembers
             .Include(cm => cm.Company)
-            .Where(cm => cm.UserId == userId && cm.Role == UserRole.CompanyOwner && cm.Company.IsActive)
+            .Where(cm => cm.UserId == userId && cm.Role == UserRole.CompanyOwner && cm.Company.IsActive && cm.Company.Kind == wantedKind)
             .ToListAsync(ct);
         // GetMy only ever returns CompanyOwner memberships (the query above filters on
         // cm.Role == UserRole.CompanyOwner), so every row here is a company this caller manages.
@@ -149,12 +154,14 @@ public class CompaniesController(
     // Returns all companies where the current user is a member (any role)
     [HttpGet("member")]
     [Authorize]
-    public async Task<ActionResult<List<CompanyDto>>> GetMemberOf(CancellationToken ct)
+    public async Task<ActionResult<List<CompanyDto>>> GetMemberOf([FromQuery] string? kind, CancellationToken ct)
     {
+        // Cycle 23 (§389.2, §408.2): same default as GetMy — Services when the parameter is absent.
+        if (!CompanyKindQuery.TryParse(kind, out var wantedKind)) return BadRequest(CompanyKindQuery.UnknownKindText);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var memberships = await db.CompanyMembers
             .Include(cm => cm.Company)
-            .Where(cm => cm.UserId == userId && cm.Company.IsActive)
+            .Where(cm => cm.UserId == userId && cm.Company.IsActive && cm.Company.Kind == wantedKind)
             .ToListAsync(ct);
         // §232/§237, review finding (cycle 13 review, blocking #2): unlike GetMy, this endpoint returns
         // companies for EVERY membership role — a Master's own membership row must not light up
@@ -165,6 +172,23 @@ public class CompaniesController(
             canManage: cm => isSuperAdmin || cm.Role == UserRole.CompanyOwner));
     }
 
+    // Cycle 23 (§408.3): how many active companies of each kind the caller belongs to (any role) and where
+    // to manage them — feeds "Ваши магазины управляются на goods.ezbook.ru" (ezbook) and its mirror (goods).
+    [HttpGet("kinds-summary")]
+    [Authorize]
+    public async Task<ActionResult<CompanyKindsSummaryDto>> GetKindsSummary(CancellationToken ct)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var counts = await db.CompanyMembers.AsNoTracking()
+            .Where(cm => cm.UserId == userId && cm.Company.IsActive)
+            .GroupBy(cm => cm.Company.Kind)
+            .Select(g => new { Kind = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        int CountOf(CompanyKind k) => counts.FirstOrDefault(x => x.Kind == k)?.Count ?? 0;
+        return Ok(new CompanyKindsSummaryDto(
+            new CompanyKindSummaryItemDto(CountOf(CompanyKind.Services), siteLinks.SiteBaseUrl(CompanyKind.Services)),
+            new CompanyKindSummaryItemDto(CountOf(CompanyKind.Orders), siteLinks.SiteBaseUrl(CompanyKind.Orders))));
+    }
 
     [HttpGet("{slug}")]
     public async Task<ActionResult<CompanyDto>> GetBySlug(string slug, CancellationToken ct)
@@ -184,7 +208,7 @@ public class CompaniesController(
         var photos = await companyDtoAssembler.GetPhotosOrderedAsync(c.Id);
         var cover = photos.Count > 0 ? (photos[0].Url, photos[0].ThumbnailUrl) : ((string, string)?)null;
         // Reachable anonymously (no [Authorize]) — same §46.2 treatment as GetAll: no usage computed.
-        return Ok(CompanyDtoAssembler.MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null, geoOptions.Value,
+        return Ok(companyDtoAssembler.MapToDto(c, plan, averageRating, reviewCount, city, employeeCount: 0, usage: null, geoOptions.Value,
             cover, photos, includeAddressPoint: true));
     }
 
@@ -194,6 +218,9 @@ public class CompaniesController(
         Guid id, [FromQuery] string? serviceId, [FromQuery] bool includeHidden = false,
         CancellationToken ct = default)
     {
+        // §389.2: anonymous public route — no rights to check first. A shop has no masters to pick.
+        if (await CompanyKindGuard.RejectShopAsync(db, id, ct) is { } shopRefusal) return shopRefusal;
+
         // serviceId is bound as string (not Guid?) on purpose: ASP.NET Core's default model binder
         // treats an empty string for a nullable Guid query param as "absent" and silently maps it to
         // null, so a caller sending `?serviceId=` got a 200 with no filter applied instead of a 400 for
@@ -365,7 +392,7 @@ public class CompaniesController(
         // instead of assuming Free.
         // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
         var createUsage = accountId != Guid.Empty ? await accountUsageReader.GetAsync([accountId]) : new Dictionary<Guid, AccountUsage>();
-        var companyDto = CompanyDtoAssembler.MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId), geoOptions.Value, canManage: true);
+        var companyDto = companyDtoAssembler.MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId), geoOptions.Value, canManage: true);
         return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, new CreateCompanyResponseDto(companyDto, token));
     }
 
@@ -518,6 +545,8 @@ public class CompaniesController(
         var isAllowed = userId is not null &&
             (User.IsInRole("SuperAdmin") || await CompanyMembership.IsStaffAsync(db, id, userId));
         if (!isAllowed) return Forbid();
+        // §389.2: salon-only route (rights first, kind second).
+        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var usedBytes = await db.ClientNotePhotos.Where(p => p.CompanyId == id).SumAsync(p => (long?)p.SizeBytes, ct) ?? 0;
         var photoCount = await db.ClientNotePhotos.CountAsync(p => p.CompanyId == id, ct);
@@ -535,6 +564,8 @@ public class CompaniesController(
     public async Task<IActionResult> GetStats(Guid id, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
     {
         if (!await CanManageCompany(id)) return Forbid();
+        // §389.2: salon-only route (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, id, ct) is { } shopRefusal) return shopRefusal;
 
         if (from is null || to is null) return BadRequest("Both 'from' and 'to' are required.");
         if (to < from) return BadRequest("Invalid date range: 'to' must not be earlier than 'from'.");

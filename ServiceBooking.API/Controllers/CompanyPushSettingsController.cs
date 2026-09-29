@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
@@ -33,6 +34,8 @@ public class CompanyPushSettingsController(AppDbContext db) : ControllerBase
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId, ct);
         if (company is null) return NotFound();
+        // §389.2: staff push settings are a salon feature (rights first, kind second).
+        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var settings = await db.CompanyNotificationSettings.AsNoTracking()
             .FirstOrDefaultAsync(s => s.CompanyId == companyId, ct);
@@ -53,6 +56,8 @@ public class CompanyPushSettingsController(AppDbContext db) : ControllerBase
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
         if (company is null) return NotFound();
+        // §389.2: staff push settings are a salon feature (rights first, kind second).
+        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var settings = await db.CompanyNotificationSettings.FirstOrDefaultAsync(s => s.CompanyId == companyId);
         if (settings is null)

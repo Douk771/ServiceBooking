@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -94,6 +95,8 @@ public class ClientConsentsController(
         // ClientNotePhotosController.ServeAsync, the only other place this happens.
         if (User.IsInRole("SuperAdmin")) return Forbid();
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: client consents are a salon feature (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var resolved = await ResolveClientAsync(companyId, clientKey);
         if (resolved is null) return NotFound();
@@ -127,6 +130,8 @@ public class ClientConsentsController(
     {
         if (User.IsInRole("SuperAdmin")) return Forbid();
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: client consents are a salon feature (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var resolved = await ResolveClientAsync(companyId, clientKey);
         if (resolved is null) return NotFound();
@@ -172,6 +177,8 @@ public class ClientConsentsController(
     {
         if (User.IsInRole("SuperAdmin")) return Forbid();
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: client consents are a salon feature (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var resolved = await ResolveClientAsync(companyId, clientKey);
         if (resolved is null) return NotFound();
@@ -197,6 +204,8 @@ public class ClientConsentsController(
     private async Task<ActionResult<SalonConsentDto>> GetSalonConsentAsync(Guid companyId, string clientKey, string documentKey)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: client consents are a salon feature (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var resolved = await ResolveClientAsync(companyId, clientKey);
         if (resolved is null) return NotFound();
@@ -213,6 +222,8 @@ public class ClientConsentsController(
         Guid companyId, string clientKey, string documentKey, ConsentSource source, SubmitSalonConsentDto dto)
     {
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: client consents are a salon feature (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
         if (!dto.Confirmed) return BadRequest("Подтверждение обязательно.");
 
         var resolved = await ResolveClientAsync(companyId, clientKey);

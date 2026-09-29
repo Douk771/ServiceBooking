@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -59,6 +60,8 @@ public class CompanyMembersController(
     public async Task<IActionResult> UpdateProvidesServices(Guid id, Guid memberId, [FromBody] ProvidesServicesDto dto)
     {
         if (!await CanManageCompany(id)) return Forbid();
+        // §389.2: a shop has no services/commission — rights first, kind second.
+        if (await CompanyKindGuard.RejectShopAsync(db, id) is { } shopRefusal) return shopRefusal;
 
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
@@ -88,6 +91,8 @@ public class CompanyMembersController(
     public async Task<IActionResult> UpdateMemberServices(Guid id, Guid memberId, [FromBody] List<Guid> serviceIds)
     {
         if (!await CanManageCompany(id)) return Forbid();
+        // §389.2: a shop has no services/commission — rights first, kind second.
+        if (await CompanyKindGuard.RejectShopAsync(db, id) is { } shopRefusal) return shopRefusal;
 
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();
@@ -134,6 +139,12 @@ public class CompanyMembersController(
         // a SuperAdmin caller used to sail through and blow up Enum.Parse<UserRole> below with an
         // unhandled 500 (audit D3). Reject an unknown role name explicitly instead.
         if (!Enum.TryParse<UserRole>(dto.Role, out _)) return BadRequest("Unknown role");
+
+        // §389.2/§408.7: a shop has staff only — no co-owners through the API in cycle 1 (Master = "Сотрудник").
+        // Applies to SuperAdmin as well; the kind check is a product rule, not a permission.
+        var companyKind = await db.Companies.AsNoTracking().Where(c => c.Id == id).Select(c => (CompanyKind?)c.Kind).FirstOrDefaultAsync();
+        if (companyKind == CompanyKind.Orders && dto.Role != nameof(UserRole.Master))
+            return BadRequest("В магазин можно добавить только сотрудника.");
 
         // Tariff seat limit (ARCHITECTURE_CYCLE7.md §46.4): SUMMED across every company on the
         // account, not just this one — a customer with 3 branches on an 8-seat plan can put all 8
@@ -261,6 +272,8 @@ public class CompanyMembersController(
     public async Task<IActionResult> UpdateMemberCommission(Guid id, Guid memberId, [FromBody] UpdateMemberCommissionDto dto)
     {
         if (!await CanManageCompany(id)) return Forbid();
+        // §389.2: a shop has no services/commission — rights first, kind second.
+        if (await CompanyKindGuard.RejectShopAsync(db, id) is { } shopRefusal) return shopRefusal;
 
         var member = await db.CompanyMembers.FirstOrDefaultAsync(cm => cm.Id == memberId && cm.CompanyId == id);
         if (member is null) return NotFound();

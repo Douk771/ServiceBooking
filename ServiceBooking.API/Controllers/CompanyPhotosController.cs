@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Companies;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 
@@ -53,6 +54,8 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
+        // §389.2: the photo gallery is salon-only in cycle 1 (rights first, kind second).
+        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var validation = await imageUploadService.ReadAndProcessAsync(
             file, [ImageProfile.CompanyPhoto, ImageProfile.CompanyPhotoThumb]);
@@ -138,6 +141,8 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
+        // §389.2: the photo gallery is salon-only in cycle 1 (rights first, kind second).
+        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         var photo = await db.CompanyPhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.CompanyId == id);
         // A photoId belonging to a DIFFERENT company is indistinguishable from "doesn't exist" —
@@ -174,6 +179,8 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (!await IsOwnerOrSuperAdmin(id)) return Forbid();
+        // §389.2: the photo gallery is salon-only in cycle 1 (rights first, kind second).
+        if (CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
 
         await using var tx = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"company-photos:{id}");

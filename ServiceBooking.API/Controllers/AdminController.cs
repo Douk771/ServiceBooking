@@ -19,7 +19,8 @@ namespace ServiceBooking.API.Controllers;
 [Authorize(Roles = "SuperAdmin")]
 public class AdminController(
     AppDbContext db, UserManager<AppUser> userManager, RoleManager<IdentityRole> roleManager,
-    CompanyOwnerWriter companyOwnerWriter, SubscriptionResolver subscriptionResolver) : ControllerBase
+    CompanyOwnerWriter companyOwnerWriter, SubscriptionResolver subscriptionResolver,
+    ServiceBooking.API.Services.PublicSites.PublicSiteLinks siteLinks) : ControllerBase
 {
     // ── Stats ──────────────────────────────────────────────────────────────────
 
@@ -247,11 +248,19 @@ public class AdminController(
     [HttpGet("companies")]
     public async Task<ActionResult<PagedResult<AdminCompanyDto>>> GetCompanies(
         [FromQuery] string? search, [FromQuery] int? page, [FromQuery] int? pageSize,
-        CancellationToken ct)
+        [FromQuery] string? kind, CancellationToken ct)
     {
         var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
         search = Pagination.SanitizeSearch(search);
         var query = db.Companies.AsNoTracking();
+        // Cycle 23 (§408.6): unlike the cabinet lists, "not passed" means ALL kinds here — the admin panel
+        // manages both products.
+        if (!string.IsNullOrWhiteSpace(kind))
+        {
+            if (!Services.Companies.CompanyKindQuery.TryParse(kind, out var wantedKind))
+                return BadRequest(Services.Companies.CompanyKindQuery.UnknownKindText);
+            query = query.Where(c => c.Kind == wantedKind);
+        }
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(c => c.Name.Contains(search) || c.Email!.Contains(search));
 
@@ -262,7 +271,7 @@ public class AdminController(
             .Select(c => new
             {
                 c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
-                c.OwnerUserId, c.BillingAccountId, MemberCount = c.Members.Count,
+                c.OwnerUserId, c.BillingAccountId, MemberCount = c.Members.Count, c.Kind,
             })
             .ToListAsync(ct);
         var ids = companies.Select(c => c.Id).ToList();
@@ -288,7 +297,8 @@ public class AdminController(
             var count = bookingCounts.GetValueOrDefault(c.Id);
             return new AdminCompanyDto(c.Id, c.Name, c.Slug, c.Email, c.Phone, c.IsActive, c.AllowSelfBooking, c.CreatedAt,
                 c.MemberCount, count, c.OwnerUserId, ownerEmails.GetValueOrDefault(c.OwnerUserId, c.OwnerUserId),
-                sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true);
+                sub?.PlanConfigId, sub?.PlanConfig?.Name ?? "Free", sub?.PaidUntil, sub?.IsActive ?? true,
+                c.Kind, siteLinks.CompanyPageUrl(c.Kind, c.Slug));
         }).ToList();
 
         return Ok(Pagination.Create(result, currentPage, currentPageSize, total));
@@ -502,7 +512,10 @@ public record AdminUserDto(string Id, string Phone, string? Email, string FirstN
 // (found during BE/FE contract integration, US-04).
 public record AdminCompanyDto(Guid Id, string Name, string Slug, string? Email, string? Phone, bool IsActive, bool AllowSelfBooking, DateTime CreatedAt,
     int MemberCount, int BookingCount, string OwnerUserId, string OwnerEmail,
-    Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive);
+    Guid? PlanConfigId, string PlanName, DateTime? PaidUntil, bool SubscriptionActive,
+    // ARCHITECTURE_CYCLE23.md §408.6 — additive, appended with defaults: the company's product type and the
+    // absolute link to its public page (PublicSiteLinks).
+    CompanyKind Kind = CompanyKind.Services, string PublicUrl = "");
 
 
 public record SubscriptionDiagnosticsDto(

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Infrastructure.Data;
 
@@ -41,6 +42,8 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(request.MasterId, request.CompanyId, userId)) return Forbid();
+        // §389.2: a shop has no schedule (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, request.CompanyId) is { } shopRefusal) return shopRefusal;
 
         // Serialize concurrent Put calls for the same master+company so the delete-then-insert below
         // is atomic — otherwise two simultaneous requests could interleave and leave a mix of old and
@@ -80,6 +83,8 @@ public class ScheduleTemplateController(AppDbContext db) : ControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         if (!await CanManage(masterId, companyId, userId)) return Forbid();
+        // §389.2: a shop has no schedule (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         if (to < from) return BadRequest("Invalid date range: 'to' must not be earlier than 'from'.");
         // 366, not 365 — a full leap-year range must be applyable in a single call, which is the

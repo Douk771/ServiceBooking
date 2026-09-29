@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Companies;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
@@ -25,6 +26,8 @@ public class ReportsController(AppDbContext db, SubscriptionResolver subscriptio
         // Verify caller owns this company
         if (!User.IsInRole("SuperAdmin") && !await CompanyMembership.IsOwnerAsync(db, companyId, userId))
             return Forbid();
+        // §389.2: salon-only route (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId, ct) is { } shopRefusal) return shopRefusal;
 
         var plan = await subscriptionResolver.GetEffectivePlanAsync(companyId);
         if (!plan.AllowAnalytics) return StatusCode(402, "Analytics requires a tariff plan that includes it.");
