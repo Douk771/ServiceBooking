@@ -32,4 +32,11 @@ public class SubjectRequest
     public DateTime? AnsweredAtUtc { get; set; }
     public string? HandlerUserId { get; set; }
     public string? Resolution { get; set; }
+
+    // ARCHITECTURE_CYCLE20.md §410 (US-20-09, Т20-13, migration M1). Defaults to WebForm(0) so every
+    // pre-cycle-20 row — all of them created by the public form — reads as what it actually was, with no
+    // backfill needed. RegisteredByUserId is null for WebForm (nobody "registered" an anonymous
+    // submission) and set to the superadmin who manually logged an Email/PostalMail request.
+    public SubjectRequestChannel Channel { get; set; } = SubjectRequestChannel.WebForm;
+    public string? RegisteredByUserId { get; set; }
 }
