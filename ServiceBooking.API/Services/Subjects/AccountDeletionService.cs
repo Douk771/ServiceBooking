@@ -21,7 +21,7 @@ public sealed record AccountDeletionResult(AccountDeletionStatus Status, string?
 /// </summary>
 public sealed class AccountDeletionService(
     UserManager<AppUser> userManager, AppDbContext db, FileStorage storage, SubjectScopeResolver subjectScopeResolver,
-    ILogger<ProfileController> logger)
+    ILogger<ProfileController> logger, GuestDataGateJournal guestDataGateJournal)
 {
     public async Task<AccountDeletionPreviewDto> PreviewAsync(string userId, CancellationToken ct)
     {
@@ -32,8 +32,9 @@ public sealed class AccountDeletionService(
     }
 
     /// <summary><paramref name="requestAborted"/> is what the scope resolver was always given
-    /// (<c>HttpContext.RequestAborted</c>).</summary>
-    public async Task<AccountDeletionResult> DeleteAsync(string userId, string currentPassword, CancellationToken requestAborted)
+    /// (<c>HttpContext.RequestAborted</c>). <paramref name="traceId"/> is the request's
+    /// <c>HttpContext.TraceIdentifier</c>, written to the guest-data-gate journal (ARCHITECTURE_CYCLE20.md §406.2).</summary>
+    public async Task<AccountDeletionResult> DeleteAsync(string userId, string currentPassword, string? traceId, CancellationToken requestAborted)
     {
         var user = await userManager.FindByIdAsync(userId);
         if (user is null) return new(AccountDeletionStatus.UserNotFound);
@@ -60,6 +61,7 @@ public sealed class AccountDeletionService(
         {
             // §245.7: name and endpoint only, no phone, no counts (NFT §7.4).
             logger.LogInformation("guest-data gate applied: userId={UserId} endpoint={Endpoint}", userId, "profile/delete-account");
+            await guestDataGateJournal.RecordAsync(userId, GuestDataGateOperation.DeleteAccount, traceId);
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync();

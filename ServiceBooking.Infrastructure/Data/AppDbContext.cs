@@ -67,6 +67,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PhoneVerificationSession> PhoneVerificationSessions => Set<PhoneVerificationSession>();
     public DbSet<VerifiedPhone> VerifiedPhones => Set<VerifiedPhone>();
 
+    // Cycle 20 (ARCHITECTURE_CYCLE20.md §406.2, §404.1) — guest-data-gate journal and platform notices.
+    public DbSet<GuestDataGateEvent> GuestDataGateEvents => Set<GuestDataGateEvent>();
+    public DbSet<PlatformNotice> PlatformNotices => Set<PlatformNotice>();
+    public DbSet<PlatformNoticeAcknowledgement> PlatformNoticeAcknowledgements => Set<PlatformNoticeAcknowledgement>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -187,6 +192,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(l => l.CompanyId);
             e.Property(l => l.OldOptionsSummary).HasMaxLength(500);
             e.Property(l => l.NewOptionsSummary).HasMaxLength(500);
+            // Cycle 20 (ARCHITECTURE_CYCLE20.md §403.1, US-20-02).
+            e.Property(l => l.ReasonDetails).HasMaxLength(1000);
         });
 
         // Cycle 7 (ARCHITECTURE_CYCLE7.md §43.3): payer/rules-owner of companies and subscriptions —
@@ -206,6 +213,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             // §337.1 — the only query the trial-lifecycle background task runs against BillingAccounts.
             e.HasIndex(a => a.TrialEndsAtUtc).HasDatabaseName("IX_BillingAccounts_TrialExpiry")
                 .HasFilter("\"TrialEndsAtUtc\" IS NOT NULL AND \"TrialExpiredHandledAtUtc\" IS NULL");
+            // Cycle 20 (ARCHITECTURE_CYCLE20.md §402.5, Т20-04 п. 3) — operator details for the written
+            // health-consent form. All three optional by customer decision (the form prints fine blank).
+            e.Property(a => a.ConsentOperatorFullName).HasMaxLength(300);
+            e.Property(a => a.ConsentOperatorAddress).HasMaxLength(500);
+            e.Property(a => a.ConsentOperatorInn).HasMaxLength(12);
         });
 
         // Cycle 5, stage 5 (§43.3, US-66) — per-plan option availability matrix.
@@ -365,6 +377,11 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(c => c.IpAddress).HasMaxLength(45);
             e.Property(c => c.UserAgent).HasMaxLength(256);
             e.Property(c => c.RevokeReason).HasMaxLength(256);
+            // Cycle 20 (ARCHITECTURE_CYCLE20.md §402.2) — the paper-consent form number ("HD-XXXXXXXX")
+            // and who lifted a mark. No FK on RevokedByUserId (same §44.2 p.5 reasoning as every other
+            // "who acted" column here).
+            e.Property(c => c.FormId).HasMaxLength(16);
+            e.Property(c => c.RevokedByUserId).HasMaxLength(450);
 
             // NO ACTION on all three FKs, deliberately not Cascade (ARCHITECTURE_CYCLE5.md §44.2 p.5):
             // this table is evidence — a user row being physically removed (it never is, §7.4's
@@ -407,6 +424,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(r => r.Resolution).HasMaxLength(2000);
             e.HasIndex(r => r.SubjectPhone);
             e.HasIndex(r => new { r.Status, r.DueAtUtc });
+            // Cycle 20 (ARCHITECTURE_CYCLE20.md §410, US-20-09) — manual registration by the superadmin.
+            e.Property(r => r.RegisteredByUserId).HasMaxLength(450);
         });
 
         builder.Entity<ClientHealthNote>(e =>
@@ -731,6 +750,47 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(v => v.ExternalAccountKey);
             e.HasOne(v => v.User).WithMany().HasForeignKey(v => v.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(v => v.Session).WithMany().HasForeignKey(v => v.SessionId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // Cycle 20 (ARCHITECTURE_CYCLE20.md §406.2, US-20-05) — the guest-data-gate journal. No FK on
+        // UserId on purpose: the gate can fire on the very account-deletion request that removes that
+        // user, and the journal must outlive the account (§406.2's own reasoning, same as ConsentRecord).
+        builder.Entity<GuestDataGateEvent>(e =>
+        {
+            e.Property(g => g.UserId).HasMaxLength(450);
+            e.Property(g => g.TraceId).HasMaxLength(64);
+            e.HasIndex(g => g.OccurredAtUtc);
+            e.HasIndex(g => new { g.UserId, g.OccurredAtUtc });
+        });
+
+        // Cycle 20 (ARCHITECTURE_CYCLE20.md §404.1, US-20-03) — in-cabinet notices with acknowledgement.
+        builder.Entity<PlatformNotice>(e =>
+        {
+            e.Property(n => n.Title).HasMaxLength(200);
+            e.Property(n => n.Body).HasColumnType("text");
+            e.Property(n => n.TemplateVersion).HasMaxLength(64);
+            e.Property(n => n.LinkUrl).HasMaxLength(500);
+            e.Property(n => n.AttachmentTitle).HasMaxLength(200);
+            e.Property(n => n.AttachmentHtml).HasColumnType("text");
+            e.Property(n => n.AttachmentSha256).HasMaxLength(64).IsFixedLength();
+            e.Property(n => n.CreatedByUserId).HasMaxLength(450);
+            e.Property(n => n.RevokedByUserId).HasMaxLength(450);
+            e.Property(n => n.RevokeReason).HasMaxLength(500);
+            // §404.6 (retention) and §404.1's "read active notices" — a single indexed scan.
+            e.HasIndex(n => n.VisibleUntilUtc).HasDatabaseName("IX_PlatformNotices_VisibleUntil");
+        });
+
+        builder.Entity<PlatformNoticeAcknowledgement>(e =>
+        {
+            e.Property(a => a.UserId).HasMaxLength(450);
+            // Cascade: an acknowledgement is meaningless without the notice it belongs to, and a notice
+            // is never deleted by application code anyway (only revoked, or removed by the retention
+            // rule together with its acknowledgements, §404.6).
+            e.HasOne(a => a.Notice).WithMany(n => n.Acknowledgements)
+                .HasForeignKey(a => a.NoticeId).OnDelete(DeleteBehavior.Cascade);
+            // §404.1 — idempotent "I've read it": a repeat click must not create a second row.
+            e.HasIndex(a => new { a.NoticeId, a.UserId }).IsUnique()
+                .HasDatabaseName("IX_PlatformNoticeAcknowledgements_NoticeUser");
         });
     }
 }

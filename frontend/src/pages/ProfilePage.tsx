@@ -527,8 +527,11 @@ export function ProfilePage() {
           Скачать мои данные
         </Button>
         {/* §276.2 — after a successful export, if the file itself says the gate applied, repeat its
-            own `explanation` text rather than leave the user wondering why the file looks thin. */}
-        {gateNotice && <p className="text-sm text-ink-soft mt-3">{gateNotice}</p>}
+            own `explanation` text rather than leave the user wondering why the file looks thin.
+            API_CONTRACT_CYCLE20.md §436.3 — since cycle 20 this is a FLAT text with paragraphs
+            separated by \n\n (a plain section of the uiText, no HTML at all); `whitespace-pre-wrap`
+            is what turns those into visible paragraph breaks instead of one squished line. */}
+        {gateNotice && <p className="text-sm text-ink-soft mt-3 whitespace-pre-wrap">{gateNotice}</p>}
       </Card>
 
       {/* Account deletion (US-39) */}

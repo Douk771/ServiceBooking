@@ -35,6 +35,15 @@ public static class BillingTexts
         "аккаунта, добавьте сотрудником в любую его компанию — или выполните перенос без смены " +
         "ответственного и смените ответственного отдельно.";
 
+    /// <summary>ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.1/§437.2 (US-20-07, LG6) —
+    /// a transfer WITHOUT a new owner, where the company's existing owner has no link to the receiving
+    /// account. Names the fix (pick a new owner from the target account) — the reverse of
+    /// <see cref="TransferRejectedUnlinkedOwner"/>'s "или перенос без смены и смените отдельно", since
+    /// that escape hatch is exactly what this text is rejecting.</summary>
+    public static string TransferRejectedCurrentOwnerUnlinked(string companyName) =>
+        $"Ответственный за компанию {companyName} не связан с принимающим аккаунтом. Укажите нового " +
+        "ответственного из этого аккаунта.";
+
     /// <summary>§51.2's 402 body — the transfer is rejected outright, nothing is written.</summary>
     public static string TransferRejectedCompanyLimit(string planName, int used, int limit) =>
         $"На тарифе «{planName}» — {limit} {CompaniesWord(limit)}, занято {used}. Чтобы принять ещё " +

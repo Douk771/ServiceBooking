@@ -21,7 +21,23 @@
  * nested inside a `when`/`unless` block's text), which turns any such block back into plain text
  * before the `when`/`unless` regexes run — so those never have to reason about nested tags.
  */
-type LegalRuntimeValueName = 'companyName'
+// API_CONTRACT_CYCLE20.md §432.4/§445, ARCHITECTURE_CYCLE20.md §402.5/§412.8 — seven new names added
+// in the SAME commit as `RuntimeValueScanner.KnownNames` on the backend (commit А, L1) and the
+// `knownNames` field of `contracts/legal/runtime-value-forms.json` (both sides tested against that
+// one corpus — `legalRuntimeValues.test.ts` / `RuntimeValueFormsCorpusTests.cs`, CY20-U-09). All seven
+// are used by the health-consent print form (file 17,
+// `HealthConsentFormPrintPage.tsx`) — `null` there means "the value isn't on file", which the page
+// substitutes with a literal underline (`BLANK_LINE`) rather than an empty string, so the printed form
+// keeps a line for the client to fill in by hand (US-20-01) instead of silently collapsing the field.
+type LegalRuntimeValueName =
+  | 'companyName'
+  | 'clientFullName'
+  | 'companyAddress'
+  | 'operatorFullName'
+  | 'operatorAddress'
+  | 'operatorInn'
+  | 'formId'
+  | 'formPrintedDate'
 
 function escapeHtml(value: string): string {
   return value

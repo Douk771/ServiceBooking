@@ -20,6 +20,11 @@ vi.mock('../api/consents', () => ({
   },
 }))
 
+const getText = vi.fn()
+vi.mock('../api/legal', () => ({
+  legalApi: { getText: (...args: unknown[]) => getText(...args) },
+}))
+
 function response(overrides: Partial<ProfileConsentsResponse> = {}): ProfileConsentsResponse {
   return {
     document: {
@@ -54,6 +59,7 @@ beforeEach(() => {
   grant.mockReset()
   revoke.mockReset()
   revokePreview.mockReset()
+  getText.mockReset()
 })
 
 describe('ConsentsPage', () => {
@@ -145,5 +151,41 @@ describe('ConsentsPage', () => {
 
     await waitFor(() => expect(revoke).toHaveBeenCalledWith('PdnConsent', 'ProviderDelivery', undefined))
     expect(await screen.findByText('Согласие отозвано')).toBeInTheDocument()
+  })
+})
+
+// API_CONTRACT_CYCLE20.md §432.9 / §441 item 6 (LG1, US-20-01) — HealthData is the one purpose that
+// must never be offered as a checkbox; a live (pre-cycle) grant still shows "Отозвать" as usual, plus
+// a "Текст для клиента" section.
+describe('ConsentsPage — HealthData purpose (cycle 20, LG1)', () => {
+  it('shows a note instead of a checkbox when HealthData was never granted', async () => {
+    get.mockResolvedValueOnce(
+      response({ document: { type: 'PdnConsent', version: '2026-09-21', isDraft: true, purposes: [{ key: 'HealthData', title: 'Обработка сведений о состоянии здоровья' }] } }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('Согласие даётся в салоне на бумажном бланке.')).toBeInTheDocument()
+    expect(screen.queryByText('Согласие не дано')).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('still shows "Отозвать" and the "Текст для клиента" section for a live (pre-cycle) HealthData grant', async () => {
+    getText.mockResolvedValueOnce({
+      key: 'HealthDataConsent',
+      version: 'v1',
+      isDraft: true,
+      contentHtml: '<h2>Текст для клиента</h2><p>Мастеру нужно записать, чего вам нельзя.</p>',
+    })
+    get.mockResolvedValueOnce(
+      response({
+        document: { type: 'PdnConsent', version: '2026-09-21', isDraft: true, purposes: [{ key: 'HealthData', title: 'Обработка сведений о состоянии здоровья' }] },
+        granted: [{ purpose: 'HealthData', version: '2026-09-21', grantedAt: '2026-09-21T10:00:00Z', revokedAt: null }],
+      }),
+    )
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'Отозвать' })).toBeInTheDocument()
+    await userEvent.setup().click(await screen.findByText('Текст для клиента'))
+    expect(await screen.findByText('Мастеру нужно записать, чего вам нельзя.')).toBeInTheDocument()
   })
 })

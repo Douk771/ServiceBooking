@@ -18,6 +18,8 @@ const getAccount = vi.fn()
 const assignSubscription = vi.fn()
 const getHistory = vi.fn()
 const listRequests = vi.fn()
+// US-20-02 — closed reasons list; tests that don't care about it just get an empty dropdown.
+const getChangeReasons = vi.fn().mockResolvedValue([])
 
 vi.mock('../../api/adminBilling', () => ({
   adminBillingApi: {
@@ -26,6 +28,7 @@ vi.mock('../../api/adminBilling', () => ({
     assignSubscription: (...args: unknown[]) => assignSubscription(...args),
     getHistory: (...args: unknown[]) => getHistory(...args),
     listRequests: (...args: unknown[]) => listRequests(...args),
+    getChangeReasons: (...args: unknown[]) => getChangeReasons(...args),
     rejectRequest: vi.fn(),
   },
 }))
@@ -189,6 +192,67 @@ describe('BillingAccountsAdminTab — assign subscription modal', () => {
     await userEvent.type(dateInput, '2026-12-31')
 
     expect(modal.getByText(/онлайн-запись выключена/i)).toBeInTheDocument()
+    expect(modal.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
+  })
+})
+
+// API_CONTRACT_CYCLE20.md §433.1 (US-20-02) / §441 item 10 — the "Основание" block only for a hidden
+// plan different from the account's current one; Save stays blocked until a valid reason is picked.
+describe('BillingAccountsAdminTab — manual assignment reason (US-20-02)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    listAccounts.mockResolvedValue({ items: [listItem()], page: 1, pageSize: 20, totalCount: 1 })
+    getHistory.mockResolvedValue([])
+    listOptions.mockResolvedValue([] as AdminOptionDto[])
+    getChangeReasons.mockResolvedValue([
+      { code: 'OperatorErrorCorrection', title: 'Исправление ошибки оператора', detailsRequired: true, assignableManually: true },
+      { code: 'TrialReissue', title: 'Перевыдача пробного периода', detailsRequired: true, assignableManually: false },
+    ])
+    listPlans.mockResolvedValue([paidPlan(), paidPlan({ id: 'plan-hidden', name: 'Скрытый', isPublic: false })])
+  })
+
+  it('does not show the reason block for a public plan', async () => {
+    getAccount.mockResolvedValue(account())
+    await renderTab()
+    const modal = await openAssignModal()
+
+    await userEvent.selectOptions(modal.getByRole('combobox'), 'plan-paid')
+    expect(modal.queryByText('Основание')).not.toBeInTheDocument()
+  })
+
+  it('shows the reason block and blocks Save until a reason (only assignableManually ones) is picked, for a hidden plan different from the current one', async () => {
+    getAccount.mockResolvedValue(account())
+    await renderTab()
+    const modal = await openAssignModal()
+
+    await userEvent.selectOptions(modal.getByRole('combobox'), 'plan-hidden')
+    await userEvent.type(modal.container.querySelector('input[type="date"]') as HTMLInputElement, '2026-12-31')
+
+    expect(modal.getByText('Основание')).toBeInTheDocument()
+    // TrialReissue is NOT selectable manually — only in the dropdown's option list would it appear,
+    // so its absence here proves the `assignableManually` filter is applied.
+    expect(modal.queryByText('Перевыдача пробного периода')).not.toBeInTheDocument()
+    expect(modal.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
+
+    const reasonSelects = modal.getAllByRole('combobox')
+    const reasonSelect = reasonSelects[reasonSelects.length - 1]
+    await userEvent.selectOptions(reasonSelect, 'OperatorErrorCorrection')
+    // OperatorErrorCorrection also requires non-empty details — still blocked without them.
+    expect(modal.getByRole('button', { name: 'Сохранить' })).toBeDisabled()
+
+    await userEvent.type(modal.getByPlaceholderText(/сбоя импорта/), 'Оплата прошла, тариф не применился')
+    expect(modal.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
+  })
+
+  it('does not require a reason when renewing the SAME hidden plan the account already has', async () => {
+    getAccount.mockResolvedValue(account({ planId: 'plan-hidden', plan: { id: 'plan-hidden', name: 'Скрытый', description: null, pricePerMonth: 1500, includes: [] } }))
+    await renderTab()
+    const modal = await openAssignModal()
+
+    await userEvent.selectOptions(modal.getByRole('combobox'), 'plan-hidden')
+    await userEvent.type(modal.container.querySelector('input[type="date"]') as HTMLInputElement, '2026-12-31')
+
+    expect(modal.queryByText('Основание')).not.toBeInTheDocument()
     expect(modal.getByRole('button', { name: 'Сохранить' })).toBeEnabled()
   })
 })

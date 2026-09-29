@@ -53,6 +53,18 @@ public class ConsentRecord
     public DateTime? RevokedAtUtc { get; set; }
     public string? RevokeReason { get; set; }
 
+    // ARCHITECTURE_CYCLE20.md §402.2 (US-20-01, migration M1) — two additive columns for the paper
+    // written-health-consent mark (Source = PaperForm). FormId is the printed form's number
+    // (HealthConsentFormId.New(), "HD-" + 8 Crockford-base32 chars) the staff member confirms when
+    // marking the row, or null when the salon used its own paper form (§402.5). RevokedByUserId is who
+    // lifted the mark — null when the subject revoked it themselves from the profile or a retention rule
+    // did (never both RevokedAtUtc set and RevokedByUserId meaningful at once outside those two cases).
+    public string? FormId { get; set; }
+
+    // Deliberately NO foreign key (same rule as every other "who acted" column on this table,
+    // RecordedByUserId included): deleting the staff account must not touch the consent journal.
+    public string? RevokedByUserId { get; set; }
+
     public AppUser? User { get; set; }
     public Company? Company { get; set; }
     public AppUser? RecordedByUser { get; set; }

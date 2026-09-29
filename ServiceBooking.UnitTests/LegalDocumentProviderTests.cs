@@ -12,7 +12,8 @@ namespace ServiceBooking.UnitTests;
 /// No DB, no HTTP — a temp directory standing in for App_Data/legal, exercised directly through
 /// LegalDocumentProvider's public surface (ARCHITECTURE.md §4.3/§4.4, extended by
 /// ARCHITECTURE_CYCLE5.md §43.3 to five document types and six uiTexts keys; extended again by
-/// ARCHITECTURE_CYCLE13.md §220.1 to a seventh uiTexts key, PublicAddressNotice).
+/// ARCHITECTURE_CYCLE13.md §220.1 to a seventh uiTexts key, PublicAddressNotice; extended again by
+/// ARCHITECTURE_CYCLE20.md §411/§412 to five more uiTexts keys — twelve in total).
 /// </summary>
 public class LegalDocumentProviderTests : IDisposable
 {
@@ -41,8 +42,9 @@ public class LegalDocumentProviderTests : IDisposable
     // now requires all five document types plus all six uiTexts keys to load ANY of them
     // (ARCHITECTURE_CYCLE5.md §43.3) — a two-document manifest that used to be "valid" is not any more.
     // Cycle 13 (§220.1) adds a SEVENTH uiTexts key, PublicAddressNotice, under the exact same rule.
-    // This helper writes the full five/seven manifest every test needs, and also drops content files for
-    // the three new documents and seven texts so every test starts from a state that actually loads.
+    // Cycle 20 (§411/§412) adds FIVE more uiTexts keys (twelve total) under the same rule.
+    // This helper writes the full five/twelve manifest every test needs, and also drops content files for
+    // the three new documents and twelve texts so every test starts from a state that actually loads.
     private static string ValidManifest(string privacyVersion = "2026-09-08-draft", string termsVersion = "2026-09-08-draft") => $$"""
         {
           "documents": [
@@ -59,7 +61,12 @@ public class LegalDocumentProviderTests : IDisposable
             { "key": "PhotoConsent", "version": "v1-draft", "isDraft": true, "file": "photo-consent.html" },
             { "key": "HealthDataConsent", "version": "v1-draft", "isDraft": true, "file": "health-consent.html" },
             { "key": "GuardianConfirmation", "version": "v1-draft", "isDraft": true, "file": "guardian.html" },
-            { "key": "PublicAddressNotice", "version": "v1-draft", "isDraft": true, "file": "public-address-notice.html" }
+            { "key": "PublicAddressNotice", "version": "v1-draft", "isDraft": true, "file": "public-address-notice.html" },
+            { "key": "GuestDataGateNotice", "version": "v1-draft", "isDraft": true, "file": "guest-data-gate-notice.html" },
+            { "key": "GuestDataGateDeleteNotice", "version": "v1-draft", "isDraft": true, "file": "guest-data-gate-delete-notice.html" },
+            { "key": "GuestDataGateRevokeNotice", "version": "v1-draft", "isDraft": true, "file": "guest-data-gate-revoke-notice.html" },
+            { "key": "HealthDataWrittenConsentForm", "version": "v1-draft", "isDraft": true, "file": "health-written-consent-form.html" },
+            { "key": "CompanyPhotoPeopleNotice", "version": "v1-draft", "isDraft": true, "file": "company-photo-people-notice.html" }
           ]
         }
         """;
@@ -78,10 +85,15 @@ public class LegalDocumentProviderTests : IDisposable
         WriteDoc("health-consent.html", "<p>health consent</p>");
         WriteDoc("guardian.html", "<p>guardian</p>");
         WriteDoc("public-address-notice.html", "<p>address notice</p>");
+        WriteDoc("guest-data-gate-notice.html", "<p>guest data gate notice</p>");
+        WriteDoc("guest-data-gate-delete-notice.html", "<p>guest data gate delete notice</p>");
+        WriteDoc("guest-data-gate-revoke-notice.html", "<p>guest data gate revoke notice</p>");
+        WriteDoc("health-written-consent-form.html", "<p>health written consent form</p>");
+        WriteDoc("company-photo-people-notice.html", "<p>company photo people notice</p>");
     }
 
     [Fact]
-    public void Current_ValidManifest_ReturnsAllFiveDocumentsAndSevenTexts()
+    public void Current_ValidManifest_ReturnsAllFiveDocumentsAndTwelveTexts()
     {
         WriteManifest(ValidManifest());
         WriteDoc("privacy.html", "<p>privacy text</p>");
@@ -99,6 +111,11 @@ public class LegalDocumentProviderTests : IDisposable
         snapshot.GetText(LegalTextKey.BookingNotice)!.ContentHtml.Should().Be("<p>booking notice</p>");
         snapshot.GetText(LegalTextKey.GuardianConfirmation).Should().NotBeNull();
         snapshot.GetText(LegalTextKey.PublicAddressNotice).Should().NotBeNull();
+        snapshot.GetText(LegalTextKey.GuestDataGateNotice).Should().NotBeNull();
+        snapshot.GetText(LegalTextKey.GuestDataGateDeleteNotice).Should().NotBeNull();
+        snapshot.GetText(LegalTextKey.GuestDataGateRevokeNotice).Should().NotBeNull();
+        snapshot.GetText(LegalTextKey.HealthDataWrittenConsentForm).Should().NotBeNull();
+        snapshot.GetText(LegalTextKey.CompanyPhotoPeopleNotice).Should().NotBeNull();
     }
 
     [Fact]

@@ -51,7 +51,12 @@ public class LegalControllerGetDocumentTests : IDisposable
                 { "key": "PhotoConsent", "version": "v1", "isDraft": false, "file": "photo-consent.html" },
                 { "key": "HealthDataConsent", "version": "v1", "isDraft": false, "file": "health-consent.html" },
                 { "key": "GuardianConfirmation", "version": "v1", "isDraft": false, "file": "guardian.html" },
-                { "key": "PublicAddressNotice", "version": "v1", "isDraft": false, "file": "public-address-notice.html" }
+                { "key": "PublicAddressNotice", "version": "v1", "isDraft": false, "file": "public-address-notice.html" },
+                { "key": "GuestDataGateNotice", "version": "v1", "isDraft": false, "file": "guest-data-gate-notice.html" },
+                { "key": "GuestDataGateDeleteNotice", "version": "v1", "isDraft": false, "file": "guest-data-gate-delete-notice.html" },
+                { "key": "GuestDataGateRevokeNotice", "version": "v1", "isDraft": false, "file": "guest-data-gate-revoke-notice.html" },
+                { "key": "HealthDataWrittenConsentForm", "version": "v1", "isDraft": false, "file": "health-written-consent-form.html" },
+                { "key": "CompanyPhotoPeopleNotice", "version": "v1", "isDraft": false, "file": "company-photo-people-notice.html" }
               ]
             }
             """);
@@ -59,7 +64,10 @@ public class LegalControllerGetDocumentTests : IDisposable
                  {
                      "privacy.html", "terms.html", "terms-owner.html", "pdn.html", "risk.html",
                      "booking-notice.html", "ad-warning.html", "unsubscribe.html", "photo-consent.html",
-                     "health-consent.html", "guardian.html", "public-address-notice.html"
+                     "health-consent.html", "guardian.html", "public-address-notice.html",
+                     "guest-data-gate-notice.html", "guest-data-gate-delete-notice.html",
+                     "guest-data-gate-revoke-notice.html", "health-written-consent-form.html",
+                     "company-photo-people-notice.html"
                  })
         {
             File.WriteAllText(Path.Combine(_root, file), "<p>text</p>");
@@ -79,8 +87,9 @@ public class LegalControllerGetDocumentTests : IDisposable
             NullLogger<LegalDocumentProvider>.Instance);
         provider.LoadAtStartup();
 
-        // ConsentLedger/UserManager/TokenService are only touched by other actions (Accept, GetConsentStatus).
-        var controller = new LegalController(provider, null!, null!, null!)
+        // ConsentLedger/UserManager/TokenService/AppDbContext are only touched by other actions (Accept,
+        // GetConsentStatus, GetNotices/AcknowledgeNotice/GetNoticeAttachment).
+        var controller = new LegalController(provider, null!, null!, null!, null!)
         {
             ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
             {

@@ -41,7 +41,7 @@ internal static class BookingEndpointHelpers
     internal static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName,
         ReminderStatusDto? reminderStatus = null, int? historyEventCount = null,
         bool? clientRescheduleAllowed = null, int? clientRescheduleMinHours = null, int? companyBookingHorizonDays = null,
-        bool? clientCancelAllowed = null)
+        bool? clientCancelAllowed = null, int? clientCancelMinHours = null)
     {
         // US-67 (API_CONTRACT_CYCLE6.md §43.2): `services` is built from BookingServices when loaded
         // (every path except the in-memory object returned by Create, which sets it explicitly before
@@ -62,6 +62,7 @@ internal static class BookingEndpointHelpers
             b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus,
             totalDurationMinutes, items,
             b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount,
-            clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays, clientCancelAllowed);
+            clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays, clientCancelAllowed,
+            clientCancelMinHours);
     }
 }

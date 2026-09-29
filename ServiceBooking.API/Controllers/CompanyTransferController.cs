@@ -42,6 +42,11 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             return result.Failure!.Kind switch
             {
                 TransferFailureKind.CompanyNotFound or TransferFailureKind.TargetAccountNotFound => NotFound(),
+                // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.1 (US-20-07, LG6) — the
+                // one blocked-preview case that also sets ownerChangeRequired: true, so the frontend
+                // knows a new owner (not a different target account) is the fix.
+                TransferFailureKind.CurrentOwnerNotLinkedToTargetAccount => Ok(await BuildBlockedPreviewDtoAsync(
+                    company, targetBillingAccountId, result.Failure!.Message, ownerChangeRequired: true)),
                 _ => Ok(await BuildBlockedPreviewDtoAsync(company, targetBillingAccountId, result.Failure!.Message)),
             };
         }
@@ -89,17 +94,22 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
     {
         var changedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
         var result = await transferService.TransferAsync(
-            companyId, dto.TargetBillingAccountId, dto.NewOwnerUserId, dto.ConfirmSeatOverflow, changedByUserId);
+            companyId, dto.TargetBillingAccountId, dto.NewOwnerUserId, dto.ConfirmSeatOverflow, changedByUserId,
+            dto.ConfirmRightsTransfer);
 
         if (result.Success) return NoContent();
 
         return result.Failure!.Kind switch
         {
             TransferFailureKind.CompanyNotFound or TransferFailureKind.TargetAccountNotFound => NotFound(),
-            TransferFailureKind.NewOwnerNotFound or TransferFailureKind.NewOwnerDeleted =>
+            TransferFailureKind.NewOwnerNotFound or TransferFailureKind.NewOwnerDeleted
+                // ARCHITECTURE_CYCLE20.md §407.2, API_CONTRACT_CYCLE20.md §437.2 (Т20-09 п. 1).
+                or TransferFailureKind.RightsTransferNotConfirmed =>
                 new ContentResult { StatusCode = StatusCodes.Status400BadRequest, Content = result.Failure.Message, ContentType = "text/plain; charset=utf-8" },
             TransferFailureKind.CompanyLimitExceeded =>
                 new ContentResult { StatusCode = StatusCodes.Status402PaymentRequired, Content = result.Failure.Message, ContentType = "text/plain; charset=utf-8" },
+            // CurrentOwnerNotLinkedToTargetAccount (§407.2, LG6) falls through to this default 409,
+            // same status as NewOwnerNotLinkedToTargetAccount already gets.
             _ => new ContentResult { StatusCode = StatusCodes.Status409Conflict, Content = result.Failure.Message, ContentType = "text/plain; charset=utf-8" },
         };
     }
@@ -133,7 +143,8 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
         return new TransferSideDto(billingAccountId.Value, account?.Name, sub?.PlanConfig?.Name);
     }
 
-    private async Task<CompanyTransferPreviewDto> BuildBlockedPreviewDtoAsync(Company company, Guid targetBillingAccountId, string blockReason)
+    private async Task<CompanyTransferPreviewDto> BuildBlockedPreviewDtoAsync(
+        Company company, Guid targetBillingAccountId, string blockReason, bool ownerChangeRequired = false)
     {
         var sourceSide = await BuildSideDtoAsync(company.BillingAccountId);
         var targetSide = await BuildSideDtoAsync(targetBillingAccountId);
@@ -143,7 +154,8 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
             company.Id, company.Name, seatsOfCompany, sourceSide, targetSide,
             TargetCompaniesUsed: 0, TargetCompaniesLimit: null, TargetSeatsUsed: 0, TargetSeatsLimit: null,
             CanTransfer: false, BlockReason: blockReason, SeatOverflow: false, SeatOverflowText: null,
-            WillDetachFromChannel: false, WillCancelPendingNotifications: 0, NewOwner: null, OwnerUnchangedNotice: null);
+            WillDetachFromChannel: false, WillCancelPendingNotifications: 0, NewOwner: null, OwnerUnchangedNotice: null,
+            OwnerChangeRequired: ownerChangeRequired);
     }
 
     private async Task<TransferNewOwnerDto> BuildNewOwnerDtoAsync(Guid companyId, Guid targetBillingAccountId, string newOwnerUserId)

@@ -22,5 +22,11 @@ public enum ConsentSource
     // ARCHITECTURE_CYCLE13.md §220.3 (LEGAL_REVIEW.md §16.4) — the "understood, save the address"
     // confirmation on the public-address-notice screen (POST /api/companies/address/notice). Append-only
     // member, no migration: the underlying column is a plain int (see ConsentRecord.Source).
-    AddressForm
+    AddressForm,
+
+    // ARCHITECTURE_CYCLE20.md §402.2 (US-20-01, LG1) — staff marking "written health-data consent
+    // obtained" after the client signs the paper form. This is the ONLY source that opens the health
+    // field (§402.3); the electronic HealthDataConsent uiText/salon form no longer does. Append-only
+    // member, no migration.
+    PaperForm
 }

@@ -28,8 +28,9 @@ public class LegalConsentFilterTests : IDisposable
 
         // CYCLE5-BREAKING: "Terms" is renamed to "TermsClient", and a valid manifest now needs all five
         // document types plus all six uiTexts keys to load at all (ARCHITECTURE_CYCLE5.md §43.3). Cycle
-        // 13 (§220.1) adds a seventh uiTexts key, PublicAddressNotice, under the same rule. Only
-        // Privacy/TermsClient carry `gate: Global` — the only gate this filter ever enforces (§46.3).
+        // 13 (§220.1) adds a seventh uiTexts key, PublicAddressNotice, under the same rule. Cycle 20
+        // (§411/§412) adds five more (twelve total) under the same rule. Only Privacy/TermsClient carry
+        // `gate: Global` — the only gate this filter ever enforces (§46.3).
         File.WriteAllText(Path.Combine(_root, "legal.json"), """
             {
               "documents": [
@@ -46,7 +47,12 @@ public class LegalConsentFilterTests : IDisposable
                 { "key": "PhotoConsent", "version": "v2", "isDraft": false, "file": "photo-consent.html" },
                 { "key": "HealthDataConsent", "version": "v2", "isDraft": false, "file": "health-consent.html" },
                 { "key": "GuardianConfirmation", "version": "v2", "isDraft": false, "file": "guardian.html" },
-                { "key": "PublicAddressNotice", "version": "v2", "isDraft": false, "file": "public-address-notice.html" }
+                { "key": "PublicAddressNotice", "version": "v2", "isDraft": false, "file": "public-address-notice.html" },
+                { "key": "GuestDataGateNotice", "version": "v2", "isDraft": false, "file": "guest-data-gate-notice.html" },
+                { "key": "GuestDataGateDeleteNotice", "version": "v2", "isDraft": false, "file": "guest-data-gate-delete-notice.html" },
+                { "key": "GuestDataGateRevokeNotice", "version": "v2", "isDraft": false, "file": "guest-data-gate-revoke-notice.html" },
+                { "key": "HealthDataWrittenConsentForm", "version": "v2", "isDraft": false, "file": "health-written-consent-form.html" },
+                { "key": "CompanyPhotoPeopleNotice", "version": "v2", "isDraft": false, "file": "company-photo-people-notice.html" }
               ]
             }
             """);
@@ -62,6 +68,11 @@ public class LegalConsentFilterTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "health-consent.html"), "<p>health consent</p>");
         File.WriteAllText(Path.Combine(_root, "guardian.html"), "<p>guardian</p>");
         File.WriteAllText(Path.Combine(_root, "public-address-notice.html"), "<p>address notice</p>");
+        File.WriteAllText(Path.Combine(_root, "guest-data-gate-notice.html"), "<p>guest data gate notice</p>");
+        File.WriteAllText(Path.Combine(_root, "guest-data-gate-delete-notice.html"), "<p>guest data gate delete notice</p>");
+        File.WriteAllText(Path.Combine(_root, "guest-data-gate-revoke-notice.html"), "<p>guest data gate revoke notice</p>");
+        File.WriteAllText(Path.Combine(_root, "health-written-consent-form.html"), "<p>health written consent form</p>");
+        File.WriteAllText(Path.Combine(_root, "company-photo-people-notice.html"), "<p>company photo people notice</p>");
     }
 
     public void Dispose()

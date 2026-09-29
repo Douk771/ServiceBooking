@@ -1,6 +1,7 @@
 import { api } from './client'
 import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
+import type { components as Cycle20Schemas } from '../types/api-cycle20.generated'
 
 /**
  * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
@@ -61,4 +62,19 @@ export const billingApi = {
     api
       .post<TrialStateDto>('/billing/trial/terms-acknowledgement', { termsVersion } satisfies TrialTermsAcknowledgementInput)
       .then((r) => r.data),
+
+  /** GET /api/billing/operator-details (§432.8, NEW) — held-account only; 404 = no billing account
+   *  at all (same "not an error state" convention as `getSubscription`/`getTrial` above). */
+  getOperatorDetails: (): Promise<ConsentOperatorDetailsDto> =>
+    api.get<ConsentOperatorDetailsDto>('/billing/operator-details').then((r) => r.data),
+
+  /** PUT /api/billing/operator-details — empty string / whitespace-only is sent through as-is; the
+   *  server treats it as `null` (§432.8), so the caller doesn't need to pre-convert. */
+  updateOperatorDetails: (input: ConsentOperatorDetailsInput): Promise<ConsentOperatorDetailsDto> =>
+    api.put<ConsentOperatorDetailsDto>('/billing/operator-details', input).then((r) => r.data),
 }
+
+// ── Cycle 20 (US-20-01, Т20-04 п. 3) — operator-of-record details for the paper consent form. ──────
+type Cycle20 = Cycle20Schemas['schemas']
+export type ConsentOperatorDetailsDto = Cycle20['ConsentOperatorDetailsDto']
+export type ConsentOperatorDetailsInput = Cycle20['ConsentOperatorDetailsInput']

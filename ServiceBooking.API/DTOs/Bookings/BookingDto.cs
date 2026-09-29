@@ -71,7 +71,14 @@ public record BookingDto(
     // this caller" convention). Mirrors PATCH .../cancel's rule for a ClientOwner caller (status +
     // window), but deliberately does NOT fold in AllowSelfBooking/plan online-booking gate — cancel
     // depends on neither. A hint for the UI, re-checked by the server on the PATCH itself.
-    bool? ClientCancelAllowed = null
+    bool? ClientCancelAllowed = null,
+    // ARCHITECTURE_CYCLE20.md §405, API_CONTRACT_CYCLE20.md §435 (US-20-04) — the APPLIED cancel window
+    // in hours: min(company's configured value, ClientRescheduleWindow.MaxEnforcedCancelHours). Computed
+    // ONLY on GET /api/bookings/client, same "server didn't compute this for this caller" convention as
+    // every other Client* field above; null everywhere else. Deliberately NOT the same value as
+    // ClientRescheduleMinHours (that one is uncapped and describes reschedule, not cancel) — the
+    // frontend must read this field for the "cancel not later than N h" text, not the reschedule one.
+    int? ClientCancelMinHours = null
 );
 
 // US-67 (API_CONTRACT_CYCLE6.md §43.2): one line per service in the visit, in visit order.

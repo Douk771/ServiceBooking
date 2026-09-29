@@ -56,7 +56,7 @@ public class ProfileController(
     public async Task<IActionResult> Export(CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var export = await subjectDataExporter.ExportAsync(userId, HttpContext.RequestAborted, ct);
+        var export = await subjectDataExporter.ExportAsync(userId, HttpContext.TraceIdentifier, HttpContext.RequestAborted, ct);
         if (export is null) return NotFound();
 
         Response.Headers.ContentDisposition =
@@ -228,7 +228,7 @@ public class ProfileController(
     public async Task<IActionResult> DeleteAccount([FromBody] DeleteAccountDto dto)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var result = await accountDeletionService.DeleteAsync(userId, dto.CurrentPassword, HttpContext.RequestAborted);
+        var result = await accountDeletionService.DeleteAsync(userId, dto.CurrentPassword, HttpContext.TraceIdentifier, HttpContext.RequestAborted);
         return result.Status switch
         {
             AccountDeletionStatus.UserNotFound => NotFound(),

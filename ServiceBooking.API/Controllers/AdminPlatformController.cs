@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.API.DTOs.Common;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Scheduling;
@@ -253,7 +254,40 @@ public class AdminPlatformController(
             p.InactiveAccountDays, p.BookingPersonalizationDays, p.ClientNoteDays, p.ClientNotePhotoDays,
             p.ClientHealthNoteDays, p.ConsentRecordDays, p.ChannelStateEventDays, p.PaymentLogDays,
             p.MailLogDays, p.AppLogDays, dryRun,
-            p.PhoneVerificationSessionDays, p.VerifiedPhoneOrphanDays, p.TrialPhoneRegistrationDays));
+            p.PhoneVerificationSessionDays, p.VerifiedPhoneOrphanDays, p.TrialPhoneRegistrationDays,
+            p.BookingEventDays, p.GuestDataGateEventDays, p.PlatformNoticeDays));
+    }
+
+    // ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06) — the journal's
+    // only reader. No screen reads this in cycle 20 (out of scope); SuperAdmin-only, for incident review.
+    // Written in cycle 20 inside AdminController; placed here on the merge with cycle 22 (§378), next to
+    // the retention policy it belongs to — same api/admin prefix, same SuperAdmin gate, same route.
+    [HttpGet("guest-data-gate-events")]
+    public async Task<ActionResult<PagedResult<GuestDataGateEventDto>>> GetGuestDataGateEvents(
+        [FromQuery] string? userId, [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+        [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken ct)
+    {
+        from = QueryDateTime.ToUtc(from);
+        to = QueryDateTime.ToUtc(to);
+        if (from is not null && to is not null && from > to)
+            return BadRequest("Дата начала не может быть позже даты окончания.");
+
+        var (currentPage, currentPageSize) = Pagination.Normalize(page, pageSize);
+        var query = db.GuestDataGateEvents.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(userId)) query = query.Where(e => e.UserId == userId);
+        if (from is not null) query = query.Where(e => e.OccurredAtUtc >= from);
+        if (to is not null) query = query.Where(e => e.OccurredAtUtc <= to);
+
+        var total = await query.CountAsync(ct);
+        var rows = await query.OrderByDescending(e => e.OccurredAtUtc)
+            .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
+            .ToListAsync(ct);
+
+        var items = rows.Select(e => new GuestDataGateEventDto(
+            e.Id, e.OccurredAtUtc, "guest-data-gate.applied", e.UserId,
+            e.Operation.ToString(), e.Outcome.ToString(), e.TraceId)).ToList();
+
+        return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
     }
 }
 
@@ -270,12 +304,22 @@ public record ScheduledTaskStatusDto(
 // (cycle 18, §343.2) appended additively — §49.5's own rule ("сроки не переписываются руками")
 // applied retroactively to the two cycle-14 periods that were never wired into this DTO (code review,
 // cycle 18 late delta): closing that gap here, since this endpoint is the one place it's checked.
+// ARCHITECTURE_CYCLE20.md §406.1 (US-20-05, П-5/П-10 §413) — three more fields, appended at the end.
+// BookingEventDays wasn't in this DTO at all before this cycle, despite SPEC already requiring it be
+// shown (a pre-existing gap this cycle closes together with giving the period an actual legal number).
 public record RetentionPolicyDto(
     int NotificationBodyDays, int NotificationMetadataDays, int TemplateHistoryDays,
     int InactiveAccountDays, int BookingPersonalizationDays, int ClientNoteDays, int ClientNotePhotoDays,
     int ClientHealthNoteDays, int ConsentRecordDays, int ChannelStateEventDays, int PaymentLogDays,
     int MailLogDays, int AppLogDays, bool DryRun,
-    int PhoneVerificationSessionDays = 0, int VerifiedPhoneOrphanDays = 0, int TrialPhoneRegistrationDays = 0);
+    int PhoneVerificationSessionDays = 0, int VerifiedPhoneOrphanDays = 0, int TrialPhoneRegistrationDays = 0,
+    int BookingEventDays = 0, int GuestDataGateEventDays = 0, int PlatformNoticeDays = 0);
+
+// ARCHITECTURE_CYCLE20.md §406.2, API_CONTRACT_CYCLE20.md §436.2 (US-20-05, Т20-06). 🔴 No IP, no
+// User-Agent, no phone in any form, no counts — the schema behind this DTO has no such columns
+// (LEGAL_REVIEW_CYCLE16.md §6.4), so there is nothing here for a future field to accidentally leak.
+public record GuestDataGateEventDto(
+    long Id, DateTime OccurredAt, string EventCode, string UserId, string Operation, string Outcome, string? TraceId);
 
 // pricingPublicBlockedReason: ARCHITECTURE_CYCLE11.md §114.1 — nullable, added by cycle 11. Absent/null
 // means no obstacle to turning the switch on; a non-null value is one of "OfferIsDraft"/"LegalUnavailable"

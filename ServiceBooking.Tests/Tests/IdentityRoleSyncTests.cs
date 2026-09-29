@@ -61,6 +61,14 @@ public class IdentityRoleSyncTests(TestDatabaseFixture fixture) : ApiTestBase(fi
         var (owner, company) = await CreateOwnerWithCompanyAsync();
         var newOwner = await RegisterAsync();
 
+        // ARCHITECTURE_CYCLE20.md §407.2/§437.3 (US-20-07, LG6, cycle 20) — PUT .../owner now requires
+        // the new owner to already be linked to the company's billing account (held by them, or a
+        // CompanyMember of one of its companies); make newOwner a member of THIS company first, the
+        // same way SEC-051 above does for its own scenario.
+        var addResponse = await AuthedClient(owner.Token).PostAsJsonAsync($"/api/companies/{company.Id}/members",
+            new { phone = newOwner.Phone, firstName = newOwner.FirstName, lastName = newOwner.LastName, role = "Master", bio = (string?)null, email = (string?)null });
+        addResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
         var admin = await LoginAsSuperAdminAsync();
         var response = await AuthedClient(admin.Token).PutAsJsonAsync($"/api/admin/companies/{company.Id}/owner",
             new UpdateCompanyOwnerDto(newOwner.UserId));

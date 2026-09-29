@@ -205,14 +205,23 @@ curl http://localhost:5000/api/bookings/my \
 ### 2.6. Правовые документы и согласия (`/api/legal`, `/api/profile/consents`) — **переработано в цикле 5**
 
 **Цикл 5 (ARCHITECTURE_CYCLE5.md §43–§46) переделывает контур согласий цикла 3 целиком.** Вместо двух
-документов (`Privacy`, `Terms`) манифест несёт **пять версионируемых документов** и **шесть текстов
-интерфейса** (не версионируемых как документ, никогда не блокируют доступ). Журнал согласий —
+документов (`Privacy`, `Terms`) манифест несёт **пять версионируемых документов** и набор текстов
+интерфейса (не версионируемых как документ, никогда не блокируют доступ). Журнал согласий —
 неизменяемая таблица событий (`ConsentRecords`), а не «текущее состояние» — повторное согласие
 добавляет новую строку, а не перезаписывает старую.
 
+> **Обновлено в цикле 20.** Число ключей текстов интерфейса выросло с шести (цикл 5) до **двенадцати** —
+> `PublicAddressNotice` добавлен циклом 13, ещё пять (`GuestDataGateNotice`, `GuestDataGateDeleteNotice`,
+> `GuestDataGateRevokeNotice`, `HealthDataWrittenConsentForm`, `CompanyPhotoPeopleNotice`) добавлены
+> циклом 20 (US-20-01/US-20-05/US-20-06). Список ниже и количество в примерах ответов по всему разделу
+> 2.6 исторически называли «шесть» — актуальный список смотрите в `ServiceBooking.Core/Enums/LegalTextKey.cs`,
+> он теперь единственный источник истины. `HealthDataConsent` остаётся в манифесте (используется как
+> заголовок салонной формы в истории согласий), но **новую** отметку по нему поставить нельзя —
+> см. §4.17 ниже.
+
 Манифест лежит в `App_Data/legal/legal.json` (плюс HTML-файлы текстов) и грузится в память при старте
 — вне Development/Testing приложение **не запускается**, если манифест не проходит валидацию (все пять
-типов документов и все шесть ключей текстов обязаны присутствовать; документ с `isDraft: false` не
+типов документов и все текущие ключи текстов обязаны присутствовать; документ с `isDraft: false` не
 может содержать нерешённый плейсхолдер `{{...}}`).
 
 **Пять типов документов** (`LegalDocumentType`, сериализуется как строка в JSON):
@@ -225,9 +234,10 @@ curl http://localhost:5000/api/bookings/my \
 | `PdnConsent` | Согласие на обработку персональных данных, гранулярное по целям | `None` — никогда не блокирует |
 | `ChannelRiskNotice` | Уведомление о рисках доставки через WhatsApp | `None` |
 
-**Шесть ключей текстов интерфейса** (`LegalTextKey`, строка, НЕ входит в `LegalDocumentType`):
-`BookingNotice`, `TemplateAdWarning`, `UnsubscribePage`, `PhotoConsent`, `HealthDataConsent`,
-`GuardianConfirmation`. Эти тексты **никогда** не участвуют в гейте `451`.
+**Ключи текстов интерфейса** (`LegalTextKey`, строка, НЕ входит в `LegalDocumentType`), исторический
+костяк цикла 5: `BookingNotice`, `TemplateAdWarning`, `UnsubscribePage`, `PhotoConsent`,
+`HealthDataConsent`, `GuardianConfirmation` — плюс `PublicAddressNotice` (цикл 13) и пять ключей цикла 20
+из врезки выше. Эти тексты **никогда** не участвуют в гейте `451`.
 
 #### `GET /api/legal/documents`
 
@@ -3575,6 +3585,336 @@ curl http://localhost:5000/api/health/ready
   меняются задним числом.
 * `DELETE /api/admin/plans/{id}` — новый повод для существующего 409: тариф-триал удалить нельзя.
 
+#### Добавления цикла 20 (US-20-02, US-20-05, US-20-07, US-20-09)
+
+* `PUT /api/admin/billing-accounts/{accountId}/subscription` — тело получило `reasonCode` и
+  `reasonDetails` (оба необязательные, `SubscriptionChangeReason`: `OperatorErrorCorrection` |
+  `TrialReissue`). Основание **обязательно**, когда назначаемый тариф скрыт (`isPublic == false`) и
+  отличается от текущего тарифа аккаунта — иначе `400`. **Ломающее изменение для админского фронта**:
+  раньше это тело принималось без основания. `TrialReissue` этим маршрутом никогда не принимается (это
+  делает `POST …/trial/regrant`) — `400`, даже если основание в принципе не требовалось.
+* `GET /api/admin/billing-accounts/{accountId}/subscription-history` — элементы получили `reasonCode`,
+  `reasonTitle` (человекочитаемый текст, `SubscriptionChangeReasonTexts.cs`), `reasonDetails`.
+* `GET /api/admin/subscription-change-reasons` — **новый**. Закрытый список для выпадающего списка формы
+  назначения: `{ "items": [ { "code": "OperatorErrorCorrection", "title": "Исправление ошибки оператора",
+  "detailsRequired": true, "assignableManually": true }, { "code": "TrialReissue", "title": "Перевыдача
+  пробного периода", "detailsRequired": true, "assignableManually": false } ] }`. Фронт не держит своих
+  подписей оснований.
+* `GET /api/admin/retention/policy` — три новых поля: `bookingEventDays` (по умолчанию 1095, было 0 —
+  0 означало «не удалять», сейчас это настоящий срок), `guestDataGateEventDays` (365),
+  `platformNoticeDays` (1095).
+* `GET /api/admin/guest-data-gate-events` — **новый**. Журнал срабатываний «гостевого гейта» (US-20-05,
+  когда неподтверждённый номер получает урезанный доступ к своим же данным) — `PagedResult`,
+  фильтры `userId`, `from`, `to`, `page`, `pageSize`. Элемент: `{ id, occurredAtUtc, kind:
+  "guest-data-gate.applied", userId, operation: "Export"|"DeleteAccount"|"Revoke"|"RevokePreview",
+  outcome: "Applied", traceId }`. Хранится **1 год**, без IP-адреса (`GuestDataGateEventRule`). Экрана в
+  цикле 20 нет — только для разбора инцидентов через curl/Swagger.
+* `GET /api/admin/companies/{companyId}/transfer/preview`, `POST /api/admin/companies/{companyId}/transfer`
+  (US-20-07, LG6, «только свои компании») — превью получило `ownerChangeRequired: boolean`: `true`,
+  когда ТЕКУЩИЙ владелец компании не связан с ЦЕЛЕВЫМ биллинг-аккаунтом (не держатель и не участник ни
+  одной его компании) — в этом случае передача блокируется отдельно от привычных «лимит
+  компаний»/«лимит мест» причин. `POST …/transfer` получил обязательное поле `confirmRightsTransfer:
+  boolean` — без `true` **400**; при несвязанном текущем владельце (даже с `confirmRightsTransfer: true`)
+  — **409**.
+* `PUT /api/admin/companies/{id}/owner` — новый повод для **409**: назначаемый новый владелец должен уже
+  быть связан с биллинг-аккаунтом компании (держатель или участник одной из его компаний) — проверка
+  пропускается, если у компании ещё нет биллинг-аккаунта.
+* `POST /api/admin/subject-requests` — **новый** (US-20-09, Т20-13). Ручная регистрация обращения
+  субъекта, полученного НЕ через веб-форму (бумажное письмо, звонок и т. п.): тело `{ phone, kind,
+  contactValue, message, channel }`, `channel` — `Email` | `PostalMail` (`WebForm` через этот маршрут не
+  ставится — так уже создаёт `POST /api/subject-requests`). Отвечает `202 Accepted` с тем же
+  `SubjectRequestAcceptedDto`, что и публичная форма.
+* `GET /api/admin/subject-requests` — элементы получили `channel` (`WebForm`|`Email`|`PostalMail`) и
+  `registeredByName` (ФИО суперадмина, зарегистрировавшего обращение вручную; `null` для `WebForm`).
+* `GET /api/bookings/client` — элементы получили `clientCancelMinHours` (эффективный порог отмены,
+  **не больше 24** — `ClientRescheduleWindow.EffectiveCancelHours`), отдельно от существующего `minHours`
+  переноса (у него потолка нет).
+* `PATCH /api/bookings/{id}/cancel` — текст `409` при позднем отказе теперь называет **применённое**
+  число часов (после ограничения в 24), а не настройку компании, если та выше.
+* `GET /api/profile/export` — раздел `guestDataGate` получил `explanation`: плоский текст объяснения из
+  манифеста (секция «Текст» ключа `GuestDataGateNotice`), не HTML.
+* `GET /api/legal/texts/{key}` — принимает пять новых ключей цикла 20 (см. врезку в §2.6):
+  `GuestDataGateNotice`, `GuestDataGateDeleteNotice`, `GuestDataGateRevokeNotice`,
+  `HealthDataWrittenConsentForm`, `CompanyPhotoPeopleNotice`.
+
+---
+
+### 4.17. Согласия и здоровье клиента (`/api/companies/{companyId}/clients/{clientKey}`) — новое в цикле 20 (US-20-01)
+
+> **Честная оговорка.** Этот контроллер (`ClientConsentsController`, фотосогласие и заметка о здоровье
+> клиента одного салона) существовал с цикла 5, но никогда не был описан в этом документе — раздел ниже
+> закрывает пробел заодно с документированием изменений цикла 20 (переход на бумажное согласие, LG1).
+> Доступ везде одинаковый: `[Authorize]`, дальше — сотрудник компании (`CompanyMembership.IsStaffAsync`);
+> **SuperAdmin получает `403` на каждом маршруте этого раздела** (правило не ослаблено циклом 20).
+> `{clientKey}` — `userId` зарегистрированного клиента или `phone:<канонический номер>` гостя; клиент,
+> не связанный с компанией ни одной записью, — `404` (существование чужого клиента не подтверждается).
+
+#### `GET|POST /api/companies/{companyId}/clients/{clientKey}/photo-consent`
+
+Без изменений в цикле 20. `GET` возвращает `SalonConsentDto` (`granted`, `grantedAt`, `version`,
+`confirmedBy`, `textVersionOutdated`, `source`). `POST` принимает `{ textVersion, confirmed: true }` —
+`confirmed: false` → `400`.
+
+#### `GET /api/companies/{companyId}/clients/{clientKey}/health-note`
+
+**Изменено в цикле 20.** Поле теперь открывается **только** живой отметкой о письменном (бумажном)
+согласии — электронная салонная форма и цель `PdnConsent/HealthData` больше не в счёт.
+
+```json
+{
+  "value": "Аллергия на латекс",
+  "updatedAt": "2026-09-29T10:15:00Z",
+  "updatedBy": "Анна Смирнова",
+  "consentRequired": false,
+  "writtenConsent": {
+    "granted": true,
+    "recordId": "0f5e2e2a-...-...",
+    "confirmedAt": "2026-09-29T10:10:00Z",
+    "confirmedByName": "Анна Смирнова",
+    "formId": "HD-7K3M9QTX",
+    "formVersion": "2026-09-28-draft",
+    "currentFormVersion": "2026-09-28-draft"
+  }
+}
+```
+
+`writtenConsent` приходит **всегда** (объект, не `null`); при `granted: false` все поля, кроме
+`currentFormVersion`, — `null`. Без активной отметки `value`/`updatedAt`/`updatedBy` — **всегда `null`**,
+даже если строка в БД физически осталась (защита от гонки). Ошибки: `401`, `403`, `404`, `451`.
+
+#### `PUT /api/companies/{companyId}/clients/{clientKey}/health-note`
+
+Тело прежнее — `{ "value": "…" }` (1–2000 символов), `[RequiresOwnerTerms]` не изменился. Без живой
+отметки — `400` с телом `RequiredConsentDto`:
+
+```json
+{ "message": "Для заполнения этого поля нужно письменное согласие клиента: распечатайте бланк, получите подпись и отметьте получение.", "requiredTextKey": "HealthDataWrittenConsentForm" }
+```
+
+#### `DELETE /api/companies/{companyId}/clients/{clientKey}/health-note`
+
+Не изменился: идемпотентный `200`, **разрешён и без отметки** (удаление уменьшает объём обработки
+специальной категории данных, отказывать в нём ради формальности — во вред субъекту).
+
+#### `GET /api/companies/{companyId}/clients/{clientKey}/health-consent-form` — новое в цикле 20
+
+Значения для печатной страницы бланка; сам текст — существующий `GET /api/legal/texts/HealthDataWrittenConsentForm`,
+подставляется на фронте через `applyLegalRuntimeValues`. Заголовок ответа — `Cache-Control: no-store`;
+тело не пишется в лог.
+
+```bash
+curl "http://localhost:5000/api/companies/$COMPANY_ID/clients/phone:79991234567/health-consent-form" \
+  -H "Authorization: Bearer $STAFF_TOKEN"
+```
+
+```json
+{
+  "textKey": "HealthDataWrittenConsentForm",
+  "textVersion": "2026-09-28-draft",
+  "formId": "HD-7K3M9QTX",
+  "formPrintedDate": "2026-09-29",
+  "runtimeValues": {
+    "clientFullName": "Мария Иванова",
+    "companyName": "Студия «Лотос»",
+    "companyAddress": "г. Барнаул, ул. Ленина, 1",
+    "operatorFullName": null,
+    "operatorAddress": null,
+    "operatorInn": null,
+    "formId": "HD-7K3M9QTX",
+    "formPrintedDate": "29.09.2026"
+  },
+  "operatorDetailsMissing": true
+}
+```
+
+`formId` — **новый на каждый вызов** (`HD-` + 8 символов Crockford base32 без `I`/`L`/`O`/`U`), на
+сервере **не хранится** до отметки — только формат проверяется при отметке, не существование.
+`runtimeValues.*` со значением `null` фронт печатает линией для заполнения от руки (`BLANK_LINE`), а не
+скрывает блок. Полей паспорта нет нигде. Ошибки: `401`, `403`, `404`, `451`, `503`.
+
+#### `POST /api/companies/{companyId}/clients/{clientKey}/health-written-consent` — новое в цикле 20
+
+`[RequiresOwnerTerms]` (отметка — заверение абонента, D3 п. 12.1 «н»).
+
+```json
+{ "textVersion": "2026-09-28-draft", "formId": "HD-7K3M9QTX", "confirmed": true }
+```
+
+`formId: null` означает «салон использовал собственный бланк»; иначе — формат `^HD-[0-9A-HJKMNP-TV-Z]{8}$`,
+иначе `400`. `confirmed` обязан быть `true` («подписанный оригинал у нас»), иначе `400`. `textVersion`,
+не совпадающий с текущей версией бланка, — `409` «Текст бланка обновлён — распечатайте бланк заново и
+отметьте получение по новой редакции.» **Идемпотентно**: живая отметка с тем же `formId` и той же
+версией уже есть → `200` с текущим состоянием, новая строка не пишется.
+
+**Ответ `200 OK`** — та же форма, что `writtenConsent` в `GET …/health-note` выше. Ошибки: `400`, `401`,
+`403`, `404`, `409`, `451`, `503`.
+
+#### `POST /api/companies/{companyId}/clients/{clientKey}/health-written-consent/revoke` — новое в цикле 20
+
+```json
+{ "reason": "SubjectWithdrew" }
+```
+
+`reason` — `SubjectWithdrew` (клиент отозвал письменно) | `MarkedByMistake` (отметка ошибочна);
+неизвестное значение — `400`. `[RequiresOwnerTerms]` **нет** (снятие уменьшает объём обработки).
+Снимает **все** живые отметки клиента в этой компании и **в той же транзакции** удаляет его заметку о
+здоровье в этой же компании. Идемпотентно — нечего снимать → `200` с `revoked: 0`.
+
+```json
+{ "revoked": 1, "healthNotesDeleted": 1, "writtenConsent": { "granted": false, "recordId": null, "confirmedAt": null, "confirmedByName": null, "formId": null, "formVersion": null, "currentFormVersion": "2026-09-28-draft" } }
+```
+
+Ошибки: `400`, `401`, `403`, `404`, `451`.
+
+#### `POST /api/companies/{companyId}/clients/{clientKey}/health-consent` — **410 Gone** (выведен в цикле 20)
+
+Салонная электронная форма согласия на сведения о здоровье выведена целиком (LG1). Тело ответа —
+строка: «Согласие на обработку сведений о здоровье теперь оформляется на бумажном бланке. Распечатайте
+бланк в карточке клиента и отметьте получение подписанного экземпляра.» Проверки прав до `410` не
+выполняются — маршрут выведен, а не заблокирован для части вызывающих.
+
+---
+
+### 4.18. Реквизиты оператора ПДн для бланка (`/api/billing/operator-details`) — новое в цикле 20 (US-20-01, Т20-04 п. 3)
+
+Доступ — **держатель** биллинг-аккаунта (`BillingAccount.OwnerUserId == caller`), не управляющий
+компанией; у кого аккаунта нет — `404`. Заполнять реквизиты **не обязательно** — бланк печатается и без
+них (§4.17 выше печатает линию вместо отсутствующего значения).
+
+#### `GET /api/billing/operator-details`
+
+```json
+{ "fullName": "Иванова Мария Сергеевна", "address": "г. Барнаул, ул. Ленина, 1", "inn": "222500000000", "missing": false }
+```
+
+`missing` = `fullName == null || address == null` (ИНН один по себе не считается — он необязателен даже
+при заполненных остальных двух).
+
+#### `PUT /api/billing/operator-details`
+
+Тело `{ fullName, address, inn }` — все три `string?`; пустая строка и строка из одних пробелов
+приравниваются к `null`. Ответ — та же форма, что у `GET`.
+
+| Поле | Проверка (`400` строкой) |
+|---|---|
+| `fullName` | ≤ 300 символов; **инициалы не принимаются** (ч. 4 ст. 9 152-ФЗ) — «Иванов И. И.» → 400 «Укажите фамилию, имя и отчество полностью» |
+| `address` | ≤ 500 символов |
+| `inn` | ровно 10 или 12 цифр |
+
+Ошибки: `400` (только `PUT`), `401`, `404`, `451`.
+
+---
+
+### 4.19. Уведомления платформы (`/api/legal/notices`, `/api/admin/notices`) — новое в цикле 20 (US-20-03)
+
+Уведомления в личном кабинете с обязательной фиксацией ознакомления («баннер, не блокирует работу»).
+Виды (`PlatformNoticeKind`): `PriceChange`, `TermsChange`, `Suspension`, `NewProcessor`, `PhotoRemoved`
+(создаётся только системой, см. §4.13 фото компании), `Other`. Адресат (`NoticeAudienceType`):
+`AllOwners`, `OwnersOnPlans`, `BillingAccount`, `AllClients` (кроме `SuperAdmin`) — вычисляется **при
+чтении**, не снимком на момент публикации.
+
+#### `GET /api/legal/notices?scope=pending|all`
+
+`[Authorize]`. Лежит под префиксом `/api/legal/`, уже в allow-list гейта `451` — читается и до принятия
+новой редакции документов, и в период приостановления владельца. `scope` по умолчанию `pending`
+(источник баннера — неозначенные, неотозванные, ещё видимые); `all` — все видимые вызывающему, включая
+прочитанные и отозванные (источник раздела «Уведомления сервиса»). Неизвестный `scope` — `400`.
+
+```json
+{
+  "acknowledgeButtonText": "Я ознакомился",
+  "acknowledgeCaption": "Это подтверждает только то, что вы прочитали сообщение, а не согласие с ним.",
+  "items": [
+    {
+      "id": "c2a7e2b1-...-...",
+      "kind": "PriceChange",
+      "title": "Тариф «Бизнес»: новая цена с 01.11.2026",
+      "body": "С 01.11.2026 меняется цена «Бизнес»: было 990 ₽, станет 1 190 ₽ за месяц. …",
+      "linkUrl": null,
+      "effectiveFrom": "2026-11-01",
+      "publishedAt": "2026-09-29T09:00:00Z",
+      "visibleUntil": "2027-09-29T09:00:00Z",
+      "attachment": null,
+      "acknowledged": false,
+      "acknowledgedAt": null,
+      "revokedAt": null
+    }
+  ]
+}
+```
+
+Ошибки: `400`, `401`.
+
+#### `POST /api/legal/notices/{id}/acknowledge`
+
+`[Authorize]`, тело пустое. Идемпотентно — повтор отвечает `200`, `acknowledgedAt` не двигается, новой
+записи нет. `200` — тот же элемент с `acknowledged: true`. `404` — уведомления нет, срок видимости
+истёк или вызывающий не адресат (не различаются). `409` — уведомление отозвано. `401`.
+
+#### `GET /api/legal/notices/{id}/attachment`
+
+`[Authorize]`, только адресату. `200 text/html; charset=utf-8` со снимком будущей редакции документа
+(только у `TermsChange`), заголовки `Content-Security-Policy: sandbox; default-src 'none'; style-src
+'unsafe-inline'`, `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`. Фронт показывает **только**
+в `<iframe sandbox="" srcdoc=…>`. `404` — нет вложения, не адресат или срок истёк. `401`.
+
+#### `GET /api/admin/notices`
+
+`[Authorize(Roles = "SuperAdmin")]`. Параметры `kind`, `page`, `pageSize` — `PagedResult`, элемент
+`AdminPlatformNoticeDto`: все поля публичного уведомления (кроме `acknowledged*`) плюс `audienceType`,
+`audiencePlanIds`, `targetBillingAccountId`, `templateVersion`, `createdByName` («Система» для
+`PhotoRemoved`), `revokedByName`, `revokeReason`, `audienceCount` (текущее число адресатов),
+`acknowledgedCount`.
+
+#### `POST /api/admin/notices`
+
+`[Authorize(Roles = "SuperAdmin")]`. Опубликованное **не редактируется** — маршрута `PUT` нет, только
+отзыв. Матрица видов:
+
+| `kind` | Заголовок/тело | `effectiveFrom` | Адресаты | `attachment` |
+|---|---|---|---|---|
+| `PriceChange` | собирает сервер по шаблону; присланные → `400` | обязательна, ≥ сегодня(МСК) + 30 | владельческие | необязательно |
+| `TermsChange` | собирает сервер | обязательна, ≥ +15 (владельцам) / ≥ +10 (`AllClients`) | по `termsChange.documentType`: `TermsOwner` → только владельцам, `TermsClient` → только `AllClients`, `Privacy` → любые | **обязательно** |
+| `Suspension` | пишет суперадмин, ≤ 200/≤ 4000 | необязательна | только `BillingAccount` | нет |
+| `NewProcessor` | пишет суперадмин | обязательна; ≥ +15, если адресат владельческий (D3 п. 11.9.5); для `AllClients` не проверяется | любые | необязательно |
+| `Other` | пишет суперадмин | необязательна, срок не проверяется | любые | необязательно |
+| `PhotoRemoved` | — | — | — | **400** — создаётся только системой |
+
+Общие правила (все — `400` строкой): параметры чужого вида (`priceChange` у `TermsChange` и т. п.) —
+отказ; `linkUrl` — только относительный путь с одного `/`, ≤ 500; `audience.planIds` только для
+`OwnersOnPlans` (непуст); `audience.billingAccountId` только для `BillingAccount`; несуществующий
+тариф/аккаунт — `400`; `attachment.html` ≤ 1 000 000 символов, `attachment.title` ≤ 200.
+
+**201** — `AdminPlatformNoticeDto`, заголовок `Location: /api/admin/notices`.
+
+#### `POST /api/admin/notices/preview`
+
+Тело то же, что у `POST /api/admin/notices`; ничего не пишет. `200`:
+
+```json
+{ "title": "…", "body": "…", "templateVersion": "2026-09-29", "effectiveFrom": "2026-10-20", "visibleUntil": "2027-09-29T09:00:00Z", "audienceCount": 42, "attachmentSha256": "…" }
+```
+
+#### `POST /api/admin/notices/{id}/revoke`
+
+Тело `{ "reason": "Ошибка в дате вступления" }` (обязательна, ≤ 500). `200` —
+`AdminPlatformNoticeDto` с `revokedAt`/`revokedByName`/`revokeReason`. `409` — уже отозвано. `404` — нет.
+Ознакомления не удаляются.
+
+#### `GET /api/admin/notices/{id}/attachment`
+
+То же, что публичный вариант выше, для суперадмина, без проверки адресата. `404`, если вложения нет.
+
+#### `DELETE /api/companies/{id}/photos/{photoId}?reason=DepictedPersonRequest` — новое в цикле 20 (US-20-06, Т20-07)
+
+Существующий маршрут (`IsOwnerOrSuperAdmin`, ответ `204`) получил необязательный параметр `reason`
+(единственное значение `DepictedPersonRequest`, иное → `400`). Учитывается **только** у SuperAdmin: после
+коммита удаления публикуется уведомление `PhotoRemoved` адресату `BillingAccount` этой компании (если у
+компании нет биллинг-аккаунта — берётся аккаунт владельца; если и его нет — уведомление не публикуется,
+в лог пишется `Warning` без ПДн). Ошибка публикации удаление фото **не откатывает** — фото уже убрано,
+это обязанность перед изображённым (3 рабочих дня, D3 п. 8.8). У владельца параметр ни на что не влияет.
+Остальные коды — прежние (`401`/`403`/`404`/`429`).
+
 ---
 
 ## 5. Сквозные сценарии использования
@@ -3776,7 +4116,8 @@ curl -X POST http://localhost:5000/api/admin/plans \
 | `402 Payment Required` | Гостевая/самостоятельная запись при плане подписки Free (`Online booking requires a paid subscription.`); попытка создать новую запись при просроченной подписке (`Subscription expired. New bookings are not allowed.`) — оба случая только в `POST /api/bookings` |
 | `403 Forbidden` | Пользователь аутентифицирован, но не обладает нужной ролью (`[Authorize(Roles=...)]`) или не проходит проверку владения (не CompanyOwner/мастер/SuperAdmin для данного ресурса, включая `WorkingHoursController.GET`/`ScheduleTemplateController`/`GET /api/bookings/occupied`); гостевая/несотрудничная запись при `Company.AllowSelfBooking=false`; попытка назначить роль, на которую нет прав; попытка оставить отзыв за чужую (привязанную к другому клиенту) или гостевую запись; `Master` пытается создать/изменить/удалить услугу |
 | `404 Not Found` | Ресурс с указанным идентификатором не найден (компания, услуга, запись, участник компании, тарифный план, пользователь и т.д.); компания не найдена при попытке любого бронирования (`POST /api/bookings`, теперь для всех вызывающих, не только гостя); несуществующие `ownerUserId`/`planConfigId` в `PUT /api/admin/owners/{id}/subscription`. 🔴 **Общее правило API (не особенность одного цикла, ARCHITECTURE_CYCLE16.md §244.4/AV8):** любой `404`/`409`, у которого явно не указано иное тело в этой таблице (`ProblemDetails` для `500`, `text/plain` для перечисленных бизнес-ошибок 409), отдаётся **с пустым телом** — `Program.cs` (`SuppressMapClientErrors = true`). Это касается маршрутов всех циклов, а не только тех, что описаны ниже. **Цикл 15:** посторонний вызывающий на `PATCH /api/bookings/{id}/reschedule` и на `GET /api/bookings/slots?excludeBookingId=…` получает `404` с пустым телом вместо `403` — чтобы эндпоинт не подтверждал существование чужой записи. На `PATCH /api/bookings/{id}/cancel` это **не** распространяется: там по-прежнему `403` (§4.2) |
-| `409 Conflict` | Выбранный временной слот уже занят другой записью, находится в нерабочее время/перерыве/не на 30-минутной сетке, или дата/время в прошлом/переполняет сутки (создание/перенос записи, `"Time slot is no longer available"` для всех случаев); `slug` компании уже занят; отзыв на эту запись уже существует; пользователь уже состоит участником компании; удаление тарифного плана с активными подписчиками (`DELETE /api/admin/plans/{id}`). **Цикл 15:** снятие системного бесплатного тарифа с витрины или его деактивация (`PUT /api/admin/plans/{id}`). **Цикл 17:** клиент отменяет свою запись позже окна компании (`PATCH /api/bookings/{id}/cancel`) — обратите внимание, у `PATCH /api/bookings/{id}/reschedule` то же по смыслу нарушение отдаётся как `400`, асимметрия намеренная (§4.2). См. также правило пустого тела у строки `404` выше |
+| `409 Conflict` | Выбранный временной слот уже занят другой записью, находится в нерабочее время/перерыве/не на 30-минутной сетке, или дата/время в прошлом/переполняет сутки (создание/перенос записи, `"Time slot is no longer available"` для всех случаев); `slug` компании уже занят; отзыв на эту запись уже существует; пользователь уже состоит участником компании; удаление тарифного плана с активными подписчиками (`DELETE /api/admin/plans/{id}`). **Цикл 15:** снятие системного бесплатного тарифа с витрины или его деактивация (`PUT /api/admin/plans/{id}`). **Цикл 17:** клиент отменяет свою запись позже окна компании (`PATCH /api/bookings/{id}/cancel`) — обратите внимание, у `PATCH /api/bookings/{id}/reschedule` то же по смыслу нарушение отдаётся как `400`, асимметрия намеренная (§4.2). **Цикл 20:** `POST …/health-written-consent` — прислана устаревшая версия бланка (§4.17); `POST /api/admin/companies/{companyId}/transfer` — текущий владелец компании не связан с целевым аккаунтом (§4.12); `PUT /api/admin/companies/{id}/owner` — новый владелец не связан с аккаунтом компании; `POST /api/admin/notices/{id}/revoke` — уведомление уже отозвано; `POST /api/legal/notices/{id}/acknowledge` — уведомление отозвано. См. также правило пустого тела у строки `404` выше |
+| `410 Gone` | Маршрут выведен целиком, ответ не зависит от прав вызывающего — тело `text/plain` с указанием замены. **Цикл 7:** `PUT /api/admin/owners/{ownerUserId}/subscription` (см. выше). **Цикл 20:** `POST /api/companies/{companyId}/clients/{clientKey}/health-consent` — салонная электронная форма согласия на сведения о здоровье выведена (§4.17), заменена бумажным бланком |
 | `500 Internal Server Error` | Необработанное исключение — единственная стабильно воспроизводимая точка: `SuperAdmin` создаёт услугу (`POST /api/services`) в несуществующей `companyId` (падает FK). **Изменено в цикле санации A**: тело теперь всегда `application/problem+json` с полями `type`/`title`/`status`/`traceId` (глобальный обработчик исключений, `Program.cs`) — раньше было пустое тело/страница разработчика. Формат deliberate 400/402/403/404/409 не затронут — `ProblemDetails` используется **только** для необработанных исключений |
 | `413 Payload Too Large` | **Новое в цикле санации B.** Тело запроса превышает `[RequestSizeLimit(5 МБ)]` на одном из четырёх эндпоинтов загрузки изображений (§3.10) — тело пустое, обрывается до контроллера |
 | `429 Too Many Requests` | **Новое в цикле санации B, расширено в цикле санации C (US-42).** Превышен лимит частоты — политика `uploads` (10/мин, §3.10), плюс с цикла 3: `auth-login` (10/мин по IP), `auth-register` (5/60 мин по IP), `booking-create` (10/60 мин аноним, 120/60 мин авторизован), `data-export` (3/1440 мин по пользователю, `GET /api/profile/export`). Тело — `text/plain`, свой текст на русском для каждой политики (например, `"Слишком много попыток входа. Попробуйте позже."`) |

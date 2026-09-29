@@ -6,6 +6,17 @@
     "csharp": "ServiceBooking.UnitTests/LegalKit/RuntimeValueFormsCorpusTests.cs — тот же файл: RuntimeValueScanner находит имя ровно в тех кейсах, где scannerSees:true. Корень репозитория ищется подъёмом по каталогам до ServiceBooking.sln (приём из CommittedLegalArtifactTests.cs:43-54)."
   },
   "_addingCases": "Новую форму разметки, встреченную в legal-drafts/*.html, добавлять СЮДА, а не в один из двух тестов. Кейс, добавленный только с одной стороны, — это и есть расхождение, которое файл призван исключить.",
+  "_knownNamesDoc": "ARCHITECTURE_CYCLE20.md §402.5 (Т20-04 п. 2) — единственный список ИМЁН величин (не форм разметки — те остаются в cases/valueName ниже). Обе стороны сверяют СВОЙ набор имён с этим списком: `ServiceBooking.UnitTests/LegalKit/RuntimeValueFormsCorpusTests.cs` (CY20-U-09) сравнивает его с `RuntimeValueScanner.KnownNames`, `frontend/src/utils/legalRuntimeValues.test.ts` — с `LEGAL_RUNTIME_VALUE_NAMES`. Порядок значения не имеет, сравнение — как с множеством.",
+  "knownNames": [
+    "companyName",
+    "clientFullName",
+    "operatorFullName",
+    "operatorAddress",
+    "operatorInn",
+    "companyAddress",
+    "formId",
+    "formPrintedDate"
+  ],
   "valueName": "companyName",
   "cases": [
     {

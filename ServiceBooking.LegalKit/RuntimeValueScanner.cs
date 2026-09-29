@@ -17,11 +17,20 @@ namespace ServiceBooking.LegalKit;
 /// </summary>
 internal static partial class RuntimeValueScanner
 {
-    /// <summary>The one name this cycle introduces (§256.3). Adding a second runtime value later is a
-    /// one-line change here plus a matching one-line change to LEGAL_RUNTIME_VALUE_NAMES.</summary>
+    /// <summary>The one name cycle 15 introduced (§256.3), plus the seven cycle 20 adds for the health
+    /// data written consent form (ARCHITECTURE_CYCLE20.md §402.5, §412.8). Adding a value later is a
+    /// one-line change here plus a matching one-line change to LEGAL_RUNTIME_VALUE_NAMES and to the
+    /// shared corpus <c>contracts/legal/runtime-value-forms.json</c>.</summary>
     public static readonly IReadOnlySet<string> KnownNames = new HashSet<string>(StringComparer.Ordinal)
     {
         "companyName",
+        "clientFullName",
+        "operatorFullName",
+        "operatorAddress",
+        "operatorInn",
+        "companyAddress",
+        "formId",
+        "formPrintedDate",
     };
 
     [GeneratedRegex(@"data-legal-(value|when|unless)\s*=\s*""([^""]*)""")]

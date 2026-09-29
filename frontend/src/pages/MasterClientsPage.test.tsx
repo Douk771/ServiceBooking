@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ReactElement } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MasterClientsPage } from './MasterClientsPage'
 import { useAuthStore } from '../store/authStore'
@@ -31,10 +32,15 @@ vi.mock('../api/clientNotes', () => ({
 // hit the network for real and fail noisily in the background.
 vi.mock('../api/clientConsents', () => ({
   clientConsentsApi: {
-    getHealthNote: vi.fn().mockResolvedValue({ value: null, consentRequired: true }),
+    getHealthNote: vi.fn().mockResolvedValue({
+      value: null,
+      consentRequired: true,
+      writtenConsent: { granted: false, currentFormVersion: '2026-09-28-draft' },
+    }),
     updateHealthNote: vi.fn(),
     deleteHealthNote: vi.fn(),
-    confirmHealthConsent: vi.fn(),
+    markWrittenConsent: vi.fn(),
+    revokeWrittenConsent: vi.fn(),
     getPhotoConsent: vi.fn().mockResolvedValue({ granted: false, grantedAt: null, version: null, confirmedBy: null, textVersionOutdated: false, source: null }),
     confirmPhotoConsent: (...args: unknown[]) => confirmPhotoConsent(...args),
   },
@@ -74,7 +80,13 @@ afterEach(() => {
 
 function renderWithClient(ui: ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>)
+  // Cycle 20 — HealthNoteCard's closed-field state links to the print-the-form route (`<Link>`),
+  // so a bare render without a Router now throws where it didn't before this cycle.
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  )
 }
 
 function makeClient(overrides: Partial<MasterClient> = {}): MasterClient {

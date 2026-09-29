@@ -95,6 +95,16 @@ internal static class ApplicationServicesExtensions
     // TD-03 (ARCHITECTURE_CYCLE16.md §245.4) — the single gate for "does this account get the
     // phone-matching branch of its own guest-recorded data". Scoped: wraps one AppDbContext query.
     builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectScopeResolver>();
+    // ARCHITECTURE_CYCLE20.md §406.2 (US-20-05) — the single writer for GuestDataGateEvent.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.GuestDataGateJournal>();
+    // ARCHITECTURE_CYCLE20.md §404.3/§404.7 (US-20-03/US-20-07) — platform notices: builds/validates/saves
+    // PlatformNotice rows (AdminNoticesController, CompanyPhotosController's PhotoRemoved) and counts the
+    // CURRENT audience for the admin list/preview/publish responses.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Legal.PlatformNoticePublisher>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Legal.NoticeAudienceCounter>();
+    // ARCHITECTURE_CYCLE20.md §402.4 (US-20-01) — the one cascade shared by every entry point that lifts a
+    // written-health-consent mark.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Legal.WrittenHealthConsentRevoker>();
     // Cycle 22 P5 (ARCHITECTURE_CYCLE22.md §378): the bodies of GET /api/profile/export and
     // POST /api/profile/delete-account (+ preview), moved out of ProfileController unchanged.
     builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectDataExporter>();
@@ -272,6 +282,11 @@ internal static class ApplicationServicesExtensions
     // the date of grant (Д16) plus destruction on HMAC key rotation (К3).
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.TrialPhoneRegistrationRule>();
+    // ARCHITECTURE_CYCLE20.md §406.2/§404.6 (US-20-05, US-20-03) — the 20th and 21st rules.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.GuestDataGateEventRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.PlatformNoticeRule>();
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
     builder.Services.AddHostedService<ScheduledTaskRunner>();
