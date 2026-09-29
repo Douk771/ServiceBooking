@@ -37,11 +37,9 @@ public class UploadsStaticFilesTests(TestDatabaseFixture fixture) : IClassFixtur
         return 0;
     }
 
-    private static string RandomPhone()
-    {
-        var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(9).ToArray();
-        return $"+79{new string(digits).PadRight(9, '2')}";
-    }
+    // C23-7: same fix as LegalConsentVersionChangeTests.UniquePhone — GUID digits padded with a constant collide.
+    private static string RandomPhone() =>
+        $"+79{System.Security.Cryptography.RandomNumberGenerator.GetInt32(0, 1_000_000_000):D9}";
 
     // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): only an
     // HttpClient is available here (no DI scope), so the manifest is read over HTTP from the same host

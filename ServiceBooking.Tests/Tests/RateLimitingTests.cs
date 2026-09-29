@@ -22,11 +22,9 @@ public class RateLimitingTests(TestDatabaseFixture fixture) : IClassFixture<Test
         return 0;
     }
 
-    private static string RandomNumericPhone()
-    {
-        var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(9).ToArray();
-        return $"+79{new string(digits).PadRight(9, '1')}";
-    }
+    // C23-7: same fix as LegalConsentVersionChangeTests.UniquePhone — GUID digits padded with a constant collide.
+    private static string RandomNumericPhone() =>
+        $"+79{System.Security.Cryptography.RandomNumberGenerator.GetInt32(0, 1_000_000_000):D9}";
 
     // CYCLE5-BREAKING (compile-only adaptation, see ApiTestBase.RegisterAsync's own note): the anonymous
     // registration payloads below need a `legal` object now, read from the same host they're posting to.

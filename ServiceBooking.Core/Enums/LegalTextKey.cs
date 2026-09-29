@@ -37,8 +37,8 @@ public static class LegalTextKey
     // DELIBERATELY NOT in All: All feeds LegalDocumentProvider's fail-fast, which would block the deploy until
     // legal-counsel supplies the text (cycle 20 moved GuestDataGateNotice into All once its text existed —
     // do the same here when the lawyer's text lands). The frontend reads
-    // GET /api/legal/texts/orderCheckoutNotice and shows a neutral fallback on 404.
-    public const string OrderCheckoutNotice = "orderCheckoutNotice";
+    // GET /api/legal/texts/OrderCheckoutNotice and shows a neutral fallback on 404.
+    public const string OrderCheckoutNotice = "OrderCheckoutNotice";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {

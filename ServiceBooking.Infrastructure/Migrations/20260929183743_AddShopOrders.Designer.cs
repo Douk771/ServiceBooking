@@ -199,7 +199,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("PlanConfigId");
 
-                    b.ToTable("AccountSubscriptions");
+                    b.ToTable("AccountSubscriptions", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.AccountSubscriptionOption", b =>
@@ -248,7 +248,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("BillingAccountId", "OptionId")
                         .IsUnique();
 
-                    b.ToTable("AccountSubscriptionOptions");
+                    b.ToTable("AccountSubscriptionOptions", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.AppUser", b =>
@@ -337,6 +337,18 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<string>("ConsentOperatorAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ConsentOperatorFullName")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("ConsentOperatorInn")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -432,7 +444,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasDatabaseName("IX_BillingAccounts_TrialExpiry")
                         .HasFilter("\"TrialEndsAtUtc\" IS NOT NULL AND \"TrialExpiredHandledAtUtc\" IS NULL");
 
-                    b.ToTable("BillingAccounts");
+                    b.ToTable("BillingAccounts", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Booking", b =>
@@ -538,7 +550,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("MasterId", "Date");
 
-                    b.ToTable("Bookings");
+                    b.ToTable("Bookings", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.BookingEvent", b =>
@@ -596,7 +608,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId", "OccurredAtUtc");
 
-                    b.ToTable("BookingEvents");
+                    b.ToTable("BookingEvents", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.BookingService", b =>
@@ -632,7 +644,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("BookingId", "Position")
                         .IsUnique();
 
-                    b.ToTable("BookingServices");
+                    b.ToTable("BookingServices", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelCompanyAssignment", b =>
@@ -671,7 +683,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("ChannelId", "BillingAccountId", "Transport");
 
-                    b.ToTable("ChannelCompanyAssignments");
+                    b.ToTable("ChannelCompanyAssignments", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelPaymentLog", b =>
@@ -706,7 +718,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("ChannelId");
 
-                    b.ToTable("ChannelPaymentLogs");
+                    b.ToTable("ChannelPaymentLogs", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ChannelStateEvent", b =>
@@ -738,7 +750,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("ChannelId", "OccurredAtUtc");
 
-                    b.ToTable("ChannelStateEvents");
+                    b.ToTable("ChannelStateEvents", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.City", b =>
@@ -781,7 +793,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("Region", "Name");
 
-                    b.ToTable("Cities");
+                    b.ToTable("Cities", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ClientHealthNote", b =>
@@ -829,7 +841,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"GuestPhone\" IS NOT NULL");
 
-                    b.ToTable("ClientHealthNotes");
+                    b.ToTable("ClientHealthNotes", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ClientNote", b =>
@@ -873,7 +885,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId", "GuestPhone");
 
-                    b.ToTable("ClientNotes");
+                    b.ToTable("ClientNotes", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ClientNotePhoto", b =>
@@ -930,7 +942,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId", "CreatedAt");
 
-                    b.ToTable("ClientNotePhotos");
+                    b.ToTable("ClientNotePhotos", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Company", b =>
@@ -1052,7 +1064,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasDatabaseName("IX_Companies_PublicListing_Default")
                         .HasFilter("\"IsActive\" AND \"ShowInPublicListing\"");
 
-                    b.ToTable("Companies");
+                    b.ToTable("Companies", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyMember", b =>
@@ -1090,7 +1102,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("CompanyId", "UserId")
                         .IsUnique();
 
-                    b.ToTable("CompanyMembers");
+                    b.ToTable("CompanyMembers", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyNotificationSettings", b =>
@@ -1126,7 +1138,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasKey("CompanyId");
 
-                    b.ToTable("CompanyNotificationSettings");
+                    b.ToTable("CompanyNotificationSettings", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyOwnerChangeLog", b =>
@@ -1164,7 +1176,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId");
 
-                    b.ToTable("CompanyOwnerChangeLogs");
+                    b.ToTable("CompanyOwnerChangeLogs", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.CompanyPhoto", b =>
@@ -1223,7 +1235,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId", "Position");
 
-                    b.ToTable("CompanyPhotos");
+                    b.ToTable("CompanyPhotos", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ConsentRecord", b =>
@@ -1253,6 +1265,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("FormId")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateTime>("GrantedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1272,6 +1288,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<DateTime?>("RevokedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
 
                     b.Property<int>("Source")
                         .HasColumnType("integer");
@@ -1306,7 +1326,42 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasDatabaseName("IX_ConsentRecords_CurrentByUser")
                         .HasFilter("\"RevokedAtUtc\" IS NULL AND \"UserId\" IS NOT NULL");
 
-                    b.ToTable("ConsentRecords");
+                    b.ToTable("ConsentRecords", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.GuestDataGateEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Operation")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TraceId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("UserId", "OccurredAtUtc");
+
+                    b.ToTable("GuestDataGateEvents", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.MailLog", b =>
@@ -1342,7 +1397,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("SentById");
 
-                    b.ToTable("MailLogs");
+                    b.ToTable("MailLogs", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.MasterService", b =>
@@ -1364,7 +1419,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("ServiceId");
 
-                    b.ToTable("MasterServices");
+                    b.ToTable("MasterServices", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationChannel", b =>
@@ -1471,7 +1526,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("State");
 
-                    b.ToTable("NotificationChannels");
+                    b.ToTable("NotificationChannels", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationOptOut", b =>
@@ -1499,7 +1554,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("Phone")
                         .IsUnique();
 
-                    b.ToTable("NotificationOptOuts");
+                    b.ToTable("NotificationOptOuts", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationTemplate", b =>
@@ -1530,7 +1585,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("CompanyId", "Type")
                         .IsUnique();
 
-                    b.ToTable("NotificationTemplates");
+                    b.ToTable("NotificationTemplates", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationTemplateHistory", b =>
@@ -1579,7 +1634,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId", "Type", "ChangedAtUtc");
 
-                    b.ToTable("NotificationTemplateHistories");
+                    b.ToTable("NotificationTemplateHistories", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Order", b =>
@@ -1711,7 +1766,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("CompanyId", "BusinessDate", "Number")
                         .IsUnique();
 
-                    b.ToTable("Orders");
+                    b.ToTable("Orders", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.OrderDailyCounter", b =>
@@ -1727,7 +1782,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasKey("CompanyId", "BusinessDate");
 
-                    b.ToTable("OrderDailyCounters");
+                    b.ToTable("OrderDailyCounters", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.OrderEvent", b =>
@@ -1790,7 +1845,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("OrderId", "OccurredAtUtc");
 
-                    b.ToTable("OrderEvents");
+                    b.ToTable("OrderEvents", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.OrderItem", b =>
@@ -1847,7 +1902,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("ProductId");
 
-                    b.ToTable("OrderItems");
+                    b.ToTable("OrderItems", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.OutboundNotification", b =>
@@ -1962,7 +2017,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("VisitStartUtc", "CreatedAt"), new[] { "DueAtUtc", "ChannelId", "CompanyId" });
 
-                    b.ToTable("OutboundNotifications");
+                    b.ToTable("OutboundNotifications", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.PhoneVerificationSession", b =>
@@ -2036,7 +2091,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("UserId", "CreatedAtUtc");
 
-                    b.ToTable("PhoneVerificationSessions");
+                    b.ToTable("PhoneVerificationSessions", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.PlanOptionRule", b =>
@@ -2064,7 +2119,116 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("PlanConfigId", "OptionId")
                         .IsUnique();
 
-                    b.ToTable("PlanOptionRules");
+                    b.ToTable("PlanOptionRules", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformNotice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AttachmentHtml")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AttachmentSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("AttachmentTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid[]>("AudiencePlanIds")
+                        .HasColumnType("uuid[]");
+
+                    b.Property<int>("AudienceType")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<DateOnly?>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LinkUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("PublishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokeReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<Guid?>("TargetBillingAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TemplateVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("VisibleUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VisibleUntilUtc")
+                        .HasDatabaseName("IX_PlatformNotices_VisibleUntil");
+
+                    b.ToTable("PlatformNotices", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformNoticeAcknowledgement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AcknowledgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("BillingAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("NoticeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NoticeId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PlatformNoticeAcknowledgements_NoticeUser");
+
+                    b.ToTable("PlatformNoticeAcknowledgements", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformSetting", b =>
@@ -2086,7 +2250,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasKey("Key");
 
-                    b.ToTable("PlatformSettings");
+                    b.ToTable("PlatformSettings", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformSettingChangeLog", b =>
@@ -2119,7 +2283,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("Key");
 
-                    b.ToTable("PlatformSettingChangeLogs");
+                    b.ToTable("PlatformSettingChangeLogs", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Product", b =>
@@ -2202,7 +2366,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId", "CategoryId", "Position");
 
-                    b.ToTable("Products", t =>
+                    b.ToTable("Products", null, t =>
                         {
                             t.HasCheckConstraint("CK_Products_StockOnHand_NonNegative", "\"StockOnHand\" IS NULL OR \"StockOnHand\" >= 0");
                         });
@@ -2238,7 +2402,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId", "Position");
 
-                    b.ToTable("ProductCategories");
+                    b.ToTable("ProductCategories", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.PushSubscription", b =>
@@ -2289,7 +2453,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("PushSubscriptions");
+                    b.ToTable("PushSubscriptions", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Review", b =>
@@ -2334,7 +2498,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("MasterId");
 
-                    b.ToTable("Reviews");
+                    b.ToTable("Reviews", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ScheduleBreak", b =>
@@ -2356,7 +2520,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("WorkingHoursId");
 
-                    b.ToTable("ScheduleBreaks");
+                    b.ToTable("ScheduleBreaks", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ScheduledTaskState", b =>
@@ -2385,7 +2549,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasKey("Name");
 
-                    b.ToTable("ScheduledTaskStates");
+                    b.ToTable("ScheduledTaskStates", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Service", b =>
@@ -2423,7 +2587,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("CompanyId");
 
-                    b.ToTable("Services");
+                    b.ToTable("Services", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.ShopSettings", b =>
@@ -2475,7 +2639,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasKey("CompanyId");
 
-                    b.ToTable("ShopSettings");
+                    b.ToTable("ShopSettings", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.StaffPushNotification", b =>
@@ -2555,7 +2719,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("ExpiresAtUtc", "CreatedAt"), new[] { "UserId", "CompanyId", "SubscriptionId" });
 
-                    b.ToTable("StaffPushNotifications");
+                    b.ToTable("StaffPushNotifications", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubjectRequest", b =>
@@ -2566,6 +2730,9 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<DateTime?>("AnsweredAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ContactValue")
                         .IsRequired()
@@ -2594,6 +2761,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<string>("RegisteredByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
                     b.Property<string>("Resolution")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
@@ -2615,7 +2786,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("Status", "DueAtUtc");
 
-                    b.ToTable("SubjectRequests");
+                    b.ToTable("SubjectRequests", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionChangeLog", b =>
@@ -2673,6 +2844,13 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("ReasonCode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReasonDetails")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BillingAccountId");
@@ -2681,7 +2859,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("OwnerUserId");
 
-                    b.ToTable("SubscriptionChangeLogs");
+                    b.ToTable("SubscriptionChangeLogs", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionOption", b =>
@@ -2745,7 +2923,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
-                    b.ToTable("SubscriptionOptions");
+                    b.ToTable("SubscriptionOptions", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.SubscriptionPlanConfig", b =>
@@ -2828,7 +3006,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IsSystemTrial\" = true");
 
-                    b.ToTable("SubscriptionPlanConfigs");
+                    b.ToTable("SubscriptionPlanConfigs", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.TrialGrant", b =>
@@ -2896,7 +3074,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("GrantedAtUtc");
 
-                    b.ToTable("TrialGrants");
+                    b.ToTable("TrialGrants", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.TrialPhoneRegistration", b =>
@@ -2928,7 +3106,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("RegisteredAtUtc");
 
-                    b.ToTable("TrialPhoneRegistrations");
+                    b.ToTable("TrialPhoneRegistrations", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.VerifiedPhone", b =>
@@ -2970,7 +3148,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("VerifiedPhones");
+                    b.ToTable("VerifiedPhones", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.WeeklyScheduleTemplate", b =>
@@ -3004,7 +3182,7 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.HasIndex("MasterId", "CompanyId");
 
-                    b.ToTable("WeeklyScheduleTemplates");
+                    b.ToTable("WeeklyScheduleTemplates", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.WorkingHours", b =>
@@ -3039,7 +3217,7 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.HasIndex("MasterId", "CompanyId", "Date")
                         .IsUnique();
 
-                    b.ToTable("WorkingHours");
+                    b.ToTable("WorkingHours", (string)null);
                 });
 
             modelBuilder.Entity("ServiceBooking.Infrastructure.Data.AccountUsageRow", b =>
@@ -3650,6 +3828,17 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("PlanConfig");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformNoticeAcknowledgement", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.PlatformNotice", "Notice")
+                        .WithMany("Acknowledgements")
+                        .HasForeignKey("NoticeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Notice");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.Product", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.ProductCategory", null)
@@ -3903,6 +4092,11 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("Events");
 
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformNotice", b =>
+                {
+                    b.Navigation("Acknowledgements");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Service", b =>

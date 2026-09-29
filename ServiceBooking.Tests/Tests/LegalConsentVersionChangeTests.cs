@@ -49,11 +49,11 @@ public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClas
         return client;
     }
 
-    private static string UniquePhone()
-    {
-        var digits = Guid.NewGuid().ToString("N").Where(char.IsDigit).Take(9).ToArray();
-        return $"+79{new string(digits).PadRight(9, '0')}";
-    }
+    // C23-7: this used to take the decimal digits of a GUID and pad with zeros. A GUID with few digits gave a
+    // low-entropy, zero-padded number, two registrations in one class collided, and /api/auth/register
+    // answered 409 (seen once in ~5 full runs, DeleteAccount_IsAllowed_EvenWhileBlockedByAPendingMaterialRedaction).
+    private static string UniquePhone() =>
+        $"+79{System.Security.Cryptography.RandomNumberGenerator.GetInt32(0, 1_000_000_000):D9}";
 
     // CYCLE5-BREAKING: `acceptedLegal: true` replaced by the `legal` object (API_CONTRACT_CYCLE5.md
     // §40.1) — versions read from this factory's OWN manifest (via LegalDocumentProvider), not hardcoded,

@@ -234,7 +234,7 @@ public class OrderDomainTests
     public void OrderCheckoutNotice_IsAKey_ButNotInTheFailFastSet()
     {
         // In All it would make LegalDocumentProvider's fail-fast block the deploy until legal-counsel supplies the text.
-        LegalTextKey.OrderCheckoutNotice.Should().Be("orderCheckoutNotice");
+        LegalTextKey.OrderCheckoutNotice.Should().Be("OrderCheckoutNotice");
         LegalTextKey.All.Should().NotContain(LegalTextKey.OrderCheckoutNotice);
     }
 

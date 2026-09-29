@@ -102,9 +102,9 @@ fast-forward. **На бой цикл 23 НЕ выкачен.** Циклы 19 и 
   комментарий. Добавлено правило ретенции `OrderPersonalizationRule` (`order-personalization`), но
   `Retention:OrderPersonalDataDays = 0`, и при `<= 0` правило помечается `Skipped` и **ничего не удаляет**,
   пока юрист не назовёт срок.
-- `LegalTextKey.OrderCheckoutNotice = "orderCheckoutNotice"` — ключ **в нижнем регистре**, в отличие от
-  остальных. Он **намеренно не входит в `All`**: иначе fail-fast `LegalDocumentProvider` заблокировал бы
-  выкат, пока нет текста юриста. Фронт читает `GET /api/legal/texts/orderCheckoutNotice`, а на 404
+- `LegalTextKey.OrderCheckoutNotice = "OrderCheckoutNotice"` (на `9a0ee29` был `orderCheckoutNotice` в нижнем
+  регистре; приведён к стилю остальных ключей веткой `fix/cycle23-debts`, C23-3). Он **намеренно не входит в `All`**: иначе fail-fast `LegalDocumentProvider` заблокировал бы
+  выкат, пока нет текста юриста. Фронт читает `GET /api/legal/texts/OrderCheckoutNotice`, а на 404
   показывает нейтральный fallback. Когда в `legal.json` появится запись, ключ должен совпасть **точно**,
   с регистром.
 - Зарезервированные слаги берутся из `contracts/cycle23/goods-routes.json`: `SlugPolicy` читает его как
@@ -9850,11 +9850,16 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   `orderCheckoutNotice` отсутствует в `legal.json`, и фронт показывает fallback; `SellerInfoRequirements`
   пуст; `OrderPersonalDataDays = 0`, так что правило `order-personalization` инертно и ПДн заказов не
   удаляются никогда; отдельных документов для покупателей нет.
-- **C23-3. Ключ `orderCheckoutNotice` в нижнем регистре и вне `LegalTextKey.All`.** Если в `legal.json`
-  его запишут как `OrderCheckoutNotice`, 404 и fallback останутся, и никто этого не заметит. Когда текст
-  появится, ключ надо внести в `All` вручную, по примеру `GuestDataGateNotice` в цикле 20.
-- **C23-4. Designer-снимки `AddCompanyKind`/`AddShopOrders` не содержат сущностей цикла 20.**
-  `dotnet ef migrations remove` на них потеряет модель цикла 20 (🛒23 Б).
+- **C23-3. Регистр — ✅ ЗАКРЫТО (`fix/cycle23-debts`): ключ теперь `OrderCheckoutNotice`, как у остальных.**
+  Остаётся: ключ вне `LegalTextKey.All`; когда текст юриста появится, внести его в `All` вручную, по примеру
+  `GuestDataGateNotice` в цикле 20.
+- **C23-4. ✅ ЗАКРЫТО (`fix/cycle23-debts`).** Designer-снимки `AddCompanyKind`/`AddShopOrders` не содержали
+  сущностей цикла 20. Побочный эффект был и в CI: шаг «Migrations snapshot drift» делает `migrations add` +
+  `migrations remove`, `remove` пересобирал `AppDbContextModelSnapshot.cs` из урезанного Designer, и шаг
+  «Designer snapshots are monotonic» сравнивал уже с испорченным снапшотом — локально тот же скрипт падал.
+  Теперь `AddShopOrders.Designer.cs` = текущая модель, `AddCompanyKind.Designer.cs` = та же модель без семи
+  таблиц магазина; `check-migration-snapshots.sh` проходит, `has-pending-model-changes` чист. Урок: после
+  мерджа ветки с миграциями поверх чужих миграций пересобирать Designer-снимки своих миграций.
 - **C23-5. ✅ ЗАКРЫТО (`cycle/023-goods-deploy`: шаг «Type-check goods», генерат `api-cycle23` и redocly-линт
   `contracts/cycle23` в CI).** Было: **`frontend/goods/` не проверяется по типам в CI** (🛒23 Д). Ошибка типов в goods пройдёт CI
   и всплывёт только на `npm run build:goods`.

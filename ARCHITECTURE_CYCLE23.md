@@ -714,10 +714,10 @@ RETURNING "LastNumber";
 - Гость: сервер пишет на заказ `ConsentPrivacyVersion`, `ConsentTermsVersion`, `ConsentAcceptedAtUtc` из текущего
   снимка документов — **ровно как `BookingCreationService`** для гостевой записи (SPEC US-23-19). Записей
   `ConsentRecord` для гостя в цикле 1 нет (как у записи).
-- Все заказы: `CheckoutNoticeVersion` — версия текста интерфейса `orderCheckoutNotice`, если он есть в манифесте.
+- Все заказы: `CheckoutNoticeVersion` — версия текста интерфейса `OrderCheckoutNotice`, если он есть в манифесте.
   Ключ добавляется в `LegalTextKey` как **константа, но НЕ в `LegalTextKey.All`** (приём `guestDataGateNotice`
   цикла 16) — иначе fail-fast `LegalDocumentProvider` заблокирует деплой до появления текста юриста.
-  Фронт получает текст существующим `GET /api/legal/texts/orderCheckoutNotice`; на 404 показывает **нейтральную**
+  Фронт получает текст существующим `GET /api/legal/texts/OrderCheckoutNotice`; на 404 показывает **нейтральную**
   строку со ссылками на `/privacy` и `/terms` (без маркера «ТРЕБУЕТСЯ ТЕКСТ…» — его ловит шаг CI).
 
 ### §398.4 Отзыв согласия и обращения
@@ -1092,7 +1092,7 @@ US-23-26 (журнал в карточке — журнал всё равно п
 | L1 | Роли сторон; нужен ли отдельный документ для покупателя | новый член `LegalDocumentType` **в конец** (напр. `TermsBuyer`) + маршрут в `legal-routes.json`/`goods-routes.json` (резерв `terms-buyer` добавить сразу при решении) + снимок версии на `Order` (`ConsentTermsVersion` уже есть) | манифест + одна колонка при необходимости |
 | L2 | Реквизиты продавца, обязательность, где показывать | поля `ShopSettings.Seller*` уже есть; обязательность — `SellerInfoRequirements` (код, как `LegalOptionGuards`); при обязательных — `ShopOrderingGate` отказывает «Заполните реквизиты продавца» (одна строка); показ — блок `seller` на витрине уже в контракте | код + тексты, без миграции |
 | L3 | Пищевая информация: состав, аллергены, масса, пищевая ценность, сроки | поля **внутри** `foodInfo` (контракт снаружи не меняется) + nullable-колонки `Products` добавочной миграцией; обязательность — `ProductInfoRequirements` | добавочная миграция |
-| L4 | Текст строки под кнопкой, цель обработки, передача магазину, достаточно ли модели гостевой записи | ключ `orderCheckoutNotice` в `legal.json` (`uiTexts`), затем — в `LegalTextKey.All`; `CheckoutNoticeVersion` уже пишется; при необходимости `ConsentRecord` гостя (`SubjectPhone + CompanyId` модель уже поддерживает) с новым `ConsentSource.OrderCheckout` в конец | манифест + несколько строк кода |
+| L4 | Текст строки под кнопкой, цель обработки, передача магазину, достаточно ли модели гостевой записи | ключ `OrderCheckoutNotice` в `legal.json` (`uiTexts`), затем — в `LegalTextKey.All`; `CheckoutNoticeVersion` уже пишется; при необходимости `ConsentRecord` гостя (`SubjectPhone + CompanyId` модель уже поддерживает) с новым `ConsentSource.OrderCheckout` в конец | манифест + несколько строк кода |
 | L5 | Сроки хранения ПДн в заказах и журнале | `Retention:OrderPersonalDataDays` (сейчас 0 = не задан); при минимуме по закону — fail-fast в `ValidateRetentionPeriods` | конфиг |
 | L6 | Достаточно ли отсылать за выгрузкой/удалением на ezbook | профиль goods уже даёт ссылку; при «недостаточно» — кнопки `export`/`delete-account` на goods (эндпоинты общие, ничего нового на бэкенде) | фронт |
 | L7 | Касса и 54-ФЗ | модель ничего не фискализирует; `FinalTotal` — справочная сумма; текст «оплата на месте» — в правовых текстах | тексты |

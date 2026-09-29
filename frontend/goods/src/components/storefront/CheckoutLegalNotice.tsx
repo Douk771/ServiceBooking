@@ -4,12 +4,12 @@ import { findSection, splitLegalSections } from '@/utils/legalSections'
 import { legalNoticeApi } from '../../api/legalNotice'
 
 /**
- * The line under «Заказать» [legal L4]: the text from `orderCheckoutNotice` when the lawyer's text exists,
+ * The line under «Заказать» [legal L4]: the text from `OrderCheckoutNotice` when the lawyer's text exists,
  * otherwise a neutral sentence with the two links (never a "ТРЕБУЕТСЯ ТЕКСТ…" placeholder — CI greps for it).
  */
 export function CheckoutLegalNotice() {
   const { data, isLoading } = useQuery({
-    queryKey: ['legal-text', 'orderCheckoutNotice'],
+    queryKey: ['legal-text', 'OrderCheckoutNotice'],
     queryFn: legalNoticeApi.orderCheckout,
     staleTime: 5 * 60 * 1000,
     retry: false, // 404 = "not written yet"; do not hammer it

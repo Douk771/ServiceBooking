@@ -338,6 +338,18 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ConsentOperatorAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ConsentOperatorFullName")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("ConsentOperatorInn")
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1253,6 +1265,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("FormId")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateTime>("GrantedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1272,6 +1288,10 @@ namespace ServiceBooking.Infrastructure.Migrations
 
                     b.Property<DateTime?>("RevokedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
 
                     b.Property<int>("Source")
                         .HasColumnType("integer");
@@ -1307,6 +1327,41 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .HasFilter("\"RevokedAtUtc\" IS NULL AND \"UserId\" IS NOT NULL");
 
                     b.ToTable("ConsentRecords");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.GuestDataGateEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Operation")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TraceId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("UserId", "OccurredAtUtc");
+
+                    b.ToTable("GuestDataGateEvents");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.MailLog", b =>
@@ -1799,6 +1854,115 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.ToTable("PlanOptionRules");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformNotice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AttachmentHtml")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AttachmentSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("AttachmentTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid[]>("AudiencePlanIds")
+                        .HasColumnType("uuid[]");
+
+                    b.Property<int>("AudienceType")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<DateOnly?>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LinkUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("PublishedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokeReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RevokedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<Guid?>("TargetBillingAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TemplateVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("VisibleUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VisibleUntilUtc")
+                        .HasDatabaseName("IX_PlatformNotices_VisibleUntil");
+
+                    b.ToTable("PlatformNotices");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformNoticeAcknowledgement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AcknowledgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("BillingAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("NoticeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NoticeId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PlatformNoticeAcknowledgements_NoticeUser");
+
+                    b.ToTable("PlatformNoticeAcknowledgements");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformSetting", b =>
                 {
                     b.Property<string>("Key")
@@ -2128,6 +2292,9 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<DateTime?>("AnsweredAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("Channel")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ContactValue")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2154,6 +2321,10 @@ namespace ServiceBooking.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
+
+                    b.Property<string>("RegisteredByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
 
                     b.Property<string>("Resolution")
                         .HasMaxLength(2000)
@@ -2233,6 +2404,13 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Property<string>("OwnerUserId")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int?>("ReasonCode")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReasonDetails")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
                     b.HasKey("Id");
 
@@ -3161,6 +3339,17 @@ namespace ServiceBooking.Infrastructure.Migrations
                     b.Navigation("PlanConfig");
                 });
 
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformNoticeAcknowledgement", b =>
+                {
+                    b.HasOne("ServiceBooking.Core.Entities.PlatformNotice", "Notice")
+                        .WithMany("Acknowledgements")
+                        .HasForeignKey("NoticeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Notice");
+                });
+
             modelBuilder.Entity("ServiceBooking.Core.Entities.PushSubscription", b =>
                 {
                     b.HasOne("ServiceBooking.Core.Entities.AppUser", "User")
@@ -3375,6 +3564,11 @@ namespace ServiceBooking.Infrastructure.Migrations
             modelBuilder.Entity("ServiceBooking.Core.Entities.NotificationChannel", b =>
                 {
                     b.Navigation("Assignments");
+                });
+
+            modelBuilder.Entity("ServiceBooking.Core.Entities.PlatformNotice", b =>
+                {
+                    b.Navigation("Acknowledgements");
                 });
 
             modelBuilder.Entity("ServiceBooking.Core.Entities.Service", b =>
