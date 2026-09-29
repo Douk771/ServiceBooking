@@ -358,7 +358,11 @@ Validate(reasonCode, reasonDetails, required) → null | текст 400:
 - `TermsChange`: `EffectiveFrom ≥ сегодня(МСК) + 15` для владельческих адресатов и `+ 10` для
   `AllClients`. Тип документа: `TermsOwner` → только владельческие адресаты, `TermsClient` → только
   `AllClients`, `Privacy` → любые. `attachment` обязателен.
-- `Suspension`: только `BillingAccount`. `NewProcessor`/`Other`: любые адресаты, срок не проверяется.
+- `Suspension`: только `BillingAccount`. `NewProcessor`: любые адресаты; `EffectiveFrom ≥ сегодня(МСК) +
+  15`, если адресат владельческий (`AllOwners`/`OwnersOnPlans`/`BillingAccount`) — D3 п. 11.9.5
+  («уведомление о новом обработчике не позднее чем за 15 дней»); для `AllClients` срок не проверяется
+  (дополнение L3 к первоначальной версии, где срок для этого вида не проверялся вовсе). `Other`: любые
+  адресаты, срок не проверяется.
 - `PhotoRemoved`: **только системный** (через этот маршрут → 400).
 - «Сегодня» — дата по `Europe/Moscow`, `EffectiveFrom` — `DateOnly` («календарные дни» D3).
 
@@ -892,8 +896,9 @@ D1, D2, D3 ──────────────────┘
 без причины ОК; публичный → ОК; `TrialReissue` → ошибка; `OperatorErrorCorrection` без описания →
 ошибка; 1001 символ → ошибка.
 `CY20-U-03` `PlatformNoticeRules`: `PriceChange` +29/+30 дн; `TermsChange` владельцы +14/+15, клиенты
-+9/+10; `PriceChange` для `AllClients` → ошибка; `PhotoRemoved` через админку → ошибка; `Suspension`
-не на `BillingAccount` → ошибка; граница суток по МСК.
++9/+10; `NewProcessor` владельцы +14/+15 (ошибка/ОК), `NewProcessor` для `AllClients` без
+`effectiveFrom` → ОК (срок не проверяется); `PriceChange` для `AllClients` → ошибка; `PhotoRemoved`
+через админку → ошибка; `Suspension` не на `BillingAccount` → ошибка; граница суток по МСК.
 `CY20-U-04` `NoticeAudience.Matches`: все 4 типа, Free-подписка в `OwnersOnPlans`, суперадмин не
 адресат `AllClients`, управляющий не адресат владельческих.
 `CY20-U-05` `PlatformNoticeTexts`: шаблоны `PriceChange`/`TermsChange` совпадают с Т20-02 п. 6 побайтно

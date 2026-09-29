@@ -463,7 +463,8 @@ npm run types:api:cycle20 && git diff --exit-code -- src/types/api-cycle20.gener
 | `PriceChange` | **собирает сервер** по шаблону Т20-02 п. 6; присланные → 400 | `priceChange { planId, oldPricePerMonth, newPricePerMonth }` обязателен | обязательна, **≥ сегодня + 30** | `AllOwners`, `OwnersOnPlans`, `BillingAccount` | необязательно |
 | `TermsChange` | **собирает сервер**; присланные → 400 | `termsChange { documentType, changesSummary ≤ 1000 }` обязателен | обязательна, **≥ +15** для владельческих адресатов, **≥ +10** для `AllClients` | `TermsOwner` → только владельческие; `TermsClient` → только `AllClients`; `Privacy` → любые | **обязательно** |
 | `Suspension` | суперадмин: `title ≤ 200`, `body ≤ 4000` обязательны | — | необязательна | **только** `BillingAccount` | нет |
-| `NewProcessor`, `Other` | суперадмин, обязательны | — | необязательна, срок не проверяется | любые | необязательно |
+| `NewProcessor` | суперадмин, обязательны | — | обязательна и **≥ +15**, если адресат владельческий (`AllOwners`/`OwnersOnPlans`/`BillingAccount` — D3 п. 11.9.5); для `AllClients` — не проверяется | любые | необязательно |
+| `Other` | суперадмин, обязательны | — | необязательна, срок не проверяется | любые | необязательно |
 | `PhotoRemoved` | — | — | — | — | **400**: создаётся только системой (§434.8) |
 
 Общие правила (все — **400** со строкой):

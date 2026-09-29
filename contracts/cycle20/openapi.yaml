@@ -1952,7 +1952,10 @@ components:
           type: string
           format: date
           nullable: true
-          description: Обязательна для PriceChange (≥ +30) и TermsChange (≥ +15 / ≥ +10).
+          description: |
+            Обязательна для PriceChange (≥ +30) и TermsChange (≥ +15 для владельческих адресатов,
+            ≥ +10 для AllClients). Для NewProcessor обязательна и ≥ +15, если адресат владельческий
+            (AllOwners/OwnersOnPlans/BillingAccount) — D3 п. 11.9.5; для AllClients срок не проверяется.
         title:
           type: string
           nullable: true
