@@ -32,6 +32,17 @@ type IconName =
   | 'image'
   | 'copy'
   | 'external-link'
+  | 'shopping-bag'
+  | 'minus'
+  | 'volume'
+  | 'volume-off'
+  | 'pencil'
+  | 'arrow-up'
+  | 'arrow-down'
+  | 'download'
+  | 'qr-code'
+  | 'bell'
+  | 'eye-off'
 
 /**
  * Minimal line-icon set for the premium redesign.
@@ -179,6 +190,55 @@ const paths: Record<IconName, JSX.Element> = {
       <path d="M14 4h6v6" />
       <path d="M10 14L20 4" />
       <path d="M18 13.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5.5" />
+    </>
+  ),
+  // Cycle 23 (goods.ezbook.ru) — same 24×24 stroke style.
+  'shopping-bag': (
+    <>
+      <path d="M5 8h14l.9 11a2 2 0 0 1-2 2.2H6.1a2 2 0 0 1-2-2.2z" />
+      <path d="M8.5 8V6.5a3.5 3.5 0 0 1 7 0V8" />
+    </>
+  ),
+  minus: <path d="M5 12h14" />,
+  volume: (
+    <>
+      <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </>
+  ),
+  'volume-off': (
+    <>
+      <path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" />
+      <path d="M16 9.5l5 5M21 9.5l-5 5" />
+    </>
+  ),
+  pencil: (
+    <>
+      <path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8 19z" />
+      <path d="M14.5 6.5l3 3" />
+    </>
+  ),
+  'arrow-up': <path d="M12 19V5M6 11l6-6 6 6" />,
+  'arrow-down': <path d="M12 5v14M6 13l6 6 6-6" />,
+  download: <path d="M12 4v11M7 11l5 5 5-5M5 20h14" />,
+  'qr-code': (
+    <>
+      <rect x="3.5" y="3.5" width="6" height="6" rx="1" />
+      <rect x="14.5" y="3.5" width="6" height="6" rx="1" />
+      <rect x="3.5" y="14.5" width="6" height="6" rx="1" />
+      <path d="M14.5 14.5h2.5v2.5M20.5 14.5v.01M14.5 20.5h.01M17.5 20.5h3v-3" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" />
+      <path d="M10 20.5a2 2 0 0 0 4 0" />
+    </>
+  ),
+  'eye-off': (
+    <>
+      <path d="M3 12s3.5-6.5 9-6.5c1.7 0 3.2.6 4.5 1.4M21 12s-3.5 6.5-9 6.5c-1.7 0-3.2-.6-4.5-1.4" />
+      <path d="M4 4l16 16" />
     </>
   ),
 }

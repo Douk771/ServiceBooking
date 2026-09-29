@@ -13,7 +13,7 @@ import prettierConfig from 'eslint-config-prettier'
 // is last in the array so it can turn off any formatting rule that would otherwise fight Prettier.
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**'],
+    ignores: ['dist/**', 'dist-goods/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -44,6 +44,35 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'react/prop-types': 'off', // TypeScript already checks props
+    },
+  },
+  {
+    // ARCHITECTURE_CYCLE23.md §399.4 — import boundaries between the two frontends in one package.
+    // goods may reuse shared modules from src/, but not ezbook's app shell or its own pages (except the
+    // five shared ones); ezbook must never reach into goods/.
+    files: ['goods/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['@/App', '**/src/App', '../../src/App', '../src/App'], message: 'goods must not import the ezbook app shell.' },
+            {
+              regex: '(^@/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage)$))|(src/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage)$))',
+              message: 'goods may import only LegalDocumentPage, SubjectRequestPage, ConsentsPage, LoginPage and RegisterPage from ezbook pages.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ regex: '(^@goods/)|(/goods/)|(^goods/)', message: 'ezbook (src/) must not import from goods/.' }] },
+      ],
     },
   },
   {

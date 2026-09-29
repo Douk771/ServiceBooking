@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- goods.ezbook.ru mark: the ezbook "ink" disc with a shopping-bag glyph in "cream" (colors from
+       tailwind.config.js theme.colors, same as the ezbook favicon). -->
+  <circle cx="12" cy="12" r="12" fill="#2B2420"/>
+  <g fill="none" stroke="#FAF6F0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 9h10.4l.7 8a1.6 1.6 0 0 1-1.6 1.7H7.7A1.6 1.6 0 0 1 6.1 17z"/>
+    <path d="M9.3 9V8a2.7 2.7 0 0 1 5.4 0v1"/>
+  </g>
+</svg>

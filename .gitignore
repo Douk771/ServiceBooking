@@ -76,3 +76,4 @@ ServiceBooking.API/logs/
 # собственной контрактной проверки (ARCHITECTURE_CYCLE6.md §53.2, цикл 8 §86.3) — инструмент
 # запускается по месту через pipx/npx, и его локальный вывод в репозитории не нужен.
 .schemathesis/
+frontend/dist-goods/

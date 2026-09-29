@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './queryClient'
 import { Navbar } from './components/layout/Navbar'
 import { HomePage } from './pages/HomePage'
@@ -23,12 +23,9 @@ import { UnsubscribePage } from './pages/UnsubscribePage'
 import { DeleteAccountPage } from './pages/DeleteAccountPage'
 import { Footer } from './components/layout/Footer'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { ConsentGate } from './components/legal/ConsentGate'
-import { LegalUpdateBanner } from './components/legal/LegalUpdateBanner'
+import { LegalGuard } from './components/legal/LegalGuard'
 import { OwnerTermsGateModal } from './components/legal/OwnerTermsGateModal'
-import { legalApi } from './api/legal'
 import { useAuthStore } from './store/authStore'
-import { useLegalStore } from './store/legalStore'
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const { isAuthenticated, hasRole } = useAuthStore()
@@ -57,37 +54,6 @@ const CONSENT_GATE_BYPASS_PATHS = [
   '/u/',
   '/pricing',
 ]
-
-/**
- * Owns the single `legal-consent-status` query for the whole authenticated session (T-F2). Renders
- * ConsentGate full-screen on a "Material" change (unless the current route is one of the few still
- * reachable per US-39 п. 9), otherwise renders the app with LegalUpdateBanner for "Editorial" changes.
- */
-function LegalGuard({ children }: { children: ReactNode }) {
-  const token = useAuthStore((s) => s.token)
-  const consentRequiredFlag = useLegalStore((s) => s.consentRequired)
-  const location = useLocation()
-
-  const { data: status } = useQuery({
-    queryKey: ['legal-consent-status'],
-    queryFn: legalApi.getConsentStatus,
-    enabled: !!token,
-  })
-
-  const requiresAcceptance = !!token && (consentRequiredFlag || status?.requiresAcceptance === true)
-  const bypass = CONSENT_GATE_BYPASS_PATHS.some((p) => location.pathname.startsWith(p))
-
-  if (requiresAcceptance && !bypass && status) {
-    return <ConsentGate status={status} />
-  }
-
-  return (
-    <>
-      {status?.showBanner && !requiresAcceptance && <LegalUpdateBanner status={status} />}
-      {children}
-    </>
-  )
-}
 
 /**
  * Б3 (code review): `<ErrorBoundary>` alone doesn't reset once it has caught — its `state.error`
@@ -122,7 +88,7 @@ export default function App() {
             element={
               <div className="min-h-screen bg-cream font-sans text-ink">
                 <Navbar />
-                <LegalGuard>
+                <LegalGuard bypassPaths={CONSENT_GATE_BYPASS_PATHS}>
                   {/* Wraps only the page routes, not Navbar — a page-level render crash (e.g. an
                       unprotected field on a stale API response, §100.2) must not take the shell
                       down with it (§103.1). Keyed by pathname (RouteErrorBoundary below) so it

@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:goods": "vite --config vite.goods.config.ts",
     "build": "tsc && vite build",
+    "build:goods": "tsc -p tsconfig.goods.json && vite build --config vite.goods.config.ts",
+    "build:release": "npm run build && npm run build:goods && node scripts/merge-goods-dist.mjs",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
@@ -15,7 +18,8 @@
     "types:api9": "openapi-typescript ../contracts/cycle9/openapi.yaml -o src/types/api-cycle9.generated.ts",
     "types:api:cycle13": "openapi-typescript ../contracts/cycle13/openapi.yaml -o src/types/api-cycle13.generated.ts",
     "types:api:cycle14": "openapi-typescript ../contracts/cycle14/openapi.yaml -o src/types/api-cycle14.generated.ts",
-    "types:api:cycle18": "openapi-typescript ../contracts/cycle18/openapi.yaml -o src/types/api-cycle18.generated.ts"
+    "types:api:cycle18": "openapi-typescript ../contracts/cycle18/openapi.yaml -o src/types/api-cycle18.generated.ts",
+    "types:api:cycle23": "openapi-typescript ../contracts/cycle23/openapi.yaml -o src/types/api-cycle23.generated.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.56.2",

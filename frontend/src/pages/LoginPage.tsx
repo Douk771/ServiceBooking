@@ -1,6 +1,6 @@
 import { useForm, Controller } from 'react-hook-form'
 import { useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
@@ -8,6 +8,7 @@ import { Input } from '../components/ui/Input'
 import { PhoneInput } from '../components/ui/PhoneInput'
 import { Icon } from '../components/ui/Icon'
 import { getAuthErrorMessage } from '../utils/authError'
+import { safeReturnTo, withReturnTo } from '../utils/returnTo'
 import { useState } from 'react'
 
 interface FormData {
@@ -24,6 +25,8 @@ export function LoginPage() {
   } = useForm<FormData>({ defaultValues: { phone: '' } })
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
+  // Cycle 23 (ARCHITECTURE_CYCLE23.md §389.3-5): goods sends people here with ?returnTo=/<path>; without it, as before.
+  const returnTo = useSearchParams()[0].get('returnTo')
   const qc = useQueryClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -53,7 +56,7 @@ export function LoginPage() {
         },
         res.token,
       )
-      navigate('/')
+      navigate(safeReturnTo(returnTo))
     } catch (e: unknown) {
       // getAuthErrorMessage now tells 401 (wrong credentials), 423 (lockout), 403 (sign-in not
       // allowed), 429 (rate limit), 5xx and "no response" apart (ARCHITECTURE_CYCLE6.md §42.3.3) —
@@ -115,7 +118,7 @@ export function LoginPage() {
 
           <p className="text-center text-sm text-ink-soft mt-7">
             Нет аккаунта?{' '}
-            <Link to="/register" className="text-gold font-semibold hover:text-gold-dark">
+            <Link to={withReturnTo('/register', returnTo)} className="text-gold font-semibold hover:text-gold-dark">
               Зарегистрироваться
             </Link>
           </p>

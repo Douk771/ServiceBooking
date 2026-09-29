@@ -1,6 +1,6 @@
 import { useForm, Controller } from 'react-hook-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '../api/auth'
 import { legalApi } from '../api/legal'
 import { consentsApi } from '../api/consents'
@@ -12,6 +12,7 @@ import { Icon } from '../components/ui/Icon'
 import { Card } from '../components/ui/Card'
 import { getAuthErrorMessage } from '../utils/authError'
 import { isRussianPhone } from '../utils/phone'
+import { safeReturnTo, withReturnTo } from '../utils/returnTo'
 import { useState } from 'react'
 import type { ConsentPurpose } from '../types'
 import { VerifyPhoneButton, type PhoneVerificationRefValue } from '../components/phoneVerification/VerifyPhoneButton'
@@ -52,6 +53,7 @@ export function RegisterPage() {
   })
   const { setAuth } = useAuthStore()
   const navigate = useNavigate()
+  const returnTo = useSearchParams()[0].get('returnTo')
   const qc = useQueryClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -119,7 +121,7 @@ export function RegisterPage() {
         }
       }
 
-      navigate('/')
+      navigate(safeReturnTo(returnTo))
     } catch (e: unknown) {
       setError(getAuthErrorMessage(e))
     } finally {
@@ -310,7 +312,7 @@ export function RegisterPage() {
 
           <p className="text-center text-sm text-ink-soft mt-7">
             Уже есть аккаунт?{' '}
-            <Link to="/login" className="text-gold font-semibold hover:text-gold-dark">
+            <Link to={withReturnTo('/login', returnTo)} className="text-gold font-semibold hover:text-gold-dark">
               Войти
             </Link>
           </p>
