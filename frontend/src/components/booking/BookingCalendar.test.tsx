@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { format, endOfMonth, startOfMonth } from 'date-fns'
@@ -35,6 +35,14 @@ function renderCalendar() {
 
 beforeEach(() => {
   getAvailability.mockReset()
+  // Fix only Date (timers stay real for waitFor) to mid-month: tests use "tomorrow"
+  // and must not depend on the real run date (month boundary).
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 5, 15, 12, 0, 0))
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('BookingCalendar — short booking horizon (defect fix)', () => {
