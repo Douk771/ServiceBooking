@@ -72,6 +72,21 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderTransitionService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderEditService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyStatsService>();
+
+    // ARCHITECTURE_CYCLE24.md §464 — time, availability, notifications and tariffs of shops.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Billing.OrdersPlanResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Billing.ChannelEligibility>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopGateLoader>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Shops.DailyMenuService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopChannelReader>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderMonthlyCounter>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderLimitWarner>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.StaffOrderDtoFactory>();
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Orders.CustomerOrderNotificationsBuilder>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderNotificationPlanner>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderStaffPushQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.CustomerOrderPushQueue>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderMessageScheduler>();
     builder.Services.AddHttpClient<CaptchaService>();
     // T5-B10 (ARCHITECTURE_CYCLE5.md §50.1, US-74) — reuses the existing CaptchaService/rate-limiting
     // machinery, no new infrastructure.
@@ -200,6 +215,9 @@ internal static class ApplicationServicesExtensions
     // internal budget, same shape as notification-dispatch above but bounded PARALLEL across devices instead
     // of per-channel sequential antiban pacing — see the task's own doc comment for why).
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.StaffPushDispatchTask>();
+    // ARCHITECTURE_CYCLE24.md §456.2 — web-push to customers without an account (10-second period from configuration).
+    builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.CustomerOrderPushDispatchTask>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Notifications.OrderPushSubscriptionWriter>();
     // ARCHITECTURE_CYCLE14.md §146.3 — the SIXTH task, "max-webhook-renew" (period 4h, under the platform's
     // own 8h no-response-drops-the-subscription window, О4). Registered unconditionally, same as every other
     // IScheduledTask — a no-op in practice while PhoneVerification:Provider = "stub" (its own doc comment).
@@ -273,6 +291,11 @@ internal static class ApplicationServicesExtensions
         ServiceBooking.API.Services.Retention.Rules.GuestDataGateEventRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.PlatformNoticeRule>();
+    // ARCHITECTURE_CYCLE24.md §456.4 [legal L16] — the 22nd and 23rd rules.
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.OrderPushSubscriptionRule>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.CustomerOrderPushNotificationRule>();
     builder.Services.AddScoped<IScheduledTask, ServiceBooking.API.Services.Scheduling.Tasks.DataRetentionTask>();
 
     builder.Services.AddHostedService<ScheduledTaskRunner>();

@@ -4,6 +4,7 @@ using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Orders;
+using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -144,9 +145,12 @@ public sealed class SubjectDataExporter(
         // US-75 — sent notifications and opt-out status. bodyAvailable reflects §51's затирание: a row
         // past its retention window has ContentRedactedAtUtc set, and the export must say so plainly
         // rather than showing an empty string that looks like "nothing was ever sent".
+        // Cycle 24 (§461): messages about the subject's ORDERS belong here too — including guest orders on the verified number, which the order gate above
+        // already admitted (their rows carry no account id).
+        var exportedOrderIds = orderRows.Select(o => o.Id).ToList();
         var notifications = await db.OutboundNotifications.AsNoTracking()
             .Include(n => n.Company)
-            .Where(n => n.RecipientUserId == userId)
+            .Where(n => n.RecipientUserId == userId || (n.OrderId != null && exportedOrderIds.Contains(n.OrderId.Value)))
             .OrderByDescending(n => n.CreatedAt)
             .Select(n => new ExportNotificationDto(
                 n.SentAtUtc, n.Type.ToString(), n.Status.ToString(), n.Company.Name, n.ContentRedactedAtUtc == null))
@@ -209,9 +213,16 @@ public sealed class SubjectDataExporter(
             : await db.Companies.AsNoTracking().Where(c => orderShopIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
         var orderSellers = orderShopIds.Count == 0 ? new Dictionary<Guid, ShopSettings>()
             : await db.ShopSettings.AsNoTracking().Where(s => orderShopIds.Contains(s.CompanyId)).ToDictionaryAsync(s => s.CompanyId, ct);
+        var pushRows = exportedOrderIds.Count == 0
+            ? []
+            : await db.OrderPushSubscriptions.AsNoTracking().Where(s => exportedOrderIds.Contains(s.OrderId))
+                .Select(s => new { s.OrderId, s.CreatedAtUtc }).ToListAsync(ct);
+        var exportNow = DateTime.UtcNow;
         var orderExport = orderRows.Select(o =>
         {
             orderShops.TryGetValue(o.CompanyId, out var shop);
+            var zone = TimeZoneInfo.FindSystemTimeZoneById(shop?.TimeZoneId ?? "Europe/Moscow");
+            var orderPush = pushRows.Where(p => p.OrderId == o.Id).Select(p => p.CreatedAtUtc).OrderBy(d => d).ToList();
             orderSellers.TryGetValue(o.CompanyId, out var seller);
             var hasSeller = seller is not null && (!string.IsNullOrWhiteSpace(seller.SellerLegalName) || !string.IsNullOrWhiteSpace(seller.SellerInn));
             return new ExportOrderDto(
@@ -224,7 +235,9 @@ public sealed class SubjectDataExporter(
                 o.CustomerUserId == userId ? "Account" : "GuestSamePhone",
                 // The journal the customer may see: no staff names, no service entries.
                 o.Events.Where(e => e.VisibleToCustomer).OrderBy(e => e.OccurredAtUtc)
-                    .Select(e => new ExportOrderEventDto(e.OccurredAtUtc, OrderTexts.EventText(e.Kind, e.ToStatus, e.Reason))).ToList());
+                    .Select(e => new ExportOrderEventDto(e.OccurredAtUtc, OrderTexts.EventText(e.Kind, e.ToStatus, e.Reason))).ToList(),
+                new ExportOrderPickupDto(o.PickupKind.ToString(), o.PickupDate, PickupSchedule.PickupText(o.PickupKind, o.PickupDate, o.PickupStartUtc, zone, exportNow)),
+                o.NotifyByMessenger, o.MessengerConsentVersion, o.MessengerConsentAtUtc, new ExportOrderPushDto(orderPush.Count, orderPush));
         }).ToList();
 
         var export = new ProfileExportDto(

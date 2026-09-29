@@ -160,6 +160,18 @@ public sealed class AccountDeletionService(
             OrderPersonalData.Erase(order);
             foreach (var orderEvent in order.Events) OrderPersonalData.TombstoneCustomerEvent(orderEvent);
         }
+        // ARCHITECTURE_CYCLE24.md §461: the browsers subscribed to those orders are deleted with the personal data (their endpoints identify a device);
+        // the messenger choice was reset by Erase, the consent snapshot stays (legal data). The delivery-journal rows of the orders are scrubbed by the
+        // notification step below (they carry the account id or the verified phone).
+        var erasedOrderIds = ordersToErase.Select(o => o.Id).ToList();
+        if (erasedOrderIds.Count > 0)
+            db.OrderPushSubscriptions.RemoveRange(await db.OrderPushSubscriptions.Where(s => erasedOrderIds.Contains(s.OrderId)).ToListAsync());
+        // "Кто и когда" of a shop's acceptance switch names a person: their own name goes, the fact stays.
+        foreach (var settings in await db.ShopSettings.Where(s => s.AcceptanceChangedByUserId == userId).ToListAsync())
+        {
+            settings.AcceptanceChangedByName = OrderPersonalData.DeletedActorName;
+            settings.AcceptanceChangedByUserId = null;
+        }
 
         // TD-05 (ARCHITECTURE_CYCLE16.md §247.2, no migration — §240.3/§247.1). Two rules, both scoped
         // to exactly the set of bookings the gate above already allowed touching (never a separate

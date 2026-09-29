@@ -20,6 +20,8 @@ public static class OrderPersonalData
         order.CustomerName = null;
         order.CustomerPhone = null;
         order.Comment = null;
+        // ARCHITECTURE_CYCLE24.md §461: nobody left to write to. The consent SNAPSHOT (version + time) stays — legal data is not erased.
+        order.NotifyByMessenger = false;
         order.PersonalDataErased = true;
     }
 
