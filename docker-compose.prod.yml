@@ -120,6 +120,11 @@ services:
       # false on the host, per the two-run procedure in DEPLOY.md. Empty/unset keeps the baked-in
       # default (dry run) — same fail-safe shape as NOTIFICATIONS_PROVIDER above.
       - ScheduledTasks__data-retention__DryRun=${RETENTION_DRY_RUN:-true}
+      # Сроки хранения цикла 20 (ARCHITECTURE_CYCLE20.md §413 D2). Числа названы в п. 13.2 Политики —
+      # не менять без legal-counsel. Пусто/не задано = значение по умолчанию из appsettings.json.
+      - Retention__BookingEventDays=${RETENTION__BOOKINGEVENTDAYS:-1095}
+      - Retention__GuestDataGateEventDays=${RETENTION__GUESTDATAGATEEVENTDAYS:-365}
+      - Retention__PlatformNoticeDays=${RETENTION__PLATFORMNOTICEDAYS:-1095}
     volumes:
       - api_uploads:/app/wwwroot/uploads          # public class: company logos, avatars, service images
       - api_private_uploads:/app/private-uploads  # private class: client-note photos — back this up separately, it holds personal data
