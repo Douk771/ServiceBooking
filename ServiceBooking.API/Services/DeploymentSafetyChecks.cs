@@ -519,6 +519,33 @@ public static class DeploymentSafetyChecks
     }
 
     /// <summary>
+    /// ARCHITECTURE_CYCLE23.md §391 — PublicSites:ServicesBaseUrl / OrdersBaseUrl. Outside a developer
+    /// environment both must be absolute https:// origins with no path and no trailing slash: a link built
+    /// from a malformed value would land in QR codes and (cycle 2) in customer notifications. An unrecognised
+    /// value stops the start (fail-closed convention). In Development/Testing http:// is allowed (localhost).
+    /// </summary>
+    public static void ValidatePublicSites(IConfiguration configuration, string environmentName)
+    {
+        var developer = IsDeveloperEnvironment(environmentName);
+        foreach (var key in new[] { "ServicesBaseUrl", "OrdersBaseUrl" })
+        {
+            var value = configuration[$"{PublicSites.PublicSitesOptions.SectionName}:{key}"];
+            if (string.IsNullOrWhiteSpace(value))
+                throw new InvalidOperationException(
+                    $"PublicSites:{key} is empty. Set PublicSites__{key} or keep the default from appsettings.json.");
+
+            var isAbsolute = Uri.TryCreate(value, UriKind.Absolute, out var uri);
+            var schemeOk = isAbsolute && (uri!.Scheme == Uri.UriSchemeHttps || (developer && uri.Scheme == Uri.UriSchemeHttp));
+            var originOnly = isAbsolute && uri!.AbsolutePath == "/" && string.IsNullOrEmpty(uri.Query)
+                             && string.IsNullOrEmpty(uri.Fragment) && !value.EndsWith('/');
+            if (!schemeOk || !originOnly)
+                throw new InvalidOperationException(
+                    $"PublicSites:{key} is '{value}' — expected an absolute {(developer ? "http(s)" : "https")}:// origin " +
+                    "without a path or a trailing slash (for example https://goods.ezbook.ru).");
+        }
+    }
+
+    /// <summary>
     /// ARCHITECTURE_CYCLE13.md §206/§209.2 (LEGAL_REVIEW.md §16.2). Mirrors
     /// <see cref="ValidateNotificationSecrets"/>'s shape (own section, own Provider switch, unrecognized
     /// value ALWAYS fails startup) with one addition that is NOT environment-gated at all:

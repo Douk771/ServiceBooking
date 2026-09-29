@@ -70,6 +70,8 @@ internal static class DeploymentValidationExtensions
     // (PhoneVerification:Provider), checked unconditionally (even in Development — an unrecognized
     // provider value is a config-correctness bug there too, unlike the secrets themselves).
     DeploymentSafetyChecks.ValidatePhoneVerificationSecrets(builder.Configuration, builder.Environment.EnvironmentName);
+    // ARCHITECTURE_CYCLE23.md §391 — public base addresses of ezbook.ru / goods.ezbook.ru (fail-closed).
+    DeploymentSafetyChecks.ValidatePublicSites(builder.Configuration, builder.Environment.EnvironmentName);
 
         return isDeveloperEnvironment;
     }

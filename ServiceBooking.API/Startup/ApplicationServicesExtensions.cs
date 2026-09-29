@@ -48,6 +48,9 @@ internal static class ApplicationServicesExtensions
     // BookingsController unchanged (+ the shared service-selection validation the slot endpoints use).
     builder.Services.AddScoped<ServiceBooking.API.Services.Bookings.BookingCreationService>();
     // Cycle 22 P5 (§378): CompanyDto assembly and the company stats report, moved out of CompaniesController.
+    builder.Services.Configure<ServiceBooking.API.Services.PublicSites.PublicSitesOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.PublicSites.PublicSitesOptions.SectionName));
+    builder.Services.AddSingleton<ServiceBooking.API.Services.PublicSites.PublicSiteLinks>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyDtoAssembler>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyStatsService>();
     builder.Services.AddHttpClient<CaptchaService>();
