@@ -1,6 +1,7 @@
 import { api } from './client'
 import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
+import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
 
 /**
  * Owner "Ваша подписка" screen (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41,
@@ -27,9 +28,17 @@ export type AvailableOptionDto = Schemas['AvailableOptionDto']
 export type CoveredCompanyDto = Schemas['CoveredCompanyDto']
 export type SubscriptionUsageDto = Schemas['SubscriptionUsageDto']
 export type SubscriptionWarningDto = Schemas['SubscriptionWarningDto']
-export type SubscriptionRequestItemDto = Schemas['SubscriptionRequestItemDto']
-export type SubscriptionRequestDto = Schemas['SubscriptionRequestDto']
-export type OwnerSubscriptionDto = Schemas['OwnerSubscriptionDto']
+// ARCHITECTURE_CYCLE19.md §388.5/FE-4, API_CONTRACT_CYCLE19.md §408 — `items[].retired` and
+// `retiredOptionsNotice` are new (breaking-additive) fields on the request DTO; read straight off
+// the cycle19 schema rather than the cycle7 one (N22 convention).
+type Cycle19 = Cycle19Schemas['schemas']
+export type SubscriptionRequestItemDto = Cycle19['SubscriptionRequestItemDto']
+export type SubscriptionRequestDto = Cycle19['SubscriptionRequestDto']
+/** `OwnerSubscriptionDto` (cycle 7) with `pendingRequest` overridden to the cycle19 shape — the
+ *  cycle7 schema's own nested `pendingRequest` type predates `retired`/`retiredOptionsNotice`. */
+export type OwnerSubscriptionDto = Omit<Schemas['OwnerSubscriptionDto'], 'pendingRequest'> & {
+  pendingRequest?: SubscriptionRequestDto | null
+}
 export type RejectedRequestDto = Schemas['RejectedRequestDto']
 export type RequestedOptionInput = Schemas['RequestedOptionInput']
 export type SubscriptionRequestInput = Schemas['SubscriptionRequestInput']

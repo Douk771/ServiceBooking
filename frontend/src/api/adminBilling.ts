@@ -1,9 +1,12 @@
 import { api } from './client'
 import type { components } from '../types/api-cycle7.generated'
 import type { components as Cycle18Schemas } from '../types/api-cycle18.generated'
+import type { components as Cycle19Schemas } from '../types/api-cycle19.generated'
+import type { SubscriptionRequestDto } from './billing'
 
 type Schemas = components['schemas']
 type Cycle18 = Cycle18Schemas['schemas']
+type Cycle19 = Cycle19Schemas['schemas']
 
 export type TrialAccountFilter = Cycle18['TrialAccountFilter']
 export type AdminAccountTrialDto = Cycle18['AdminAccountTrialDto']
@@ -11,16 +14,21 @@ export type AdminTrialGrantDto = Cycle18['AdminTrialGrantDto']
 export type TrialRegrantInput = Cycle18['TrialRegrantInput']
 export type TrialRefusalDto = Cycle18['TrialRefusalDto']
 
-/** Cycle 7 shapes + cycle 18 `trial`/`trialState`/`trialEndsAt` (additive — §369, §372). */
+/** Cycle 7 shapes + cycle 18 `trial`/`trialState`/`trialEndsAt` (additive — §369, §372) + cycle 19
+ *  `pendingRequest` overridden to the cycle19 shape (`items[].retired`/`retiredOptionsNotice`,
+ *  API_CONTRACT_CYCLE19.md §407). */
 export type AdminBillingAccountListItem = Schemas['AdminBillingAccountListItemDto'] & Cycle18['AdminBillingAccountListItemTrialPatch']
-export type AdminBillingAccount = Schemas['AdminBillingAccountDto'] & Cycle18['AdminBillingAccountDtoTrialPatch']
+export type AdminBillingAccount = Omit<Schemas['AdminBillingAccountDto'], 'pendingRequest'> &
+  Cycle18['AdminBillingAccountDtoTrialPatch'] & { pendingRequest?: SubscriptionRequestDto | null }
 export type AdminSubscribedOption = Schemas['AdminSubscribedOptionDto']
 export type AdminAccountCompany = Schemas['AdminAccountCompanyDto']
 export type AdminAccountChannel = Schemas['AdminAccountChannelDto']
 export type AssignSubscriptionInput = Schemas['AssignSubscriptionInput']
 export type AssignOptionInput = Schemas['AssignOptionInput']
 export type SubscriptionChangeLog = Schemas['SubscriptionChangeLogDto']
-export type AdminSubscriptionRequest = Schemas['AdminSubscriptionRequestDto']
+// ARCHITECTURE_CYCLE19.md FE-3, API_CONTRACT_CYCLE19.md §407 — `items[].retired` and
+// `retiredOptionsNotice` are new; read straight off the cycle19 schema (N22 convention).
+export type AdminSubscriptionRequest = Cycle19['AdminSubscriptionRequestDtoCycle19']
 export type SubscriptionStatus = Schemas['SubscriptionStatus']
 export type SubscriptionRequestStatus = Schemas['SubscriptionRequestStatus']
 
