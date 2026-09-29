@@ -42,9 +42,18 @@ public class AdminNoticesController(AppDbContext db, PlatformNoticePublisher pub
             .Skip((currentPage - 1) * currentPageSize).Take(currentPageSize)
             .ToListAsync();
 
+        // Code-review finding (cycle 20): MapToAdminDtoAsync's audienceCounter.CountAsync call re-runs a
+        // heavy query for EVERY row on the page — for OwnersOnPlans it loads every BillingAccount +
+        // AccountSubscription into memory, for AllClients it calls GetUsersInRoleAsync — an N+1 against the
+        // CURRENT audience, not the page of notices. Notices addressing the same audience (the common case
+        // — the same handful of tariffs, or "all owners") share one cache entry for the lifetime of this
+        // one request; the underlying counts genuinely cannot change mid-request, so reusing them here is
+        // safe.
+        var audienceCountCache = new Dictionary<string, int>();
+
         var items = new List<AdminPlatformNoticeDto>(rows.Count);
         foreach (var n in rows)
-            items.Add(await MapToAdminDtoAsync(n));
+            items.Add(await MapToAdminDtoAsync(n, audienceCountCache));
 
         return Ok(Pagination.Create(items, currentPage, currentPageSize, total));
     }
@@ -121,11 +130,11 @@ public class AdminNoticesController(AppDbContext db, PlatformNoticePublisher pub
         dto.TermsChange is null ? null : new TermsChangeParams(dto.TermsChange.DocumentType, dto.TermsChange.ChangesSummary),
         dto.Attachment is null ? null : new NoticeAttachmentParams(dto.Attachment.Title, dto.Attachment.Html));
 
-    private async Task<AdminPlatformNoticeDto> MapToAdminDtoAsync(PlatformNotice n)
+    private async Task<AdminPlatformNoticeDto> MapToAdminDtoAsync(PlatformNotice n, Dictionary<string, int>? audienceCountCache = null)
     {
         var createdByName = n.CreatedByUserId == "system" ? "Система" : await ResolveUserNameAsync(n.CreatedByUserId);
         var revokedByName = n.RevokedByUserId is null ? null : await ResolveUserNameAsync(n.RevokedByUserId);
-        var audienceCount = await audienceCounter.CountAsync(n.AudienceType, n.AudiencePlanIds, n.TargetBillingAccountId);
+        var audienceCount = await GetAudienceCountAsync(n.AudienceType, n.AudiencePlanIds, n.TargetBillingAccountId, audienceCountCache);
         var acknowledgedCount = await db.PlatformNoticeAcknowledgements.CountAsync(a => a.NoticeId == n.Id);
 
         return new AdminPlatformNoticeDto(
@@ -134,6 +143,21 @@ public class AdminNoticesController(AppDbContext db, PlatformNoticePublisher pub
             n.AudienceType.ToString(), n.AudiencePlanIds, n.TargetBillingAccountId, n.TemplateVersion,
             createdByName, audienceCount, acknowledgedCount,
             n.RevokedAtUtc, revokedByName, n.RevokeReason);
+    }
+
+    private async Task<int> GetAudienceCountAsync(
+        NoticeAudienceType type, Guid[]? planIds, Guid? billingAccountId, Dictionary<string, int>? cache)
+    {
+        if (cache is null)
+            return await audienceCounter.CountAsync(type, planIds, billingAccountId);
+
+        var key = $"{type}:{(planIds is null ? "" : string.Join(",", planIds.OrderBy(id => id)))}:{billingAccountId}";
+        if (cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var count = await audienceCounter.CountAsync(type, planIds, billingAccountId);
+        cache[key] = count;
+        return count;
     }
 
     private async Task<string> ResolveUserNameAsync(string userId)
