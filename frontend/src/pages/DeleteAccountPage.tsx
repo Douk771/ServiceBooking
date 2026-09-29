@@ -75,7 +75,9 @@ export function DeleteAccountPage() {
           </p>
         </div>
 
-        {profile && <GuestDataGateNotice phoneVerified={profile.phoneVerified} />}
+        {/* Т20-08 — the delete screen reads its OWN key (GuestDataGateDeleteNotice, file 15), not the
+            export screen's GuestDataGateNotice (file 14): different consequences, different text. */}
+        {profile && <GuestDataGateNotice phoneVerified={profile.phoneVerified} textKey="GuestDataGateDeleteNotice" />}
         <TrialRegistryDeletionNotice text={deletionPreview?.trialRegistryNotice ?? null} />
 
         <Input label="Текущий пароль" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
