@@ -154,6 +154,15 @@ describe('BookingCalendar — review finding #1: `lastFreeSlotStart` marks today
 })
 
 describe('BookingCalendar — cycle 10: staffMode/scheduleState (ARCHITECTURE_CYCLE10.md §108.5)', () => {
+  // Pin mid-month: on the last day of a month "tomorrow" lies in the next month and is not rendered.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 10, 12, 0, 0))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   function renderManualCalendar() {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return render(
