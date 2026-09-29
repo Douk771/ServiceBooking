@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.Infrastructure.Data;

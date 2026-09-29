@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Signals;
 using ServiceBooking.Core.Enums;

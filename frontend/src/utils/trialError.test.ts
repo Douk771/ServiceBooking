@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios'
-import { getTrialErrorMessage, getTrialRefusalCode, isTrialTermsVersionMismatch } from './trialError'
+import { getTrialErrorMessage, isTrialTermsVersionMismatch } from './trialError'
 
 function axiosErrorWith(status: number, data: unknown): AxiosError {
   const response: AxiosResponse = {
@@ -55,17 +55,5 @@ describe('isTrialTermsVersionMismatch', () => {
 
   it('is false for non-409 statuses', () => {
     expect(isTrialTermsVersionMismatch(axiosErrorWith(400, { code: 'TrialTermsVersionMismatch', message: 'x' }))).toBe(false)
-  })
-})
-
-describe('getTrialRefusalCode', () => {
-  it('returns the code from a 409 TrialRefusalDto', () => {
-    const err = axiosErrorWith(409, { code: 'PhoneNotVerified', message: 'Подтвердите номер телефона.' })
-    expect(getTrialRefusalCode(err)).toBe('PhoneNotVerified')
-  })
-
-  it('returns null when there is no 409 body', () => {
-    expect(getTrialRefusalCode(axiosErrorWith(404, ''))).toBeNull()
-    expect(getTrialRefusalCode(axiosErrorWith(409, undefined))).toBeNull()
   })
 })

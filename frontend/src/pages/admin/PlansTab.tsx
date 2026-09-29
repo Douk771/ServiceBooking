@@ -24,6 +24,7 @@ import {
   optionRulesToPayload,
   type PlanForm,
 } from './planForm'
+import { formatMonthlyPrice } from '../../utils/pricingFormat'
 
 const RETENTION_LABELS: Record<PhotoRetention, string> = {
   SixMonths: '6 месяцев',
@@ -363,7 +364,7 @@ export function PlansTab() {
                           </span>
                         )}
                         <span className="text-sm font-medium text-gold-dark">
-                          {plan.pricePerMonth > 0 ? `${plan.pricePerMonth.toLocaleString('ru-RU')} ₽/мес` : 'Бесплатно'}
+                          {formatMonthlyPrice(plan.pricePerMonth)}
                         </span>
                         <span className="text-xs text-muted">
                           Сотрудников суммарно: {plan.maxEmployees != null ? `до ${plan.maxEmployees}` : '∞'}

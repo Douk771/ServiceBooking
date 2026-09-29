@@ -7,7 +7,6 @@ using ServiceBooking.API.Controllers;
 using ServiceBooking.API.DTOs.Bookings;
 using ServiceBooking.API.DTOs.ClientNotes;
 using ServiceBooking.API.DTOs.Legal;
-using ServiceBooking.API.Services.Retention;
 using ServiceBooking.API.Services.Scheduling;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -331,7 +330,6 @@ public class LegalPriorityTests(TestDatabaseFixture fixture) : ApiTestBase(fixtu
             {
                 Id = Guid.NewGuid(), OwnerUserId = owner.UserId, BillingAccountId = billingAccountId, State = ChannelState.Connected,
                 PhoneNumber = UniquePhone().TrimStart('+'), ProviderInstanceId = Unique("instance"),
-                PaidFromUtc = DateTime.UtcNow.AddDays(-1), PaidUntilUtc = DateTime.UtcNow.AddDays(30),
                 ConnectedAtUtc = DateTime.UtcNow.AddDays(-1), RiskAcceptedAtUtc = DateTime.UtcNow.AddDays(-1),
             };
             db0.NotificationChannels.Add(channel);

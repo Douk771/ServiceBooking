@@ -289,26 +289,15 @@ public sealed class StaffPushDispatchTask(
     private async Task<Dictionary<Guid, DateTime>> ResolveVisitStartTimesAsync(
         List<StaffPushNotification> candidates, CancellationToken ct)
     {
-        var result = new Dictionary<Guid, DateTime>();
         var bookingIds = candidates.Where(n => n.BookingId.HasValue).Select(n => n.BookingId!.Value).Distinct().ToList();
-        if (bookingIds.Count == 0) return result;
+        var visitStartByBooking = await VisitStartResolver.ResolveAsync(db, bookingIds, ct);
 
-        var bookings = await db.Bookings.Where(b => bookingIds.Contains(b.Id))
-            .Select(b => new { b.Id, b.CompanyId, b.Date, b.StartTime }).ToListAsync(ct);
-        if (bookings.Count == 0) return result;
-
-        var companyIds = bookings.Select(b => b.CompanyId).Distinct().ToList();
-        var timeZonesByCompany = await db.Companies.Where(c => companyIds.Contains(c.Id))
-            .Select(c => new { c.Id, c.TimeZoneId }).ToDictionaryAsync(c => c.Id, c => c.TimeZoneId, ct);
-
-        var bookingById = bookings.ToDictionary(b => b.Id);
+        var result = new Dictionary<Guid, DateTime>();
         foreach (var row in candidates)
         {
-            if (row.BookingId is not { } bookingId || !bookingById.TryGetValue(bookingId, out var booking)) continue;
-            if (!timeZonesByCompany.TryGetValue(booking.CompanyId, out var timeZoneId)) continue;
-            result[row.Id] = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, timeZoneId);
+            if (row.BookingId is { } bookingId && visitStartByBooking.TryGetValue(bookingId, out var visitStartUtc))
+                result[row.Id] = visitStartUtc;
         }
-
         return result;
     }
 

@@ -1,6 +1,6 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using System.Text;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Notifications;
@@ -31,9 +31,16 @@ public sealed class NotificationScheduler(
     ConsentLedger consentLedger,
     IOptions<NotificationOptions> options)
 {
-    public async Task OnBookingCreatedAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct)
+    /// <param name="booking">The booking just created (not yet saved).</param>
+    /// <param name="serviceNames">The visit's service names, known at Create time.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="plan">The company's effective plan when the caller already resolved it in this same
+    /// request (BookingsController.Create does, for its own 402 gate — §375 F17); null resolves it here.
+    /// A hand-over within one request, not a cache.</param>
+    public async Task OnBookingCreatedAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct,
+        EffectivePlan? plan = null)
     {
-        var ctx = await BuildContextAsync(booking, serviceNames, ct);
+        var ctx = await BuildContextAsync(booking, serviceNames, ct, plan);
         if (ctx is null) return;
 
         var nowUtc = DateTime.UtcNow;
@@ -113,7 +120,9 @@ public sealed class NotificationScheduler(
     /// falls back to the single legacy Booking.ServiceId lookup if that table somehow has no rows yet
     /// (defensive only — the migration backfill guarantees at least one row for every booking).</param>
     /// <param name="ct">Cancellation token.</param>
-    private async Task<SchedulingContext?> BuildContextAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct)
+    /// <param name="knownPlan">Already-resolved effective plan of the booking's company, if any.</param>
+    private async Task<SchedulingContext?> BuildContextAsync(Booking booking, IReadOnlyList<string>? serviceNames, CancellationToken ct,
+        EffectivePlan? knownPlan = null)
     {
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == booking.CompanyId, ct);
         var master = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == booking.MasterId, ct);
@@ -139,7 +148,7 @@ public sealed class NotificationScheduler(
             }
         }
 
-        var plan = await subscriptionResolver.GetEffectivePlanAsync(company.Id);
+        var plan = knownPlan ?? await subscriptionResolver.GetEffectivePlanAsync(company.Id);
 
         // ARCHITECTURE_CYCLE9.md §104.3: every live assignment, one per transport at most — not an
         // arbitrary FirstOrDefault. N9: ordered by Transport so ctx.Channels[0] (the "representative"

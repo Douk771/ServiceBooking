@@ -43,7 +43,7 @@ export interface PushAvailabilityInput {
 }
 
 /** Web Push for Home Screen web apps shipped in iOS/iPadOS 16.4 — below that, installing doesn't help. */
-export const IOS_MIN_PUSH_VERSION: readonly [number, number] = [16, 4]
+const IOS_MIN_PUSH_VERSION: readonly [number, number] = [16, 4]
 
 /**
  * Returns the single reason a master cannot (yet) turn push on, in the priority order of
@@ -101,12 +101,6 @@ export function detectIosEnvironment(nav: NavigatorLike, displayModeStandalone =
     isStandalone: nav.standalone === true || displayModeStandalone,
     version: parseIosVersion(ua, isIphoneLike),
   }
-}
-
-/** Cycle-9 name kept for callers that only need the yes/no answer. */
-export function detectIosSafariNotInstalled(nav: NavigatorLike, displayModeStandalone = false): boolean {
-  const env = detectIosEnvironment(nav, displayModeStandalone)
-  return env.isIos && !env.isStandalone
 }
 
 function parseIosVersion(ua: string, isIphoneLike: boolean): readonly [number, number] | null {

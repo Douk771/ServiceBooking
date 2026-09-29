@@ -21,6 +21,7 @@ import { applyLegalRuntimeValues } from '../../utils/legalRuntimeValues'
 import { SmartCaptcha, smartCaptchaEnabled } from './SmartCaptcha'
 import { BookingCalendar } from './BookingCalendar'
 import type { Company, Service } from '../../types'
+import { formatRub } from '../../utils/money'
 
 // US-67 (API_CONTRACT_CYCLE6.md §41.1/§43.1) — server rejects a visit of more than 5 services.
 const MAX_SERVICES = 5
@@ -310,7 +311,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
               {allServices.length > 0 && (
                 <p className="text-[13px] text-ink-soft">
                   {allServices.map((s) => s.name).join(', ')} · {totalDurationMinutes} мин ·{' '}
-                  {totalPrice.toLocaleString('ru-RU')} ₽
+                  {formatRub(totalPrice)}
                 </p>
               )}
             </div>
@@ -395,7 +396,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                       <div>
                         <p className="text-sm font-medium text-ink">{s.name}</p>
                         <p className="text-xs text-muted mt-0.5">
-                          {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                          {s.durationMinutes} мин · {formatRub(s.price)}
                         </p>
                       </div>
                       {s.id !== service.id && (
@@ -433,7 +434,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                         <div>
                           <p className="font-semibold text-sm text-ink">{s.name}</p>
                           <p className="text-xs text-muted mt-0.5">
-                            {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                            {s.durationMinutes} мин · {formatRub(s.price)}
                           </p>
                         </div>
                         <Icon
@@ -454,7 +455,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                 <div className="flex items-center justify-between text-[13.5px] font-semibold text-ink bg-cream-deep rounded-xl px-3.5 py-2.5 mb-4">
                   <span>Итого</span>
                   <span>
-                    {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
+                    {totalDurationMinutes} мин · {formatRub(totalPrice)}
                   </span>
                 </div>
               )}
@@ -477,7 +478,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
                         <div>
                           <p className="text-sm font-medium text-ink">{s.name}</p>
                           <p className="text-xs text-muted mt-0.5">
-                            {s.durationMinutes} мин · {s.price.toLocaleString('ru-RU')} ₽
+                            {s.durationMinutes} мин · {formatRub(s.price)}
                           </p>
                         </div>
                         <Icon name="plus" size={16} strokeWidth={1.8} className="text-line-strong shrink-0" />
@@ -687,7 +688,7 @@ export function BookingModal({ company, service, onClose, allowMultipleServices 
               <div className="bg-cream-deep rounded-2xl p-4 text-[13.5px] text-ink">
                 <div className="font-semibold">{allServices.map((s) => s.name).join(', ')}</div>
                 <div className="text-ink-soft mt-0.5">
-                  {totalDurationMinutes} мин · {totalPrice.toLocaleString('ru-RU')} ₽
+                  {totalDurationMinutes} мин · {formatRub(totalPrice)}
                 </div>
                 {selectedMaster && (
                   <div className="text-ink-soft mt-0.5">

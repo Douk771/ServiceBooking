@@ -1,7 +1,5 @@
-using System.Net;
 using Lib.Net.Http.WebPush;
 using Lib.Net.Http.WebPush.Authentication;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace ServiceBooking.API.Services.Notifications.WebPush;

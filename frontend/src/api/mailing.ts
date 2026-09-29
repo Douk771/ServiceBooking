@@ -1,6 +1,6 @@
 import { api } from './client'
 
-export interface MailLog {
+interface MailLog {
   id: string
   subject: string
   message: string

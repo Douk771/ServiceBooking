@@ -18,6 +18,7 @@ public sealed class ChannelHealthTask(
     IChannelProvisioningRegistry provisioningRegistry,
     IOptions<NotificationOptions> options,
     PlatformSettings platformSettings,
+    ChannelFundingReader fundingReader,
     INotificationClock clock,
     ILogger<ChannelHealthTask> logger) : IScheduledTask
 {
@@ -228,7 +229,8 @@ public sealed class ChannelHealthTask(
         return stuck.Count;
     }
 
-    /// <summary>§30.3 — one GROUP BY/LEFT JOIN for every channel's active-assigned-company count, then
+    /// <summary>§30.3 — one GROUP BY/LEFT JOIN for every channel's active-assigned-company count, one
+    /// batched funding read (<see cref="ChannelFundingReader"/>), then
     /// <see cref="ChannelIdleCalculator.Recompute"/> per channel (the only place
     /// <see cref="NotificationChannel.IdleSinceUtc"/> is ever written).</summary>
     private async Task<(int Warned, int Deleted)> RecomputeIdleAsync(DateTime now, CancellationToken ct)
@@ -242,13 +244,19 @@ public sealed class ChannelHealthTask(
         // Replaced is terminal (§23.2) — nothing about its idle state matters anymore.
         var channels = await db.NotificationChannels.Where(c => c.State != ChannelState.Replaced).ToListAsync(ct);
 
+        // Cycle 22 (§379, Р2): "paid period live" = the channel is funded — one batch for the whole pass.
+        // The task's clock is handed to the reader for its option filter (C22-5); plan resolution inside
+        // it still reads the wall clock.
+        var funding = await fundingReader.LoadAsync(channels, ct, nowUtc: now);
+
         var warned = 0;
         var deleted = 0;
         foreach (var channel in channels)
         {
             var activeCount = activeCompanyCounts.GetValueOrDefault(channel.Id, 0);
+            var isFunded = funding.TryGetValue(channel.Id, out var f) && f.State == Billing.ChannelFundingState.Funded;
             var recomputedIdleSince = ChannelIdleCalculator.Recompute(
-                channel.IdleSinceUtc, activeCount, channel.PaidUntilUtc, channel.IsSuspendedByAdmin, now);
+                channel.IdleSinceUtc, activeCount, isFunded, channel.IsSuspendedByAdmin, now);
 
             if (recomputedIdleSince != channel.IdleSinceUtc)
             {

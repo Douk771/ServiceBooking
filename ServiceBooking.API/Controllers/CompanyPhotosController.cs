@@ -29,17 +29,17 @@ public class CompanyPhotosController(AppDbContext db, ImageUploadService imageUp
     : ControllerBase
 {
     [HttpGet("{id:guid}/photos")]
-    public async Task<ActionResult<List<CompanyPhotoDto>>> GetPhotos(Guid id)
+    public async Task<ActionResult<List<CompanyPhotoDto>>> GetPhotos(Guid id, CancellationToken ct)
     {
         // Matches GetBySlug (CompaniesController): a deactivated company is NotFound to an anonymous
         // caller, not a visible gallery — this endpoint and GetBySlug must not disagree.
-        var exists = await db.Companies.AnyAsync(c => c.Id == id && c.IsActive);
+        var exists = await db.Companies.AnyAsync(c => c.Id == id && c.IsActive, ct);
         if (!exists) return NotFound();
 
         var photos = await db.CompanyPhotos
             .Where(p => p.CompanyId == id)
             .OrderBy(p => p.Position).ThenBy(p => p.CreatedAtUtc).ThenBy(p => p.Id)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(photos.Select(CompanyPhotoDto.From).ToList());
     }

@@ -19,14 +19,7 @@ import { useLegalText } from '../hooks/useLegalText'
 import { usePhotoUploadWithConsent } from '../hooks/usePhotoUploadWithConsent'
 import { findSection, splitLegalSections } from '../utils/legalSections'
 import { useAuthStore } from '../store/authStore'
-
-const STATUS_LABELS: Record<string, string> = {
-  Pending: 'Ожидает',
-  Confirmed: 'Подтверждена',
-  Completed: 'Выполнена',
-  Cancelled: 'Отменена',
-  NoShow: 'Не пришёл',
-}
+import { bookingStatusLabel } from '../utils/bookingStatus'
 
 const STATUS_CLASSES: Record<string, string> = {
   Completed: 'bg-success-bg text-success',
@@ -154,7 +147,7 @@ function ClientCard({ client, companyId }: ClientCardProps) {
                     <span
                       className={`text-xs px-2.5 py-0.5 rounded-full shrink-0 font-medium ${STATUS_CLASSES[b.status] ?? 'bg-cream-deep text-ink-soft'}`}
                     >
-                      {STATUS_LABELS[b.status] ?? b.status}
+                      {bookingStatusLabel(b.status)}
                     </span>
                   </div>
                 ))}

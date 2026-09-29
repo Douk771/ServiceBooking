@@ -417,8 +417,8 @@ public abstract class ApiTestBase : IClassFixture<TestDatabaseFixture>
     ///
     /// Used to go through the real admin HTTP endpoint (<c>PUT /api/admin/owners/{ownerUserId}/subscription</c>),
     /// which exercised that endpoint's own validation as a side effect. That endpoint is now contractually
-    /// retired (contracts/cycle7/openapi.yaml, redaction 2.1 — see <c>AdminController.UpdateSubscription</c>, answers
-    /// 410 Gone) and its replacement (<c>PUT /admin/billing-accounts/{accountId}/subscription</c>) doesn't
+    /// retired (contracts/cycle7/openapi.yaml, redaction 2.1 — its 410 stub was removed
+    /// altogether in cycle 22, ARCHITECTURE_CYCLE22.md §372) and its replacement (<c>PUT /admin/billing-accounts/{accountId}/subscription</c>) doesn't
     /// exist yet (cycle-07 backend report), so this helper — which exists purely to arrange test
     /// preconditions, not to exercise that endpoint's behavior — writes the row directly, the same way
     /// <see cref="GiveActivePaidPlanAsync"/> already does. Tests that actually need to exercise an

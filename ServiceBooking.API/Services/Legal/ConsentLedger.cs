@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using ServiceBooking.API.Services;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -23,7 +22,7 @@ public sealed record ConsentGrant(
     string? UserAgent = null,
     string? RecordedByUserId = null);
 
-/// <summary>Read-only projection of a ConsentRecord row for CurrentAsync/CurrentAllAsync/HistoryAsync —
+/// <summary>Read-only projection of a ConsentRecord row for CurrentAsync/HistoryAsync —
 /// callers of the ledger get a value they can't accidentally track/save through, only GrantAsync/
 /// RevokeAsync write.</summary>
 public sealed record ConsentState(
@@ -65,29 +64,10 @@ public class ConsentLedger(AppDbContext db)
         return record is null ? null : ToState(record);
     }
 
-    /// <summary>Every (DocumentKey, Purpose) combination this subject currently has a live grant for —
-    /// one row per combination, the most recent non-revoked one. Used to render "Мои согласия"
-    /// (API_CONTRACT_CYCLE5.md §41.1 `granted`), never the full journal (that's a separate, explicit
-    /// full-history read — this method's whole purpose is to answer "what applies right now").</summary>
-    public async Task<IReadOnlyList<ConsentState>> CurrentAllAsync(ConsentSubject subject, CancellationToken ct = default)
-    {
-        var candidates = await CurrentRecordsQuery(subject)
-            .OrderByDescending(c => c.GrantedAtUtc)
-            .ToListAsync(ct);
-
-        // Grouped in memory, not in SQL: per-subject row counts are small (a handful of document keys
-        // times a handful of purposes), and a window-function/DISTINCT ON translation would buy nothing
-        // here but complexity — this method is never on the hot path (see class comment).
-        return candidates
-            .GroupBy(c => (c.DocumentKey, c.Purpose))
-            .Select(g => ToState(g.First())) // already ordered by GrantedAtUtc desc
-            .ToList();
-    }
-
     /// <summary>The FULL journal for one subject — every row, revoked or not, newest first. Used where a
     /// human needs to see everything they ever did (API_CONTRACT_CYCLE5.md §41.1 `history`, §49
-    /// `consents` export section), never for an access-control decision (that's CurrentAsync/
-    /// CurrentAllAsync above — a revoked row must never look "current" to anything but this audit view).
+    /// `consents` export section), never for an access-control decision (that's CurrentAsync
+    /// above — a revoked row must never look "current" to anything but this audit view).
     ///
     /// Code review В3: for a <see cref="ConsentSubject.ForUser"/> subject, <paramref name="knownPhone"/>
     /// (the account's current canonical phone, when known) additionally pulls in every row recorded

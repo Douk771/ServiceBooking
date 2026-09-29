@@ -1,5 +1,3 @@
-using ServiceBooking.API.Services;
-
 namespace ServiceBooking.API.Services.Notifications;
 
 /// <summary>

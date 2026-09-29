@@ -1,5 +1,4 @@
 using FluentAssertions;
-using ServiceBooking.API.Services.PhoneVerification;
 using ServiceBooking.Core.Enums;
 using static ServiceBooking.API.Services.PhoneVerification.PhoneVerificationStateMachine;
 

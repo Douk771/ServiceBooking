@@ -52,7 +52,7 @@ export async function unsubscribeCurrentDeviceOnLogout(): Promise<void> {
   }
 }
 
-export interface UseWebPushResult {
+interface UseWebPushResult {
   /** Single reason to show in PushUnavailableNotice, or null when the toggle should be offered. */
   reason: PushUnavailableReason | null
   /** Whether the request for config/devices is still in flight. */

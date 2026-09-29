@@ -24,18 +24,18 @@ namespace ServiceBooking.API.Controllers;
 public class CompanyPushSettingsController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<StaffPushSettingsDto>> Get(Guid companyId)
+    public async Task<ActionResult<StaffPushSettingsDto>> Get(Guid companyId, CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId is null) return Forbid();
         if (!await CompanyMembership.IsOwnerAsync(db, companyId, userId) && !User.IsInRole("SuperAdmin"))
             return Forbid();
 
-        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId);
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == companyId, ct);
         if (company is null) return NotFound();
 
         var settings = await db.CompanyNotificationSettings.AsNoTracking()
-            .FirstOrDefaultAsync(s => s.CompanyId == companyId);
+            .FirstOrDefaultAsync(s => s.CompanyId == companyId, ct);
         // §105.4/§105.7: no row = defaults (StaffPushEnabled = true) — no backfill needed for companies
         // that existed before this cycle.
         return Ok(new StaffPushSettingsDto(settings?.StaffPushEnabled ?? new CompanyNotificationSettings().StaffPushEnabled));

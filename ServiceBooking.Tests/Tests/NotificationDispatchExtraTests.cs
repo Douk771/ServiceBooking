@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceBooking.API.DTOs.Auth;
@@ -162,8 +161,11 @@ public class NotificationDispatchExtraTests(TestDatabaseFixture fixture) : IClas
             visitStartUtc: factory.Clock.UtcNow.AddDays(20));
         pendingRow.DueAtUtc = factory.Clock.UtcNow.AddDays(10);
         db.OutboundNotifications.Add(pendingRow);
-        var paidUntilBefore = channel.PaidUntilUtc;
         await db.SaveChangesAsync();
+        // Cycle 22 (§379, Р2): the paid period is the account's WhatsApp option — captured to prove the
+        // idle deletion leaves it alone.
+        var optionBefore = await db.AccountSubscriptionOptions.AsNoTracking()
+            .SingleAsync(o => o.BillingAccountId == channel.BillingAccountId);
 
         // Pass 1: establishes IdleSinceUtc = now (FakeClock's current instant).
         await WaitForAsync(async () =>
@@ -206,14 +208,9 @@ public class NotificationDispatchExtraTests(TestDatabaseFixture fixture) : IClas
         var finalDb = finalScope.ServiceProvider.GetRequiredService<AppDbContext>();
         var finalChannel = await finalDb.NotificationChannels.AsNoTracking().FirstAsync(x => x.Id == channel.Id);
         finalChannel.State.Should().Be(ChannelState.NeedsReconnect);
-        // CI-flake fix: Postgres' timestamp column is microsecond-precision, .NET DateTime is 100ns-tick
-        // precision — a value written, then read back through a real round trip (unlike this test's other
-        // in-memory `paidUntilBefore` capture), can lose its 7th significant digit. Exact .Be(...) compares
-        // ticks bit-for-bit and is flaky depending on what random sub-microsecond tick the seed happened to
-        // land on; a 1ms tolerance is generous for round-trip truncation and still tight enough to catch a
-        // real bug (e.g. the period being recalculated instead of carried through unchanged).
-        finalChannel.PaidUntilUtc.Should().BeCloseTo(paidUntilBefore!.Value, TimeSpan.FromMilliseconds(1),
-            "the paid period must survive an idle deletion");
+        var optionAfter = await finalDb.AccountSubscriptionOptions.AsNoTracking().SingleAsync(o => o.Id == optionBefore.Id);
+        optionAfter.Should().BeEquivalentTo(optionBefore, o => o.Excluding(x => x.Option).Excluding(x => x.BillingAccount),
+            "the paid period (the account's WhatsApp option) must survive an idle deletion");
 
         var assignmentStillThere = await finalDb.ChannelCompanyAssignments.AsNoTracking()
             .AnyAsync(a => a.ChannelId == channel.Id && a.CompanyId == company.Id);
@@ -268,7 +265,6 @@ public class NotificationDispatchExtraTests(TestDatabaseFixture fixture) : IClas
             Id = Guid.NewGuid(), OwnerUserId = auth.UserId, BillingAccountId = billingAccount.Id, State = ChannelState.Connected,
             PhoneNumber = "79990000000",
             ProviderInstanceId = Unique("instance"),
-            PaidFromUtc = DateTime.UtcNow.AddDays(-1), PaidUntilUtc = DateTime.UtcNow.AddDays(30),
             ConnectedAtUtc = DateTime.UtcNow.AddDays(-1),
         };
         channel.ProviderSecretCiphertext = SecretProtector.Encrypt("test-provider-token", EncryptionKey, channel.Id);

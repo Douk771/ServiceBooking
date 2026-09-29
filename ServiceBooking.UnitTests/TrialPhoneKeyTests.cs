@@ -1,4 +1,3 @@
-using System.Linq;
 using FluentAssertions;
 using ServiceBooking.API.Services.Billing;
 

@@ -58,7 +58,8 @@ grep -rn "BK-003" ServiceBooking.Tests/
 | `PHV-` 🆕 | `PhoneVerificationTests.cs` | 25 (цикл 14, см. ниже) |
 | `CY15-` 🆕 | `Cycle15MapLinksTests.cs` + `Cycle15PlansTests.cs` + `Cycle15ClientRescheduleTests.cs` | 32 (13 + 7 + 12; цикл 15, QA-написанные — T-B1/T-D3/T-D4/T-E1..E8, см. ниже) |
 | `CY17-` 🆕 | `Cycle17ClientCancelTests.cs` | 11 (цикл 17, QA-написанные — Блок B / US-17-06 / §313 CY17-B-01..08, см. ниже) |
-| **Итого** | | **722** запуска — 711 на конец цикла 15 (см. предыдущую строку итога) **+ 11 `CY17-`** (цикл 17, добавлены QA); сверено фактическим прогоном `dotnet test ServiceBooking.Tests` на HEAD этой ветки |
+| `CY22-` 🆕 | `Cycle22ChannelFundingTests.cs` + `Cycle22RefactorEquivalenceTests.cs` + `Cycle22RouteTableTests.cs` (+ CY22-01 — это ADM-048/049 в `AdminTests.cs`) | 18 (9 + 8 + 1; цикл 22, см. раздел «Цикл 22» в конце) |
+| **Итого** | | **722** запуска — 711 на конец цикла 15 (см. предыдущую строку итога) **+ 11 `CY17-`** (цикл 17, добавлены QA); сверено фактическим прогоном `dotnet test ServiceBooking.Tests` на HEAD этой ветки. **Цикл 22: 815** — по фактическому прогону (базовая линия цикла 797 + 18 `CY22-`); строки таблицы с цикла 18 точечно не дополнялись (`CY18-`/`CY18L-` и тесты циклов 18–21 в ней не отражены), поэтому сумма строк с этим числом не сходится |
 
 ⚠️ **Пересчёт цикла 9 (закрытие хвоста, стык с циклом 10).** Таблица выше пересчитана заново по
 исходникам (`grep -c 'TestCase("<префикс>-'` + `dotnet test ServiceBooking.Tests --list-tests` для
@@ -2128,6 +2129,14 @@ ADM-048/ADM-049 (регрессия на сам факт `410`, см. ниже);
 
 #### ADM-048/ADM-049 — упразднённые эндпоинты безусловно отвечают `410 Gone` с адресом замены
 
+> 🧽 **Цикл 22 (CY22-01, `ARCHITECTURE_CYCLE22.md` §372):** заглушки `410` удалены вместе с помощником
+> `LegacyEndpointGone`, оба теста переписаны и переименованы. **ADM-048** —
+> `RemovedLegacyOwnerSubscriptionWrite_IsNoLongerRouted`: `PUT /api/admin/owners/{ownerUserId}/subscription`
+> → **`405 Method Not Allowed`** (не 404: тот же путь по-прежнему обслуживает `GET` — диагностика US-63,
+> поэтому маршрутизация ASP.NET Core отвечает 405 на любой другой метод; своей заглушки нет).
+> **ADM-049** — `RemovedLegacyNotificationChannelPayment_IsNoLongerRouted`:
+> `POST /api/admin/notification-channels/{id}/payment` → **`404`**. Текст ниже описывает состояние циклов 7–21.
+
 `PUT /api/admin/owners/{ownerUserId}/subscription` (ADM-048) и
 `POST /api/admin/notification-channels/{id}/payment` (ADM-049) контрактно упразднены
 (contracts/cycle7/openapi.yaml, redaction 2.1/legacyChannelPayment) в пользу ещё не реализованного
@@ -2790,12 +2799,18 @@ US-75 п.1-2) — старая проверка «никаких чужих id �
 - **NTF-C015** — **приоритетный сценарий замены номера после бана**: период и назначение переезжают на
   новый канал, `Pending`-строка переезжает, `Expired`-строка — нет (не воскрешена), старый канал →
   `Replaced` с `replacedByChannelId`, `PaidUntil` на старом канале обнулён (не задваивается в сводках).
+  *Цикл 22 (§379):* колонок `PaidUntilUtc` у каналов больше нет — проверки «на старом канале обнулён» и
+  «на новом скопирован» сняты вместе с ними; `paidUntil` ответа замены сверяется с периодом, который
+  финансирует аккаунт (здесь — период подписки, у опции WhatsApp своего срока нет). Ответ замены по
+  финансированию отдельно — CY22-05.
 - **NTF-C016** — `.../replace` на неблокированном канале → 409.
 - **NTF-C017** — **приоритетный сценарий смены владельца компании**: назначение снято, `Pending`-строка
   компании отменена, а прежний владелец **по-прежнему видит свой канал** в `GET /api/notification-channels`
   (регрессия, которую чинили отдельно — раньше он получал 403, потеряв последнюю компанию).
 - **NTF-C018** — `DELETE` (отвязка владельцем): оплаченный период сохраняется, `Pending`-строки канала →
-  `Cancelled`.
+  `Cancelled`. *Цикл 22 (§379):* «период сохраняется» проверяется по `paidUntil` канала в
+  `GET /api/notification-channels` (финансирование аккаунта, которое отвязка не трогает), а не по
+  удалённой колонке `PaidUntilUtc`; сид функционального помощника больше не пишет `PaidFromUtc`/`PaidUntilUtc`.
 
 ### NotificationQueueingTests.cs (`NTF-Q001`…`NTF-Q005`) — общая коллекция `"Api"`
 
@@ -2865,7 +2880,9 @@ US-75 п.1-2) — старая проверка «никаких чужих id �
   повторной отправки первых двух (уникальность номеров получателей по всем вызовам транспорта).
 - **NTF-D05** — **приоритетный сценарий простоя канала**: `FakeClock` продвигается на 2 из 3 дней порога
   — предупреждение (`IdleWarningSentAtUtc`) выставлено, инстанс ЕЩЁ жив; ещё 2 дня (итого мимо порога) —
-  инстанс удалён, `state=NeedsReconnect`, оплаченный период и назначение компании на месте, а
+  инстанс удалён, `state=NeedsReconnect`, оплаченный период и назначение компании на месте (*цикл 22:*
+  «оплаченный период» — строка опции WhatsApp аккаунта, после удаления инстанса она равна прежней
+  целиком; до цикла 22 — колонка `PaidUntilUtc` канала), а
   `Pending`-строка канала (с намеренно далёким `DueAtUtc`, чтобы её не подобрал обычный
   `notification-dispatch`, который тот же хост тоже реально тикает) остаётся `Pending`.
 
@@ -3051,6 +3068,9 @@ US-75 п.1-2) — старая проверка «никаких чужих id �
    Взамен четырёх удалённых — два новых регрессионных теста на сам факт упразднения:
    `LegacyOwnerSubscriptionEndpoint_ReturnsGoneWithReplacementRoute` (ADM-048) и
    `LegacyNotificationChannelPaymentEndpoint_ReturnsGoneWithReplacementRoute` (ADM-049).
+   *(Цикл 22: переименованы в `RemovedLegacyOwnerSubscriptionWrite_IsNoLongerRouted` /
+   `RemovedLegacyNotificationChannelPayment_IsNoLongerRouted` и проверяют `405`/`404` — см. раздел
+   ADM-048/ADM-049 и «Цикл 22».)*
 
 ### Итог по числам
 
@@ -5530,7 +5550,7 @@ ServiceBooking.Tests`: **797/797 зелёных** (795 на момент пос�
 
 ## Цикл 21 — iPhone: уведомления через «На экран Домой» (`CY21-`, 15 тестов, frontend/vitest)
 
-Источник — `SPEC.md` цикла 21 (US-21-01…US-21-03) и `ARCHITECTURE_CYCLE21.md` §362/§363/§365. Бэкенд
+Источник — `SPEC_CYCLE21_IOS_HOME_SCREEN_PUSH.md` (цикл 21) (US-21-01…US-21-03) и `ARCHITECTURE_CYCLE21.md` §362/§363/§365. Бэкенд
 цикл не трогает, поэтому все тесты — фронтовые (`npm run test:run`), плюс шаг смоука собранного фронта.
 
 ### `frontend/src/utils/pushAvailability.test.ts`
@@ -5574,3 +5594,110 @@ ServiceBooking.Tests`: **797/797 зелёных** (795 на момент пос�
 **Не автоматизируется:** доставка на реальный iPhone — чек-лист в `ARCHITECTURE_CYCLE21.md` §365,
 выполняется при выкате.
 
+
+---
+
+## Цикл 22 — рефакторинг: мёртвый код, дублирование, тяжёлые запросы (`CY22-`, 18 новых функциональных запусков)
+
+Источник — `SPEC.md` (цикл 22, US-22-01…US-22-08-bis) и `ARCHITECTURE_CYCLE22.md` §381/§382. Цикл не
+добавляет функциональности, поэтому тесты трёх видов: **поведение, которое цикл меняет намеренно**
+(CY22-01…05), **равенство ответа прежнему** до и после переписывания запросов (CY22-06…11 — написаны и
+зелёные на старом коде, потом без правок зелёные на новом) и **неизменность маршрутов** при разрезании
+контроллеров (CY22-12).
+
+### Поведение, изменённое намеренно
+
+| ID | Где | Что проверяет |
+|---|---|---|
+| CY22-01 | `AdminTests.cs` — это **ADM-048/ADM-049**, переписанные | заглушки `410` цикла 7 удалены: `PUT /api/admin/owners/{ownerUserId}/subscription` → `405` (путь занят `GET`-диагностикой), `POST /api/admin/notification-channels/{id}/payment` → `404`. Новые имена: `RemovedLegacyOwnerSubscriptionWrite_IsNoLongerRouted`, `RemovedLegacyNotificationChannelPayment_IsNoLongerRouted` |
+| CY22-02 (×3) | `Cycle22ChannelFundingTests.cs` | админка каналов по финансированию: сводка — `expiringIn7Days`/`pendingRequests` (`AdminSummary_ExpiringAndPendingCounters_ComeFromFunding`), список — `paidUntil`/`paymentState` (`AdminChannelList_PaidUntilAndPaymentState_ComeFromFunding`), журнал приостановки — `ChannelPaymentLog.Old/NewPaidUntil` (`AdminSuspend_PaymentLogRecordsFundingPaidUntil`) |
+| CY22-03 (×2) | там же | настройки уведомлений компании: `channel.paymentState`/`paidUntil` и `channelPaidUntil` сводки журнала; текст состояния `NeedsReconnect` называет дату финансирования |
+| CY22-04 | там же | `ChannelHealthTask`: простой канала следует финансированию — у финансированного канала с активной компанией отметка простоя снимается, у нефинансированного продолжается с прежней даты; приостановленный админом и канал без активной компании простаивают и при оплате |
+| CY22-04b | там же | `ChannelFundingReader.LoadAsync(…, nowUtc)` (ревью цикла 22, долг C22-5): фильтр опции WhatsApp по `EndsAtUtc` идёт по часам вызывающего — `FakeClock`, сдвинутый за срок опции, отбрасывает её, и «оплачено до» падает на период подписки; до срока (и по умолчанию, по реальным часам) — дата опции. Состояние финансирования при этом остаётся `Funded`: резолвер тарифа живёт по реальным часам — открытый остаток C22-5 (`FundingReader_OptionFilter_UsesCallersClock`) |
+| CY22-05 (`[Theory]` ×2) | там же | `POST /api/notification-channels/{id}/replace`: `paidUntil` ответа — из финансирования (далёкая оплата опции; только заявка без оплаты) |
+
+Сценарии CY22-02…05 строятся на пяти состояниях финансирования аккаунта: опция WhatsApp оплачена надолго,
+истекает в течение 7 дней, только запрошена, истекла; подписки нет вовсе. **На коде до
+пакета P4 все 8 запусков падали** (читали устаревшую колонку `PaidUntilUtc`) — это и есть доказательство,
+что поведение изменилось, а не «прошло само».
+
+### Равенство ответа прежнему (переписывание запросов в SQL)
+
+`Cycle22RefactorEquivalenceTests.cs`, общий набор данных: несколько клиентов с аккаунтом и гостей (в том
+числе гость, дважды записанный под разными именами), отмены и неявки, мульти-услуги, суммы с копейками,
+история до отчётного периода. Эталон — точный JSON ответа, снятый с кода до переписывания.
+
+| ID | Что проверяет |
+|---|---|
+| CY22-06 | `GET /api/masters/clients` — полный список, точный JSON |
+| CY22-07 | он же — границы страниц, `total`, порядок при равных датах (тай-брейк) |
+| CY22-08 | он же — поиск по имени (без учёта регистра) и по цифрам телефона: тот же состав и порядок |
+| CY22-07b | он же — **заметки и сводки визитов на постраничных срезах**, точный JSON (ревью цикла 22: CY22-07/08 сверяют только ключи и `total`, а переписанный код читает заметки и сводки только для клиентов запрошенной страницы). К общему набору добавлена заметка, у которой заданы **и** `ClientId` (C4), **и** `GuestPhone` (гость G2) — модель это допускает; прежний код сопоставлял клиентов по `ClientId`, гостей по `GuestPhone` независимо, поэтому такая заметка видна у обоих. Срезы: `page=1&pageSize=3` (G1, G2, C1 — заметка по визиту и заметка коллеги с фото), `page=3&pageSize=3` (только C4, гостей нет), `page=1&pageSize=2` (только гости). Ожидаемый JSON собран из CY22-06 плюс эта заметка; тест прогнан зелёным и на коде до переписывания (`a08c6ca`) (`MasterClients_PageSlices_NotesAndSummaries_ExactJson`) |
+| CY22-08b | он же — то же на срезах поиска: «анна» `page=1&pageSize=1` (C1 целиком), «Мария» (только гость G2), `000004` (только C4); зелёный и на `a08c6ca` (`MasterClients_SearchSlices_NotesAndSummaries_ExactJson`) |
+| CY22-09 | `GET /api/companies/{id}/stats` — насыщенный период, точный JSON (выручка по мастерам и дням, популярные услуги, «новые клиенты») |
+| CY22-10 | он же — края: пустой период, только отмены, один день |
+| CY22-11 | выдача и отзыв роли напрямую в `AspNetUserRoles` действуют на **следующем** запросе с тем же токеном — страховка перед F20 (проверка токена одним запросом, без кеша); отзыв через членство — SEC-050 |
+
+### Неизменность маршрутов при разрезании (P5)
+
+| ID | Что проверяет |
+|---|---|
+| CY22-12 | `Cycle22RouteTableTests.RouteTable_EqualsPreSplitGolden`: таблица всех эндпоинтов хоста (**179**, включая health) — метод, шаблон, имя/порядок маршрута, атрибуты авторизации, лимитов и фильтров по уровням (контроллер/действие), параметры с источником привязки, метаданные — **без** имён контроллера и действия, побайтно равна эталону `Cycle22RouteTable.golden.txt`, снятому на коде **до** разрезания. Эталон не перегенерируется ради зелёного прогона (переключатель `CY22_WRITE_ROUTE_GOLDEN=1` использован один раз). Зелёный после каждого из шести коммитов разрезания |
+
+### Затронутые существующие функциональные тесты
+
+- **ADM-048/ADM-049** — переписаны (см. CY22-01 и раздел ADM-048/ADM-049).
+- **NTF-C015, NTF-C018, NTF-D05** — проверки через колонку `PaidUntilUtc` заменены проверками через
+  финансирование аккаунта (см. их описания выше); сиды `NotificationTestBase`/помощников больше не пишут
+  `PaidFromUtc`/`PaidUntilUtc`.
+- Формы десериализации админского биллинга (`AdminOptionDto`, `AdminBillingAccountListItemDto`,
+  `AdminBillingAccountDto`, `AdminAccountCompanyDto`, `AdminAccountChannelDto`) переехали из продуктового
+  кода в `ServiceBooking.Tests/Infrastructure/AdminBillingTestDtos.cs`; тесты опций используют живой
+  `AdminOptionInput`. `AdminTests.ToUpdateDto` переведён на `AdminPlanInput`.
+- Удалённых функциональных тестов нет.
+
+### Юнит-тесты (`ServiceBooking.UnitTests`, +36 запусков)
+
+| Класс | Запусков | Что проверяет |
+|---|---|---|
+| `PhoneNormalizerTests` — `ParseSearch` 🆕 | +9 | одна эвристика «телефон или имя» (D2): порог 5 цифр, любая буква → поиск по имени, нормализация к каноническому виду; строка только из не-ASCII цифр — телефон с пустым `Term` |
+| `ScheduleFallbackPolicyTests` 🆕 | 8 | таблица доверия расписанию (D5) целиком: `manual` × `extendedHours` × `isStaff` |
+| `SubscriptionUsabilityTests` 🆕 | 8 | «подписка действует» (D1): `IsUsable` и выражение `UsableAt` для EF согласованы на 7 случаях (граница `PaidUntil == now` включительна); нет подписки → `false` |
+| `TrialEligibilityTests` 🆕 | 11 | условие права на триал (D11, C18-11): порядок отказов `TrialNotOffered → TrialAlreadyActive → AlreadyOnPaidPlan → TrialAlreadyUsed → гейт телефона`, тексты с датами, `PhoneNotVerified`/`PhoneVerificationUnavailable` по состоянию подсистемы, обход override суперадмина |
+| `SubscriptionResolverOptionGatingTests` | +1 | `UsableSubscription_OwnPaidUntilExactlyNow_OptionCounted` — граница «оплачено ровно сейчас» переехала сюда из `ChannelIdleCalculatorTests` |
+| `ChannelPaymentStateTests` ✏️ | 5 (было 5) | переписан на финансирование: нет данных → `NotPaid`; финансирован → `Paid`; не финансирован → `NotPaid` даже при будущем сроке аккаунта; прошедший срок → `NotPaid` (раньше `Suspended`); приостановка админом важнее финансирования |
+| `ChannelIdleCalculatorTests` ✏️ | 4 (было 5) | переписан на `isFunded`; `Recompute_PaidExactlyNow_CountsAsLive` удалён — граница теперь внутри финансирования (см. строку выше) |
+
+Остальные правки юнит-тестов — механические: `AdminPlanDtoMappingTests`/`PricingValidationTests`
+обращаются к `AdminPlansController`/`AdminOptionsController` (разрезание), у `ValidateOptionInput` нет
+параметра `existingCode`, `NotificationGateTests` не заполняет удалённую колонку.
+
+### Фронтенд (`npm run test:run`, 633 → 640)
+
+- **Удалено 6 тестов вместе с удалённым кодом:** `billingApi.getTrial` (1 — метод не вызывался),
+  `bookingTotalDuration` (3 — функцию использовали только тесты), `getTrialRefusalCode` (2 — то же).
+- **Перенесено 2:** `formatRub` из `billingAccountsHelpers.test.ts` → `utils/money.test.ts` как
+  `formatRubRounded` (округление до рубля для экрана биллинг-аккаунтов).
+- **Новых 13:** `utils/dateFormat.test.ts` — 5 (`fmtDate`/`fmtDateTime`: формат, совпадение с заменённым
+  инлайном, «—» для пустого); `utils/money.test.ts` — 2 новых на `formatRub` (ровно прежний шаблон
+  `${x.toLocaleString('ru-RU')} ₽`, копейки и неразрывный пробел) + 2 перенесённых; `utils/bookingStatus.test.ts` —
+  3 (одна таблица подписей: «Подтверждена», «Выполнена», «Отменена»; неизвестный статус показывается как
+  есть; `StatusBadge` читает ту же таблицу); `components/review/ReviewModal.test.tsx` — 3 (подписанный
+  диалог `role="dialog"` с прежним содержимым; закрытие по Esc; ревью цикла 22 — пока отзыв отправляется,
+  окно не закрывается: Esc и щелчок мимо окна ничего не делают, крестик неактивен, как и «Отмена»).
+- **Переписаны без изменения числа:** `pushAvailability.test.ts` — сценарии цикла 9 удалённой
+  `detectIosSafariNotInstalled` переведены на `detectIosEnvironment`; `NotificationsAdminTab.test.tsx` — из
+  фикстуры убрано поле `paidFrom`.
+
+### Прогон (2026-09-28, HEAD ветки `cycle/022-refactoring-dead-code`)
+
+| Набор | Базовая линия (`a08c6ca`) | Итог цикла |
+|---|---|---|
+| Сборка решения | 0 предупреждений | 0 предупреждений |
+| `ServiceBooking.UnitTests` | 1522/1522 | **1558/1558** |
+| `ServiceBooking.Tests` (функциональные) | 797/797 | **815/815** |
+| Фронтенд (`vitest`) | 633/633 | **640/640** |
+| `tsc --noEmit`, `eslint`, `knip` | чисто | чисто (`knip` — без неиспользуемых файлов, зависимостей и экспортов, кроме исключений §376) |
+
+Числа не меньше базовой линии за вычетом тестов, удалённых вместе с кодом (6 фронтовых и 1 юнит,
+перечислены выше) — НФТ SPEC §3 выполнено.

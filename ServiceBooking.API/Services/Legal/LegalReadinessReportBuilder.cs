@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.Services.Legal;
 
@@ -217,5 +216,3 @@ public record LegalReadinessAnchorsDto(List<LegalReadinessMissingAnchorDto> Miss
 public record LegalReadinessImpactEntryDto(string DocumentType, string Gate, int Users);
 
 public record LegalReadinessImpactSummaryDto(List<LegalReadinessImpactEntryDto> ReAcceptanceRequired, string Note);
-
-public record LegalReadinessDriftDto(string ComparedWith, List<string> DifferentFiles);

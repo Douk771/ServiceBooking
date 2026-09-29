@@ -44,7 +44,6 @@ services:
       - SuperAdmin__Phone=${SUPERADMIN_PHONE}
       - SuperAdmin__Password=${SUPERADMIN_PASSWORD}
       - SmartCaptcha__SecretKey=${SMARTCAPTCHA_SECRET_KEY}
-      - SmartCaptcha__SiteKey=${SMARTCAPTCHA_SITE_KEY}
       - ASPNETCORE_ENVIRONMENT=Production
       # Private storage class for client-note photos (ARCHITECTURE.md §3): must never resolve inside
       # wwwroot/uploads (the public class, api_uploads below) — the API fail-fasts on startup if it does.
@@ -139,7 +138,7 @@ services:
     # /api/health/live never touches the database (ARCHITECTURE.md §10.1), so this only tells docker
     # "the process is up and answering HTTP" — readiness (DB + migrations) is what deploy-remote.sh /
     # rollback.sh poll separately after a restart (T-D3). start_period is generous on purpose: it has to
-    # cover EF Core applying pending migrations on startup (Program.cs -> MigrateAsync()).
+    # cover EF Core applying pending migrations on startup (Startup/StartupSeedingExtensions.cs -> MigrateAsync(); Program.cs before cycle 22).
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
       interval: 30s

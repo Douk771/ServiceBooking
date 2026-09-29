@@ -8,17 +8,9 @@ import { Icon } from '../../components/ui/Icon'
 import { ChannelBreachBanner } from '../../components/notifications/ChannelBreachBanner'
 import { StaffPushSettingsCard } from '../../components/push/StaffPushSettingsCard'
 import { getNotificationErrorMessage } from '../../utils/notificationError'
-import { TRANSPORT_LABELS } from '../../utils/notificationTransport'
+import { TRANSPORT_LABELS, NOTIFICATION_TYPE_LABELS } from '../../utils/notificationTransport'
 import type { NotificationType, NotificationDeliveryMode, NotificationTransport } from '../../types'
 
-const TYPE_LABELS: Record<NotificationType, string> = {
-  BookingConfirmed: 'Подтверждение записи',
-  Reminder: 'Напоминание о визите',
-  BookingCancelled: 'Отмена записи',
-  BookingRescheduled: 'Перенос записи',
-  StaffBookingCreated: 'Новая запись (персоналу)',
-  StaffBookingCancelled: 'Отмена записи (персоналу)',
-}
 const CLIENT_TYPES: NotificationType[] = ['BookingConfirmed', 'Reminder', 'BookingCancelled', 'BookingRescheduled']
 
 /** US-31 — company-level notification settings, каналонезависимые (SPEC §4.0). */
@@ -251,7 +243,7 @@ export function NotificationSettingsTab({ companyId }: { companyId: string }) {
         <div className="grid gap-2 mb-6">
           {CLIENT_TYPES.map((t) => (
             <label key={t} className="flex items-center justify-between gap-3 py-1.5 cursor-pointer">
-              <span className="text-sm text-ink-soft">{TYPE_LABELS[t]}</span>
+              <span className="text-sm text-ink-soft">{NOTIFICATION_TYPE_LABELS[t]}</span>
               <input
                 type="checkbox"
                 className="w-4 h-4 accent-gold rounded"

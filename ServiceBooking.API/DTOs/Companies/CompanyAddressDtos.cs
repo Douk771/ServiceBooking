@@ -1,5 +1,4 @@
 using ServiceBooking.API.Services.Geo;
-using ServiceBooking.Core.Enums;
 
 namespace ServiceBooking.API.DTOs.Companies;
 

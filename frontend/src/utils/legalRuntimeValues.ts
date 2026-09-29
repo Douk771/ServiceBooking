@@ -21,8 +21,7 @@
  * nested inside a `when`/`unless` block's text), which turns any such block back into plain text
  * before the `when`/`unless` regexes run — so those never have to reason about nested tags.
  */
-export const LEGAL_RUNTIME_VALUE_NAMES = ['companyName'] as const
-export type LegalRuntimeValueName = (typeof LEGAL_RUNTIME_VALUE_NAMES)[number]
+type LegalRuntimeValueName = 'companyName'
 
 function escapeHtml(value: string): string {
   return value

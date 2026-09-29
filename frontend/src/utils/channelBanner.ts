@@ -2,7 +2,7 @@ import type { ChannelState } from '../types'
 
 const BROKEN_STATES: ChannelState[] = ['Disconnected', 'Blocked', 'NeedsReconnect']
 
-export type ChannelBannerKind = 'broken' | 'idle' | null
+type ChannelBannerKind = 'broken' | 'idle' | null
 
 /**
  * Decides which of the two banner texts (broken connection vs. upcoming idle-deletion, US-62 п. 2 и

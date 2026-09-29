@@ -1,5 +1,4 @@
 using System.Text.Json;
-using ServiceBooking.API.Services;
 
 namespace ServiceBooking.API.Services.Notifications.GreenApi;
 

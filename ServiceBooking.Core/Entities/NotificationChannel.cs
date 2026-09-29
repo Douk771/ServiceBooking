@@ -41,8 +41,10 @@ public class NotificationChannel
     // ChannelHealthTask must retry DeleteInstanceAsync on its next pass.
     public string? OrphanedInstanceId { get; set; }
 
-    // Owner's request to buy the option (US-57 p.2). Non-null with PaidUntilUtc still null = "request
-    // pending superadmin approval".
+    // Owner's request to buy the option (US-57 p.2). Cycle 22 (ARCHITECTURE_CYCLE22.md §379, Р2): the
+    // request is "pending" while the channel is not FUNDED (ChannelFundingReader — the account's
+    // notifications.whatsapp option), not while a channel-level paid-until is null: the channel row has
+    // no paid period of its own any more.
     public DateTime? RequestedAtUtc { get; set; }
 
     // Reserved, deliberately unused in cycle 4 (§23.1, US-57 p.2 / US-62 p.4: email collection and the
@@ -56,8 +58,10 @@ public class NotificationChannel
     public LegalEntityForm? LegalEntityForm { get; set; }
     public string? Inn { get; set; }
 
-    public DateTime? PaidFromUtc { get; set; }
-    public DateTime? PaidUntilUtc { get; set; }
+    // Cycle 22 (ARCHITECTURE_CYCLE22.md §379, SPEC Р2): the legacy PaidFromUtc/PaidUntilUtc columns are
+    // dropped (migration DropChannelLegacyPaidPeriod). The paid period belongs to the billing account —
+    // its notifications.whatsapp option's PaidUntilUtc, else its subscription's PaidUntil — and is read
+    // through ChannelFundingReader. The admin's suspend/resume history stays in ChannelPaymentLog.
     public bool IsSuspendedByAdmin { get; set; }
 
     // One field for all four idle causes (§30.3) — recomputed only by ChannelHealthTask.

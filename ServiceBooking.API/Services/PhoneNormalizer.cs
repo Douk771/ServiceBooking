@@ -40,6 +40,21 @@ public static class PhoneNormalizer
         return digits;
     }
 
+    /// <summary>
+    /// The one "is this search string a phone number?" heuristic of the staff/admin search boxes
+    /// (ARCHITECTURE.md §11.2; cycle 22 D2 — formerly three inline copies). A string with at least five
+    /// digits (Unicode-aware <c>char.IsDigit</c>, as before) and no letters is a phone search, and
+    /// <see cref="PhoneSearch.Term"/> is its canonical form; anything else is searched as typed.
+    /// ⚠️ <see cref="PhoneSearch.Term"/> can be empty (a phone-looking string of non-ASCII digits
+    /// normalizes to "") — callers keep their <c>Term.Length &gt; 0</c> guard before a <c>Contains</c>.
+    /// </summary>
+    public static PhoneSearch ParseSearch(string search)
+    {
+        var digitCount = search.Count(char.IsDigit);
+        var looksLikePhone = digitCount >= 5 && !search.Any(char.IsLetter);
+        return new PhoneSearch(looksLikePhone, looksLikePhone ? Normalize(search) : search);
+    }
+
     /// <summary>E.164 bounds: 10 to 15 digits.</summary>
     public static bool IsValid(string canonical) =>
         canonical.Length is >= MinDigits and <= MaxDigits;
@@ -77,3 +92,8 @@ public static class PhoneNormalizer
         return IsValid(canonical) && IsRussian(canonical);
     }
 }
+
+/// <summary>Result of <see cref="PhoneNormalizer.ParseSearch"/>: <see cref="Term"/> is the string to match
+/// against stored (canonical) phone numbers — normalized when <see cref="IsPhone"/>, the raw search
+/// otherwise.</summary>
+public readonly record struct PhoneSearch(bool IsPhone, string Term);

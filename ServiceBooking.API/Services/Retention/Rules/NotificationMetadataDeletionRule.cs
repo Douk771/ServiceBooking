@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Retention.Rules;
