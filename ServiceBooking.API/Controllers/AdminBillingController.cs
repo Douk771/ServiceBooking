@@ -240,6 +240,8 @@ public class AdminBillingController(
         {
             plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanId.Value);
             if (plan is null) return NotFound("Тариф не найден.");
+            // ARCHITECTURE_CYCLE24.md §459.5: a tariff of the "Заказы" line goes through line = Orders only.
+            if (plan.Line != CompanyKind.Services) return BadRequest(BillingTexts.AdminDifferentLine);
 
             // Б... (code review, cycle 18 4th pass) — the trial plan is materialized ONLY through
             // TrialActivationService.GrantAsync (owner self-service and superadmin grant/regrant), never

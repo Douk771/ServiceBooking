@@ -45,15 +45,18 @@ public static class OrderNotificationTexts
 
     public static string OrderTag(Guid orderId) => $"o-{orderId}";
 
+    /// <summary>A shop name is up to 200 characters; the push body must stay short (a lock screen shows a couple of lines) and inside the column.</summary>
+    private static string ShortName(string name) => name.Length <= 60 ? name : name[..59] + "…";
+
     /// <summary>"Новый заказ № 27" / "к 12:30 · 3 позиции · ≈ 540 ₽ · Шаурма на Ленина".</summary>
     public static PushPayload StaffOrderCreated(OrderTextFacts f, Guid shopId, Guid orderId) => new(
         $"Новый заказ № {f.Number}",
-        $"{StaffTimePhrase(f)} · {f.ItemCount} {ShopTimeTexts.Plural(f.ItemCount, "позиция", "позиции", "позиций")} · ≈ {OrderTexts.Money(f.Total)} · {f.ShopName}",
+        $"{StaffTimePhrase(f)} · {f.ItemCount} {ShopTimeTexts.Plural(f.ItemCount, "позиция", "позиции", "позиций")} · ≈ {OrderTexts.Money(f.Total)} · {ShortName(f.ShopName)}",
         OrderTag(orderId), StaffOrderUrl(shopId, orderId));
 
     /// <summary>"Покупатель отменил заказ № 27" / "к 12:30 · Шаурма на Ленина".</summary>
     public static PushPayload StaffOrderCancelledByCustomer(OrderTextFacts f, Guid shopId, Guid orderId) => new(
-        $"Покупатель отменил заказ № {f.Number}", $"{StaffTimePhrase(f)} · {f.ShopName}", OrderTag(orderId), StaffOrderUrl(shopId, orderId));
+        $"Покупатель отменил заказ № {f.Number}", $"{StaffTimePhrase(f)} · {ShortName(f.ShopName)}", OrderTag(orderId), StaffOrderUrl(shopId, orderId));
 
     /// <summary>The owner's warning at 80 % / 100 % of the monthly limit (§459.6). <c>month</c> is the first day of the month.</summary>
     public static PushPayload OwnerOrderLimitWarning(bool reached, int used, int limit, DateOnly month)
@@ -102,7 +105,7 @@ public static class OrderNotificationTexts
 
     /// <summary>Web-push to the customer: the shop is the title, the sentence the body; the token stays inside the encrypted payload.</summary>
     public static PushPayload CustomerWebPush(NotificationType type, OrderTextFacts f, Guid orderId, string token) =>
-        new(f.ShopName, CustomerSentence(type, f), $"co-{orderId}", CustomerOrderUrl(token));
+        new(ShortName(f.ShopName), CustomerSentence(type, f), $"co-{orderId}", CustomerOrderUrl(token));
 
     /// <summary>The messenger text: "{Shop}: заказ № 27 принят. …" + the order link line + the unsubscribe line.</summary>
     public static string Messenger(NotificationType type, OrderTextFacts f, string orderUrl, string? unsubscribeUrl)

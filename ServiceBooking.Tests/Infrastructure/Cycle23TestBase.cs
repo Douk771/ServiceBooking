@@ -153,8 +153,10 @@ public abstract class Cycle23TestBase(TestDatabaseFixture fixture) : ApiTestBase
         var r = await AuthedClient(actorToken ?? shop.OwnerToken).GetAsync($"/api/shops/{shop.Id}/order-board");
         r.StatusCode.Should().Be(HttpStatusCode.OK);
         var board = (await r.Content.ReadJsonAsync<OrderBoardDto>())!;
+        // Цикл 24: номер уникален в пределах ДНЯ ВЫДАЧИ, поэтому заказ ищем по паре (дата выдачи, номер); предзаказы лежат в группах.
         var card = (board.NewOrders ?? []).Concat(board.Accepted ?? []).Concat(board.Ready ?? []).Concat(board.CompletedToday ?? [])
-            .Single(c => c.Number == pub.Number);
+            .Concat((board.Preorders ?? []).SelectMany(g => g.Orders))
+            .Single(c => c.Number == pub.Number && c.Pickup.Date == pub.Pickup.Date);
         var one = await AuthedClient(actorToken ?? shop.OwnerToken).GetAsync($"/api/shops/{shop.Id}/orders/{card.Id}");
         one.StatusCode.Should().Be(HttpStatusCode.OK);
         return (await one.Content.ReadJsonAsync<StaffOrderDto>())!;

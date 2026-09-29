@@ -17,7 +17,14 @@ public sealed class OrderStaffPushQueue(AppDbContext db)
     /// <summary>A queued row lives an hour: "a late new-order push does more harm than a missed one" (the salon rule, §105.8).</summary>
     public static readonly TimeSpan StaffPushTtl = TimeSpan.FromHours(1);
 
-    public static readonly JsonSerializerOptions PayloadOptions = new(JsonSerializerDefaults.Web);
+    /// <summary>
+    /// The push body as JSON. Cyrillic is written as-is (not as \uXXXX escapes, which would make a Russian text six times longer and push a long shop name
+    /// past the 1000-character column). The service worker reads it with <c>event.data.json()</c>, which is indifferent to the escaping.
+    /// </summary>
+    public static readonly JsonSerializerOptions PayloadOptions = new(JsonSerializerDefaults.Web)
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     /// <summary>One row per (staff member, device). The customer who is also staff of the shop is left out: they made the order themselves.</summary>
     public async Task QueueForStaffAsync(
