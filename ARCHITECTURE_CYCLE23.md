@@ -777,7 +777,7 @@ frontend/
 `components/ui/*` (Button, Input, Card, Modal, Badge, Icon, PhoneInput, CityCombobox, Pagination),
 `components/legal/*` (ConsentGate, LegalUpdateBanner, OwnerTermsGateModal, **LegalGuard** — после выноса §389.3-6),
 `components/phoneVerification/*` + `hooks/usePhoneVerification`, `components/booking/SmartCaptcha.tsx`,
-`components/company/{CompanyMapLinks,PublicAddressNotice,AddressVerifyField}`, `hooks/{useOverlayDismiss,useLegalText,
+`components/company/{CompanyMapLinks,PublicAddressNotice,CompanyAddressField}` (после цикла 19 — вместо удалённого `AddressVerifyField`), `hooks/{useOverlayDismiss,useLegalText,
 useDebouncedValue,useAuthedImage}`, `utils/{money,phone,dateFormat,timezone,authError,legalError,uploadError,memberError}`,
 `api/{legal,cities,phoneVerification,consents,companies}` (профиль, логотип, адрес, участники), страницы
 `LegalDocumentPage`, `SubjectRequestPage`, `ConsentsPage`, `LoginPage`, `RegisterPage` (с `returnTo`, §389.3-5).

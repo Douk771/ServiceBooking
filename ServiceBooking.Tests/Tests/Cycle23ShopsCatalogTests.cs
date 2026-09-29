@@ -96,6 +96,13 @@ public class Cycle23ShopsCatalogTests(TestDatabaseFixture fixture) : Cycle23Test
             (HttpMethod.Get, $"/api/companies/{shop.Id}/masters", null),
             (HttpMethod.Get, $"/api/companies/{shop.Id}/stats?from=2026-01-01&to=2026-01-31", null),
             (HttpMethod.Get, $"/api/companies/{shop.Id}/photo-usage", null),
+            // Cycle 20 written health consent (merged after cycle 23): the kind check runs before body
+            // validation, so even an unconfirmed/unknown-reason body gets 409, not 400/404.
+            (HttpMethod.Get, $"/api/companies/{shop.Id}/clients/u_{Guid.NewGuid()}/health-consent-form", null),
+            (HttpMethod.Post, $"/api/companies/{shop.Id}/clients/u_{Guid.NewGuid()}/health-written-consent",
+                new { textVersion = "v1", formId = (string?)null, confirmed = false }),
+            (HttpMethod.Post, $"/api/companies/{shop.Id}/clients/u_{Guid.NewGuid()}/health-written-consent/revoke",
+                new { reason = "unknown" }),
         };
         foreach (var (method, url, body) in routes)
         {

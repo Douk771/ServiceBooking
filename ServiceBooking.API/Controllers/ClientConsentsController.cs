@@ -228,6 +228,8 @@ public class ClientConsentsController(
     {
         if (User.IsInRole("SuperAdmin")) return Forbid();
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: client consents are a salon feature (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var resolved = await ResolveClientAsync(companyId, clientKey);
         if (resolved is null) return NotFound();
@@ -282,6 +284,8 @@ public class ClientConsentsController(
     {
         if (User.IsInRole("SuperAdmin")) return Forbid();
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: client consents are a salon feature (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         if (!dto.Confirmed) return BadRequest("Подтверждение обязательно.");
         if (dto.FormId is not null && !HealthConsentFormId.IsValid(dto.FormId))
@@ -320,6 +324,8 @@ public class ClientConsentsController(
     {
         if (User.IsInRole("SuperAdmin")) return Forbid();
         if (!await IsStaffAsync(companyId)) return Forbid();
+        // §389.2: client consents are a salon feature (rights first, kind second).
+        if (await CompanyKindGuard.RejectShopAsync(db, companyId) is { } shopRefusal) return shopRefusal;
 
         var reasonText = dto.Reason switch
         {
