@@ -62,24 +62,7 @@ public record AdminAccountCompanyDto(Guid CompanyId, string CompanyName, string 
 
 public record AdminAccountChannelDto(Guid ChannelId, string? PhoneMasked, string State, string FundingState, DateTime CreatedAt, int AssignedCompanies);
 
-public record AssignSubscriptionInput(
-    Guid? PlanId, bool IsActive, DateOnly? PaidUntil, List<AssignOptionInput>? Options = null,
-    decimal? Amount = null, string? Comment = null, Guid? RequestId = null, bool ConfirmLimitOverflow = false);
-
-public record AssignOptionInput(Guid OptionId, int Quantity, DateOnly? PaidUntil);
-
 public record AdminSubscriptionChangeLogDto(
     Guid Id, DateTime ChangedAt, string ChangedByName, string ChangeKind, Guid? CompanyId,
     string? OldPlanName, string? NewPlanName, DateTime? OldPaidUntil, DateTime? NewPaidUntil,
     string? OldOptionsSummary, string? NewOptionsSummary, decimal? Amount, string? Comment);
-
-// ── Subscription requests queue (admin, US-67/US-70) ────────────────────────────
-public record AdminSubscriptionRequestDto(
-    Guid Id, Guid BillingAccountId, string? AccountName, string RequestedByName, string? RequestedByPhoneMasked,
-    DateTime CreatedAt, string Status, string? CurrentPlanName, string? DesiredPlanName,
-    IReadOnlyList<SubscriptionRequestItemDto> Items, decimal EstimatedMonthlyPrice, string? Comment, int CompaniesCount,
-    // ARCHITECTURE_CYCLE19.md §407/§414 — same wording/null convention as SubscriptionRequestDto's own
-    // RetiredOptionsNotice (OwnerBillingDtos.cs); AdminBillingController builds this shape as an
-    // anonymous object today (contracts/cycle19/openapi.yaml's AdminSubscriptionRequestDtoCycle19), this
-    // record documents it.
-    string? RetiredOptionsNotice = null);
