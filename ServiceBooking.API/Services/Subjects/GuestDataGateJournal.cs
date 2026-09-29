@@ -27,16 +27,16 @@ public class GuestDataGateJournal(AppDbContext db, ILogger<GuestDataGateJournal>
             "GuestDataGateJournal.RecordAsync must run before the caller opens its own unit of work — " +
             "see this class's own doc comment (ARCHITECTURE_CYCLE20.md §406.2).");
 
+        var entry = db.GuestDataGateEvents.Add(new GuestDataGateEvent
+        {
+            OccurredAtUtc = DateTime.UtcNow,
+            UserId = userId,
+            Operation = operation,
+            Outcome = GuestDataGateOutcome.Applied,
+            TraceId = traceId,
+        });
         try
         {
-            db.GuestDataGateEvents.Add(new GuestDataGateEvent
-            {
-                OccurredAtUtc = DateTime.UtcNow,
-                UserId = userId,
-                Operation = operation,
-                Outcome = GuestDataGateOutcome.Applied,
-                TraceId = traceId,
-            });
             await db.SaveChangesAsync(ct);
         }
         catch (Exception ex)
@@ -45,13 +45,13 @@ public class GuestDataGateJournal(AppDbContext db, ILogger<GuestDataGateJournal>
             // exception message itself must never carry a phone/name, which it can't here (this method
             // never receives one).
             logger.LogError(ex, "Failed to record guest-data-gate journal entry for operation {Operation}", operation);
-        }
-        finally
-        {
-            // Whether the write succeeded or the catch above swallowed it, the change tracker must be
-            // left clean for the caller's own upcoming unit of work — same "leave no trace" contract the
-            // precondition assert above documents.
-            db.ChangeTracker.Clear();
+
+            // Detach ONLY the row this method added — NOT ChangeTracker.Clear(), which would also
+            // detach whatever the CALLER's own ASP.NET Identity/EF entities this shared, per-request
+            // DbContext is already tracking (e.g. the AppUser UserManager loaded before calling here) and
+            // break their later SaveChangesAsync with an "already tracked" conflict. On success, nothing
+            // to clean up: the added row is simply Unchanged, like any other freshly-saved entity.
+            entry.State = Microsoft.EntityFrameworkCore.EntityState.Detached;
         }
     }
 }
