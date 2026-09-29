@@ -118,4 +118,16 @@ public class ClientRescheduleWindowTests
         var visitStart = now.AddHours(-1);
         ClientRescheduleWindow.CanClientCancel(now, visitStart, minHours: 2).Should().BeFalse();
     }
+
+    // CY20-U-01 (ARCHITECTURE_CYCLE20.md §405, §417, US-20-04) — EffectiveCancelHours: the ceiling
+    // applies only when the stored/normalized value exceeds it; below the ceiling, the stored value
+    // (after the same garbage-defense Normalize already performs) passes through unchanged.
+    [Theory]
+    [InlineData(48, 24)]   // above the ceiling -> capped
+    [InlineData(24, 24)]   // exactly at the ceiling -> unchanged
+    [InlineData(2, 2)]     // below the ceiling -> unchanged
+    [InlineData(0, 0)]     // "no window at all" is a legitimate explicit value, stays 0
+    [InlineData(999, 2)]   // garbage: Normalize first falls back to Default (2), which is < 24
+    public void EffectiveCancelHours_CapsAtMaxEnforcedCancelHours(int stored, int expected) =>
+        ClientRescheduleWindow.EffectiveCancelHours(stored).Should().Be(expected);
 }

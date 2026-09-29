@@ -644,6 +644,9 @@ public class BookingsController(
             var name = b.Client is not null ? $"{b.Client.FirstName} {b.Client.LastName}" : b.GuestName ?? "Guest";
             var company = b.Company;
             var minHours = ClientRescheduleWindow.Normalize(company.ClientRescheduleMinHours);
+            // ARCHITECTURE_CYCLE20.md §405 (US-20-04) — cancel has its own, capped window; reschedule
+            // above keeps using the uncapped company value.
+            var cancelMinHours = ClientRescheduleWindow.EffectiveCancelHours(company.ClientRescheduleMinHours);
             var plan = plansByCompany.GetValueOrDefault(b.CompanyId);
             var currentVisitStartUtc = NotificationTiming.ComputeVisitStartUtc(b.Date, b.StartTime, company.TimeZoneId);
             // §286 — a hint, not a re-check of the target time (there isn't one yet): only the CURRENT
@@ -656,16 +659,17 @@ public class BookingsController(
 
             // ARCHITECTURE_CYCLE17.md §304.3, API_CONTRACT_CYCLE17.md §323 — deliberately does NOT
             // fold in AllowSelfBooking/plan.AllowOnlineBooking: cancel depends on neither (§0-bis).
+            // ARCHITECTURE_CYCLE20.md §405 — uses the CAPPED cancelMinHours, not minHours.
             var cancelAllowed =
                 (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed) &&
-                ClientRescheduleWindow.CanClientCancel(nowForWindowUtc, currentVisitStartUtc, minHours);
+                ClientRescheduleWindow.CanClientCancel(nowForWindowUtc, currentVisitStartUtc, cancelMinHours);
 
             // П8/API_CONTRACT_CYCLE10.md §123: reminderStatus/historyEventCount always null on the
             // client's own endpoint — not filtered on the frontend, simply never computed here.
             return MapToDto(b, b.Service, b.Master, name, reminderStatus: null, historyEventCount: null,
                 clientRescheduleAllowed: rescheduleAllowed, clientRescheduleMinHours: minHours,
                 companyBookingHorizonDays: BookingHorizon.Normalize(company.BookingHorizonDays),
-                clientCancelAllowed: cancelAllowed);
+                clientCancelAllowed: cancelAllowed, clientCancelMinHours: cancelMinHours);
         }));
     }
 
@@ -948,7 +952,9 @@ public class BookingsController(
         // Reschedule's 400): 400 here is already occupied by the reason-length check above.
         if (authority == RescheduleAuthority.ClientOwner)
         {
-            var minHours = ClientRescheduleWindow.Normalize(booking.Company.ClientRescheduleMinHours);
+            // ARCHITECTURE_CYCLE20.md §405 (US-20-04, Т20-05) — capped at MaxEnforcedCancelHours; the
+            // text below names the APPLIED number, never the company's raw (possibly larger) setting.
+            var minHours = ClientRescheduleWindow.EffectiveCancelHours(booking.Company.ClientRescheduleMinHours);
             var visitStartUtc = NotificationTiming.ComputeVisitStartUtc(booking.Date, booking.StartTime, booking.Company.TimeZoneId);
             if (!ClientRescheduleWindow.CanClientCancel(DateTime.UtcNow, visitStartUtc, minHours))
             {
@@ -1015,7 +1021,7 @@ public class BookingsController(
     private static BookingDto MapToDto(Booking b, Service s, AppUser master, string clientName,
         ReminderStatusDto? reminderStatus = null, int? historyEventCount = null,
         bool? clientRescheduleAllowed = null, int? clientRescheduleMinHours = null, int? companyBookingHorizonDays = null,
-        bool? clientCancelAllowed = null)
+        bool? clientCancelAllowed = null, int? clientCancelMinHours = null)
     {
         // US-67 (API_CONTRACT_CYCLE6.md §43.2): `services` is built from BookingServices when loaded
         // (every path except the in-memory object returned by Create, which sets it explicitly before
@@ -1036,7 +1042,8 @@ public class BookingsController(
             b.ConsentPrivacyVersion, b.ConsentTermsVersion, b.ConsentAcceptedAtUtc, b.ClientDeleted, reminderStatus,
             totalDurationMinutes, items,
             b.BookingNoticeVersion, b.BookedForOther, b.GuardianConfirmedAtUtc, historyEventCount,
-            clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays, clientCancelAllowed);
+            clientRescheduleAllowed, clientRescheduleMinHours, companyBookingHorizonDays, clientCancelAllowed,
+            clientCancelMinHours);
     }
 
     // API_CONTRACT_CYCLE4.md §30.3. Picks the highest-Generation Reminder row for a booking (§23.5: a
