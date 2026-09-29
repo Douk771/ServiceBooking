@@ -9,7 +9,7 @@ import { ErrorState, InlineError, LoadingList } from '../StatePanels'
 import { filterProducts } from '../../utils/catalogGroups'
 import { formatUnitPrice } from '../../utils/quantityFormat'
 import { getCatalogErrorMessage } from '../../utils/catalogError'
-import type { ProductDto } from '../../types'
+import type { ProductDto, SoldOutScope } from '../../types'
 
 /** US-23-16 — «закончилось» from the orders screen: product list with search, takes effect immediately. */
 export function ProductsPanel({ shopId, trackStock, onClose }: { shopId: string; trackStock: boolean; onClose: () => void }) {
@@ -20,9 +20,14 @@ export function ProductsPanel({ shopId, trackStock, onClose }: { shopId: string;
   const [error, setError] = useState('')
   const q = useQuery({ queryKey: key, queryFn: () => catalogApi.products(shopId) })
   const replace = (p: ProductDto) => qc.setQueryData<ProductDto[]>(key, (old) => old?.map((x) => (x.id === p.id ? p : x)) ?? old)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const toggle = useMutation({
-    mutationFn: (v: { p: ProductDto; value: boolean }) => catalogApi.setSoldOut(shopId, v.p.id, v.value),
-    onMutate: () => setError(''),
+    mutationFn: (v: { p: ProductDto; value: boolean; scope?: SoldOutScope }) => catalogApi.setSoldOut(shopId, v.p.id, v.value, v.scope),
+    onMutate: (v) => {
+      setError('')
+      setBusyId(v.p.id)
+    },
+    onSettled: () => setBusyId(null),
     onSuccess: replace,
     onError: (e) => setError(getCatalogErrorMessage(e, 'Не удалось изменить отметку.')),
   })
@@ -50,12 +55,24 @@ export function ProductsPanel({ shopId, trackStock, onClose }: { shopId: string;
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-ink truncate">{p.name}</p>
-                      <p className="text-xs text-muted">{formatUnitPrice(p.unit, p.price)}{p.isSoldOut ? ' · закончилось' : ''}</p>
+                      <p className="text-xs text-muted">{formatUnitPrice(p.unit, p.price)}{p.isSoldOut ? ` · закончилось${p.soldOut?.text ? ` (${p.soldOut.text})` : ''}` : ''}</p>
                     </div>
-                    <Button size="sm" variant={p.isSoldOut ? 'primary' : 'secondary'} aria-pressed={p.isSoldOut} loading={toggle.isPending && toggle.variables?.p.id === p.id} onClick={() => toggle.mutate({ p, value: !p.isSoldOut })}>
-                      {p.isSoldOut ? 'Вернуть' : 'Закончилось'}
-                    </Button>
+                    {p.isSoldOut && (
+                      <Button size="sm" variant="primary" className="min-h-[44px]" loading={busyId === p.id} onClick={() => toggle.mutate({ p, value: false })}>
+                        Вернуть
+                      </Button>
+                    )}
                   </div>
+                  {!p.isSoldOut && (
+                    <div className="mt-2 flex gap-2 flex-wrap" role="group" aria-label={`Закончилось: ${p.name}`}>
+                      <Button size="sm" variant="secondary" className="min-h-[44px]" loading={busyId === p.id} onClick={() => toggle.mutate({ p, value: true, scope: 'Today' })}>
+                        Нет на сегодня
+                      </Button>
+                      <Button size="sm" variant="secondary" className="min-h-[44px]" loading={busyId === p.id} onClick={() => toggle.mutate({ p, value: true, scope: 'UntilCancelled' })}>
+                        Нет до отмены
+                      </Button>
+                    </div>
+                  )}
                   {trackStock && <div className="mt-2"><StockEditor shopId={shopId} product={p} onChanged={replace} /></div>}
                 </li>
               ))}

@@ -8,11 +8,13 @@ import { Modal } from '@/components/ui/Modal'
 import { CategoryModal } from '../../components/catalog/CategoryModal'
 import { ProductModal } from '../../components/catalog/ProductModal'
 import { StockEditor } from '../../components/catalog/StockEditor'
+import { SoldOutDialog } from '../../components/catalog/SoldOutDialog'
+import { CategoryWeekdaysModal } from '../../components/catalog/CategoryWeekdaysModal'
 import { EmptyState, ErrorState, InlineError, LoadingList } from '../../components/StatePanels'
 import { filterProducts, groupProducts, moveItem, type CatalogSection } from '../../utils/catalogGroups'
 import { formatUnitPrice } from '../../utils/quantityFormat'
 import { getCatalogErrorMessage } from '../../utils/catalogError'
-import type { CategoryDto, ProductDto } from '../../types'
+import type { CategoryDto, ProductDto, SoldOutScope } from '../../types'
 
 /**
  * US-23-14/15/16/17. Owner: categories, products, order, photo. Staff (`Master`): only «закончилось» and the
@@ -30,6 +32,8 @@ export function CatalogPage() {
   const [categoryModal, setCategoryModal] = useState<{ category?: CategoryDto } | null>(null)
   const [productModal, setProductModal] = useState<{ product?: ProductDto; categoryId?: string | null } | null>(null)
   const [deleting, setDeleting] = useState<{ kind: 'category'; category: CategoryDto } | { kind: 'product'; product: ProductDto } | null>(null)
+  const [soldOutFor, setSoldOutFor] = useState<ProductDto | null>(null)
+  const [weekdaysFor, setWeekdaysFor] = useState<CategoryDto | null>(null)
   const [actionError, setActionError] = useState('')
 
   const refreshAll = () => {
@@ -41,10 +45,16 @@ export function CatalogPage() {
     qc.setQueryData<ProductDto[]>(prodKey, (old) => old?.map((x) => (x.id === p.id ? p : x)) ?? old)
 
   const soldOut = useMutation({
-    mutationFn: (v: { p: ProductDto; value: boolean }) => catalogApi.setSoldOut(shop.id, v.p.id, v.value),
+    mutationFn: (v: { p: ProductDto; value: boolean; scope?: SoldOutScope }) => catalogApi.setSoldOut(shop.id, v.p.id, v.value, v.scope),
     onMutate: () => setActionError(''),
-    onSuccess: replaceProduct,
-    onError: (e) => setActionError(getCatalogErrorMessage(e, 'Не удалось изменить отметку «закончилось».')),
+    onSuccess: (p) => {
+      replaceProduct(p)
+      setSoldOutFor(null)
+    },
+    onError: (e) => {
+      setSoldOutFor(null)
+      setActionError(getCatalogErrorMessage(e, 'Не удалось изменить отметку «закончилось».'))
+    },
   })
   const reorderCats = useMutation({
     mutationFn: (ids: string[]) => catalogApi.reorderCategories(shop.id, ids),
@@ -114,6 +124,11 @@ export function CatalogPage() {
         )}
       </div>
 
+      {isOwner && products.data && (
+        <p className="text-sm text-ink-soft mb-4" data-testid="product-limit">
+          Товаров: {products.data.length}{shop.productLimit ? ` из ${shop.productLimit}` : ''}
+        </p>
+      )}
       {!isOwner && <p className="text-sm text-ink-soft mb-4">Вы можете отмечать «закончилось» и править остатки. Товары и цены меняет владелец.</p>}
       {actionError && <div className="mb-4"><InlineError>{actionError}</InlineError></div>}
 
@@ -159,6 +174,9 @@ export function CatalogPage() {
                         <>
                           <IconButton label={`Поднять категорию ${cat.name}`} icon="arrow-up" disabled={sortedIndex <= 0 || reorderCats.isPending} onClick={() => reorderCats.mutate(moveItem(sortedCats, sortedIndex, -1).map((c) => c.id))} />
                           <IconButton label={`Опустить категорию ${cat.name}`} icon="arrow-down" disabled={sortedIndex >= sortedCats.length - 1 || reorderCats.isPending} onClick={() => reorderCats.mutate(moveItem(sortedCats, sortedIndex, 1).map((c) => c.id))} />
+                          <Button variant="ghost" size="sm" aria-label={`Дни продажи категории ${cat.name}`} onClick={() => setWeekdaysFor(cat)}>
+                            <Icon name="calendar" size={14} /> Дни
+                          </Button>
                           <IconButton label={`Изменить категорию ${cat.name}`} icon="pencil" onClick={() => setCategoryModal({ category: cat })} />
                           <IconButton label={`Удалить категорию ${cat.name}`} icon="trash" onClick={() => { doDelete.reset(); setDeleting({ kind: 'category', category: cat }) }} />
                         </>
@@ -184,7 +202,7 @@ export function CatalogPage() {
                         canMoveUp={i > 0 && !search.trim()}
                         canMoveDown={i < section.products.length - 1 && !search.trim()}
                         onMove={(delta) => reorderProds.mutate({ categoryId: cat?.id ?? null, ids: moveItem(section.products, i, delta).map((x) => x.id) })}
-                        onToggleSoldOut={() => soldOut.mutate({ p, value: !p.isSoldOut })}
+                        onToggleSoldOut={() => (p.isSoldOut ? soldOut.mutate({ p, value: false }) : setSoldOutFor(p))}
                         togglePending={soldOut.isPending && soldOut.variables?.p.id === p.id}
                         onEdit={() => setProductModal({ product: p })}
                         onDelete={() => { doDelete.reset(); setDeleting({ kind: 'product', product: p }) }}
@@ -218,6 +236,20 @@ export function CatalogPage() {
           defaultCategoryId={productModal.categoryId}
           onClose={() => setProductModal(null)}
           onSaved={refreshAll}
+        />
+      )}
+      {soldOutFor && (
+        <SoldOutDialog product={soldOutFor} busy={soldOut.isPending} onClose={() => setSoldOutFor(null)} onConfirm={(scope) => soldOut.mutate({ p: soldOutFor, value: true, scope })} />
+      )}
+      {weekdaysFor && (
+        <CategoryWeekdaysModal
+          shopId={shop.id}
+          category={weekdaysFor}
+          onClose={() => setWeekdaysFor(null)}
+          onSaved={() => {
+            setWeekdaysFor(null)
+            refreshAll()
+          }}
         />
       )}
       {deleting && (
@@ -292,7 +324,8 @@ function ProductRow({ product: p, shopId, trackStock, isOwner, canMoveUp, canMov
             </p>
             <div className="flex flex-wrap gap-1.5 mt-1.5">
               {!p.isPublished && <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-cream-deep text-muted">Не опубликован</span>}
-              {p.isSoldOut && <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-warning-bg text-warning">Закончилось</span>}
+              {p.isSoldOut && <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-warning-bg text-warning" data-testid="sold-out-chip">{p.soldOut?.text ? `Закончилось · ${p.soldOut.text}` : 'Закончилось'}</span>}
+              {p.weekdaysLabel && <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-cream-deep text-ink-soft" data-testid="weekdays-chip">{p.weekdaysLabel}</span>}
               {!p.availableToCustomers && !p.isSoldOut && p.isPublished && <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-warning-bg text-warning">Покупателю недоступен</span>}
             </div>
           </div>

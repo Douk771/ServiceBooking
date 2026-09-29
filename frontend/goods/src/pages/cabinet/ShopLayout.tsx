@@ -6,7 +6,7 @@ import { NotFoundPage } from '../NotFoundPage'
 import { getGoodsErrorMessage, httpStatus } from '../../utils/orderError'
 import type { ShopContext } from '../../hooks/useShop'
 
-const OWNER_ONLY_SEGMENTS = ['settings', 'staff']
+const OWNER_ONLY_SEGMENTS = ['settings', 'staff', 'hours', 'notifications']
 
 /**
  * Shell of `/cabinet/:shopId/*`: loads the shop once, shows the tab bar and hands `{ shop, isOwner }` to the
@@ -54,6 +54,9 @@ export function ShopLayout() {
   const tabs = [
     { to: `/cabinet/${shopId}/orders`, label: 'Заказы', show: true },
     { to: `/cabinet/${shopId}/catalog`, label: 'Каталог', show: true },
+    { to: `/cabinet/${shopId}/menu`, label: 'Меню на дату', show: true },
+    { to: `/cabinet/${shopId}/hours`, label: 'Часы работы', show: isOwner },
+    { to: `/cabinet/${shopId}/notifications`, label: 'Уведомления', show: isOwner },
     { to: `/cabinet/${shopId}/settings`, label: 'Настройки', show: isOwner },
     { to: `/cabinet/${shopId}/staff`, label: 'Сотрудники', show: isOwner },
     { to: `/cabinet/${shopId}/link`, label: 'Ссылка и QR', show: true },

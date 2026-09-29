@@ -6,7 +6,9 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { CartPanel } from './CartPanel'
 import { useCart } from '../../hooks/useCart'
+import { usePickupChoice } from '../../hooks/usePickupChoice'
 import { cartStorageKey } from '../../utils/cart'
+import { pickupStorageKey } from '../../utils/pickup'
 import type { QuoteDto, StorefrontDto, StorefrontProductDto } from '../../types'
 
 const quote = vi.fn()
@@ -15,7 +17,11 @@ const createOrder = vi.fn()
 vi.mock('../../api/storefront', () => ({
   storefrontApi: { quote: (...a: unknown[]) => quote(...a), createOrder: (...a: unknown[]) => createOrder(...a) },
 }))
-vi.mock('../../api/legalNotice', () => ({ legalNoticeApi: { orderCheckout: () => Promise.reject(Object.assign(new Error('404'), { response: { status: 404 } })) } }))
+const notFound = () => Promise.reject(Object.assign(new Error('404'), { response: { status: 404 } }))
+vi.mock('../../api/legalNotice', () => ({
+  legalNoticeApi: { orderCheckout: () => notFound() },
+  orderLegalTextsApi: { messengerConsent: () => notFound(), preorderNotice: () => notFound() },
+}))
 vi.mock('@/api/profile', () => ({ profileApi: { get: () => Promise.resolve({ phoneVerified: false }) } }))
 vi.mock('@/api/phoneVerification', () => ({ phoneVerificationApi: { getConfig: () => Promise.resolve({ enabled: false, healthy: false }) } }))
 
@@ -23,17 +29,21 @@ const product = (over: Partial<StorefrontProductDto> = {}): StorefrontProductDto
   id: 'p1', name: 'Шаурма классическая', unit: 'Piece', price: 250, minQuantity: 1, maxQuantity: 99, foodInfo: {}, available: true, ...over,
 })
 const shop = (over: Partial<StorefrontDto> = {}): StorefrontDto =>
-  ({ slug: 'shaurma', name: 'Шаурма', publicUrl: 'https://goods.ezbook.ru/shaurma', isAvailable: true, acceptingOrders: true, customerMode: 'Anyone', allowCustomerCancel: true, categories: [], ...over }) as StorefrontDto
+  ({ slug: 'shaurma', name: 'Шаурма', publicUrl: 'https://goods.ezbook.ru/shaurma', isAvailable: true, acceptingOrders: true, customerMode: 'Anyone', allowCustomerCancel: true, categories: [], pickup: { asapEnabled: true, scheduledEnabled: true, asap: { available: true, text: '≈ к 13:20' }, dates: [] }, customerNotifications: { webPushOffered: false, messengerOffered: false }, ...over }) as StorefrontDto
 
 const quoteFor = (unitPrice: number, over: Partial<QuoteDto> = {}): QuoteDto => ({
   lines: [{ productId: 'p1', name: 'Шаурма классическая', unit: 'Piece', unitPrice, quantity: 2, lineTotal: unitPrice * 2, isApproximate: false }],
-  total: unitPrice * 2, isApproximate: false, hasProblems: false, acceptingOrders: true, ...over,
+  total: unitPrice * 2, isApproximate: false, hasProblems: false, acceptingOrders: true, pickupDate: '2026-09-30', ...over,
 })
+
+const onNotice = vi.fn()
+const onChange = vi.fn()
 
 function Harness({ shopDto = shop() }: { shopDto?: StorefrontDto }) {
   const cart = useCart('shaurma')
+  const pickup = usePickupChoice('shaurma')
   const products = new Map([['p1', product()]])
-  return <CartPanel slug="shaurma" shop={shopDto} products={products} cart={cart} onClose={() => {}} />
+  return <CartPanel slug="shaurma" shop={shopDto} products={products} cart={cart} pickup={pickup} onPickupNotice={onNotice} onChangePickup={onChange} onClose={() => {}} />
 }
 
 function renderPanel(shopDto?: StorefrontDto) {
@@ -51,7 +61,10 @@ function renderPanel(shopDto?: StorefrontDto) {
   )
 }
 
-const seedCart = (seen = 250) => window.localStorage.setItem(cartStorageKey('shaurma'), JSON.stringify([{ productId: 'p1', quantity: 2, unitPriceSeen: seen }]))
+const seedCart = (seen = 250, choice: object | null = { kind: 'Asap' }) => {
+  window.localStorage.setItem(cartStorageKey('shaurma'), JSON.stringify([{ productId: 'p1', quantity: 2, unitPriceSeen: seen }]))
+  if (choice) window.localStorage.setItem(pickupStorageKey('shaurma'), JSON.stringify({ choice, browseDate: null }))
+}
 
 const created = { order: { token: 'tok', number: 27 }, orderUrl: `${window.location.origin}/o/tok` }
 
@@ -59,6 +72,8 @@ beforeEach(() => {
   window.localStorage.clear()
   quote.mockReset().mockResolvedValue(quoteFor(250))
   createOrder.mockReset()
+  onNotice.mockReset()
+  onChange.mockReset()
   useAuthStore.setState({ user: null, token: null })
 })
 afterEach(() => useAuthStore.setState({ user: null, token: null }))
@@ -148,6 +163,92 @@ describe('CartPanel — checkout', () => {
     renderPanel()
     expect(await screen.findByText('Закончилось')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Заказать/ })).toBeDisabled()
+  })
+})
+
+describe('CartPanel — pick-up time (cycle 24)', () => {
+  const slotChoice = { kind: 'Slot', date: '2026-10-02', slotStartUtc: '2026-10-02T09:00:00Z', dateLabel: 'пт 2 окт', slotLabel: '12:00–12:15' }
+
+  it('sends the chosen slot with every quote and with the order, and prints the server labels in the summary', async () => {
+    seedCart(250, slotChoice)
+    createOrder.mockResolvedValue(created)
+    const user = userEvent.setup()
+    renderPanel()
+    await fillGuest(user)
+    expect(await screen.findByTestId('cart-pickup')).toHaveTextContent('пт 2 окт, 12:00–12:15')
+    await user.click(await screen.findByRole('button', { name: /Заказать/ }))
+    await screen.findByText('Страница заказа')
+    expect(quote.mock.calls[0][1].pickup).toEqual({ kind: 'Slot', date: '2026-10-02', slotStartUtc: '2026-10-02T09:00:00Z' })
+    expect(createOrder.mock.calls[0][1].pickup).toEqual({ kind: 'Slot', date: '2026-10-02', slotStartUtc: '2026-10-02T09:00:00Z' })
+  })
+
+  it('does not let the buyer order until a time is chosen, and offers to choose it', async () => {
+    seedCart(250, null)
+    const user = userEvent.setup()
+    renderPanel()
+    await fillGuest(user)
+    expect(await screen.findByText('Время не выбрано')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Заказать/ })).toBeDisabled()
+    expect(screen.getByText('Выберите, когда заберёте заказ.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Выбрать' }))
+    expect(onChange).toHaveBeenCalled()
+  })
+
+  it('blocks ordering on a quote pick-up problem and shows the server message', async () => {
+    seedCart(250, slotChoice)
+    quote.mockResolvedValue(quoteFor(250, { hasProblems: true, pickupProblem: { code: 'PickupTimeUnavailable', message: 'Это время уже недоступно — выберите другое' } }))
+    renderPanel()
+    expect(await screen.findByTestId('pickup-problem')).toHaveTextContent('Это время уже недоступно — выберите другое')
+    expect(screen.getByRole('button', { name: /Заказать/ })).toBeDisabled()
+  })
+
+  it('on 409 PickupTimeUnavailable keeps the cart, clears the time, passes the server message on, and a retry reuses the key', async () => {
+    seedCart(250, slotChoice)
+    createOrder.mockRejectedValueOnce({ response: { status: 409, data: { code: 'PickupTimeUnavailable', message: 'Это время уже недоступно — выберите другое' } } })
+    const user = userEvent.setup()
+    renderPanel()
+    await fillGuest(user)
+    await user.click(await screen.findByRole('button', { name: /Заказать/ }))
+    await waitFor(() => expect(onNotice).toHaveBeenCalledWith('Это время уже недоступно — выберите другое'))
+    expect(window.localStorage.getItem(cartStorageKey('shaurma'))).not.toBeNull()
+    expect(JSON.parse(window.localStorage.getItem(pickupStorageKey('shaurma')) ?? '{"choice":null}').choice).toBeNull()
+    expect(await screen.findByText('Время не выбрано')).toBeInTheDocument()
+  })
+})
+
+describe('CartPanel — messenger consent (cycle 24, L9)', () => {
+  const withMessenger = () => shop({ customerNotifications: { webPushOffered: false, messengerOffered: true } })
+
+  it('shows no checkbox when the shop does not offer messages', async () => {
+    seedCart()
+    renderPanel()
+    await screen.findByLabelText('Имя *')
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+
+  it('offers an UNCHECKED box with the masked-number fallback and sends notifyByMessenger only when ticked', async () => {
+    seedCart()
+    createOrder.mockResolvedValue(created)
+    const user = userEvent.setup()
+    renderPanel(withMessenger())
+    await fillGuest(user)
+    const box = await screen.findByRole('checkbox', { name: /Присылать статус заказа в MAX\/WhatsApp на номер \+7 \(9\*\*\) \*\*\*-\*\*-67/ })
+    expect(box).not.toBeChecked()
+    await user.click(box)
+    await user.click(await screen.findByRole('button', { name: /Заказать/ }))
+    await screen.findByText('Страница заказа')
+    expect(createOrder.mock.calls[0][1].notifyByMessenger).toBe(true)
+  })
+
+  it('sends notifyByMessenger: false by default', async () => {
+    seedCart()
+    createOrder.mockResolvedValue(created)
+    const user = userEvent.setup()
+    renderPanel(withMessenger())
+    await fillGuest(user)
+    await user.click(await screen.findByRole('button', { name: /Заказать/ }))
+    await screen.findByText('Страница заказа')
+    expect(createOrder.mock.calls[0][1].notifyByMessenger).toBe(false)
   })
 })
 

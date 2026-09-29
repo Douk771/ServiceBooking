@@ -56,3 +56,16 @@ export function validateCheckout(f: CheckoutFields, isRussianPhone: (p: string) 
   }
   return null
 }
+
+/** «+7 (9**) ***-**-67» — the masked number for the messenger consent line (SPEC: only a mask, never the full number). */
+export function maskPhone(canonical: string | null | undefined): string {
+  const digits = (canonical ?? '').replace(/\D/g, '')
+  if (digits.length !== 11 || digits[0] !== '7') return ''
+  return `+7 (${digits[1]}**) ***-**-${digits.slice(9)}`
+}
+
+/** The fallback consent line when `OrderMessengerConsent` has no text yet (API_CONTRACT_CYCLE24.md §478.3). */
+export function messengerConsentFallback(canonical: string | null | undefined): string {
+  const mask = maskPhone(canonical)
+  return `Присылать статус заказа в MAX/WhatsApp на номер ${mask || 'из этого заказа'}`
+}

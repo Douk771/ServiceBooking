@@ -62,6 +62,19 @@ export function CabinetHomePage() {
         </ul>
       )}
 
+      {shops.data && shops.data.length > 0 && (
+        <nav aria-label="Аккаунт" className="mt-8 flex gap-3 flex-wrap">
+          <Link to="/cabinet/devices" className="inline-flex items-center gap-2 min-h-[44px] rounded-full border border-line bg-white px-5 text-sm font-semibold !text-ink hover:border-line-strong">
+            <Icon name="bell" size={15} strokeWidth={1.8} /> Устройства и уведомления
+          </Link>
+          {shops.data.some((s) => s.myRole !== 'Staff') && (
+            <Link to="/cabinet/subscription" className="inline-flex items-center gap-2 min-h-[44px] rounded-full border border-line bg-white px-5 text-sm font-semibold !text-ink hover:border-line-strong">
+              <Icon name="credit-card" size={15} strokeWidth={1.8} /> Подписка
+            </Link>
+          )}
+        </nav>
+      )}
+
       {summary.data && summary.data.services.count > 0 && (
         <p className="mt-8 text-sm text-ink-soft">
           Ваши салоны — на{' '}

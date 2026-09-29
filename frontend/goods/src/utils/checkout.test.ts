@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { checkoutGate, loginUrlForCheckout, validateCheckout } from './checkout'
+import { checkoutGate, loginUrlForCheckout, maskPhone, messengerConsentFallback, validateCheckout } from './checkout'
 
 const ru = (p: string) => /^7\d{10}$/.test(p)
 
@@ -49,5 +49,21 @@ describe('validateCheckout', () => {
   })
   it('does not demand a captcha when none is configured', () => {
     expect(validateCheckout({ ...guest, captchaRequired: false, captchaToken: '' }, ru)).toBeNull()
+  })
+})
+
+describe('messenger consent line (cycle 24, L9)', () => {
+  it('masks all but the first and last two digits of a Russian number', () => {
+    expect(maskPhone('79001234567')).toBe('+7 (9**) ***-**-67')
+    expect(maskPhone('+7 (900) 123-45-67')).toBe('+7 (9**) ***-**-67')
+  })
+  it('never prints a foreign or partial number', () => {
+    expect(maskPhone('375291234567')).toBe('')
+    expect(maskPhone('7900')).toBe('')
+    expect(maskPhone(undefined)).toBe('')
+  })
+  it('builds the SPEC fallback with the mask, or a neutral wording before the guest typed a number', () => {
+    expect(messengerConsentFallback('79001234567')).toBe('Присылать статус заказа в MAX/WhatsApp на номер +7 (9**) ***-**-67')
+    expect(messengerConsentFallback('')).toBe('Присылать статус заказа в MAX/WhatsApp на номер из этого заказа')
   })
 })

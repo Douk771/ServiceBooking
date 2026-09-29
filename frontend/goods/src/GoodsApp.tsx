@@ -29,6 +29,11 @@ import { CatalogPage } from './pages/cabinet/CatalogPage'
 import { SettingsPage } from './pages/cabinet/SettingsPage'
 import { StaffPage } from './pages/cabinet/StaffPage'
 import { LinkPage } from './pages/cabinet/LinkPage'
+import { HoursPage } from './pages/cabinet/HoursPage'
+import { MenuPage } from './pages/cabinet/MenuPage'
+import { ShopNotificationsPage } from './pages/cabinet/ShopNotificationsPage'
+import { DevicesPage } from './pages/cabinet/DevicesPage'
+import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
 import { shopsApi } from './api/shops'
 
 /**
@@ -110,12 +115,17 @@ export function GoodsApp() {
                     <Route path="/notices" element={<NoticesPage />} />
                     <Route path="/cabinet" element={<CabinetHomePage />} />
                     <Route path="/cabinet/new" element={<CreateShopPage />} />
+                    <Route path="/cabinet/devices" element={<DevicesPage />} />
+                    <Route path="/cabinet/subscription" element={<SubscriptionPage />} />
                     <Route element={<ShopLayout />}>
                       <Route path="/cabinet/:shopId/orders" element={<OrdersScreenPage />} />
                       <Route path="/cabinet/:shopId/catalog" element={<CatalogPage />} />
                       <Route path="/cabinet/:shopId/settings" element={<SettingsPage />} />
                       <Route path="/cabinet/:shopId/staff" element={<StaffPage />} />
                       <Route path="/cabinet/:shopId/link" element={<LinkPage />} />
+                      <Route path="/cabinet/:shopId/hours" element={<HoursPage />} />
+                      <Route path="/cabinet/:shopId/menu" element={<MenuPage />} />
+                      <Route path="/cabinet/:shopId/notifications" element={<ShopNotificationsPage />} />
                     </Route>
                   </Route>
 

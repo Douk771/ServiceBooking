@@ -12,6 +12,11 @@ const accept = vi.fn()
 vi.mock('../../api/orders', () => ({
   ordersApi: { board: (...a: unknown[]) => board(...a), accept: (...a: unknown[]) => accept(...a) },
 }))
+const orderingStatus = vi.fn()
+const putAcceptance = vi.fn()
+vi.mock('../../api/schedule', () => ({
+  scheduleApi: { orderingStatus: (...a: unknown[]) => orderingStatus(...a), putAcceptance: (...a: unknown[]) => putAcceptance(...a) },
+}))
 vi.mock('../../api/catalog', () => ({ catalogApi: { products: () => Promise.resolve([]) } }))
 
 const shop = {
@@ -19,8 +24,11 @@ const shop = {
   settings: { customerMode: 'Anyone', acceptanceMode: 'Manual', allowCustomerCancel: true, trackStock: false },
 } as unknown as ShopManageDto
 
+const ACCEPTING = { mode: 'Accepting', statusText: 'Принимаем заказы' } as const
+const statusDto = (over: Record<string, unknown> = {}) => ({ acceptingOrders: true, openState: { isOpen: true, text: 'Открыто до 21:00' }, acceptance: ACCEPTING, scheduledAvailable: true, workingHoursSet: true, orderLimit: { used: 10, limit: 150, monthLabel: 'октябрь', warningLevel: 'None', text: null }, ...over })
+
 function fullBoard(over: Partial<OrderBoardDto> = {}): OrderBoardDto {
-  return { revision: 1, changed: true, businessDate: '2026-10-05', serverTimeUtc: '2026-10-05T10:05:00Z', newOrders: [staffCard()], accepted: [], ready: [], completedToday: [], ...over }
+  return { revision: 1, changed: true, businessDate: '2026-10-05', serverTimeUtc: '2026-10-05T10:05:00Z', acceptance: ACCEPTING, newOrders: [staffCard()], accepted: [], ready: [], completedToday: [], ...over }
 }
 
 function Layout() {
@@ -47,6 +55,9 @@ const column = (name: string) => screen.getByRole('region', { name })
 beforeEach(() => {
   board.mockReset()
   accept.mockReset()
+  orderingStatus.mockReset()
+  putAcceptance.mockReset()
+  orderingStatus.mockResolvedValue(statusDto())
 })
 afterEach(() => vi.useRealTimers())
 
@@ -115,5 +126,61 @@ describe('OrdersScreenPage', () => {
     board.mockRejectedValue({ response: { status: 500, data: '' } })
     renderScreen()
     expect(await screen.findByRole('button', { name: 'Повторить' })).toBeInTheDocument()
+  })
+  describe('cycle 24: acceptance, limits, pick-up time', () => {
+    it('pauses acceptance with the chosen duration and refreshes the board and the status', async () => {
+      board.mockResolvedValue(fullBoard())
+      putAcceptance.mockResolvedValue({ mode: 'Paused', statusText: 'Пауза до 13:30' })
+      renderScreen()
+      const user = userEvent.setup()
+      const panel = await screen.findByTestId('acceptance-panel')
+      expect(within(panel).getByText('Принимаем заказы')).toBeInTheDocument()
+      await user.click(within(panel).getByRole('button', { name: '30 минут' }))
+      expect(putAcceptance).toHaveBeenCalledWith('s1', { mode: 'Paused', pause: 'Minutes30' })
+      await waitFor(() => expect(board.mock.calls.length).toBeGreaterThan(1))
+    })
+
+    it('offers only «Возобновить приём» while stopped, and shows the server reason for not accepting', async () => {
+      board.mockResolvedValue(fullBoard({ acceptance: { mode: 'Stopped', statusText: 'Не принимаем, пока не включите' } }))
+      orderingStatus.mockResolvedValue(statusDto({ acceptingOrders: false, ownerText: 'Приём заказов выключен', acceptance: { mode: 'Stopped', statusText: 'Не принимаем, пока не включите' } }))
+      putAcceptance.mockResolvedValue(ACCEPTING)
+      renderScreen()
+      const user = userEvent.setup()
+      const panel = await screen.findByTestId('acceptance-panel')
+      expect(within(panel).queryByRole('button', { name: '15 минут' })).toBeNull()
+      expect(await screen.findByText('Приём заказов выключен')).toBeInTheDocument()
+      await user.click(within(panel).getByRole('button', { name: 'Возобновить приём' }))
+      expect(putAcceptance).toHaveBeenCalledWith('s1', { mode: 'Accepting' })
+    })
+
+    it('shows the monthly-limit warning text from the server', async () => {
+      board.mockResolvedValue(fullBoard())
+      orderingStatus.mockResolvedValue(statusDto({ orderLimit: { used: 120, limit: 150, monthLabel: 'октябрь', warningLevel: 'Warning80', text: 'Заказов в этом месяце: 120 из 150' } }))
+      renderScreen()
+      const banner = await screen.findByTestId('limit-banner')
+      expect(banner).toHaveTextContent('Заказов в этом месяце: 120 из 150')
+      expect(banner).toHaveAttribute('data-level', 'Warning80')
+    })
+
+    it('shows a plain empty state instead of the banner when the status request fails, and the board still works', async () => {
+      board.mockResolvedValue(fullBoard())
+      orderingStatus.mockRejectedValue(new Error('boom'))
+      renderScreen()
+      expect(await screen.findByTestId('order-card-27')).toBeInTheDocument()
+      expect(await screen.findByText(/Не удалось обновить статус приёма/)).toBeInTheDocument()
+    })
+
+    it('lists preorders by date under «Предзаказы» and marks an overdue order in words', async () => {
+      const pre = staffCard({ id: 'p1', number: 5, status: 'Accepted', availableActions: ['MarkReady'], pickup: { kind: 'Slot', date: '2026-10-06', startUtc: '2026-10-06T09:00:00Z', dueUtc: '2026-10-06T09:00:00Z', text: 'Завтра, к 12:00', isPreorder: true, isOverdue: false } })
+      const late = staffCard({ id: 'l1', number: 8, status: 'Accepted', availableActions: ['MarkReady'], pickup: { kind: 'Asap', date: '2026-10-05', startUtc: '2026-10-05T09:00:00Z', dueUtc: '2026-10-05T09:30:00Z', text: 'К 12:30', isPreorder: false, isOverdue: true } })
+      board.mockResolvedValue(fullBoard({ newOrders: [], accepted: [late], preorders: [{ date: '2026-10-06', label: 'Завтра', orders: [pre] }] }))
+      renderScreen()
+      await screen.findByTestId('order-card-8')
+      expect(within(screen.getByTestId('order-card-8')).getByText('Просрочен')).toBeInTheDocument()
+      const pres = screen.getByTestId('preorders')
+      expect(within(pres).getByText('Завтра')).toBeInTheDocument()
+      expect(within(pres).getByTestId('order-card-5')).toHaveTextContent('Завтра, к 12:00')
+      expect(within(column('Принятые')).queryByTestId('order-card-5')).toBeNull()
+    })
   })
 })

@@ -13,11 +13,14 @@ import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
 import { formatPhone, isRussianPhone } from '@/utils/phone'
 import { storefrontApi } from '../../api/storefront'
+import { orderLegalTextsApi } from '../../api/legalNotice'
 import { CheckoutLegalNotice } from './CheckoutLegalNotice'
 import { InlineError } from '../StatePanels'
 import { useCart } from '../../hooks/useCart'
 import { decrementQuantity, incrementQuantity, priceChanges, quantityRule } from '../../utils/cart'
-import { checkoutGate, loginUrlForCheckout, validateCheckout } from '../../utils/checkout'
+import { checkoutGate, loginUrlForCheckout, messengerConsentFallback, validateCheckout } from '../../utils/checkout'
+import { toPickupInput } from '../../utils/pickup'
+import type { PickupControl } from '../../hooks/usePickupChoice'
 import { newIdempotencyKey, orderPath } from '../../utils/idempotency'
 import { lineTotal, orderTotal } from '../../utils/orderMoney'
 import { formatMoney, formatQuantity, formatUnitPrice } from '../../utils/quantityFormat'
@@ -29,6 +32,11 @@ interface Props {
   shop: StorefrontDto
   products: Map<string, StorefrontProductDto>
   cart: ReturnType<typeof useCart>
+  pickup: PickupControl
+  /** Server message to show at the picker after `PickupTimeUnavailable` (the cart and the idempotency key stay). */
+  onPickupNotice: (text: string | null) => void
+  /** Closes the panel and scrolls to «Когда заберёте». */
+  onChangePickup: () => void
   onClose: () => void
 }
 
@@ -37,7 +45,7 @@ interface Props {
  * of prices, sums and problems (opened panel + right before «Заказать»); numbers shown before the answer come
  * from the local preview and use «≈» for weighed lines. Nothing is reserved by `quote`.
  */
-export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
+export function CartPanel({ slug, shop, products, cart, pickup, onPickupNotice, onChangePickup, onClose }: Props) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const dismiss = useOverlayDismiss(onClose)
@@ -48,7 +56,9 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
   const keyRef = useRef<string>(newIdempotencyKey())
 
   const debouncedItems = useDebouncedValue(cart.items, 300)
-  const quoteBody = useMemo(() => ({ items: debouncedItems.map((i) => ({ productId: i.productId, quantity: i.quantity })) }), [debouncedItems])
+  // `pickup` rides on every quote: the server re-checks availability ON THE PICK-UP DATE and the time itself (§477.4).
+  const pickupInput = useMemo(() => toPickupInput(pickup.choice), [pickup.choice])
+  const quoteBody = useMemo(() => ({ items: debouncedItems.map((i) => ({ productId: i.productId, quantity: i.quantity })), pickup: pickupInput }), [debouncedItems, pickupInput])
   const quoteKey = useMemo(() => JSON.stringify(quoteBody), [quoteBody])
   const quoteQuery = useQuery({
     queryKey: ['quote', slug, quoteKey],
@@ -65,6 +75,7 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
   const [name, setName] = useState(() => (user ? `${user.firstName} ${user.lastName}`.trim().slice(0, 100) : ''))
   const [phone, setPhone] = useState('')
   const [comment, setComment] = useState('')
+  const [notifyByMessenger, setNotifyByMessenger] = useState(false)
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaNonce, setCaptchaNonce] = useState(0)
   const [formError, setFormError] = useState('')
@@ -87,6 +98,7 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
     verificationEnabled: verifyConfig.data?.enabled,
   })
   const guest = !signedIn
+  const messengerOffered = shop.customerNotifications.messengerOffered
 
   const create = useMutation({
     mutationFn: () =>
@@ -97,6 +109,8 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
         customerPhone: guest ? phone : undefined,
         comment: comment.trim() || undefined,
         captchaToken: guest ? captchaToken || undefined : undefined,
+        pickup: pickupInput,
+        notifyByMessenger: messengerOffered && notifyByMessenger,
       }),
     onSuccess: (res) => {
       cart.clear()
@@ -113,6 +127,13 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
         if (r.code === 'PriceChanged' || r.code === 'ItemsUnavailable' || r.code === 'ShopNotAcceptingOrders') {
           void qc.invalidateQueries({ queryKey: ['quote', slug] })
           void qc.invalidateQueries({ queryKey: ['storefront', slug] })
+        }
+        if (r.code === 'PickupTimeUnavailable') {
+          // §478.2: refetch the slots and show the choice again with the server's message; cart and key are kept.
+          void qc.invalidateQueries({ queryKey: ['pickup-slots', slug] })
+          void qc.invalidateQueries({ queryKey: ['storefront', slug] })
+          pickup.choose(null)
+          onPickupNotice(r.message)
         }
         if (r.code === 'PhoneVerificationRequired' || r.code === 'LoginRequired') void qc.invalidateQueries({ queryKey: ['profile'] })
         if (isPhoneVerificationRequired(r)) retryAfterVerify.current = true
@@ -150,11 +171,12 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
       return
     }
     if (fresh.hasProblems || !fresh.acceptingOrders || priceChanges(cart.items, fresh.lines).length > 0) {
+      if (fresh.pickupProblem) void qc.invalidateQueries({ queryKey: ['pickup-slots', slug] })
       submittingRef.current = false
       return // the panel now shows the problem lines / the price confirmation
     }
     create.mutate()
-  }, [name, comment, phone, guest, captchaToken, create, quoteQuery, cart.items])
+  }, [name, comment, phone, guest, captchaToken, create, quoteQuery, cart.items, qc, slug])
 
   const submitRef = useRef(submit)
   submitRef.current = submit
@@ -195,8 +217,10 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
   const acceptingOrders = quote ? quote.acceptingOrders : shop.acceptingOrders
   const notAcceptingReason = quote?.notAcceptingReason ?? shop.notAcceptingReason
   const hasProblems = !!quote?.hasProblems
+  const pickupProblem = quote?.pickupProblem ?? null
+  const pickupChosen = pickup.choice !== null
   const busy = create.isPending || checking
-  const canOrder = cart.items.length > 0 && acceptingOrders && !hasProblems && changes.length === 0 && gate.kind === 'open' && !busy
+  const canOrder = cart.items.length > 0 && acceptingOrders && !hasProblems && pickupChosen && changes.length === 0 && gate.kind === 'open' && !busy
 
   return (
     <div className="fixed inset-0 z-50 bg-ink/45 backdrop-blur-sm flex justify-end" {...dismiss}>
@@ -301,6 +325,21 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
                 })}
               </ul>
 
+              <div className="rounded-2xl border border-line bg-white p-4 flex items-start justify-between gap-3" data-testid="cart-pickup">
+                <div className="min-w-0">
+                  <p className="text-xs text-muted">Когда заберёте</p>
+                  <p className="font-semibold text-ink leading-snug">{pickupSummary(pickup.choice, shop.pickup.asap?.text)}</p>
+                </div>
+                <Button size="sm" variant="secondary" onClick={onChangePickup}>
+                  {pickupChosen ? 'Изменить' : 'Выбрать'}
+                </Button>
+              </div>
+              {pickupProblem && (
+                <div role="alert" className="rounded-xl bg-danger-bg text-danger text-sm px-4 py-3" data-testid="pickup-problem">
+                  {pickupProblem.message}
+                </div>
+              )}
+
               {changes.length > 0 && (
                 <div role="alert" className="rounded-xl bg-warning-bg text-warning text-sm px-4 py-3">
                   <p className="font-semibold">Цена изменилась — проверьте и подтвердите заказ ещё раз</p>
@@ -392,6 +431,8 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
                       <p className="text-[11px] text-muted text-right">{comment.length}/500</p>
                     </div>
 
+                    {messengerOffered && <MessengerConsent checked={notifyByMessenger} onChange={setNotifyByMessenger} phone={guest ? phone : (user?.phone ?? '')} />}
+
                     {guest && smartCaptchaEnabled && (
                       <div>
                         <SmartCaptcha key={captchaNonce} onToken={setCaptchaToken} />
@@ -408,7 +449,7 @@ export function CartPanel({ slug, shop, products, cart, onClose }: Props) {
                     </Button>
                     {!canOrder && !busy && cart.items.length > 0 && (
                       <p className="text-xs text-muted text-center -mt-2">
-                        {!acceptingOrders ? 'Магазин сейчас не принимает заказы.' : hasProblems ? 'Исправьте отмеченные позиции — и можно заказывать.' : changes.length > 0 ? 'Подтвердите новые цены выше.' : ''}
+                        {!acceptingOrders ? 'Магазин сейчас не принимает заказы.' : !pickupChosen ? 'Выберите, когда заберёте заказ.' : pickupProblem ? 'Выберите другое время получения.' : hasProblems ? 'Исправьте отмеченные позиции — и можно заказывать.' : changes.length > 0 ? 'Подтвердите новые цены выше.' : ''}
                       </p>
                     )}
                     <CheckoutLegalNotice />
@@ -454,5 +495,34 @@ function RefusalBanner({ refusal, slug }: { refusal: OrderRefusalDto; slug: stri
         </Link>
       )}
     </div>
+  )
+}
+
+function pickupSummary(choice: PickupControl['choice'], asapText: string | null | undefined): string {
+  if (!choice) return 'Время не выбрано'
+  if (choice.kind === 'Asap') return asapText ? `Как можно скорее (${asapText})` : 'Как можно скорее'
+  return [choice.dateLabel ?? choice.date, choice.slotLabel].filter(Boolean).join(', ')
+}
+
+/**
+ * The messenger checkbox [legal L9]: OFF by default; the label is the lawyer's `OrderMessengerConsent` when it exists and the
+ * SPEC line with a MASKED number otherwise (404 is a normal state, §478.3).
+ */
+function MessengerConsent({ checked, onChange, phone }: { checked: boolean; onChange: (v: boolean) => void; phone: string }) {
+  const { data } = useQuery({
+    queryKey: ['legal-text', 'OrderMessengerConsent'],
+    queryFn: orderLegalTextsApi.messengerConsent,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  })
+  return (
+    <label className="flex items-start gap-3 rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink cursor-pointer min-h-[44px]">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-5 w-5 accent-[#2B2420]" />
+      {data?.contentHtml ? (
+        <span className="legal-content [&_a]:text-gold [&_p]:mb-0" dangerouslySetInnerHTML={{ __html: data.contentHtml }} />
+      ) : (
+        <span>{messengerConsentFallback(phone)}</span>
+      )}
+    </label>
   )
 }

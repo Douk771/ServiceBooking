@@ -6,9 +6,11 @@ import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { getUploadErrorMessage } from '@/utils/uploadError'
 import { InlineError } from '../StatePanels'
+import { WeekdayPicker } from './WeekdayPicker'
+import { ALL_WEEKDAYS, normalizeWeekdays } from '../../utils/weekdays'
 import { getCatalogErrorMessage } from '../../utils/catalogError'
 import { parsePrice, validateProduct } from '../../utils/productForm'
-import type { CategoryDto, ProductDto, ProductInput, ProductUnit } from '../../types'
+import type { CategoryDto, DayOfWeek, ProductDto, ProductInput, ProductUnit } from '../../types'
 
 const DEFAULT_STEP = 100
 
@@ -39,6 +41,7 @@ export function ProductModal({ shopId, categories, product, defaultCategoryId = 
   const [min, setMin] = useState(product && product.unit === 'Weight' ? String(product.minQuantity ?? '') : '')
   const [isPublished, setIsPublished] = useState(product?.isPublished ?? true)
   const [composition, setComposition] = useState(product?.foodInfo.compositionAndAllergens ?? '')
+  const [weekdays, setWeekdays] = useState<DayOfWeek[]>(product?.availableWeekdays ? normalizeWeekdays(product.availableWeekdays) : [...ALL_WEEKDAYS])
   const [formError, setFormError] = useState('')
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [current, setCurrent] = useState<ProductDto | undefined>(product)
@@ -58,6 +61,7 @@ export function ProductModal({ shopId, categories, product, defaultCategoryId = 
         minQuantityGrams: unit === 'Weight' && min.trim() !== '' ? Number(min) : null,
         isPublished,
         foodInfo: { compositionAndAllergens: composition.trim() || null },
+        availableWeekdays: weekdays,
       }
       let saved = target ? await catalogApi.updateProduct(shopId, target.id, body) : await catalogApi.createProduct(shopId, body)
       let photoFailed = false
@@ -203,6 +207,8 @@ export function ProductModal({ shopId, categories, product, defaultCategoryId = 
           </div>
           {imageError && <p role="alert" className="text-xs text-danger mt-1.5">{imageError}</p>}
         </div>
+
+        <WeekdayPicker legend="Дни продажи" value={weekdays} onChange={setWeekdays} hint="Без отметок товар продаётся только по меню на дату." />
 
         <label className="flex items-center gap-3 text-sm text-ink cursor-pointer">
           <input type="checkbox" className="w-4 h-4 accent-gold" checked={isPublished} onChange={(e) => setIsPublished(e.target.checked)} />

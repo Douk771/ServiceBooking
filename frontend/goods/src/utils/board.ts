@@ -1,4 +1,4 @@
-import type { OrderBoardDto, OrderStatus, StaffOrderCardDto } from '../types'
+import type { OrderBoardDto, OrderStatus, PreorderGroupDto, ShopAcceptanceDto, StaffOrderCardDto } from '../types'
 import { isTerminalStatus } from './orderStatus'
 
 /** The staff screen's view of the board: the last FULL answer, kept while polls say «no changes» (§415). */
@@ -6,30 +6,58 @@ export interface BoardState {
   revision: number
   businessDate: string
   serverTimeUtc: string
+  /** `serverTime − clientTime` at the moment the answer arrived: a tablet with a wrong clock must not lie about «Просрочен» (§480). */
+  clockOffsetMs: number
+  acceptance: ShopAcceptanceDto | null
   newOrders: StaffOrderCardDto[]
   accepted: StaffOrderCardDto[]
   ready: StaffOrderCardDto[]
+  /** `Accepted` with a pick-up date after today, grouped by date ascending (API_CONTRACT_CYCLE24.md §480). */
+  preorders: PreorderGroupDto[]
   completedToday: StaffOrderCardDto[]
 }
 
 /** Folds one `order-board` answer into the state. `changed: false` keeps the previous columns and only moves
  *  revision/clock (the arrays are null in that answer). */
-export function applyBoardResponse(prev: BoardState | null, res: OrderBoardDto): BoardState {
+export function applyBoardResponse(prev: BoardState | null, res: OrderBoardDto, nowMs: number = Date.now()): BoardState {
+  const clockOffsetMs = new Date(res.serverTimeUtc).getTime() - nowMs
+  const offset = Number.isFinite(clockOffsetMs) ? clockOffsetMs : (prev?.clockOffsetMs ?? 0)
   if (!res.changed && prev) {
-    return { ...prev, revision: res.revision, businessDate: res.businessDate, serverTimeUtc: res.serverTimeUtc }
+    // `acceptance` comes in EVERY answer, `changed: false` included (§480).
+    return { ...prev, revision: res.revision, businessDate: res.businessDate, serverTimeUtc: res.serverTimeUtc, clockOffsetMs: offset, acceptance: res.acceptance }
   }
   return {
     revision: res.revision,
     businessDate: res.businessDate,
     serverTimeUtc: res.serverTimeUtc,
+    clockOffsetMs: offset,
+    acceptance: res.acceptance,
     newOrders: res.newOrders ?? [],
     accepted: res.accepted ?? [],
     ready: res.ready ?? [],
+    preorders: res.preorders ?? [],
     completedToday: res.completedToday ?? [],
   }
 }
 
-const byCreatedAsc = (a: StaffOrderCardDto, b: StaffOrderCardDto) => new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime()
+/** Inside a column: by pick-up time, then by creation (API_CONTRACT_CYCLE24.md §480). */
+export const byPickupThenCreated = (a: StaffOrderCardDto, b: StaffOrderCardDto) =>
+  new Date(a.pickup.startUtc).getTime() - new Date(b.pickup.startUtc).getTime() ||
+  new Date(a.createdAtUtc).getTime() - new Date(b.createdAtUtc).getTime()
+
+const ACTIVE: ReadonlySet<OrderStatus> = new Set<OrderStatus>(['New', 'Accepted', 'Ready'])
+
+/**
+ * «Просрочен» — the ONLY thing the frontend computes about time (§490): the server's clock is past `pickup.dueUtc` while
+ * the order is still New/Accepted/Ready. Between full answers this is re-evaluated on every tick.
+ */
+export function isOverdueNow(order: Pick<StaffOrderCardDto, 'status' | 'pickup'>, serverNowMs: number): boolean {
+  return ACTIVE.has(order.status) && serverNowMs > new Date(order.pickup.dueUtc).getTime()
+}
+
+export function serverNow(state: Pick<BoardState, 'clockOffsetMs'>, nowMs: number = Date.now()): number {
+  return nowMs + state.clockOffsetMs
+}
 
 function columnFor(status: OrderStatus): 'newOrders' | 'accepted' | 'ready' | 'completedToday' {
   switch (status) {
@@ -53,14 +81,24 @@ export function patchOrder(state: BoardState, order: StaffOrderCardDto): BoardSt
     ready: state.ready.filter((o) => o.id !== order.id),
     completedToday: state.completedToday.filter((o) => o.id !== order.id),
   }
+  // A future-dated accepted order lives in «Предзаказы», not in the day's «Принятые» (§480).
+  const preorders = stripped.preorders.map((g) => ({ ...g, orders: g.orders.filter((o) => o.id !== order.id) })).filter((g) => g.orders.length > 0)
+  if (order.status === 'Accepted' && order.pickup.date > state.businessDate) {
+    const group = preorders.find((g) => g.date === order.pickup.date)
+    if (group) group.orders = [...group.orders, order].sort(byPickupThenCreated)
+    else preorders.push({ date: order.pickup.date, label: order.pickup.text.split(',')[0], orders: [order] })
+    preorders.sort((a, b) => a.date.localeCompare(b.date))
+    return { ...stripped, preorders }
+  }
+  stripped.preorders = preorders
   const col = columnFor(order.status)
   const merged = [...stripped[col], order]
-  stripped[col] = col === 'completedToday' ? merged.sort((a, b) => new Date(b.completedAtUtc ?? b.createdAtUtc).getTime() - new Date(a.completedAtUtc ?? a.createdAtUtc).getTime()) : merged.sort(byCreatedAsc)
+  stripped[col] = col === 'completedToday' ? merged.sort((a, b) => new Date(b.completedAtUtc ?? b.createdAtUtc).getTime() - new Date(a.completedAtUtc ?? a.createdAtUtc).getTime()) : merged.sort(byPickupThenCreated)
   return stripped
 }
 
 export function allIds(state: BoardState): string[] {
-  return [...state.newOrders, ...state.accepted, ...state.ready, ...state.completedToday].map((o) => o.id)
+  return [...state.newOrders, ...state.accepted, ...state.ready, ...state.preorders.flatMap((g) => g.orders), ...state.completedToday].map((o) => o.id)
 }
 
 /**

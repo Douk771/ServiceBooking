@@ -42,7 +42,9 @@ export function ProductCard({ product: p, quantity, onChange }: Props) {
           </div>
 
           {!p.available ? (
-            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-cream-deep text-muted">Закончилось</span>
+            <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-cream-deep text-muted">
+              {p.unavailableReason === 'ShopNotAccepting' ? 'Сейчас не принимаем' : 'Закончилось'}
+            </span>
           ) : inCart ? (
             <div className="inline-flex items-center rounded-full border border-line bg-cream" role="group" aria-label={`Количество: ${p.name}`}>
               <button

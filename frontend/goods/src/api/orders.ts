@@ -4,6 +4,7 @@ import type {
   EditOrderInput,
   IssueQuoteDto,
   MyOrderSummaryDto,
+  ChangePickupInput,
   OrderBoardDto,
   PublicOrderDto,
   StaffOrderDto,
@@ -38,6 +39,9 @@ export const ordersApi = {
     api
       .post<StaffOrderDto>(`/shops/${shopId}/orders/${orderId}/issue`, { expectedVersion, actualQuantities })
       .then((r) => r.data),
+  /** P1, API_CONTRACT_CYCLE24.md §481: staff moves the pick-up time (and possibly the date → new number). */
+  changePickup: (shopId: string, orderId: string, data: ChangePickupInput) =>
+    api.put<StaffOrderDto>(`/shops/${shopId}/orders/${orderId}/pickup`, data).then((r) => r.data),
   edit: (shopId: string, orderId: string, data: EditOrderInput) =>
     api.put<StaffOrderDto>(`/shops/${shopId}/orders/${orderId}/items`, data).then((r) => r.data),
 }

@@ -23,6 +23,8 @@ export function staffCard(over: Partial<StaffOrderCardDto> = {}): StaffOrderCard
     isModified: false,
     hasWeightItems: true,
     version: 3,
+    pickup: { kind: 'Asap', date: '2026-10-05', startUtc: '2026-10-05T10:15:00Z', dueUtc: '2026-10-05T10:30:00Z', text: 'Как можно скорее (≈ 13:15)', isPreorder: false, isOverdue: false },
+    notifyByMessenger: false,
     availableActions: ['Accept', 'Reject', 'Edit'],
     ...over,
   } as StaffOrderCardDto

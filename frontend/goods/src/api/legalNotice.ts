@@ -13,3 +13,9 @@ export interface OrderCheckoutNotice {
 export const legalNoticeApi = {
   orderCheckout: () => api.get<OrderCheckoutNotice>('/legal/texts/OrderCheckoutNotice').then((r) => r.data),
 }
+
+/** Cycle 24 (API_CONTRACT_CYCLE24.md §478.3–§478.4): both keys are kept out of `LegalTextKey.All` until the lawyer's text exists; 404 = «not written». */
+export const orderLegalTextsApi = {
+  messengerConsent: () => api.get<OrderCheckoutNotice>('/legal/texts/OrderMessengerConsent').then((r) => r.data),
+  preorderNotice: () => api.get<OrderCheckoutNotice>('/legal/texts/OrderPreorderNotice').then((r) => r.data),
+}

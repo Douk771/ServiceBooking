@@ -55,3 +55,37 @@ describe('OrderCard', () => {
     expect(screen.getByText('Выдан')).toBeInTheDocument()
   })
 })
+
+describe('OrderCard — pick-up time (cycle 24)', () => {
+  const overduePickup = { kind: 'Asap', date: '2026-10-05', startUtc: '2026-10-05T10:00:00Z', dueUtc: '2026-10-05T10:10:00Z', text: 'К 13:10', isPreorder: false, isOverdue: false } as const
+
+  it('prints the pick-up text large and «Просрочен» as a word once the server clock passes dueUtc', () => {
+    const { rerender } = render(<OrderCard order={staffCard({ status: 'Accepted', pickup: overduePickup })} serverNow={NOW} nowMs={new Date('2026-10-05T10:09:00Z').getTime()} highlighted={false} busy={false} onAction={() => {}} />)
+    expect(screen.getByTestId('pickup-text')).toHaveTextContent('К 13:10')
+    expect(screen.queryByText('Просрочен')).toBeNull()
+    rerender(<OrderCard order={staffCard({ status: 'Accepted', pickup: overduePickup })} serverNow={NOW} nowMs={new Date('2026-10-05T10:11:00Z').getTime()} highlighted={false} busy={false} onAction={() => {}} />)
+    expect(screen.getByText('Просрочен')).toBeInTheDocument()
+  })
+
+  it('never marks a finished order overdue', () => {
+    render(<OrderCard order={staffCard({ status: 'Issued', availableActions: [], pickup: overduePickup })} serverNow={NOW} nowMs={new Date('2026-10-05T12:00:00Z').getTime()} highlighted={false} busy={false} readOnly onAction={() => {}} />)
+    expect(screen.queryByText('Просрочен')).toBeNull()
+  })
+
+  it('offers «Изменить время» only when the server lists ChangePickup, and reports it', async () => {
+    const onAction = vi.fn()
+    const order = staffCard({ availableActions: ['Accept', 'ChangePickup'] })
+    const { rerender } = render(<OrderCard order={order} serverNow={NOW} highlighted={false} busy={false} onAction={onAction} />)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Изменить время' }))
+    expect(onAction).toHaveBeenCalledWith('changePickup', order)
+    rerender(<OrderCard order={staffCard({ availableActions: ['Accept'] })} serverNow={NOW} highlighted={false} busy={false} onAction={onAction} />)
+    expect(screen.queryByRole('button', { name: 'Изменить время' })).toBeNull()
+  })
+
+  it('shows the messenger delivery status only when a message was requested', () => {
+    const { rerender } = render(<OrderCard order={staffCard({ notifyByMessenger: true, messenger: { requested: true, status: 'Failed', statusText: 'Не доставлено' } })} serverNow={NOW} highlighted={false} busy={false} onAction={() => {}} />)
+    expect(screen.getByTestId('messenger-status')).toHaveTextContent('Не доставлено')
+    rerender(<OrderCard order={staffCard({ messenger: { requested: false } })} serverNow={NOW} highlighted={false} busy={false} onAction={() => {}} />)
+    expect(screen.queryByTestId('messenger-status')).toBeNull()
+  })
+})

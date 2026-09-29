@@ -12,6 +12,7 @@ import { dialHref } from '../utils/dial'
 import { ordersApi } from '../api/orders'
 import { OrderStatusBadge } from '../components/OrderStatusBadge'
 import { OrderTimeline } from '../components/OrderTimeline'
+import { OrderPushCard } from '../components/order/OrderPushCard'
 import { ErrorState, InlineError, Skeleton } from '../components/StatePanels'
 import { isFailedOutcome, isTerminalStatus } from '../utils/orderStatus'
 import { formatMoney, formatQuantity, formatUnitPrice } from '../utils/quantityFormat'
@@ -109,7 +110,16 @@ export function OrderPage() {
           <OrderStatusBadge status={order.status} text={order.statusText} large />
         </div>
 
-        <div className="mt-7">
+        <p className="mt-5 flex items-center gap-2 flex-wrap font-serif text-2xl text-ink leading-tight" data-testid="order-pickup">
+          <Icon name="clock" size={18} strokeWidth={1.7} className="shrink-0" />
+          <span>{order.pickup.text}</span>
+          {order.pickup.isPreorder && <span className="font-sans text-[11px] font-bold uppercase tracking-wide bg-cream-deep text-ink-soft rounded-full px-2.5 py-1">Предзаказ</span>}
+        </p>
+        {order.notifications.messengerRequested && !isTerminalStatus(order.status) && (
+          <p className="mt-2 text-sm text-ink-soft" data-testid="order-messenger">Статус заказа пришлём сообщением в MAX/WhatsApp.</p>
+        )}
+
+        <div className="mt-6">
           {isFailedOutcome(order.status) ? (
             <div className="rounded-xl bg-cream-deep px-4 py-3">
               <p className="text-sm font-semibold text-ink">{order.statusText}</p>
@@ -121,6 +131,7 @@ export function OrderPage() {
         </div>
       </section>
 
+      <OrderPushCard token={token} info={order.notifications.webPush} />
       <ShareLink order={order} justCreated={justCreated} />
       <ShopChanges order={order} />
 

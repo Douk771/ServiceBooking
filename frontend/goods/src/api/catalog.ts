@@ -1,5 +1,5 @@
 import { api } from '@/api/client'
-import type { CategoryDto, CategoryInput, ProductDto, ProductInput } from '../types'
+import type { CategoryDto, CategoryInput, ProductDto, ProductInput, SoldOutScope } from '../types'
 
 /** API_CONTRACT_CYCLE23.md §410. Owner: everything; staff: only sold-out and stock. */
 export const catalogApi = {
@@ -32,8 +32,9 @@ export const catalogApi = {
   deleteImage: (shopId: string, id: string) =>
     api.delete<ProductDto>(`/shops/${shopId}/products/${id}/image`).then((r) => r.data),
 
-  setSoldOut: (shopId: string, id: string, isSoldOut: boolean) =>
-    api.put<ProductDto>(`/shops/${shopId}/products/${id}/sold-out`, { isSoldOut }).then((r) => r.data),
+  /** Cycle 24 (§482.2): goods ALWAYS sends `scope`; the default in the dialog is «Today». */
+  setSoldOut: (shopId: string, id: string, isSoldOut: boolean, scope: SoldOutScope = 'UntilCancelled') =>
+    api.put<ProductDto>(`/shops/${shopId}/products/${id}/sold-out`, { isSoldOut, scope }).then((r) => r.data),
   setStock: (shopId: string, id: string, onHand: number | null) =>
     api.put<ProductDto>(`/shops/${shopId}/products/${id}/stock`, { onHand }).then((r) => r.data),
 }

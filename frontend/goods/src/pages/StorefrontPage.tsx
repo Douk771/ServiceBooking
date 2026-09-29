@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { CompanyMapLinks } from '@/components/company/CompanyMapLinks'
 import { Icon } from '@/components/ui/Icon'
 import { formatPhone } from '@/utils/phone'
 import { dialHref } from '../utils/dial'
 import { storefrontApi } from '../api/storefront'
 import { CartPanel } from '../components/storefront/CartPanel'
+import { PickupPicker } from '../components/storefront/PickupPicker'
 import { ProductCard } from '../components/storefront/ProductCard'
 import { ErrorState, LoadingList, Skeleton } from '../components/StatePanels'
 import { useCart } from '../hooks/useCart'
+import { usePickupChoice } from '../hooks/usePickupChoice'
+import { defaultChoice, isChoiceStillOffered } from '../utils/pickup'
 import { quantityRule } from '../utils/cart'
 import { orderTotal } from '../utils/orderMoney'
 import { formatMoney } from '../utils/quantityFormat'
@@ -26,12 +29,45 @@ export function StorefrontPage() {
   const cart = useCart(slug)
   const [cartOpen, setCartOpen] = useState(false)
 
+  const pickup = usePickupChoice(slug)
+  const [pickupNotice, setPickupNotice] = useState<string | null>(null)
+
+  // `?date=` follows the browsed pick-up date: the assortment is that day's (menu, weekdays). The previous answer stays on
+  // screen while the new one loads, so the list does not flash empty (US-24-11/12).
   const shopQuery = useQuery({
-    queryKey: ['storefront', slug],
-    queryFn: () => storefrontApi.get(slug),
+    queryKey: ['storefront', slug, pickup.date ?? 'today'],
+    queryFn: () => storefrontApi.get(slug, pickup.date),
+    placeholderData: keepPreviousData,
     retry: (count, err) => httpStatus(err) === undefined && count < 2,
   })
   const shop = shopQuery.data
+  const options = shop?.pickup
+
+  // The requested date turned out unavailable: the server answered with today's assortment and a notice — drop the stale
+  // date/slot and say why (never leave the buyer with a slot for a day that is not shown).
+  const dateNotice = shop?.dateNotice
+  const { reset: resetPickup, choose: choosePickup } = pickup
+  useEffect(() => {
+    if (dateNotice && pickup.browseDate) {
+      resetPickup()
+      setPickupNotice(dateNotice)
+    }
+  }, [dateNotice, pickup.browseDate, resetPickup])
+
+  // Reconcile the stored choice with what the shop offers now; preselect «как можно скорее» once, when possible.
+  const preselected = useRef(false)
+  useEffect(() => {
+    if (!options) return
+    if (pickup.choice && !isChoiceStillOffered(pickup.choice, options)) {
+      choosePickup(null)
+      return
+    }
+    if (!pickup.choice && !pickup.browseDate && !preselected.current) {
+      preselected.current = true
+      const d = defaultChoice(options)
+      if (d) choosePickup(d)
+    }
+  }, [options, pickup.choice, pickup.browseDate, choosePickup])
 
   const products = useMemo(() => {
     const m = new Map<string, StorefrontProductDto>()
@@ -124,11 +160,37 @@ export function StorefrontPage() {
         </div>
       </header>
 
+      <div className="mb-5 flex flex-col gap-2" data-testid="open-state">
+        <p className={`inline-flex items-center gap-2 self-start rounded-full px-3.5 py-1.5 text-sm font-semibold ${shop.openState.isOpen ? 'bg-success-bg text-success' : 'bg-cream-deep text-ink-soft'}`}>
+          <Icon name="clock" size={14} strokeWidth={1.8} />
+          {shop.openState.text}
+        </p>
+        {shop.workingHours.lines.length > 0 && (
+          <details className="text-sm text-ink-soft">
+            <summary className="cursor-pointer text-gold hover:text-gold-dark w-fit">Часы работы</summary>
+            <ul className="mt-1.5 flex flex-col gap-0.5">
+              {shop.workingHours.lines.map((l) => (
+                <li key={l.dayLabel}>
+                  <span className="inline-block min-w-[64px] font-medium text-ink">{l.dayLabel}</span> {l.text}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+
       {!shop.acceptingOrders && (
-        <div role="status" className="mb-6 rounded-xl bg-warning-bg text-warning text-sm font-medium px-4 py-3">
+        <div role="status" className="mb-6 rounded-xl bg-warning-bg text-warning text-sm font-medium px-4 py-3" data-testid="not-accepting" data-code={shop.notAcceptingCode ?? undefined}>
           {shop.notAcceptingReason ?? 'Сейчас магазин не принимает заказы.'}
         </div>
       )}
+
+      {(shop.pickup.asapEnabled || shop.pickup.scheduledEnabled) && (
+        <PickupPicker slug={slug} options={shop.pickup} pickup={pickup} notice={pickupNotice} onNoticeChange={setPickupNotice} />
+      )}
+      <p className="sr-only" aria-live="polite" data-testid="assortment-live">
+        {shopQuery.isFetching ? 'Обновляем ассортимент…' : `Показан ассортимент на ${shop.pickup.dates.find((d) => d.date === shop.date)?.label ?? shop.date}`}
+      </p>
 
       {shop.categories.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line-strong bg-white/60 px-6 py-14 text-center">
@@ -186,7 +248,21 @@ export function StorefrontPage() {
         </div>
       )}
 
-      {cartOpen && <CartPanel slug={slug} shop={shop} products={products} cart={cart} onClose={() => setCartOpen(false)} />}
+      {cartOpen && (
+        <CartPanel
+          slug={slug}
+          shop={shop}
+          products={products}
+          cart={cart}
+          pickup={pickup}
+          onPickupNotice={setPickupNotice}
+          onChangePickup={() => {
+            setCartOpen(false)
+            requestAnimationFrame(() => document.getElementById('pickup')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+          }}
+          onClose={() => setCartOpen(false)}
+        />
+      )}
     </main>
   )
 }

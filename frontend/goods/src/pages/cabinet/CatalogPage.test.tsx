@@ -21,7 +21,7 @@ vi.mock('../../api/catalog', () => ({
 }))
 
 const shop = (over: Partial<ShopManageDto['settings']> = {}) =>
-  ({ id: 's1', name: 'Шаурма', settings: { customerMode: 'Anyone', acceptanceMode: 'Manual', allowCustomerCancel: true, trackStock: false, ...over } }) as unknown as ShopManageDto
+  ({ id: 's1', name: 'Шаурма', productLimit: 50, settings: { customerMode: 'Anyone', acceptanceMode: 'Manual', allowCustomerCancel: true, trackStock: false, ...over } }) as unknown as ShopManageDto
 
 const cat = (over: Partial<CategoryDto> = {}): CategoryDto => ({ id: 'c1', name: 'Горячее', position: 1, isHidden: false, productCount: 1, ...over })
 const prod = (over: Partial<ProductDto> = {}): ProductDto =>
@@ -85,14 +85,40 @@ describe('CatalogPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Резерв больше остатка на 2 шт')
   })
 
-  it('toggles «закончилось» right away and updates the row', async () => {
-    setSoldOut.mockResolvedValue(prod({ isSoldOut: true }))
+  it('asks for how long, defaulting to «на сегодня», and sends the scope', async () => {
+    setSoldOut.mockResolvedValue(prod({ isSoldOut: true, soldOut: { scope: 'Today', date: '2026-10-05', text: 'нет на сегодня' } }))
     const user = userEvent.setup()
     renderPage(false)
     const row = (await screen.findByText('Шаурма классическая')).closest('li')!
     await user.click(within(row).getByRole('button', { name: 'Закончилось' }))
-    expect(setSoldOut).toHaveBeenCalledWith('s1', 'p1', true)
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('radio', { name: 'Нет на сегодня' })).toHaveAttribute('aria-checked', 'true')
+    await user.click(within(dialog).getByRole('button', { name: 'Убрать из продажи' }))
+    expect(setSoldOut).toHaveBeenCalledWith('s1', 'p1', true, 'Today')
     expect(await within(row).findByRole('button', { name: 'Вернуть в продажу' })).toBeInTheDocument()
+    expect(within(row).getByTestId('sold-out-chip')).toHaveTextContent('Закончилось · нет на сегодня')
+  })
+
+  it('sends «до отмены» when chosen, and returns to sale without a dialog', async () => {
+    setSoldOut.mockResolvedValueOnce(prod({ isSoldOut: true, soldOut: { scope: 'UntilCancelled', text: 'нет до отмены' } })).mockResolvedValueOnce(prod())
+    const user = userEvent.setup()
+    renderPage(false)
+    const row = (await screen.findByText('Шаурма классическая')).closest('li')!
+    await user.click(within(row).getByRole('button', { name: 'Закончилось' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('radio', { name: 'Нет до отмены' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Убрать из продажи' }))
+    expect(setSoldOut).toHaveBeenLastCalledWith('s1', 'p1', true, 'UntilCancelled')
+    await user.click(await within(row).findByRole('button', { name: 'Вернуть в продажу' }))
+    expect(setSoldOut).toHaveBeenLastCalledWith('s1', 'p1', false, undefined)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('shows the weekdays label and the product counter «N из лимита» to the owner', async () => {
+    products.mockResolvedValue([prod({ weekdaysLabel: 'пн, ср, пт' }), prod({ id: 'p2', name: 'Пирожок', weekdaysLabel: 'только по меню' })])
+    renderPage(true)
+    const chips = await screen.findAllByTestId('weekdays-chip')
+    expect(chips.map((c) => c.textContent)).toEqual(['пн, ср, пт', 'только по меню'])
+    expect(screen.getByTestId('product-limit')).toHaveTextContent('Товаров: 2 из 50')
   })
 
   it('shows the server explanation when a non-empty category cannot be deleted', async () => {

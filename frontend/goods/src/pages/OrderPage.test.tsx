@@ -8,6 +8,7 @@ import type { PublicOrderDto } from '../types'
 
 const getPublic = vi.fn()
 const cancelPublic = vi.fn()
+vi.mock('../hooks/useOrderPush', () => ({ useOrderPush: () => ({ reason: null, subscribed: false, busy: false, error: null, enable: () => {}, disable: () => {} }) }))
 vi.mock('../api/orders', () => ({ ordersApi: { getPublic: (...a: unknown[]) => getPublic(...a), cancelPublic: (...a: unknown[]) => cancelPublic(...a) } }))
 
 const timeline = (reached: number) =>
@@ -18,7 +19,9 @@ const order = (over: Partial<PublicOrderDto> = {}): PublicOrderDto => ({
   items: [{ name: 'Сыр твёрдый', unit: 'Weight', unitPrice: 540, quantityOrdered: 540, lineTotal: 291.6, isApproximate: true }],
   total: 291.6, totalIsApproximate: true, comment: 'без лука', customerName: 'Иван', customerPhoneMasked: '+7 (900) ***-**-67', canCancel: true,
   shop: { name: 'Шаурма', slug: 'shaurma', publicUrl: 'https://goods.ezbook.ru/shaurma', phone: '79001234567', address: 'ул. Ленина, 12' },
-  shopChanges: [], version: 1, isGuest: true, ...over,
+  shopChanges: [], version: 1, isGuest: true,
+  pickup: { kind: 'Asap', date: '2026-10-05', startUtc: '2026-10-05T10:15:00Z', dueUtc: '2026-10-05T10:30:00Z', text: 'Как можно скорее (≈ 13:15)', isPreorder: false, isOverdue: false },
+  notifications: { webPush: { available: false, publicKey: null, unavailableText: null }, messengerRequested: false }, ...over,
 }) as PublicOrderDto
 
 function renderPage(state?: unknown) {
@@ -132,5 +135,25 @@ describe('OrderPage', () => {
     getPublic.mockRejectedValue({ response: { status: 404, data: '' } })
     renderPage()
     expect(await screen.findByRole('heading', { name: 'Заказ не найден' })).toBeInTheDocument()
+  })
+  describe('cycle 24: pick-up time and notifications', () => {
+    it('shows the pick-up text from the server prominently, with «Предзаказ» for a future date', async () => {
+      getPublic.mockResolvedValue(order({ pickup: { kind: 'Slot', date: '2026-10-09', startUtc: '2026-10-09T09:30:00Z', dueUtc: '2026-10-09T09:30:00Z', text: 'пт 9 окт, к 12:30', isPreorder: true, isOverdue: false } }))
+      renderPage()
+      expect(await screen.findByTestId('order-pickup')).toHaveTextContent('пт 9 окт, к 12:30')
+      expect(screen.getByTestId('order-pickup')).toHaveTextContent('Предзаказ')
+    })
+
+    it('says a message will come only when it was requested and the order is still active', async () => {
+      getPublic.mockResolvedValue(order({ notifications: { webPush: { available: false }, messengerRequested: true } }))
+      renderPage()
+      expect(await screen.findByTestId('order-messenger')).toBeInTheDocument()
+    })
+
+    it('shows the current number after the shop moved the order to another day', async () => {
+      getPublic.mockResolvedValue(order({ number: 12 }))
+      renderPage()
+      expect(await screen.findByTestId('order-number')).toHaveTextContent('№ 12')
+    })
   })
 })

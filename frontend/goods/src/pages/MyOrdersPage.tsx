@@ -43,7 +43,10 @@ export function MyOrdersPage() {
                   </div>
                   <OrderStatusBadge status={o.status} text={o.statusText} />
                 </div>
-                <p className="mt-3 text-sm text-ink-soft">
+                <p className="mt-3 text-sm text-ink" data-testid="my-order-pickup">
+                  {o.pickup.text}
+                </p>
+                <p className="mt-1 text-sm text-ink-soft">
                   Сумма: <span className="font-medium text-ink">{formatMoney(o.total, o.totalIsApproximate)}</span>
                 </p>
               </Link>

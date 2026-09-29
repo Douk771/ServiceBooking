@@ -5,15 +5,19 @@ import { useShopContext } from '../../hooks/useShop'
 import { useOrderBoardPolling } from '../../hooks/useOrderBoardPolling'
 import { useNewOrderSound } from '../../hooks/useNewOrderSound'
 import { useWakeLock } from '../../hooks/useWakeLock'
+import { useOrderingStatus } from '../../hooks/useOrderingStatus'
 import { ordersApi } from '../../api/orders'
 import { OrderCard, type CardAction } from '../../components/orders/OrderCard'
 import { ConfirmModal, ReasonModal } from '../../components/orders/ReasonModal'
 import { IssueModal } from '../../components/orders/IssueModal'
 import { EditOrderModal } from '../../components/orders/EditOrderModal'
 import { OrderDetailsModal } from '../../components/orders/OrderDetailsModal'
+import { ChangePickupModal } from '../../components/orders/ChangePickupModal'
+import { AcceptancePanel } from '../../components/acceptance/AcceptancePanel'
+import { OrderingBanner } from '../../components/acceptance/OrderingBanner'
 import { ProductsPanel } from '../../components/orders/ProductsPanel'
 import { ErrorState, InlineError, LoadingList } from '../../components/StatePanels'
-import { activeHighlights, boardTitle, detectNewOrders, freshness } from '../../utils/board'
+import { activeHighlights, boardTitle, detectNewOrders, freshness, serverNow } from '../../utils/board'
 import { getGoodsErrorMessage, httpStatus, readOrderConflict } from '../../utils/orderError'
 import type { OrderConflictDto, StaffOrderCardDto, StaffOrderDto } from '../../types'
 
@@ -30,6 +34,7 @@ type Dialog =
   | { kind: 'notPickedUp'; order: StaffOrderCardDto }
   | { kind: 'issue'; order: StaffOrderCardDto }
   | { kind: 'edit'; order: StaffOrderCardDto }
+  | { kind: 'changePickup'; order: StaffOrderCardDto }
   | { kind: 'details'; order: StaffOrderCardDto }
 
 /**
@@ -42,6 +47,7 @@ export function OrdersScreenPage() {
   const { shop } = useShopContext()
   const autoAccept = shop.settings.acceptanceMode === 'Auto'
   const board = useOrderBoardPolling(shop.id)
+  const ordering = useOrderingStatus(shop.id)
   const sound = useNewOrderSound()
   const wake = useWakeLock()
 
@@ -137,6 +143,7 @@ export function OrdersScreenPage() {
       case 'notPickedUp':
       case 'issue':
       case 'edit':
+      case 'changePickup':
       case 'details':
         return setDialog({ kind: act, order })
     }
@@ -167,6 +174,23 @@ export function OrdersScreenPage() {
           <Icon name="shopping-bag" size={14} /> Товары
         </Button>
       </div>
+
+      {state && (state.acceptance ?? ordering.data?.acceptance) && (
+        <AcceptancePanel
+          shopId={shop.id}
+          acceptance={(state.acceptance ?? ordering.data?.acceptance)!}
+          serverNowMs={serverNow(state, now)}
+          onChanged={() => {
+            void board.refresh()
+            void ordering.refresh()
+          }}
+        />
+      )}
+      {ordering.data ? (
+        <OrderingBanner status={ordering.data} />
+      ) : ordering.isError && state ? (
+        <p className="mb-4 text-xs text-muted" role="status">Не удалось обновить статус приёма заказов — повторим через минуту.</p>
+      ) : null}
 
       {sound.state === 'off' && (
         <div className="mb-4 rounded-xl bg-warning-bg text-warning px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
@@ -234,13 +258,38 @@ export function OrdersScreenPage() {
                 ) : (
                   <div className="flex flex-col gap-3">
                     {state[c.key].map((o) => (
-                      <OrderCard key={o.id} order={o} serverNow={state.serverTimeUtc} highlighted={live.has(o.id)} busy={busyId === o.id} onAction={onAction} />
+                      <OrderCard key={o.id} order={o} serverNow={state.serverTimeUtc} nowMs={serverNow(state, now)} highlighted={live.has(o.id)} busy={busyId === o.id} onAction={onAction} />
                     ))}
                   </div>
                 )}
               </section>
             ))}
           </div>
+
+          {/* «Предзаказы» — accepted orders with a pick-up date after today, grouped by date (§480). */}
+          <section aria-label="Предзаказы" className="mt-10" data-testid="preorders">
+            <h2 className="font-serif text-xl text-ink mb-3">
+              Предзаказы <span className="text-sm font-sans text-muted">{state.preorders.reduce((n, g) => n + g.orders.length, 0)}</span>
+            </h2>
+            {state.preorders.length === 0 ? (
+              <p className="text-sm text-muted">Заказов на другие дни нет. Принятые предзаказы появятся здесь и сами перейдут в «Принятые» в день выдачи.</p>
+            ) : (
+              <div className="flex flex-col gap-6">
+                {state.preorders.map((g) => (
+                  <div key={g.date}>
+                    <h3 className="text-sm font-semibold text-ink-soft mb-2">
+                      {g.label} <span className="font-normal text-muted">· {g.orders.length}</span>
+                    </h3>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {g.orders.map((o) => (
+                        <OrderCard key={o.id} order={o} serverNow={state.serverTimeUtc} nowMs={serverNow(state, now)} highlighted={false} busy={busyId === o.id} onAction={onAction} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
 
           <section aria-label="Завершённые сегодня" className="mt-10">
             <h2 className="font-serif text-xl text-ink mb-3">
@@ -251,7 +300,7 @@ export function OrdersScreenPage() {
             ) : (
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {state.completedToday.map((o) => (
-                  <OrderCard key={o.id} order={o} serverNow={state.serverTimeUtc} highlighted={false} busy={false} readOnly onAction={onAction} />
+                  <OrderCard key={o.id} order={o} serverNow={state.serverTimeUtc} nowMs={serverNow(state, now)} highlighted={false} busy={false} readOnly onAction={onAction} />
                 ))}
               </div>
             )}
@@ -273,6 +322,9 @@ export function OrdersScreenPage() {
       )}
       {dialog?.kind === 'edit' && (
         <EditOrderModal shopId={shop.id} order={dialog.order} onClose={closeDialog} onDone={doneFromDialog} onConflict={(c) => handleConflict(c, dialog.order.number)} />
+      )}
+      {dialog?.kind === 'changePickup' && (
+        <ChangePickupModal shopId={shop.id} order={dialog.order} onClose={closeDialog} onDone={doneFromDialog} onConflict={(c) => handleConflict(c, dialog.order.number)} />
       )}
       {dialog?.kind === 'details' && <OrderDetailsModal shopId={shop.id} orderId={dialog.order.id} number={dialog.order.number} onClose={closeDialog} />}
       {showProducts && <ProductsPanel shopId={shop.id} trackStock={shop.settings.trackStock} onClose={() => setShowProducts(false)} />}
