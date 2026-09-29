@@ -228,6 +228,16 @@ public class OrderDomainTests
         dto.Changes![0].Text.Should().Be("Сыр: списано 0,4 кг из 0,54 кг, остаток обнулён");
     }
 
+    // ── LegalTextKey (§398.3) ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void OrderCheckoutNotice_IsAKey_ButNotInTheFailFastSet()
+    {
+        // In All it would make LegalDocumentProvider's fail-fast block the deploy until legal-counsel supplies the text.
+        LegalTextKey.OrderCheckoutNotice.Should().Be("orderCheckoutNotice");
+        LegalTextKey.All.Should().NotContain(LegalTextKey.OrderCheckoutNotice);
+    }
+
     // ── OrderChangeLog ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
