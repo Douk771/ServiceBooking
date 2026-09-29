@@ -29,6 +29,14 @@ public static class ManualPlanAssignmentPolicy
         if (required && reasonCode is null)
             return "Для назначения скрытого тарифа укажите основание из списка.";
 
+        // Code-review finding (cycle 20): Program.cs's JsonStringEnumConverter accepts a raw integer for
+        // any enum by default (`allowIntegerValues` defaults to true), so an out-of-range value like
+        // `"reasonCode": 99` used to bind straight through model binding and reach this method as a
+        // technically-non-null-but-undefined enum value — §433.1 requires 400 for an unknown reasonCode,
+        // not a row silently written with a meaningless numeric code.
+        if (reasonCode is not null && !Enum.IsDefined(reasonCode.Value))
+            return $"Неизвестное значение reasonCode '{reasonCode}'.";
+
         if (reasonCode == SubscriptionChangeReason.TrialReissue)
             return "Перевыдача пробного периода делается только через «Выдать повторно» в блоке «Пробный период».";
 

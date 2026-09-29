@@ -76,4 +76,19 @@ public class ManualPlanAssignmentPolicyTests
         ManualPlanAssignmentPolicy.Validate(
                 SubscriptionChangeReason.OperatorErrorCorrection, new string('a', 1000), required: true)
             .Should().BeNull();
+
+    // Code-review finding (cycle 20): Program.cs's JsonStringEnumConverter accepts a raw out-of-range
+    // integer for any enum by default, so `"reasonCode": 99` used to bind straight through model binding
+    // as a technically-non-null `SubscriptionChangeReason` and reach here undetected — §433.1 requires 400
+    // for an unknown reasonCode, not a row silently written with a meaningless numeric code.
+    [Fact]
+    public void Validate_UndefinedReasonCode_ReturnsError() =>
+        ManualPlanAssignmentPolicy.Validate((SubscriptionChangeReason)99, "любой текст", required: true)
+            .Should().NotBeNull();
+
+    [Fact]
+    public void Validate_UndefinedReasonCode_ReturnsErrorEvenWhenNotRequired() =>
+        // §433.1's own ordering: a volunteered reason is validated regardless of `required`.
+        ManualPlanAssignmentPolicy.Validate((SubscriptionChangeReason)99, "любой текст", required: false)
+            .Should().NotBeNull();
 }
