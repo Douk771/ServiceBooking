@@ -10,6 +10,15 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<Company> Companies => Set<Company>();
+
+    // ARCHITECTURE_CYCLE23.md §388.2 — pickup orders for shops (Company.Kind = Orders).
+    public DbSet<ShopSettings> ShopSettings => Set<ShopSettings>();
+    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<OrderEvent> OrderEvents => Set<OrderEvent>();
+    public DbSet<OrderDailyCounter> OrderDailyCounters => Set<OrderDailyCounter>();
     public DbSet<CompanyMember> CompanyMembers => Set<CompanyMember>();
     public DbSet<Service> Services => Set<Service>();
     public DbSet<MasterService> MasterServices => Set<MasterService>();
@@ -132,6 +141,103 @@ public class AppDbContext : IdentityDbContext<AppUser>
         builder.Entity<Service>(e =>
         {
             e.Property(s => s.Price).HasColumnType("decimal(10,2)");
+        });
+
+        // ── Cycle 23: shop orders (ARCHITECTURE_CYCLE23.md §388.2) ────────────────────────────────────
+        builder.Entity<ShopSettings>(e =>
+        {
+            e.HasKey(s => s.CompanyId);
+            e.HasOne<Company>().WithOne().HasForeignKey<ShopSettings>(s => s.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(s => s.AllowCustomerCancel).HasDefaultValue(true);
+            e.Property(s => s.SellerLegalName).HasMaxLength(300);
+            e.Property(s => s.SellerInn).HasMaxLength(12);
+            e.Property(s => s.SellerOgrn).HasMaxLength(15);
+            e.Property(s => s.SellerLegalAddress).HasMaxLength(500);
+        });
+
+        builder.Entity<ProductCategory>(e =>
+        {
+            e.Property(c => c.Name).HasMaxLength(100);
+            e.HasOne<Company>().WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(c => new { c.CompanyId, c.Position });
+        });
+
+        builder.Entity<Product>(e =>
+        {
+            e.Property(p => p.Name).HasMaxLength(200);
+            e.Property(p => p.Description).HasMaxLength(2000);
+            e.Property(p => p.ImageUrl).HasMaxLength(300);
+            e.Property(p => p.ThumbnailUrl).HasMaxLength(300);
+            e.Property(p => p.Price).HasColumnType("decimal(10,2)");
+            e.Property(p => p.PortionText).HasMaxLength(50);
+            e.Property(p => p.CompositionAndAllergens).HasMaxLength(2000);
+            e.HasOne<Company>().WithMany().HasForeignKey(p => p.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            // Restrict is a safety net only: CatalogController nulls CategoryId of soft-deleted products
+            // before it deletes an (empty) category.
+            e.HasOne<ProductCategory>().WithMany().HasForeignKey(p => p.CategoryId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(p => new { p.CompanyId, p.CategoryId, p.Position });
+            e.HasIndex(p => p.CompanyId).HasDatabaseName("IX_Products_CompanyId_Live").HasFilter("\"DeletedAtUtc\" IS NULL");
+            // §388.4-4: stock is never negative. NULL = not tracked.
+            e.ToTable(t => t.HasCheckConstraint("CK_Products_StockOnHand_NonNegative", "\"StockOnHand\" IS NULL OR \"StockOnHand\" >= 0"));
+        });
+
+        builder.Entity<Order>(e =>
+        {
+            e.Property(o => o.PublicToken).HasMaxLength(64);
+            e.Property(o => o.CustomerName).HasMaxLength(100);
+            e.Property(o => o.CustomerPhone).HasMaxLength(20);
+            e.Property(o => o.Comment).HasMaxLength(500);
+            e.Property(o => o.StatusReason).HasMaxLength(300);
+            e.Property(o => o.EstimatedTotal).HasColumnType("decimal(10,2)");
+            e.Property(o => o.FinalTotal).HasColumnType("decimal(10,2)");
+            e.Property(o => o.ConsentPrivacyVersion).HasMaxLength(64);
+            e.Property(o => o.ConsentTermsVersion).HasMaxLength(64);
+            e.Property(o => o.CheckoutNoticeVersion).HasMaxLength(32);
+            // §396.2: the concurrency token. Incremented by hand on every change (int, not rowversion).
+            e.Property(o => o.Version).IsConcurrencyToken();
+            e.HasOne<Company>().WithMany().HasForeignKey(o => o.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            // Deleting the customer's account does not delete the shop's books — the link is just cleared.
+            e.HasOne<AppUser>().WithMany().HasForeignKey(o => o.CustomerUserId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(o => new { o.CompanyId, o.BusinessDate, o.Number }).IsUnique();
+            e.HasIndex(o => o.PublicToken).IsUnique();
+            e.HasIndex(o => new { o.CompanyId, o.IdempotencyKey }).IsUnique();
+            e.HasIndex(o => new { o.CompanyId, o.Status });
+            e.HasIndex(o => new { o.CompanyId, o.CompletedAtUtc });
+            e.HasIndex(o => new { o.CustomerUserId, o.CreatedAtUtc });
+            // Phone throttle and the subject export (§395.2 step 6, §398.1).
+            e.HasIndex(o => new { o.CustomerPhone, o.CreatedAtUtc }).HasFilter("\"CustomerPhone\" IS NOT NULL");
+        });
+
+        builder.Entity<OrderItem>(e =>
+        {
+            e.Property(i => i.NameSnapshot).HasMaxLength(200);
+            e.Property(i => i.PortionTextSnapshot).HasMaxLength(50);
+            e.Property(i => i.UnitPrice).HasColumnType("decimal(10,2)");
+            e.Property(i => i.LineTotalEstimated).HasColumnType("decimal(10,2)");
+            e.Property(i => i.LineTotalFinal).HasColumnType("decimal(10,2)");
+            e.HasOne(i => i.Order).WithMany(o => o.Items).HasForeignKey(i => i.OrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Product>().WithMany().HasForeignKey(i => i.ProductId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(i => i.OrderId);
+            e.HasIndex(i => i.ProductId);
+        });
+
+        builder.Entity<OrderEvent>(e =>
+        {
+            e.Property(ev => ev.ActorNameSnapshot).HasMaxLength(200);
+            e.Property(ev => ev.Reason).HasMaxLength(300);
+            e.Property(ev => ev.Comment).HasMaxLength(500);
+            e.Property(ev => ev.ChangesJson).HasColumnType("jsonb");
+            e.Property(ev => ev.TotalBefore).HasColumnType("decimal(10,2)");
+            e.Property(ev => ev.TotalAfter).HasColumnType("decimal(10,2)");
+            e.HasOne(ev => ev.Order).WithMany(o => o.Events).HasForeignKey(ev => ev.OrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(ev => new { ev.OrderId, ev.OccurredAtUtc });
+            e.HasIndex(ev => ev.OccurredAtUtc);
+        });
+
+        builder.Entity<OrderDailyCounter>(e =>
+        {
+            e.HasKey(c => new { c.CompanyId, c.BusinessDate });
+            e.HasOne<Company>().WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<CompanyMember>(e =>

@@ -25,6 +25,12 @@ public static class LegalTextKey
     // LegalDocumentType (doesn't gate the 451 flow), read-only reference text like the other six.
     public const string PublicAddressNotice = "PublicAddressNotice";
 
+    // ARCHITECTURE_CYCLE23.md §398.3 — the line under the "Заказать" button on goods. A constant, but
+    // DELIBERATELY NOT in All (the guestDataGateNotice precedent, cycle 16): All feeds LegalDocumentProvider's
+    // fail-fast, which would block the deploy until legal-counsel supplies the text. The frontend reads
+    // GET /api/legal/texts/orderCheckoutNotice and shows a neutral fallback on 404.
+    public const string OrderCheckoutNotice = "orderCheckoutNotice";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,
