@@ -21,7 +21,11 @@ public sealed record ConsentGrant(
     ConsentSource Source,
     string? IpAddress = null,
     string? UserAgent = null,
-    string? RecordedByUserId = null);
+    string? RecordedByUserId = null,
+    // ARCHITECTURE_CYCLE20.md §402.2 (US-20-01) — the printed paper form's number for a `PaperForm`-source
+    // grant, or null when the salon used its own paper form. Meaningless (and always null) for every
+    // other source; appended at the end so every pre-cycle-20 positional construction keeps compiling.
+    string? FormId = null);
 
 /// <summary>Read-only projection of a ConsentRecord row for CurrentAsync/CurrentAllAsync/HistoryAsync —
 /// callers of the ledger get a value they can't accidentally track/save through, only GrantAsync/
@@ -36,7 +40,11 @@ public sealed record ConsentState(
     Guid? CompanyId,
     DateTime GrantedAtUtc,
     DateTime? RevokedAtUtc,
-    string? RevokeReason);
+    string? RevokeReason,
+    // ARCHITECTURE_CYCLE20.md §402.2 — the paper form's printed number for a PaperForm-source row, or
+    // null for every other source (or a PaperForm row where the salon used its own form). Appended at the
+    // end so every pre-cycle-20 positional construction of this record keeps compiling.
+    string? FormId = null);
 
 /// <summary>
 /// The single reader and single writer of ConsentRecords (ARCHITECTURE_CYCLE5.md §45.1, §45.4). Scoped,
@@ -168,7 +176,8 @@ public class ConsentLedger(AppDbContext db)
             GrantedAtUtc = now,
             IpAddress = grant.IpAddress,
             UserAgent = grant.UserAgent,
-            RecordedByUserId = grant.RecordedByUserId
+            RecordedByUserId = grant.RecordedByUserId,
+            FormId = grant.FormId,
         };
 
         db.ConsentRecords.Add(record);
@@ -184,7 +193,12 @@ public class ConsentLedger(AppDbContext db)
     /// Returns the number of rows actually revoked; 0 is a legitimate, idempotent answer ("nothing to
     /// revoke"), not an error (US-68 p.7).
     /// </summary>
-    public async Task<int> RevokeAsync(ConsentSubject subject, string documentKey, ConsentPurpose? purpose, string? reason, CancellationToken ct = default)
+    public async Task<int> RevokeAsync(
+        ConsentSubject subject, string documentKey, ConsentPurpose? purpose, string? reason,
+        // ARCHITECTURE_CYCLE20.md §402.2 — who lifted the mark; null (the default) means the subject
+        // themselves did it from their profile, or a retention rule did — every pre-cycle-20 call site
+        // keeps its exact prior meaning unchanged.
+        string? revokedByUserId = null, CancellationToken ct = default)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await AdvisoryLock.AcquireAsync(db, subject.LockKey);
@@ -199,6 +213,7 @@ public class ConsentLedger(AppDbContext db)
         {
             record.RevokedAtUtc = now;
             record.RevokeReason = reason;
+            record.RevokedByUserId = revokedByUserId;
         }
 
         await db.SaveChangesAsync(ct);
@@ -218,5 +233,5 @@ public class ConsentLedger(AppDbContext db)
     }
 
     private static ConsentState ToState(ConsentRecord r) =>
-        new(r.Id, r.DocumentKey, r.Purpose, r.DocumentVersion, r.Act, r.Source, r.CompanyId, r.GrantedAtUtc, r.RevokedAtUtc, r.RevokeReason);
+        new(r.Id, r.DocumentKey, r.Purpose, r.DocumentVersion, r.Act, r.Source, r.CompanyId, r.GrantedAtUtc, r.RevokedAtUtc, r.RevokeReason, r.FormId);
 }

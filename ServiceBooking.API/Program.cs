@@ -375,6 +375,9 @@ builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.GuestDataGateJou
 // CURRENT audience for the admin list/preview/publish responses.
 builder.Services.AddScoped<ServiceBooking.API.Services.Legal.PlatformNoticePublisher>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Legal.NoticeAudienceCounter>();
+// ARCHITECTURE_CYCLE20.md §402.4 (US-20-01) — the one cascade shared by every entry point that lifts a
+// written-health-consent mark.
+builder.Services.AddScoped<ServiceBooking.API.Services.Legal.WrittenHealthConsentRevoker>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(
