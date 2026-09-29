@@ -174,6 +174,11 @@ internal static class NotificationServicesExtensions
         var webPushOptions = builder.Configuration.GetSection(ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions.SectionName)
             .Get<ServiceBooking.API.Services.Notifications.WebPush.WebPushOptions>() ?? new();
         client.Timeout = TimeSpan.FromSeconds(webPushOptions.RequestTimeoutSeconds);
+    }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        // SSRF: push services never redirect; connect only to public addresses.
+        AllowAutoRedirect = false,
+        ConnectCallback = ServiceBooking.API.Services.Notifications.WebPush.PushAddressGuard.ConnectAsync
     });
 
     builder.Services.AddSingleton<ServiceBooking.API.Services.Notifications.WebPush.LoggingWebPushSender>();
