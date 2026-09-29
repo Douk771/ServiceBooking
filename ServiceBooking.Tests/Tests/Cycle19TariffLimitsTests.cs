@@ -14,7 +14,7 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 19 — SPEC.md US-19-01…US-19-05, ARCHITECTURE_CYCLE19.md §382-§408. Written from SPEC.md's
+/// QA cycle 19 — SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md US-19-01…US-19-05, ARCHITECTURE_CYCLE19.md §382-§408. Written from SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md's
 /// acceptance criteria, independently of AdminController/AdminBillingController/BillingController's own
 /// implementation. Covers: "employees"/"companies" retired from the sellable option catalog everywhere
 /// they could be selected, bought or shown, and the account limit formula (tariff field + grandfathered

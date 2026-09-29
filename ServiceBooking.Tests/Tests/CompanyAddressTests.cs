@@ -12,8 +12,8 @@ using ServiceBooking.Tests.Infrastructure;
 namespace ServiceBooking.Tests.Tests;
 
 /// <summary>
-/// QA cycle 19 (SPEC.md US-19-06/US-19-07/US-19-08/US-19-09, ARCHITECTURE_CYCLE19.md §388/§413) —
-/// written independently from SPEC.md's acceptance criteria, not from the implementation.
+/// QA cycle 19 (SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md US-19-06/US-19-07/US-19-08/US-19-09, ARCHITECTURE_CYCLE19.md §388/§413) —
+/// written independently from SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md's acceptance criteria, not from the implementation.
 ///
 /// The geocoder ("проверка адреса по карте", cycle 13) is removed целиком in this cycle. This file
 /// replaces the old `AddressVerificationTests.cs` (ADDR-001…028, cycle 13): every scenario in that file

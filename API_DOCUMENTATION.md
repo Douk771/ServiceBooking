@@ -3621,7 +3621,8 @@ curl http://localhost:5000/api/health/ready
   `addressVerification`/`addressPoint`. `PUT /api/companies/{id}/address` принимает и игнорирует поле
   `verify` (было — включало проверку), отвечает `{ company }` без `verification`. Правовой гейт
   `POST /api/companies/address/notice` и его лимит (`address-verify`, 30/ч) не изменились.
-#### Добавления цикла 20 (US-20-02, US-20-05, US-20-07, US-20-09)
+
+### Добавления цикла 20 (US-20-02, US-20-05, US-20-07, US-20-09)
 
 * `PUT /api/admin/billing-accounts/{accountId}/subscription` — тело получило `reasonCode` и
   `reasonDetails` (оба необязательные, `SubscriptionChangeReason`: `OperatorErrorCorrection` |

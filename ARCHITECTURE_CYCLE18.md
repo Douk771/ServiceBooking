@@ -1315,11 +1315,11 @@ npm run types:api:cycle18        # openapi-typescript → src/types/api-cycle18.
 **D1.** Архивирование спек циклов 13/15/17 и перенаправление ссылок — §7 SPEC, шесть циклов долга:
 
 ```
-git show e9b7005:SPEC_CYCLE18_TRIAL_PLAN.md > SPEC_CYCLE17_C15_TECHDEBT.md
-git show f45fe56:SPEC_CYCLE18_TRIAL_PLAN.md > SPEC_CYCLE15_BOOKING_CARD_TARIFF.md
-git show 4058ae9:SPEC_CYCLE18_TRIAL_PLAN.md > SPEC_CYCLE13_PHOTO_LOGO_MAPS.md
+git show e9b7005:SPEC.md > SPEC_CYCLE17_C15_TECHDEBT.md
+git show f45fe56:SPEC.md > SPEC_CYCLE15_BOOKING_CARD_TARIFF.md
+git show 4058ae9:SPEC.md > SPEC_CYCLE13_PHOTO_LOGO_MAPS.md
 ```
-плюс перенаправление ссылок «`SPEC_CYCLE18_TRIAL_PLAN.md` §…», означающих циклы 13/15/17, в `ARCHITECTURE_CYCLE13.md`,
+плюс перенаправление ссылок «`SPEC.md` §…», означающих циклы 13/15/17, в `ARCHITECTURE_CYCLE13.md`,
 `ARCHITECTURE_CYCLE15.md`, `API_CONTRACT_CYCLE15.md`, `ARCHITECTURE_CYCLE17.md`,
 `API_CONTRACT_CYCLE17.md`, `LEGAL_REVIEW.md`, `CURRENT_STATE.md` §10.5; проверка —
 `grep -rn "SPEC\.md" --include="*.md" --include="*.cs" --include="*.ts" --include="*.tsx" .`
