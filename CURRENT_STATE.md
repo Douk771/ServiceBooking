@@ -143,8 +143,8 @@ Vitest 617/618 (падал `BookingCalendar.test.tsx`, потом стабили
 после `7bfa209`/`7591cd2` в репозитории нет.** Ожидаемый порядок — функциональные ≈ 852+3 цикла 20 − 28
 удалённых `ADDR-` + 32 новых, но это оценка, а не прогон. Команды запуска прежние (§7).
 ⚠️ В тексте и комментариях кода упоминаются тест-ID `LIM19-*` (`RetiredLimitOptionsTests.cs`: «exercised by the
-functional LIM19-020 gate-parity test»). **Таких тестов нет:** QA назвал кейсы `CY19-*`, а тест паритета
-SQL-гейта и `LiveRetiredRows` (LIM19-020) не написан (§9 C19-3).
+functional LIM19-020 gate-parity test»). QA назвал кейсы `CY19-*`; тест паритета
+SQL-гейта и `LiveRetiredRows` (LIM19-020) дописан после интеграции (§9 C19-3).
 
 **Документация:** `API_DOCUMENTATION.md` §4.16, подраздел «Опции-лимиты выведены из оборота — новое
 в цикле 19» (включает абзац об удалении геокодера). `DEPLOY.md` §19 переписан на «Геокодер удалён в
@@ -9628,12 +9628,13 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   (нумерация 9.7 → 9.9). Эта редакция опубликована на бою 30.09.2026 (🚀20), живой манифест —
   `/opt/ezbook/app/legal/`. Цикл 19 `legal-drafts/` сознательно не правил (ответ заказчика 5).
   Фронт показывает владельцу только раздел «Текст для владельца», приложение Б в интерфейс не попадает.
-- **C19-3. Паритет SQL-гейта и `RetiredLimitOptions.LiveRetiredRows` тестом не проверен.**
-  `ARCHITECTURE_CYCLE19.md` §385.2 требовал тест LIM19-020. Его нет, хотя на него ссылается
-  комментарий в `ServiceBooking.UnitTests/RetiredLimitOptionsTests.cs`. Два определения
-  «незавершённой покупки» (SQL в `deploy/checks/cycle19-retired-limit-options-live.sql` и LINQ) могут
-  разойтись незаметно. `RetiredLimitOptionsStartupReport` и сами SQL-файлы автотестами не покрыты
-  (US-19-05 QA не проверял, `TEST_CATALOG.md` «Цикл 19»).
+- **C19-3. ✅ Закрыт 2026-09-30 (`ddd1556`).** `ServiceBooking.Tests/Tests/Cycle19RetiredLimitGateParityTests.cs`:
+  LIM19-020 — SQL гейта и `LiveRetiredRows` на одном наборе (регистр/пробелы ключа, границы
+  `EndsAtUtc`/`PaidUntilUtc` включая «ровно now()» в одной транзакции, истёкшая подписка) дают одно
+  множество и совпадают с §385.2; LIM19-020b — отчёт выполняется штатным `psql` в контейнере. Остаток:
+  `RetiredLimitOptionsStartupReport` автотестом не покрыт; SQL обрезает только пробелы (`btrim`), а
+  `IsRetiredCapability` — любой пробельный символ (ключ с табуляцией гейт не признал бы; админ-API ключ
+  валидирует, риск низкий).
 - **C19-4. Миграция `20260928163137_Cycle19RetireLimitOptions` по ID старше миграций циклов 20–22**,
   которые уже применены на бою. `MigrateAsync` на старте применит её как недостающую. Риск есть только
   для неидемпотентного `dotnet ef migrations script <from> <to>`: он её пропустит. В `deploy/` и CI
