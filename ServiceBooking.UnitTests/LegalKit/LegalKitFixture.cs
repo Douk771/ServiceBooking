@@ -44,13 +44,24 @@ internal static class LegalKitFixture
                 new { key = "HealthDataConsent", version = "2026-09-22-draft", isDraft = true, file = "health.html" },
                 new { key = "GuardianConfirmation", version = "2026-09-22-draft", isDraft = true, file = "guardian.html" },
                 new { key = "PublicAddressNotice", version = "2026-09-22-draft", isDraft = true, file = "address-notice.html" },
+                // ARCHITECTURE_CYCLE20.md §411/§412 — five more required uiTexts keys, same fail-fast rule.
+                new { key = "GuestDataGateNotice", version = "2026-09-22-draft", isDraft = true, file = "guest-data-gate-notice.html" },
+                new { key = "GuestDataGateDeleteNotice", version = "2026-09-22-draft", isDraft = true, file = "guest-data-gate-delete-notice.html" },
+                new { key = "GuestDataGateRevokeNotice", version = "2026-09-22-draft", isDraft = true, file = "guest-data-gate-revoke-notice.html" },
+                new { key = "HealthDataWrittenConsentForm", version = "2026-09-22-draft", isDraft = true, file = "health-written-consent-form.html" },
+                new { key = "CompanyPhotoPeopleNotice", version = "2026-09-22-draft", isDraft = true, file = "company-photo-people-notice.html" },
             },
             appendices = new { TermsOwner = new[] { "09-channel-offer.html" } },
         };
 
         File.WriteAllText(Path.Combine(dir, "legal.json"), JsonSerializer.Serialize(manifest));
 
-        foreach (var file in new[] { "terms", "pdn", "risk", "booking", "ad", "unsub", "photo", "health", "guardian", "address-notice" })
+        foreach (var file in new[]
+                 {
+                     "terms", "pdn", "risk", "booking", "ad", "unsub", "photo", "health", "guardian", "address-notice",
+                     "guest-data-gate-notice", "guest-data-gate-delete-notice", "guest-data-gate-revoke-notice",
+                     "health-written-consent-form", "company-photo-people-notice",
+                 })
             File.WriteAllText(Path.Combine(dir, $"{file}.html"), $"<p>{{{{ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ}}}} {file}</p>");
 
         File.WriteAllText(Path.Combine(dir, "privacy.html"), privacyHtml ?? "<p>{{ПОЧТА_ДЛЯ_ОБРАЩЕНИЙ}} privacy</p>");

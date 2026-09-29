@@ -25,9 +25,20 @@ public static class LegalTextKey
     // LegalDocumentType (doesn't gate the 451 flow), read-only reference text like the other six.
     public const string PublicAddressNotice = "PublicAddressNotice";
 
+    // ARCHITECTURE_CYCLE20.md §411, §412 (Т20-08) — five new keys added by the cycle 20 commit A, together
+    // with the matching legal-drafts/*.html files and the legal.json manifest entries. Same convention as
+    // the other members: read-only reference texts, none of them gate the 451 flow.
+    public const string GuestDataGateNotice = "GuestDataGateNotice";
+    public const string GuestDataGateDeleteNotice = "GuestDataGateDeleteNotice";
+    public const string GuestDataGateRevokeNotice = "GuestDataGateRevokeNotice";
+    public const string HealthDataWrittenConsentForm = "HealthDataWrittenConsentForm";
+    public const string CompanyPhotoPeopleNotice = "CompanyPhotoPeopleNotice";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,
-        PublicAddressNotice
+        PublicAddressNotice,
+        GuestDataGateNotice, GuestDataGateDeleteNotice, GuestDataGateRevokeNotice, HealthDataWrittenConsentForm,
+        CompanyPhotoPeopleNotice
     };
 }

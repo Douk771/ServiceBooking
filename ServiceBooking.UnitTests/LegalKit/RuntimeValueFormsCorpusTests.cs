@@ -75,6 +75,21 @@ public class RuntimeValueFormsCorpusTests
             "the scanner must flag this markup so the build fails on a typo, per §306.2/§256.5");
     }
 
+    /// <summary>CY20-U-09 (ARCHITECTURE_CYCLE20.md §402.5, §412.8) — the corpus's `knownNames` is the
+    /// single list both sides are meant to sync against; this is the C# half (the TS half is
+    /// `legalRuntimeValues.test.ts` comparing the same field to `LEGAL_RUNTIME_VALUE_NAMES`). Compared as
+    /// a set — order carries no meaning here.</summary>
+    [Fact]
+    public void KnownNames_MatchRuntimeValueScanner()
+    {
+        var corpus = LoadCorpus();
+
+        corpus.KnownNames.Should().NotBeEmpty("contracts/legal/runtime-value-forms.json must declare knownNames");
+        corpus.KnownNames.Should().BeEquivalentTo(RuntimeValueScanner.KnownNames,
+            "the corpus's knownNames is the one list both RuntimeValueScanner.KnownNames (C#) and " +
+            "LEGAL_RUNTIME_VALUE_NAMES (TS) must stay in sync with (ARCHITECTURE_CYCLE20.md §402.5)");
+    }
+
     /// <summary>Known-name-only smoke test on the real committed document (US-17-07's second criterion):
     /// no un-substitutable data-legal-value markup should remain in the canonical file after a real
     /// substitution pass — but that pass lives in the frontend, so here we only assert the scanner finds
@@ -122,6 +137,7 @@ public class RuntimeValueFormsCorpusTests
     {
         public List<CorpusCase> Cases { get; set; } = [];
         public UnknownCase? UnknownNameCase { get; set; }
+        public List<string> KnownNames { get; set; } = [];
     }
 
     private sealed class CorpusCase
