@@ -17,6 +17,7 @@ public static class ShopTexts
     public const string InnInvalid = "ИНН указан с ошибкой";
     public const string SlugOrNameRequired = "Передайте адрес или название";
     public const string StaffOnly = "В магазин можно добавить только сотрудника.";
+    public const string WeekdayUnknown = "Неизвестный день недели";
 
     public static string CategoryLimitReached(int limit) => $"В магазине уже {limit} категорий";
     public static string ProductLimitReached(int limit) => $"В магазине уже {limit} товаров";

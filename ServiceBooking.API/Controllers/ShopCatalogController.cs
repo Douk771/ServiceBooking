@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.DTOs.Shops;
 using ServiceBooking.API.Services;
+using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.API.Services.Orders;
 using ServiceBooking.API.Services.Shops;
@@ -28,7 +29,8 @@ namespace ServiceBooking.API.Controllers;
 [Authorize]
 public class ShopCatalogController(
     AppDbContext db, ShopAccessResolver access, CatalogMapper mapper, StockLedger stockLedger,
-    ImageUploadService imageUploadService, FileStorage storage, IOptions<OrdersOptions> ordersOptions) : ControllerBase
+    ImageUploadService imageUploadService, FileStorage storage, IOptions<OrdersOptions> ordersOptions,
+    OrdersPlanResolver plans, ShopGateLoader gates) : ControllerBase
 {
     // ── Categories ───────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -182,19 +184,25 @@ public class ShopCatalogController(
             return BadRequest(error);
         if (input.CategoryId is { } categoryId && !await db.ProductCategories.AnyAsync(c => c.Id == categoryId && c.CompanyId == shopId, ct))
             return BadRequest(ShopTexts.CategoryNotFound);
+        if (!TryWeekdayMask(input.AvailableWeekdays, out var weekdayMask)) return BadRequest(ShopTexts.WeekdayUnknown);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await AdvisoryLock.AcquireAsync(db, $"shop-catalog:{shopId}");
-        var limit = ordersOptions.Value.MaxProductsPerShop;
+        // The limit is the TARIFF's ("Заказы" line), capped by the technical ceiling (§459.3); the count is taken under the catalog lock.
+        var plan = result.Shop!.BillingAccountId is { } accountId ? await plans.GetForAccountAsync(accountId, ct) : OrdersPlan.FallbackFree;
+        var ceiling = ordersOptions.Value.MaxProductsPerShop;
+        var limit = ShopManageMapper.EffectiveProductLimit(plan, ordersOptions.Value);
         if (await db.Products.CountAsync(p => p.CompanyId == shopId && p.DeletedAtUtc == null, ct) >= limit)
-            return Conflict(new CatalogConflictDto(CatalogConflictCode.ProductLimitReached, ShopTexts.ProductLimitReached(limit)));
+            return Conflict(new CatalogConflictDto(CatalogConflictCode.ProductLimitReached,
+                limit < ceiling ? BillingTexts.ShopProductLimitReached(plan.PlanName, limit) : ShopTexts.ProductLimitReached(limit)));
 
         var positions = await db.Products.Where(p => p.CompanyId == shopId && p.CategoryId == input.CategoryId && p.DeletedAtUtc == null)
             .Select(p => p.Position).ToListAsync(ct);
         var product = new Product
         {
             Id = Guid.NewGuid(), CompanyId = shopId, CategoryId = input.CategoryId, Unit = input.Unit,
-            IsPublished = input.IsPublished, Position = CatalogOrdering.NextPosition(positions)
+            IsPublished = input.IsPublished, Position = CatalogOrdering.NextPosition(positions),
+            AvailableWeekdaysMask = weekdayMask
         };
         Apply(product, normalized!);
         db.Products.Add(product);
@@ -220,9 +228,12 @@ public class ShopCatalogController(
             return BadRequest(error);
         if (input.CategoryId is { } categoryId && !await db.ProductCategories.AnyAsync(c => c.Id == categoryId && c.CompanyId == shopId, ct))
             return BadRequest(ShopTexts.CategoryNotFound);
+        // A PUT replaces the whole product: no weekdays in the body means every day (cycle-23 behavior).
+        if (!TryWeekdayMask(input.AvailableWeekdays, out var weekdayMask)) return BadRequest(ShopTexts.WeekdayUnknown);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await AdvisoryLock.AcquireAsync(db, $"shop-catalog:{shopId}");
+        product.AvailableWeekdaysMask = weekdayMask;
         if (input.CategoryId != product.CategoryId)
         {
             // Moved to another category: it goes last there.
@@ -340,18 +351,48 @@ public class ShopCatalogController(
 
     // ── Sold out and stock (owner and staff) ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// "Sold out" with a term (Q-24-5, §452.2): "for today" (the mark carries the shop's current working day and stops counting on its own the next
+    /// day — computed, no background task) or "until cancelled". No <c>scope</c> with <c>isSoldOut: true</c> is "until cancelled": what the cycle-23
+    /// frontend means. Available to the owner and staff (<see cref="ShopPermission.ManageAvailability"/>).
+    /// </summary>
     [HttpPut("products/{productId:guid}/sold-out")]
     public async Task<ActionResult<ProductDto>> SetSoldOut(Guid shopId, Guid productId, SoldOutInput input, CancellationToken ct)
     {
-        var result = await access.ResolveAsync(shopId, User, ShopPermission.ManageStock, asNoTracking: true, ct: ct);
+        var result = await access.ResolveAsync(shopId, User, ShopPermission.ManageAvailability, asNoTracking: true, ct: ct);
         if (!result.Ok) return result.Error!;
         var product = await FindLiveProductAsync(shopId, productId, ct);
         if (product is null) return NotFound();
 
+        var scope = input.IsSoldOut ? input.Scope ?? SoldOutScope.UntilCancelled : (SoldOutScope?)null;
+        var now = DateTime.UtcNow;
         product.IsSoldOut = input.IsSoldOut;
-        product.UpdatedAtUtc = DateTime.UtcNow;
+        product.SoldOutForDate = scope == SoldOutScope.Today
+            ? (await gates.LoadAsync(result.Shop!, now, ct)).Pickup.CurrentWorkingDay(now)
+            : null;
+        product.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
         return Ok(await mapper.BuildOneAsync(result.Shop!, product, ct));
+    }
+
+    /// <summary>P1 (US-24-10): put the same weekdays on every product of a category (owner). The mask of each product is replaced.</summary>
+    [HttpPut("categories/{categoryId:guid}/weekdays")]
+    [RequiresOwnerTerms]
+    public async Task<ActionResult<List<ProductDto>>> SetCategoryWeekdays(Guid shopId, Guid categoryId, CategoryWeekdaysInput input, CancellationToken ct)
+    {
+        var result = await access.ResolveAsync(shopId, User, ShopPermission.ManageShop, asNoTracking: true, ct: ct);
+        if (!result.Ok) return result.Error!;
+        if (!await db.ProductCategories.AnyAsync(c => c.Id == categoryId && c.CompanyId == shopId, ct)) return NotFound();
+        if (!TryWeekdayMask(input.Weekdays ?? [], out var mask)) return BadRequest(ShopTexts.WeekdayUnknown);
+
+        var products = await db.Products.Where(p => p.CompanyId == shopId && p.CategoryId == categoryId && p.DeletedAtUtc == null).ToListAsync(ct);
+        foreach (var p in products)
+        {
+            p.AvailableWeekdaysMask = mask;
+            p.UpdatedAtUtc = DateTime.UtcNow;
+        }
+        await db.SaveChangesAsync(ct);
+        return Ok(await mapper.BuildManyAsync(result.Shop!, products, ct));
     }
 
     /// <summary>
@@ -377,6 +418,16 @@ public class ShopCatalogController(
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Weekdays of the input as the stored mask. null = every day; a repeated or unknown day is refused (the caller answers 400).</summary>
+    private static bool TryWeekdayMask(IReadOnlyList<DayOfWeek>? days, out int mask)
+    {
+        mask = WeekdayMask.All;
+        if (days is null) return true;
+        if (days.Any(d => !Enum.IsDefined(d)) || days.Distinct().Count() != days.Count) return false;
+        mask = WeekdayMask.FromDays(days);
+        return true;
+    }
 
     private Task<Product?> FindLiveProductAsync(Guid shopId, Guid productId, CancellationToken ct) =>
         db.Products.FirstOrDefaultAsync(p => p.Id == productId && p.CompanyId == shopId && p.DeletedAtUtc == null, ct);
