@@ -3547,7 +3547,8 @@ curl http://localhost:5000/api/health/ready
 сделанные покупки **не удаляются** — они просто перестают читаться как действующие (`IsActive = false`
 после миграции цикла, плюс серверный фильтр по `capabilityKey`).
 
-* `items[].retired` (`bool`) — новое поле у строк заявки владельца (`GET/POST /api/billing/subscription`)
+* `items[].retired` (`bool`) — новое поле у строк заявки владельца (`GET /api/billing/subscription`,
+  `POST /api/billing/subscription/request`)
   и у строк заявки в очереди/карточке аккаунта админки. `true` только у строк, поданных **до** выката
   этого цикла по опции, которая на момент чтения оказалась опцией-лимитом; для всех новых строк и всех
   остальных опций — `false`.
@@ -3565,7 +3566,7 @@ curl http://localhost:5000/api/health/ready
   правило в БД не меняется; матрица в ответе и `optionCoverage` эту опцию не содержат. Если правило
   `extra-*` было сохранено раньше и в новом запросе просто отсутствует — оно тоже **не удаляется**
   (обычные «неприсланные правила удаляются» сюда не относится).
-* `GET /api/admin/options`, `GET /api/option-capabilities`, витрина (`GET /api/pricing`,
+* `GET /api/admin/options`, `GET /api/admin/option-capabilities`, витрина (`GET /api/pricing`,
   `GET /api/admin/pricing/preview`) — опции-лимиты и возможности `employees`/`companies` в ответах
   больше не появляются.
 * Геокодер (проверка адреса по карте, цикл 13) удалён целиком: маршрута `POST
