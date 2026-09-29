@@ -36,6 +36,7 @@ public class NotificationChannelsController(
     LegalDocumentProvider legalProvider,
     ConsentLedger ledger,
     ChannelFundingReader fundingReader,
+    ChannelEligibility eligibility,
     ILogger<NotificationChannelsController> logger) : ControllerBase
 {
     private const string TestMessageText =
@@ -91,7 +92,7 @@ public class NotificationChannelsController(
         };
 
         return Ok(new ChannelOfferDto(
-            PricePerMonth: price, AllowedByPlan: plan.AllowNotificationChannel,
+            PricePerMonth: price, AllowedByPlan: await eligibility.IsAllowedAsync(accountId, plan, ct),
             RiskText: riskDoc.ContentHtml, RiskVersion: riskDoc.Version, Transports: transports));
     }
 
@@ -122,7 +123,7 @@ public class NotificationChannelsController(
         var plan = accountId.HasValue
             ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
             : EffectivePlan.Free;
-        if (!plan.AllowNotificationChannel)
+        if (!await eligibility.IsAllowedAsync(accountId, plan))
             return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
 
         // N21, §59/§47.3: `notifications.channel.price-per-month` no longer controls anything — the
@@ -231,7 +232,7 @@ public class NotificationChannelsController(
         var plan = accountId.HasValue
             ? await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId.Value)
             : EffectivePlan.Free;
-        if (!plan.AllowNotificationChannel)
+        if (!await eligibility.IsAllowedAsync(accountId, plan))
             return StatusCode(402, "Подключение канала недоступно на вашем тарифе");
 
         var nowUtc = DateTime.UtcNow;
@@ -597,8 +598,7 @@ public class NotificationChannelsController(
         if (channel.BillingAccountId is null || company.BillingAccountId is null)
             return Forbid();
 
-        // ARCHITECTURE_CYCLE23.md §389.2: notification channels serve salons only in cycle 1 (rights first, kind second).
-        if (ServiceBooking.API.Services.Companies.CompanyKindGuard.RejectShop(company.Kind) is { } shopRefusal) return shopRefusal;
+        // ARCHITECTURE_CYCLE24.md §457.3 (A10): the number can now serve a SHOP too — the cycle-23 refusal is gone (the isolation matrix loses this row).
 
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"channel-assignment:{id}");
@@ -620,7 +620,9 @@ public class NotificationChannelsController(
                 await transaction.CommitAsync();
                 return await BuildAssignedResponseAsync(channel, idleDaysSame);
             }
-            return Conflict("Салон уже привязан к другому номеру этого мессенджера");
+            return Conflict(company.Kind == CompanyKind.Orders
+                ? "Магазин уже привязан к другому номеру этого мессенджера"
+                : "Салон уже привязан к другому номеру этого мессенджера");
         }
 
         var otherCompanyCount = await db.ChannelCompanyAssignments.CountAsync(a => a.ChannelId == id);

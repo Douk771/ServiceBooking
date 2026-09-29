@@ -34,5 +34,11 @@ public sealed class PublicSiteLinks(IOptions<PublicSitesOptions> options)
     /// <summary>{Orders}/o/{token}.</summary>
     public string OrderPageUrl(string token) => $"{SiteBaseUrl(CompanyKind.Orders)}/o/{token}";
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE24.md §457.1 — the unsubscribe link of a message about an order: <c>{ServicesBaseUrl}/u/{token}</c>. The opt-out is by
+    /// phone number and common to the whole platform; its page exists on ezbook.ru only (the goods nginx deliberately does not proxy <c>/u/</c>).
+    /// </summary>
+    public string UnsubscribeUrl(string token) => $"{SiteBaseUrl(CompanyKind.Services)}/u/{token}";
+
     private static string Trim(string url) => url.TrimEnd('/');
 }

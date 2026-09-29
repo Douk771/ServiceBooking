@@ -416,7 +416,8 @@ public class CompanyNotificationsController(
         EffectivePlan plan, CompanyNotificationSettings? settings, IReadOnlyList<ChannelCompanyAssignment> assignments)
     {
         var enabledMask = settings?.EnabledTypeMask ?? CompanyNotificationSettings.DefaultEnabledTypeMask;
-        var enabledTypes = Enum.GetValues<NotificationType>().Where(t => (enabledMask & (1 << (int)t)) != 0).ToList();
+        // Cycle 24 (§458): the salon screen speaks ONLY about booking types — the order types share the enum but are not salon settings.
+        var enabledTypes = NotificationTypeCatalog.BookingTypes.Where(t => (enabledMask & (1 << (int)t)) != 0).ToList();
 
         var deliveryMode = settings?.DeliveryMode ?? new CompanyNotificationSettings().DeliveryMode;
         var priorityTransport = settings?.PriorityTransport ?? new CompanyNotificationSettings().PriorityTransport;

@@ -117,6 +117,14 @@ public sealed class NotificationDispatchTask(
                 .Where(s => companyIds.Contains(s.CompanyId))
                 .ToDictionaryAsync(s => s.CompanyId, linkedCt);
 
+            // ARCHITECTURE_CYCLE24.md §457.3: a message about an ORDER is held back at send time if the shop switched messenger messages off since it
+            // was queued — one query for the shops of the order rows of this batch (none when the batch has no order rows).
+            var orderShopIds = candidates.Where(n => n.OrderId != null).Select(n => n.CompanyId).Distinct().ToList();
+            var messengerOffShops = orderShopIds.Count == 0
+                ? new HashSet<Guid>()
+                : (await db.ShopSettings.AsNoTracking().Where(s => orderShopIds.Contains(s.CompanyId) && !s.CustomerMessengerEnabled)
+                    .Select(s => s.CompanyId).ToListAsync(linkedCt)).ToHashSet();
+
             var phones = candidates.Select(n => n.RecipientPhone).Distinct().ToList();
             var optedOutPhones = (await db.NotificationOptOuts
                     .Where(o => phones.Contains(o.Phone))
@@ -131,8 +139,17 @@ public sealed class NotificationDispatchTask(
                 if (NotificationTiming.IsExpired(row.VisitStartUtc, now))
                 {
                     row.Status = NotificationStatus.Expired;
-                    row.Reason = NotificationReason.VisitAlreadyStarted;
+                    // For an order row VisitStartUtc is "the moment the message is outdated" (queued + 2 h), not a visit.
+                    row.Reason = row.OrderId != null ? NotificationReason.OrderMessageOutdated : NotificationReason.VisitAlreadyStarted;
                     expired++;
+                    continue;
+                }
+
+                if (row.OrderId != null && messengerOffShops.Contains(row.CompanyId))
+                {
+                    row.Status = NotificationStatus.Skipped;
+                    row.Reason = NotificationReason.MessengerDisabledByShop;
+                    skipped++;
                     continue;
                 }
 
