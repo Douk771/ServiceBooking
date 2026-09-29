@@ -1,13 +1,14 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { subjectRequestsApi } from '../../api/subjectRequests'
+import { subjectRequestsApi, type ManualSubjectRequestPayload } from '../../api/subjectRequests'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
+import { Input } from '../../components/ui/Input'
 import { getSubjectRequestAdminErrorMessage } from '../../utils/subjectRequestError'
 import type { DueState, SubjectRequestDto, SubjectRequestKind, SubjectRequestStatus } from '../../types'
 
@@ -40,6 +41,131 @@ const DUE_LABEL: Record<DueState, string> = {
   OnTime: 'в срок',
   DueSoon: 'срок скоро истекает',
   Overdue: 'просрочено',
+}
+
+// API_CONTRACT_CYCLE20.md §438 (US-20-09) — `WebForm` is what the public form always sends; the two
+// manual channels only ever come from `RegisterManuallyModal` below.
+const CHANNEL_LABEL: Record<'WebForm' | 'Email' | 'PostalMail', string> = {
+  WebForm: 'Веб-форма',
+  Email: 'E-mail',
+  PostalMail: 'Почта',
+}
+
+function RegisterManuallyModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient()
+  const kindId = useId()
+  const channelId = useId()
+  const messageId = useId()
+  const [kind, setKind] = useState<SubjectRequestKind>('Access')
+  const [channel, setChannel] = useState<'Email' | 'PostalMail'>('Email')
+  const [receivedAt, setReceivedAt] = useState(() => new Date().toISOString().slice(0, 10))
+  const [phone, setPhone] = useState('')
+  const [contactValue, setContactValue] = useState('')
+  const [message, setMessage] = useState('')
+
+  const mut = useMutation({
+    mutationFn: () => {
+      const payload: ManualSubjectRequestPayload = {
+        kind,
+        channel,
+        // §438 — receivedAt is a date-time; a plain <input type="date"> gives just the calendar day,
+        // which the server treats as midnight UTC of that day (§0 conventions) — enough precision for
+        // "поступило по почте на этой неделе", never later than the moment of registration itself.
+        receivedAt: new Date(`${receivedAt}T00:00:00Z`).toISOString(),
+        phone: phone.trim() || null,
+        contactValue: contactValue.trim(),
+        message: message.trim(),
+      }
+      return subjectRequestsApi.adminRegister(payload)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-subject-requests'] })
+      onClose()
+    },
+  })
+
+  const canSubmit = contactValue.trim().length > 0 && message.trim().length > 0 && receivedAt !== ''
+
+  return (
+    <Modal title="Зарегистрировать обращение, пришедшее не через форму" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <p className="text-xs text-muted bg-info-bg rounded-xl px-3 py-2">
+          Для обращений, полученных по e-mail или почтой. Обращения через веб-форму регистрируются автоматически.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={kindId} className="text-[13px] font-medium text-[#4A4038]">
+              Вид обращения
+            </label>
+            <select
+              id={kindId}
+              value={kind}
+              onChange={(e) => setKind(e.target.value as SubjectRequestKind)}
+              className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
+            >
+              {Object.entries(KIND_LABEL).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={channelId} className="text-[13px] font-medium text-[#4A4038]">
+              Канал
+            </label>
+            <select
+              id={channelId}
+              value={channel}
+              onChange={(e) => setChannel(e.target.value as 'Email' | 'PostalMail')}
+              className="rounded-xl border border-line px-3.5 py-2.5 text-sm outline-none focus:border-gold bg-white text-ink"
+            >
+              <option value="Email">E-mail</option>
+              <option value="PostalMail">Почта</option>
+            </select>
+          </div>
+        </div>
+        <Input
+          label="Дата поступления"
+          type="date"
+          value={receivedAt}
+          max={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setReceivedAt(e.target.value)}
+        />
+        <Input label="Телефон (если известен)" placeholder="+7 900 000-00-00" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <Input
+          label="Контакт для ответа"
+          placeholder="e-mail или почтовый адрес"
+          value={contactValue}
+          onChange={(e) => setContactValue(e.target.value)}
+        />
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={messageId} className="text-[13px] font-medium text-[#4A4038]">
+            Текст обращения
+          </label>
+          <textarea
+            id={messageId}
+            rows={4}
+            maxLength={4000}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            className="rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-gold focus:ring-[3px] focus:ring-cream-deep resize-none bg-white text-ink"
+          />
+        </div>
+
+        {mut.isError && <p className="text-sm text-danger">{getSubjectRequestAdminErrorMessage(mut.error)}</p>}
+
+        <div className="flex gap-3 pt-1">
+          <Button variant="secondary" className="flex-1" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button className="flex-1" disabled={!canSubmit} loading={mut.isPending} onClick={() => mut.mutate()}>
+            Зарегистрировать
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
 }
 
 function AnswerModal({ request, onClose }: { request: SubjectRequestDto; onClose: () => void }) {
@@ -116,6 +242,7 @@ export function SubjectRequestsTab() {
   const [status, setStatus] = useState<SubjectRequestStatus | ''>('')
   const [dueState, setDueState] = useState<DueState | ''>('')
   const [answering, setAnswering] = useState<SubjectRequestDto | null>(null)
+  const [registering, setRegistering] = useState(false)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['admin-subject-requests', page, status, dueState],
@@ -161,6 +288,9 @@ export function SubjectRequestsTab() {
             </option>
           ))}
         </select>
+        <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setRegistering(true)}>
+          Зарегистрировать обращение
+        </Button>
       </div>
 
       {isLoading ? (
@@ -188,9 +318,13 @@ export function SubjectRequestsTab() {
                   <span className="text-xs text-muted">{KIND_LABEL[r.kind]}</span>
                   <span className="text-xs px-2 py-0.5 rounded-full bg-cream-deep text-ink-soft">{STATUS_LABEL[r.status]}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DUE_CLASS[r.dueState]}`}>{DUE_LABEL[r.dueState]}</span>
+                  {/* §438 — `channel` is absent on a stale cached list (pre-cycle-20); treated as the
+                      public web form, which is what every pre-cycle request actually was. */}
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-line text-ink-soft">{CHANNEL_LABEL[r.channel ?? 'WebForm']}</span>
                 </div>
                 <p className="text-xs text-muted mt-0.5">
                   {r.phoneMasked} · поступило {fmt(r.receivedAt)} · срок до {fmt(r.dueAt)}
+                  {r.registeredByName && ` · зарегистрировал(а) ${r.registeredByName}`}
                 </p>
               </div>
               <Button size="sm" variant="secondary" className="shrink-0" onClick={() => setAnswering(r)}>
@@ -204,6 +338,7 @@ export function SubjectRequestsTab() {
       {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} hasNext={data.hasNext} onPageChange={setPage} />}
 
       {answering && <AnswerModal request={answering} onClose={() => setAnswering(null)} />}
+      {registering && <RegisterManuallyModal onClose={() => setRegistering(false)} />}
     </div>
   )
 }
