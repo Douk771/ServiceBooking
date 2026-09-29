@@ -38,7 +38,9 @@ public class LegalConsentTests(TestDatabaseFixture fixture) : ApiTestBase(fixtur
             ["Privacy", "TermsClient", "TermsOwner", "PdnConsent", "ChannelRiskNotice"]);
         body.Documents.Should().OnlyContain(d => d.Version != "" && d.EffectiveFrom != default);
         // ARCHITECTURE_CYCLE13.md §220.1: seventh uiTexts key, PublicAddressNotice.
-        body.UiTexts.Should().HaveCount(7);
+        // ARCHITECTURE_CYCLE20.md §411/§412: five more (GuestDataGateNotice/GuestDataGateDeleteNotice/
+        // GuestDataGateRevokeNotice/HealthDataWrittenConsentForm/CompanyPhotoPeopleNotice) — twelve total.
+        body.UiTexts.Should().HaveCount(12);
     }
 
     [Fact, TestCase("LEG-001b")]
