@@ -2,17 +2,19 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Legal;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
+using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Controllers;
 
 [ApiController]
 [Route("api/legal")]
 public class LegalController(
-    LegalDocumentProvider provider, ConsentLedger ledger, UserManager<AppUser> userManager, TokenService tokenService)
+    LegalDocumentProvider provider, ConsentLedger ledger, UserManager<AppUser> userManager, TokenService tokenService, AppDbContext db)
     : ControllerBase
 {
     private const string UnavailableMessage = "Правовые документы временно недоступны.";
@@ -222,6 +224,157 @@ public class LegalController(
         return state?.DocumentVersion;
     }
 
+    // ARCHITECTURE_CYCLE20.md §404.1/§404.2, API_CONTRACT_CYCLE20.md §434.1 (US-20-03, NEW) — `/api/legal/`
+    // is already in LegalConsentFilter's allow-list by PREFIX (§430), so a suspended owner or a caller
+    // with a pending Material revision can still read/acknowledge notices without any extra wiring here.
+    // "3 запроса к БД на один HTTP-запрос" (§404.2): caller's held account, its plan, all currently
+    // visible notices, and the caller's own acknowledgements for them.
+    [HttpGet("notices")]
+    [Authorize]
+    public async Task<ActionResult<PlatformNoticeListDto>> GetNotices([FromQuery] string? scope)
+    {
+        scope ??= "pending";
+        if (scope is not ("pending" or "all"))
+            return BadRequest($"Неизвестное значение scope '{scope}'. Ожидается pending или all.");
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"));
+
+        var nowUtc = DateTime.UtcNow;
+        var visible = await db.PlatformNotices.AsNoTracking().Where(n => n.VisibleUntilUtc > nowUtc).ToListAsync();
+
+        // The system-free plan is only ever needed to resolve an OwnersOnPlans match for an account with
+        // no subscription row — looked up lazily so an account/kind mix that never needs it costs nothing.
+        if (facts.HeldBillingAccountId is not null && facts.HeldPlanConfigId is null
+            && visible.Any(n => n.AudienceType == NoticeAudienceType.OwnersOnPlans))
+        {
+            var systemFreePlanId = await db.SubscriptionPlanConfigs.AsNoTracking()
+                .Where(p => p.IsSystemFree).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
+            facts = facts with { SystemFreePlanConfigId = systemFreePlanId };
+        }
+
+        var matched = visible.Where(n => NoticeAudience.Matches(n, facts)).ToList();
+
+        var matchedIds = matched.Select(n => n.Id).ToList();
+        var acknowledgedAt = matchedIds.Count == 0
+            ? new Dictionary<Guid, DateTime>()
+            : await db.PlatformNoticeAcknowledgements.AsNoTracking()
+                .Where(a => a.UserId == userId && matchedIds.Contains(a.NoticeId))
+                .ToDictionaryAsync(a => a.NoticeId, a => a.AcknowledgedAtUtc);
+
+        if (scope == "pending")
+            matched = matched.Where(n => n.RevokedAtUtc is null && !acknowledgedAt.ContainsKey(n.Id)).ToList();
+
+        var items = matched.OrderByDescending(n => n.PublishedAtUtc).Select(n => MapToNoticeDto(n, acknowledgedAt)).ToList();
+
+        return Ok(new PlatformNoticeListDto(PlatformNoticeTexts.AcknowledgeButtonText, PlatformNoticeTexts.AcknowledgeCaption, items));
+    }
+
+    // API_CONTRACT_CYCLE20.md §434.2 (US-20-03, NEW). Idempotent by the (NoticeId, UserId) unique index —
+    // a repeat click answers 200 without moving AcknowledgedAtUtc or writing a second row.
+    [HttpPost("notices/{id:guid}/acknowledge")]
+    [Authorize]
+    public async Task<IActionResult> AcknowledgeNotice(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var notice = await db.PlatformNotices.AsNoTracking().FirstOrDefaultAsync(n => n.Id == id);
+        var nowUtc = DateTime.UtcNow;
+
+        // "Уведомления нет, срок видимости вышел или вызывающий не адресат (не различаются)" — the three
+        // cases share one 404 so a caller can never probe for a notice they aren't the addressee of.
+        if (notice is null || notice.VisibleUntilUtc <= nowUtc) return NotFound();
+
+        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"));
+        if (facts.HeldBillingAccountId is not null && facts.HeldPlanConfigId is null && notice.AudienceType == NoticeAudienceType.OwnersOnPlans)
+        {
+            var systemFreePlanId = await db.SubscriptionPlanConfigs.AsNoTracking()
+                .Where(p => p.IsSystemFree).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
+            facts = facts with { SystemFreePlanConfigId = systemFreePlanId };
+        }
+        if (!NoticeAudience.Matches(notice, facts)) return NotFound();
+
+        if (notice.RevokedAtUtc is not null) return Conflict("Уведомление отозвано.");
+
+        var existing = await db.PlatformNoticeAcknowledgements.FirstOrDefaultAsync(a => a.NoticeId == id && a.UserId == userId);
+        if (existing is null)
+        {
+            db.PlatformNoticeAcknowledgements.Add(new PlatformNoticeAcknowledgement
+            {
+                Id = Guid.NewGuid(),
+                NoticeId = id,
+                UserId = userId,
+                BillingAccountId = PlatformNoticeRules.IsOwnerFacingAudience(notice.AudienceType) ? facts.HeldBillingAccountId : null,
+                AcknowledgedAtUtc = nowUtc,
+            });
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // A genuinely concurrent double-click lost the unique-index race — treat it exactly like
+                // the "already acknowledged" branch above (idempotent per §434.2), not as an error. Not a
+                // `when` filter: awaiting inside a catch filter expression is illegal (CS7094).
+                if (!await db.PlatformNoticeAcknowledgements.AnyAsync(a => a.NoticeId == id && a.UserId == userId))
+                    throw;
+            }
+        }
+
+        var ackMap = await db.PlatformNoticeAcknowledgements.AsNoTracking()
+            .Where(a => a.NoticeId == id && a.UserId == userId)
+            .ToDictionaryAsync(a => a.NoticeId, a => a.AcknowledgedAtUtc);
+
+        return Ok(MapToNoticeDto(notice, ackMap));
+    }
+
+    // API_CONTRACT_CYCLE20.md §434.3 (US-20-03, NEW) — the TermsChange future-edition snapshot
+    // (ARCHITECTURE_CYCLE20.md §404.4). Sandboxed CSP so even a compromised SuperAdmin session can't
+    // smuggle a script into a document this endpoint serves.
+    [HttpGet("notices/{id:guid}/attachment")]
+    [Authorize]
+    public async Task<IActionResult> GetNoticeAttachment(Guid id)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var notice = await db.PlatformNotices.AsNoTracking().FirstOrDefaultAsync(n => n.Id == id);
+        var nowUtc = DateTime.UtcNow;
+        if (notice is null || notice.VisibleUntilUtc <= nowUtc || notice.AttachmentHtml is null) return NotFound();
+
+        var facts = await LoadCallerFactsAsync(userId, User.IsInRole("SuperAdmin"));
+        if (!NoticeAudience.Matches(notice, facts)) return NotFound();
+
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers["Content-Security-Policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return Content(notice.AttachmentHtml, "text/html; charset=utf-8");
+    }
+
+    /// <summary>§404.2's "CallerFacts — держатель каких аккаунтов, на каких тарифах, суперадмин ли".
+    /// Does NOT resolve <see cref="NoticeCallerFacts.SystemFreePlanConfigId"/> — that lookup is only worth
+    /// doing when an OwnersOnPlans notice is actually in play, so each call site adds it lazily.</summary>
+    private async Task<NoticeCallerFacts> LoadCallerFactsAsync(string userId, bool isSuperAdmin)
+    {
+        var heldAccountId = await db.BillingAccounts.AsNoTracking()
+            .Where(a => a.OwnerUserId == userId).Select(a => (Guid?)a.Id).FirstOrDefaultAsync();
+
+        Guid? heldPlanConfigId = null;
+        if (heldAccountId is { } accountId)
+        {
+            heldPlanConfigId = await db.AccountSubscriptions.AsNoTracking()
+                .Where(s => s.BillingAccountId == accountId).Select(s => s.PlanConfigId).FirstOrDefaultAsync();
+        }
+
+        return new NoticeCallerFacts(isSuperAdmin, heldAccountId, heldPlanConfigId, SystemFreePlanConfigId: null);
+    }
+
+    private static PlatformNoticeDto MapToNoticeDto(PlatformNotice n, IReadOnlyDictionary<Guid, DateTime> acknowledgedAt)
+    {
+        var acknowledged = acknowledgedAt.TryGetValue(n.Id, out var ackAt);
+        return new PlatformNoticeDto(
+            n.Id, n.Kind.ToString(), n.Title, n.Body, n.LinkUrl, n.EffectiveFrom, n.PublishedAtUtc, n.VisibleUntilUtc,
+            n.AttachmentTitle is not null ? new NoticeAttachmentRefDto(n.AttachmentTitle, n.AttachmentSha256!) : null,
+            acknowledged, acknowledged ? ackAt : null, n.RevokedAtUtc);
+    }
+
     private static LegalDocumentMetaDto MapToMetaDto(LegalDocument d) =>
         new(d.Type.ToString(), d.Title, d.Version, d.EffectiveFrom, d.IsDraft, d.ChangeKind.ToString(), d.Gate.ToString(),
             LegalRoutes.UrlFor(d.Type),
@@ -257,3 +410,15 @@ public record ConsentStatusDto(bool RequiresAcceptance, bool OwnerActionBlocked,
 public record AcceptLegalItemDto(string Type, string Version);
 public record AcceptLegalRequestDto(List<AcceptLegalItemDto> Accept);
 public record AcceptLegalResponseDto(string Token, DateTime AcceptedAt);
+
+// ARCHITECTURE_CYCLE20.md §404.1/§404.2, API_CONTRACT_CYCLE20.md §434.1 (US-20-03) — the addressee-facing
+// notice shape. Field names/casing match frontend/src/types/api-cycle20.generated.ts's PlatformNoticeDto
+// exactly (frontend-developer generated it from this cycle's contract ahead of this implementation).
+public record NoticeAttachmentRefDto(string Title, string Sha256);
+
+public record PlatformNoticeDto(
+    Guid Id, string Kind, string Title, string Body, string? LinkUrl, DateOnly? EffectiveFrom,
+    DateTime PublishedAt, DateTime VisibleUntil, NoticeAttachmentRefDto? Attachment,
+    bool Acknowledged, DateTime? AcknowledgedAt, DateTime? RevokedAt);
+
+public record PlatformNoticeListDto(string AcknowledgeButtonText, string AcknowledgeCaption, List<PlatformNoticeDto> Items);

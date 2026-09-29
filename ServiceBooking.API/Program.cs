@@ -370,6 +370,11 @@ builder.Services.AddScoped<HealthNoteProtector>();
 builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.SubjectScopeResolver>();
 // ARCHITECTURE_CYCLE20.md §406.2 (US-20-05) — the single writer for GuestDataGateEvent.
 builder.Services.AddScoped<ServiceBooking.API.Services.Subjects.GuestDataGateJournal>();
+// ARCHITECTURE_CYCLE20.md §404.3/§404.7 (US-20-03/US-20-07) — platform notices: builds/validates/saves
+// PlatformNotice rows (AdminNoticesController, CompanyPhotosController's PhotoRemoved) and counts the
+// CURRENT audience for the admin list/preview/publish responses.
+builder.Services.AddScoped<ServiceBooking.API.Services.Legal.PlatformNoticePublisher>();
+builder.Services.AddScoped<ServiceBooking.API.Services.Legal.NoticeAudienceCounter>();
 
 // WhatsApp notifications (cycle 4, ARCHITECTURE_CYCLE4.md §21–§37).
 builder.Services.Configure<ServiceBooking.API.Services.Notifications.NotificationOptions>(

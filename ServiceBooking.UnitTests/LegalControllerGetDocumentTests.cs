@@ -87,8 +87,9 @@ public class LegalControllerGetDocumentTests : IDisposable
             NullLogger<LegalDocumentProvider>.Instance);
         provider.LoadAtStartup();
 
-        // ConsentLedger/UserManager/TokenService are only touched by other actions (Accept, GetConsentStatus).
-        var controller = new LegalController(provider, null!, null!, null!)
+        // ConsentLedger/UserManager/TokenService/AppDbContext are only touched by other actions (Accept,
+        // GetConsentStatus, GetNotices/AcknowledgeNotice/GetNoticeAttachment).
+        var controller = new LegalController(provider, null!, null!, null!, null!)
         {
             ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
             {
