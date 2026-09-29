@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { NoticeLink } from './NoticeLink'
 import { usePlatformNotices, useAcknowledgeNotice } from '../../hooks/usePlatformNotices'
 import { PlatformNoticeAttachment } from './PlatformNoticeAttachment'
 import { getNoticeAcknowledgeErrorMessage } from '../../utils/noticeError'
@@ -32,9 +33,9 @@ export function PlatformNoticeBanner() {
             <p className="text-sm text-info whitespace-pre-wrap">{notice.body}</p>
             <div className="flex flex-wrap items-center gap-3 mt-1.5">
               {notice.linkUrl && (
-                <Link to={notice.linkUrl} className="text-xs font-medium text-info underline hover:no-underline">
+                <NoticeLink to={notice.linkUrl} className="text-xs font-medium text-info underline hover:no-underline">
                   Подробнее
-                </Link>
+                </NoticeLink>
               )}
               {notice.attachment && (
                 <button

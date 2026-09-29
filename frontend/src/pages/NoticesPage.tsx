@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { Link } from 'react-router-dom'
+import { NoticeLink } from '../components/legal/NoticeLink'
 import { usePlatformNotices, useAcknowledgeNotice } from '../hooks/usePlatformNotices'
 import { PlatformNoticeAttachment } from '../components/legal/PlatformNoticeAttachment'
 import { getNoticeAcknowledgeErrorMessage } from '../utils/noticeError'
@@ -47,9 +47,9 @@ function NoticeCard({
       <p className="text-sm text-ink-soft whitespace-pre-wrap mt-3">{notice.body}</p>
       <div className="flex flex-wrap items-center gap-3 mt-3">
         {notice.linkUrl && (
-          <Link to={notice.linkUrl} className="text-xs font-medium text-gold-dark underline hover:no-underline">
+          <NoticeLink to={notice.linkUrl} className="text-xs font-medium text-gold-dark underline hover:no-underline">
             Подробнее
-          </Link>
+          </NoticeLink>
         )}
         {notice.attachment && (
           <button type="button" onClick={onOpenAttachment} className="text-xs font-medium text-gold-dark underline hover:no-underline">

@@ -49,7 +49,7 @@ export default tseslint.config(
   {
     // ARCHITECTURE_CYCLE23.md §399.4 — import boundaries between the two frontends in one package.
     // goods may reuse shared modules from src/, but not ezbook's app shell or its own pages (except the
-    // five shared ones); ezbook must never reach into goods/.
+    // six shared ones); ezbook must never reach into goods/.
     files: ['goods/src/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
@@ -58,8 +58,8 @@ export default tseslint.config(
           patterns: [
             { group: ['@/App', '**/src/App', '../../src/App', '../src/App'], message: 'goods must not import the ezbook app shell.' },
             {
-              regex: '(^@/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage)$))|(src/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage)$))',
-              message: 'goods may import only LegalDocumentPage, SubjectRequestPage, ConsentsPage, LoginPage and RegisterPage from ezbook pages.',
+              regex: '(^@/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage)$))|(src/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage)$))',
+              message: 'goods may import only LegalDocumentPage, SubjectRequestPage, ConsentsPage, LoginPage, RegisterPage and NoticesPage from ezbook pages.',
             },
           ],
         },
