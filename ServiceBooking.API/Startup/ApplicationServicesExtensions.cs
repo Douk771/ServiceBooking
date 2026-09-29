@@ -52,6 +52,7 @@ internal static class ApplicationServicesExtensions
         builder.Configuration.GetSection(ServiceBooking.API.Services.PublicSites.PublicSitesOptions.SectionName));
     builder.Services.AddSingleton<ServiceBooking.API.Services.PublicSites.PublicSiteLinks>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyDtoAssembler>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyCreationService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyStatsService>();
     builder.Services.AddHttpClient<CaptchaService>();
     // T5-B10 (ARCHITECTURE_CYCLE5.md §50.1, US-74) — reuses the existing CaptchaService/rate-limiting

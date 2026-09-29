@@ -38,6 +38,18 @@ public static class OrderQuantityRules
         return quantity < MinQuantity(unit, stepGrams, minQuantityGrams) ? QuantityCheck.BelowMinimum : QuantityCheck.Ok;
     }
 
+    /// <summary>
+    /// How much a customer can order given the free stock: the free amount capped at the maximum, floored to the weight step,
+    /// and 0 when that is below the product's minimum (the product is then simply "sold out" for the customer).
+    /// </summary>
+    public static int AvailableQuantity(ProductUnit unit, int freeStock, int? stepGrams, int? minQuantityGrams)
+    {
+        if (freeStock <= 0) return 0;
+        var max = Math.Min(freeStock, MaxQuantity(unit));
+        if (unit == ProductUnit.Weight) max = max / EffectiveStep(stepGrams) * EffectiveStep(stepGrams);
+        return max < MinQuantity(unit, stepGrams, minQuantityGrams) ? 0 : max;
+    }
+
     /// <summary>Validates a quantity in a staff edit: only the step (of the line's snapshot) and the bounds — no product minimum.</summary>
     public static bool IsValidForEdit(ProductUnit unit, int quantity, int? stepGrams)
     {

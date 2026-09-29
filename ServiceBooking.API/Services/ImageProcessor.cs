@@ -38,6 +38,11 @@ public sealed record ImageProfile(int MaxDimension, bool SquareCrop, OutputForma
     // source, same "one validation, two profiles" pipeline as ClientNotePhoto/ClientNotePhotoThumb.
     public static readonly ImageProfile CompanyPhoto = new(1600, SquareCrop: false, OutputFormatPolicy.PngIfSourceWasPngElseJpeg, JpegQuality: 85);
     public static readonly ImageProfile CompanyPhotoThumb = new(480, SquareCrop: false, OutputFormatPolicy.AlwaysJpeg, JpegQuality: 78);
+
+    // ARCHITECTURE_CYCLE23.md §393.1: a product photo of a shop — the same "one validation, two renditions"
+    // pipeline; public storage class, area "products".
+    public static readonly ImageProfile ProductImage = new(1200, SquareCrop: false, OutputFormatPolicy.PngIfSourceWasPngElseJpeg, JpegQuality: 85);
+    public static readonly ImageProfile ProductImageThumb = new(480, SquareCrop: false, OutputFormatPolicy.AlwaysJpeg, JpegQuality: 78);
 }
 
 public sealed record ProcessedImage(byte[] Bytes, int Width, int Height, string ContentType, string Extension);

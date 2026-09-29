@@ -156,6 +156,36 @@ internal static class RateLimitingExtensions
         // Applies to BOTH branches: staff moving their own bookings is human-paced too, 30/hour is ample.
         o.AddPolicy("booking-reschedule", ctx => UserWindowPolicy(ctx, "booking-reschedule", defaultPermitLimit: 30, defaultWindowMinutes: 60));
 
+        // ── Cycle 23 (ARCHITECTURE_CYCLE23.md §395.4): four policies for the orders module ─────────────────
+        // storefront: the public storefront and the cart quote — 120/min per IP.
+        o.AddPolicy("storefront", ctx => IpWindowPolicy(ctx, "storefront", defaultPermitLimit: 120, defaultWindowMinutes: 1));
+        // order-create: POST /api/storefront/{slug}/orders — 20/hour per IP anonymously, 60/hour per user
+        // (same "user id if present, else IP" shape as booking-create). The per-phone limits live in
+        // OrderPhoneThrottle (by the database), not here.
+        o.AddPolicy("order-create", ctx =>
+        {
+            var config = ctx.RequestServices.GetRequiredService<IConfiguration>();
+            var windowMinutes = config.GetValue("RateLimits:order-create:WindowMinutes", 60);
+            var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId is not null)
+                return RateLimitPartition.GetFixedWindowLimiter($"user:{userId}", _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = config.GetValue("RateLimits:order-create:PermitLimit", 60),
+                    Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+                });
+            var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+            return RateLimitPartition.GetFixedWindowLimiter($"ip:{ip}", _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = config.GetValue("RateLimits:order-create:AnonymousPermitLimit", 20),
+                Window = TimeSpan.FromMinutes(windowMinutes), QueueLimit = 0
+            });
+        });
+        // order-public: the order page by token and the cancellation — 120/min per IP (the token is 256 bits,
+        // the limit only bounds a flood of 404s).
+        o.AddPolicy("order-public", ctx => IpWindowPolicy(ctx, "order-public", defaultPermitLimit: 120, defaultWindowMinutes: 1));
+        // order-board: the staff board poll every 5 s per screen — 120/min per user leaves room for several tabs.
+        o.AddPolicy("order-board", ctx => UserWindowPolicy(ctx, "order-board", defaultPermitLimit: 120, defaultWindowMinutes: 1));
+
         // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
         // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
         // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -179,6 +209,8 @@ internal static class RateLimitingExtensions
                 "phone-change" => ServiceBooking.API.Services.PhoneVerification.PhoneVerificationTexts.TooManyChangePhoneAttempts,
                 "phone-verify-webhook" => "Too many requests.",
                 "booking-reschedule" => "Слишком много попыток переноса записи. Повторите позже.",
+                "storefront" or "order-public" or "order-board" => "Слишком много запросов — подождите минуту",
+                "order-create" => "Слишком много заказов подряд — попробуйте через несколько минут",
                 _ => "Too many uploads. Try again in a minute."
             };
             // WriteAsync alone never sets Content-Type (unlike controller-level BadRequest(string)/Conflict(string),

@@ -21,7 +21,12 @@ public enum ProductAvailability
 /// </summary>
 public static class CatalogAvailability
 {
-    /// <param name="freeStock">Stock minus the active reserve; null when it was not computed (then the product's own stock, if any, is taken as free).</param>
+    /// <summary>The verdict for one product; <paramref name="freeStock"/> is the stock minus the active reserve (null = not computed, the product's own stock counts as free).</summary>
+    /// <param name="product">The product.</param>
+    /// <param name="category">Its category, null for the "Другое" block.</param>
+    /// <param name="shopTracksStock">The shop's stock-tracking switch.</param>
+    /// <param name="freeStock">Stock minus the active reserve; null when it was not computed.</param>
+    /// <param name="shopAccepting">The result of ShopOrderingGate.</param>
     public static ProductAvailability Evaluate(
         Product product, ProductCategory? category, bool shopTracksStock, int? freeStock, bool shopAccepting)
     {

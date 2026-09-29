@@ -20,14 +20,12 @@ namespace ServiceBooking.API.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 public class CompaniesController(
-    AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
-    ServiceBooking.API.Services.Billing.BillingAccountProvisioner billingAccountProvisioner,
+    AppDbContext db, SubscriptionResolver subscriptionResolver,
     ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader,
     ImageUploadService imageUploadService, FileStorage storage,
-    LegalDocumentProvider legalProvider, ConsentLedger ledger, TokenService tokenService,
     IOptions<GeoOptions> geoOptions,
     CompanyDtoAssembler companyDtoAssembler, CompanyStatsService companyStatsService,
-    ServiceBooking.API.Services.PublicSites.PublicSiteLinks siteLinks) : ControllerBase
+    ServiceBooking.API.Services.PublicSites.PublicSiteLinks siteLinks, CompanyCreationService companyCreation) : ControllerBase
 {
     // Cycle 22 P5 (§378): the member endpoints moved to CompanyMembersController, the DTO assembly to
     // CompanyDtoAssembler and the stats body to CompanyStatsService — all unchanged.
@@ -271,129 +269,27 @@ public class CompaniesController(
         )).ToList());
     }
 
+    // Cycle 23 (§395.1): the body moved to CompanyCreationService, unchanged for salons — POST /api/shops shares it.
     [HttpPost]
     [Authorize]
     [RequiresOwnerTerms]
     public async Task<ActionResult<CreateCompanyResponseDto>> Create(CreateCompanyDto dto)
     {
-        if (await db.Companies.AnyAsync(c => c.Slug == dto.Slug))
-            return Conflict("Slug already taken");
+        var outcome = await companyCreation.CreateAsync(
+            CompanyKind.Services,
+            new CompanyCreationRequest(dto.Name, dto.Slug, dto.Description, dto.Address, dto.Phone, dto.Email, dto.CityId,
+                dto.TimeZoneId, dto.AllowSelfBooking, dto.ShowInPublicListing, dto.OwnerTerms?.Version),
+            User, HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers.UserAgent.ToString());
+        if (outcome.Error is not null) return outcome.Error;
+        var (company, city, plan, accountId) = (outcome.Company!, outcome.City!, outcome.Plan!, outcome.AccountId);
 
-        // ARCHITECTURE_CYCLE5.md §42.1, API_CONTRACT_CYCLE5.md §42.1 (BREAKING № 3). Checked by hand
-        // (RegisterDto.Legal's own note explains why), before anything else touches the database — an
-        // unaccepted company creation must never create a row to begin with.
-        if (string.IsNullOrWhiteSpace(dto.OwnerTerms?.Version))
-            return BadRequest("Для создания компании нужно принять соглашение с владельцем.");
-
-        var ownerTermsDoc = legalProvider.Current?.Get(LegalDocumentType.TermsOwner);
-        if (ownerTermsDoc is null)
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Правовые документы временно недоступны.");
-        if (dto.OwnerTerms.Version != ownerTermsDoc.Version)
-            return Conflict("Соглашение было обновлено ещё раз — перечитайте и примите новую редакцию.");
-
-        // Cycle 4, API_CONTRACT_CYCLE4.md §31.2 (breaking change): every new company needs a city, so
-        // a derived time zone exists for reminder timing. Validated before touching the advisory lock
-        // below — no point serializing on the owner-companies lock for a request that's going to 400.
-        if (dto.CityId is null)
-            return BadRequest("Укажите город салона");
-
-        var city = await db.Cities.FindAsync(dto.CityId.Value);
-        if (city is null || !city.IsActive)
-            return BadRequest("Город не найден");
-
-        if (!string.IsNullOrWhiteSpace(dto.TimeZoneId) &&
-            !TimeZoneOffset.TryGetUtcOffsetMinutes(dto.TimeZoneId, DateTime.UtcNow, out _))
-            return BadRequest("Неизвестный часовой пояс");
-
-        var (timeZoneId, timeZoneIsManual) = CompanyTimeZoneResolver.ForNewCompany(city.TimeZoneId, dto.TimeZoneId);
-
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
-        // Branch limit: the account plan caps how many companies this owner may create. Without a plan
-        // (Free) that's 1 — so a brand-new owner can open their first company, but a second branch needs
-        // a paid plan with MaxCompanies >= 2. Existing companies over a since-lowered limit are untouched.
-        //
-        // Serialize concurrent creates against everything else that can change how many companies fit
-        // on this billing account (§52) — a company transfer moving a company IN, or another create —
-        // by using the SAME lock key ("billing-account:{id}") those operations already take
-        // (AdminBillingController.AssignSubscription, CompanyTransferService). Locking by userId alone
-        // (the previous key) let a create race a concurrent transfer: both would read the pre-write
-        // company count and both pass the limit check.
-        var accountId = await billingAccountProvisioner.EnsureAccountAsync(userId);
-        await using var limitTransaction = await db.Database.BeginTransactionAsync();
-        await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
-
-        var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId);
-        if (plan.AccountMaxCompanies.HasValue)
-        {
-            var ownedCount = await db.Companies.CountAsync(c => c.BillingAccountId == accountId);
-            if (ownedCount >= plan.AccountMaxCompanies.Value)
-                return StatusCode(402, BillingTexts.CompanyLimitReached(ownedCount, plan.AccountMaxCompanies.Value));
-        }
-
-        var company = new Company
-        {
-            Id = Guid.NewGuid(),
-            Name = dto.Name,
-            Slug = dto.Slug,
-            Description = dto.Description,
-            Address = dto.Address,
-            Phone = dto.Phone,
-            Email = dto.Email,
-            AllowSelfBooking = dto.AllowSelfBooking,
-            ShowInPublicListing = dto.ShowInPublicListing,
-            OwnerUserId = userId,
-            BillingAccountId = accountId,
-            CityId = city.Id,
-            TimeZoneId = timeZoneId,
-            TimeZoneIsManual = timeZoneIsManual
-        };
-
-        var member = new CompanyMember
-        {
-            Id = Guid.NewGuid(),
-            CompanyId = company.Id,
-            UserId = userId,
-            Role = UserRole.CompanyOwner
-        };
-
-        db.Companies.Add(company);
-        db.CompanyMembers.Add(member);
-
-        await db.SaveChangesAsync();
-        // US-46, ARCHITECTURE.md §8.3/§8.4: recompute Identity roles from the CompanyMember rows just
-        // written, inside the same transaction and AFTER SaveChangesAsync — UserManager writes its own
-        // AspNetUserRoles changes through the same AppDbContext, so this is the order that keeps both
-        // writes in one commit instead of a separate round trip.
-        await IdentityRoleSync.SyncAsync(db, userManager, userId);
-        await limitTransaction.CommitAsync();
-
-        // ARCHITECTURE_CYCLE5.md §42.1 — the acceptance itself, recorded AFTER the company/membership
-        // commit above (nothing before this point can fail because of it, and a failure here must not
-        // undo an otherwise-successful company creation — best-effort would be wrong here though: US-66
-        // needs this row to exist, so it's still inside the overall request, just its own grant/lock).
-        var ownerSubject = ConsentSubject.ForUser(userId);
-        await ledger.GrantAsync(new ConsentGrant(
-            ownerSubject, LegalDocumentType.TermsOwner.ToString(), ownerTermsDoc.Version, ownerTermsDoc.ContentHash,
-            Purpose: null, ConsentAct.Accepted, ConsentSource.CompanyCreation,
-            IpAddress: HttpContext.Connection.RemoteIpAddress?.ToString(), UserAgent: Request.Headers.UserAgent.ToString()));
-
-        // A fresh token, carrying the new "lco" claim — see CreateCompanyResponseDto's own doc comment
-        // for why this is mandatory, not an optimization. Privacy/TermsClient claims are re-resolved the
-        // same way AuthController.Login does, so this token is complete, not just augmented.
-        var user = await userManager.FindByIdAsync(userId);
-        var roles = await userManager.GetRolesAsync(user!);
-        var privacyState = await ledger.CurrentAsync(ownerSubject, LegalDocumentType.Privacy.ToString(), purpose: null);
-        var termsState = await ledger.CurrentAsync(ownerSubject, LegalDocumentType.TermsClient.ToString(), purpose: null);
-        var token = tokenService.GenerateToken(user!, roles, privacyState?.DocumentVersion, termsState?.DocumentVersion, ownerTermsDoc.Version);
-
-        // `plan` was already resolved above for the MaxCompanies check — reuse it so the response
+        // `plan` was already resolved during creation for the MaxCompanies check — reuse it so the response
         // reflects the owner's real plan (e.g. their existing paid plan when opening a 2nd+ branch),
         // instead of assuming Free.
         // A brand new company has no reviews yet — skip the query, (null, 0) is correct by construction.
         var createUsage = accountId != Guid.Empty ? await accountUsageReader.GetAsync([accountId]) : new Dictionary<Guid, AccountUsage>();
         var companyDto = companyDtoAssembler.MapToDto(company, plan, null, 0, city, employeeCount: 1, createUsage.GetValueOrDefault(accountId), geoOptions.Value, canManage: true);
-        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, new CreateCompanyResponseDto(companyDto, token));
+        return CreatedAtAction(nameof(GetBySlug), new { slug = company.Slug }, new CreateCompanyResponseDto(companyDto, outcome.Token!));
     }
 
     [HttpPut("{id:guid}")]
