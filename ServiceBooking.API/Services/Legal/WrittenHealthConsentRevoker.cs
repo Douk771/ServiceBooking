@@ -25,7 +25,7 @@ public sealed record WrittenHealthConsentRevokeResult(int Revoked, int HealthNot
 /// (<c>SubjectScopeResolver</c>) or, for the staff entry point, through the company's own client
 /// resolution — <see cref="RevokeAsync"/> trusts the phone it is given and does not re-derive it.
 ///
-/// Composable under an AMBIENT transaction: <c>ProfileController.ApplyOrPreviewRevokeEffectsAsync</c>
+/// Composable under an AMBIENT transaction: <c>ProfileConsentsController.ApplyOrPreviewRevokeEffectsAsync</c> (moved out of ProfileController by cycle 22)
 /// already has one open (shared with its OTHER cascades — photos, queued notifications, profile fields)
 /// by the time it needs to call this for the whole-PdnConsent/HealthData-purpose entry point.
 /// <see cref="RevokeAsync"/> only opens (and later commits) its OWN transaction and advisory lock when

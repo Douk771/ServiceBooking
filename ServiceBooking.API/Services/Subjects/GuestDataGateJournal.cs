@@ -8,7 +8,9 @@ namespace ServiceBooking.API.Services.Subjects;
 /// <summary>
 /// ARCHITECTURE_CYCLE20.md §406.2 (US-20-05, Т20-06) — the single writer for
 /// <see cref="GuestDataGateEvent"/>, replacing the four inline <c>logger.LogInformation("guest-data gate
-/// applied: …")</c> calls in <see cref="Controllers.ProfileController"/> (the Information-level log line
+/// applied: …")</c> calls that now live in <see cref="Controllers.ProfileConsentsController"/> (revoke,
+/// revoke-preview), <c>SubjectDataExporter</c> (export) and <c>AccountDeletionService</c> (delete-account)
+/// after the cycle 22 split of ProfileController (the Information-level log line
 /// itself is untouched — it carries no phone either and lives by the ordinary technical-log retention,
 /// this journal is the NEW, separate, one-year record).
 ///

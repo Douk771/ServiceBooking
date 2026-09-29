@@ -267,6 +267,8 @@ public class AdminPlatformController(
         [FromQuery] string? userId, [FromQuery] DateTime? from, [FromQuery] DateTime? to,
         [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken ct)
     {
+        from = QueryDateTime.ToUtc(from);
+        to = QueryDateTime.ToUtc(to);
         if (from is not null && to is not null && from > to)
             return BadRequest("Дата начала не может быть позже даты окончания.");
 
