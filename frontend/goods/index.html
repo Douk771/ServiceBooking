@@ -3,7 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <!-- goods.ezbook.ru (ARCHITECTURE_CYCLE23.md §399.1). The <div id="root"> below is what the deploy smoke
-         looks for. No manifest and no service worker on goods in cycle 1 (SPEC §3): no Home Screen app, no push. -->
+         looks for. Cycle 24 (ARCHITECTURE_CYCLE24.md §454): goods is a Home Screen app — manifest, sw.js (push). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#2B2420" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Заказы" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

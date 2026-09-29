@@ -168,7 +168,8 @@ jobs:
             ../contracts/cycle18/openapi.yaml \
             ../contracts/cycle19/openapi.yaml \
             ../contracts/cycle20/openapi.yaml \
-            ../contracts/cycle23/openapi.yaml
+            ../contracts/cycle23/openapi.yaml \
+            ../contracts/cycle24/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -198,7 +199,8 @@ jobs:
           npm run types:api:cycle19
           npm run types:api:cycle20
           npm run types:api:cycle23
-          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts
+          npm run types:api:cycle24
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя
@@ -214,12 +216,15 @@ jobs:
       # listener or touch the Cache API: that is the mechanical guarantee that it cannot intercept a
       # navigation and strand a browser on a stale build. Three tokens, cheap insurance against a week
       # of "why is the site not updating" debugging.
+      # ARCHITECTURE_CYCLE24.md §463.2 п.1 — goods has its own worker (goods/public/sw.js), the same ban applies.
       - name: Service worker must not intercept fetch/cache (R11)
         run: |
-          if grep -nE "addEventListener\s*\(\s*['\"\`]fetch|\bcaches\b|CacheStorage" public/sw.js; then
-            echo "public/sw.js must never register a fetch handler or use the Cache API (ARCHITECTURE_CYCLE9.md §105.9, R11)" >&2
-            exit 1
-          fi
+          for f in public/sw.js goods/public/sw.js; do
+            if grep -nE "addEventListener\s*\(\s*['\"\`]fetch|\bcaches\b|CacheStorage" "$f"; then
+              echo "$f must never register a fetch handler or use the Cache API (ARCHITECTURE_CYCLE9.md §105.9, R11)" >&2
+              exit 1
+            fi
+          done
 
       - name: Unit tests
         run: npm run test:run

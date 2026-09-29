@@ -270,6 +270,35 @@ if [ "$GOODS_SMOKE" != "0" ]; then
     rollback_hint
     exit 1
   }
+  # ARCHITECTURE_CYCLE24.md §463.3 (DO-3) — goods is a Home Screen app: service worker and manifest must be real files.
+  # The SPA fallback (`try_files ... /index.html`) answers 200 for ANY path, so a missing sw.js is caught by
+  # checking the body is not the HTML shell, not only the status code.
+  goods_curl=(curl -s --max-time 10 --resolve "$GOODS_HOST:443:127.0.0.1")
+  goods_sw_headers=$("${goods_curl[@]}" -D - -o /tmp/goods-sw.js.$$ -w '' "https://$GOODS_HOST/sw.js") || true
+  goods_sw_code=$(head -n1 <<<"$goods_sw_headers" | awk '{print $2}')
+  if [ "$goods_sw_code" != "200" ] || grep -qi '<div id="root">' /tmp/goods-sw.js.$$ 2>/dev/null; then
+    rm -f /tmp/goods-sw.js.$$
+    echo "ERROR: https://$GOODS_HOST/sw.js did not answer 200 with the service worker file (got: ${goods_sw_code:-none}) — was goods built with build:release (goods/public/sw.js)?" >&2
+    rollback_hint
+    exit 1
+  fi
+  rm -f /tmp/goods-sw.js.$$
+  # The vhost of goods is maintained by hand on this machine (DEPLOY.md §22): agents cannot apply an nginx change
+  # (needs sudo). So a wrong Cache-Control is only a WARNING — it does not fail the deploy, but a browser may keep
+  # an old push handler until the vhost is updated.
+  if ! grep -qi '^cache-control:.*no-cache' <<<"$goods_sw_headers"; then
+    echo "WARNING: https://$GOODS_HOST/sw.js has no 'Cache-Control: no-cache' — the goods vhost on this machine is not updated to deploy/nginx/goods.ezbook.conf (location = /sw.js). Manual step: DEPLOY.md §22.2." >&2
+  fi
+  goods_manifest=$("${goods_curl[@]}" -f "https://$GOODS_HOST/manifest.webmanifest") || {
+    echo "ERROR: https://$GOODS_HOST/manifest.webmanifest did not answer 200" >&2
+    rollback_hint
+    exit 1
+  }
+  grep -Eq '"display"[[:space:]]*:[[:space:]]*"standalone"' <<<"$goods_manifest" || {
+    echo "ERROR: goods manifest.webmanifest is not a standalone app manifest (\"display\": \"standalone\" missing)" >&2
+    rollback_hint
+    exit 1
+  }
   echo "    goods OK"
 else
   echo "==> goods smoke skipped (GOODS_SMOKE=0)"

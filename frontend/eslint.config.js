@@ -49,7 +49,7 @@ export default tseslint.config(
   {
     // ARCHITECTURE_CYCLE23.md §399.4 — import boundaries between the two frontends in one package.
     // goods may reuse shared modules from src/, but not ezbook's app shell or its own pages (except the
-    // six shared ones); ezbook must never reach into goods/.
+    // shared ones — cycle 24 adds BillingPage and owner/NotificationsSection); ezbook must never reach into goods/.
     files: ['goods/src/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
@@ -58,8 +58,8 @@ export default tseslint.config(
           patterns: [
             { group: ['@/App', '**/src/App', '../../src/App', '../src/App'], message: 'goods must not import the ezbook app shell.' },
             {
-              regex: '(^@/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage)$))|(src/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage)$))',
-              message: 'goods may import only LegalDocumentPage, SubjectRequestPage, ConsentsPage, LoginPage, RegisterPage and NoticesPage from ezbook pages.',
+              regex: '(^@/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage|BillingPage|owner/NotificationsSection)$))|(src/pages/(?!(LegalDocumentPage|SubjectRequestPage|ConsentsPage|LoginPage|RegisterPage|NoticesPage|BillingPage|owner/NotificationsSection)$))',
+              message: 'goods may import only LegalDocumentPage, SubjectRequestPage, ConsentsPage, LoginPage, RegisterPage, NoticesPage, BillingPage (cycle 24, ARCHITECTURE_CYCLE24.md §462.2) and owner/NotificationsSection (ChannelCard, §462.1) from ezbook pages.',
             },
           ],
         },
@@ -87,7 +87,7 @@ export default tseslint.config(
   {
     // ARCHITECTURE_CYCLE9.md §105.9 — plain JS served verbatim from public/, not built by Vite, so it
     // needs the service-worker global scope (`self`, `caches`, `clients`) instead of the browser one.
-    files: ['public/sw.js'],
+    files: ['public/sw.js', 'goods/public/sw.js'], // goods: ARCHITECTURE_CYCLE24.md §454
     languageOptions: { globals: globals.serviceworker },
   },
   prettierConfig,

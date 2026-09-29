@@ -10,9 +10,10 @@
 #     frontend/dist;
 #   - by hand, against any already-built dist: `DIST_DIR=frontend/dist deploy/ci/smoke-frontend.sh`
 #
-# SMOKE_PROFILE=goods (ARCHITECTURE_CYCLE23.md §401.4) checks the goods.ezbook.ru build in dist/__goods:
-# index.html with the React root, favicon.ico/svg and apple-touch-icon.png — and NO manifest (goods has no
-# manifest or service worker, SPEC cycle 23 §3). Default profile (ezbook) is unchanged.
+# SMOKE_PROFILE=goods (ARCHITECTURE_CYCLE23.md §401.4, cycle 24 §463.2) checks the goods.ezbook.ru build in
+# dist/__goods: index.html with the React root, favicon.ico/svg, apple-touch-icon.png, and — since cycle 24 (goods is
+# a Home Screen app with push) — the same home-screen checks as ezbook: manifest served, parsed, display=standalone,
+# linked from index.html, and GET /sw.js = 200. Default profile (ezbook) is unchanged.
 #
 # Any failed step exits 1.
 set -euo pipefail
@@ -55,8 +56,20 @@ if [ "$SMOKE_PROFILE" = "goods" ]; then
   grep -q '<div id="root">' <<<"$index_html" || fail "goods index.html has no <div id=\"root\">"
   apple_icon_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/apple-touch-icon.png")
   [ "$apple_icon_code" = "200" ] || fail "GET /apple-touch-icon.png returned $apple_icon_code (expected 200)"
-  manifest_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/manifest.webmanifest")
-  [ "$manifest_code" != "200" ] || fail "goods build ships a manifest.webmanifest — goods has none by design (SPEC cycle 23 §3)"
+  # Cycle 24 (ARCHITECTURE_CYCLE24.md §454, §463.2): goods is a standalone app now.
+  curl -sf "$BASE_URL/manifest.webmanifest" -o /tmp/smoke-frontend-goods-manifest.json \
+    || fail "goods: GET /manifest.webmanifest did not return 200"
+  python3 - /tmp/smoke-frontend-goods-manifest.json <<'PY' || fail "goods manifest.webmanifest must parse and have display=standalone, start_url, scope and icons"
+import json, sys
+m = json.load(open(sys.argv[1], encoding="utf-8"))
+assert m.get("display") in ("standalone", "fullscreen"), m.get("display")
+assert m.get("start_url") and m.get("scope"), (m.get("start_url"), m.get("scope"))
+assert m.get("icons"), "icons"
+PY
+  grep -q 'rel="manifest" href="/manifest.webmanifest"' <<<"$index_html" || fail "goods index.html does not link the manifest"
+  grep -q 'rel="apple-touch-icon"' <<<"$index_html" || fail "goods index.html does not link apple-touch-icon"
+  sw_code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/sw.js")
+  [ "$sw_code" = "200" ] || fail "goods: GET /sw.js returned $sw_code (expected 200)"
   log "ALL FRONTEND SMOKE CHECKS PASSED (goods)"
   exit 0
 fi

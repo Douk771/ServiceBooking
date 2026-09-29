@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { pushApi } from '../api/push'
+import { pushApi, type PushSite } from '../api/push'
 import { urlBase64ToUint8Array, arrayBufferToBase64Url } from '../utils/webPushEncoding'
 import { detectIosEnvironment, getPushUnavailableReason, type PushUnavailableReason } from '../utils/pushAvailability'
 import type { PushSubscriptionDevice } from '../types'
@@ -72,7 +72,20 @@ interface UseWebPushResult {
   disableDevice: (id: string) => Promise<void>
 }
 
-export function useWebPush(): UseWebPushResult {
+/**
+ * ARCHITECTURE_CYCLE24.md §454, §456.3. Defaults keep ezbook exactly as before (`site` omitted from every request,
+ * the browser subscription is dropped on disable).
+ * - `site: 'Orders'` — goods: the server filters devices/companies by site and stores the site on the row.
+ * - `keepBrowserSubscription: true` — goods: one browser has ONE push subscription shared by the staff member and
+ *   the customer, so "disable" removes the server row only and never calls PushSubscription.unsubscribe().
+ */
+export interface UseWebPushOptions {
+  site?: PushSite
+  keepBrowserSubscription?: boolean
+}
+
+export function useWebPush(options: UseWebPushOptions = {}): UseWebPushResult {
+  const { site, keepBrowserSubscription = false } = options
   const qc = useQueryClient()
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(readPermission)
   const [currentEndpoint, setCurrentEndpoint] = useState<string | null>(null)
@@ -81,8 +94,8 @@ export function useWebPush(): UseWebPushResult {
   const [actionError, setActionError] = useState<string | null>(null)
 
   const configQuery = useQuery({
-    queryKey: ['push-config'],
-    queryFn: pushApi.getConfig,
+    queryKey: ['push-config', site ?? 'Services'],
+    queryFn: () => pushApi.getConfig(site),
     enabled: SERVICE_WORKER_SUPPORTED,
     staleTime: 60 * 1000,
   })
@@ -108,8 +121,8 @@ export function useWebPush(): UseWebPushResult {
   }, [])
 
   const devicesQuery = useQuery({
-    queryKey: ['push-devices', currentEndpoint],
-    queryFn: () => pushApi.listSubscriptions(currentEndpoint ?? undefined),
+    queryKey: ['push-devices', site ?? 'Services', currentEndpoint],
+    queryFn: () => pushApi.listSubscriptions(currentEndpoint ?? undefined, site),
     enabled: SERVICE_WORKER_SUPPORTED && configQuery.data?.enabled === true,
   })
 
@@ -162,9 +175,10 @@ export function useWebPush(): UseWebPushResult {
           auth: arrayBufferToBase64Url(subscription.getKey('auth')),
         },
         deviceLabel: describeDevice(),
+        ...(site ? { site } : {}),
       })
       setCurrentEndpoint(subscription.endpoint)
-      qc.setQueryData(['push-devices', subscription.endpoint], (prev: PushSubscriptionDevice[] | undefined) => {
+      qc.setQueryData(['push-devices', site ?? 'Services', subscription.endpoint], (prev: PushSubscriptionDevice[] | undefined) => {
         const rest = (prev ?? []).filter((d) => d.id !== created.id)
         return [...rest, { ...created, isCurrent: true }]
       })
@@ -174,7 +188,7 @@ export function useWebPush(): UseWebPushResult {
     } finally {
       setIsEnabling(false)
     }
-  }, [configQuery.data?.publicKey, invalidateDevices, qc])
+  }, [configQuery.data?.publicKey, invalidateDevices, qc, site])
 
   const disableOnThisDevice = useCallback(async () => {
     setActionError(null)
@@ -184,15 +198,15 @@ export function useWebPush(): UseWebPushResult {
       const subscription = await registration?.pushManager.getSubscription()
       const current = devices.find((d) => d.isCurrent)
       if (current) await pushApi.deleteSubscription(current.id)
-      await subscription?.unsubscribe()
-      setCurrentEndpoint(null)
+      if (!keepBrowserSubscription) await subscription?.unsubscribe()
+      if (!keepBrowserSubscription) setCurrentEndpoint(null)
       invalidateDevices()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Не удалось отключить уведомления')
     } finally {
       setIsDisabling(false)
     }
-  }, [devices, invalidateDevices])
+  }, [devices, invalidateDevices, keepBrowserSubscription])
 
   const disableDevice = useCallback(
     async (id: string) => {
@@ -201,7 +215,7 @@ export function useWebPush(): UseWebPushResult {
       try {
         await pushApi.deleteSubscription(id)
         const device = devices.find((d) => d.id === id)
-        if (device?.isCurrent) {
+        if (device?.isCurrent && !keepBrowserSubscription) {
           const registration = await navigator.serviceWorker.getRegistration('/')
           const subscription = await registration?.pushManager.getSubscription()
           await subscription?.unsubscribe()
@@ -214,7 +228,7 @@ export function useWebPush(): UseWebPushResult {
         setIsDisabling(false)
       }
     },
-    [devices, invalidateDevices],
+    [devices, invalidateDevices, keepBrowserSubscription],
   )
 
   return {
@@ -231,7 +245,7 @@ export function useWebPush(): UseWebPushResult {
   }
 }
 
-function describeDevice(): string {
+export function describeDevice(): string {
   // Best-effort, human label only ("Chrome на Windows") — the endpoint, not this string, is what
   // identifies the device to the server.
   const ua = navigator.userAgent

@@ -2,18 +2,22 @@ import { api } from './client'
 import type { PushConfig, PushSubscriptionDevice, StaffPushSettings } from '../types'
 
 // API_CONTRACT_CYCLE9.md §115 — staff Web Push.
+/** API_CONTRACT_CYCLE24.md §484 — which site's devices: ezbook sends nothing (server default `Services`), goods `Orders`. */
+export type PushSite = 'Services' | 'Orders'
+
 export const pushApi = {
-  getConfig: () => api.get<PushConfig>('/push/config').then((r) => r.data),
+  getConfig: (site?: PushSite) =>
+    api.get<PushConfig>('/push/config', { params: site ? { site } : undefined }).then((r) => r.data),
 
   // §115.2 — currentEndpoint is optional; without it the server always answers isCurrent: false.
-  listSubscriptions: (currentEndpoint?: string) =>
+  listSubscriptions: (currentEndpoint?: string, site?: PushSite) =>
     api
       .get<{ items: PushSubscriptionDevice[] }>('/push/subscriptions', {
-        params: currentEndpoint ? { currentEndpoint } : undefined,
+        params: currentEndpoint || site ? { ...(currentEndpoint ? { currentEndpoint } : {}), ...(site ? { site } : {}) } : undefined,
       })
       .then((r) => r.data.items),
 
-  subscribe: (input: { endpoint: string; keys: { p256dh: string; auth: string }; deviceLabel?: string }) =>
+  subscribe: (input: { endpoint: string; keys: { p256dh: string; auth: string }; deviceLabel?: string; site?: PushSite }) =>
     api.post<PushSubscriptionDevice>('/push/subscriptions', input).then((r) => r.data),
 
   // §115.4 — deletes any of the caller's own devices, including one that isn't the current one

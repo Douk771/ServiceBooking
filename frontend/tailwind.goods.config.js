@@ -11,5 +11,7 @@ export default {
     './goods/src/**/*.{js,ts,jsx,tsx}',
     './src/components/**/*.{js,ts,jsx,tsx}',
     './src/pages/{LegalDocumentPage,SubjectRequestPage,ConsentsPage,LoginPage,RegisterPage}.tsx',
+    './src/pages/owner/NotificationsSection.tsx',
+    './src/pages/BillingPage.tsx',
   ],
 }
