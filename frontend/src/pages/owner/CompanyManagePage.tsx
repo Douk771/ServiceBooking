@@ -13,7 +13,7 @@ import { Avatar } from '../../components/ui/Avatar'
 import { CityCombobox } from '../../components/ui/CityCombobox'
 import { ScheduleTab } from './ScheduleTab'
 import { CompanyPhotosSection } from './CompanyPhotosSection'
-import { AddressVerifyField } from '../../components/company/AddressVerifyField'
+import { CompanyAddressField } from '../../components/company/CompanyAddressField'
 import { NotificationSettingsTab } from './NotificationSettingsTab'
 import { NotificationTemplatesTab } from './NotificationTemplatesTab'
 import { NotificationLogTab } from './NotificationLogTab'
@@ -723,7 +723,7 @@ export function SettingsTab({ companyId }: { companyId: string }) {
         }
       : undefined,
     // `values` resyncs the form whenever the `['my-companies']` cache updates — which now also
-    // happens on `AddressVerifyField`'s own save (§209), a save this form's fields know nothing
+    // happens on `CompanyAddressField`'s own save (§209), a save this form's fields know nothing
     // about. Without `keepDirtyValues`, that resync silently reverts whatever the owner had typed
     // into THIS form but not yet submitted (review finding, cycle 13).
     resetOptions: { keepDirtyValues: true },
@@ -850,11 +850,9 @@ export function SettingsTab({ companyId }: { companyId: string }) {
               (`PUT /api/companies/{id}/address`), never through this form's submit — so this field
               owns its own save action instead of being `register('address')`d into `updateMut`. */}
           {company && (
-            <AddressVerifyField
+            <CompanyAddressField
               companyId={companyId}
               initialAddress={company.address ?? ''}
-              cityId={company.cityId}
-              addressVerification={company.addressVerification}
               onSaved={() => qc.invalidateQueries({ queryKey: ['my-companies'] })}
             />
           )}

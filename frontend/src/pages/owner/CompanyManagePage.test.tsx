@@ -145,7 +145,7 @@ describe('SettingsTab — unsaved edits survive an unrelated `my-companies` refe
     expect(saveButton).not.toBeDisabled()
 
     // Simulate `['my-companies']` resyncing mid-edit because of an unrelated change (e.g. the
-    // address field's own save via AddressVerifyField, §209) — writing a new value into the SAME
+    // address field's own save via CompanyAddressField, §209) — writing a new value into the SAME
     // query cache the form's `values` prop reads from triggers RHF's `keepDirtyValues` resync path,
     // exactly like a real refetch landing while the owner is still typing.
     qc.setQueryData(['my-companies'], [{ id: 'co1', name: 'Салон красоты', allowSelfBooking: false }])

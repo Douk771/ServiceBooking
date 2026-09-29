@@ -1,43 +1,30 @@
 import { api } from './client'
-import type { AddressLookupResultDto, AddressNoticeResultDto, Company, CompanyAddressVerificationResultDto } from '../types'
+import type { AddressNoticeResultDto, Company } from '../types'
 
-/** API_CONTRACT_CYCLE13.md §233. */
-export interface AddressLookupParams {
-  address: string
-  cityId?: number | null
-  companyId?: string | null
-}
-
-/** API_CONTRACT_CYCLE13.md §234 — `company` comes back as the full `CompanyDto`. */
+/**
+ * API_CONTRACT_CYCLE19.md §413.4 — `CompanyAddressUpdateResultDto` is `{ company: CompanyDto }`.
+ * Kept as a named type because `Company` is a hand-maintained interface, not read off the
+ * generated schema (§388.3).
+ */
 export interface SaveCompanyAddressResult {
   company: Company
-  verification: CompanyAddressVerificationResultDto
 }
 
 export const companyAddressApi = {
   /**
-   * `POST /api/companies/address/lookup` — search only, never writes anything. `[Authorize]`; when
-   * `companyId` is omitted (company-creation flow) any authenticated user may call it. Can 404 for
-   * two indistinguishable reasons: the switch is off (`Provider: logging`), or `companyId` isn't the
-   * caller's to manage — the interface is not meant to hit this at all when it already knows
-   * `addressVerification.available === false` (§237).
+   * `PUT /api/companies/{id}/address` — writes the address. ARCHITECTURE_CYCLE19.md §388.2/§413.2:
+   * `verify` is no longer sent — the geocoder is gone, and the route never wrote the five
+   * verification columns for anything this component controls. An empty `address` erases it
+   * (§234, unchanged) — pass `''`, not `undefined`, to do that.
    */
-  lookup: (params: AddressLookupParams) =>
-    api.post<AddressLookupResultDto>('/companies/address/lookup', params).then((r) => r.data),
-
-  /**
-   * `PUT /api/companies/{id}/address` — the only endpoint that writes verification columns. Always
-   * works, even with the switch off (`verify` is then simply ignored server-side, `outcome:
-   * "Disabled"`). An empty `address` erases it (§234) — pass `''`, not `undefined`, to do that.
-   */
-  saveAddress: (companyId: string, address: string, verify = false) =>
-    api.put<SaveCompanyAddressResult>(`/companies/${companyId}/address`, { address, verify }).then((r) => r.data),
+  saveAddress: (companyId: string, address: string) =>
+    api.put<SaveCompanyAddressResult>(`/companies/${companyId}/address`, { address }).then((r) => r.data),
 
   /**
    * `POST /api/companies/address/notice` — records that the owner/SuperAdmin saw and accepted the
-   * public-address warning (§220/§242). Independent of the geocoder switch. `textVersion` MUST be the
-   * version the caller actually read from `GET /api/legal/texts/PublicAddressNotice` — never a
-   * hardcoded string, so a 409 (text changed under them) is meaningful.
+   * public-address warning (§220/§242, unchanged by cycle 19). `textVersion` MUST be the version the
+   * caller actually read from `GET /api/legal/texts/PublicAddressNotice` — never a hardcoded string,
+   * so a 409 (text changed under them) is meaningful.
    */
   confirmNotice: (textVersion: string) =>
     api.post<AddressNoticeResultDto>('/companies/address/notice', { textVersion, confirmed: true }).then((r) => r.data),
