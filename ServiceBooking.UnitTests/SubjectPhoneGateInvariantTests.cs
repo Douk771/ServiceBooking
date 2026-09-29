@@ -19,7 +19,7 @@ namespace ServiceBooking.UnitTests;
 public class SubjectPhoneGateInvariantTests
 {
     private static readonly Regex TokenPattern = new(
-        @"GuestPhone ==|RecipientPhone ==|\.Phone == |CanonicalPhone ==", RegexOptions.Compiled);
+        @"GuestPhone ==|RecipientPhone ==|\.Phone == |CanonicalPhone ==|CustomerPhone ==", RegexOptions.Compiled);
 
     private static readonly Regex MarkerPattern = new(
         @"SUBJECT-PHONE-GATE:\s*(gated|staff-scoped|not-account-scoped)\s*—\s*\S", RegexOptions.Compiled);

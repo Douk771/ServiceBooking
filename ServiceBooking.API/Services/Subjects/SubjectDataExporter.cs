@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Controllers;
+using ServiceBooking.API.DTOs.Orders;
 using ServiceBooking.API.Services.Legal;
+using ServiceBooking.API.Services.Orders;
 using ServiceBooking.Core.Entities;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Subjects;
@@ -108,6 +111,12 @@ public sealed class SubjectDataExporter(
             .Where(n => n.ClientId == userId || (guestMatchPhone != null && n.GuestPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — TD-03, ARCHITECTURE_CYCLE16.md §245.4
             .ToListAsync(ct);
 
+        // ARCHITECTURE_CYCLE23.md §398.1: orders of the account, and guest orders on the same number ONLY when the number is verified.
+        var orderRows = await db.Orders.AsNoTracking().Include(o => o.Items).Include(o => o.Events).AsSplitQuery()
+            .Where(o => o.CustomerUserId == userId || (guestMatchPhone != null && o.CustomerKind == OrderActorKind.Guest && o.CustomerPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — cycle 23, orders follow the same gate as bookings (ARCHITECTURE_CYCLE23.md §398.1)
+            .OrderByDescending(o => o.CreatedAtUtc)
+            .ToListAsync(ct);
+
         var whatIsStoredByCompany = new Dictionary<Guid, List<string>>();
         void Tag(IEnumerable<Guid> companyIds, string kind)
         {
@@ -121,6 +130,7 @@ public sealed class SubjectDataExporter(
         Tag(noteCompanyIds, "notes");
         Tag(photoCompanyIds, "photos");
         Tag(healthNoteRows.Select(n => n.CompanyId), "healthNotes");
+        Tag(orderRows.Select(o => o.CompanyId).Distinct(), "orders");
 
         var operatorCompanyIds = whatIsStoredByCompany.Keys.ToList();
         var operators = operatorCompanyIds.Count == 0 ? []
@@ -189,6 +199,29 @@ public sealed class SubjectDataExporter(
         // ARCHITECTURE_CYCLE5.md §50.2, API_CONTRACT_CYCLE5.md §49: "признаны результатом работы салона"
         // is removed — it is not a valid ground for refusal (ч. 8 ст. 14 152-ФЗ is exhaustive). Replaced
         // with routing to the actual operator of that data — see `operators` above.
+        var orderShopIds = orderRows.Select(o => o.CompanyId).Distinct().ToList();
+        var orderShops = orderShopIds.Count == 0 ? new Dictionary<Guid, Company>()
+            : await db.Companies.AsNoTracking().Where(c => orderShopIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
+        var orderSellers = orderShopIds.Count == 0 ? new Dictionary<Guid, ShopSettings>()
+            : await db.ShopSettings.AsNoTracking().Where(s => orderShopIds.Contains(s.CompanyId)).ToDictionaryAsync(s => s.CompanyId, ct);
+        var orderExport = orderRows.Select(o =>
+        {
+            orderShops.TryGetValue(o.CompanyId, out var shop);
+            orderSellers.TryGetValue(o.CompanyId, out var seller);
+            var hasSeller = seller is not null && (!string.IsNullOrWhiteSpace(seller.SellerLegalName) || !string.IsNullOrWhiteSpace(seller.SellerInn));
+            return new ExportOrderDto(
+                shop?.Name ?? string.Empty, shop?.Address, hasSeller ? new ExportOrderSellerDto(seller!.SellerLegalName, seller.SellerInn) : null,
+                o.Number, o.BusinessDate, o.CreatedAtUtc, o.Status.ToString(), OrderTexts.StatusText(o.Status),
+                o.CustomerName, o.CustomerPhone, o.Comment,
+                o.Items.OrderBy(i => i.Position).Select(i => new ExportOrderItemDto(
+                    i.NameSnapshot, i.Unit.ToString(), i.UnitPrice, i.QuantityOrdered, i.QuantityActual, OrderDtoMapper.LineTotal(o, i))).ToList(),
+                OrderDtoMapper.DisplayTotal(o), o.StatusReason,
+                o.CustomerUserId == userId ? "Account" : "GuestSamePhone",
+                // The journal the customer may see: no staff names, no service entries.
+                o.Events.Where(e => e.VisibleToCustomer).OrderBy(e => e.OccurredAtUtc)
+                    .Select(e => new ExportOrderEventDto(e.OccurredAtUtc, OrderTexts.EventText(e.Kind, e.ToStatus, e.Reason))).ToList());
+        }).ToList();
+
         var export = new ProfileExportDto(
             DateTime.UtcNow,
             // ownPhone (§245.4 table): the account's own contact — shown regardless of verification.
@@ -200,7 +233,7 @@ public sealed class SubjectDataExporter(
             "компания — контакты и адрес каждой такой компании перечислены в разделе «operators» этой " +
             "выгрузки. Запрос об их предоставлении, уточнении или удалении направляйте ей напрямую. По " +
             "вопросам обработки ваших данных платформой обращайтесь в поддержку сервиса.",
-            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate);
+            operators, notifications, optOut, healthNotesExport, phoneVerification, guestDataGate, orderExport);
 
         return export;
     }

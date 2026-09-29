@@ -412,7 +412,10 @@ public record ProfileExportDto(
     List<ExportNoteMetaDto> NotesAboutMe, List<ExportPhotoMetaDto> PhotosOfMe, string Explanation,
     List<ExportOperatorDto> Operators, List<ExportNotificationDto> Notifications, ExportOptOutDto OptOut,
     List<ExportHealthNoteDto> HealthNotes, ExportPhoneVerificationDto PhoneVerification,
-    ExportGuestDataGateDto GuestDataGate);
+    ExportGuestDataGateDto GuestDataGate,
+    // ARCHITECTURE_CYCLE23.md §398.1 — additive, appended at the end: the customer's orders (own account's, plus guest orders on the
+    // same VERIFIED number under the cycle-16 SubjectScope gate).
+    List<ServiceBooking.API.DTOs.Orders.ExportOrderDto> Orders);
 
 // API_CONTRACT_CYCLE16.md §273.1. §272/A2: deliberately carries no count or "hasHiddenData" flag — only
 // whether the rule applied, so the response can never be used to infer whether hidden data exists.

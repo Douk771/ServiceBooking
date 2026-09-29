@@ -67,6 +67,12 @@ public sealed class RetentionPeriods
     /// the whole cycle's release on legal's timeline, which the spec doesn't ask for.</summary>
     public int BookingEventDays { get; set; } = 0;
 
+    /// <summary>ARCHITECTURE_CYCLE23.md §398.5 (L5). Age of a finished <see cref="Core.Entities.Order"/> since <c>CompletedAtUtc</c> after
+    /// which the customer's personal data on it is erased. Default 0, read by <see cref="Rules.OrderPersonalizationRule"/> as "срок не
+    /// задан" — legal-counsel has not given a number, so at 0 the rule changes nothing and says so (the <see cref="BookingEventDays"/>
+    /// precedent). NOT fail-fast-checked at startup.</summary>
+    public int OrderPersonalDataDays { get; set; } = 0;
+
     /// <summary>Age of a <see cref="Core.Entities.ChannelStateEvent"/> since it occurred. Default 365.</summary>
     public int ChannelStateEventDays { get; set; } = 365;
 

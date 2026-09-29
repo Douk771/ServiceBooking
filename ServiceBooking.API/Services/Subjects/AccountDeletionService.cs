@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.Controllers;
+using ServiceBooking.API.Services.Orders;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -143,6 +144,19 @@ public sealed class AccountDeletionService(
             booking.GuestEmail = null;
             booking.Notes = null;
             booking.ClientDeleted = true;
+        }
+
+        // Step 3b (ARCHITECTURE_CYCLE23.md §398.2): pickup orders — depersonalized, never deleted: the shop's books (number, lines,
+        // totals, status) stay, name/phone/comment/account link go, and the order is marked PersonalDataErased. Same scope as the bookings
+        // above: the account's own orders, plus guest orders on a number this account has PROVEN it owns. Active orders are NOT cancelled —
+        // the shop still sees "данные покупателя удалены" and the order number and can finish or refuse it.
+        var ordersToErase = await db.Orders.Include(o => o.Events)
+            .Where(o => o.CustomerUserId == userId || (guestMatchPhone != null && o.CustomerKind == OrderActorKind.Guest && o.CustomerPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — cycle 23, orders follow the same gate as bookings (ARCHITECTURE_CYCLE23.md §398.2)
+            .ToListAsync();
+        foreach (var order in ordersToErase)
+        {
+            OrderPersonalData.Erase(order);
+            foreach (var orderEvent in order.Events) OrderPersonalData.TombstoneCustomerEvent(orderEvent);
         }
 
         // TD-05 (ARCHITECTURE_CYCLE16.md §247.2, no migration — §240.3/§247.1). Two rules, both scoped

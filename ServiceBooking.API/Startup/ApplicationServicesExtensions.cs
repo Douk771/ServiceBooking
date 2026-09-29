@@ -265,6 +265,9 @@ internal static class ApplicationServicesExtensions
         ServiceBooking.API.Services.Retention.Rules.ClientNotePhotoRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.BookingEventRule>();
+    // ARCHITECTURE_CYCLE23.md §398.5 — order-personalization (does nothing while Retention:OrderPersonalDataDays is 0).
+    builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
+        ServiceBooking.API.Services.Retention.Rules.OrderPersonalizationRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,
         ServiceBooking.API.Services.Retention.Rules.ClientHealthNoteRule>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Retention.IRetentionRule,

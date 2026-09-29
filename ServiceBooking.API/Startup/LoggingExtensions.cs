@@ -154,7 +154,7 @@ internal static class LoggingExtensions
     // B2/I5: mask the {token} segment of the two notification routes that embed a secret in the URL, so
     // the request-completed log line (Information) never carries it. Returns null for every other path —
     // callers only override RequestPath when this returns non-null.
-    private static string? MaskSensitiveRequestPath(string? path)
+    internal static string? MaskSensitiveRequestPath(string? path)
     {
         if (string.IsNullOrEmpty(path)) return null;
 
@@ -167,6 +167,15 @@ internal static class LoggingExtensions
         // reaches here — neither alone is sufficient.
         const string maxWebhookPrefix = "/api/phone-verification/max/webhook/";
 
+        // ARCHITECTURE_CYCLE23.md §398.6 — the 256-bit order token is a secret of access to the order (name, phone mask, content);
+        // it sits in the path of the order page API and of the cancellation. The tail after the token ("/cancel") is kept.
+        const string orderPublicPrefix = "/api/orders/public/";
+
+        if (path.StartsWith(orderPublicPrefix, StringComparison.Ordinal) && path.Length > orderPublicPrefix.Length)
+        {
+            var slash = path.IndexOf('/', orderPublicPrefix.Length);
+            return orderPublicPrefix + "***" + (slash < 0 ? string.Empty : path[slash..]);
+        }
         if (path.StartsWith(webhookPrefix, StringComparison.Ordinal) && path.Length > webhookPrefix.Length)
             return webhookPrefix + "***";
         if (path.StartsWith(unsubscribePrefix, StringComparison.Ordinal) && path.Length > unsubscribePrefix.Length)
