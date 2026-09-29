@@ -1,8 +1,158 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `7117660` (`develop`, merge `cycle/020-legal-closure`), дата: 2026-09-30.**
-Прошлая отметка — `e2e927b`/`e3774c1` (вход в цикл 20) и шапка слияния `f5798ab` ниже. **Следующий diff
-отсчитывайте от `7117660`.** Метка блоков этой правки — ⚖️20✅ (итог цикла 20) и 🚀20 (факты боя).
+**Актуально по состоянию на коммит: `7591cd2` (`develop`, merge `cycle/019-tariff-limits-geocoder-cleanup`), дата: 2026-09-30.**
+Прошлая отметка — `7117660` (итог цикла 20, правка документа — `7f7a26a`). **Следующий diff отсчитывайте
+от `7591cd2`.** Метка блоков этой правки — 🧮19 (итог цикла 19). Предыдущие метки ⚖️20✅ / 🚀20 ниже
+остаются в силе, кроме мест, где рядом стоит 🧮19.
+
+### 🧮19 Итог цикла 19 «лимиты только в тарифе, удаление заготовки геокодера» — что влито в `develop` (`7f7a26a..7591cd2`)
+
+Точечное обновление; остальной документ не пересканировался. Диапазон — 26 коммитов, 102 файла,
++9 958 / −4 241. Источники: `SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md` (корневой `SPEC.md` по-прежнему
+= спека цикла 20), `ARCHITECTURE_CYCLE19.md` §380–§396, `API_CONTRACT_CYCLE19.md` §400–§416,
+`contracts/cycle19/openapi.yaml`, раздел «Цикл 19» в `TEST_CATALOG.md`, `DEPLOY.md` §19–§20, коммиты цикла.
+**Порядок вливания:** цикл 19 стартовал от `e3774c1` раньше циклов 20–22, но влит в `develop`
+**последним**. Сначала `develop` (циклы 20–22) влит в ветку цикла 19 мердж-коммитом **`7bfa209`**
+(конфликты `SPEC.md`/`CURRENT_STATE.md` решены в пользу `develop`, `API_DOCUMENTATION.md`/`TEST_CATALOG.md`
+объединены, во фронте сведены типы cycle19 и cycle20, из `Cycle22RouteTable.golden.txt` удалён
+`address/lookup`). Затем `6de5a50` исправил ссылки, DO-1…DO-4 доделаны уже после интеграции, и
+`7591cd2` влил ветку в `develop`. **Цикл 19 на бой НЕ выкачен.** На бою по-прежнему `7117660`
+(см. 🚀20), значит там работает код **с** геокодером и **с** опциями-лимитами.
+Сверка на входе в цикл («как было до»: две формулы лимита, инвентарь геокодера) при интеграции в документ
+не попала. История — `git show 93f23e6:CURRENT_STATE.md`, раздел «0.4 🧩».
+
+**А. Лимиты сотрудников и компаний — только поля тарифа.**
+- **Формула** (единственная в коде — `ServiceBooking.API/Services/Billing/AccountLimitFormula.cs`,
+  `Compute(planMaxEmployees, planMaxCompanies, grandfatheredEmployeeBonus)`): сотрудники =
+  `MaxEmployees` тарифа + `BillingAccount.GrandfatheredEmployeeBonus`, компании = `MaxCompanies`.
+  `null` означает «без ограничения», бонус к нему не прибавляется, отрицательный бонус считается нулём.
+  Раньше к лимиту прибавлялась Σ `Quantity` купленных строк `AccountSubscriptionOption` с
+  `CapabilityKey` `employees`/`companies`. Теперь это не так. `PlanOptionRule.IncludedQuantity` в лимит
+  не входил и не входит. `SubscriptionResolver`: 6-аргументной перегрузки `Resolve` больше нет,
+  `GetEffectivePlansForAccountsAsync` читает из опций только `notifications.whatsapp`. Формулу
+  вызывают резолвер, `AdminBillingController.AssignSubscription` (409 превышения, `confirmLimitOverflow`)
+  и разбор 402 в `CompaniesController`. Колонки «бонус компаний» нет (решение заказчика).
+- **Опция-лимит** — опция, у которой `CapabilityKey` после `Trim()+ToLowerInvariant()` ∈
+  {`employees`, `companies`}. На сиде это `extra-employees` и `extra-companies`. Признак вычисляет только сервер
+  и только по ключу, а не по `code`. Единственное определение — `Services/Billing/RetiredLimitOptions.cs`:
+  `IsRetiredCapability`, `IsRetired`, три `WhereNotRetired()` (для `SubscriptionOption`,
+  `PlanOptionRule`, `AccountSubscriptionOption`), `LiveRetiredRows(db, nowUtc)`. `CapabilityKeys.Employees/
+  Companies` остались константами. Из `OptionCapabilityCatalog.Known` (`GET /api/admin/option-capabilities`)
+  оба ключа убраны.
+- **Где скрыты (`WhereNotRetired` / `IsRetired`)** — `AdminOptionsController.GetOptions`,
+  `AdminPlansController` (правила и счётчик `totalOptionsInCatalog` в `GetPlans` и в общем пути
+  create/update/system-free/system-trial; `ApplyOptionRulesAsync` отбрасывает входные правила по
+  выведенным опциям и **не удаляет** уже сохранённые), `AdminBillingController` (карточка, список,
+  `AssignSubscription` — `existingOptions`, `BuildOptionsSummaryAsync`), `AdminAccountDtoBuilder`,
+  `OwnerSubscriptionService.BuildAsync`, `ProfileController.GetPlanInfoAsync`, `PricingCatalogBuilder`
+  (витрина и предпросмотр — при любых `IsActive/IsPublic/PricePerMonth`).
+- **Отказы (тексты — `BillingTexts`):** `POST|PUT /api/admin/options` с ключом-лимитом → **400**
+  `LimitCapabilityNotSellable`; `PUT /api/admin/options/{id}` по уже выведенной опции → **409**
+  `RetiredOptionNotEditable` (проверяется раньше «код менять нельзя»);
+  `PUT /api/admin/billing-accounts/{id}/subscription` и `POST /api/billing/subscription/request` с
+  опцией-лимитом → **400** `RetiredOptionRejected`. `PUT /api/admin/plans/{id}` с правилом `extra-*` →
+  200, правило молча игнорируется. `DELETE /api/admin/options/{id}` — без изменений.
+- **Добавочные поля:** `items[].retired` и `retiredOptionsNotice` у заявки
+  (`GET /api/billing/subscription`, ответ `POST …/request`, `GET /api/admin/subscription-requests`,
+  карточка аккаунта). Строит их `OwnerSubscriptionService.BuildPendingRequestDto`. Старые заявки с
+  `extra-*` в `RequestedOptionsJson` не переписываются, пометка вычисляется при чтении.
+- **Новые тексты 402:** `BillingTexts.SeatLimitReached(used, planName, limit)` (без «докуплено» и без
+  призыва купить опцию), `TransferRejectedCompanyLimit`. Текст 402 на создание компании прежний.
+- **Данные:** миграция **`20260928163137_Cycle19RetireLimitOptions`** — только
+  `UPDATE "SubscriptionOptions" SET "IsActive"=false … WHERE lower(btrim("CapabilityKey")) IN ('employees','companies') AND "IsActive"=true`.
+  Она идемпотентна, `Down()` пуст (намеренный no-op), схема не меняется. Строки опций, правил
+  `PlanOptionRules`, покупок `AccountSubscriptionOptions` и заявок **не удалены и не переписаны**.
+  **Миграций теперь 74** (по `*.Designer.cs`). ⚠️ По ID миграция цикла 19 (`20260928163137`) **старше**
+  уже применённых на бою `20260928192625`/`20260928192742` (цикл 22) и `20260929142013`/`…142045` (цикл 20).
+  `MigrateAsync` на старте применит её как недостающую, но неидемпотентный `dotnet ef migrations script
+  <from> <to>` её пропустит (§9 C19-4).
+- **Гейт выката** — функция `check_retired_limit_options` в `deploy/deploy-remote.sh`. Она запускается
+  сразу после `check_legal_manifest`, до «Recording rollback point», и работает только на чтение. Шаги:
+  (1) если postgres не запущен → `SKIPPED`; (2) печатает отчёт для заказчика
+  `deploy/checks/cycle19-limit-options-report.sql` (правила матрицы по опциям-лимитам рядом с
+  `max_employees`/`max_companies` тарифа, все строки покупок опций-лимитов с меткой `live`/`ended`);
+  (3) выполняет `deploy/checks/cycle19-retired-limit-options-live.sql` (незакрытые, `EndsAtUtc` null/в
+  будущем, и неистёкшие, `PaidUntilUtc` null/≥ now, строки опций-лимитов). Если вывод непуст, `exit 1`
+  с «Nothing has been changed on this host yet». При ошибке psql — отказ (fail-closed). Вторая линия
+  защиты — `Services/Billing/RetiredLimitOptionsStartupReport.LogAsync` в
+  `Startup/StartupSeedingExtensions.cs` сразу после `MigrateAsync`. Пусто → Information, иначе
+  **LogError**, старт не прерывается. Порядок действий — `DEPLOY.md` §20 (20.1 гейт, 20.2 где отчёт,
+  20.3 если сработал, 20.4 чек-лист C18-1).
+- **Фронт:** `frontend/src/types/api-cycle19.generated.ts` (скрипт `npm run types:api:cycle19`);
+  `BillingPage` и `BillingAccountsAdminTab` печатают `retiredOptionsNotice` и зачёркивают строки с
+  `retired`. На `PlansTab` у полей лимитов подсказка «Лимит задаётся только здесь; опций для докупки
+  сотрудников и компаний нет.». **Фронт опции-лимиты сам не фильтрует** — это требование
+  `ARCHITECTURE_CYCLE19.md` §386.2 (окно выката «новый фронт + старый API»).
+
+**Б. Геокодер удалён целиком.**
+- **Удалено:** `ServiceBooking.API/Services/Geo/**` (11 файлов, включая `Yandex/`),
+  `Core/Enums/AddressPrecision.cs`, DI и HTTP-клиент `yandex-geocoder` (`ApplicationServicesExtensions`),
+  `DeploymentSafetyChecks.ValidateAddressVerification` и её вызов, секция `AddressVerification` в
+  `appsettings.json`/`appsettings.Testing.json`, `AddressVerification__*` в `docker-compose.prod.yml`,
+  `ADDRESSVERIFICATION__*` в `.env.production.example`, маршрут **`POST /api/companies/address/lookup`**
+  (теперь 404 при любой конфигурации), DTO проверки в `CompanyAddressDtos.cs`, поля
+  **`CompanyDto.addressVerification` и `addressPoint`**. На фронте удалены
+  `AddressVerifyField.tsx` (+тест), `companyAddressApi.lookup`, вызов `saveAddress(…, true)` в
+  `CabinetPage.tsx`, `src/types/api-cycle13.generated.ts` и скрипт `types:api:cycle13`, из CI убран его
+  шаг сверки. Юнит-тесты геокодера удалены (6 файлов), `AddressVerificationTests.cs` удалён.
+- **Осталось и работает:** `PUT /api/companies/{id}/address` (`CompanyAddressController.SaveAddress`).
+  `verify` принимается и **игнорируется**, ответ — `{ company }` **без `verification`**, адрес пишется
+  побайтно, пустая строка стирает. `POST /api/companies/address/notice` (правовой гейт публичности
+  адреса) не изменился. Политика лимитов **`address-verify`** сохранила имя и умолчания 30/60 мин,
+  ровно два `EnableRateLimiting("address-verify")`, новый текст 429: «Слишком много попыток изменить
+  адрес. Повторите позже.». Ссылки в Яндекс Карты/2ГИС (`CompanyMapLinks`, `utils/mapLinks.ts`) не
+  тронуты. Фронт: **`components/company/CompanyAddressField.tsx`** (бывший `AddressVerifyField`,
+  пропсы `{companyId, initialAddress, onSaved}`, гейт `PublicAddressNotice` перед сохранением).
+- **Пять колонок `Companies.AddressVerifiedInputKey/AddressVerifiedAt/AddressPrecision/AddressLatitude/
+  AddressLongitude` остались в БД** как **теневые свойства EF** (`AppDbContext.cs`, конфигурация
+  `Company`). CLR-свойств в `Company.cs` больше нет, код колонки не читает и не пишет (раньше
+  `PUT …/address` их обнулял, теперь не трогает). Снапшот не менялся, `DropColumn` нет.
+  Комментарий в `AppDbContext.cs` прямо запрещает превращать их обратно в CLR-свойства.
+- `contracts/cycle13/openapi.yaml` помечен YAML-комментарием «ИСТОРИЧЕСКИЙ» и по-прежнему линтуется в CI.
+  Приёмочный греп US-19-09 и исчерпывающий список допустимых совпадений — `ARCHITECTURE_CYCLE19.md`
+  §388.6 (пункт 4 про генерат cycle19 добавлен при интеграции, `cfbae70`).
+
+**Сознательно отложено (решение заказчика 2026-09-28): физическая очистка.** Строки `extra-*`, их
+правила и покупки, пять колонок `Companies.Address*` и шаг гейта в `deploy-remote.sh` удаляются
+отдельным будущим циклом после проверки боевых данных (`ARCHITECTURE_CYCLE19.md` §393).
+**`legal-drafts/` цикл 19 не правил** (ответ заказчика 5). Упоминания проверки адреса картой
+остались, см. §9 C19-2.
+
+**Ломающие изменения (для нашего фронта; `API_CONTRACT_CYCLE19.md` §416):** (1) `CompanyDto` без
+`addressVerification`/`addressPoint`; (2) ответ `PUT /api/companies/{id}/address` без `verification`;
+(3) новые тексты 402 (места, перенос) и 429 (`address-verify`). Новых маршрутов нет, новых
+зависимостей нет. Эталон маршрутов `ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt` без
+`address/lookup`.
+
+**CI (`a760981`):** в шаге «API types must match committed contracts (TD-07)» больше нет
+`types:api:cycle13`. `contracts/cycle19/openapi.yaml` добавлен в «Lint API contracts (TD-07)» и в
+`contracts/redocly.yaml`. `types:api:cycle19` добавлен в «Generated API types must match the contracts»
+(вместе с cycle18/cycle20). Новых job'ов нет.
+
+**Тесты.** Новые функциональные: `ServiceBooking.Tests/Tests/Cycle19TariffLimitsTests.cs` (CY19-01…13,
+13 атрибутов `[Fact]/[Theory]`) и `CompanyAddressTests.cs` (18 атрибутов, 20 кейсов: не связанные с
+геокодером `ADDR-` перенесены из удалённого `AddressVerificationTests.cs`, плюс ADDR-001/002 «lookup →
+404» и ADDR-029/030/031). Фабрика — `Infrastructure/CompanyAddressTestFactory.cs` (заменила
+`AddressVerificationTestFactory`). Новые юнит-тесты: `AccountLimitFormulaTests`, `RetiredLimitOptionsTests`,
+`OwnerSubscriptionServiceBuildPendingRequestDtoTests`. Переписаны `DeploymentSafetyChecksTests`,
+`BillingTextsTests`, `SubscriptionResolverRulesTests`, `PricingCatalogBuilderTests`,
+`BillingCatalogSeedKeysTests`. Фронт: `CompanyAddressField.test.tsx`, правки тестов `PlansTab`,
+`BillingPage`, `BillingAccountsAdminTab`, `CompanyManagePage`. Числа есть **только до интеграции**
+(ветка цикла без циклов 20–22, `TEST_CATALOG.md` «Цикл 19»): функциональные 801/801, unit 1466/1466,
+Vitest 617/618 (падал `BookingCalendar.test.tsx`, потом стабилизирован коммитом `7e93f42`). **Чисел прогона
+после `7bfa209`/`7591cd2` в репозитории нет.** Ожидаемый порядок — функциональные ≈ 852+3 цикла 20 − 28
+удалённых `ADDR-` + 32 новых, но это оценка, а не прогон. Команды запуска прежние (§7).
+⚠️ В тексте и комментариях кода упоминаются тест-ID `LIM19-*` (`RetiredLimitOptionsTests.cs`: «exercised by the
+functional LIM19-020 gate-parity test»). **Таких тестов нет:** QA назвал кейсы `CY19-*`, а тест паритета
+SQL-гейта и `LiveRetiredRows` (LIM19-020) не написан (§9 C19-3).
+
+**Документация:** `API_DOCUMENTATION.md` §4.16, подраздел «Опции-лимиты выведены из оборота — новое
+в цикле 19» (включает абзац об удалении геокодера). `DEPLOY.md` §19 переписан на «Геокодер удалён в
+цикле 19», новый §20 «Выкат цикла 19». `TEST_CATALOG.md` — раздел «Цикл 19». ⚠️ **Не сделано из
+`ARCHITECTURE_CYCLE19.md` §394:** записи в `CHANGELOG.md` нет (последний раздел — цикл 20), `README.md`
+не правился: стр. ~176 по-прежнему перечисляет «дополнительные компании, дополнительные сотрудники»
+среди опций. Однострочных пометок «удалено в цикле 19» в `ARCHITECTURE_CYCLE13.md`,
+`API_CONTRACT_CYCLE13.md`, `LEGAL_REVIEW.md` §16 нет.
 
 ### ⚖️20✅ Итог цикла 20 «закрытие правовых долгов» — что влито в `develop` (`e3774c1..7117660`)
 
@@ -19,7 +169,7 @@
   конец), `SubscriptionChangeReason`, `PlatformNoticeKind`, `NoticeAudienceType`, `GuestDataGateOperation`
   (+Outcome), `SubjectRequestChannel`; `LegalTextKey` +5 ключей. **Миграция данных
   `20260929142045_Cycle20PurgeHealthNotesWithoutWrittenConsent`** — `DELETE FROM "ClientHealthNotes"`,
-  `Down()` пуст (необратима). **Миграций теперь 73** (по `*.Designer.cs`).
+  `Down()` пуст (необратима). **Миграций теперь 73** (по `*.Designer.cs`; 🧮19 после цикла 19 — **74**).
 - **Новые/изменённые маршруты** (эталон `ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt`):
   `GET …/clients/{clientKey}/health-consent-form`, `POST …/health-written-consent` (фильтр
   `RequiresOwnerTerms`), `POST …/health-written-consent/revoke`; **`POST …/health-consent` → 410 без тела**;
@@ -143,6 +293,8 @@
 упоминания геокодера/Яндекса есть в `legal-drafts/01-privacy-policy.html` (2),
 `02-terms-client.html` (1), `13-public-address-notice.html` (1). Правки `legal-drafts/` циклов 19 и
 20 будут пересекаться — конфликт ожидается при мёрже, а не при старте.
+🧮19 **Устарело:** цикл 19 влит в `develop` (`7591cd2`), геокодера в дереве больше нет. Цикл 19
+`legal-drafts/` не правил, поэтому конфликта по ним не было. Упоминания остались, см. §9 C19-2.
 
 ---
 
@@ -1187,7 +1339,10 @@ payload по RFC 8291 и подпись VAPID по RFC 8292. Во фронтен
   `GreenApiHandlerFactory`), базовый адрес `https://api.green-api.com`.
   Модель: **один экземпляр провайдера = один номер = одна оплата**, номер принадлежит салону,
   платформа платит провайдеру партнёрским токеном. **Партнёрского аккаунта GREEN-API пока нет** (§9).
-- 🗺 **Яндекс Геокодер** — **новая интеграция цикла 13, выключена в закоммиченной конфигурации.**
+- 🧮19 **Яндекс Геокодер — УДАЛЁН в цикле 19** (`7591cd2`). В коде `develop` нет ни интеграции, ни
+  секции `AddressVerification`, ни HTTP-клиента. Абзац ниже описывает состояние до цикла 19, то есть и
+  код, который **сейчас работает на бою** (`7117660`), пока цикл 19 не выкачен. См. шапку 🧮19, часть Б.
+  🗺 **Яндекс Геокодер** — **новая интеграция цикла 13, выключена в закоммиченной конфигурации.**
   Секция `AddressVerification` (`GeoOptions`), рубильник `AddressVerification:Provider`: по умолчанию
   **`logging`** — заглушка `LoggingAddressGeocoder`, не делающая ни одного сетевого вызова;
   значение `yandex` включает `Services/Geo/Yandex/YandexAddressGeocoder` (`GET
@@ -1696,6 +1851,14 @@ ServiceBooking.sln                  📜 7 проектов (+ папка Soluti
   руками нельзя** — он собирается из `legal-drafts/`, и расхождение ловит шаг CI (§8).
 
 🗺 **Что добавил в дерево цикл 13** (файлов много, поэтому списком, а не правкой дерева выше):
+🧮19 **После цикла 19 из этого списка удалены:** каталог `Services/Geo/**` целиком,
+`Core/Enums/AddressPrecision.cs`, поля `addressVerification`/`addressPoint` в `CompanyDto`,
+`AddressVerifyField.tsx` (теперь `components/company/CompanyAddressField.tsx`),
+`types/api-cycle13.generated.ts` и скрипт `types:api:cycle13`. `CompanyAddressController.cs` остался
+(`PUT …/address`, `POST address/notice`). `contracts/cycle13/openapi.yaml` остался как исторический.
+Новое в `Services/Billing/`: `AccountLimitFormula.cs`, `RetiredLimitOptions.cs`,
+`RetiredLimitOptionsStartupReport.cs`. В `deploy/checks/`: `cycle19-limit-options-report.sql`,
+`cycle19-retired-limit-options-live.sql`.
 - `ServiceBooking.API/Services/Geo/` — **новый каталог слоя сервисов**, устроен как
   `Services/Notifications/`: `GeoOptions`, `IAddressGeocoder` (+ `AddressQuery`, `GeocodeOutcome`,
   `GeocodeCandidate`, `AddressWarning`, `GeocodeResult`, `GeoPoint`), `LoggingAddressGeocoder`,
@@ -2065,6 +2228,13 @@ append-only — оно участвует в персистентных данн
 `PushSubscriptionReassigned`.
 
 ### 🗺 Адрес компании: пять новых колонок в `Companies`, ни одной новой сущности (цикл 13)
+
+🧮19 **После цикла 19:** колонки в БД остались, но в модели это **теневые свойства EF**
+(`AppDbContext.cs`, конфигурация `Company`: `e.Property<string?>("AddressVerifiedInputKey").HasMaxLength(300)`,
+`DateTime?`, `int?`, `double?`, `double?`). CLR-свойств в `Company.cs` и перечисления `AddressPrecision`
+больше нет, код колонки не читает и не пишет, статус проверки не вычисляется (`AddressVerificationState`
+удалён). Значения, записанные раньше, лежат в БД нетронутыми. Физическое удаление колонок отложено на
+отдельный цикл. Таблица ниже — историческое описание цикла 13.
 
 Цикл 13 **не добавил ни одной таблицы** — только пять аддитивных **nullable**-колонок в `Companies`
 (`ServiceBooking.Core/Entities/Company.cs`, миграция `20260924065320_AddCompanyAddressVerification`):
@@ -3354,6 +3524,11 @@ QR (`components/notifications/QrModal.tsx`), назначение компани
 **строки нет — значит `Unavailable`**. Опции **меняют лимиты** сотрудников и компаний (`447226f`),
 лимит сотрудников — **суммарный по аккаунту** плюс `GrandfatheredEmployeeBonus`. Отказ по лимиту
 (`SeatLimitReached`) разложен на «тариф / докуплено / бонус» (`1a30205`).
+🧮19 **Неверно после цикла 19:** опции лимиты **не меняют**. Лимит = `MaxEmployees` +
+`GrandfatheredEmployeeBonus` / `MaxCompanies` (`AccountLimitFormula`). Опции-лимиты (`extra-employees`,
+`extra-companies`) неактивны и скрыты во всех списках. Запросы с ними получают 400/409, в матрице тарифа
+правила по ним игнорируются. Текст `SeatLimitReached` — «Занято {used} из {limit} мест — столько
+включено в тариф…», без «докуплено». Подробности — шапка 🧮19, часть А.
 
 #### Эндпоинты владельца — `BillingController` (`api/billing`, `[Authorize]`)
 
@@ -3825,6 +4000,13 @@ translateX(...)`, а `position: fixed` внутри предка с `transform` 
 `findSection`, потому что фолбэк «показать документ целиком» протёк бы в интерфейс владельца
 служебными приложениями А/Б (юридическая квалификация и внутренний комментарий).
 
+🧮19 **Пункт D ниже устарел: геокодер удалён в цикле 19.** `POST /api/companies/address/lookup`
+удалён (404). `PUT /api/companies/{id}/address` игнорирует `verify`, отвечает `{ company }` без
+`verification` и пять колонок не трогает. Предупреждений, кандидатов и статуса «Подтверждён по карте»
+нет. `CompanyDto.addressVerification`/`addressPoint` удалены. Фронт — `CompanyAddressField.tsx`.
+Пункты A–C не менялись, кроме текста 429 политики `address-verify`. Текст D оставлен как описание кода,
+который работает на бою (`7117660`) до выката цикла 19.
+
 **D. Мягкая верификация адреса геокодером — код есть целиком, рубильник НЕ переведён.**
 `AddressVerification:Provider = logging` по умолчанию; **это штатное состояние после цикла, а не
 недоделка** (`DEPLOY.md` §19.1). Три новых эндпоинта, все `[Authorize]` и все под одной новой
@@ -4116,6 +4298,8 @@ Sentry-конверт **прямо в DSN**, минуя Serilog (обычный 
 каталога** — опция без явно проставленного `PlanOptionRule` в триал не попадает (fail-closed
 `Unavailable`, конвенция цикла 7), и опция, добавленная в каталог позже, сама туда не попадёт. На
 экране тарифов админки для этого печатается «В тариф включено N из M опций каталога».
+🧮19 После цикла 19 — **по каждой опции, кроме опций-лимитов**: их в матрице и в счётчике M больше
+нет, поэтому числа станут меньше (`DEPLOY.md` §20.4).
 
 **Активация — два пути, один сервис.** Вся выдача живёт в
 `ServiceBooking.API/Services/Billing/TrialActivationService.cs` (единственное место записи):
@@ -5211,6 +5395,16 @@ false`, `AdminPlanDto.IsSystemTrial`/`OptionCoverage`, `AdminPlatformSettingsDto
 - **Ключи возможностей — из `CapabilityKeys`/`OptionCapabilityCatalog`**, это `companies` и
   `employees`. ⚠️ Коды опций ключами возможностей **не являются** — на этом уже ошиблись один раз
   (`d60e29b`, потребовалась 11-я миграция).
+  🧮19 После цикла 19 `companies`/`employees` из `OptionCapabilityCatalog.Known` убраны. Константы
+  `CapabilityKeys.Employees/Companies` используют только `RetiredLimitOptions` и тесты.
+- 🧮19 **Лимит считается только через `AccountLimitFormula`**, второй копии формулы быть не должно.
+  «Опция-лимит» определяется только через `RetiredLimitOptions` (по `CapabilityKey`, не по `code`). Любой
+  новый запрос к `SubscriptionOptions`/`PlanOptionRules`/`AccountSubscriptionOptions`, который отдаёт
+  данные наружу, проходит через `.WhereNotRetired()`. Строки опций-лимитов не создаются, не
+  обновляются и не удаляются. **Фронт опции-лимиты сам не фильтрует** (`ARCHITECTURE_CYCLE19.md` §386.2):
+  рисует то, что вернул сервер, и отправляет то, что нарисовал.
+- 🧮19 **Пять колонок `Companies.Address*` — теневые свойства EF. CLR-свойствами их не делать,
+  `DropColumn` не генерировать** (ломающие миграции запрещены). Удаление — только отдельным циклом.
 - **Advisory-lock'и берутся в фиксированном порядке — аккаунт, затем компания** (`6f11eda`), ключи
   унифицированы (`f3760c2`). Нарушение порядка даёт взаимную блокировку.
 - **Контракт первичен.** Для биллинга есть машиночитаемый `contracts/cycle7/openapi.yaml`; новые
@@ -5329,6 +5523,10 @@ false`, `AdminPlanDto.IsSystemTrial`/`OptionCoverage`, `AdminPlatformSettingsDto
     проверяется на полноту на старте: забытый адаптер уронит приложение, а не «молча не подтвердит».
 
 ### 🗺 Конвенции цикла 13 — чему следовать, если трогаете адрес, карты или шапку карточки
+
+🧮19 Геокодер удалён. Там, где пункты ниже ссылаются на `AddressVerification`, `GeoHandlerFactory` и
+`Services/Geo`, это история. Общий принцип (новый внешний сервис — своя секция, рубильник и
+`DeploymentSafetyChecks`) остаётся в силе.
 
 1. **Новый внешний сервис = своя секция конфигурации + свой рубильник + свой `DeploymentSafetyChecks`.**
    `AddressVerification` сделана прямой копией формы `NotificationOptions`: `Provider` с безопасным
@@ -5956,6 +6154,11 @@ qa-engineer, не автор этой редакции; окружение — c
 ### 7.2 Функциональные (API) тесты — `ServiceBooking.Tests`
 
 **Это тот набор, который QA прогоняет как базовый.**
+
+🧮19 После цикла 19 файла `Tests/AddressVerificationTests.cs` и фабрики `AddressVerificationTestFactory`
+**нет**. Вместо них — `Tests/CompanyAddressTests.cs` + `Infrastructure/CompanyAddressTestFactory.cs` (тег
+`addr` в `TestHostSettings` сохранён), новый `Tests/Cycle19TariffLimitsTests.cs`. Фреймворк и команда
+запуска не менялись. Числа после интеграции не зафиксированы (шапка 🧮19).
 
 - **Фреймворк:** xUnit 2.5.3 + FluentAssertions 6.12.1 + `Microsoft.AspNetCore.Mvc.Testing` 8.0.11,
   `Microsoft.NET.Test.Sdk` 17.8.0, `coverlet.collector` 6.0.0 (покрытие настроено, но нигде не собирается).
@@ -6597,6 +6800,12 @@ push-сервисов, выполнена **фактически 2026-09-23**, �
 
 ### CI — есть (`.github/workflows/ci.yml`)
 
+🧮19 Цикл 19 (`a760981`) убрал из CI `types:api:cycle13` (генерат удалён) и добавил
+`contracts/cycle19/openapi.yaml` в линт и `types:api:cycle19` в сверку генератов. В
+`deploy/deploy-remote.sh` добавлен гейт `check_retired_limit_options` (только чтение, fail-closed),
+из `docker-compose.prod.yml` и `.env.production.example` удалены переменные геокодера. Подробности —
+шапка 🧮19.
+
 Появился в цикле 1, расширен в 2 и 3. Триггеры: push в `master`, `release-candidate`, `develop`
 и любую ветку по маске `cycle/**`, плюс **любой**
 pull request. `concurrency` с `cancel-in-progress`, у каждого job'а `timeout-minutes: 15`.
@@ -7046,6 +7255,7 @@ actions). Раннбука по включению чего-либо цикл н
 | ⚖️ L | 5 | L1…L6 | после T8 |
 | 🆕 P0-цикл-4 | 4 | A…E | после L |
 | 🧽 C22 | 22 | C22-L1, C22-1…C22-8 | в конце раздела, после 📲 C21 (перед §10) |
+| 🧮 C19 | 19 | C19-1…C19-8 | самым последним, после 🧽 C22 (перед §10) |
 | (без префикса) | 1–3 + первое развёртывание | **1…30**, сгруппированы P0/P1/P2/P3 | **в самом конце раздела** |
 
 Итого в реестре около **117 пунктов**. Закрытые помечены ✅ прямо в тексте пункта (например, AV5,
@@ -7226,6 +7436,8 @@ LG5, C15-2, §9.16, §9.17, §9.20, §9.26, §9.29, T8-1, T8-5.
 `IsPublic`. Опция без явного правила в триал не попадает (fail-closed), и опция, добавленная в
 каталог позже, сама туда не попадёт — то есть **каждое расширение каталога опций требует ручной
 правки правил триала**. Пока строки нет, активация отвечает `409 TrialNotOffered`.
+🧮19 После цикла 19 правила нужны по каждой опции, **кроме опций-лимитов** (`extra-*` в матрице
+больше нет, правила по ним игнорируются). Лимиты триала — только поля триального тарифа (+ бонус).
 
 **C18-2. ✅ ЗАКРЫТО в цикле 18. Старт окна рассылок реализован** — `TrialMailingWindowStarter`
 вызывается из `ChannelStateTransition` при первой авторизации канала и пишет
@@ -7692,6 +7904,12 @@ schemathesis, пустой diff типов) в дереве следов не о
 ---
 
 **🗺 AV — долг, наблюдения и принятые решения цикла 13 (адрес, карты, шапка карточки)**
+
+🧮19 **Геокодер удалён в цикле 19 (`7591cd2`).** Для `develop` это означает: **AV2** снят, живого вызова
+больше не будет, парсера нет. **AV1** в части «рубильник и п. 9.8 публикуются в один деплой» потерял
+предмет: включать больше нечего. Дыра 9.8 в политике (9.7 → 9.9) осталась, а правовые тексты про
+проверку адреса картой не правились — см. **C19-2**. Пока цикл 19 не выкачен, на бою работает код
+`7117660` с геокодером, так что вопрос о значении `ADDRESSVERIFICATION__PROVIDER` на бою актуален до выката.
 
 🔒 **AV1 — ОСТАЁТСЯ ОТКРЫТЫМ после цикла 16, и к прежней причине добавилась ещё одна.** Цикл 16
 не смог подтвердить **фактическое значение `ADDRESSVERIFICATION__PROVIDER` на боевой машине**:
@@ -9254,6 +9472,9 @@ V1 (в частности, `consents/revoke-preview` как оракул чуж�
 подтверждено.** Та же причина, что у TD16-3 — доступ к машине заблокирован. По решению заказчика
 отложено до прояснения с другим циклом. Практическое следствие: утверждение «геокодер на бою
 выключен, значит п. 9.8 политики можно не публиковать» сегодня **не проверено**.
+🧮19 После выката цикла 19 пункт снимается: код переменную `ADDRESSVERIFICATION__*` не читает, а compose
+её в контейнер не передаёт. Старые значения в боевом `.env` можно удалить в любой момент, ключ API
+геокодера, если он был, — отозвать (`DEPLOY.md` §19). До выката пункт остаётся открытым.
 
 🔴⚖️20 **Для боя неверно:** комплект опубликован 24.09.2026, текущая редакция `2026-09-30`, `isDraft: false` — см. шапку «🚀20». В git — по-прежнему черновой исходник. Поэтому «каждая регистрация фиксирует согласие с черновиком» — неверно с 24.09.2026. `guestDataGateNotice` в манифесте есть с цикла 20. Открытой остаётся только вычитка живым юристом (C20-3).
 
@@ -9391,6 +9612,50 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
 Попутно, **не долг, а осознанный остаток:** `frontend/src/types/api-cycle9.generated.ts` по-прежнему
 объявляет `paidFrom` у каналов — это исторический сгенерированный контракт цикла 9, его сверяет шаг CI с
 `contracts/cycle9/openapi.yaml`; рукописные типы фронта поле больше не содержат, бэкенд его не отдаёт.
+
+### 🧮 Цикл 19 — C19-1…C19-8 (открыто на `7591cd2`)
+
+- **C19-1. 🔴 Гейт выката `check_retired_limit_options` ни разу не выполнялся на реальной БД.** Цикл 19
+  не выкачен. SQL гейта и отчёта (`deploy/checks/cycle19-*.sql`) не исполнялся против боевых данных.
+  Утверждение заказчика «купленных `extra-*` на бою нет» станет проверенным только на первом выкате.
+  Если гейт сработает, выкат остановится до решения заказчика (`DEPLOY.md` §20.3). Хотфикса «перенос в
+  бонус» нет, колонки бонуса компаний нет.
+- **C19-2. Правовые тексты описывают удалённую проверку адреса картой — открытый вопрос для
+  legal-counsel.** `legal-drafts/13-public-address-notice.html`, служебное приложение Б: в конце Б.1
+  «по отдельному действию владельца или администратора направляет строку адреса и город
+  правообладателю картографического сервиса для проверки существования адреса», пункт **Б.3**
+  целиком, комментарий «ЮРИСТУ» о паре с п. 9.8 политики. В `01-privacy-policy.html` по-прежнему нет п. 9.8
+  (нумерация 9.7 → 9.9). Эта редакция опубликована на бою 30.09.2026 (🚀20), живой манифест —
+  `/opt/ezbook/app/legal/`. Цикл 19 `legal-drafts/` сознательно не правил (ответ заказчика 5).
+  Фронт показывает владельцу только раздел «Текст для владельца», приложение Б в интерфейс не попадает.
+- **C19-3. Паритет SQL-гейта и `RetiredLimitOptions.LiveRetiredRows` тестом не проверен.**
+  `ARCHITECTURE_CYCLE19.md` §385.2 требовал тест LIM19-020. Его нет, хотя на него ссылается
+  комментарий в `ServiceBooking.UnitTests/RetiredLimitOptionsTests.cs`. Два определения
+  «незавершённой покупки» (SQL в `deploy/checks/cycle19-retired-limit-options-live.sql` и LINQ) могут
+  разойтись незаметно. `RetiredLimitOptionsStartupReport` и сами SQL-файлы автотестами не покрыты
+  (US-19-05 QA не проверял, `TEST_CATALOG.md` «Цикл 19»).
+- **C19-4. Миграция `20260928163137_Cycle19RetireLimitOptions` по ID старше миграций циклов 20–22**,
+  которые уже применены на бою. `MigrateAsync` на старте применит её как недостающую. Риск есть только
+  для неидемпотентного `dotnet ef migrations script <from> <to>`: он её пропустит. В `deploy/` и CI
+  такого вызова нет, миграции применяются на старте приложения.
+- **C19-5. US-19-03 закрыт гейтом вместо переноса.** Критерий SPEC «лимиты каждого аккаунта до и после
+  миграции равны, в том числе с купленными `extra-*`» не проверялся: архитектура заменила перенос в
+  бонус гейтом (§385), миграция данные не переносит. Текст критерия в `SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md`
+  с решением не сведён (открытый пункт 2 в `TEST_CATALOG.md` «Цикл 19»).
+- **C19-6. Не покрыто функциональными тестами:** историческая заявка с `extra-*` в
+  `RequestedOptionsJson` на экране суперадмина (US-19-04; есть только юнит-тест
+  `OwnerSubscriptionServiceBuildPendingRequestDtoTests` и фронтовые тесты); лимит компаний при переносе
+  (`CompanyTransferCalculator`) по новой формуле — только транзитивно. Грепа US-19-09 в тестах нет,
+  выполнен вручную (`cfbae70`).
+- **C19-7. Физическая очистка отложена (решение заказчика 2026-09-28).** В БД остаются строки
+  `extra-*` (`IsActive=false`), их `PlanOptionRules`, `AccountSubscriptionOptions`, заявки в
+  `RequestedOptionsJson` и пять колонок `Companies.Address*` (теневые свойства). Шаг гейта остаётся в
+  `deploy-remote.sh` и выполняется на каждом выкате. Всё это снимается одним будущим циклом.
+- **C19-8. Пользовательская/продуктовая документация не обновлена** (задача product-analyst по
+  `ARCHITECTURE_CYCLE19.md` §394 не выполнена). В `CHANGELOG.md` нет записи цикла 19, `README.md`
+  стр. ~176 всё ещё называет «дополнительные компании, дополнительные сотрудники» опциями. Пометок в
+  `ARCHITECTURE_CYCLE13.md`/`API_CONTRACT_CYCLE13.md`/`LEGAL_REVIEW.md` §16 нет. Числа тестов после
+  интеграции (`7bfa209`) в репозитории не зафиксированы.
 
 ## 10. Что уже существует в документации и тест-кейсах
 
@@ -10088,6 +10353,15 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 пакета в `frontend/package.json` и каталога с такими тестами не найдено.
 
 ### 10.5 Документы цикла работ
+
+🧮19 **Документы цикла 19 (все в корне, по соглашению `_CYCLEnn`; `docs/history/` нет):**
+`SPEC_CYCLE19_TARIFF_LIMITS_GEOCODER.md` (391 строка, спека с ответами заказчика на развилки;
+корневым `SPEC.md` не стала, там спека цикла 20), `ARCHITECTURE_CYCLE19.md` (893 строки, **§380–§396**:
+§384 формула, §385 гейт выката, §386 точки скрытия, §388 удаление геокодера и приёмочный греп §388.6,
+§393 что отложено), `API_CONTRACT_CYCLE19.md` (310 строк, **§400–§416**, §416 — ломающие изменения),
+`contracts/cycle19/openapi.yaml` (1 041 строка, OpenAPI; генерат —
+`frontend/src/types/api-cycle19.generated.ts`). Пользовательские описания — `API_DOCUMENTATION.md` §4.16
+«новое в цикле 19», `DEPLOY.md` §19–§20. Тест-кейсы — `TEST_CATALOG.md`, раздел «Цикл 19» (CY19-*, ADDR-*).
 
 ⚖️20✅ **Новое после цикла 20:** `legal-internal/` (markdown, вне сборки `LegalKit`, в `legal.json` не
 регистрируется): `01-health-data-written-consent-form.md`, `02-risk-acceptance-acts.md`,
