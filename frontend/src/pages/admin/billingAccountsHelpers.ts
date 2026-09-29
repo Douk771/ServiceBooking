@@ -1,4 +1,4 @@
-import type { AssignOptionInput, AssignSubscriptionInput, SubscriptionStatus } from '../../api/adminBilling'
+import type { AssignOptionInput, AssignSubscriptionInput, SubscriptionChangeReason, SubscriptionStatus } from '../../api/adminBilling'
 
 export const STATUS_BADGE_CLASS: Record<SubscriptionStatus, string> = {
   Free: 'bg-cream-deep text-ink-soft',
@@ -72,6 +72,8 @@ export function buildAssignInput(params: {
   comment: string
   requestId?: string | null
   confirmLimitOverflow: boolean
+  reasonCode?: SubscriptionChangeReason | null
+  reasonDetails?: string
 }): AssignSubscriptionInput {
   return {
     planId: params.planId,
@@ -83,5 +85,40 @@ export function buildAssignInput(params: {
     comment: params.comment.trim() === '' ? null : params.comment.trim(),
     requestId: params.requestId ?? null,
     confirmLimitOverflow: params.confirmLimitOverflow,
+    // `undefined` (not `null`) when unset, so a caller that never mentions a reason keeps sending
+    // EXACTLY the same body it sent before this cycle (JSON.stringify drops undefined keys) — this is
+    // what the existing buildAssignInput tests assert with a strict `toEqual`, and it also matches
+    // §433.1: a reason omitted where it isn't required is simply absent, not an explicit "no reason".
+    reasonCode: params.reasonCode ?? undefined,
+    reasonDetails: params.reasonDetails?.trim() ? params.reasonDetails.trim() : undefined,
   }
+}
+
+/**
+ * API_CONTRACT_CYCLE20.md §433.1 (US-20-02, П3) / ARCHITECTURE_CYCLE20.md §403.2
+ * (`ManualPlanAssignmentPolicy.RequiresReason`) mirrored on the client so the "Основание" field can
+ * appear/become required WITHOUT a round-trip — the server re-checks everything regardless (this is a
+ * UX hint, not the source of truth). A reason is required exactly when the target plan is hidden
+ * (`isPublic: false`) AND differs from the account's current plan; picking the SAME hidden plan again
+ * (renewal) or a public plan never requires one. `targetPlanId: null` (Free) never requires a reason
+ * either — Free is always public in spirit and never "hidden" in the §433.1 sense.
+ */
+export function isManualReasonRequired(currentPlanId: string | null, targetPlanId: string | null, targetIsPublic: boolean | undefined): boolean {
+  if (!targetPlanId) return false
+  if (targetIsPublic !== false) return false
+  return targetPlanId !== (currentPlanId ?? null)
+}
+
+/**
+ * Client-side mirror of the three `reasonCode`/`reasonDetails` checks the server enforces in
+ * `ManualPlanAssignmentPolicy.Validate` (§433.1) — used only to disable the Save button with an
+ * inline hint before a doomed request goes out; the server's own 400 text remains authoritative and
+ * is what actually gets shown if this check is somehow bypassed (stale UI, race with a plan edit).
+ */
+export function manualReasonValidationError(reasonCode: SubscriptionChangeReason | '', reasonDetails: string, required: boolean): string | null {
+  if (required && !reasonCode) return 'Выберите основание для назначения скрытого тарифа.'
+  if (reasonCode === 'TrialReissue') return 'Пробный период назначается только через «Выдать повторно», не эту форму.'
+  if (reasonCode === 'OperatorErrorCorrection' && !reasonDetails.trim()) return 'Опишите исправляемую ошибку.'
+  if (reasonDetails.length > 1000) return 'Описание не длиннее 1000 символов.'
+  return null
 }
