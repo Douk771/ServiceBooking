@@ -142,16 +142,27 @@ public class ClientConsentsController(
         if (dto.Value.Length > 2000)
             return BadRequest("Значение не должно превышать 2000 символов.");
 
+        var subjectKey = SubjectKey(resolved.Value);
+        var ciphertext = healthNoteProtector.Protect(dto.Value, companyId, subjectKey);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+        // Code-review finding (cycle 20): WrittenHealthConsentRevoker takes an advisory lock scoped to
+        // "consent:health-written:{phone}" before deleting the note and revoking the mark, but this
+        // endpoint used to check-then-act with NO lock at all — a revoke could commit strictly between
+        // the consent check above and the SaveChangesAsync below, leaving a health note on file with no
+        // live consent behind it (exactly the invariant LG1 exists to protect). Taking the SAME lock here,
+        // then re-checking the mark inside it, makes the two operations mutually exclusive: whichever
+        // request acquires the lock first fully completes (commit or the 400 below) before the other's
+        // check can run.
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"consent:health-written:{resolved.Value.Phone}");
+
         // ARCHITECTURE_CYCLE20.md §402.3 (US-20-01) — ONLY the paper written-consent mark satisfies this
         // gate from now on; the salon-scoped electronic HealthDataConsent form and the account holder's
         // own PdnConsent/HealthData purpose no longer count.
         if (await CurrentWrittenConsentAsync(companyId, resolved.Value) is null)
             return BadRequest(new RequiredConsentDto(
                 WrittenHealthConsentTexts.ConfirmationRequiredMessage, LegalTextKey.HealthDataWrittenConsentForm));
-
-        var subjectKey = SubjectKey(resolved.Value);
-        var ciphertext = healthNoteProtector.Protect(dto.Value, companyId, subjectKey);
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
         var row = await FindHealthNoteRowAsync(companyId, resolved.Value);
         if (row is null)
@@ -169,6 +180,7 @@ public class ClientConsentsController(
         row.UpdatedAt = DateTime.UtcNow;
         row.UpdatedByUserId = userId;
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         return Ok();
     }
