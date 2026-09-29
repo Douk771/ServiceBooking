@@ -14,6 +14,8 @@ import { TrialCard } from '../components/billing/TrialCard'
 import { TrialBanner } from '../components/billing/TrialBanner'
 import { TrialExpiredNotice } from '../components/billing/TrialExpiredNotice'
 import { TrialActivationTerms } from '../components/billing/TrialActivationTerms'
+import { OperatorDetailsSection } from '../components/billing/OperatorDetailsSection'
+import { BillingNoticesSummary } from '../components/billing/BillingNoticesSummary'
 
 /**
  * Owner screen "Ваша подписка" (US-65, US-68, US-70) — API_CONTRACT_CYCLE7.md §41. One request
@@ -371,6 +373,12 @@ export function BillingPage() {
       )}
 
       {requestError && <p className="text-sm text-danger mb-6">{requestError}</p>}
+
+      {/* US-20-03 — compact summary + link to /notices; ARCHITECTURE_CYCLE20.md §404.5. */}
+      <BillingNoticesSummary />
+
+      {/* Т20-04 п. 3 (US-20-01) — operator-of-record details for the paper health-consent form. */}
+      <OperatorDetailsSection />
 
       <p className="text-xs text-muted">
         Хотите сравнить тарифы целиком? <Link to="/pricing" className="underline">Смотрите страницу тарифов</Link>.

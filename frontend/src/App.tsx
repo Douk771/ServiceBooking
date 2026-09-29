@@ -21,10 +21,13 @@ import { PricingPage } from './pages/PricingPage'
 import { BillingPage } from './pages/BillingPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
 import { DeleteAccountPage } from './pages/DeleteAccountPage'
+import { HealthConsentFormPrintPage } from './pages/HealthConsentFormPrintPage'
 import { Footer } from './components/layout/Footer'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConsentGate } from './components/legal/ConsentGate'
 import { LegalUpdateBanner } from './components/legal/LegalUpdateBanner'
+import { PlatformNoticeBanner } from './components/legal/PlatformNoticeBanner'
+import { NoticesPage } from './pages/NoticesPage'
 import { OwnerTermsGateModal } from './components/legal/OwnerTermsGateModal'
 import { legalApi } from './api/legal'
 import { useAuthStore } from './store/authStore'
@@ -84,6 +87,13 @@ function LegalGuard({ children }: { children: ReactNode }) {
   return (
     <>
       {status?.showBanner && !requiresAcceptance && <LegalUpdateBanner status={status} />}
+      {/* US-20-03 (Т20-02) — next to LegalUpdateBanner, per ARCHITECTURE_CYCLE20.md §404.5. Only for
+          an authenticated caller (own query is `enabled: !!token`, but gating the mount here too
+          avoids a doomed 401 request on every anonymous page load). §404.5 explicitly does NOT build
+          a bypass for this under a pending ConsentGate (the `requiresAcceptance` branch above returns
+          early without reaching this component at all) — the backend route stays reachable via API
+          regardless, this is a frontend simplification the architecture accepted. */}
+      {!!token && <PlatformNoticeBanner />}
       {children}
     </>
   )
@@ -167,6 +177,18 @@ export default function App() {
                           </ProtectedRoute>
                         }
                       />
+                      {/* API_CONTRACT_CYCLE20.md §432 — SuperAdmin is 403 on every health-consent
+                          route (§48.2 cycle 5 not weakened by this cycle); `SuperAdmin` deliberately
+                          excluded from `roles` here, same as `HealthNoteCard` not even rendering for
+                          that role in `MasterClientsPage`. */}
+                      <Route
+                        path="/companies/:companyId/clients/:clientKey/health-consent-form"
+                        element={
+                          <ProtectedRoute roles={['Master', 'CompanyOwner']}>
+                            <HealthConsentFormPrintPage />
+                          </ProtectedRoute>
+                        }
+                      />
                       <Route
                         path="/profile"
                         element={
@@ -210,6 +232,14 @@ export default function App() {
                         }
                       />
                       <Route path="/data-request" element={<SubjectRequestPage />} />
+                      <Route
+                        path="/notices"
+                        element={
+                          <ProtectedRoute>
+                            <NoticesPage />
+                          </ProtectedRoute>
+                        }
+                      />
                       <Route path="/privacy" element={<LegalDocumentPage type="Privacy" />} />
                       <Route path="/terms" element={<LegalDocumentPage type="TermsClient" />} />
                       <Route path="/terms-owner" element={<LegalDocumentPage type="TermsOwner" />} />
