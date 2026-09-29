@@ -13,22 +13,33 @@ public class ShopRulesTests
 
     // ── ShopOrderingGate (§392.3) ───────────────────────────────────────────────────────────────────
 
+    // Cycle 24 turned the gate into ShopOrderingGate v2 (a ShopGateInput with hours, pause, tariff, month counter): the exhaustive tests are in
+    // ShopOrderingGateV2Tests and PickupScheduleVectorsTests. Here only the cycle-23 facts that must never change.
+
+    /// <summary>A shop open round the clock with default settings — the cycle-23 world where nothing but "the shop is active" mattered.</summary>
+    private static ShopGateResult Gate(Company company)
+    {
+        var hours = new WeeklyHours(WeekdayMask.IsoDays.ToDictionary(d => d, d => (IReadOnlyList<TimeInterval>)new[] { new TimeInterval(0, 1440) }));
+        var schedule = new ShopScheduleSnapshot(TimeZoneInfo.Utc, hours, new Dictionary<DateOnly, SpecialDayHours>());
+        return ShopOrderingGate.Evaluate(new ShopGateInput(
+            company, new ShopSettings(), schedule, ServiceBooking.API.Services.Billing.OrdersPlan.FallbackFree, 0, Now));
+    }
+
     [Fact]
-    public void Gate_ActiveShop_Accepts() =>
-        ShopOrderingGate.Evaluate(new Company { Kind = CompanyKind.Orders, IsActive = true }, null, Now)
-            .Should().Be(new ShopOrderingGate.Result(true, null));
+    public void Gate_ActiveShop_Accepts() => Gate(new Company { Kind = CompanyKind.Orders, IsActive = true }).Accepting.Should().BeTrue();
 
     [Fact]
     public void Gate_BlockedShop_DoesNotAccept_WithText()
     {
-        var r = ShopOrderingGate.Evaluate(new Company { Kind = CompanyKind.Orders, IsActive = false }, new ShopSettings(), Now);
+        var r = Gate(new Company { Kind = CompanyKind.Orders, IsActive = false });
         r.Accepting.Should().BeFalse();
         r.ReasonText.Should().Be("Магазин недоступен");
+        r.Code.Should().Be(ShopNotAcceptingCode.Blocked);
     }
 
     [Fact]
     public void Gate_Salon_DoesNotAccept() =>
-        ShopOrderingGate.Evaluate(new Company { Kind = CompanyKind.Services, IsActive = true }, null, Now).Accepting.Should().BeFalse();
+        Gate(new Company { Kind = CompanyKind.Services, IsActive = true }).Accepting.Should().BeFalse();
 
     // ── CatalogAvailability (§393.2) ────────────────────────────────────────────────────────────────
 

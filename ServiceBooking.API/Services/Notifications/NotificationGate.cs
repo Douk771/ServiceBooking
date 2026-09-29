@@ -90,8 +90,11 @@ public static class NotificationGate
         if (!channelIsFunded)
             return NotificationGateResult.Block(NotificationReason.NotOnPaidPlan);
 
+        // ARCHITECTURE_CYCLE24.md §457.1: the salon mask concerns the BOOKING types only. Whether messages about orders are sent is the shop's own
+        // flag (ShopSettings.CustomerMessengerEnabled, checked when they are queued and again when they are sent) — otherwise saving a salon form
+        // (which builds the mask from booking types) could silently switch them off.
         var enabledTypeMask = settings?.EnabledTypeMask ?? CompanyNotificationSettings.DefaultEnabledTypeMask;
-        if ((enabledTypeMask & (1 << (int)type)) == 0)
+        if (NotificationTypeCatalog.IsBookingType(type) && (enabledTypeMask & (1 << (int)type)) == 0)
             return NotificationGateResult.Block(NotificationReason.TypeDisabledByCompany);
 
         // B3 / SPEC US-31 п. 2: the "less than N minutes before the visit" threshold is a safety valve

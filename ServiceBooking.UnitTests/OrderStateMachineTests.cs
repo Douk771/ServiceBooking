@@ -10,8 +10,8 @@ public class OrderStateMachineTests
     [Fact]
     public void AvailableActions_MatchTheContractTable()
     {
-        OrderStateMachine.AvailableActions(OrderStatus.New).Should().Equal(OrderAction.Accept, OrderAction.Reject, OrderAction.Edit);
-        OrderStateMachine.AvailableActions(OrderStatus.Accepted).Should().Equal(OrderAction.MarkReady, OrderAction.Cancel, OrderAction.Edit);
+        OrderStateMachine.AvailableActions(OrderStatus.New).Should().Equal(OrderAction.Accept, OrderAction.Reject, OrderAction.Edit, OrderAction.ChangePickup);
+        OrderStateMachine.AvailableActions(OrderStatus.Accepted).Should().Equal(OrderAction.MarkReady, OrderAction.Cancel, OrderAction.Edit, OrderAction.ChangePickup);
         OrderStateMachine.AvailableActions(OrderStatus.Ready).Should().Equal(OrderAction.Issue, OrderAction.NotPickedUp, OrderAction.Cancel, OrderAction.Edit);
     }
 

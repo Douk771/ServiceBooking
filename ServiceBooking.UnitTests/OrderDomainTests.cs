@@ -172,10 +172,13 @@ public class OrderDomainTests
         OrderDtoMapper.TotalIsApproximate(issued).Should().BeFalse();
     }
 
+    private static readonly OrderPickupContext PickupCtx = new(TimeZoneInfo.Utc, new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
+    private static readonly OrderCustomerNotificationsDto NoNotifications = new(new OrderWebPushInfoDto(false, null, null), false);
+
     [Fact]
     public void Card_ExposesActionsFromTheMachine_AndFullPhone()
     {
-        var card = OrderDtoMapper.ToCard(NewOrder(OrderStatus.Ready));
+        var card = OrderDtoMapper.ToCard(NewOrder(OrderStatus.Ready), PickupCtx);
         card.AvailableActions.Should().Equal(OrderAction.Issue, OrderAction.NotPickedUp, OrderAction.Cancel, OrderAction.Edit);
         card.CustomerPhone.Should().Be("79001234567");
         card.StatusText.Should().Be("Готов к выдаче");
@@ -194,7 +197,7 @@ public class OrderDomainTests
         });
         order.Events.Add(new OrderEvent { Kind = OrderEventKind.Accepted, OccurredAtUtc = T0, ActorKind = OrderActorKind.Staff, ActorNameSnapshot = "Анна Кассир" });
 
-        var dto = Mapper.ToPublic(order, new Company { Name = "Шаурма", Slug = "shaurma", Kind = CompanyKind.Orders }, "Барнаул");
+        var dto = Mapper.ToPublic(order, new Company { Name = "Шаурма", Slug = "shaurma", Kind = CompanyKind.Orders }, "Барнаул", NoNotifications);
 
         dto.CustomerPhoneMasked.Should().Be("+7 900 ***-**-67");
         dto.CustomerPhoneMasked.Should().NotContain("1234");
@@ -213,7 +216,7 @@ public class OrderDomainTests
     {
         var order = NewOrder(OrderStatus.Issued);
         OrderPersonalData.Erase(order);
-        var dto = Mapper.ToPublic(order, new Company { Name = "Ш", Slug = "shaurma", Kind = CompanyKind.Orders }, null);
+        var dto = Mapper.ToPublic(order, new Company { Name = "Ш", Slug = "shaurma", Kind = CompanyKind.Orders }, null, NoNotifications);
         dto.CustomerName.Should().BeNull();
         dto.CustomerPhoneMasked.Should().BeNull();
         dto.Comment.Should().BeNull();
@@ -223,7 +226,7 @@ public class OrderDomainTests
     public void StaffEvent_Issued_ShowsOnlyZeroedStockNotes()
     {
         var log = new IssueLog([new StockWriteOff("Сыр", ProductUnit.Weight, 540, 400, Zeroed: true), new StockWriteOff("Шаурма", ProductUnit.Piece, 2, 2, Zeroed: false)]);
-        var dto = OrderDtoMapper.ToEventDto(new OrderEvent { Kind = OrderEventKind.Issued, ActorKind = OrderActorKind.Staff, ChangesJson = OrderChangeLog.SerializeIssue(log) });
+        var dto = OrderDtoMapper.ToEventDto(new OrderEvent { Kind = OrderEventKind.Issued, ActorKind = OrderActorKind.Staff, ChangesJson = OrderChangeLog.SerializeIssue(log) }, PickupCtx);
         dto.Changes.Should().ContainSingle();
         dto.Changes![0].Text.Should().Be("Сыр: списано 0,4 кг из 0,54 кг, остаток обнулён");
     }

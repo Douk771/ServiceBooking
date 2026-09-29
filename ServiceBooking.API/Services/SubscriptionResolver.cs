@@ -189,6 +189,20 @@ public class SubscriptionResolver(AppDbContext db)
             ? []
             : await db.PlanOptionRules.Where(r => planConfigIds.Contains(r.PlanConfigId)).ToListAsync();
 
+        // ARCHITECTURE_CYCLE24.md §457.4 (A11): the notifications.whatsapp option belongs to the ACCOUNT, and a number is paid if the option is
+        // paid AND the tariff of EITHER line allows it — "Записи" always, "Заказы" only when the account has a shop. One extra query; for
+        // accounts without shops nothing below changes (the result is bit-for-bit the cycle-23 one).
+        var accountsWithShops = (await db.Companies.AsNoTracking()
+                .Where(c => c.Kind == CompanyKind.Orders && c.BillingAccountId != null && ids.Contains(c.BillingAccountId!.Value))
+                .Select(c => c.BillingAccountId!.Value).Distinct().ToListAsync()).ToHashSet();
+        var ordersPlans = accountsWithShops.Count == 0
+            ? new Dictionary<Guid, OrdersPlan>()
+            : await new OrdersPlanResolver(db).GetForAccountsAsync(accountsWithShops);
+        var ordersPlanIds = ordersPlans.Values.Where(p => p.PlanId.HasValue).Select(p => p.PlanId!.Value).Distinct().ToList();
+        var ordersRules = ordersPlanIds.Count == 0
+            ? []
+            : await db.PlanOptionRules.AsNoTracking().Where(r => ordersPlanIds.Contains(r.PlanConfigId)).ToListAsync();
+
         var result = new Dictionary<Guid, EffectivePlan>();
         foreach (var id in ids)
         {
@@ -202,7 +216,12 @@ public class SubscriptionResolver(AppDbContext db)
                 var availability = currentPlanConfigId is { } planConfigId
                     ? planRules.FirstOrDefault(r => r.PlanConfigId == planConfigId && r.OptionId == o.OptionId)?.Availability
                     : null;
-                return IsOptionCurrentlyPaid(subUsable, o.PaidUntilUtc, availability, now) ? o.Quantity : 0;
+                var hasShops = accountsWithShops.Contains(id);
+                var ordersPlan = hasShops ? ordersPlans.GetValueOrDefault(id) : null;
+                var ordersAvailability = ordersPlan?.PlanId is { } ordersPlanId
+                    ? ordersRules.FirstOrDefault(r => r.PlanConfigId == ordersPlanId && r.OptionId == o.OptionId)?.Availability
+                    : null;
+                return PaidNumbers(o.Quantity, o.PaidUntilUtc, subUsable, availability, hasShops, ordersPlan?.Usable ?? false, ordersAvailability, now);
             }
 
             var whatsapp = activeOptions.FirstOrDefault(o => o.BillingAccountId == id && o.Option.Code == WhatsAppOptionCode);
@@ -212,6 +231,19 @@ public class SubscriptionResolver(AppDbContext db)
         }
         return result;
     }
+
+    /// <summary>
+    /// ARCHITECTURE_CYCLE24.md §457.4 — how many numbers of the purchased option count as paid: the option row must be paid and either
+    /// the "Записи" plan allows it, or the account has a shop and the "Заказы" plan allows it. For an account WITHOUT shops this is exactly
+    /// the cycle-23 rule (<see cref="IsOptionCurrentlyPaid"/> on the "Записи" side alone). Pure.
+    /// </summary>
+    public static int PaidNumbers(
+        int quantity, DateTime? optionPaidUntilUtc, bool servicesUsable, OptionAvailability? servicesRule,
+        bool accountHasShops, bool ordersUsable, OptionAvailability? ordersRule, DateTime nowUtc) =>
+        IsOptionCurrentlyPaid(servicesUsable, optionPaidUntilUtc, servicesRule, nowUtc) ||
+        (accountHasShops && IsOptionCurrentlyPaid(ordersUsable, optionPaidUntilUtc, ordersRule, nowUtc))
+            ? quantity
+            : 0;
 
     /// <summary>
     /// Pure decision (no DB access, unit-testable): is one purchased option row currently counted

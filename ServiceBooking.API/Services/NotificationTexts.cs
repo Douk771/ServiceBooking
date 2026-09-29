@@ -22,6 +22,16 @@ public static class NotificationTexts
         NotificationType.StaffBookingCreated => "Уведомление сотруднику: новая запись",
         NotificationType.StaffBookingCancelled => "Уведомление сотруднику: отмена записи",
         NotificationType.StaffBookingRescheduled => "Уведомление сотруднику: перенос записи",
+        // ARCHITECTURE_CYCLE24.md §458 — order notifications.
+        NotificationType.StaffOrderCreated => "Уведомление сотруднику: новый заказ",
+        NotificationType.StaffOrderCancelledByCustomer => "Уведомление сотруднику: заказ отменён покупателем",
+        NotificationType.OrderAccepted => "Заказ принят",
+        NotificationType.OrderReady => "Заказ готов к выдаче",
+        NotificationType.OrderRejected => "Заказ отклонён",
+        NotificationType.OrderCancelledByShop => "Заказ отменён магазином",
+        NotificationType.OrderEditedByShop => "Заказ изменён магазином",
+        NotificationType.OrderPickupChanged => "Изменено время получения заказа",
+        NotificationType.OwnerOrderLimitWarning => "Предупреждение о лимите заказов",
         _ => "Уведомление",
     };
 
@@ -82,6 +92,10 @@ public static class NotificationTexts
             NotificationReason.StaffPushDisabledByCompany => "push-уведомления сотрудникам отключены салоном",
             NotificationReason.MasterNoLongerInCompany => "сотрудник больше не работает в этой компании",
             NotificationReason.PushSubscriptionReassigned => "устройство теперь привязано к другому сотруднику",
+            // ARCHITECTURE_CYCLE24.md §456–§457 — order messages.
+            NotificationReason.OrderMessageOutdated => "не отправлено: сообщение о заказе устарело",
+            NotificationReason.CustomerPushDisabledByShop => "магазин отключил уведомления в браузере",
+            NotificationReason.MessengerDisabledByShop => "магазин отключил сообщения в мессенджер",
             null => status == NotificationStatus.Failed ? "не удалось отправить" : "пропущено",
             _ => "пропущено",
         };
