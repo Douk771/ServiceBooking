@@ -53,6 +53,24 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddSingleton<ServiceBooking.API.Services.PublicSites.PublicSiteLinks>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyDtoAssembler>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyCreationService>();
+
+    // ARCHITECTURE_CYCLE23.md §402 — shops and pickup orders.
+    builder.Services.Configure<ServiceBooking.API.Services.Orders.OrdersOptions>(
+        builder.Configuration.GetSection(ServiceBooking.API.Services.Orders.OrdersOptions.SectionName));
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Shops.PhoneVerificationAvailability>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopAccessResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Shops.ShopManageMapper>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Shops.CatalogMapper>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.StockLedger>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderEventLog>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderActorResolver>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderNumberAllocator>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderPhoneThrottle>();
+    builder.Services.AddSingleton<ServiceBooking.API.Services.Orders.OrderDtoMapper>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderCreationService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.PublicOrderService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderTransitionService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.OrderEditService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Companies.CompanyStatsService>();
     builder.Services.AddHttpClient<CaptchaService>();
     // T5-B10 (ARCHITECTURE_CYCLE5.md §50.1, US-74) — reuses the existing CaptchaService/rate-limiting
