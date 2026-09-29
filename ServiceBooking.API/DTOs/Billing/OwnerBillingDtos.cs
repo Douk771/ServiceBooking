@@ -27,7 +27,21 @@ public record OwnerSubscriptionDto(
     // eligible for one. Non-null whenever GET /api/billing/trial itself would answer non-null, so the
     // owner cabinet's "Пробный период" card, the always-visible date (Т2), the un-closable expiry
     // notice (Т3) and the activation button all have a field to read.
-    TrialStateDto? Trial = null);
+    TrialStateDto? Trial = null,
+    // Cycle 24 (API_CONTRACT_CYCLE24.md §485.1) — the line the screen is built for and, for "Заказы", the month counter and the plans to ask for [legal L14].
+    // For the "Записи" line: Line = Services, Orders = null, AvailablePlans = null (the answer is the cycle-23 one plus these three fields).
+    // Line is a STRING carrying the enum name (the CompanyDto.Kind convention): clients that read this DTO without a string-enum converter keep working.
+    string Line = nameof(Core.Enums.CompanyKind.Services), OrdersUsageDto? Orders = null,
+    IReadOnlyList<AvailablePlanDto>? AvailablePlans = null);
+
+/// <summary>Orders of the month against the limit of the "Заказы" tariff (ARCHITECTURE_CYCLE24.md §459.6). All texts are the server's.</summary>
+public record OrdersUsageDto(
+    int OrdersThisMonth, int? OrdersLimit, string MonthLabel, string? Text, ServiceBooking.API.Services.Shops.OrderLimitWarningLevel WarningLevel,
+    int? ProductsPerShopLimit, bool AllowOrders);
+
+/// <summary>An active tariff of the "Заказы" line the owner may ask for — shown ONLY to a signed-in owner, never publicly [legal L14].</summary>
+public record AvailablePlanDto(
+    Guid PlanId, string Name, decimal PricePerMonth, string? Description, IReadOnlyList<string> Highlights, string LimitsText);
 
 public record RejectedRequestDto(string Reason, DateTime RejectedAtUtc);
 
@@ -57,7 +71,10 @@ public record AvailableOptionDto(
     decimal? PricePerMonth, int? MaxQuantity, string Availability, string AvailabilityText, bool CanRequest);
 
 // ── Requests (US-70, §49) ───────────────────────────────────────────────────────
-public record SubscriptionRequestInputDto(Guid? PlanId, List<RequestedOptionInputDto>? Options = null, string? Comment = null);
+public record SubscriptionRequestInputDto(
+    Guid? PlanId, List<RequestedOptionInputDto>? Options = null, string? Comment = null,
+    // Cycle 24: which line the request is for; not sent = "Записи".
+    Core.Enums.CompanyKind? Line = null);
 
 public record RequestedOptionInputDto(Guid OptionId, int Quantity);
 
@@ -75,7 +92,9 @@ public record SubscriptionRequestDto(
     // ARCHITECTURE_CYCLE19.md §408/§414 — non-null only when Items contains at least one retired limit
     // option (a request submitted before the cycle 19 rollout); appended at the end, same convention
     // as IrreversibilityNotice above.
-    string? RetiredOptionsNotice = null);
+    string? RetiredOptionsNotice = null,
+    // Cycle 24 (API_CONTRACT_CYCLE24.md §485.1): the line of the request; appended at the end like the two notices above.
+    string Line = nameof(Core.Enums.CompanyKind.Services));
 
 public record SubscriptionRequestItemDto(
     Guid OptionId, string Name, int Quantity,

@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Billing;
+using ServiceBooking.API.Services.Orders;
+using ServiceBooking.API.Services.Shops;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -12,17 +15,25 @@ namespace ServiceBooking.API.Services.Billing;
 /// request. Every text is assembled here (§41 п. 8) — the frontend prints strings as-is.</summary>
 public class OwnerSubscriptionService(
     AppDbContext db, SubscriptionResolver subscriptionResolver, AccountUsageReader usageReader,
-    TrialStateReader trialStateReader)
+    TrialStateReader trialStateReader, OrdersPlanResolver ordersPlans, IOptions<OrdersOptions> ordersOptions)
 {
     public async Task<BillingAccount?> FindAccountForOwnerAsync(string ownerUserId) =>
         await db.BillingAccounts.Include(a => a.RequestedPlan).FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId);
 
-    public async Task<OwnerSubscriptionDto?> GetAsync(string ownerUserId)
+    public async Task<OwnerSubscriptionDto?> GetAsync(string ownerUserId, CompanyKind line = CompanyKind.Services)
     {
         var account = await FindAccountForOwnerAsync(ownerUserId);
         if (account is null) return null;
-        return await BuildAsync(account);
+        return await BuildAsync(account, line);
     }
+
+    /// <summary>
+    /// The owner's "Ваша подписка" for one LINE (ARCHITECTURE_CYCLE24.md §459.5). The "Записи" branch is the cycle-23 code, untouched (its answer only gains
+    /// <c>line</c>/<c>orders</c>/<c>availablePlans</c> with their default values); "Заказы" is built from <see cref="OrdersSubscription"/>, the tariff of the line,
+    /// the shops of the account and the month counter.
+    /// </summary>
+    public Task<OwnerSubscriptionDto> BuildAsync(BillingAccount account, CompanyKind line) =>
+        line == CompanyKind.Orders ? BuildOrdersAsync(account) : BuildAsync(account);
 
     public async Task<OwnerSubscriptionDto> BuildAsync(BillingAccount account)
     {
@@ -138,6 +149,111 @@ public class OwnerSubscriptionService(
             "RUB", status, statusText, planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
             usageDto, coveredCompanies, warning, availableOptions, pendingRequest, CanRequestChanges: true,
             LastRejectedRequest: lastRejectedRequest, Trial: trial);
+    }
+
+    /// <summary>"Free" (no subscription of the line), "Expired" (not active / past its date), "Active" — the same three words as the "Записи" line.</summary>
+    public static string OrdersStatusFor(OrdersSubscription? sub, DateTime now)
+    {
+        if (sub is null || sub.PlanConfigId is null) return "Free";
+        if (!sub.IsActive) return "Expired";
+        if (sub.PaidUntil.HasValue && sub.PaidUntil < now) return "Expired";
+        return "Active";
+    }
+
+    private async Task<OwnerSubscriptionDto> BuildOrdersAsync(BillingAccount account)
+    {
+        var now = DateTime.UtcNow;
+        var sub = await db.OrdersSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
+        var plan = OrdersPlanResolver.Resolve(sub, await db.SubscriptionPlanConfigs.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.IsSystemFree && p.Line == CompanyKind.Orders), now);
+        var planConfig = plan.PlanId is { } planId ? await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.Id == planId) : null;
+
+        // The purchased options belong to the ACCOUNT and are shared by both lines; what differs is the availability rule of the tariff of THIS line.
+        var subscribedOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
+            .Where(o => o.BillingAccountId == account.Id && (o.EndsAtUtc == null || o.EndsAtUtc > now)).ToListAsync();
+        var planRules = plan.PlanId is { } rulesPlanId
+            ? await db.PlanOptionRules.Where(r => r.PlanConfigId == rulesPlanId).ToListAsync()
+            : [];
+        var optionDtos = subscribedOptions.Select(o => ToSubscribedOptionDto(o, planRules)).ToList();
+
+        var shops = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == CompanyKind.Orders).ToListAsync();
+        var usage = (await usageReader.GetAsync([account.Id], CompanyKind.Orders)).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
+        var seatsByCompany = await usageReader.GetCompanySeatsAsync(shops.Select(c => c.Id).ToList());
+        var assignedIds = (await db.ChannelCompanyAssignments.Where(a => shops.Select(s => s.Id).Contains(a.CompanyId))
+            .Select(a => a.CompanyId).ToListAsync()).ToHashSet();
+
+        var status = OrdersStatusFor(sub, now);
+        var expiresInDays = BillingCalculator.ExpiresInDays(sub?.PaidUntil, now);
+        var isExpiringSoon = sub?.PlanConfig is not null && BillingCalculator.IsExpiringSoon(sub.PaidUntil, sub.PlanConfig.NotifyDaysBefore, now);
+
+        var numbersRegistered = await db.NotificationChannels.CountAsync(c => c.BillingAccountId == account.Id && c.State != ChannelState.Replaced);
+        var servicesPlan = await subscriptionResolver.GetEffectivePlanForAccountAsync(account.Id);
+        var numbersText = BuildNumbersText(servicesPlan.PaidNotificationNumbers, numbersRegistered);
+
+        // "Frozen degradation" (Д3): being over the limits after a downgrade forbids ADDING, nothing is switched off. Counted within the line.
+        var overShops = plan.IsFreeTier && plan.MaxShops is { } maxShops ? Math.Max(0, usage.CompaniesUsed - maxShops) : 0;
+        var overSeats = plan.IsFreeTier && plan.MaxSeats is { } maxSeats ? Math.Max(0, usage.SeatsUsed - maxSeats) : 0;
+        var usageDto = new SubscriptionUsageDto(
+            usage.CompaniesUsed, plan.MaxShops, usage.SeatsUsed, plan.MaxSeats,
+            BillingTexts.ShopSeatsUsedText(usage.SeatsUsed, plan.MaxSeats), BillingTexts.ShopsUsedText(usage.CompaniesUsed, plan.MaxShops),
+            servicesPlan.PaidNotificationNumbers, numbersRegistered, numbersText, overShops, overSeats, null);
+
+        var coveredShops = shops.Select(c => new CoveredCompanyDto(c.Id, c.Name, seatsByCompany.GetValueOrDefault(c.Id), assignedIds.Contains(c.Id))).ToList();
+        var planDto = new SubscribedPlanDto(
+            plan.IsFreeTier ? null : plan.PlanId, plan.PlanName, planConfig?.Description, planConfig?.PricePerMonth ?? 0m, OrdersPlanIncludes(plan));
+        var totalMonthlyPrice = BillingCalculator.TotalMonthlyPrice(planDto.PricePerMonth, optionDtos.Select(o => o.PricePerMonth));
+
+        SubscriptionWarningDto? warning = null;
+        if (status == "Expired")
+            warning = new SubscriptionWarningDto("Expired",
+                sub?.PlanConfig?.Name is { } lapsed
+                    ? $"Подписка на тариф «{lapsed}» истекла — действует бесплатный уровень линейки «Заказы»."
+                    : "Подписка истекла — действует бесплатный уровень линейки «Заказы».", []);
+        else if (isExpiringSoon && expiresInDays is >= 0)
+            warning = new SubscriptionWarningDto("Expiring", $"Подписка истекает через {expiresInDays} дн. — продлите её, чтобы не потерять возможности тарифа.", []);
+
+        var allOptions = await db.SubscriptionOptions.WhereNotRetired().Where(o => o.IsActive && o.PricePerMonth != null).ToListAsync();
+        var availableOptions = allOptions.Select(o => ToAvailableOptionDto(o, planRules)).ToList();
+
+        // One pending request per ACCOUNT: this screen shows it only when it is a request for THIS line.
+        var pendingRequest = account.RequestedLine == CompanyKind.Orders
+            ? BuildPendingRequestDto(account, await db.SubscriptionOptions.ToListAsync(), planDto.PricePerMonth, false, sub?.PlanConfigId)
+            : null;
+        var lastRejected = account.LastRejectionReason is not null && account.LastRejectedAtUtc.HasValue
+            ? new RejectedRequestDto(account.LastRejectionReason, account.LastRejectedAtUtc.Value) : null;
+
+        // The month counter, by the shop's own clock (the month is the first day of the month in the zone of the shop where the order was created).
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(shops.OrderBy(s => s.CreatedAt).FirstOrDefault()?.TimeZoneId ?? "Europe/Moscow");
+        var monthDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(now, zone));
+        var monthStart = new DateOnly(monthDate.Year, monthDate.Month, 1);
+        var ordersThisMonth = await db.OrderMonthlyUsages.AsNoTracking().Where(u => u.BillingAccountId == account.Id && u.Month == monthStart)
+            .Select(u => (int?)u.Count).FirstOrDefaultAsync() ?? 0;
+        var limitInfo = OrderLimitRules.Describe(ordersThisMonth, plan.MaxOrdersPerMonth, monthDate);
+        var ordersDto = new OrdersUsageDto(
+            ordersThisMonth, plan.MaxOrdersPerMonth, limitInfo.MonthLabel, limitInfo.Text, limitInfo.WarningLevel,
+            plan.MaxProductsPerShop is null ? ordersOptions.Value.MaxProductsPerShop : Math.Min(plan.MaxProductsPerShop.Value, ordersOptions.Value.MaxProductsPerShop),
+            plan.AllowOrders);
+
+        var availablePlans = (await db.SubscriptionPlanConfigs.AsNoTracking().Where(p => p.Line == CompanyKind.Orders && p.IsActive)
+                .OrderBy(p => p.PricePerMonth).ThenBy(p => p.SortOrder).ToListAsync())
+            .Select(p => new AvailablePlanDto(
+                p.Id, p.Name, p.PricePerMonth, p.Description,
+                string.IsNullOrWhiteSpace(p.Highlights) ? [] : p.Highlights.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(PricingCatalogBuilder.MaxHighlights).ToList(),
+                BillingTexts.OrdersPlanLimitsText(p.MaxCompanies, p.MaxEmployees, p.MaxProductsPerShop, p.MaxOrdersPerMonth)))
+            .ToList();
+
+        return new OwnerSubscriptionDto(
+            "RUB", status, StatusTextFor(status, sub?.PaidUntil), planDto, optionDtos, totalMonthlyPrice, sub?.PaidUntil, expiresInDays, isExpiringSoon,
+            usageDto, coveredShops, warning, availableOptions, pendingRequest, CanRequestChanges: true, LastRejectedRequest: lastRejected, Trial: null,
+            Line: nameof(CompanyKind.Orders), Orders: ordersDto, AvailablePlans: availablePlans);
+    }
+
+    private static List<string> OrdersPlanIncludes(OrdersPlan plan)
+    {
+        var list = new List<string>();
+        if (plan.AllowOrders) list.Add("Приём заказов");
+        if (plan.AllowNotificationChannel) list.Add("Сообщения покупателям в MAX и WhatsApp");
+        return list;
     }
 
     public static string SubscriptionStatusFor(AccountSubscription? sub, DateTime now)
@@ -386,7 +502,7 @@ public class OwnerSubscriptionService(
             // Deterministic pseudo-id derived from the account (there's no separate request row to key
             // off — see the entity's own remarks); stable for the lifetime of one pending request.
             account.Id, "Pending", account.RequestedAtUtc.Value, account.RequestedPlanId, account.RequestedPlan?.Name,
-            estimated, items, account.RequestedComment, irreversibilityNotice, retiredOptionsNotice);
+            estimated, items, account.RequestedComment, irreversibilityNotice, retiredOptionsNotice, (account.RequestedLine ?? CompanyKind.Services).ToString());
     }
 
     public static List<RequestedOptionLine> DeserializeOptionLines(string? json) =>

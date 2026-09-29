@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
 
 namespace ServiceBooking.API.Services.Billing;
@@ -17,11 +18,13 @@ public class AccountUsageReader(AppDbContext db)
 {
     /// <summary>
     /// One grouped query for however many accounts are asked about (§46.1's exact SQL): companies
-    /// owned and seats occupied, summed per billing account. An account with zero companies (shouldn't
+    /// owned and seats occupied, summed per billing account. Since cycle 24 (ARCHITECTURE_CYCLE24.md §459.3) the count is
+    /// WITHIN a line — <paramref name="kind"/> defaults to salons, so every existing call still answers about the "Записи" line and a
+    /// shop no longer takes a salon's place (and vice versa). For an account without shops the numbers are the cycle-23 ones. An account with zero companies (shouldn't
     /// happen in practice, but defensive) is simply absent from the result — callers get 0 via
     /// <c>GetValueOrDefault</c>/<c>TryGetValue</c>, same convention as <c>GetReviewAggregatesAsync</c>.
     /// </summary>
-    public async Task<Dictionary<Guid, AccountUsage>> GetAsync(IEnumerable<Guid> accountIds)
+    public async Task<Dictionary<Guid, AccountUsage>> GetAsync(IEnumerable<Guid> accountIds, CompanyKind kind = CompanyKind.Services)
     {
         var ids = accountIds.Distinct().ToList();
         if (ids.Count == 0) return new Dictionary<Guid, AccountUsage>();
@@ -33,7 +36,7 @@ public class AccountUsageReader(AppDbContext db)
                        COUNT(cm."Id")::int AS "SeatsUsed"
                 FROM "Companies" c
                 LEFT JOIN "CompanyMembers" cm ON cm."CompanyId" = c."Id"
-                WHERE c."BillingAccountId" = ANY({ids.ToArray()})
+                WHERE c."BillingAccountId" = ANY({ids.ToArray()}) AND c."Kind" = {(int)kind}
                 GROUP BY c."BillingAccountId"
                 """)
             .ToListAsync();

@@ -215,6 +215,11 @@ public class AdminBillingController(
     {
         var account = await db.BillingAccounts.Include(a => a.Owner).FirstOrDefaultAsync(a => a.Id == accountId);
         if (account is null) return NotFound();
+        if (dto.Line is { } requestedLine && !Enum.IsDefined(requestedLine)) return BadRequest("Неизвестная линейка.");
+        if (dto.Line == CompanyKind.Orders) return await AssignOrdersSubscriptionAsync(account, dto);
+        // A request of the "Заказы" line is closed by an "Orders" assignment only.
+        if (dto.RequestId.HasValue && account.RequestedAtUtc is not null && account.RequestedLine == CompanyKind.Orders)
+            return Conflict("Заявка уже обработана.");
 
         if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
             return BadRequest("Дата окончания оплаты не может быть в прошлом.");
@@ -444,6 +449,151 @@ public class AdminBillingController(
         return Ok(await BuildAdminAccountDtoAsync(freshAccount));
     }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE24.md §459.5 — assigns the subscription of the "Заказы" line (<see cref="OrdersSubscription"/>). The checks are those of the "Записи"
+    /// assignment, counted within the line: a tariff of the other line is a 400; <c>confirmLimitOverflow</c> compares the new limits (shops, seats) with what the
+    /// account already has in this line; the change log row carries the line. The options are the account's (shared by both lines) — the request is their full set.
+    /// A reason for a hidden tariff is not REQUIRED here (every "Заказы" tariff is hidden by design, [legal L14]) but is validated and stored when given.
+    /// </summary>
+    private async Task<IActionResult> AssignOrdersSubscriptionAsync(BillingAccount account, AssignSubscriptionInput dto)
+    {
+        var accountId = account.Id;
+        if (dto.PaidUntil is { } paidUntilDate && paidUntilDate.ToDateTime(TimeOnly.MinValue) < DateTime.UtcNow.Date.AddDays(-1))
+            return BadRequest("Дата окончания оплаты не может быть в прошлом.");
+        if (SubscriptionAssignmentValidator.RequiresPaidUntil(dto.PlanId, dto.PaidUntil))
+            return BadRequest(SubscriptionAssignmentValidator.MissingPaidUntilError);
+        var optionLines = dto.Options ?? [];
+
+        if (dto.RequestId.HasValue && (account.RequestedAtUtc is null || account.RequestedLine != CompanyKind.Orders || dto.RequestId.Value != accountId))
+            return Conflict("Заявка уже обработана.");
+
+        SubscriptionPlanConfig? plan = null;
+        if (dto.PlanId.HasValue)
+        {
+            plan = await db.SubscriptionPlanConfigs.FindAsync(dto.PlanId.Value);
+            if (plan is null) return NotFound("Тариф не найден.");
+            if (plan.Line != CompanyKind.Orders) return BadRequest(BillingTexts.AdminDifferentLine);
+        }
+        var reasonError = ManualPlanAssignmentPolicy.Validate(dto.ReasonCode, dto.ReasonDetails, required: false);
+        if (reasonError is not null) return BadRequest(reasonError);
+
+        var optionIds = optionLines.Select(o => o.OptionId).ToList();
+        var options = await db.SubscriptionOptions.Where(o => optionIds.Contains(o.Id)).ToListAsync();
+        if (options.Count != optionIds.Distinct().Count()) return BadRequest("Одна или несколько опций не найдены.");
+        var retired = options.FirstOrDefault(RetiredLimitOptions.IsRetired);
+        if (retired is not null) return BadRequest(BillingTexts.RetiredOptionRejected(retired.Name));
+        foreach (var line in optionLines)
+        {
+            if (line.Quantity < 1) return BadRequest("Количество для опции должно быть не меньше 1.");
+            var option = options.First(o => o.Id == line.OptionId);
+            if (option.MaxQuantity is { } max && line.Quantity > max)
+                return BadRequest($"Количество для опции «{option.Name}» не может превышать {max}.");
+        }
+        var planRules = plan is not null ? await db.PlanOptionRules.Where(r => r.PlanConfigId == plan.Id).ToListAsync() : [];
+        foreach (var line in optionLines)
+        {
+            var rule = planRules.FirstOrDefault(r => r.OptionId == line.OptionId);
+            if (plan is not null && (rule is null || rule.Availability == OptionAvailability.Unavailable))
+                return Conflict("Опция недоступна на выбранном тарифе.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await AdvisoryLock.AcquireAsync(db, $"billing-account:{accountId}");
+        var changedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var now = DateTime.UtcNow;
+
+        // The new limits vs what is already occupied IN THIS LINE (shops, seats incl. the owner).
+        var systemFree = await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.IsSystemFree && p.Line == CompanyKind.Orders);
+        var newPlan = plan is not null
+            ? OrdersPlanResolver.Resolve(new OrdersSubscription { PlanConfig = plan, PlanConfigId = plan.Id, IsActive = true }, systemFree, now)
+            : OrdersPlanResolver.Resolve(null, systemFree, now);
+        var usage = (await usageReader.GetAsync([accountId], CompanyKind.Orders)).GetValueOrDefault(accountId) ?? new AccountUsage(accountId, 0, 0);
+        if (!dto.ConfirmLimitOverflow)
+        {
+            if (newPlan.MaxShops is { } maxShops && usage.CompaniesUsed > maxShops)
+                return Conflict($"На новом тарифе доступно {maxShops} магазинов, занято {usage.CompaniesUsed}. Подтвердите превышение лимита, чтобы продолжить.");
+            if (newPlan.MaxSeats is { } maxSeats && usage.SeatsUsed > maxSeats)
+                return Conflict($"На новом тарифе доступно {maxSeats} мест, занято {usage.SeatsUsed}. Подтвердите превышение лимита, чтобы продолжить.");
+        }
+
+        var sub = await db.OrdersSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == accountId);
+        if (sub is null)
+        {
+            sub = new OrdersSubscription { Id = Guid.NewGuid(), BillingAccountId = accountId, CreatedAtUtc = now };
+            db.OrdersSubscriptions.Add(sub);
+        }
+        var oldPlanId = sub.PlanConfigId;
+        var oldPaidUntil = sub.PaidUntil;
+        var oldIsActive = sub.IsActive;
+        var oldOptionsSummary = await BuildOptionsSummaryAsync(accountId);
+
+        sub.PlanConfigId = dto.PlanId;
+        sub.IsActive = dto.IsActive;
+        sub.PaidUntil = ToUtc(dto.PaidUntil);
+        sub.UpdatedAtUtc = now;
+        sub.UpdatedByUserId = changedByUserId;
+
+        // The account's options: the request is the FULL set (as in the "Записи" assignment); the ones left out end with the paid period.
+        var existingOptions = await db.AccountSubscriptionOptions.WhereNotRetired().Where(o => o.BillingAccountId == accountId).ToListAsync();
+        foreach (var line in optionLines)
+        {
+            var row = existingOptions.FirstOrDefault(o => o.OptionId == line.OptionId);
+            if (row is null)
+                db.AccountSubscriptionOptions.Add(new AccountSubscriptionOption
+                {
+                    Id = Guid.NewGuid(), BillingAccountId = accountId, OptionId = line.OptionId, Quantity = line.Quantity,
+                    PaidUntilUtc = ToUtc(line.PaidUntil), ActivatedAtUtc = now, ActivatedByUserId = changedByUserId,
+                });
+            else
+            {
+                row.EndsAtUtc = null;
+                row.Quantity = line.Quantity;
+                row.PaidUntilUtc = ToUtc(line.PaidUntil);
+                row.ActivatedAtUtc = now;
+                row.ActivatedByUserId = changedByUserId;
+                row.RequestedQuantity = null;
+                row.RequestedAtUtc = null;
+                row.RequestedByUserId = null;
+                row.GrantedByTrial = false;
+            }
+        }
+        foreach (var row in existingOptions.Where(r => optionLines.All(l => l.OptionId != r.OptionId) && r.EndsAtUtc is null))
+            row.EndsAtUtc = sub.PaidUntil ?? now;
+
+        if (dto.RequestId.HasValue)
+        {
+            account.RequestedLine = null;
+            account.RequestedPlanId = null;
+            account.RequestedOptionsJson = null;
+            account.RequestedAtUtc = null;
+            account.RequestedByUserId = null;
+            account.RequestedComment = null;
+            account.LastRejectionReason = null;
+            account.LastRejectedAtUtc = null;
+        }
+
+        var newOptionsSummary = string.Join(", ", optionLines.Select(o => $"{options.First(x => x.Id == o.OptionId).Name} ×{o.Quantity}"));
+        db.SubscriptionChangeLogs.Add(new SubscriptionChangeLog
+        {
+            Id = Guid.NewGuid(), OwnerUserId = account.OwnerUserId, BillingAccountId = accountId, ChangedByUserId = changedByUserId, ChangedAt = now,
+            OldPlanConfigId = oldPlanId, NewPlanConfigId = dto.PlanId, OldPaidUntil = oldPaidUntil, NewPaidUntil = sub.PaidUntil,
+            OldIsActive = oldIsActive, NewIsActive = dto.IsActive,
+            ChangeKind = oldPlanId != dto.PlanId ? SubscriptionChangeKind.Plan : SubscriptionChangeKind.Options,
+            OldOptionsSummary = oldOptionsSummary, NewOptionsSummary = newOptionsSummary, Comment = dto.Comment,
+            ReasonCode = dto.ReasonCode, ReasonDetails = dto.ReasonDetails,
+            Line = CompanyKind.Orders,
+        });
+        account.UpdatedAtUtc = now;
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        logger.LogInformation(
+            "Orders subscription assigned to billing account {AccountId} by {UserId}: plan {PlanName}, options {OptionsSummary}",
+            accountId, changedByUserId, plan?.Name ?? OrdersFreePlan.Name, string.IsNullOrEmpty(newOptionsSummary) ? "—" : newOptionsSummary);
+        var freshAccount = await db.BillingAccounts.Include(a => a.Owner).Include(a => a.RequestedPlan).FirstAsync(a => a.Id == accountId);
+        return Ok(await BuildAdminAccountDtoAsync(freshAccount));
+    }
+
     private async Task<string?> BuildOptionsSummaryAsync(Guid accountId)
     {
         var rows = await db.AccountSubscriptionOptions.WhereNotRetired().Include(o => o.Option)
@@ -480,6 +630,7 @@ public class AdminBillingController(
                 ? "Система"
                 : changedByNames.GetValueOrDefault(l.ChangedByUserId, l.ChangedByUserId),
             changeKind = l.ChangeKind.ToString(),
+            line = l.Line, // ARCHITECTURE_CYCLE24.md §459.5
             companyId = l.CompanyId,
             oldPlanName = l.OldPlanConfigId.HasValue ? planNames.GetValueOrDefault(l.OldPlanConfigId.Value, "—") : null,
             newPlanName = l.NewPlanConfigId.HasValue ? planNames.GetValueOrDefault(l.NewPlanConfigId.Value, "—") : null,
@@ -538,6 +689,8 @@ public class AdminBillingController(
 
         var subs = await db.AccountSubscriptions.Include(s => s.PlanConfig)
             .Where(s => s.BillingAccountId != null && page1.Select(a => a.Id).Contains(s.BillingAccountId!.Value)).ToListAsync(ct);
+        var ordersSubs = await db.OrdersSubscriptions.Include(s => s.PlanConfig)
+            .Where(s => page1.Select(a => a.Id).Contains(s.BillingAccountId)).ToListAsync(ct);
         var companyCounts = await db.Companies.Where(c => c.BillingAccountId != null && page1.Select(a => a.Id).Contains(c.BillingAccountId!.Value))
             .GroupBy(c => c.BillingAccountId!.Value).Select(g => new { AccountId = g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.AccountId, x => x.Count, ct);
 
@@ -559,8 +712,11 @@ public class AdminBillingController(
                 };
             }).ToList();
             var retiredNames = itemDtos.Where(i => i.retired).Select(i => i.name).Distinct().ToList();
+            var requestLine = a.RequestedLine ?? CompanyKind.Services;
             var sub = subs.FirstOrDefault(s => s.BillingAccountId == a.Id);
-            var estimated = (sub?.PlanConfig?.PricePerMonth ?? 0m) + itemDtos.Where(i => !i.retired)
+            var ordersSub = ordersSubs.FirstOrDefault(s => s.BillingAccountId == a.Id);
+            var currentPlanConfig = requestLine == CompanyKind.Orders ? ordersSub?.PlanConfig : sub?.PlanConfig;
+            var estimated = (currentPlanConfig?.PricePerMonth ?? 0m) + itemDtos.Where(i => !i.retired)
                 .Sum(i => (allOptions.FirstOrDefault(o => o.Id == i.optionId)?.PricePerMonth ?? 0m) * i.quantity);
             return new
             {
@@ -571,7 +727,8 @@ public class AdminBillingController(
                 requestedByPhoneMasked = a.Owner.PhoneNumber is null ? null : PhoneDisplayMask.Mask(a.Owner.PhoneNumber),
                 createdAt = a.RequestedAtUtc,
                 status = "Pending",
-                currentPlanName = sub?.PlanConfig?.Name,
+                line = requestLine,
+                currentPlanName = currentPlanConfig?.Name ?? (requestLine == CompanyKind.Orders ? OrdersFreePlan.Name : null),
                 desiredPlanName = a.RequestedPlan?.Name,
                 items = itemDtos,
                 estimatedMonthlyPrice = estimated,
@@ -598,6 +755,7 @@ public class AdminBillingController(
         if (account is null) return NotFound();
         if (account.RequestedAtUtc is null) return Conflict("Заявка уже обработана.");
 
+        account.RequestedLine = null;
         account.RequestedPlanId = null;
         account.RequestedOptionsJson = null;
         account.RequestedAtUtc = null;
@@ -624,6 +782,8 @@ public record AssignSubscriptionInput(
     decimal? Amount = null, string? Comment = null, Guid? RequestId = null, bool ConfirmLimitOverflow = false,
     // ARCHITECTURE_CYCLE20.md §403.1, API_CONTRACT_CYCLE20.md §433.1 (US-20-02) — appended at the end,
     // both optional, so every existing positional call in the test suite keeps compiling.
-    Core.Enums.SubscriptionChangeReason? ReasonCode = null, string? ReasonDetails = null);
+    Core.Enums.SubscriptionChangeReason? ReasonCode = null, string? ReasonDetails = null,
+    // ARCHITECTURE_CYCLE24.md §459.5 — which line's subscription is assigned; not sent = "Записи" (as before).
+    Core.Enums.CompanyKind? Line = null);
 
 public record RejectRequestDto(string? Comment);

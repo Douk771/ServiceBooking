@@ -77,10 +77,13 @@ public class BillingController(
     }
 
     [HttpGet("subscription")]
-    public async Task<ActionResult<OwnerSubscriptionDto>> GetSubscription()
+    public async Task<ActionResult<OwnerSubscriptionDto>> GetSubscription([FromQuery] string? line)
     {
+        // ARCHITECTURE_CYCLE24.md §485.1: no `line` = "Записи", the answer of cycle 23 plus the three new fields at their defaults.
+        if (!ServiceBooking.API.Services.Companies.CompanyKindQuery.TryParse(line, out var lineKind))
+            return BadRequest(ServiceBooking.API.Services.Companies.CompanyKindQuery.UnknownKindText);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var dto = await ownerSubscriptionService.GetAsync(userId);
+        var dto = await ownerSubscriptionService.GetAsync(userId, lineKind);
         return dto is null ? NotFound() : Ok(dto);
     }
 
@@ -92,6 +95,10 @@ public class BillingController(
         if (account is null) return NotFound();
 
         if (dto.Comment is { Length: > 500 }) return BadRequest("Комментарий не может быть длиннее 500 символов.");
+
+        // ARCHITECTURE_CYCLE24.md §485.1: a request is for ONE line; the account holds ONE pending request in total.
+        var requestLine = dto.Line ?? CompanyKind.Services;
+        if (!Enum.IsDefined(requestLine)) return BadRequest(ServiceBooking.API.Services.Companies.CompanyKindQuery.UnknownKindText);
 
         // B6: an omitted `options` array is a request with no options, not a 500.
         var lines = dto.Options ?? [];
@@ -116,6 +123,7 @@ public class BillingController(
         {
             requestedPlan = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.Id == dto.PlanId && p.IsActive);
             if (requestedPlan is null) return BadRequest("Указанный тариф не найден или неактивен.");
+            if (requestedPlan.Line != requestLine) return BadRequest(BillingTexts.DifferentLine);
         }
 
         // Contract: repeated submission OVERWRITES the existing pending request and answers 200 — there
@@ -127,6 +135,11 @@ public class BillingController(
         await using var transaction = await db.Database.BeginTransactionAsync();
         await AdvisoryLock.AcquireAsync(db, $"billing-account:{account.Id}");
 
+        // A request of the OTHER line is waiting → 409 (checked under the account lock; the pending request itself is never overwritten across lines).
+        if (account.RequestedAtUtc is not null && (account.RequestedLine ?? CompanyKind.Services) != requestLine)
+            return Conflict(BillingTexts.RequestOfOtherLine(account.RequestedLine ?? CompanyKind.Services));
+
+        account.RequestedLine = requestLine == CompanyKind.Services ? null : requestLine; // null = "Записи", exactly what every request before cycle 24 is
         account.RequestedPlanId = dto.PlanId;
         // N15 — keep the RequestedPlan navigation in sync with RequestedPlanId explicitly: `account`
         // was loaded with the OLD RequestedPlan already fixed up by the change tracker, and EF Core
@@ -147,7 +160,7 @@ public class BillingController(
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        var full = await ownerSubscriptionService.BuildAsync(account);
+        var full = await ownerSubscriptionService.BuildAsync(account, requestLine);
         return Ok(full.PendingRequest);
     }
 
@@ -161,6 +174,7 @@ public class BillingController(
         // Idempotent per contract — absence of a pending request is still 204, not an error.
         if (account.RequestedAtUtc is not null)
         {
+            account.RequestedLine = null;
             account.RequestedPlanId = null;
             account.RequestedOptionsJson = null;
             account.RequestedAtUtc = null;

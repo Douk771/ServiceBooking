@@ -136,6 +136,35 @@ internal static class AdminAccountDtoBuilder
             }).ToList(),
             pendingRequest,
             trial = trialDto,
+            // ARCHITECTURE_CYCLE24.md §459.5 — the subscription of the "Заказы" line next to the "Записи" one above.
+            ordersSubscription = await BuildOrdersSubscriptionAsync(db, usageReader, account, now),
+        };
+    }
+
+    private static async Task<object> BuildOrdersSubscriptionAsync(AppDbContext db, AccountUsageReader usageReader, BillingAccount account, DateTime now)
+    {
+        var sub = await db.OrdersSubscriptions.Include(s => s.PlanConfig).FirstOrDefaultAsync(s => s.BillingAccountId == account.Id);
+        var plan = OrdersPlanResolver.Resolve(sub, await db.SubscriptionPlanConfigs.AsNoTracking().FirstOrDefaultAsync(p => p.IsSystemFree && p.Line == CompanyKind.Orders), now);
+        var usage = (await usageReader.GetAsync([account.Id], CompanyKind.Orders)).GetValueOrDefault(account.Id) ?? new AccountUsage(account.Id, 0, 0);
+        var firstShopZone = await db.Companies.AsNoTracking().Where(c => c.BillingAccountId == account.Id && c.Kind == CompanyKind.Orders)
+            .OrderBy(c => c.CreatedAt).Select(c => c.TimeZoneId).FirstOrDefaultAsync() ?? "Europe/Moscow";
+        var local = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(now, TimeZoneInfo.FindSystemTimeZoneById(firstShopZone)));
+        var month = new DateOnly(local.Year, local.Month, 1);
+        var ordersThisMonth = await db.OrderMonthlyUsages.AsNoTracking().Where(u => u.BillingAccountId == account.Id && u.Month == month)
+            .Select(u => (int?)u.Count).FirstOrDefaultAsync() ?? 0;
+        return new
+        {
+            planId = plan.IsFreeTier ? null : plan.PlanId,
+            planName = plan.PlanName,
+            paidUntil = sub?.PaidUntil,
+            isActive = sub?.IsActive ?? false,
+            isFreeTier = plan.IsFreeTier,
+            shopsUsed = usage.CompaniesUsed,
+            shopsLimit = plan.MaxShops,
+            seatsUsed = usage.SeatsUsed,
+            seatsLimit = plan.MaxSeats,
+            ordersThisMonth,
+            ordersLimit = plan.MaxOrdersPerMonth,
         };
     }
 

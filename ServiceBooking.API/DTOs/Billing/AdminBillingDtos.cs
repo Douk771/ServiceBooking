@@ -21,7 +21,10 @@ public record AdminPlanInput(
     // CreatePlan/UpdatePlan, so this fix doesn't also have to rewrite that test helper (see the cycle-07
     // backend report).
     bool? IsPublic = null, bool IsActive = true, int? SortOrder = null,
-    List<AdminPlanOptionRuleDtoV2>? Options = null);
+    List<AdminPlanOptionRuleDtoV2>? Options = null,
+    // Cycle 24 (API_CONTRACT_CYCLE24.md §485.3). Line: set at creation (default "Записи"), a different value on PUT is a 409.
+    // For the "Заказы" line MaxEmployees / MaxCompanies read as "Макс. участников" / "Макс. магазинов"; null limits = unlimited.
+    Core.Enums.CompanyKind? Line = null, int? MaxProductsPerShop = null, int? MaxOrdersPerMonth = null, bool? AllowOrders = null);
 
 // contracts/cycle7/openapi.yaml's AdminPlanInput has no isSystemFree property (additionalProperties:
 // false) — changing which plan is the system free one is a distinct, rarer administrative action from

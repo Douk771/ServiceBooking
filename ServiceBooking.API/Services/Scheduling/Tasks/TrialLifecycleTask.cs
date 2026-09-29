@@ -412,7 +412,7 @@ public sealed class TrialLifecycleTask(
             // One lookup per pass, not per account — the flag can only change between passes, an hour
             // apart, never mid-batch.
             var systemTrial = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.IsSystemTrial, ct);
-            var systemFree = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.IsSystemFree, ct);
+            var systemFree = await db.SubscriptionPlanConfigs.FirstOrDefaultAsync(p => p.IsSystemFree && p.Line == CompanyKind.Services, ct);
             if (systemFree is null)
             {
                 failed += candidates.Count;

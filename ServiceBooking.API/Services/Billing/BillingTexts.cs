@@ -1,3 +1,5 @@
+using ServiceBooking.Core.Enums;
+
 namespace ServiceBooking.API.Services.Billing;
 
 /// <summary>Server-assembled Russian copy for billing/funding surfaces (ARCHITECTURE_CYCLE7.md §41
@@ -17,6 +19,61 @@ public static class BillingTexts
 
     public static string CompanyLimitReached(int used, int limit) =>
         $"Открыто {used} из {limit} точек, доступных на вашем тарифе.";
+
+    // ── Cycle 24, the "Заказы" line (API_CONTRACT_CYCLE24.md §485.2, §482.1) ──
+
+    /// <summary>402 of <c>CompanyCreationService</c> for a shop: the limit of the "Заказы" tariff is counted within the shops.</summary>
+    public static string ShopLimitReached(string planName, int limit) =>
+        $"По тарифу «{planName}» можно открыть не больше {limit} {ShopsWord(limit)}. Чтобы открыть ещё, смените тариф в разделе «Подписка»";
+
+    /// <summary>402 of <c>CompanyMembersController.Add</c> for a shop.</summary>
+    public static string ShopSeatLimitReached(string planName, int limit) =>
+        $"По тарифу «{planName}» в магазинах может быть не больше {limit} участников, включая владельца";
+
+    /// <summary>409 <c>ProductLimitReached</c> when the TARIFF (not the technical ceiling) is what stops a new product.</summary>
+    public static string ShopProductLimitReached(string planName, int limit) =>
+        $"По тарифу «{planName}» в магазине может быть не больше {limit} товаров";
+
+    /// <summary>The limits of a "Заказы" tariff in one line: "до 3 магазинов · до 10 участников · до 1000 товаров · заказы без ограничения" (API_CONTRACT_CYCLE24.md §485.1).</summary>
+    public static string OrdersPlanLimitsText(int? shops, int? seats, int? productsPerShop, int? ordersPerMonth)
+    {
+        static string Word(int n, string one, string few, string many) => ServiceBooking.API.Services.Shops.ShopTimeTexts.Plural(n, one, few, many);
+        var parts = new List<string>
+        {
+            shops is { } s ? $"до {s} {Word(s, "магазина", "магазинов", "магазинов")}" : "магазины без ограничения",
+            seats is { } m ? $"до {m} {Word(m, "участника", "участников", "участников")}" : "участники без ограничения",
+            productsPerShop is { } p ? $"до {p} {Word(p, "товара", "товаров", "товаров")}" : "товары без ограничения",
+            ordersPerMonth is { } o ? $"до {o} {Word(o, "заказа", "заказов", "заказов")} в месяц" : "заказы без ограничения"
+        };
+        return string.Join(" · ", parts);
+    }
+
+    public static string ShopsUsedText(int used, int? limit) =>
+        limit is null ? $"Магазинов: {used} (без ограничения)" : $"Открыто {used} из {limit} магазинов, доступных на тарифе.";
+
+    public static string ShopSeatsUsedText(int used, int? limit) =>
+        limit is null ? $"Участников: {used} (без ограничения)" : $"Занято {used} из {limit} мест в магазинах (включая владельца).";
+
+    public const string DifferentLine = "Этот тариф из другой линейки";
+    public const string AdminDifferentLine = "Тариф из другой линейки";
+    public const string LineCannotChange = "Линейку тарифа менять нельзя";
+    public const string TrialOnlyForServices = "Пробный период есть только у тарифов «Записи»";
+
+    /// <summary>409 when a request of the OTHER line is already waiting (one request per account).</summary>
+    public static string RequestOfOtherLine(CompanyKind pendingLine) =>
+        $"У вас уже есть заявка на смену тарифа «{(pendingLine == CompanyKind.Orders ? "Заказы" : "Записи")}» — отмените её или дождитесь решения";
+
+    private static string ShopsWord(int n)
+    {
+        var lastTwo = n % 100;
+        if (lastTwo is >= 11 and <= 14) return "магазинов";
+        return (n % 10) switch
+        {
+            1 => "магазин",
+            2 or 3 or 4 => "магазина",
+            _ => "магазинов",
+        };
+    }
 
     /// <summary>§51.1's 409 body when the proposed new owner isn't linked to the receiving account —
     /// names both fixes plus the third way out (transfer without changing the owner), per acceptance

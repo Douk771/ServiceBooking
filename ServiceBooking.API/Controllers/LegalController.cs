@@ -364,7 +364,7 @@ public class LegalController(
         if (needsFreePlan && heldAccountId is not null && heldPlanConfigId is null)
         {
             systemFreePlanConfigId = await db.SubscriptionPlanConfigs.AsNoTracking()
-                .Where(p => p.IsSystemFree).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
+                .Where(p => p.IsSystemFree && p.Line == CompanyKind.Services).Select(p => (Guid?)p.Id).FirstOrDefaultAsync();
         }
 
         return new NoticeCallerFacts(isSuperAdmin, heldAccountId, heldPlanConfigId, systemFreePlanConfigId);

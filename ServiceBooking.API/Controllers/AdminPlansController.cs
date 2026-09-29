@@ -42,11 +42,15 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         var validationError = ValidatePlanInput(dto);
         if (validationError is not null) return validationError;
 
-        var systemFreeError = await ValidateSystemFreeAsync(false, dto.PricePerMonth, existingPlanId: null);
+        var systemFreeError = await ValidateSystemFreeAsync(false, dto.PricePerMonth, existingPlanId: null, dto.Line ?? CompanyKind.Services);
         if (systemFreeError is not null) return systemFreeError;
 
         var plan = new SubscriptionPlanConfig
         {
+            Line = dto.Line ?? CompanyKind.Services,
+            MaxProductsPerShop = dto.MaxProductsPerShop,
+            MaxOrdersPerMonth = dto.MaxOrdersPerMonth,
+            AllowOrders = dto.AllowOrders ?? true,
             Id = Guid.NewGuid(),
             Name = dto.Name,
             Description = dto.Description,
@@ -92,9 +96,16 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         var plan = await db.SubscriptionPlanConfigs.FindAsync(id);
         if (plan is null) return NotFound();
 
-        var systemFreeError = await ValidateSystemFreeAsync(plan.IsSystemFree, dto.PricePerMonth, existingPlanId: id);
+        // ARCHITECTURE_CYCLE24.md §459.5: the line is chosen at creation and never changes — accounts, limits and history are counted by it.
+        if (dto.Line is { } requestedLine && requestedLine != plan.Line)
+            return Conflict("Линейку тарифа менять нельзя");
+
+        var systemFreeError = await ValidateSystemFreeAsync(plan.IsSystemFree, dto.PricePerMonth, existingPlanId: id, plan.Line);
         if (systemFreeError is not null) return systemFreeError;
 
+        plan.MaxProductsPerShop = dto.MaxProductsPerShop;
+        plan.MaxOrdersPerMonth = dto.MaxOrdersPerMonth;
+        if (dto.AllowOrders.HasValue) plan.AllowOrders = dto.AllowOrders.Value;
         plan.Name = dto.Name;
         plan.PricePerMonth = dto.PricePerMonth;
         plan.MaxEmployees = dto.MaxEmployees;
@@ -140,7 +151,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             if (plan.IsSystemFree)
                 return Conflict("The system free plan cannot be deactivated.");
 
-            var activeSubscribers = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
+            var activeSubscribers = await ActiveSubscribersAsync(id);
             if (activeSubscribers > 0)
                 return Conflict($"Cannot deactivate a plan with {activeSubscribers} active subscriber(s). Move them to another plan first.");
         }
@@ -191,7 +202,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             // unconditionally, which made moving it to another plan impossible altogether (cycle-07 QA
             // finding #1) — the seeded plan could never be replaced.
             var transferCandidateExists = await db.SubscriptionPlanConfigs
-                .AnyAsync(p => p.Id != id && p.IsActive && p.PricePerMonth == 0);
+                .AnyAsync(p => p.Id != id && p.Line == plan.Line && p.IsActive && p.PricePerMonth == 0);
             if (!transferCandidateExists)
                 return Conflict("Ровно один тариф должен быть системным бесплатным — создайте или подготовьте тариф с ценой 0, прежде чем снимать этот флаг.");
         }
@@ -205,7 +216,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         if (dto.IsSystemFree && plan.IsSystemTrial)
             return Conflict("Этот тариф уже пробный период — тариф не может быть одновременно системным бесплатным.");
 
-        var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree, plan.PricePerMonth, existingPlanId: id);
+        var systemFreeError = await ValidateSystemFreeAsync(dto.IsSystemFree, plan.PricePerMonth, existingPlanId: id, plan.Line);
         if (systemFreeError is not null) return systemFreeError;
 
         plan.IsSystemFree = dto.IsSystemFree;
@@ -240,6 +251,9 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
 
         if (dto.IsSystemTrial)
         {
+            // ARCHITECTURE_CYCLE24.md §459.5: the trial period exists only for the "Записи" line.
+            if (plan.Line != CompanyKind.Services)
+                return Conflict("Пробный период есть только у тарифов «Записи»");
             if (plan.PricePerMonth != 0)
                 return BadRequest("Триал не оплачивается — цена тарифа должна быть равна 0.");
             if (plan.IsSystemFree)
@@ -285,7 +299,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         // their very next request (SubscriptionResolver.Resolve treats PlanConfig.IsActive == false as
         // Free) — the admin must move them off the plan first
         // (PUT /api/admin/billing-accounts/{accountId}/subscription, AdminBillingController).
-        var subscriberCount = await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == id && s.IsActive);
+        var subscriberCount = await ActiveSubscribersAsync(id);
         if (subscriberCount > 0)
             return Conflict($"Cannot delete a plan with {subscriberCount} active subscriber(s). Move them to another plan first.");
 
@@ -302,8 +316,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
     /// </summary>
     private async Task<AdminPlanDto> BuildAdminPlanDtoAsync(SubscriptionPlanConfig plan, bool isNew = false)
     {
-        var subscribedAccounts = isNew ? 0
-            : await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == plan.Id && s.IsActive);
+        var subscribedAccounts = isNew ? 0 : await ActiveSubscribersAsync(plan.Id);
         var rules = await db.PlanOptionRules.WhereNotRetired().Where(r => r.PlanConfigId == plan.Id).ToListAsync();
         var totalOptionsInCatalog = await db.SubscriptionOptions.WhereNotRetired().CountAsync();
         return MapAdminPlanDto(plan, subscribedAccounts, rules, totalOptionsInCatalog);
@@ -312,12 +325,25 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
     private async Task<Dictionary<Guid, int>> GetActiveSubscriberCountsAsync(IEnumerable<Guid> planIds)
     {
         var ids = planIds.ToList();
-        return await db.AccountSubscriptions
+        var services = await db.AccountSubscriptions
             .Where(s => s.IsActive && s.PlanConfigId.HasValue && ids.Contains(s.PlanConfigId.Value))
             .GroupBy(s => s.PlanConfigId!.Value)
             .Select(g => new { PlanConfigId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.PlanConfigId, x => x.Count);
+        // ARCHITECTURE_CYCLE24.md §459.5: a "Заказы" plan's subscribers live in OrdersSubscriptions.
+        var orders = await db.OrdersSubscriptions
+            .Where(s => s.IsActive && s.PlanConfigId.HasValue && ids.Contains(s.PlanConfigId.Value))
+            .GroupBy(s => s.PlanConfigId!.Value)
+            .Select(g => new { PlanConfigId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.PlanConfigId, x => x.Count);
+        foreach (var (planId, count) in orders) services[planId] = services.GetValueOrDefault(planId) + count;
+        return services;
     }
+
+    /// <summary>Active subscribers of ONE plan across both tables — the guard of deleting / deactivating a plan (§459.5).</summary>
+    private async Task<int> ActiveSubscribersAsync(Guid planId) =>
+        await db.AccountSubscriptions.CountAsync(s => s.PlanConfigId == planId && s.IsActive) +
+        await db.OrdersSubscriptions.CountAsync(s => s.PlanConfigId == planId && s.IsActive);
 
     // contracts/cycle7/openapi.yaml AdminPlanDto: projects the entity onto the contract shape rather than
     // returning it directly — the entity also carries AllowNotificationChannel and CreatedAt (neither
@@ -339,7 +365,8 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
                 .Select(r => new AdminPlanOptionRuleDto(r.OptionId, r.Availability.ToString(), r.IncludedQuantity)).ToList(),
             subscribedAccounts,
             IsSystemTrial: plan.IsSystemTrial,
-            OptionCoverage: new AdminPlanOptionCoverageDto(configured, total, $"В тариф включено {configured} из {total} опций каталога"));
+            OptionCoverage: new AdminPlanOptionCoverageDto(configured, total, $"В тариф включено {configured} из {total} опций каталога"),
+            Line: plan.Line, MaxProductsPerShop: plan.MaxProductsPerShop, MaxOrdersPerMonth: plan.MaxOrdersPerMonth, AllowOrders: plan.AllowOrders);
     }
 
     // N25 — shares its cap with PricingCatalogBuilder.MaxHighlights so the admin editor and the public
@@ -380,6 +407,10 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             return new BadRequestObjectResult("MaxEmployees must not be negative.");
         if (dto.MaxCompanies is < 0)
             return new BadRequestObjectResult("MaxCompanies must not be negative.");
+        if (dto.MaxProductsPerShop is < 1)
+            return new BadRequestObjectResult("Макс. товаров в магазине — не меньше 1 (пусто — без ограничения).");
+        if (dto.MaxOrdersPerMonth is < 1)
+            return new BadRequestObjectResult("Заказов в месяц — не меньше 1 (пусто — без ограничения).");
         var highlightsError = Services.Billing.PricingCatalogBuilder.ValidateHighlights(dto.Highlights);
         if (highlightsError is not null)
             return new BadRequestObjectResult(highlightsError);
@@ -448,12 +479,12 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
         return null;
     }
 
-    /// <summary>ARCHITECTURE_CYCLE7.md §43.4: exactly one row may have <c>IsSystemFree == true</c>, and
+    /// <summary>ARCHITECTURE_CYCLE7.md §43.4 (cycle 24, §448.1: PER LINE): exactly one row of a line may have <c>IsSystemFree == true</c>, and
     /// that row's price must be 0 — validated here so a violation surfaces as 400/409 instead of the
     /// partial unique index throwing a raw <c>DbUpdateException</c> (500) on save. The
     /// <see cref="DbUpdateException"/> catch around <c>SaveChangesAsync</c> callers still handles the
     /// race where two concurrent requests both pass this check before either commits.</summary>
-    private async Task<IActionResult?> ValidateSystemFreeAsync(bool isSystemFree, decimal pricePerMonth, Guid? existingPlanId)
+    private async Task<IActionResult?> ValidateSystemFreeAsync(bool isSystemFree, decimal pricePerMonth, Guid? existingPlanId, CompanyKind line)
     {
         if (!isSystemFree) return null;
 
@@ -461,7 +492,7 @@ public class AdminPlansController(AppDbContext db, PricingCatalogCache pricingCa
             return BadRequest("The system free plan must have PricePerMonth = 0.");
 
         var otherSystemFreeExists = await db.SubscriptionPlanConfigs
-            .AnyAsync(p => p.IsSystemFree && p.Id != (existingPlanId ?? Guid.Empty));
+            .AnyAsync(p => p.IsSystemFree && p.Line == line && p.Id != (existingPlanId ?? Guid.Empty));
         if (otherSystemFreeExists)
             return Conflict("Another plan is already marked as the system free plan.");
 
@@ -481,7 +512,9 @@ public record AdminPlanDto(
     bool AllowPublicListing, bool AllowOnlinePayment, int? PhotoQuotaMb, PhotoRetention PhotoRetention,
     int NotifyDaysBefore, bool IsPublic, bool IsActive, bool IsSystemFree, int SortOrder,
     List<AdminPlanOptionRuleDto> Options, int SubscribedAccounts,
-    bool IsSystemTrial = false, AdminPlanOptionCoverageDto? OptionCoverage = null);
+    bool IsSystemTrial = false, AdminPlanOptionCoverageDto? OptionCoverage = null,
+    // Cycle 24 (API_CONTRACT_CYCLE24.md §485.3).
+    CompanyKind Line = CompanyKind.Services, int? MaxProductsPerShop = null, int? MaxOrdersPerMonth = null, bool AllowOrders = true);
 
 // Cycle 18 (API_CONTRACT_CYCLE18.md §366) — "отсутствие строки PlanOptionRule = Unavailable" is
 // fail-closed behaviour, not a defect, but a superadmin must be able to SEE it on the plan's own card.

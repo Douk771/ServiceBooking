@@ -51,7 +51,8 @@ public sealed class PricingCatalogCache(AppDbContext db, IMemoryCache cache, Leg
 
     private async Task<CachedPricing> BuildAsync(CancellationToken ct)
     {
-        var plans = await db.SubscriptionPlanConfigs.AsNoTracking().ToListAsync(ct);
+        // ARCHITECTURE_CYCLE24.md §459.5 [legal L14]: the public price list shows the "Записи" line only — "Заказы" tariffs are seen by a signed-in owner in their cabinet.
+        var plans = await db.SubscriptionPlanConfigs.AsNoTracking().Where(p => p.Line == Core.Enums.CompanyKind.Services).ToListAsync(ct);
         var options = await db.SubscriptionOptions.AsNoTracking().ToListAsync(ct);
         var legalNotice = await GetRawSettingAsync("pricing.legal-notice", ct);
 

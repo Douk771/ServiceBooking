@@ -21,7 +21,8 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/Companies")]
 public class CompanyMembersController(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
-    ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader) : ControllerBase
+    ServiceBooking.API.Services.Billing.AccountUsageReader accountUsageReader,
+    ServiceBooking.API.Services.Billing.OrdersPlanResolver ordersPlans) : ControllerBase
 {
     [HttpGet("{id:guid}/members")]
     [Authorize]
@@ -169,7 +170,22 @@ public class CompanyMembersController(
             await AdvisoryLock.AcquireAsync(db, $"billing-account:{billingAccountId}");
         await AdvisoryLock.AcquireAsync(db, $"company-members:{id}");
 
-        var plan = await subscriptionResolver.GetEffectivePlanAsync(id);
+        // ARCHITECTURE_CYCLE24.md §459.3: the seats of a SHOP are counted within the shops of the account against the "Заказы" tariff (the owner counts).
+        if (companyKind == CompanyKind.Orders && billingAccountId.HasValue)
+        {
+            var ordersPlan = await ordersPlans.GetForAccountAsync(billingAccountId.Value);
+            if (ordersPlan.MaxSeats is { } maxSeats)
+            {
+                var shopSeats = (await accountUsageReader.GetAsync([billingAccountId.Value], CompanyKind.Orders))
+                    .GetValueOrDefault(billingAccountId.Value)?.SeatsUsed ?? 0;
+                if (shopSeats >= maxSeats)
+                    return StatusCode(402, BillingTexts.ShopSeatLimitReached(ordersPlan.PlanName, maxSeats));
+            }
+        }
+
+        var plan = companyKind == CompanyKind.Orders
+            ? EffectivePlan.Free with { AccountMaxEmployees = null } // a shop's seats were decided above; the salon limit does not apply to it
+            : await subscriptionResolver.GetEffectivePlanAsync(id);
         if (plan.AccountMaxEmployees.HasValue)
         {
             var seatsUsed = billingAccountId.HasValue

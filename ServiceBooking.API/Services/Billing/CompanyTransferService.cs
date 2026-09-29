@@ -59,7 +59,7 @@ public sealed record TransferResult(bool Success, TransferFailure? Failure)
 /// </summary>
 public class CompanyTransferService(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
-    AccountUsageReader usageReader, CompanyOwnerWriter companyOwnerWriter, ILogger<CompanyTransferService> logger)
+    AccountUsageReader usageReader, CompanyOwnerWriter companyOwnerWriter, OrdersPlanResolver ordersPlans, ILogger<CompanyTransferService> logger)
 {
     /// <summary>
     /// §51.1's linkage rule, evaluated against the database, wrapping the pure
@@ -145,24 +145,40 @@ public class CompanyTransferService(
             if (currentOwnerFailure is not null) return new TransferPreviewResult(false, currentOwnerFailure, null);
         }
 
-        var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, ownerWillChange: !string.IsNullOrEmpty(newOwnerUserId));
+        var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, ownerWillChange: !string.IsNullOrEmpty(newOwnerUserId), company.Kind);
         return TransferPreviewResult.Ok(preview);
     }
 
-    private async Task<TransferPreview> ComputePreviewAsync(Guid companyId, Guid targetBillingAccountId, bool newOwnerAddsSeat, bool ownerWillChange)
+    /// <summary>
+    /// The receiving account's numbers for the LINE the company belongs to (ARCHITECTURE_CYCLE24.md §459.3): a salon is counted against the "Записи" tariff and the
+    /// salons of the account, a shop against the "Заказы" tariff and its shops. A mixed account moves neither into the other's limits.
+    /// </summary>
+    private async Task<TransferPreview> ComputePreviewAsync(
+        Guid companyId, Guid targetBillingAccountId, bool newOwnerAddsSeat, bool ownerWillChange, CompanyKind kind = CompanyKind.Services)
     {
-        var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(targetBillingAccountId);
-        var usage = (await usageReader.GetAsync([targetBillingAccountId])).GetValueOrDefault(targetBillingAccountId)
+        var (maxCompanies, maxEmployees) = await LimitsAsync(targetBillingAccountId, kind);
+        var usage = (await usageReader.GetAsync([targetBillingAccountId], kind)).GetValueOrDefault(targetBillingAccountId)
                     ?? new AccountUsage(targetBillingAccountId, 0, 0);
         var companySeats = (await usageReader.GetCompanySeatsAsync([companyId])).GetValueOrDefault(companyId);
 
-        var companyLimitExceeded = CompanyTransferCalculator.IsCompanyLimitExceeded(usage.CompaniesUsed, plan.AccountMaxCompanies);
+        var companyLimitExceeded = CompanyTransferCalculator.IsCompanyLimitExceeded(usage.CompaniesUsed, maxCompanies);
         var seatsAfter = CompanyTransferCalculator.ComputeSeatsAfter(usage.SeatsUsed, companySeats, newOwnerAddsSeat);
-        var seatOverflow = CompanyTransferCalculator.IsSeatOverflow(seatsAfter, plan.AccountMaxEmployees);
+        var seatOverflow = CompanyTransferCalculator.IsSeatOverflow(seatsAfter, maxEmployees);
 
         return new TransferPreview(
-            usage.CompaniesUsed, plan.AccountMaxCompanies, companyLimitExceeded,
-            seatsAfter, plan.AccountMaxEmployees, seatOverflow, ownerWillChange);
+            usage.CompaniesUsed, maxCompanies, companyLimitExceeded,
+            seatsAfter, maxEmployees, seatOverflow, ownerWillChange);
+    }
+
+    private async Task<(int? MaxCompanies, int? MaxEmployees)> LimitsAsync(Guid accountId, CompanyKind kind)
+    {
+        if (kind == CompanyKind.Orders)
+        {
+            var orders = await ordersPlans.GetForAccountAsync(accountId);
+            return (orders.MaxShops, orders.MaxSeats);
+        }
+        var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId);
+        return (plan.AccountMaxCompanies, plan.AccountMaxEmployees);
     }
 
     /// <summary>
@@ -231,18 +247,20 @@ public class CompanyTransferService(
             if (currentOwnerFailure is not null) return new TransferResult(false, currentOwnerFailure);
         }
 
-        var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, newOwner is not null);
+        var preview = await ComputePreviewAsync(companyId, targetBillingAccountId, newOwnerAddsSeat, newOwner is not null, company.Kind);
 
         if (preview.CompanyLimitExceeded)
         {
-            var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(targetBillingAccountId);
-            var planName = await db.AccountSubscriptions
-                .Where(s => s.BillingAccountId == targetBillingAccountId)
-                .Select(s => s.PlanConfig != null ? s.PlanConfig.Name : null)
-                .FirstOrDefaultAsync() ?? "Бесплатный";
+            var (maxCompanies, _) = await LimitsAsync(targetBillingAccountId, company.Kind);
+            var planName = company.Kind == CompanyKind.Orders
+                ? (await ordersPlans.GetForAccountAsync(targetBillingAccountId)).PlanName
+                : await db.AccountSubscriptions
+                    .Where(s => s.BillingAccountId == targetBillingAccountId)
+                    .Select(s => s.PlanConfig != null ? s.PlanConfig.Name : null)
+                    .FirstOrDefaultAsync() ?? "Бесплатный";
             return TransferResult.Fail(
                 TransferFailureKind.CompanyLimitExceeded,
-                BillingTexts.TransferRejectedCompanyLimit(planName, preview.CompaniesUsedOnTarget, plan.AccountMaxCompanies ?? 0));
+                BillingTexts.TransferRejectedCompanyLimit(planName, preview.CompaniesUsedOnTarget, maxCompanies ?? 0));
         }
 
         if (preview.SeatOverflow && !confirmSeatOverflow)

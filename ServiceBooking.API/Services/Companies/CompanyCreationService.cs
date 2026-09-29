@@ -32,7 +32,7 @@ public sealed record CompanyCreationOutcome(
 public sealed class CompanyCreationService(
     AppDbContext db, UserManager<AppUser> userManager, SubscriptionResolver subscriptionResolver,
     BillingAccountProvisioner billingAccountProvisioner, LegalDocumentProvider legalProvider, ConsentLedger ledger,
-    TokenService tokenService)
+    TokenService tokenService, OrdersPlanResolver ordersPlans)
 {
     public const string SlugTakenSalonText = "Slug already taken";
 
@@ -87,7 +87,7 @@ public sealed class CompanyCreationService(
         // Branch limit: the account plan caps how many companies this owner may create. Without a plan
         // (Free) that's 1 — so a brand-new owner can open their first company, but a second branch needs
         // a paid plan with MaxCompanies >= 2. Existing companies over a since-lowered limit are untouched.
-        // Shops and salons count together (Q5 of cycle 23).
+        // Since cycle 24 shops and salons are counted apart, each in its own line (Q-24-7).
         //
         // Serialize concurrent creates against everything else that can change how many companies fit
         // on this billing account (§52) — a company transfer moving a company IN, or another create —
@@ -107,12 +107,27 @@ public sealed class CompanyCreationService(
             if (slugRefusal is not null) return Refuse(slugRefusal);
         }
 
+        // ARCHITECTURE_CYCLE24.md §459.3 (Q-24-7, changes Q5 of cycle 23): the limits are counted WITHIN the line. A shop is checked against the tariff
+        // of the "Заказы" line and the shops of the account; a salon against the "Записи" tariff and the salons — a shop no longer takes a salon's place.
         var plan = await subscriptionResolver.GetEffectivePlanForAccountAsync(accountId);
-        if (plan.AccountMaxCompanies.HasValue)
+        if (isShop)
         {
-            var ownedCount = await db.Companies.CountAsync(c => c.BillingAccountId == accountId);
-            if (ownedCount >= plan.AccountMaxCompanies.Value)
-                return Refuse(new ObjectResult(BillingTexts.CompanyLimitReached(ownedCount, plan.AccountMaxCompanies.Value)) { StatusCode = 402 });
+            var ordersPlan = await ordersPlans.GetForAccountAsync(accountId);
+            if (ordersPlan.MaxShops is { } maxShops)
+            {
+                var shopCount = await db.Companies.CountAsync(c => c.BillingAccountId == accountId && c.Kind == CompanyKind.Orders);
+                if (shopCount >= maxShops)
+                    return Refuse(new ObjectResult(BillingTexts.ShopLimitReached(ordersPlan.PlanName, maxShops)) { StatusCode = 402 });
+            }
+        }
+        else
+        {
+            if (plan.AccountMaxCompanies.HasValue)
+            {
+                var ownedCount = await db.Companies.CountAsync(c => c.BillingAccountId == accountId && c.Kind == CompanyKind.Services);
+                if (ownedCount >= plan.AccountMaxCompanies.Value)
+                    return Refuse(new ObjectResult(BillingTexts.CompanyLimitReached(ownedCount, plan.AccountMaxCompanies.Value)) { StatusCode = 402 });
+            }
         }
 
         var company = new Company
