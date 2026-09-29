@@ -17,7 +17,12 @@ SELECT
     p."IsActive" AS plan_is_active,
     p."IsPublic" AS plan_is_public,
     so."Code" AS option_code,
-    r."Availability" AS availability,
+    CASE r."Availability"
+        WHEN 0 THEN 'Unavailable'
+        WHEN 1 THEN 'Included'
+        WHEN 2 THEN 'Extra'
+        ELSE r."Availability"::text
+    END AS availability,
     r."IncludedQuantity" AS included_quantity,
     p."MaxEmployees" AS max_employees,
     p."MaxCompanies" AS max_companies
