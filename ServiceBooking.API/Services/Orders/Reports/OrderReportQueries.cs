@@ -74,11 +74,15 @@ public sealed class OrderReportQueries(AppDbContext db)
     /// <summary>One page of rows (sorted by pickup time, ties by creation and id) with the item counts of just these orders.</summary>
     public async Task<List<HistoryRow>> PageAsync(IQueryable<Order> filtered, OrderHistorySort sort, int page, int pageSize, CancellationToken ct)
     {
+        // The offset is computed in long: a huge page number is simply an empty page, not an int overflow (500).
+        var offset = ((long)page - 1) * pageSize;
+        if (offset > int.MaxValue) return [];
+
         var ordered = sort == OrderHistorySort.PickupAsc
             ? filtered.OrderBy(o => o.PickupDate).ThenBy(o => o.PickupStartUtc).ThenBy(o => o.CreatedAtUtc).ThenBy(o => o.Id)
             : filtered.OrderByDescending(o => o.PickupDate).ThenByDescending(o => o.PickupStartUtc).ThenByDescending(o => o.CreatedAtUtc).ThenBy(o => o.Id);
 
-        var rows = await ordered.Skip((page - 1) * pageSize).Take(pageSize)
+        var rows = await ordered.Skip((int)offset).Take(pageSize)
             .Select(o => new
             {
                 o.Id, o.Number, o.PickupDate, o.PickupStartUtc, o.PickupKind, o.Status, o.CustomerName, o.CustomerPhone, o.PersonalDataErased,

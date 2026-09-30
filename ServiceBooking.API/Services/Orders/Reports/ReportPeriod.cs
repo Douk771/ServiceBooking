@@ -23,6 +23,13 @@ public sealed record ReportPeriod(ReportPeriodPreset Preset, DateOnly From, Date
     public const string CustomBoundsRequired = "Укажите начало и конец периода";
     public const string EndBeforeStart = "Конец периода раньше начала";
     public const string TooLong = "Период — не длиннее 366 дней";
+    public const string DateOutOfRange = "Дата должна быть между 2000 и 2100 годом";
+
+    public static readonly DateOnly MinDate = new(2000, 1, 1);
+    public static readonly DateOnly MaxDate = new(2100, 12, 31);
+
+    /// <summary>A date the API accepts from a client: far enough from DateOnly bounds that day arithmetic never overflows.</summary>
+    public static bool IsSaneDate(DateOnly date) => date >= MinDate && date <= MaxDate;
 
     /// <summary>
     /// ARCHITECTURE_CYCLE25.md §500 — the ONLY place periods are computed; the frontend never does. <paramref name="workingDay"/> is the shop's
@@ -54,6 +61,7 @@ public sealed record ReportPeriod(ReportPeriodPreset Preset, DateOnly From, Date
                 return true;
             case ReportPeriodPreset.Custom:
                 if (from is not { } f || to is not { } t) { error = CustomBoundsRequired; period = null!; return false; }
+                if (!IsSaneDate(f) || !IsSaneDate(t)) { error = DateOutOfRange; period = null!; return false; }
                 if (t < f) { error = EndBeforeStart; period = null!; return false; }
                 if (t.DayNumber - f.DayNumber + 1 > MaxDays) { error = TooLong; period = null!; return false; }
                 period = new(preset, f, t, CustomLabel(f, t));
