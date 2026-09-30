@@ -53,7 +53,6 @@ describe('resolveShowcaseText (API_CONTRACT_CYCLE28.md §600)', () => {
       live('<p>&laquo;Пример&raquo; &mdash; салон &amp; студия&nbsp;&#8470;1.</p>'),
     )
     expect(r.text).toBe('«Пример» — салон & студия №1.')
-    expect(r.text).not.toContain('&')
   })
 
   it('an escaped tag stays text and is not turned into markup', () => {
