@@ -33,23 +33,28 @@ public sealed class MalformedKeyGuardValueProviderFactory(IValueProviderFactory 
         }
     }
 
-    /// <summary>Replaces the two JQuery factories in place; fails loudly if a framework upgrade removed them.</summary>
+    /// <summary>
+    /// Wraps whichever of the two JQuery factories are registered. JQueryQueryStringValueProviderFactory is not in the
+    /// default list on net8 (the plain query factory does not normalise keys and cannot throw), so a missing one is skipped;
+    /// only a missing form factory, which is always default, is an error.
+    /// </summary>
     public static void Install(IList<IValueProviderFactory> factories)
     {
-        Replace<JQueryFormValueProviderFactory>(factories, MalformedKeySource.Form);
+        if (!Replace<JQueryFormValueProviderFactory>(factories, MalformedKeySource.Form))
+            throw new InvalidOperationException($"{nameof(JQueryFormValueProviderFactory)} is not registered; the malformed-key guard cannot be installed.");
         Replace<JQueryQueryStringValueProviderFactory>(factories, MalformedKeySource.Query);
     }
 
-    private static void Replace<T>(IList<IValueProviderFactory> factories, MalformedKeySource source) where T : IValueProviderFactory
+    private static bool Replace<T>(IList<IValueProviderFactory> factories, MalformedKeySource source) where T : IValueProviderFactory
     {
         for (var i = 0; i < factories.Count; i++)
         {
             if (factories[i] is T)
             {
                 factories[i] = new MalformedKeyGuardValueProviderFactory(factories[i], source);
-                return;
+                return true;
             }
         }
-        throw new InvalidOperationException($"{typeof(T).Name} is not registered; the malformed-key guard cannot be installed.");
+        return false;
     }
 }

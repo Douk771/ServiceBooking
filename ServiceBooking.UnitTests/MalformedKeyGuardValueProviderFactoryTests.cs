@@ -117,9 +117,21 @@ public class MalformedKeyGuardValueProviderFactoryTests
     }
 
     [Fact]
-    public void Install_MissingFactory_Throws()
+    public void Install_MissingQueryFactory_WrapsOnlyForm()
     {
-        var list = new List<IValueProviderFactory> { new JQueryFormValueProviderFactory() };
+        var form = new JQueryFormValueProviderFactory();
+        var list = new List<IValueProviderFactory> { form };
+
+        MalformedKeyGuardValueProviderFactory.Install(list);
+
+        list.Should().ContainSingle().Which.Should().BeOfType<MalformedKeyGuardValueProviderFactory>()
+            .Which.Inner.Should().BeSameAs(form);
+    }
+
+    [Fact]
+    public void Install_MissingFormFactory_Throws()
+    {
+        var list = new List<IValueProviderFactory> { new JQueryQueryStringValueProviderFactory() };
 
         var act = () => MalformedKeyGuardValueProviderFactory.Install(list);
 
