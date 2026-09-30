@@ -2,12 +2,12 @@ import { findSection, splitLegalSections } from './legalSections'
 import type { LegalText, LegalTextKey } from '../types'
 
 /**
- * API_CONTRACT_CYCLE28.md §600 [L28-1] — the two showcase uiTexts live OUTSIDE the server's `LegalTextKey.All`,
+ * API_CONTRACT_CYCLE28.md §600 [L28-1] — the showcase/demo uiTexts live OUTSIDE the server's `LegalTextKey.All`,
  * so `GET /api/legal/texts/{key}` answers 404 until the text is published in the live legal.json. Until then
  * the screen shows the fallback below, VERBATIM from §600 (do not reword it: it is the customer-approved
  * placeholder, and the "delete within a day" clause mirrors `Retention:ShowcaseVisitorBookingHours = 24`).
  */
-export type ShowcaseTextKey = Extract<LegalTextKey, 'ShowcaseNotice' | 'ShowcaseBookingClosed'>
+export type ShowcaseTextKey = Extract<LegalTextKey, 'ShowcaseNotice' | 'ShowcaseBookingClosed' | 'DemoBanner'>
 
 export const SHOWCASE_FALLBACK_TEXTS: Record<ShowcaseTextKey, string> = {
   ShowcaseNotice:
@@ -15,6 +15,8 @@ export const SHOWCASE_FALLBACK_TEXTS: Record<ShowcaseTextKey, string> = {
     'Запись здесь не означает настоящего визита, салон не свяжется с вами. ' +
     'Данные такой записи удаляются автоматически в течение суток.',
   ShowcaseBookingClosed: 'Это пример страницы салона: компания вымышленная, запись к ней не принимается.',
+  // [L28-3] — the demo stand banner (same "live text or verbatim §600 fallback" rule; shown only in demo mode).
+  DemoBanner: 'Демо-версия. Данные удаляются каждую ночь. Не вводите настоящие имена и телефоны.',
 }
 
 /** The visible label of the badge — a frontend constant, not a legal text (§600). */

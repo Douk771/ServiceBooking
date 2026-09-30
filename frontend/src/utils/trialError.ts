@@ -1,5 +1,6 @@
 import { AxiosError } from 'axios'
 import type { TrialRefusalDto } from '../api/billing'
+import { getDemoRestrictedMessage } from './demoHeaders'
 
 /**
  * Maps a failed trial-activation call (`POST /billing/trial`, `.../terms-acknowledgement`, and the
@@ -17,6 +18,9 @@ import type { TrialRefusalDto } from '../api/billing'
 export function getTrialErrorMessage(error: unknown, fallback = 'Не удалось выполнить действие. Попробуйте снова.'): string {
   const ax = error as AxiosError
   const status = ax?.response?.status
+  // Cycle 28 (§599): a demo role tried to activate the trial — the demo's own refusal text, told apart by its header.
+  const demoRestricted = getDemoRestrictedMessage(error)
+  if (demoRestricted) return demoRestricted
 
   switch (status) {
     case 409: {

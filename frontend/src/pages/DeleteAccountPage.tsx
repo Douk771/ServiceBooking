@@ -10,6 +10,7 @@ import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { Icon } from '../components/ui/Icon'
+import { getDemoRestrictedMessage } from '../utils/demoHeaders'
 
 /**
  * US-39. POST /api/profile/delete-account is in the 451 allow-list (API_CONTRACT.md §0.4) — this page
@@ -38,9 +39,10 @@ export function DeleteAccountPage() {
     },
     onError: (err: unknown) => {
       const message =
-        err instanceof AxiosError && typeof err.response?.data === 'string'
+        getDemoRestrictedMessage(err) ??
+        (err instanceof AxiosError && typeof err.response?.data === 'string'
           ? err.response.data
-          : 'Не удалось удалить аккаунт. Попробуйте снова.'
+          : 'Не удалось удалить аккаунт. Попробуйте снова.')
       setError(message)
     },
   })

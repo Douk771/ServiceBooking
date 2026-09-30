@@ -57,3 +57,13 @@ describe('isTrialTermsVersionMismatch', () => {
     expect(isTrialTermsVersionMismatch(axiosErrorWith(400, { code: 'TrialTermsVersionMismatch', message: 'x' }))).toBe(false)
   })
 })
+
+describe('getTrialErrorMessage — demo restriction (API_CONTRACT_CYCLE28.md §599)', () => {
+  it('a 403 with X-Demo-Restricted shows the demo refusal text', () => {
+    const e = { response: { status: 403, data: 'В демо-версии это действие недоступно.', headers: { 'x-demo-restricted': '1' } } }
+    expect(getTrialErrorMessage(e, 'запасной')).toBe('В демо-версии это действие недоступно.')
+  })
+  it('a plain 403 still falls through to the fallback', () => {
+    expect(getTrialErrorMessage({ response: { status: 403, data: '', headers: {} } }, 'запасной')).toBe('запасной')
+  })
+})

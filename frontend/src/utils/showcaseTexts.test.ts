@@ -16,6 +16,9 @@ describe('resolveShowcaseText (API_CONTRACT_CYCLE28.md §600)', () => {
     expect(SHOWCASE_FALLBACK_TEXTS.ShowcaseBookingClosed).toBe(
       'Это пример страницы салона: компания вымышленная, запись к ней не принимается.',
     )
+    expect(SHOWCASE_FALLBACK_TEXTS.DemoBanner).toBe(
+      'Демо-версия. Данные удаляются каждую ночь. Не вводите настоящие имена и телефоны.',
+    )
   })
 
   it('404 / error / still loading (no live text) → fallback, not empty', () => {
