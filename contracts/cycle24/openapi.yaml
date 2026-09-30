@@ -2209,6 +2209,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PushConfigDtoCycle24' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /api/push/subscriptions:
     get:

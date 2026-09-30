@@ -2953,6 +2953,7 @@ export interface operations {
                     "application/json": components["schemas"]["PushConfigDtoCycle24"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             401: components["responses"]["Unauthorized"];
         };
     };
