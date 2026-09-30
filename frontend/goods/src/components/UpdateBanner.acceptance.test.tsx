@@ -1,4 +1,4 @@
-// �цикл 34, приёмочные сценарии по SPEC_CYCLE34_GOODS_UPDATE_BANNER.md (CY34-01..CY34-12), написаны независимо от реализации.
+// Цикл 34, приёмочные сценарии по SPEC_CYCLE34_GOODS_UPDATE_BANNER.md (CY34-01..CY34-12), написаны независимо от реализации.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

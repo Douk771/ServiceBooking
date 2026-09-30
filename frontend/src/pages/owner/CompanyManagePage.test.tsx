@@ -29,6 +29,17 @@ const saveAddress = vi.fn()
 vi.mock('../../api/companyAddress', () => ({
   companyAddressApi: { saveAddress: (...a: unknown[]) => saveAddress(...a), notice: vi.fn() },
 }))
+vi.mock('../../api/companyCatalogListing', () => ({
+  companyCatalogListingApi: {
+    get: () =>
+      Promise.resolve({
+        showInCatalog: true, allowedByPlan: true, visible: true, statusText: 'Салон виден в каталоге ezbook.ru',
+        notAllowedByPlanText: null, checklist: [{ code: 'HiddenByOwner', text: 'Показ включен в настройках', done: true }],
+      }),
+    put: vi.fn(),
+  },
+}))
+vi.mock('../../api/companyPhotos', () => ({ companyPhotosApi: { list: () => Promise.resolve([]) } }))
 vi.mock('../../api/cities', () => ({ citiesApi: { search: () => Promise.resolve([]) } }))
 
 vi.mock('../../api/services', () => ({
@@ -253,7 +264,7 @@ describe('SettingsTab — cycle 29 field groups', () => {
     const rec = screen.getByRole('group', { name: 'Запись' })
     expect(within(rec).getByLabelText('На сколько дней вперёд клиент может записаться')).toBeInTheDocument()
     expect(within(rec).getByLabelText('За сколько часов клиент может перенести или отменить запись')).toBeInTheDocument()
-    expect(within(rec).getAllByRole('checkbox')).toHaveLength(3)
+    expect(within(rec).getAllByRole('checkbox')).toHaveLength(2)
   })
 
   it('V29-02: main save sends one update without cityId/timeZoneId/address', async () => {
@@ -268,6 +279,25 @@ describe('SettingsTab — cycle 29 field groups', () => {
     expect(body).not.toHaveProperty('timeZoneId')
     expect(body).not.toHaveProperty('address')
     expect(saveAddress).not.toHaveBeenCalled()
+  })
+
+  it('C31: no "Показывать компанию в общем списке" checkbox; the catalog block is its own card', async () => {
+    renderSettings()
+    await screen.findByRole('group', { name: 'Запись' })
+    expect(screen.queryByLabelText('Показывать компанию в общем списке')).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Каталог ezbook.ru' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Показывать салон в каталоге ezbook.ru' })).toBeInTheDocument()
+  })
+
+  it('C31 R-4: saving the main form never sends showInPublicListing', async () => {
+    getMy.mockResolvedValue([{ ...COMPANY, showInPublicListing: true }])
+    renderSettings()
+    const name = await screen.findByLabelText('Название')
+    await waitFor(() => expect(name).toHaveValue('Салон'))
+    await userEvent.type(name, '!')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update.mock.calls[0][1]).not.toHaveProperty('showInPublicListing')
   })
 
   it('V29-03: city save sends exactly { cityId, timeZoneId } and does not submit the main form', async () => {

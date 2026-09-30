@@ -2,6 +2,7 @@ import type { components as Cycle9Components } from './api-cycle9.generated'
 import type { components as Cycle19Components } from './api-cycle19.generated'
 import type { components as Cycle14Components } from './api-cycle14.generated'
 import type { components as Cycle23Components } from './api-cycle23.generated'
+import type { components as Cycle31Components } from './api-cycle31.generated'
 
 // ── Cycle 19 (ARCHITECTURE_CYCLE19.md §388.5, API_CONTRACT_CYCLE19.md §413): automatic address checking removed,
 // only the notice-acknowledgement result survives from cycle 13's address types. Read straight off
@@ -879,3 +880,6 @@ export interface LegalReadiness {
   /** Mandatory and non-empty even when `ready: true` — must always be shown, never hidden behind an icon. */
   disclaimer: string
 }
+
+// ── Cycle 31 (API_CONTRACT_CYCLE31.md §31.21): salon catalog block. Read off the generated schema.
+export type SalonCatalogListingDto = Cycle31Components['schemas']['SalonCatalogListingDto']

@@ -39,7 +39,7 @@ export function RadioChips<T extends string>({ label, options, value, onChange, 
   }
 
   return (
-    <div role="radiogroup" aria-label={label} className={`flex flex-wrap gap-2 ${className}`}>
+    <div role="radiogroup" aria-label={label} className={`flex flex-wrap gap-1.5 sm:gap-2 ${className}`}>
       {options.map((o, i) => {
         const checked = o.value === value
         return (
@@ -57,7 +57,7 @@ export function RadioChips<T extends string>({ label, options, value, onChange, 
             onClick={() => onChange(o.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
             title={o.hint}
-            className={`min-h-[44px] rounded-full border px-4 py-2 text-sm font-semibold transition-colors text-left ${
+            className={`min-h-[44px] rounded-full border px-2.5 sm:px-4 py-2 text-sm font-semibold transition-colors text-left ${
               checked ? 'bg-ink text-cream border-ink' : 'bg-white text-ink border-line hover:border-line-strong'
             } disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-line`}
           >

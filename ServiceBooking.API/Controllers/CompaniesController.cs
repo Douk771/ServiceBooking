@@ -33,7 +33,7 @@ public class CompaniesController(
     {
         // §375 F21: the owner's own opt-in (ShowInPublicListing, see below) is a plain column — filtered
         // in SQL, so opted-out companies are never loaded, nor resolved/rated/covered below.
-        var companies = await db.Companies.AsNoTracking().Where(c => c.IsActive && c.ShowInPublicListing && c.Kind == CompanyKind.Services).ToListAsync(ct);
+        var companies = await db.Companies.AsNoTracking().VisibleInSalonCatalog(db, DateTime.UtcNow).ToListAsync(ct);
         var plans = await subscriptionResolver.GetEffectivePlansAsync(companies.Select(c => c.Id));
         var ratings = await companyDtoAssembler.GetReviewAggregatesAsync(companies.Select(c => c.Id));
         var cities = await companyDtoAssembler.GetCitiesAsync(companies.Select(c => c.CityId));
@@ -49,7 +49,6 @@ public class CompaniesController(
         // at all (not "called and cached", not called), so employeeCount/accountSeatsUsed/
         // accountSeatsLimit/canAddEmployee cost this endpoint exactly zero extra queries.
         return Ok(companies
-            .Where(c => plans[c.Id].AllowPublicListing)
             .Select(c => companyDtoAssembler.MapToDto(c, plans[c.Id], ratings[c.Id].AverageRating, ratings[c.Id].ReviewCount,
                 c.CityId.HasValue ? cities.GetValueOrDefault(c.CityId.Value) : null, employeeCount: 0, usage: null,
                 covers.GetValueOrDefault(c.Id))));
@@ -90,8 +89,7 @@ public class CompaniesController(
         // AllowPublicListing rule, see that method's remarks) — are applied in SQL, so filtering and
         // paging never require materializing the full candidate set (ARCHITECTURE_CYCLE9.md §103.5).
         var query = db.Companies
-            .Where(c => c.IsActive && c.ShowInPublicListing && c.Kind == CompanyKind.Services)
-            .WhereAllowsPublicListing(db, DateTime.UtcNow);
+            .VisibleInSalonCatalog(db, DateTime.UtcNow);
 
         if (cityId.HasValue) query = query.Where(c => c.CityId == cityId.Value);
         if (!string.IsNullOrWhiteSpace(sanitizedSearch))

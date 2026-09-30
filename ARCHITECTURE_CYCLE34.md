@@ -1,4 +1,4 @@
-# ARCHITECTURE — �цикл 34: плашка обновления goods
+# ARCHITECTURE — цикл 34: плашка обновления goods
 
 Спека: `SPEC_CYCLE34_GOODS_UPDATE_BANNER.md`. Изменений API, БД, контрактов, миграций нет; `API_CONTRACT` не создаётся.
 

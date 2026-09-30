@@ -1,4 +1,4 @@
-# SPEC — �цикл 34 ServiceBooking: плашка «Доступна новая версия» в goods (Home Screen)
+# SPEC — цикл 34 ServiceBooking: плашка «Доступна новая версия» в goods (Home Screen)
 
 **Дата: 2026-10-01. Ветка цикла: `cycle/034-goods-update-banner`, отправная точка — `develop` = `e1d7cdb`.**
 Истории — `US-34-xx`, задачи — `T-34-xx`, функциональные кейсы — `CY34-`. Цикл только фронтенд goods + конфиг nginx, без API и БД.

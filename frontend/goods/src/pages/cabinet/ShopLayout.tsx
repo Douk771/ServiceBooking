@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { NavLink, Outlet, useLocation, useParams, Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { shopsApi } from '../../api/shops'
@@ -5,6 +6,10 @@ import { ErrorState, Skeleton } from '../../components/StatePanels'
 import { NotFoundPage } from '../NotFoundPage'
 import { getGoodsErrorMessage, httpStatus } from '../../utils/orderError'
 import type { ShopContext } from '../../hooks/useShop'
+
+// The route error boundary is keyed by pathname (GoodsApp), so this layout remounts on every tab click; without this the
+// tab strip would jump back to the far left each time. Module-level: survives the remount.
+let tabsScrollLeft = 0
 
 const OWNER_ONLY_SEGMENTS = ['settings', 'staff', 'hours', 'notifications', 'summary']
 
@@ -14,6 +19,9 @@ const OWNER_ONLY_SEGMENTS = ['settings', 'staff', 'hours', 'notifications', 'sum
  * orders (the API answers 403 anyway — §392.2).
  */
 export function ShopLayout() {
+  const tabsRef = useCallback((el: HTMLElement | null) => {
+    if (el) el.scrollLeft = tabsScrollLeft
+  }, [])
   const { shopId = '' } = useParams<{ shopId: string }>()
   const location = useLocation()
   const { data: shop, isLoading, isError, error, refetch } = useQuery({
@@ -77,7 +85,7 @@ export function ShopLayout() {
               {isOwner ? 'Владелец' : 'Сотрудник'}
             </span>
           </div>
-          <nav aria-label="Разделы магазина" className="flex gap-1 overflow-x-auto -mb-px">
+          <nav ref={tabsRef} onScroll={(e) => { tabsScrollLeft = e.currentTarget.scrollLeft }} aria-label="Разделы магазина" className="flex gap-1 overflow-x-auto -mb-px">
             {tabs.map((t) => (
               <NavLink
                 key={t.to}

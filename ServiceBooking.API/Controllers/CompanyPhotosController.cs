@@ -44,7 +44,7 @@ public class CompanyPhotosController(
 
     [HttpPost("{id:guid}/photos")]
     [Authorize]
-    [EnableRateLimiting("uploads")]
+    [EnableRateLimiting("company-photos")]
     [RequestSizeLimit(5 * 1024 * 1024)]
     public async Task<ActionResult<CompanyPhotoDto>> Upload(Guid id, IFormFile? file)
     {
@@ -130,7 +130,7 @@ public class CompanyPhotosController(
 
     [HttpDelete("{id:guid}/photos/{photoId:guid}")]
     [Authorize]
-    [EnableRateLimiting("uploads")]
+    [EnableRateLimiting("company-photos-edit")]
     public async Task<IActionResult> Delete(Guid id, Guid photoId, [FromQuery] string? reason)
     {
         // ARCHITECTURE_CYCLE20.md §404.7, API_CONTRACT_CYCLE20.md §434.8 (US-20-06/Т20-07) — the only
@@ -180,7 +180,7 @@ public class CompanyPhotosController(
 
     [HttpPut("{id:guid}/photos/order")]
     [Authorize]
-    [EnableRateLimiting("uploads")]
+    [EnableRateLimiting("company-photos-edit")]
     public async Task<ActionResult<List<CompanyPhotoDto>>> Reorder(Guid id, ReorderCompanyPhotosDto dto)
     {
         var company = await db.Companies.FindAsync(id);
