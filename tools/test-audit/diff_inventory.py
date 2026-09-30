@@ -58,10 +58,12 @@ def parse_registry(path):
 
 
 def matches_key(row, test):
-    if row["id"] and test.get("id") == row["id"]:
-        return True
     suffix = row["test"]
-    if not suffix or suffix in ("—", "-"):
+    has_test = bool(suffix) and suffix not in ("—", "-")
+    # ID закрывает тест только когда в строке не указано имя теста: иначе одна строка закрыла бы все тесты с этим ID
+    if row["id"] and not has_test and test.get("id") == row["id"]:
+        return True
+    if not has_test:
         return False
     key = test["key"]
     if key == suffix:
@@ -70,12 +72,30 @@ def matches_key(row, test):
 
 
 def referenced_in_replacements(test, rows):
-    short = test["key"].split("::")[-1] if "::" in test["key"] else ".".join(test["key"].split(".")[-2:])
+    """§36.9.4: исключение только для юнит-тестов, названных в «Замена»; сравнение по целому элементу списка."""
+    short = ".".join(test["key"].split(".")[-2:])
     for row in rows:
-        text = row["replacement"]
-        if test["key"] in text or short in text or (test.get("id") and test["id"] in text):
+        if row["suite"] != "unit":
+            continue
+        items = {clean(x) for x in re.split(r"[;,]", row["replacement"])}
+        if test["key"] in items or short in items:
             return True
     return False
+
+
+def pair_counts(tests):
+    counts = {}
+    for t in tests:
+        if t.get("id"):
+            pair = (t["id"], t.get("method"))
+            counts[pair] = counts.get(pair, 0) + 1
+    return counts
+
+
+def moved_by_id(test, own_counts, other_counts):
+    """§36.9.4: автосопоставление при смене класса, только если пара (id, метод) однозначна в обоих снимках."""
+    pair = (test.get("id"), test.get("method"))
+    return bool(pair[0]) and own_counts.get(pair) == 1 and other_counts.get(pair) == 1
 
 
 def main():
@@ -101,8 +121,8 @@ def main():
     suite_rows = [r for r in rows if r["suite"] == args.suite]
     b = {t["key"]: t for t in before["tests"]}
     a = {t["key"]: t for t in after["tests"]}
-    after_ids = {t["id"] for t in after["tests"] if t["id"]}
-    before_ids = {t["id"] for t in before["tests"] if t["id"]}
+    before_pairs = pair_counts(before["tests"])
+    after_pairs = pair_counts(after["tests"])
     dotnet = args.suite != "vitest"
 
     vanished, appeared, changed, protected_removed = [], [], [], []
@@ -111,7 +131,7 @@ def main():
             if a[key]["cases"] != t["cases"] and not any(matches_key(r, t) for r in suite_rows):
                 changed.append("%s (cases %d -> %d)" % (key, t["cases"], a[key]["cases"]))
             continue
-        if dotnet and t["id"] and t["id"] in after_ids:
+        if dotnet and moved_by_id(t, before_pairs, after_pairs):
             continue  # класс переименован/разбит, тест найден по TestCase-ID (§36.9.4)
         covering = [r for r in suite_rows if r["action"] in GONE_ACTIONS and matches_key(r, t)]
         if not covering:
@@ -121,10 +141,10 @@ def main():
     for key, t in sorted(a.items()):
         if key in b:
             continue
-        if dotnet and t["id"] and t["id"] in before_ids:
+        if dotnet and moved_by_id(t, after_pairs, before_pairs):
             continue
         ok = any(r["action"] in NEW_ACTIONS and matches_key(r, t) for r in suite_rows) \
-            or referenced_in_replacements(t, rows)
+            or (args.suite == "unit" and referenced_in_replacements(t, suite_rows))
         if not ok:
             appeared.append(key)
 

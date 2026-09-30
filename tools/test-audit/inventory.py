@@ -97,13 +97,28 @@ class SourceIndex:
                 return rel
         return candidates[0] if candidates else ""
 
-    def test_case_id(self, rel, method):
+    def class_body(self, rel, class_name):
+        """Текст от объявления класса до следующего объявления класса в файле (или None)."""
         text = self.files.get(rel, "")
-        for m in ATTR_BLOCK_METHOD_RE.finditer(text):
-            if m.group(2) == method:
-                found = TESTCASE_RE.search(m.group(1))
-                if found:
-                    return found.group(1)
+        simple = class_name.split("+")[-1].split(".")[-1]
+        matches = list(CLASS_RE.finditer(text))
+        for i, m in enumerate(matches):
+            if m.group(2) == simple:
+                end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+                return text[m.start():end]
+        return None
+
+    def test_case_id(self, rel, method, class_name=None):
+        text = self.files.get(rel, "")
+        body = self.class_body(rel, class_name) if class_name else None
+        for source in ([body] if body else []) + [text]:
+            for m in ATTR_BLOCK_METHOD_RE.finditer(source):
+                if m.group(2) == method:
+                    found = TESTCASE_RE.search(m.group(1))
+                    if found:
+                        return found.group(1)
+            if body and any(m.group(2) == method for m in ATTR_BLOCK_METHOD_RE.finditer(body)):
+                return None  # метод есть в теле своего класса, но без TestCase: не брать ID чужого класса
         return None
 
     def areas(self, class_name):
@@ -155,7 +170,7 @@ def build_dotnet(suite):
     for key in sorted(counts):
         class_name, _, method = key.rpartition(".")
         rel = index.locate(class_name, method)
-        test_id = index.test_case_id(rel, method)
+        test_id = index.test_case_id(rel, method, class_name)
         entry = {
             "key": key,
             "id": test_id,
