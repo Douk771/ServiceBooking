@@ -8,6 +8,7 @@ using ServiceBooking.API.DTOs.Legal;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Billing;
 using ServiceBooking.API.Services.Bookings;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -556,6 +557,7 @@ public class AdminController(
     // manage the company they were just made the owner of. The previous owner's membership (if any) is
     // left untouched — this is a reassignment of billing ownership, not a removal of the old owner's
     // access, which the caller can still revoke separately via DELETE .../members/{memberId}.
+    [DemoForbidden]
     [HttpPut("companies/{id:guid}/owner")]
     public async Task<IActionResult> UpdateCompanyOwner(Guid id, [FromBody] UpdateCompanyOwnerDto dto)
     {

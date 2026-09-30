@@ -39,6 +39,12 @@ if (opsCommand is not null)
 // REAL client address, not nginx's, and both run later in this pipeline (ARCHITECTURE.md §9.1).
 app.UseForwardedHeaders();
 
+// Cycle 28, pass B (ARCHITECTURE_CYCLE28.md §579.3, §580): the demo's two middlewares, FIRST after the forwarded headers — the maintenance answer must come before
+// anything that reads the database (the reset holds locks on its tables), and the noindex header must mark every answer including that 503. Both are no-ops unless
+// DemoMode:Enabled.
+app.UseMiddleware<ServiceBooking.API.Services.Demo.DemoResponseHeadersMiddleware>();
+app.UseMiddleware<ServiceBooking.API.Services.Demo.DemoMaintenanceMiddleware>();
+
 app.ValidateDeploymentAfterBuild(builder, isDeveloperEnvironment);
 app.UseServiceBookingRequestLogging();
 app.UseServiceBookingExceptionHandler();

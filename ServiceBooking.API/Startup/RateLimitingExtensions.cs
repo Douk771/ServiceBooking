@@ -194,6 +194,14 @@ internal static class RateLimitingExtensions
         // staff-max-link: a one-time link to connect MAX — 10/hour per user.
         o.AddPolicy("staff-max-link", ctx => UserWindowPolicy(ctx, "staff-max-link", defaultPermitLimit: 10, defaultWindowMinutes: 60));
 
+        // ── Cycle 28, pass B (ARCHITECTURE_CYCLE28.md §579.4) ──────────────────────────────────────────────
+        // demo-login: POST /api/demo/login — 30/min per IP. Outside demo mode the route must answer a plain 404 (it "does not exist"), and the limiter runs BEFORE
+        // the endpoint filter that says so, so there it lets everything through: a flood of requests to a route that is not there must not turn into 429s.
+        o.AddPolicy("demo-login", ctx =>
+            ctx.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<ServiceBooking.API.Services.Demo.DemoModeOptions>>().Value.Enabled
+                ? IpWindowPolicy(ctx, "demo-login", defaultPermitLimit: 30, defaultWindowMinutes: 1)
+                : RateLimitPartition.GetNoLimiter("demo-off"));
+
         // 4xx bodies are plain text everywhere in this API (ARCHITECTURE.md §14) — the built-in rejection
         // response is empty, so OnRejected has to write the body itself or the frontend's *Error.ts mappers
         // couldn't tell a 429 apart from a 403. Branches by policy name so each surfaces its own Russian
@@ -204,7 +212,7 @@ internal static class RateLimitingExtensions
             var policyName = ctx.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
             var message = policyName switch
             {
-                "auth-login" => "Слишком много попыток входа. Повторите через минуту.",
+                "auth-login" or "demo-login" => "Слишком много попыток входа. Повторите через минуту.",
                 "auth-register" => "Слишком много регистраций с этого адреса. Повторите позже.",
                 "booking-create" => "Слишком много записей с этого адреса. Повторите позже.",
                 "availability" => "Слишком много запросов. Повторите через минуту.",

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ServiceBooking.API.DTOs.Billing;
 using ServiceBooking.API.Services.Billing;
+using ServiceBooking.API.Services.Demo;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -89,6 +90,7 @@ public class CompanyTransferController(AppDbContext db, CompanyTransferService t
         return Ok(dto);
     }
 
+    [DemoForbidden]
     [HttpPost("{companyId:guid}/transfer")]
     public async Task<IActionResult> Transfer(Guid companyId, [FromBody] CompanyTransferInput dto)
     {

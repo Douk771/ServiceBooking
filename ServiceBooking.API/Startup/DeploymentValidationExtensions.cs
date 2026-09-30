@@ -72,6 +72,8 @@ internal static class DeploymentValidationExtensions
     DeploymentSafetyChecks.ValidateStaffMax(builder.Configuration, builder.Environment.EnvironmentName);
     // ARCHITECTURE_CYCLE23.md §391 — public base addresses of ezbook.ru / goods.ezbook.ru (fail-closed).
     DeploymentSafetyChecks.ValidatePublicSites(builder.Configuration, builder.Environment.EnvironmentName);
+    // ARCHITECTURE_CYCLE28.md §579.2 — lock 1 of demo mode: a no-op unless DemoMode:Enabled; then every address, the database, the JWT issuer and the providers must look like a demo.
+    DeploymentSafetyChecks.ValidateDemoMode(builder.Configuration);
 
         return isDeveloperEnvironment;
     }
