@@ -1,10 +1,13 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `b9c2a79` (`develop` = `origin/develop` = `cycle/029-cycle26-followups` на старте цикла 29), дата: 2026-09-30.**
-**Режим: обновление поверх полного сканирования на `1837373`.** Diff `1837373..b9c2a79` (✔) — только документы:
-`CURRENT_STATE.md` (сама полная пересборка, `4737b2f`), `README.md` и `CHANGELOG.md` (описание цикла 26, `b9c2a79`).
-Код, миграции, контракты, CI и конфиги не менялись, поэтому §1–§7 остаются в силе без правок. Обновлены §0, §5.5, §9.1
-(C26-6 закрыт, добавлен C26-7), §10.1. **Следующий diff отсчитывайте от `b9c2a79`.**
+**Актуально по состоянию на коммит: `aeed251` (HEAD ветки `cycle/030-user-section-screenshots` в конце цикла 30; ветка уже содержит влитый `develop` = `origin/develop` = `c19a83c` с циклом 29, мердж `2100fb3`), дата: 2026-09-30.**
+**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`).
+Сверено по git (✔): `git diff b9c2a79..c19a83c` — цикл 29 (кратко в §5.5; в этот файл цикл 29 сам вписал только числа
+прогонов), `git diff origin/develop..HEAD` — цикл 30 (37 файлов, только фронт goods, скрипты съёмки, `tsconfig`, CI-шаг,
+`contracts/cycle30`, документы; бэкенд, миграции и API цикл 30 **не** менял). Цикл 30 описан в §5.7; обновлены также §0,
+§1 (фронт-зависимости), §2, §3–§4 (строки про цикл 29), §5.4, §5.5, §6.2, §7.1–§7.3, §9.1–§9.2, §10.1, §10.3–§10.5. Документ обновлён в ветке цикла 30 до её влития в
+`develop`. **Следующий diff отсчитывайте от `aeed251`** (после влития ветки — от мерджа её в `develop`; коммиты между
+ними — только документы этого обновления).
 
 ## 0. Как читать этот документ
 
@@ -26,12 +29,18 @@
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
-**Ветки, которые идут параллельно и в `develop` ещё не влиты** (✔ `git fetch` 2026-09-30, пересчитано на `b9c2a79`):
-- `origin/cycle/029-cycle26-followups` — текущая ветка цикла 29, пока совпадает с `develop` (0 впереди, 0 позади).
-- `origin/cycle/030-user-section-screenshots` — ветка цикла 30 (блок «Для покупателей» и скриншоты на главной goods), см. §5.7.
-- `origin/cycle/028-showcase-data-demo-stand` — на 7 коммитов впереди и на 23 позади `develop`. Только документы: спека
-  цикла 28, бриф «витрина и демо-стенд», черновик тарифной сетки. Когда эта ветка будет вливаться, у неё будет свой
-  `SPEC.md` (спека 28) поверх спеки 27 в корне. Если она тронет CURRENT_STATE.md, конфликт разрешает codebase-analyst,
+**Ветки** (✔ по локальным ссылкам `origin/*` на 2026-09-30, `git fetch` в этом обновлении не делался):
+- `origin/develop` = `c19a83c` — в нём влит **цикл 29** «Доделки цикла 26» (последний коммит цикла — `c19a83c`,
+  «docs(cycle29): CHANGELOG, статус ручных кейсов 360 px»). Кратко — §5.5.
+- `cycle/030-user-section-screenshots` — ветка **цикла 30** (блок «Для покупателей» и скриншоты на главной goods), в
+  `develop` ещё не влита; `origin/cycle/030-…` = `aeed251`. Впереди `origin/develop` на 14 коммитов, позади на 0:
+  13 коммитов цикла 30 (`712032e`…`aeed251`, включая прежнее обновление этого файла) и мердж `2100fb3`
+  (`origin/develop` с циклом 29 влит в ветку). Что в ней — §5.7.
+- `origin/cycle/029-cycle26-followups` — ветка цикла 29, влита в `develop`.
+- `origin/cycle/028-showcase-data-demo-stand` — на 10 коммитов впереди и на 13 позади `origin/develop` (✔ на `c19a83c`;
+  циклы 26–27 в неё уже влиты, `d23a7a3`). Только документы: спека цикла 28, бриф «витрина и демо-стенд», черновик
+  тарифной сетки, архитектура и контракт цикла 28. Когда эта ветка будет вливаться, её `SPEC.md` (спека 28) столкнётся
+  с корневым `SPEC.md`, который к тому моменту — спека цикла 30 (§10.5). Если она тронет CURRENT_STATE.md, конфликт разрешает codebase-analyst,
   сводя обе версии по смыслу; выбирать файл целиком нельзя.
 - `origin/cycle/027-goods-business-block` влита в `develop` целиком (0 впереди, 0 позади).
 
@@ -76,6 +85,7 @@
 | Тесты | Vitest 3.2.7, jsdom 25, @testing-library/react 16, jest-dom, user-event |
 | Качество | ESLint 9 (flat config, typescript-eslint 8.70, react, react-hooks, react-refresh), Prettier 3.9 |
 | Контракты | openapi-typescript 7.13 (генерация типов), @redocly/cli 2.54 (линт OpenAPI) |
+| Съёмка скриншотов (цикл 30, только dev) | playwright-core ^1.63.0 → 1.63.0 (браузеры не скачивает, работает с установленным Google Chrome), @types/node ^26.6.3 → 26.6.3 (только для `tsconfig.node.json`) |
 
 Node: в CI — 20 (`actions/setup-node`), на машине сканирования — 24.16. Менеджер пакетов — **npm**
 (`package-lock.json`). У .NET — NuGet (`PackageReference`).
@@ -123,7 +133,9 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `frontend/src/` | Приложение **ezbook.ru** (запись на услуги). Точка входа — `main.tsx` → `App.tsx` |
 | `frontend/goods/` | Приложение **goods.ezbook.ru** (заказы на самовывоз). Точка входа — `goods/src/main.tsx` → `GoodsApp.tsx`; `goods/index.html`, `goods/public/` (свой `sw.js`, манифест) |
 | `frontend/scripts/merge-goods-dist.mjs` | Кладёт сборку goods в `dist/__goods/`, чтобы оба сайта уезжали одним релизом |
-| `contracts/` | Машиночитаемые контракты по циклам (`cycleN/openapi.yaml`, JSON-схемы и векторы), `redocly.yaml` |
+| `frontend/scripts/screenshots/` | Цикл 30: локальный стенд `sb-shots` (`stack.sh`), засев демо-данных goods через HTTP API (`seed-goods-demo.mjs`, `demo-data.mjs`), съёмка кадров (`capture-goods-screenshots.mjs`), `README.md` пересъёмки. В сборку и CI не входят (§5.7) |
+| `frontend/goods/src/assets/screenshots/` | Цикл 30: 5 WebP-кадров главной goods, манифест `screenshots.json`, модуль подключения `shots.ts` |
+| `contracts/` | Машиночитаемые контракты по циклам (`cycleN/openapi.yaml`, JSON-схемы и векторы), `redocly.yaml`. Цикл 30 — только JSON-схемы `cycle30/screenshots-manifest.schema.json` и `seed-state.schema.json`, OpenAPI нет |
 | `legal-drafts/` | **Исходники** правовых текстов (HTML + `legal.json`), правятся только здесь |
 | `legal-internal/` | Внутренние правовые документы (markdown), в сборку не входят |
 | `deploy/` | `deploy.sh`, `deploy-remote.sh`, `rollback.sh`, `ssh-deploy-wrapper.sh`, `nginx/` (3 vhost), `backup/` (systemd-таймер `pg_dump`), `monitor/` (health-alert), `checks/` (SQL-гейты выката), `ci/` (смоуки, сверка пинов образов, дрейф снапшота миграций) |
@@ -153,7 +165,7 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 ## 3. Модель данных (✔ по `AppDbContext` и `Entities/`)
 
 62 `DbSet` плюс таблицы Identity (`AspNetUsers` = `AppUser`, роли, клеймы). Миграций **78** (по `*.Designer.cs`),
-последняя — `20260930004926_Cycle25OrdersInsightsMax`. **Цикл 26 миграций не добавлял.**
+последняя — `20260930004926_Cycle25OrdersInsightsMax`. **Циклы 26, 27, 29 и 30 миграций не добавляли** (✔ на `aeed251`).
 
 **Ядро и пользователи.**
 - `AppUser` — Identity-пользователь. Добавлены `FirstName`, `LastName`, `AvatarUrl`, `DeletedAtUtc` (надгробие после
@@ -343,7 +355,7 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 - `GET /api/staff-max`, `POST /api/staff-max/link-sessions`, `DELETE /api/staff-max/link`.
 
 **Магазин (goods) — покупатель, anon**
-- `GET /api/goods/catalog` — каталог города, кеш 30 с.
+- `GET /api/goods/catalog` — каталог города, кеш 30 с. С цикла 29 у элемента есть `logoUrl` (`string | null`).
 - `GET /api/storefront/{slug}`, `GET /api/storefront/{slug}/pickup-slots`, `POST /api/storefront/{slug}/{quote,orders}`.
 - `GET /api/orders/public/{token}`, `POST /api/orders/public/{token}/cancel`,
   `POST /api/orders/public/{token}/push-subscription[/remove]`.
@@ -466,7 +478,7 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 ### 5.4 Мёртвый и исторический код (✔)
 - 5 теневых колонок `Companies.Address*` от удалённого геокодера (C19-7). Строки опций-лимитов `extra-*` (`IsActive=false`)
   и их правила остаются в БД. Ограждение — `RetiredLimitOptions`/`.WhereNotRetired()`.
-- `frontend/src/types/api-cycle*.generated.ts` для циклов 7, 9, 14, 18, 19, 20, 23, 24, 25, 26 — сверочные генераты
+- `frontend/src/types/api-cycle*.generated.ts` для циклов 7, 9, 14, 18, 19, 20, 23, 24, 25, 26, 29 — сверочные генераты
   контрактов. Часть из них ни один модуль не импортирует, их держит только CI-сверка. Прикладные типы — рукописные
   `src/types/index.ts` и `goods/src/types.ts`.
 - `openapi-cycle6.yaml` в корне и `contracts/cycle{10,11,15,17}/openapi.yaml` — исторические контракты, в CI не линтуются.
@@ -475,6 +487,31 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - ↪ C22-1: восемь навигационных свойств EF без ссылок в коде.
 
 ### 5.5 Что сделали последние циклы
+
+**Цикл 30 — блок «Для покупателей» и скриншоты на главной goods** — в ветке `cycle/030-…`, в `develop` пока не влит.
+Подробно — §5.7.
+
+**Цикл 29 — «Доделки цикла 26» (✔ `git diff b9c2a79..c19a83c`, влит в `develop`).** Без миграций и без новых маршрутов.
+- API:
+  - `GoodsCatalogShopDto` (`GET /api/goods/catalog`) — в конец добавлен `LogoUrl` (пустой → `null`), он же хранится в
+    кеше каталога (`GoodsCatalogService.CatalogEntry`), поэтому новый логотип появляется не позже чем через 30 с;
+  - `MalformedKeyGuardValueProviderFactory` оборачивает `JQueryFormValueProviderFactory`: незакрытая `[` в имени поля
+    multipart-формы даёт 400 `text/plain` с текстом `RequestTexts.MalformedFormFieldName` вместо 500
+    (`ModelValidationErrorFormatter`). Ветка для строки запроса — «защита на будущее», на net8 не срабатывает;
+  - `CompanyDtoAssembler.GetPhotosOrderedAsync` удалён, публичная карточка салона берёт галерею из
+    `CompanyPhotoQueries.OrderedAsync` — этим закрыт C26-4.
+- Фронт: `components/company/CompanyLogoMark.tsx` (логотип или первая буква, `utils/companyInitial.ts`) в карточке
+  компании, в каталоге goods (`CatalogHomePage` → `ShopRow`) и в каталоге ezbook (`HomePage`); галерея и ссылки на карты
+  во встраиваемой форме `/embed/:slug`; настройки салона `CompanyManagePage` разбиты на группы полей; генерат
+  `api-cycle29.generated.ts`, goods берёт типы каталога из него.
+- Контракты: `contracts/cycle29/openapi.yaml` (+ `openapi.json`), `contracts/cycle26/openapi.json`. CI теперь линтует
+  контракты 26 и 29 и сверяет генераты 26 и 29 — **C26-1 закрыт**.
+- Тесты: функциональные `Cycle29QaTests.cs`, `Cycle29ContractTests.cs` (сверка ответов с OpenAPI через новый
+  валидатор подмножества `ServiceBooking.Tests/Infrastructure/OpenApiContract.cs`, самопроверка —
+  `OpenApiContractValidatorTests.cs`), юнит `MalformedKeyGuardValueProviderFactoryTests`, vitest V29-*.
+- Документы: `ARCHITECTURE_CYCLE29.md`, `API_CONTRACT_CYCLE29.md` (нумерация §29.x — по номеру цикла, не сквозная),
+  спека — `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md`, CHANGELOG — раздел «Не выпущено — цикл 29». Ручные кейсы 360 px M29-01…09
+  выполнены частично (TEST_CATALOG, раздел цикла 29).
 
 **После `1837373` — только документы (✔ `git diff 1837373..b9c2a79`).** `4737b2f` — полное пересканирование этого файла.
 `b9c2a79` — в `CHANGELOG.md` добавлен раздел «Не выпущено — цикл 26: одна карточка компании…» (строка 34, под
@@ -556,21 +593,42 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 
 Тик `main` — 10 с, тик `realtime` — 1 с. В окружении `Testing` все задачи выключены (`appsettings.Testing.json`).
 
-### 5.7 Главная goods, путь покупателя, доска заказов, изображения во фронте (✔ по коду на `b9c2a79`)
-Сверено к старту цикла 30 («раздел для покупателей на главной goods и скриншоты»).
+### 5.7 Главная goods, путь покупателя, доска заказов, изображения во фронте — цикл 30 (✔ по коду на `aeed251`)
+Раздел описывает состояние **после цикла 30** («блок „Для покупателей“ и настоящие скриншоты на главной goods»), ветка
+`cycle/030-user-section-screenshots`, в `develop` пока не влита. Документы цикла: `SPEC.md` (корневой),
+`ARCHITECTURE_CYCLE30.md` (§30.0–§30.15), `API_CONTRACT_CYCLE30.md` (§30.20–§30.27; «API не меняется», только формы
+файлов засева и манифеста). Бэкенд, миграции, маршруты и OpenAPI цикл 30 не менял ✔ (`git diff origin/develop..HEAD`).
 
 **Главная goods** — `frontend/goods/src/pages/CatalogHomePage.tsx`, маршруты `/` и `/city/:cityId` (`GoodsApp.tsx`).
 Порядок внутри `<main class="max-w-[1180px] …">`:
-1. шапка без картинки: eyebrow «Заказы с самовывозом», `h1` «Где заказать в вашем городе», одна строка «Выберите
-   магазин, соберите заказ и заберите его в удобное время.»;
+1. шапка без картинки: eyebrow «Заказы с самовывозом», `h1` «Где заказать в вашем городе», строка «Выберите магазин,
+   соберите заказ и заберите его в удобное время.», под ней **ссылка-якорь «Как сделать заказ» → `#buyers-title`**
+   (цикл 30);
 2. `form role="search"`: город (`CityCombobox`), поиск, «Открыто сейчас», ссылка «Поделиться»;
-3. `section aria-label="Магазины"` — сетка карточек магазинов с пагинацией;
-4. `<BusinessBlock />` (§5.5, цикл 27) — последний элемент `main`.
+3. `section#shop-list` (`aria-label="Магазины"`, `tabIndex=-1`, `scroll-mt-24`) — сетка карточек магазинов с
+   логотипом (`CompanyLogoMark`, цикл 29) и пагинацией;
+4. `<BuyersBlock />` — **новый блок «Для покупателей»** (цикл 30);
+5. `<BusinessBlock />` (цикл 27) — последний элемент `main`, с цикла 30 со скриншотом доски.
 
-**Отдельного блока для покупателей («как заказать», «как следить за заказом») на главной goods нет.** Описания шагов
-покупателя в интерфейсе нет нигде, кроме строки под `h1`. Руководства покупателю в `docs/` тоже нет (§10.2).
-На ezbook образец шагов — секция `#how` в `frontend/src/pages/HomePage.tsx` (массив `howItWorks`, три карточки с
-`Icon`); `BusinessBlock` копирует её разметку. Тексты шагов в обоих местах — константы в файле компонента.
+**Блок «Для покупателей»** — `frontend/goods/src/components/BuyersBlock.tsx` (90 строк). Разметка — копия
+`BusinessBlock` (решение A2, паритет классов держит тест T30-13, общего компонента разметки нет). Тексты — константы
+`steps`/`track` в файле (вариант A из `ARCHITECTURE_CYCLE30.md §30.3`), i18n нет:
+- `section[aria-labelledby=buyers-title]`, eyebrow «Для покупателей», `h2#buyers-title` (`tabIndex=-1`, цель якоря)
+  «Соберите заказ с телефона и заберите, когда он готов», абзац;
+- кнопки: «Выбрать магазин» — `<a href="#shop-list">`, «Мои заказы» — `Link` на `/orders` (аноним уходит на логин
+  через защиту маршрута);
+- панель `bg-cream-deep` с `h3#buyers-steps-title` «Как сделать заказ» и `ol` из трёх шагов с `Icon` (store,
+  shopping-bag, clock);
+- `h3#buyers-track-title` «Как следить за заказом» — список из 5 пунктов; **пункт 3 обещает уведомление о смене статуса
+  (push)** — см. §9.1, R-F; строка «Оплата — при получении в магазине.»;
+- рядом — скриншот страницы заказа (`ScreenshotFigure` с `orderPageShot`).
+
+**`ScreenshotFigure`** — `goods/src/components/ScreenshotFigure.tsx`: `<figure><picture>` с необязательными `<source
+type="image/webp" media=…>`, `<img loading="lazy" decoding="async" width height>` и `figcaption`. `width`/`height` —
+CSS-размер 1x-кадра из манифеста (без сдвига вёрстки). Используется в обоих блоках.
+
+**Руководства покупателю в `docs/` по-прежнему нет** (§10.2) — описание шагов есть только в самом блоке.
+На ezbook образец шагов — секция `#how` в `frontend/src/pages/HomePage.tsx`.
 
 **Путь покупателя, который можно описывать (по коду):**
 - витрина `/:slug` (`StorefrontPage`) → корзина (`useCart`, хранится в браузере) → оформление на одном экране с выбором
@@ -590,29 +648,76 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 (354 строки). Три колонки «Новые» / «Принятые» / «Готовы к выдаче» (`md:grid-cols-3`), на телефоне — вкладки
 (`role="tablist"`). Карточка — `components/orders/OrderCard.tsx`. Данные — `useOrderBoardPolling` (свой worker-таймер
 `hooks/boardTimer.worker.ts`), звук нового заказа — `useNewOrderSound`, экран не гаснет — `useWakeLock`. Под колонками — секция
-«Завершённые сегодня» (`h2`). Демо-данных для доски нет: фикстуры `components/orders/testData.ts` служат только тестам,
-`StartupSeedingExtensions` магазинов и заказов не сидирует. Витринные и демо-данные — тема `origin/cycle/028-…`, но только для «Записи»
-(услуги), не для goods.
+«Завершённые сегодня» (`h2`). В API и в `StartupSeedingExtensions` демо-данных для доски по-прежнему нет (фикстуры
+`components/orders/testData.ts` — только для тестов). Демо-данные goods теперь создаёт **внешний скрипт засева цикла 30**
+через HTTP API и только в локальном стенде `sb-shots` (ниже). Витринные и демо-данные `origin/cycle/028-…` — только для
+«Записи» (услуги).
 
 **Изображения во фронте:**
-- растровая картинка в интерфейсе одна — `frontend/src/assets/salon-hero.jpg`, hero ezbook
-  (`HomePage.tsx`: `import salonHero from '../assets/salon-hero.jpg'`, блок `hidden md:block aspect-[4/5]`, на телефоне
-  не показывается). ⚠️ Файл по содержимому — **PNG** 941×1672 размером 1,7 МБ, несмотря на расширение `.jpg`
-  (коммит `4a3f469`);
-- у goods своей папки `assets/` нет, на главной goods картинок нет вообще. В `goods/public/` лежат только иконки,
-  манифест и `sw.js`;
-- конвейера оптимизации картинок нет: в `package.json` нет плагинов для изображений, форматов WebP/AVIF нет. `srcSet` и
-  `loading="lazy"` есть только у галереи компании (`components/company/CompanyPhotoGallery.tsx`, миниатюры 480w
-  делает сервер) и у `ui/AuthedImage.tsx`, на главных страницах их нет. Vite отдаёт импортированный файл как есть, с
-  хешем в имени;
-- goods может импортировать картинку из `frontend/src/assets` через `@/assets/…`: ESLint ограничивает для goods только
-  `@/App` и `@/pages/*` (§6.2). Для файлов в `frontend/src/**` действует правило только относительных импортов (C26-2);
-- инструмента для снятия скриншотов (Playwright, Puppeteer, Storybook) в проекте нет (§7.1).
+- ezbook: одна растровая картинка — `frontend/src/assets/salon-hero.jpg`, hero ezbook (`HomePage.tsx`, блок
+  `hidden md:block aspect-[4/5]`, на телефоне не показывается). ⚠️ Файл по содержимому — **PNG** 941×1672 размером
+  ~1,7 МБ, несмотря на расширение `.jpg` (коммит `4a3f469`). Цикл 30 его не трогал;
+- goods (цикл 30): своя папка **`frontend/goods/src/assets/screenshots/`** — 5 WebP-кадров и манифест:
+  - `order-page-1x.webp` / `order-page-2x.webp` (страница заказа `/o/:token`, 390×509 CSS, ~10/21 КБ) — в `BuyersBlock`;
+  - `board-desktop-1x.webp` / `board-desktop-2x.webp` (доска `/cabinet/:shopId/orders`, 1280×820 CSS, ~47/102 КБ) и
+    `board-phone-2x.webp` (390×900 CSS, ~47 КБ) — в `BusinessBlock`, один `<picture>`: `<source media="(min-width:
+    768px)">` отдаёт десктопный кадр, `<img>` — телефонный, грузится ровно один;
+  - `screenshots.json` — манифест (схема `contracts/cycle30/screenshots-manifest.schema.json`): `capturedAt`,
+    `sourceCommit`, `browser`, CSS-размеры, имена и вес файлов, `orderNumber`/`pickupClock`/`statusText` для alt. Текущие
+    кадры сняты 2026-09-30 с `sourceCommit: "6ea8d4c-dirty"` (снимали с незакоммиченными правками);
+  - `shots.ts` импортирует кадры и манифест и собирает пропсы `orderPageShot`/`boardShot`; `MD_MEDIA` дублирует
+    брейкпоинт Tailwind `md` (менять вместе с `tailwind.goods.config.js`); alt строится из манифеста;
+- конвейера оптимизации картинок в сборке по-прежнему нет (плагинов в `package.json` нет): WebP кодирует Chrome при
+  съёмке, Vite отдаёт файлы как есть с хешем в имени. Бюджет веса (2x: заказ ≤ 120 КБ, доска-десктоп ≤ 200 КБ,
+  доска-телефон ≤ 120 КБ, заказ + доска ≤ 450 КБ) проверяет тест T30-16 и сам скрипт съёмки;
+- `srcSet` и `loading="lazy"` — у `ScreenshotFigure`, галереи компании (`CompanyPhotoGallery.tsx`) и `ui/AuthedImage.tsx`.
 
-**Тесты, которые заденет правка главной goods:** `BusinessBlock.test.tsx` (T27-01…10) и `BusinessBlock.qa.test.tsx`
-(QA27-01…09) — они проверяют тексты дословно, «один `h2`», иерархию `h2 → h3 → h4`, что все `svg` скрыты от
-скринридеров, и запрет слов «столов», «бесплатн», «комисси». Тестов на `CatalogHomePage` нет. `OrderPage.test.tsx`,
-`OrdersScreenPage.test.tsx`, `OrderCard.test.tsx` покрывают экраны, которые предлагается показывать на скриншотах.
+**Скрипты засева и съёмки (цикл 30)** — `frontend/scripts/screenshots/`, в сборку, тесты CI и образ не входят:
+- `stack.sh up|down|reset` — корневой `docker-compose.yml` как отдельный compose-проект **`sb-shots`** (свой том,
+  API `:55000`, Postgres `:55432`, переопределяются `SB_API_PORT`/`SB_DB_PORT`), `ASPNETCORE_ENVIRONMENT=Development`.
+  `reset` = `down -v` + `up -d --build postgres api` — пересборка образа API. Для colima сам выставляет `DOCKER_HOST` и
+  `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`. Обычный dev-стек не затрагивается;
+- `seed-goods-demo.mjs` (`npm run shots:seed`) + `demo-data.mjs` (выдуманные владелец «Елена Демидова» `+79000000000`,
+  «Пекарня на Садовой», категории и товары, телефоны `+7 900 000-00-xx`). Ходит **только через существующий HTTP API**:
+  регистрация владельца, `POST /api/shops`, настройки, часы, самовывоз, приём заказов, категории и товары, гостевые заказы
+  через витрину, перевод части заказов в «Принят»/«Готов». Замки до первой записи: хост из белого списка (`localhost`,
+  `127.0.0.1`, `::1` или `SHOTS_ALLOW_HOST`), `*.ezbook.ru` — отказ всегда; `GET /swagger/index.html` = 200 **и** в теле
+  Swagger UI, а не SPA-фолбэк (`isSwaggerUiHtml`), иначе код 3. Затем ожидание `/api/health/ready`. Состояние (пароль
+  владельца, id магазина, публичный токен заказа) пишется в `scripts/screenshots/.state/seed.json` (схема
+  `contracts/cycle30/seed-state.schema.json`), `.state/` закрыт `.gitignore`. Съёмка должна идти днём по времени
+  магазина (07:00–20:30) и не позже ~55 мин после засева;
+- `capture-goods-screenshots.mjs` (`npm run shots:capture`) — `playwright-core` + установленный Google Chrome
+  (`SHOTS_CHROME_PATH`), сам поднимает Vite goods на `:55174` (или `SHOTS_WEB_URL`), снимает `/o/:token` и доску, проверяет
+  запретные строки в кадре (`localhost`, «Ссылка на этот заказ», «Не удалось», …; `SHOTS_FORBID_EXTRA`), бюджет веса и
+  размеры, затем пишет 5 WebP и `screenshots.json`. Коды выхода 0–5 — в README и `API_CONTRACT_CYCLE30.md §30.26`;
+- **как переснять** — `frontend/scripts/screenshots/README.md`: когда (правки `OrderPage`, `OrderTimeline`,
+  `OrderStatusBadge`, `GoodsNavbar`, `OrdersScreenPage`, `ShopLayout`, `OrderCard`, палитры Tailwind), что нужно
+  (Docker/colima, Node ≥ 20, Chrome, интернет для Google Fonts, чистое дерево — иначе `sourceCommit` с `-dirty`), шаги
+  `stack.sh reset` → `shots:seed` → `shots:capture` → осмотр кадров → vitest → `ajv-cli` по схеме → коммит →
+  `stack.sh down`, ручной запасной путь через DevTools. Замер FE-30-4: около 20 минут ушло на сборку образа API в
+  `stack.sh reset` на загруженной colima, съёмка — 42 с; ориентир на свободной машине — до 15 минут. Автоматической
+  проверки свежести кадров нет (устаревание — риск R-D).
+
+**Типизация скриптов и node-тестов (цикл 30).** Браузерные `tsconfig.json` и `tsconfig.goods.json` получили
+`"types": ["vite/client"]` (без `node` и без `vitest/globals`, `aeed251`) и исключают три файла, которым нужны
+node-типы: `shots.test.ts`, `seed-goods-demo.test.ts`, `BuyersBlock.qa.test.tsx`. Их проверяет отдельный
+`frontend/tsconfig.node.json` (`types: ["node", "vite/client"]`) — скрипт `npm run typecheck:node`, в CI — шаг
+«Type-check node (shots)» после `tsc` для goods. Сами `.mjs`-скрипты `tsc` не проверяет.
+
+**Тесты главной goods (vitest):**
+- `BuyersBlock.test.tsx` (T30-01…13, включая паритет классов с `BusinessBlock` T30-13), `BuyersBlock.qa.test.tsx`
+  (QA30-01…10, написаны QA по SPEC: тексты дословно, иерархия заголовков, запретные слова, alt/width/height/lazy,
+  `<picture>` с `md`-источником, бюджет веса);
+- `BusinessBlock.screenshot.test.tsx` (T30-14: кадр доски в «Для бизнеса»), `assets/screenshots/shots.test.ts` (T30-15…17:
+  форма манифеста и наличие файлов, WebP и бюджет веса, пиксели = CSS × плотность), `seed-goods-demo.test.ts` (замки
+  хоста, `isSwaggerUiHtml`, окно съёмки, пароль);
+- **`CatalogHomePage.test.tsx` теперь есть**: V29-32 (логотип в `ShopRow`, цикл 29), T30-18 (порядок: магазины →
+  «Для покупателей» → «Для бизнеса», ссылка «Как сделать заказ» до формы поиска), T30-19 (блоки остаются при ошибке
+  каталога);
+- T27/QA27 (`BusinessBlock.test.tsx`, `BusinessBlock.qa.test.tsx`) не менялись. `OrderPage.test.tsx`,
+  `OrdersScreenPage.test.tsx`, `OrderCard.test.tsx` покрывают снятые экраны, но **не** сверяют их с кадрами.
+- Ручные кейсы M30-01…09 — `TEST_CATALOG.md`, раздел цикла 30; в `ARCHITECTURE_CYCLE30.md §30.14` их 12 (M30-01…12),
+  нумерация в двух местах не совпадает (§9.1).
 
 ---
 
@@ -683,6 +788,11 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - **Типы:** прикладные — рукописные (`src/types/index.ts`, `goods/src/types.ts`). Для формы контракта цикла — генерат
   `npm run types:api:cycleNN` из `contracts/cycleNN/openapi.yaml`, руками его не правят.
 - Тесты лежат рядом с кодом (`*.test.ts(x)`), `globals: false`: `describe`/`it`/`expect` импортируются явно.
+- **Типы окружения в tsconfig** (с цикла 30): браузерные `tsconfig.json`/`tsconfig.goods.json` — только
+  `types: ["vite/client"]`; файл, которому нужны node-API (`fs`, `path`, импорт `.mjs`-скрипта), исключается из обоих и
+  вписывается в `include` `tsconfig.node.json` (проверка — `npm run typecheck:node`). Node-типы в браузерный код не тянуть.
+- **Картинки goods** — в `frontend/goods/src/assets/…`, импортом из исходников (хеш от Vite), WebP; скриншоты — только
+  через `ScreenshotFigure` и манифест `screenshots.json`, размеры и alt не хардкодятся в JSX.
 - Service worker'ы не должны ловить `fetch` и трогать Cache API — это проверяет CI.
 - Язык интерфейса — русский. Даты — `date-fns` с локалью `ru` и общие утилиты `utils/dateFormat.ts`, деньги — `utils/money.ts`.
 - Prettier: без `;`, одинарные кавычки, ширина 120, trailing comma `all`.
@@ -719,13 +829,18 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 ## 7. Тесты, CI и деплой (✔ по конфигам; ничего не запускалось)
 
 ### 7.1 Наборы тестов
-| Набор | Фреймворк | Объём (✔ подсчёт атрибутов) | Последний известный прогон (↪ из отчётов, на `b23c13c`) |
+| Набор | Фреймворк | Объём (✔ подсчёт атрибутов) | Последний известный прогон (↪ из отчёта QA цикла 30, после мерджа цикла 29, 30.09.2026) |
 |---|---|---|---|
-| Юнит бэкенда `ServiceBooking.UnitTests` | xUnit 2.5.3 + FluentAssertions 6.12; без БД и без Docker | 177 файлов, 1 581 `[Fact]/[Theory]` | 2 407/2 407 на `b23c13c` (цикл 29, 30.09.2026); на `b23c13c` (цикл 29): 2 407/2 407 |
-| Функциональные API `ServiceBooking.Tests` | xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`) + **реальный PostgreSQL 16** через Testcontainers 3.10 (или внешний сервер) | 81 файл тестов, 1 063 `[Fact]/[Theory]` | 1 153/1 153 на `b23c13c` (цикл 29, 30.09.2026) |
-| Фронтенд (оба сайта) | Vitest 3.2 + jsdom + Testing Library | 154 файла `*.test.ts(x)`, около 1 087 `it/test` (на `1837373`) | 1 157/1 157 в 157 файлах на `b23c13c` (цикл 29, 30.09.2026) |
+| Юнит бэкенда `ServiceBooking.UnitTests` | xUnit 2.5.3 + FluentAssertions 6.12; без БД и без Docker | 177 файлов, 1 581 `[Fact]/[Theory]` (на `1837373`; цикл 29 добавил тесты, заново не пересчитывалось) | 2 407/2 407 (так же на `b23c13c`, цикл 29) |
+| Функциональные API `ServiceBooking.Tests` | xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`) + **реальный PostgreSQL 16** через Testcontainers 3.10 (или внешний сервер) | 81 файл тестов, 1 063 `[Fact]/[Theory]` (на `1837373`; цикл 29 добавил 3 файла, заново не пересчитывалось) | 1 153/1 153 (так же на `b23c13c`) |
+| Фронтенд (оба сайта) | Vitest 3.2 + jsdom + Testing Library | 162 файла `*.test.ts(x)` ✔ на `aeed251` | 1 194/1 194 на ветке цикла 30 (с пустой `VITE_SMARTCAPTCHA_SITEKEY`; с локальным `.env` — 8 падений `CartPanel`, §7.2); на `b23c13c` было 1 157/1 157 в 157 файлах |
 
-**Сквозного браузерного e2e-набора (Playwright, Cypress и т.п.) в проекте НЕТ** ✔. «Функциональные» здесь — HTTP-тесты
+Там же после мерджа зелёные `tsc` (ezbook, goods), `lint`, `build:release` (↪ отчёт; `typecheck:node` в отчёте отдельно
+не назван).
+
+**Сквозного браузерного e2e-набора (Playwright, Cypress и т.п.) в проекте НЕТ** ✔. `playwright-core` появился в
+devDependencies в цикле 30, но только для скрипта съёмки скриншотов (`frontend/scripts/screenshots/`, §5.7): тестов на
+нём нет, в `test:run` и CI он не запускается. «Функциональные» здесь — HTTP-тесты
 против хоста в памяти и настоящего Postgres. Ближе всего к e2e — bash-смоуки `deploy/ci/smoke.sh` (живой контейнер API:
 health, регистрация, загрузка аватара) и `deploy/ci/smoke-frontend.sh` (собранный `dist`, профили ezbook/goods). Их
 запускает CI, а не тест-раннер.
@@ -744,8 +859,12 @@ dotnet run --project ServiceBooking.TestKit -- doctor   # проверка ср�
 dotnet build ServiceBooking.sln -warnaserror
 dotnet test ServiceBooking.UnitTests                    # быстрый, без Docker
 dotnet test ServiceBooking.Tests                        # функциональный, нужен Docker
-cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p tsconfig.goods.json && npm run test:run
+cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p tsconfig.goods.json && npm run typecheck:node && npm run test:run
 ```
+- Фронт-тесты гонять с пустой `VITE_SMARTCAPTCHA_SITEKEY` (как в CI): при локальном `frontend/.env` с ключом краснеют
+  8 тестов `CartPanel` (ловушка ниже).
+- Скрипты `shots:seed`/`shots:capture` и `stack.sh` — **не тесты**: они поднимают Docker-стенд и пишут в его базу;
+  их запускает человек по `frontend/scripts/screenshots/README.md`, а не базовый прогон.
 - **macOS + colima** (так на этой машине): перед прогоном выставить
   `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock` и `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`.
   Без второй переменной падает весь набор, и выглядит это как поломка кода (`docs/testing-isolation.md`, «macOS + colima»).
@@ -778,10 +897,10 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - `LegalKit check`.
 - **frontend** (Node 20):
   - `npm ci`;
-  - сверка генератов циклов 7, 9, 14 и отдельным шагом 18, 19, 20, 23, 24, 25;
-  - `redocly lint` контрактов 8-invariant, 13, 14, 16, 18, 19, 20, 23, 24, 25;
+  - сверка генератов циклов 7, 9, 14 и отдельным шагом 18, 19, 20, 23, 24, 25, 26, 29 (26 и 29 — с цикла 29);
+  - `redocly lint` контрактов 8-invariant, 13, 14, 16, 18, 19, 20, 23, 24, 25, 26, 29;
   - `npm audit --omit=dev --audit-level=high`;
-  - `lint`, `tsc` для ezbook и для goods;
+  - `lint`, `tsc` для ezbook и для goods, `npm run typecheck:node` (шаг «Type-check node (shots)», цикл 30);
   - греп на заглушку правового текста и на `fetch`/Cache в `sw.js`;
   - `test:run`;
   - `build:release` — оба сайта;
@@ -789,8 +908,9 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - артефакт `frontend-dist-<sha>` для `master`/`release-candidate`/`develop`.
 - **docker-build** — сборка образа API и запуск в режиме `Production` с Postgres. Это заодно доказывает полноту
   обязательных env-переменных. Затем `smoke.sh`.
-- ⚠️ **Контракт цикла 26 CI не охвачен**: `contracts/cycle26/openapi.yaml` нет в `redocly lint`, `types:api:cycle26` нет в
-  сверке генератов (C26-1).
+- Контракты 26 и 29 в CI охвачены с цикла 29 (C26-1 закрыт). JSON-схемы `contracts/cycle30/*.schema.json` в CI **не**
+  проверяются: сверку манифеста скриншотов со схемой делает человек при пересъёмке (`ajv-cli`), а форму манифеста в
+  каждом прогоне держит vitest T30-15. Скрипты засева и съёмки CI не запускает.
 
 ### 7.4 Деплой
 - `deploy-staging.yml` — ручной запуск, только ветка `develop`, окружение GitHub `staging`. Шаги: сборка фронта, SSH-ключ,
@@ -815,27 +935,60 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 ## 9. Рискованные и хрупкие места
 
 ### 9.1 Найдено или подтверждено в этом сканировании (✔)
-- **C26-1. CI не проверяет контракт цикла 26.** В `ci.yml` нет `contracts/cycle26/openapi.yaml` в `redocly lint` и нет
-  `types:api:cycle26` в сверке генератов. Расхождение `api-cycle26.generated.ts` с контрактом пройдёт молча. Шаблон один и
-  тот же каждый цикл: новый контракт надо дописывать в два шага `ci.yml`.
+**Добавлено в цикле 30 (✔ по коду и git на `aeed251`, если не сказано иное):**
+- **C30-1. `swagger.json` в Development отдаёт 500** (дефект бэкенда, циклом 30 не чинился). Swashbuckle падает на
+  одинаковом schemaId у двух разных record'ов `WorkingHoursDto`: `ServiceBooking.API.DTOs.WorkingHours.WorkingHoursDto`
+  (`DTOs/WorkingHours/WorkingHoursDto.cs`) и `ServiceBooking.API.DTOs.Shops.WorkingHoursDto`
+  (`DTOs/Shops/ShopScheduleDtos.cs:24`); `CustomSchemaIds` в `ApiExtensions` не задан ✔. Следствия: Swagger UI в
+  Development открывается, но документ API не грузится; замок стенда съёмки поэтому проверяет `GET /swagger/index.html`
+  и разбор тела (`isSwaggerUiHtml`), а не `swagger.json`. Сам 500 в этом обновлении не воспроизводился (↪ отчёт BE-30-1,
+  комментарий в `seed-goods-demo.mjs`). На бою Swagger выключен, пользователей не касается.
+- **C30-2 (= R-F цикла 30, C24-2). Текст блока «Для покупателей» обещает push, который на бою не включён и на устройствах
+  не проверен.** Пункт 3 списка «Как следить за заказом» говорит об уведомлении о смене статуса; на бою провайдер
+  `WEBPUSH_STAFFPUSH_PROVIDER` не задан → `logging` 🖥, на реальных Android/iPhone push не проверялся. Ручной кейс «push на
+  реальном телефоне» (M30-10 в `ARCHITECTURE_CYCLE30.md §30.14`, M30-09 в `TEST_CATALOG.md`) — **гейт выката этого
+  текста**, не гейт мержа; по состоянию на `aeed251` не выполнен.
+- **C30-3. `core.hooksPath=.githooks`, а каталога `.githooks` в репозитории нет** ✔ (`git config --get core.hooksPath`,
+  локальный конфиг чекаута). Git-хуки в этом чекауте фактически не работают — ни свои, ни стандартные из `.git/hooks`.
+- **C30-4. Скриншоты сняты с «грязного» дерева и не проверяются на свежесть.** `screenshots.json` → `sourceCommit:
+  "6ea8d4c-dirty"`. Проверки, что кадры соответствуют текущему коду снятых экранов, нет (решение SPEC, риск R-D); список
+  «снятых» файлов — только в README скриптов.
+- **C30-5. Пересъёмка дорогая по времени.** `stack.sh reset` пересобирает образ API: в замере FE-30-4 это ~20 минут на
+  colima под нагрузкой (одна попытка упала на экспорте слоя containerd). Съёмка требует Chrome, интернет (Google Fonts) и
+  дневного времени магазина.
+- **C30-6. Нумерация ручных кейсов цикла 30 расходится:** в `ARCHITECTURE_CYCLE30.md §30.14` M30-01…12, в
+  `TEST_CATALOG.md` M30-01…09 с другими номерами (push — M30-10 против M30-09; M30-11 «пересъёмка ≤ 30 мин» и M30-12
+  «замок на `goods.ezbook.ru`» в каталог не перенесены).
+- **Ручные кейсы M30 не выполнены** (вердиктов в `TEST_CATALOG.md` нет): вёрстка 360/768/1280, чёткость 2x, ленивая
+  загрузка и вес, скринридер. Сквозного браузерного набора нет.
+- **`API_CONTRACT_CYCLE30.md §30.26`, проверка «API не изменился»** сформулирована как пустой
+  `git diff --stat b9c2a79 -- ServiceBooking.* contracts/cycle2*`; после мерджа цикла 29 этот diff не пустой (цикл 29 менял
+  бэкенд и контракты). Базой для этой проверки теперь служит `c19a83c`.
+- **`react-router` 6.x — умеренный advisory `npm audit`** (↪ AV7/C25-8, GHSA-wrjc-x8rr-h8h6): цикл 30 зависимостей рантайма
+  не менял, CI-порог `--audit-level=high` его пропускает. `playwright-core` и `@types/node` — только dev.
+
+**Прежние пункты:**
+- ~~**C26-1. CI не проверяет контракт цикла 26.**~~ **Закрыто в цикле 29** (`d03720b`, ✔ `ci.yml`): `cycle26` и `cycle29`
+  в `redocly lint` и в сверке генератов. Шаблон прежний: новый OpenAPI цикла надо дописывать в два шага `ci.yml`.
 - **C26-2. Ловушка с алиасом `@` в ezbook-сборке** (§6.2). `tsc` и vitest алиас видят, `vite build` ezbook — нет. Ловит
   только шаг `build:release` в CI, локальные `tsc`/тесты зелёные.
 - **C26-3. `ShopManageDto.TimeZoneChangeAllowed = !hasOrders`, а сервер разрешает магазину с заказами переезд в город с
   тем же смещением UTC** (`ShopTimeZoneChangePolicy`). Флаг строже правила. Если UI опирается только на флаг, он запретит
   разрешённый переезд.
-- **C26-4. Два одинаковых запроса упорядоченной галереи:** `CompanyDtoAssembler.GetPhotosOrderedAsync` (карточка салона)
-  и новый `CompanyPhotoQueries.OrderedAsync` (галерея и витрина). Порядок сортировки сейчас совпадает, но при правке одного
-  разойдётся.
+- ~~**C26-4. Два одинаковых запроса упорядоченной галереи.**~~ **Закрыто в цикле 29** (✔): `GetPhotosOrderedAsync` удалён,
+  карточка салона тоже берёт `CompanyPhotoQueries.OrderedAsync`. Выбор обложки (`CompanyPhotoOrdering`) сортирует
+  отдельно, тем же порядком.
 - **C26-5. Галерея магазина без счётчика квоты.** `photo-usage` для магазина отвечает 409. Загрузка же идёт через общий
   конвейер и тарифные правила фото: какой лимит объёма фото у линейки «Заказы» действует на деле, в этом сканировании не
   проверялось.
 - ~~**C26-6. CHANGELOG и README не описывают цикл 26.**~~ **Закрыто в `b9c2a79`** (✔): в CHANGELOG раздел
   «Не выпущено — цикл 26: …» (строка 34, между циклами 27 и 25), в README цикл 26 описан в блоке goods и в возможностях
   салона (карточка, фото, ссылки на карты).
-- **C26-7. Счётчик разделов «Не выпущено» во вступлении CHANGELOG снова отстаёт** (✔): в тексте «двадцать два», по
-  факту разделов `## Не выпущено` — 24. Мелочь, но повторяется каждый цикл.
-- **Hero ezbook `salon-hero.jpg` — PNG на 1,7 МБ под расширением `.jpg`** (§5.7). Это самый тяжёлый файл фронта, он
-  грузится на главной ezbook. Если скриншоты добавят тем же способом, вес страницы вырастет так же.
+- **C26-7. Счётчик разделов «Не выпущено» во вступлении CHANGELOG снова отстаёт** (✔ на `aeed251`): в тексте «двадцать
+  три», по факту разделов `## Не выпущено` — 25 (с циклом 29). Мелочь, но повторяется каждый цикл.
+- **Hero ezbook `salon-hero.jpg` — PNG на ~1,7 МБ под расширением `.jpg`** (§5.7). По-прежнему самый тяжёлый файл
+  фронта, грузится на главной ezbook (на широком экране). Цикл 30 его не трогал; скриншоты goods сделаны отдельно, в WebP
+  с бюджетом веса.
 - **C27-1. Номера § в документах циклов 26 и 27 совпадают.** Оба цикла стартовали параллельно от `0d41df4`.
   `ARCHITECTURE_CYCLE26.md` — §543–§556, `API_CONTRACT_CYCLE26.md` — §557–§569. `ARCHITECTURE_CYCLE27.md` — снова
   §543–§552, `API_CONTRACT_CYCLE27.md` — §553. Ссылка вида «§548.2» без имени файла неоднозначна. Это продолжение
@@ -853,12 +1006,12 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - **§9.25** (подтверждено): `dotnet format` в CI нет.
 - **Заглушка рассылки** (§5.3) выглядит как работающая функция: API отвечает «поставлена в очередь».
 - **Крупные файлы, на которых завязано много:**
-  - `frontend/src/pages/owner/CompanyManagePage.tsx` — 1 305 строк;
+  - `frontend/src/pages/owner/CompanyManagePage.tsx` — 1 327 строк (на `aeed251`, после групп полей цикла 29);
   - `NotificationChannelsController` — 845 (не режется по решению цикла 22);
   - `AdminBillingController` — 791, `AdminController` — 675, `BookingsController` — 595;
   - `AppDbContext` — 1 086.
 - **Модель релизов разошлась с документами.** Кнопка «staging» фактически выкатывает боевой ezbook.ru, `master`/теги/
-  `release-candidate` не используются. CHANGELOG держит 24 раздела «Не выпущено», хотя часть из них на бою (циклы 20–22).
+  `release-candidate` не используются. CHANGELOG держит 25 разделов «Не выпущено», хотя часть из них на бою (циклы 20–22).
 
 ### 9.2 Открытый долг из прежней редакции (↪ не перепроверялся; подробности — `git show 491406c:CURRENT_STATE.md`, §9)
 **Эксплуатация и выкат**
@@ -867,7 +1020,7 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - **C25-1 / C25-2.** MAX персоналу не включён, живого смоука нет. Бот MAX один на подтверждение телефона и на сообщения
   персоналу: бан бота остановит оба.
 - **C24-1 / C25-4.** vhost goods на сервере не обновлён: `/sw.js` без no-cache — ручной шаг `DEPLOY.md` §22.2.
-- **C24-2.** Push на реальных устройствах не проверен.
+- **C24-2.** Push на реальных устройствах не проверен. С цикла 30 на это опирается текст главной goods (C30-2, §9.1).
 - **C21-2.** VAPID `sub` проверяется только на непустоту, Apple отвергает заглушки.
 - **C19-1.** Гейт `check_retired_limit_options` ни разу не выполнялся на реальной БД.
 - **C19-4.** Миграция цикла 19 старше по ID, чем уже применённые миграции циклов 20–22: неидемпотентный
@@ -918,7 +1071,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - **C24-3.** Галочка мессенджера у гостя работает без подтверждения номера.
 
 **Документация**
-- **C19-8 / C23-8.** Руководств по goods в `docs/` нет. Нумерация § в документах пересекается.
+- **C19-8 / C23-8.** Руководств по goods в `docs/` нет (цикл 30 добавил шаги покупателя только в интерфейс главной).
+  Нумерация § в документах пересекается.
 - **C22-4.** Ссылки `Файл.cs:строка` в старых документах исторические.
 
 ---
@@ -933,13 +1087,17 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - **«Запуск»** (со строки 581) с подразделами `###`: «Локально, всё в Docker», «Локально, без Docker для API»,
     «Переменные окружения и секреты», «Тесты», «CI», «Деплой».
   - Цикл 26 в README отражён (`b9c2a79`): профиль и фото магазина, смена города, общая карточка салона/магазина.
-- **`CHANGELOG.md`** (4 061 строка на `b9c2a79`). Формат по мотивам Keep a Changelog, язык — для пользователей. Номеров версий нет.
-  Раздел `## …` на каждый цикл, **самый свежий сверху**. Сверху идут 24 раздела «Не выпущено — <суть>» в порядке влития,
+    Логотип/первая буква в карточках упомянуты. **Блок «Для покупателей» и скриншоты главной goods (цикл 30) в README
+    на `aeed251` не описаны** ✔ (grep «Для покупателей»/«скриншот» — пусто). Инструкция пересъёмки для команды лежит
+    отдельно — `frontend/scripts/screenshots/README.md` (§5.7).
+- **`CHANGELOG.md`** (4 089 строк на `aeed251`). Формат по мотивам Keep a Changelog, язык — для пользователей. Номеров версий нет.
+  Раздел `## …` на каждый цикл, **самый свежий сверху**. Сверху идут 25 разделов «Не выпущено — <суть>» в порядке влития,
   ниже — датированные разделы (`## 2026-09-17 — сервис впервые развёрнут…`, самый ранний — `2026-09-01`). Верхний раздел
-  сейчас — цикл 27 («Для бизнеса» на главной goods), под ним — цикл 26 (строка 34), затем цикл 25. Внутри крупных
+  сейчас — цикл 29 (строка 20), под ним цикл 27 (строка 48), цикл 26 (строка 62), затем цикл 25. **Раздела цикла 30 на
+  `aeed251` нет.** Внутри крупных
   разделов сложились подзаголовки `###`: «Что стоит прочитать до выката», тематические блоки, «Чего этот цикл не даёт»,
   «Для команды» (итоги тестов и документы цикла). Даты «Не выпущено» при выкате не проставлялись. Счётчик во вступлении
-  («двадцать два») отстаёт от факта (24) — C26-7.
+  («двадцать три») отстаёт от факта (25) — C26-7.
 - Releases на GitHub и wiki не используются: тегов нет, ссылок на wiki в репозитории нет.
 - Внутренние справки: `BRIEF_BRAND_AND_DOMAINS.md` (бренд и домены «EZBOOK Запись» / «EZBOOK Заказы»),
   `BENCHMARK_CYCLE22.md`.
@@ -959,30 +1117,35 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   `LEGAL_DECISIONS_CYCLE20.md`, `legal-drafts/README.md`.
 
 ### 10.3 Документация API для внешних потребителей
-- **`API_DOCUMENTATION.md`** (4 480 строк, markdown, по-русски) — основной справочник:
+- **`API_DOCUMENTATION.md`** (4 481 строка, markdown, по-русски) — основной справочник:
   - §1 «Обзор», §2 «Аутентификация», §3 «Ключевые бизнес-концепции»;
-  - §4 «Справочник эндпоинтов» — по доменам, с подразделами «Цикл N (unreleased)», у цикла 26 — строка ~1955;
+  - §4 «Справочник эндпоинтов» — по доменам, с подразделами «Цикл N (unreleased)», у цикла 26 — строка ~1955; цикл 29
+    вписан точечно (`logoUrl` каталога — ~4168, 400 на битую форму — в §6, ~4384). Цикл 30 API не менял и сюда не вписан;
   - §5 «Сквозные сценарии», §6 «Справочник кодов ответа», §7 «Известные ограничения».
   - ↪ C23-8: в §4 есть повторяющиеся номера подразделов.
-- **OpenAPI по циклам** — `contracts/cycleN/openapi.yaml` для циклов 7, 9, 10, 11, 13–20, 23–26 и
+- **OpenAPI по циклам** — `contracts/cycleN/openapi.yaml` для циклов 7, 9, 10, 11, 13–20, 23–26, 29 (у 26 и 29 есть ещё
+  `openapi.json` — для валидатора функциональных тестов `OpenApiContract.cs`) и
   `contracts/cycle8/servicebooking-invariant.openapi.yaml`. Каждый файл описывает **дельту своего цикла, а не весь API
   целиком**. Сводного OpenAPI нет.
 - Прочие контракты: `contracts/cycle23/goods-routes.json`, `order-money-vectors.json`, `cycle24/pickup-schedule-vectors.json`,
-  `cycle11/*.schema.json`, `legal-routes.json`, `contracts/legal/runtime-value-forms.json`. Линт — `contracts/redocly.yaml`.
+  `cycle11/*.schema.json`, `legal-routes.json`, `contracts/legal/runtime-value-forms.json`, `cycle30/screenshots-manifest.schema.json`
+  и `cycle30/seed-state.schema.json` (JSON Schema файлов съёмки, не API). Линт — `contracts/redocly.yaml`.
 - Исторический `openapi-cycle6.yaml` лежит в корне.
-- Swagger UI — только в Development.
+- Swagger UI — только в Development; `swagger.json` там сейчас отдаёт 500 (C30-1, §9.1).
 - Полный перечень маршрутов с атрибутами — `ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt` (§4).
 - Postman-коллекции нет. `ServiceBooking.API/ServiceBooking.API.http` — файл запросов IDE.
 
 ### 10.4 Описания тест-кейсов (отдельно от кода автотестов)
-- **`TEST_CATALOG.md`** (6 345 строк, markdown):
+- **`TEST_CATALOG.md`** (6 415 строк на `aeed251`, markdown):
   - в начале — «Как устроены ссылки на тесты» и «Префиксы по доменам»;
   - затем разделы по доменам (Auth, Bookings, Companies…);
   - затем разделы по циклам: «Цикл N — … (`CYNN-`, число тестов, файл)», в каждом таблица `ID | US | Что проверяет`.
     Там же ручные кейсы (`M27-…` в ветке 27), вердикты QA и «не покрыто»;
-  - раздел цикла 27 — строка ~6226, за ним цикл 26 (~6240), **затем цикл 20**: разделы идут в порядке влития, а не по
-    номеру. У цикла 27 кроме автотестов есть таблица ручных кейсов `M27-` с колонками `Кейс | Шаги | Ожидаемый
-    результат | Критерий` — образец для ручных проверок вёрстки.
+  - порядок разделов в конце: цикл 27 (~6226), цикл 29 (~6240), цикл 30 (~6278), цикл 26 (~6294), **затем цикл 20**:
+    разделы идут в порядке влития/написания, а не по номеру. У циклов 27, 29, 30 кроме автотестов есть таблицы ручных
+    кейсов (`M27-`, `M29-`, `M30-`) с колонками `Кейс | Шаги | Ожидаемый результат | Критерий` (у M29 ещё `Вердикт`).
+    Раздел цикла 30 перечисляет vitest T30-01…19 и QA30-01…10 одной строкой (без таблицы по ID) и M30-01…09 без
+    вердиктов; ссылка раздела цикла 29 на спеку исправлена на архив `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md`.
   - ↪ TD16-7: вердикты раздела «Цикл 16» устарели.
 - ID кейсов продублированы в коде атрибутом `[TestCase("CY26-01")]` на тестах `ServiceBooking.Tests`.
 - Ручные живые проверки выката — чек-листы в `DEPLOY.md` (§16 и шаги циклов).
@@ -990,12 +1153,15 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 
 ### 10.5 Документы циклов
 - Корень:
-  - `SPEC.md` — спека **цикла 27** (уже выполненного). Следующий цикл заменит её своей, а эту заархивирует как
-    `SPEC_CYCLE27_*.md`;
-  - архив спек `SPEC_CYCLE{3..26}_*.md` (последний — `SPEC_CYCLE26_COMPANY_CARD_UNIFIED.md`), плюс
-    `SPEC_APPENDIX_CHANNELS.md` и `SPEC_DEFERRED_NOTIFICATIONS.md`;
-  - `ARCHITECTURE_CYCLE{4..27}.md` (у цикла 8 два файла: основной и `_PHASE2`) и `API_CONTRACT_CYCLE{4..27}.md`
-    (у цикла 27 — одна строка «API не меняется»). Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` — от цикла 3;
+  - `SPEC.md` — спека **цикла 30** (блок «Для покупателей» и скриншоты). Следующий цикл заменит её своей, а эту
+    заархивирует как `SPEC_CYCLE30_*.md`;
+  - архив спек `SPEC_CYCLE{3..27,29}_*.md`: спека 27 — `SPEC_CYCLE27_GOODS_BUSINESS_BLOCK.md` (архивирована в цикле 29 и
+    повторно в ветке 30, `e633cbb`), спека 29 — `SPEC_CYCLE29_CYCLE26_FOLLOWUPS.md` (появилась в
+    ветке 30 при мердже `2100fb3`, в `origin/develop` = `c19a83c` корневой `SPEC.md` — ещё спека 29); спеки 12 и 28 в корне нет (28 — в
+    ветке `origin/cycle/028-…`). Плюс `SPEC_APPENDIX_CHANNELS.md` и `SPEC_DEFERRED_NOTIFICATIONS.md`;
+  - `ARCHITECTURE_CYCLE{4..27,29,30}.md` (у цикла 8 два файла: основной и `_PHASE2`) и `API_CONTRACT_CYCLE{4..27,29,30}.md`
+    (у 27 — «API не меняется», у 30 — только формы файлов засева/манифеста, §30.20–§30.27). Циклы 29 и 30 нумеруют § по
+    номеру цикла (§29.x, §30.x), а не сквозной нумерацией. Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` — от цикла 3;
   - `LEGAL_REVIEW*.md`.
 - `docs/history/` не существует: архивом служат суффиксы в корне.
 

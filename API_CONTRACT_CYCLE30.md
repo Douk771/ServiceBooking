@@ -27,7 +27,7 @@ JSON) и завершает работу с кодом 5 (§30.26). Сервер
 
 | # | Метод и путь | Авторизация | Тело запроса (ключевые поля) | Ожидаем | Схема |
 |---|---|---|---|---|---|
-| 0 | `GET /swagger/v1/swagger.json` | нет | — | 200 (только Development) | Swashbuckle, вне контрактов |
+| 0 | `GET /swagger/index.html` | нет | — | 200 (только Development) и в теле Swagger UI (`swagger-ui`/`SwaggerUIBundle`, нет `<div id="root">`), а не SPA-фолбэк; иначе код 3. `swagger.json` не используется: в Development он отдаёт 500 (одинаковый schemaId у двух `WorkingHoursDto`, ARCHITECTURE_CYCLE30.md §30.7.1) | Swashbuckle UI, вне контрактов |
 | 1 | `GET /api/health/ready` | нет | — | 200 | `HealthEndpointsExtensions` |
 | 2 | `GET /api/legal/documents` | нет | — | 200, версии `Privacy`, `TermsClient`, `TermsOwner` | `contracts/cycle11/openapi.yaml` |
 | 3 | `POST /api/auth/register` | нет | `firstName`, `lastName`, `phone`, `password` (≥ 8), `email: null`, `legal: { privacyAcknowledgedVersion, termsAcceptedVersion }`; `phoneVerification` не передаётся | 200 (`AuthResponseDto`, `token`); номер занят → засев выходит с кодом 2 | `DTOs/Auth/RegisterDto.cs`, `API_CONTRACT_CYCLE5.md` §40.1, `CYCLE14` §168 |
@@ -145,6 +145,7 @@ JSON) и завершает работу с кодом 5 (§30.26). Сервер
 | Компонент и файлы сошлись с манифестом | `cd frontend && npx vitest run goods/src/assets goods/src/components goods/src/pages/CatalogHomePage.test.tsx` | T30-01…19 зелёные |
 | API не изменился | `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle22RouteTableTests"`; `git diff --stat b9c2a79 -- ServiceBooking.* contracts/cycle2*` | зелёный; пусто |
 | Засев не пишет в чужое | `SHOTS_API_URL=https://goods.ezbook.ru npm run shots:seed` (из `frontend/`) | код 3, в выводе нет ни одного HTTP-запроса |
+| Замок «это стенд разработки» (A4) | `curl -s -o /dev/null -w '%{http_code}' http://localhost:55000/swagger/index.html` на поднятом `sb-shots`; разбор тела — `isSwaggerUiHtml` в `seed-goods-demo.mjs` (юнит-проверка в `seed-goods-demo.test.ts`) | 200 и Swagger UI, а не SPA-фолбэк с `<div id="root">`. `swagger.json` не проверяется: в Development он отдаёт 500 |
 | Секреты не в git | `git ls-files frontend/scripts/screenshots/.state` | пусто |
 
 **Коды выхода скриптов:**
@@ -154,7 +155,7 @@ JSON) и завершает работу с кодом 5 (§30.26). Сервер
 | 0 | засеяно, `.state/seed.json` записан | 5 файлов и манифест записаны |
 | 1 | непредвиденная ошибка (стек, сеть) | непредвиденная ошибка (браузер, Vite) |
 | 2 | база уже засеяна → `stack.sh reset` | нет `.state/seed.json` или данные устарели → пересеять |
-| 3 | адрес не локальный или не Development — отказ до записи | — |
+| 3 | адрес не локальный или не Development (`/swagger/index.html` не отдаёт Swagger UI) — отказ до записи | — |
 | 4 | время магазина вне `[07:00, 20:30]` | в кадре запретная строка или модалка |
 | 5 | сервер ответил не так, как ожидалось (§30.21), или самопроверка не прошла | бюджет веса или размер в пикселях не сошлись |
 

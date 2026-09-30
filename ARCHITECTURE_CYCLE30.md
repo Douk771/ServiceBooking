@@ -27,7 +27,7 @@
 | A1 | Стек | Без изменений. React + TS + Tailwind (конфиг goods), vitest. **Одна новая dev-зависимость — `playwright-core`**: браузеры не скачивает, зависимостей не тянет. Рантайм-зависимостей ноль. Бэкенд, миграции, маршруты, OpenAPI не меняются | §30.1 |
 | A2 | Общий компонент или копия (R30-5) | **Копия разметки**, как в цикле 27. `BusinessBlock` получает только `<ScreenshotFigure>`. Общим становится один новый компонент — `ScreenshotFigure`. Одинаковость стилей держит тест паритета классов T30-13, а не общий код: так T27/QA27 гарантированно не меняются | §30.4 |
 | A3 | Засев демо-данных (R30-3) | Node-скрипт `frontend/scripts/screenshots/seed-goods-demo.mjs` ходит **через существующий HTTP API**. Стек отдельный: compose-проект `sb-shots` со своим томом и портами. Идемпотентность — пересозданием базы (`stack.sh reset`). Миграций, кода на старте API и изменений бэкенда нет | §30.7 |
-| A4 | Защита боевой базы | Три замка до первой записи: хост из белого списка (`localhost`), жёсткий отказ для `*.ezbook.ru`, проба `GET /swagger/v1/swagger.json` = 200 (Swagger есть **только** в Development). Токены и пароль — только в `.state/seed.json`, он не в git | §30.7.1 |
+| A4 | Защита боевой базы | Три замка до первой записи: хост из белого списка (`localhost`), жёсткий отказ для `*.ezbook.ru`, проба `GET /swagger/index.html` = 200 и в теле Swagger UI, а не SPA-фолбэк (Swagger есть **только** в Development; `swagger.json` для пробы не годится — в Development он отдаёт 500, см. §30.7.1). Токены и пароль — только в `.state/seed.json`, он не в git | §30.7.1 |
 | A5 | Съёмка | Скрипт `capture-goods-screenshots.mjs` на `playwright-core` + установленный Google Chrome. WebP кодирует сам Chrome через CDP `Page.captureScreenshot`, поэтому `sharp`/`cwebp` не нужны. Скрипт проверяет запретные строки в кадре, бюджет веса и размеры в пикселях, а затем пишет манифест | §30.8 |
 | A6 | Формат и плотности | Только **WebP**, без запасного PNG/JPEG. Файлов 5: `order-page-1x/2x`, `board-desktop-1x/2x`, `board-phone-2x`. Телефонный кадр доски виден только на телефонах, а у них всех плотность ≥ 2, поэтому 1x ему не нужен | §30.5 |
 | A7 | Телефон и десктоп для доски (Q-30-4) | Один `<picture>`: `<source media="(min-width: 768px)">` отдаёт десктопный кадр, `<img>` — телефонный. Грузится ровно один файл | §30.5 |
@@ -277,8 +277,13 @@ export const boardShot = { src: boardPhone2x, width: manifest.boardPhone.cssWidt
    - `SHOTS_API_URL` (по умолчанию `http://localhost:55000`). Хост должен быть `localhost`/`127.0.0.1`/`::1` или явно
      совпадать с `SHOTS_ALLOW_HOST` (изолированный стенд);
    - хост, оканчивающийся на `ezbook.ru`, — **отказ всегда**, без обхода, код выхода 3, сетевых запросов нет;
-   - `GET {api}/swagger/v1/swagger.json` должен вернуть 200. Swagger включается только в `Development`
-     (`ApiExtensions.cs:159`), бой всегда `Production`. Иначе код 3 «Это не стенд разработки».
+   - `GET {api}/swagger/index.html` должен вернуть 200, и тело должно быть страницей Swagger UI (`swagger-ui` или
+     `SwaggerUIBundle` в HTML и нет `<div id="root">` — иначе это SPA-фолбэк фронта, который на боевом хосте тоже
+     отдаёт 200; функция `isSwaggerUiHtml` в `seed-goods-demo.mjs`). Swagger UI и `swagger.json` включаются одним
+     условием `IsDevelopment` (`ApiExtensions.UseServiceBookingSwagger`), бой всегда `Production`. Иначе код 3
+     «Это не стенд разработки». **Исправлено при реализации (BE-30-1, `6ea8d4c`):** первоначально замок пробовал
+     `GET /swagger/v1/swagger.json`, но в Development он отвечает 500 — Swashbuckle падает на одинаковом schemaId у
+     `DTOs.WorkingHours.WorkingHoursDto` и `DTOs.Shops.WorkingHoursDto` (дефект бэкенда вне цикла 30, CURRENT_STATE §9.1).
 3. **Что не делаем:** миграции с данными, код в `StartupSeedingExtensions`, флаги в БД, SQL в обход API. Всё это ушло бы
    в образ и в бой.
 4. **Секреты.** Пароль владельца случайный (`crypto.randomBytes`), живёт только в `.state/seed.json`. Каталог `.state/`
