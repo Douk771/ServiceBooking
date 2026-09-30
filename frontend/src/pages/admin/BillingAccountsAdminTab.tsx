@@ -17,6 +17,9 @@ import { Input } from '../../components/ui/Input'
 import { Modal } from '../../components/ui/Modal'
 import { Icon } from '../../components/ui/Icon'
 import { Pagination } from '../../components/ui/Pagination'
+import { ShowcaseFilterControl } from '../../components/showcase/ShowcaseFilterControl'
+import { ShowcaseRowBadge } from '../../components/showcase/ShowcaseRowBadge'
+import { showcaseParam, type ShowcaseFilter } from '../../utils/showcaseFilter'
 import { getAdminBillingErrorMessage as getBillingErrorMessage, isLimitOverflowConflict } from '../../utils/adminBillingError'
 import { getTrialErrorMessage } from '../../utils/trialError'
 import {
@@ -715,6 +718,7 @@ function AccountRow({ item, onOpen }: { item: AdminBillingAccountListItem; onOpe
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-ink">{item.ownerName}</span>
+          {item.isShowcase && <ShowcaseRowBadge />}
           {item.name && <span className="text-xs text-muted">({item.name})</span>}
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE_CLASS[item.status]}`}>
             {item.statusText}
@@ -750,16 +754,19 @@ function AccountsListSection() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<SubscriptionStatus | ''>('')
   const [trial, setTrial] = useState<TrialAccountFilter | ''>('')
+  // Cycle 28 (§594.1): «Все / Без витрины / Только витрина» — «Все» sends no ?showcase=.
+  const [showcase, setShowcase] = useState<ShowcaseFilter>('all')
   const [page, setPage] = useState(1)
   const [openAccountId, setOpenAccountId] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-billing-accounts', search, status, trial, page],
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['admin-billing-accounts', search, status, trial, showcase, page],
     queryFn: () =>
       adminBillingApi.listAccounts({
         search: search || undefined,
         status: status || undefined,
         trial: trial || undefined,
+        showcase: showcaseParam(showcase),
         page,
         pageSize: 20,
       }),
@@ -806,6 +813,15 @@ function AccountsListSection() {
           ))}
         </select>
       </div>
+      <div className="mb-4">
+        <ShowcaseFilterControl
+          value={showcase}
+          onChange={(v) => {
+            setShowcase(v)
+            setPage(1)
+          }}
+        />
+      </div>
 
       {isLoading ? (
         <div className="grid gap-3">
@@ -813,6 +829,8 @@ function AccountsListSection() {
             <div key={i} className="h-20 bg-cream-deep rounded-2xl animate-pulse" />
           ))}
         </div>
+      ) : isError ? (
+        <Card className="p-10 text-center text-muted">Не удалось загрузить биллинг-аккаунты. Попробуйте ещё раз.</Card>
       ) : (
         <div className="grid gap-3">
           {(data?.items ?? []).map((a) => (

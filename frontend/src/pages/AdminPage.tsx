@@ -23,12 +23,18 @@ import { getChangeOwnerErrorMessage } from '../utils/companyOwnerError'
 import { formatPhone } from '../utils/phone'
 import { formatBookingServiceNames } from '../utils/bookingServices'
 import { formatRub } from '../utils/money'
+import { ShowcaseFilterControl } from '../components/showcase/ShowcaseFilterControl'
+import { ShowcaseRowBadge } from '../components/showcase/ShowcaseRowBadge'
+import { formatShowcaseSummary, showcaseParam, type ShowcaseFilter } from '../utils/showcaseFilter'
 import { COMPANY_KIND_FILTERS, companyKindLabel, kindParam, type CompanyKindFilter } from '../utils/companyKind'
 
 // ── Stats tab ─────────────────────────────────────────────────────────────────
 
 function StatsTab() {
-  const { data, isLoading } = useQuery({ queryKey: ['admin-stats'], queryFn: adminApi.getStats })
+  const { data, isLoading, isError } = useQuery({ queryKey: ['admin-stats'], queryFn: adminApi.getStats })
+
+  if (isError)
+    return <Card className="p-8 text-center text-muted">Не удалось загрузить сводку. Попробуйте обновить страницу.</Card>
 
   if (isLoading)
     return (
@@ -46,14 +52,24 @@ function StatsTab() {
     { label: 'Выручка (завершённые)', value: formatRub(data?.totalRevenue ?? 0) },
   ]
 
+  // Cycle 28 (§578): the tiles above count WITHOUT the showcase; it gets its own line so the two never blend.
+  const showcaseSummary = formatShowcaseSummary(data)
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {tiles.map((t) => (
-        <Card key={t.label} className="p-6 text-center">
-          <p className="text-[26px] font-bold text-ink mb-1.5">{t.value}</p>
-          <p className="text-[13px] text-ink-soft">{t.label}</p>
-        </Card>
-      ))}
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {tiles.map((t) => (
+          <Card key={t.label} className="p-6 text-center">
+            <p className="text-[26px] font-bold text-ink mb-1.5">{t.value}</p>
+            <p className="text-[13px] text-ink-soft">{t.label}</p>
+          </Card>
+        ))}
+      </div>
+      {showcaseSummary && (
+        <p className="mt-4 text-[13px] text-ink-soft">
+          {showcaseSummary}. <span className="text-muted">Счётчики выше — без витрины.</span>
+        </p>
+      )}
     </div>
   )
 }
@@ -209,9 +225,12 @@ function CompaniesTab() {
   const [blockingCompany, setBlockingCompany] = useState<AdminCompany | null>(null)
   // Cycle 23 (US-23-28): «Все / Салоны / Магазины» — «Все» sends no ?kind=.
   const [kindFilter, setKindFilter] = useState<CompanyKindFilter>('all')
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-companies', search, page, kindFilter],
-    queryFn: () => adminApi.getCompanies(search || undefined, page, 20, kindParam(kindFilter)),
+  // Cycle 28 (§594.1): «Все / Без витрины / Только витрина» — «Все» sends no ?showcase=.
+  const [showcaseFilter, setShowcaseFilter] = useState<ShowcaseFilter>('all')
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['admin-companies', search, page, kindFilter, showcaseFilter],
+    queryFn: () =>
+      adminApi.getCompanies(search || undefined, page, 20, kindParam(kindFilter), showcaseParam(showcaseFilter)),
   })
   // Typing a new search always restarts at page 1 — otherwise "page 3" of the old, wider result set
   // could be past the end of a narrower one and render nothing with no indication why.
@@ -246,6 +265,13 @@ function CompaniesTab() {
             </button>
           ))}
         </div>
+        <ShowcaseFilterControl
+          value={showcaseFilter}
+          onChange={(v) => {
+            setShowcaseFilter(v)
+            setPage(1)
+          }}
+        />
       </div>
       {isLoading ? (
         <div className="grid gap-3">
@@ -253,6 +279,8 @@ function CompaniesTab() {
             <div key={i} className="h-16 bg-cream-deep rounded-2xl animate-pulse" />
           ))}
         </div>
+      ) : isError ? (
+        <Card className="p-8 text-center text-muted">Не удалось загрузить компании. Попробуйте ещё раз.</Card>
       ) : (data?.items ?? []).length === 0 ? (
         <Card className="p-8 text-center text-muted">Компаний не найдено</Card>
       ) : (
@@ -274,6 +302,7 @@ function CompaniesTab() {
                     >
                       {c.planName}
                     </span>
+                    {c.isShowcase && <ShowcaseRowBadge />}
                     {!c.isActive && (
                       <span className="text-xs bg-danger-bg text-danger px-2 py-0.5 rounded-full">Заблокирована</span>
                     )}
@@ -383,9 +412,10 @@ function UsersTab() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [editUser, setEditUser] = useState<AdminUser | null>(null)
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-users', search, page],
-    queryFn: () => adminApi.getUsers(search || undefined, page),
+  const [showcaseFilter, setShowcaseFilter] = useState<ShowcaseFilter>('all')
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['admin-users', search, page, showcaseFilter],
+    queryFn: () => adminApi.getUsers(search || undefined, page, 20, showcaseParam(showcaseFilter)),
   })
   const handleSearch = (value: string) => {
     setSearch(value)
@@ -398,8 +428,15 @@ function UsersTab() {
       <p className="text-xs text-muted mb-3">
         Подписка, тариф и опции держателя — во вкладке «Биллинг-аккаунты».
       </p>
-      <div className="mb-4">
+      <div className="mb-4 flex flex-col gap-3">
         <Input placeholder="Поиск по email, имени..." value={search} onChange={(e) => handleSearch(e.target.value)} />
+        <ShowcaseFilterControl
+          value={showcaseFilter}
+          onChange={(v) => {
+            setShowcaseFilter(v)
+            setPage(1)
+          }}
+        />
       </div>
       {isLoading ? (
         <div className="grid gap-3">
@@ -407,6 +444,10 @@ function UsersTab() {
             <div key={i} className="h-14 bg-cream-deep rounded-2xl animate-pulse" />
           ))}
         </div>
+      ) : isError ? (
+        <Card className="p-8 text-center text-muted">Не удалось загрузить пользователей. Попробуйте ещё раз.</Card>
+      ) : (data?.items ?? []).length === 0 ? (
+        <Card className="p-8 text-center text-muted">Пользователей не найдено</Card>
       ) : (
         <div className="grid gap-2">
           {(data?.items ?? []).map((u) => (
@@ -421,6 +462,7 @@ function UsersTab() {
                     <span className="font-medium text-ink text-sm">
                       {u.firstName} {u.lastName}
                     </span>
+                    {u.isShowcase && <ShowcaseRowBadge />}
                     {u.roles.map((r) => (
                       <span key={r} className="text-xs bg-cream-deep text-ink-soft px-1.5 py-0.5 rounded">
                         {r}
