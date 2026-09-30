@@ -124,7 +124,7 @@ export function CatalogHomePage() {
             <EmptyState title={data.emptyText ?? 'Пока нет магазинов на goods'} />
           ) : (
             <>
-              <ul className="flex flex-col divide-y divide-line border-y border-line" data-testid="catalog-list">
+              <ul className="grid gap-6 list-none p-0" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }} data-testid="catalog-list">
                 {data.items.map((s) => (
                   <ShopRow key={s.slug} shop={s} showCity={cityId === undefined} />
                 ))}
@@ -141,22 +141,35 @@ export function CatalogHomePage() {
 }
 
 function ShopRow({ shop, showCity }: { shop: GoodsCatalogShopDto; showCity: boolean }) {
+  const place = [showCity ? shop.cityName : null, shop.address].filter(Boolean).join(', ')
   return (
     <li>
       <Link
         to={shop.path}
         aria-label={`${shop.name}, ${shop.openState.text}, ${shop.acceptanceText}`}
-        className="group flex items-center justify-between gap-4 py-5 px-1 hover:bg-white/60 transition-colors"
+        className="block h-full bg-white border border-line rounded-[20px] p-[26px] transition-all duration-200 hover:shadow-card hover:-translate-y-[3px] hover:border-line-strong"
         data-testid="catalog-shop"
       >
-        <div className="min-w-0">
-          <p className="font-serif text-2xl text-ink group-hover:text-gold-dark transition-colors truncate">{shop.name}</p>
-          <p className="text-sm text-ink-soft mt-0.5">
-            {[showCity ? shop.cityName : null, shop.address].filter(Boolean).join(', ')}
-          </p>
-          <p className="text-sm text-muted mt-0.5">{shop.openState.text}</p>
+        <div className="flex items-start gap-4 mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-cream-deep flex items-center justify-center shrink-0">
+            <Icon name="store" size={24} className="text-gold-dark" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-serif text-[19px] font-medium text-ink truncate">{shop.name}</h3>
+            <p className="text-sm text-muted mt-0.5">{shop.openState.text}</p>
+          </div>
         </div>
-        <span className={`shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full ${ACCEPT_STYLE[shop.acceptance] ?? 'bg-cream-deep text-muted'}`}>{shop.acceptanceText}</span>
+        <div className="flex items-center justify-between gap-3 pt-3.5 border-t border-cream-deep">
+          <div className="flex items-center gap-1.5 text-[13px] text-ink-soft min-w-0">
+            {place && (
+              <>
+                <Icon name="map-pin" size={14} strokeWidth={1.6} className="shrink-0" />
+                <span className="truncate">{place}</span>
+              </>
+            )}
+          </div>
+          <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${ACCEPT_STYLE[shop.acceptance] ?? 'bg-cream-deep text-muted'}`}>{shop.acceptanceText}</span>
+        </div>
       </Link>
     </li>
   )
