@@ -90,6 +90,7 @@ internal static class ApplicationServicesExtensions
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.OrderReportQueries>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.ShopReportService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.PickListService>();
+    builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Reports.ShopCustomerService>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.CustomerOrderPushQueue>();
     builder.Services.AddScoped<ServiceBooking.API.Services.Orders.Notifications.OrderMessageScheduler>();
     builder.Services.AddHttpClient<CaptchaService>();
