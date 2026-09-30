@@ -6766,6 +6766,210 @@ Vitest разработчиков (не пересобирались QA): раз
 
 | Набор | Файл | Кат. | Примечание |
 |---|---|---|---|
+| vitest | `frontend/goods/src/assets/screenshots/seed-goods-demo.test.ts` | Е |  |
+| vitest | `frontend/goods/src/assets/screenshots/shots.test.ts` | Е |  |
+| vitest | `frontend/goods/src/cabinetDevicesRedirect.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/BusinessBlock.qa.test.tsx` | Е | Б для QA27-09 (R36-F004) |
+| vitest | `frontend/goods/src/components/BusinessBlock.screenshot.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/BusinessBlock.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/BuyersBlock.qa.test.tsx` | Е | Б для QA30-01, QA30-03, QA30-04 (R36-F005…F007) |
+| vitest | `frontend/goods/src/components/BuyersBlock.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/CatalogListingSection.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/GoodsNavbar.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/UpdateBanner.acceptance.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/UpdateBanner.test.tsx` | Б | удалён целиком: R36-F001…F003 |
+| vitest | `frontend/goods/src/components/catalog/ProductModal.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/order/OrderPushCard.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/orders/IssueModal.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/orders/OrderCard.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/profile/ShopProfileSection.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/staffMax/StaffMaxCard.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/components/storefront/CartPanel.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/goods/src/goodsRoutes.test.ts` | Е |  |
+| vitest | `frontend/goods/src/pages/CatalogHomePage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/GoodsProfilePage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/OrderPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/StorefrontPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/CabinetHomePage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/CatalogPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/CreateShopPage.test.tsx` | Г | 3.4 с на файл — сборка jsdom-экрана, ускорять нечем |
+| vitest | `frontend/goods/src/pages/cabinet/HoursPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/LinkPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/MenuPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/OrdersScreenPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/SettingsPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/pages/cabinet/ShopNotificationsPage.test.tsx` | Е |  |
+| vitest | `frontend/goods/src/sharedSources.guard.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/acceptance.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/board.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/cart.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/catalog.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/checkout.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/goodsPush.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/goodsPushStorage.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/homeCity.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/hours.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/idempotency.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/menu.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/orderEdit.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/orderError.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/orderMoney.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/orderStatus.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/pickup.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/quantityFormat.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/reports.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/serviceWorkerRouting.test.ts` | Е |  |
+| vitest | `frontend/goods/src/utils/weekdays.test.ts` | Е |  |
+| vitest | `frontend/src/api/adminBilling.test.ts` | Е |  |
+| vitest | `frontend/src/api/billing.test.ts` | Е |  |
+| vitest | `frontend/src/api/client.demo.test.ts` | Е |  |
+| vitest | `frontend/src/api/demo.test.ts` | Е |  |
+| vitest | `frontend/src/api/plans.test.ts` | Е |  |
+| vitest | `frontend/src/api/pricing.test.ts` | Е |  |
+| vitest | `frontend/src/api/push.test.ts` | Е |  |
+| vitest | `frontend/src/components/billing/BillingNoticesSummary.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/billing/OperatorDetailsSection.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/booking/BookingCalendar.test.tsx` | Е |  |
+| vitest | `frontend/src/components/booking/BookingHistoryPanel.test.tsx` | Е |  |
+| vitest | `frontend/src/components/booking/BookingModal.captcha.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/booking/BookingModal.showcase.test.tsx` | Е |  |
+| vitest | `frontend/src/components/booking/BookingModal.test.tsx` | Г | 2.6 с на файл — сборка jsdom-экрана, ускорять нечем |
+| vitest | `frontend/src/components/booking/RescheduleModal.test.tsx` | Е |  |
+| vitest | `frontend/src/components/clientNotes/HealthNoteCard.test.tsx` | Е |  |
+| vitest | `frontend/src/components/clientNotes/NotePhotoUploader.test.tsx` | Е |  |
+| vitest | `frontend/src/components/clientNotes/PhotoConsentBadge.test.tsx` | Е |  |
+| vitest | `frontend/src/components/clientNotes/PhotoGallery.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CatalogListingCard.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyCard.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyLogoMark.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyMapLinks.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyPhotoGallery.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyPhotosSection.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/CompanyProfileCard.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/GoodsShopsNotice.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/PublicAddressNotice.test.tsx` | Е |  |
+| vitest | `frontend/src/components/company/profileZone.test.ts` | Е |  |
+| vitest | `frontend/src/components/demo/DemoBanner.test.tsx` | Е |  |
+| vitest | `frontend/src/components/demo/DemoMaintenanceGate.test.tsx` | Е |  |
+| vitest | `frontend/src/components/demo/DemoRoleButtons.test.tsx` | Е |  |
+| vitest | `frontend/src/components/layout/Navbar.test.tsx` | Е |  |
+| vitest | `frontend/src/components/legal/ConsentGate.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/LegalGuard.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/LegalUpdateBanner.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/NoticeLink.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/OwnerTermsGateModal.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/legal/PlatformNoticeBanner.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/notifications/ChannelRequestModal.test.tsx` | Е |  |
+| vitest | `frontend/src/components/pricing/OptionRow.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/components/profile/GuestDataGateNotice.test.tsx` | Е |  |
+| vitest | `frontend/src/components/push/DevicesAndNotificationsSection.test.tsx` | Е |  |
+| vitest | `frontend/src/components/push/PushUnavailableNotice.test.tsx` | Е |  |
+| vitest | `frontend/src/components/review/ReviewModal.test.tsx` | Е |  |
+| vitest | `frontend/src/components/ui/CityCombobox.test.tsx` | Е |  |
+| vitest | `frontend/src/components/ui/Pagination.test.tsx` | Е |  |
+| vitest | `frontend/src/components/ui/PhoneInput.test.tsx` | Е |  |
+| vitest | `frontend/src/hooks/useCarousel.test.ts` | Е |  |
+| vitest | `frontend/src/hooks/useDebouncedValue.test.ts` | Е |  |
+| vitest | `frontend/src/hooks/useExportData.test.tsx` | Е |  |
+| vitest | `frontend/src/hooks/useNoindexMeta.test.tsx` | Е |  |
+| vitest | `frontend/src/hooks/usePhoneVerification.test.tsx` | Е |  |
+| vitest | `frontend/src/hooks/usePhotoUploadWithConsent.test.tsx` | Е |  |
+| vitest | `frontend/src/legalRoutes.test.ts` | Е |  |
+| vitest | `frontend/src/pages/AdminPage.showcase.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/BillingPage.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/pages/BillingPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/CabinetPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/ClientBookingsPage.showcase.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/ClientBookingsPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/CompanyPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/ConsentsPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/EmbedPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/HomePage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/LegalDocumentPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/LoginPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/MasterClientsPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/MyBookingsPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/NoticesPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/PricingPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/ProfilePage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/RegisterPage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/SubjectRequestPage.test.tsx` | Е | защищённая зона |
+| vitest | `frontend/src/pages/admin/BillingAccountsAdminTab.showcase.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/BillingAccountsAdminTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/LegalReadinessTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/NoticesAdminTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/NotificationsAdminTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/PlansTab.test.ts` | Е |  |
+| vitest | `frontend/src/pages/admin/PlansTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/PlansTabLine.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/SubjectRequestsTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/admin/billingAccountsHelpers.test.ts` | Е |  |
+| vitest | `frontend/src/pages/admin/planForm.test.ts` | Е |  |
+| vitest | `frontend/src/pages/admin/planState.test.ts` | Е |  |
+| vitest | `frontend/src/pages/owner/BookingRulesSection.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/CompanyManagePage.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/NotificationLogTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/NotificationSettingsTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/NotificationTemplatesTab.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/SalonCatalogListingSection.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/SalonProfileSection.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/owner/SettingsTab.qa32.test.tsx` | Г | 3.4 с на файл — сборка jsdom-экрана, ускорять нечем |
+| vitest | `frontend/src/pages/owner/TemplateAcknowledgementModal.test.tsx` | Е |  |
+| vitest | `frontend/src/pages/showcasePublicPages.test.tsx` | Е |  |
+| vitest | `frontend/src/test/testAreas.guard.test.ts` | Е | новый guard CY36-02, окружение node |
+| vitest | `frontend/src/utils/adminBillingError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/authError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/billingError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/bookingError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/bookingHorizon.test.ts` | Е |  |
+| vitest | `frontend/src/utils/bookingServices.test.ts` | Е |  |
+| vitest | `frontend/src/utils/bookingStatus.test.ts` | Е |  |
+| vitest | `frontend/src/utils/cancelError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/catalogListingError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/channelBanner.test.ts` | Е |  |
+| vitest | `frontend/src/utils/clearUserCache.test.ts` | Е |  |
+| vitest | `frontend/src/utils/clientKey.test.ts` | Е |  |
+| vitest | `frontend/src/utils/clientRescheduleError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyInitial.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyKind.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyManageError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyOwnerError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/companyPhotos.test.ts` | Е |  |
+| vitest | `frontend/src/utils/dateFormat.test.ts` | Е |  |
+| vitest | `frontend/src/utils/demoHeaders.test.ts` | Е |  |
+| vitest | `frontend/src/utils/demoReload.test.ts` | Е |  |
+| vitest | `frontend/src/utils/demoRoles.test.ts` | Е |  |
+| vitest | `frontend/src/utils/healthConsentError.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/healthConsentForm.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/inn.test.ts` | Е |  |
+| vitest | `frontend/src/utils/legalError.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/legalRuntimeValues.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/legalSection.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/legalSections.test.ts` | Е | защищённая зона |
+| vitest | `frontend/src/utils/mapLinksFieldError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/money.test.ts` | Е |  |
+| vitest | `frontend/src/utils/notificationError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/phone.test.ts` | Е |  |
+| vitest | `frontend/src/utils/phoneVerificationError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/photoBatch.test.ts` | Е |  |
+| vitest | `frontend/src/utils/pricingFormat.test.ts` | Е |  |
+| vitest | `frontend/src/utils/providesServicesError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/publicAddress.test.ts` | Е |  |
+| vitest | `frontend/src/utils/pushAvailability.test.ts` | Е |  |
+| vitest | `frontend/src/utils/pushError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/pushWorker.test.ts` | Е |  |
+| vitest | `frontend/src/utils/returnTo.test.ts` | Е |  |
+| vitest | `frontend/src/utils/serviceWorkerRouting.test.ts` | Е |  |
+| vitest | `frontend/src/utils/showcaseFilter.test.ts` | Е |  |
+| vitest | `frontend/src/utils/showcaseRefusal.test.ts` | Е |  |
+| vitest | `frontend/src/utils/showcaseTexts.test.ts` | Е |  |
+| vitest | `frontend/src/utils/staffPushTexts.test.ts` | Е |  |
+| vitest | `frontend/src/utils/subjectRequestError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/templateMarkers.test.ts` | Е |  |
+| vitest | `frontend/src/utils/timezone.test.ts` | Е |  |
+| vitest | `frontend/src/utils/trialError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/uploadError.test.ts` | Е |  |
+| vitest | `frontend/src/utils/webPushEncoding.test.ts` | Е |  |
 
 ### Реестр — бэкенд (unit, functional)
 
@@ -6776,6 +6980,13 @@ Vitest разработчиков (не пересобирались QA): раз
 
 | № | Набор | ID | Тест | Кат. | Действие | Причина | Замена / ссылка |
 |---|---|---|---|---|---|---|---|
+| R36-F001 | vitest | — | `goods/src/components/UpdateBanner.test.tsx::UpdateBanner > stays hidden while the deployed bundle is the loaded one` | Б | удалён | тот же компонент, тот же мок index.html и то же утверждение; приёмочный тест строже (проверяет и отсутствие ошибок в консоли) | `goods/src/components/UpdateBanner.acceptance.test.tsx::CY34 UpdateBanner acceptance > CY34-07 same build: no banner, no console errors` |
+| R36-F002 | vitest | — | `goods/src/components/UpdateBanner.test.tsx::UpdateBanner > appears when index.html points to a newer bundle` | Б | удалён | тот же компонент, тот же мок index.html и то же утверждение; приёмочный тест строже (проверяет и отсутствие ошибок в консоли) | `goods/src/components/UpdateBanner.acceptance.test.tsx::CY34 UpdateBanner acceptance > CY34-01 return to app with newer build shows banner and button` |
+| R36-F003 | vitest | — | `goods/src/components/UpdateBanner.test.tsx::UpdateBanner > ignores network errors` | Б | удалён | тот же компонент, тот же мок index.html и то же утверждение; приёмочный тест строже (проверяет и отсутствие ошибок в консоли) | `goods/src/components/UpdateBanner.acceptance.test.tsx::CY34 UpdateBanner acceptance > CY34-08 network error and non-OK response: no banner, no console errors, next check works` |
+| R36-F004 | vitest | QA27-09 | `goods/src/components/BusinessBlock.qa.test.tsx::BusinessBlock QA (cycle 27) > QA27-09 mentions chats/one place` | Б | удалён | обе фразы («по чатам», «в одном месте») входят в абзац, который T27-05 сверяет дословно | `goods/src/components/BusinessBlock.test.tsx::BusinessBlock > T27-05 paragraph and 4 benefits verbatim` |
+| R36-F005 | vitest | QA30-01 | `goods/src/components/BuyersBlock.qa.test.tsx::BuyersBlock QA (cycle 30) > QA30-01 section is labelled by h2 with variant A text; id differs from biz-title` | Б | удалён | точный текст h2, единственность h2, id и связь region-h2 проверяют T30-02 и T30-03; «не больше 60 знаков» — следствие дословного совпадения | `goods/src/components/BuyersBlock.test.tsx::BuyersBlock > T30-02 h2 has id buyers-title, exact text and tabIndex -1`; `goods/src/components/BuyersBlock.test.tsx::BuyersBlock > T30-03 section is a region labelled by h2` |
+| R36-F006 | vitest | QA30-03 | `goods/src/components/BuyersBlock.qa.test.tsx::BuyersBlock QA (cycle 30) > QA30-03 heading levels h2 > h3 > h4 without gaps` | Б | удалён | те же порядок и тексты заголовков h2/h3/h4, что в T30-05 | `goods/src/components/BuyersBlock.test.tsx::BuyersBlock > T30-05 heading order` |
+| R36-F007 | vitest | QA30-04 | `goods/src/components/BuyersBlock.qa.test.tsx::BuyersBlock QA (cycle 30) > QA30-04 five tracking items verbatim and within 140 chars` | Б | удалён | те же пять пунктов дословно; T30-07 строже: лимит 140 знаков и иконки | `goods/src/components/BuyersBlock.test.tsx::BuyersBlock > T30-07 track: ul with 5 li verbatim, short, hidden icons` |
 
 ### Переименования классов
 
