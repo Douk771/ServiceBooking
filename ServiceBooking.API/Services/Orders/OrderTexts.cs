@@ -50,6 +50,13 @@ public static class OrderTexts
         return kg.ToString("0.###", Ru) + " кг";
     }
 
+    /// <summary>
+    /// Quantity as the cycle-25 reports print it: "3 шт", "650 г" below a kilogram, "1,2 кг" above (<see cref="Quantity"/> always uses
+    /// kilograms — the form of the order card).
+    /// </summary>
+    public static string QuantityCompact(ProductUnit unit, int quantity) =>
+        unit == ProductUnit.Weight && quantity < 1000 ? $"{quantity} г" : Quantity(unit, quantity);
+
     /// <summary>"2 шт × 150 ₽" / "0,54 кг × 540 ₽/кг" — one line of an order in the "was → became" texts.</summary>
     public static string LineSummary(ProductUnit unit, int quantity, decimal unitPrice) =>
         unit == ProductUnit.Piece

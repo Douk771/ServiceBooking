@@ -481,6 +481,5 @@ public class CompaniesController(
     /// Backslash must be escaped first, or escaping '%'/'_' afterward would double-escape their own
     /// backslashes.
     /// </summary>
-    public static string EscapeLikeWildcards(string value) =>
-        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+    public static string EscapeLikeWildcards(string value) => ServiceBooking.API.Services.LikePattern.Escape(value);
 }

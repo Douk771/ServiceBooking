@@ -159,6 +159,24 @@ public sealed class PickupSchedule(ShopScheduleSnapshot schedule, PickupSettings
         return slots;
     }
 
+    /// <summary>
+    /// ARCHITECTURE_CYCLE25.md §503 — the whole slot grid of a working day (step <c>SlotStepMinutes</c>, every slot entirely inside an interval),
+    /// with NO cut-off for "already gone", no preparation time and no dependence on <c>ScheduledEnabled</c>: the pick list needs the grid of past
+    /// and future dates too.
+    /// </summary>
+    public IReadOnlyList<PickupSlot> DaySlots(DateOnly day)
+    {
+        var step = TimeSpan.FromMinutes(settings.SlotStepMinutes);
+        var slots = new List<PickupSlot>();
+        foreach (var interval in IntervalsFor(day))
+            for (var start = interval.StartUtc; start + step <= interval.EndUtc; start += step)
+            {
+                var end = start + step;
+                slots.Add(new PickupSlot(start, end, $"{ShopTimeTexts.Hhmm(LocalMinutes(start))}–{ShopTimeTexts.Hhmm(LocalMinutes(end))}"));
+            }
+        return slots;
+    }
+
     /// <summary>The slots a date really offers: none outside the horizon or on a day off (the raw <see cref="Slots"/> grid knows nothing of the horizon).</summary>
     public IReadOnlyList<PickupSlot> SlotsForDate(DateOnly day, DateTime nowUtc, bool forStaff) =>
         SelectableDays(nowUtc).Contains(day) ? Slots(day, nowUtc, forStaff) : [];

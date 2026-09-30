@@ -121,6 +121,43 @@ public class PickupScheduleVectorsTests
             gate.Schedule.PauseEndOfDay(now).Should().Be(Utc(pauseEnd.GetString()!), id + " pauseEndOfDay");
     }
 
+    // ── daySlots (cycle 25, §503) ─────────────────────────────────────────────────────────────────────
+
+    public static IEnumerable<object[]> DaySlotCaseIds()
+    {
+        using var doc = ContractFiles.Load("cycle24", "pickup-schedule-vectors.json");
+        foreach (var c in doc.RootElement.GetProperty("daySlots").EnumerateArray())
+            yield return [c.GetProperty("id").GetString()!];
+    }
+
+    [Theory]
+    [MemberData(nameof(DaySlotCaseIds))]
+    public void DaySlots_MatchesEveryExpectedField(string id)
+    {
+        using var doc = ContractFiles.Load("cycle24", "pickup-schedule-vectors.json");
+        var c = doc.RootElement.GetProperty("daySlots").EnumerateArray().Single(x => x.GetProperty("id").GetString() == id);
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(c.GetProperty("timeZoneId").GetString()!);
+        var special = new Dictionary<DateOnly, SpecialDayHours>();
+        foreach (var d in c.GetProperty("specialDays").EnumerateObject())
+            special[Date(d.Name)] = d.Value.TryGetProperty("isClosed", out var ic) && ic.GetBoolean()
+                ? SpecialDayHours.Closed
+                : new SpecialDayHours(false, IntervalsOf(d.Value.GetProperty("intervals")));
+        var schedule = new ShopScheduleSnapshot(zone, WeeklyOf(c.GetProperty("workingHours")), special);
+        // scheduledEnabled = false and a huge preparation time must not matter: the grid is the shop's, not "what is still orderable".
+        var settings = new PickupSettings(true, false, c.GetProperty("slotStepMinutes").GetInt32(), 0, 600);
+
+        var actual = new PickupSchedule(schedule, settings).DaySlots(Date(c.GetProperty("day").GetString()!));
+
+        var expect = c.GetProperty("expect");
+        actual.Count.Should().Be(expect.GetProperty("count").GetInt32(), id);
+        if (expect.TryGetProperty("first", out var first))
+            (actual[0].StartUtc, actual[0].EndUtc).Should().Be((Utc(first[0].GetString()!), Utc(first[1].GetString()!)), id + " first");
+        if (expect.TryGetProperty("last", out var last))
+            (actual[^1].StartUtc, actual[^1].EndUtc).Should().Be((Utc(last[0].GetString()!), Utc(last[1].GetString()!)), id + " last");
+        if (expect.TryGetProperty("labels", out var labels))
+            actual.Select(x => x.Label).Should().Equal(labels.EnumerateArray().Select(x => x.GetString()!), id + " labels");
+    }
+
     // ── file → model ────────────────────────────────────────────────────────────────────────────────
 
     private static DateTime Utc(string s) => DateTime.Parse(s, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal);

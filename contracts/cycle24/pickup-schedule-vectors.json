@@ -7,7 +7,8 @@
     "defaults": "Не указанные в случае поля берутся из defaults.",
     "slots": "expect.slots[date]: count — число слотов покупателя (start ≥ now + minPrep, слот целиком в интервале, сетка от начала интервала с шагом slotStepMinutes); first/last — [startUtc, endUtc].",
     "dates": "expect.dates — даты, предлагаемые покупателю (PickupOptionsDto.dates): при scheduledEnabled = false — пустой список; выходные и закрытые особые дни не входят; идущий «хвост» интервала через полночь делает его рабочий день первой датой.",
-    "pauseEndOfDayUtc": "Результат PickupSchedule.PauseEndOfDay(now): конец последнего интервала текущего рабочего дня, если он ещё впереди (в том числе в перерыве и в «хвосте» через полночь); иначе — ближайшая локальная полночь."
+    "pauseEndOfDayUtc": "Результат PickupSchedule.PauseEndOfDay(now): конец последнего интервала текущего рабочего дня, если он ещё впереди (в том числе в перерыве и в «хвосте» через полночь); иначе — ближайшая локальная полночь.",
+    "daySlots": "Раздел daySlots (цикл 25, ARCHITECTURE_CYCLE25.md §503): PickupSchedule.DaySlots(day) — вся сетка слотов дня без отсечения «уже прошло», без времени на приготовление и без учёта scheduledEnabled. Поля случая: timeZoneId, workingHours, specialDays, slotStepMinutes, day; expect: count, first/last — [startUtc, endUtc], labels — подписи всех слотов."
   },
   "defaults": {
     "timeZoneId": "Europe/Moscow",
@@ -235,5 +236,13 @@
         }
       }
     }
+  ],
+  "daySlots": [
+    {"id": "DS01-plain-day-step15", "timeZoneId": "Europe/Moscow", "workingHours": {"Wednesday": [["09:00", "10:00"]]}, "specialDays": {}, "slotStepMinutes": 15, "day": "2026-09-30", "expect": {"count": 4, "first": ["2026-09-30T06:00:00Z", "2026-09-30T06:15:00Z"], "last": ["2026-09-30T06:45:00Z", "2026-09-30T07:00:00Z"], "labels": ["09:00–09:15", "09:15–09:30", "09:30–09:45", "09:45–10:00"]}},
+    {"id": "DS02-step30-two-intervals", "timeZoneId": "Europe/Moscow", "workingHours": {"Wednesday": [["09:00", "10:00"], ["14:00", "15:00"]]}, "specialDays": {}, "slotStepMinutes": 30, "day": "2026-09-30", "expect": {"count": 4, "first": ["2026-09-30T06:00:00Z", "2026-09-30T06:30:00Z"], "last": ["2026-09-30T11:30:00Z", "2026-09-30T12:00:00Z"], "labels": ["09:00–09:30", "09:30–10:00", "14:00–14:30", "14:30–15:00"]}},
+    {"id": "DS03-overnight-belongs-to-start-day", "timeZoneId": "Europe/Moscow", "workingHours": {"Friday": [["22:00", "01:00"]]}, "specialDays": {}, "slotStepMinutes": 60, "day": "2026-10-02", "expect": {"count": 3, "first": ["2026-10-02T19:00:00Z", "2026-10-02T20:00:00Z"], "last": ["2026-10-02T21:00:00Z", "2026-10-02T22:00:00Z"], "labels": ["22:00–23:00", "23:00–00:00", "00:00–01:00"]}},
+    {"id": "DS04-day-off", "timeZoneId": "Europe/Moscow", "workingHours": {"Monday": [["09:00", "21:00"]]}, "specialDays": {}, "slotStepMinutes": 15, "day": "2026-09-30", "expect": {"count": 0}},
+    {"id": "DS05-closed-special-day", "timeZoneId": "Europe/Moscow", "workingHours": {"Wednesday": [["09:00", "21:00"]]}, "specialDays": {"2026-09-30": {"isClosed": true}}, "slotStepMinutes": 15, "day": "2026-09-30", "expect": {"count": 0}},
+    {"id": "DS06-interval-shorter-than-step", "timeZoneId": "Europe/Moscow", "workingHours": {"Wednesday": [["09:00", "09:40"]]}, "specialDays": {}, "slotStepMinutes": 30, "day": "2026-09-30", "expect": {"count": 1, "first": ["2026-09-30T06:00:00Z", "2026-09-30T06:30:00Z"], "last": ["2026-09-30T06:00:00Z", "2026-09-30T06:30:00Z"], "labels": ["09:00–09:30"]}}
   ]
 }

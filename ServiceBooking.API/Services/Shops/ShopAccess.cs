@@ -34,7 +34,16 @@ public enum ShopPermission
     ManageAvailability,
 
     /// <summary>§460 — working hours, special days, pickup settings, weekdays of products, notification settings (owner only; the role check is <see cref="EditSettings"/>'s).</summary>
-    ManageShop
+    ManageShop,
+
+    /// <summary>ARCHITECTURE_CYCLE25.md §506 — order history, the pick list, the customer card and reading the customer note (owner and staff).</summary>
+    ViewOrderReports,
+
+    /// <summary>§506 — writing the customer note (owner and staff).</summary>
+    EditCustomerNotes,
+
+    /// <summary>§506 — the day/period summary (owner and SuperAdmin only; staff get 403).</summary>
+    ViewSummary
 }
 
 /// <summary>
@@ -48,7 +57,8 @@ public static class ShopAccess
     {
         ShopRole.Owner or ShopRole.SuperAdmin => true,
         ShopRole.Staff => permission is ShopPermission.ManageOrders or ShopPermission.ManageStock or ShopPermission.ViewShop
-            or ShopPermission.ManageAcceptance or ShopPermission.ManageAvailability,
+            or ShopPermission.ManageAcceptance or ShopPermission.ManageAvailability
+            or ShopPermission.ViewOrderReports or ShopPermission.EditCustomerNotes,
         _ => false
     };
 }
