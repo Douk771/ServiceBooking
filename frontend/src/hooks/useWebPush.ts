@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { pushApi, type PushSite } from '../api/push'
 import { urlBase64ToUint8Array, arrayBufferToBase64Url } from '../utils/webPushEncoding'
 import { detectIosEnvironment, getPushUnavailableReason, type PushUnavailableReason } from '../utils/pushAvailability'
-import type { PushSubscriptionDevice } from '../types'
+import { refreshPushWorkerPeer, registerPushWorker } from '../utils/pushWorker'
+import type { PushConfigCompany, PushSiteUrls, PushSubscriptionDevice } from '../types'
 
 // ARCHITECTURE_CYCLE9.md §105.5/§105.9/§105.10, API_CONTRACT_CYCLE9.md §115 — feature detection,
 // SW registration, subscribe/unsubscribe and server reconciliation for the master's own device.
@@ -13,6 +14,7 @@ import type { PushSubscriptionDevice } from '../types'
 
 const SERVICE_WORKER_SUPPORTED = typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
 const EMPTY_DEVICES: PushSubscriptionDevice[] = []
+const EMPTY_COMPANIES: PushConfigCompany[] = []
 
 /** ARCHITECTURE_CYCLE21.md §362 — iOS + "opened from the Home Screen" detection, safe outside a browser. */
 function readIosEnvironment() {
@@ -38,14 +40,15 @@ function readPermission(): NotificationPermission | 'unsupported' {
  * interceptor (api/client.ts); a missing SW registration or a network failure must never block logout
  * itself — rubezh 1 will pick up the slack the next time someone subscribes on this browser.
  */
-export async function unsubscribeCurrentDeviceOnLogout(): Promise<void> {
+export async function unsubscribeCurrentDeviceOnLogout(opts: { keepBrowserSubscription?: boolean } = {}): Promise<void> {
   if (!SERVICE_WORKER_SUPPORTED) return
   try {
     const registration = await navigator.serviceWorker.getRegistration('/')
     const subscription = await registration?.pushManager.getSubscription()
     if (!subscription) return
     await pushApi.deleteCurrent(subscription.endpoint)
-    await subscription.unsubscribe()
+    // goods: the browser subscription is shared with the buyer role (ARCHITECTURE_CYCLE33.md §33.9.2) — server row only.
+    if (!opts.keepBrowserSubscription) await subscription.unsubscribe()
   } catch {
     // Best-effort (§105.5) — no network, no registration, or the server call failed: logout proceeds
     // regardless.
@@ -59,8 +62,17 @@ interface UseWebPushResult {
   isLoading: boolean
   /** True once this exact browser+device is subscribed (its endpoint is on the server's list). */
   isSubscribedOnThisDevice: boolean
-  /** All of the master's devices, including this one — for MyDevicesCard's list. */
+  /** All of the user's devices of BOTH sites, including this one (ARCHITECTURE_CYCLE33.md §33.9.2). */
   devices: PushSubscriptionDevice[]
+  /** Companies where the user is Master/CompanyOwner, both kinds; empty = not staff. */
+  companies: PushConfigCompany[]
+  hasServices: boolean
+  hasOrders: boolean
+  /** `undefined` while the config is loading (role not known yet). */
+  isStaff: boolean | undefined
+  siteUrls: PushSiteUrls | undefined
+  /** The device list request failed (the switch may still work). */
+  devicesError: boolean
   isEnabling: boolean
   isDisabling: boolean
   actionError: string | null
@@ -73,18 +85,17 @@ interface UseWebPushResult {
 }
 
 /**
- * ARCHITECTURE_CYCLE24.md §454, §456.3. Defaults keep ezbook exactly as before (`site` omitted from every request,
- * the browser subscription is dropped on disable).
- * - `site: 'Orders'` — goods: the server filters devices/companies by site and stores the site on the row.
+ * ARCHITECTURE_CYCLE33.md §33.9.2. `site` is where the page lives (sent with every POST); config and devices are always
+ * requested for BOTH sites (`allSites=true`).
  * - `keepBrowserSubscription: true` — goods: one browser has ONE push subscription shared by the staff member and
  *   the customer, so "disable" removes the server row only and never calls PushSubscription.unsubscribe().
  */
 export interface UseWebPushOptions {
-  site?: PushSite
+  site: PushSite
   keepBrowserSubscription?: boolean
 }
 
-export function useWebPush(options: UseWebPushOptions = {}): UseWebPushResult {
+export function useWebPush(options: UseWebPushOptions): UseWebPushResult {
   const { site, keepBrowserSubscription = false } = options
   const qc = useQueryClient()
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(readPermission)
@@ -93,10 +104,10 @@ export function useWebPush(options: UseWebPushOptions = {}): UseWebPushResult {
   const [isDisabling, setIsDisabling] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
+  // Not gated by SERVICE_WORKER_SUPPORTED: iPhone Safari must still learn the role to show the «install the app» steps.
   const configQuery = useQuery({
-    queryKey: ['push-config', site ?? 'Services'],
-    queryFn: () => pushApi.getConfig(site),
-    enabled: SERVICE_WORKER_SUPPORTED,
+    queryKey: ['push-config', site, 'all'],
+    queryFn: () => pushApi.getConfig(site, { allSites: true }),
     staleTime: 60 * 1000,
   })
 
@@ -120,16 +131,31 @@ export function useWebPush(options: UseWebPushOptions = {}): UseWebPushResult {
     }
   }, [])
 
+  const companies = configQuery.data?.companies ?? EMPTY_COMPANIES
+  const hasServices = companies.some((c) => c.kind === 'Services')
+  const hasOrders = companies.some((c) => c.kind === 'Orders')
+  const isStaff = configQuery.data ? companies.length > 0 : undefined
+  const siteUrls = configQuery.data?.siteUrls
+  const peerOrigin = siteUrls ? (site === 'Services' ? siteUrls.orders : siteUrls.services) : undefined
+
+  // Devices are listed from any browser (also where push is unsupported): a forgotten device can be removed from anywhere.
   const devicesQuery = useQuery({
-    queryKey: ['push-devices', site ?? 'Services', currentEndpoint],
-    queryFn: () => pushApi.listSubscriptions(currentEndpoint ?? undefined, site),
-    enabled: SERVICE_WORKER_SUPPORTED && configQuery.data?.enabled === true,
+    queryKey: ['push-devices', site, 'all', currentEndpoint],
+    queryFn: () => pushApi.listSubscriptions(currentEndpoint ?? undefined, site, { allSites: true }),
+    enabled: configQuery.data?.enabled === true && companies.length > 0,
   })
 
   const devices = devicesQuery.data ?? EMPTY_DEVICES
   const isSubscribedOnThisDevice = devices.some((d) => d.isCurrent)
 
-  const companies = configQuery.data?.companies ?? []
+  // §33.5.3: devices enabled before cycle 33 learn the sibling site on the first open. Silent; never installs a worker.
+  useEffect(() => {
+    if (!SERVICE_WORKER_SUPPORTED || !peerOrigin || companies.length === 0) return
+    refreshPushWorkerPeer(peerOrigin).catch(() => {
+      // Best-effort: the notification still arrives, only the cross-site click degrades to the default page.
+    })
+  }, [peerOrigin, companies.length])
+
   const companyStaffPushEnabled = companies.length > 0 ? companies.some((c) => c.staffPushEnabled) : undefined
 
   const reason = getPushUnavailableReason({
@@ -154,7 +180,7 @@ export function useWebPush(options: UseWebPushOptions = {}): UseWebPushResult {
       setPermission(perm)
       if (perm !== 'granted') return
 
-      const registration = await navigator.serviceWorker.register('/sw.js')
+      const registration = await registerPushWorker(peerOrigin)
       await registration.update()
 
       const publicKey = configQuery.data?.publicKey
@@ -175,10 +201,10 @@ export function useWebPush(options: UseWebPushOptions = {}): UseWebPushResult {
           auth: arrayBufferToBase64Url(subscription.getKey('auth')),
         },
         deviceLabel: describeDevice(),
-        ...(site ? { site } : {}),
+        site,
       })
       setCurrentEndpoint(subscription.endpoint)
-      qc.setQueryData(['push-devices', site ?? 'Services', subscription.endpoint], (prev: PushSubscriptionDevice[] | undefined) => {
+      qc.setQueryData(['push-devices', site, 'all', subscription.endpoint], (prev: PushSubscriptionDevice[] | undefined) => {
         const rest = (prev ?? []).filter((d) => d.id !== created.id)
         return [...rest, { ...created, isCurrent: true }]
       })
@@ -188,7 +214,7 @@ export function useWebPush(options: UseWebPushOptions = {}): UseWebPushResult {
     } finally {
       setIsEnabling(false)
     }
-  }, [configQuery.data?.publicKey, invalidateDevices, qc, site])
+  }, [configQuery.data?.publicKey, invalidateDevices, peerOrigin, qc, site])
 
   const disableOnThisDevice = useCallback(async () => {
     setActionError(null)
@@ -233,7 +259,13 @@ export function useWebPush(options: UseWebPushOptions = {}): UseWebPushResult {
 
   return {
     reason,
-    isLoading: configQuery.isLoading || (configQuery.data?.enabled === true && devicesQuery.isLoading),
+    isLoading: configQuery.isLoading || devicesQuery.isLoading,
+    companies,
+    hasServices,
+    hasOrders,
+    isStaff,
+    siteUrls,
+    devicesError: devicesQuery.isError,
     isSubscribedOnThisDevice,
     devices,
     isEnabling,
