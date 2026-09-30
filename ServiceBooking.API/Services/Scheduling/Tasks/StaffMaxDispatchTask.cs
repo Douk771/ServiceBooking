@@ -144,6 +144,10 @@ public sealed class StaffMaxDispatchTask(
         // 1. The platform switch — checked again at send time, so switching it off holds what is already queued.
         if (!availability.Enabled) return await SkipAsync(scopedDb, row, NotificationReason.StaffMaxPlatformDisabled, runnerCt);
 
+        // 1a. A deactivated shop sends nothing to its staff.
+        var shopActive = await scopedDb.Companies.AsNoTracking().Where(c => c.Id == row.CompanyId).Select(c => (bool?)c.IsActive).FirstOrDefaultAsync(runnerCt);
+        if (shopActive != true) return await SkipAsync(scopedDb, row, NotificationReason.StaffMaxShopInactive, runnerCt);
+
         // 2. The shop's own switch, for order messages (the owner's limit warning is about the account — like push, §459.6).
         Order? order = null;
         if (row.Type != NotificationType.OwnerOrderLimitWarning)

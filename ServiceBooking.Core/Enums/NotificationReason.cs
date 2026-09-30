@@ -122,4 +122,7 @@ public enum NotificationReason
 
     /// <summary>§499.4 — MAX rate limit; the row stays pending and is retried shortly.</summary>
     StaffMaxRateLimited,
+
+    /// <summary>The shop was deactivated after the row was queued — staff of a closed shop get no MAX order messages.</summary>
+    StaffMaxShopInactive,
 }
