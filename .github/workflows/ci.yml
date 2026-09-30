@@ -169,7 +169,8 @@ jobs:
             ../contracts/cycle19/openapi.yaml \
             ../contracts/cycle20/openapi.yaml \
             ../contracts/cycle23/openapi.yaml \
-            ../contracts/cycle24/openapi.yaml
+            ../contracts/cycle24/openapi.yaml \
+            ../contracts/cycle25/openapi.yaml
 
       # ARCHITECTURE_CYCLE16.md §249 (TD-06). Production-dependency vulnerabilities only — dev tooling
       # (e.g. @redocly/cli's own dependency tree) is explicitly out of scope for this threshold so the
@@ -200,7 +201,8 @@ jobs:
           npm run types:api:cycle20
           npm run types:api:cycle23
           npm run types:api:cycle24
-          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts
+          npm run types:api:cycle25
+          git diff --exit-code -- src/types/api-cycle18.generated.ts src/types/api-cycle19.generated.ts src/types/api-cycle20.generated.ts src/types/api-cycle23.generated.ts src/types/api-cycle24.generated.ts src/types/api-cycle25.generated.ts
 
       # Цикл 17: тексты правовых уведомлений пишет legal-counsel, а каркас кода появляется
       # раньше текста. Заглушка видна владельцу на экране «Ваша подписка», поэтому её нельзя

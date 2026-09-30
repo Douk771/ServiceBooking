@@ -78,6 +78,11 @@ services:
       - Notifications__StaffPush__VapidPublicKey=${WEBPUSH_VAPID_PUBLIC_KEY:-}
       - Notifications__StaffPush__VapidPrivateKey=${WEBPUSH_VAPID_PRIVATE_KEY:-}
       - Notifications__StaffPush__VapidSubject=${WEBPUSH_VAPID_SUBJECT:-}
+      # ARCHITECTURE_CYCLE25.md §498.1, §510.3 (Q-25-2, DO-2) — "MAX for staff": messages about new orders / cancellations to the shop staff's MAX chats.
+      # OFF by default and in the repository; a person turns it on on the machine with STAFFMAX_ENABLED=true AFTER the prerequisites of DEPLOY.md §23
+      # (PHONEVERIFY_PROVIDER=max-bot, the bot configured, NOTIFICATIONS_ENCRYPTION_KEY and PHONEVERIFY_EXTERNAL_KEY set — otherwise the API refuses to start).
+      # The ONLY new environment variable of cycle 25.
+      - Notifications__StaffMax__Enabled=${STAFFMAX_ENABLED:-false}
       # ARCHITECTURE_CYCLE14.md §150.1-§150.2 — phone verification via the MAX bot. A PLATFORM
       # subsystem: own top-level section, own five secrets, deliberately NOT nested under Notifications__
       # (§140.2/R5 — the whole point is that it never depends on the WhatsApp/MAX channel machinery

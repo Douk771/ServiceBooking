@@ -299,6 +299,19 @@ if [ "$GOODS_SMOKE" != "0" ]; then
     rollback_hint
     exit 1
   }
+  # ARCHITECTURE_CYCLE25.md §514 (DO-3) — the anonymous shop catalog on the goods home page: the API route must answer 200 with JSON that has
+  # the "items" array, through the same local nginx. A red here means the catalog (the goods home page) is broken — roll back.
+  goods_catalog_headers=$("${goods_curl[@]}" -D - -o /tmp/goods-catalog.json.$$ -w '' "https://$GOODS_HOST/api/goods/catalog") || true
+  goods_catalog_code=$(head -n1 <<<"$goods_catalog_headers" | awk '{print $2}')
+  if [ "$goods_catalog_code" != "200" ] \
+    || ! grep -qi '^content-type:.*application/json' <<<"$goods_catalog_headers" \
+    || ! grep -q '"items"' /tmp/goods-catalog.json.$$ 2>/dev/null; then
+    rm -f /tmp/goods-catalog.json.$$
+    echo "ERROR: https://$GOODS_HOST/api/goods/catalog did not answer 200 application/json with an \"items\" array (got: ${goods_catalog_code:-none}) — the goods home page would be empty" >&2
+    rollback_hint
+    exit 1
+  fi
+  rm -f /tmp/goods-catalog.json.$$
   echo "    goods OK"
 else
   echo "==> goods smoke skipped (GOODS_SMOKE=0)"
