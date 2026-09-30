@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Icon } from '@/components/ui/Icon'
+import { Link } from 'react-router-dom'
 import { useShopContext } from '../../hooks/useShop'
 import { useOrderBoardPolling } from '../../hooks/useOrderBoardPolling'
 import { useNewOrderSound } from '../../hooks/useNewOrderSound'
@@ -170,6 +171,10 @@ export function OrdersScreenPage() {
         </span>
         {wake === 'unsupported' && <span className="text-xs text-muted">Отключите автоблокировку экрана — браузер не умеет держать его включённым.</span>}
         {wake === 'active' && <span className="text-xs text-muted">Экран не погаснет</span>}
+        <span className="ml-auto flex items-center gap-4 text-xs font-semibold">
+          <Link to={`/cabinet/${shop.id}/picklist`} className="underline underline-offset-2 hover:no-underline min-h-[36px] inline-flex items-center">Лист сборки</Link>
+          <Link to={`/cabinet/${shop.id}/history`} className="underline underline-offset-2 hover:no-underline min-h-[36px] inline-flex items-center">История</Link>
+        </span>
         <Button variant="secondary" size="sm" className="ml-auto" onClick={() => setShowProducts(true)}>
           <Icon name="shopping-bag" size={14} /> Товары
         </Button>

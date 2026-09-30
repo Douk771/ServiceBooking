@@ -6,7 +6,7 @@ import { NotFoundPage } from '../NotFoundPage'
 import { getGoodsErrorMessage, httpStatus } from '../../utils/orderError'
 import type { ShopContext } from '../../hooks/useShop'
 
-const OWNER_ONLY_SEGMENTS = ['settings', 'staff', 'hours', 'notifications']
+const OWNER_ONLY_SEGMENTS = ['settings', 'staff', 'hours', 'notifications', 'summary']
 
 /**
  * Shell of `/cabinet/:shopId/*`: loads the shop once, shows the tab bar and hands `{ shop, isOwner }` to the
@@ -53,6 +53,9 @@ export function ShopLayout() {
 
   const tabs = [
     { to: `/cabinet/${shopId}/orders`, label: 'Заказы', show: true },
+    { to: `/cabinet/${shopId}/history`, label: 'История', show: true },
+    { to: `/cabinet/${shopId}/picklist`, label: 'Лист сборки', show: true },
+    { to: `/cabinet/${shopId}/summary`, label: 'Сводка', show: isOwner },
     { to: `/cabinet/${shopId}/catalog`, label: 'Каталог', show: true },
     { to: `/cabinet/${shopId}/menu`, label: 'Меню на дату', show: true },
     { to: `/cabinet/${shopId}/hours`, label: 'Часы работы', show: isOwner },
@@ -66,7 +69,7 @@ export function ShopLayout() {
 
   return (
     <div>
-      <div className="border-b border-line bg-white/50">
+      <div className="no-print border-b border-line bg-white/50">
         <div className="max-w-[1180px] mx-auto px-4 sm:px-8 pt-6">
           <div className="flex items-center gap-3 mb-4">
             <h1 className="font-serif text-[26px] text-ink leading-tight truncate">{shop.name}</h1>

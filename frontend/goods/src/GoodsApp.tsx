@@ -15,7 +15,7 @@ import { LegalDocumentPage } from '@/pages/LegalDocumentPage'
 import { NoticesPage } from '@/pages/NoticesPage'
 import { GoodsNavbar } from './components/GoodsNavbar'
 import { GoodsFooter } from './components/GoodsFooter'
-import { LandingPage } from './pages/LandingPage'
+import { CatalogHomePage } from './pages/CatalogHomePage'
 import { StorefrontPage } from './pages/StorefrontPage'
 import { OrderPage } from './pages/OrderPage'
 import { MyOrdersPage } from './pages/MyOrdersPage'
@@ -32,6 +32,10 @@ import { LinkPage } from './pages/cabinet/LinkPage'
 import { HoursPage } from './pages/cabinet/HoursPage'
 import { MenuPage } from './pages/cabinet/MenuPage'
 import { ShopNotificationsPage } from './pages/cabinet/ShopNotificationsPage'
+import { HistoryPage } from './pages/cabinet/HistoryPage'
+import { SummaryPage } from './pages/cabinet/SummaryPage'
+import { PickListPage } from './pages/cabinet/PickListPage'
+import { CustomerPage } from './pages/cabinet/CustomerPage'
 import { DevicesPage } from './pages/cabinet/DevicesPage'
 import { SubscriptionPage } from './pages/cabinet/SubscriptionPage'
 import { shopsApi } from './api/shops'
@@ -103,7 +107,8 @@ export function GoodsApp() {
             <LegalGuard bypassPaths={CONSENT_GATE_BYPASS_PATHS} showPlatformNotices>
               <RouteErrorBoundary>
                 <Routes>
-                  <Route path="/" element={<LandingPage />} />
+                  <Route path="/" element={<CatalogHomePage />} />
+                  <Route path="/city/:cityId" element={<CatalogHomePage />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/register" element={<RegisterPage />} />
                   <Route path="/o/:token" element={<OrderPage />} />
@@ -126,6 +131,10 @@ export function GoodsApp() {
                       <Route path="/cabinet/:shopId/hours" element={<HoursPage />} />
                       <Route path="/cabinet/:shopId/menu" element={<MenuPage />} />
                       <Route path="/cabinet/:shopId/notifications" element={<ShopNotificationsPage />} />
+                      <Route path="/cabinet/:shopId/history" element={<HistoryPage />} />
+                      <Route path="/cabinet/:shopId/summary" element={<SummaryPage />} />
+                      <Route path="/cabinet/:shopId/picklist" element={<PickListPage />} />
+                      <Route path="/cabinet/:shopId/customers/:customerRef" element={<CustomerPage />} />
                     </Route>
                   </Route>
 
