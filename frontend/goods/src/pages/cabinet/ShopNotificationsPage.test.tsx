@@ -17,7 +17,7 @@ vi.mock('@/components/notifications/ChannelRequestModal', () => ({ ChannelReques
 
 const settings = (over: Partial<ShopNotificationSettingsDto> = {}): ShopNotificationSettingsDto => ({
   staffPushEnabled: true, customerWebPushEnabled: true, customerMessengerEnabled: false, deliveryMode: 'PriorityChannel', priorityTransport: 'Max',
-  messengerAvailable: false, messengerUnavailableText: 'Подключите номер для сообщений покупателям', platformPushEnabled: false, channels: [], ...over,
+  messengerAvailable: false, messengerUnavailableText: 'Подключите номер для сообщений покупателям', platformPushEnabled: false, channels: [], staffMaxEnabled: true, staffMaxAvailable: true, ...over,
 })
 
 function renderPage() {
@@ -58,7 +58,7 @@ describe('ShopNotificationsPage', () => {
     renderPage()
     await user.click(await screen.findByRole('switch', { name: /Push о новых заказах/ }))
     await user.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(put).toHaveBeenCalledWith('s1', { staffPushEnabled: false, customerWebPushEnabled: true, customerMessengerEnabled: false, deliveryMode: 'PriorityChannel', priorityTransport: 'Max' }))
+    await waitFor(() => expect(put).toHaveBeenCalledWith('s1', { staffPushEnabled: false, customerWebPushEnabled: true, customerMessengerEnabled: false, staffMaxEnabled: true, deliveryMode: 'PriorityChannel', priorityTransport: 'Max' }))
     expect(await screen.findByText('Сохранено')).toBeInTheDocument()
   })
 

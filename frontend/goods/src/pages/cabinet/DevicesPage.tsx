@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/Icon'
 import { useWebPush } from '@/hooks/useWebPush'
 import { GoodsIosSteps } from '../../components/push/GoodsIosSteps'
 import { LoadingList } from '../../components/StatePanels'
+import { StaffMaxCard } from '../../components/staffMax/StaffMaxCard'
 import { goodsPushMessage } from '../../utils/goodsPush'
 
 /**
@@ -89,6 +90,8 @@ export function DevicesPage() {
           </ul>
         )}
       </section>
+
+      <StaffMaxCard />
 
       <p className="text-xs text-muted mt-6">
         <Link to="/cabinet" className="underline">

@@ -51,6 +51,7 @@ export function ShopNotificationsPage() {
         staffPushEnabled: d.staffPushEnabled,
         customerWebPushEnabled: d.customerWebPushEnabled,
         customerMessengerEnabled: d.customerMessengerEnabled,
+        staffMaxEnabled: d.staffMaxEnabled,
         deliveryMode: d.deliveryMode,
         priorityTransport: d.priorityTransport,
       }),
@@ -94,6 +95,17 @@ export function ShopNotificationsPage() {
         </h2>
         <Toggle label="Push о новых заказах" hint="Сотрудник включает уведомления на своём устройстве в разделе «Устройства»." checked={draft.staffPushEnabled} onChange={(v) => set({ staffPushEnabled: v })} />
         {!draft.platformPushEnabled && <p className="text-xs text-muted">Уведомления на устройство пока не включены на платформе.</p>}
+        <Toggle
+          label="Сообщения сотрудникам в MAX"
+          hint="Новые заказы и отмены покупателями приходят в MAX тем сотрудникам, кто подключил его в разделе «Устройства». Кнопка «Сохранить» — ниже, в блоке «Покупателям»."
+          checked={draft.staffMaxEnabled}
+          onChange={(v) => set({ staffMaxEnabled: v })}
+        />
+        {!draft.staffMaxAvailable && (
+          <p className="text-sm text-ink-soft bg-cream-deep rounded-xl px-4 py-2.5" data-testid="staff-max-unavailable">
+            {draft.staffMaxUnavailableText ?? 'Сообщения в MAX пока не включены на платформе'}. Настройку можно сохранить заранее — она начнёт действовать после включения.
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="ntf-customers" className="rounded-2xl border border-line bg-white p-5 sm:p-6">

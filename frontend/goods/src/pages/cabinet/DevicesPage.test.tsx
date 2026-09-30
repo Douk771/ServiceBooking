@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { DevicesPage } from './DevicesPage'
 
+vi.mock('../../components/staffMax/StaffMaxCard', () => ({ StaffMaxCard: () => null }))
 const useWebPush = vi.fn()
 vi.mock('@/hooks/useWebPush', () => ({ useWebPush: (...a: unknown[]) => useWebPush(...a) }))
 

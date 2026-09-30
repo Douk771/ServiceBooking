@@ -26,7 +26,8 @@ export type OrderRefusalCode = N['OrderRefusalCode']
 export type OrderConflictCode = N['OrderConflictCode']
 export type CatalogConflictCode = M['CatalogConflictCode']
 
-export type CatalogConflictDto = M['CatalogConflictDto']
+/** Cycle-24 shape (keeps `conflictingOrders`) with the cycle-25 code list (+ `CatalogListingNotAllowedByPlan`). */
+export type CatalogConflictDto = Omit<N['CatalogConflictDto'], 'code'> & { code: M['CatalogConflictCode'] }
 export type CompanyKindsSummaryDto = S['CompanyKindsSummaryDto']
 export type CreateShopInput = S['CreateShopInput']
 export type CreateShopResponse = S['CreateShopResponse']
