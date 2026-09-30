@@ -1,12 +1,210 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `8d4e98d` (`develop` = `origin/develop` = стартовая точка ветки `cycle/024-goods-orders-time-notify`), дата: 2026-09-30.**
-Прошлая отметка — `9a0ee29` (итог цикла 23). После неё в `develop` вошли четыре коммита: `16912e8` (запись
-цикла 23 в этот документ), `5996589` (ветка `cycle/023-goods-deploy`), `4ad9fa1` (ветка `fix/cycle23-debts`),
-`8d4e98d` (C23-7 в этом документе). Их содержание уже было вписано точечно в 🛒23 и §9, но шапка осталась
-на `9a0ee29`; эта правка сверяет вписанное с кодом и переносит отметку. **Следующий diff отсчитывайте от
-`8d4e98d`.** Метка блоков этой правки — 🛒23+ (долги цикла 23 после мерджа). Предыдущие метки 🛒23 / 🧮19 /
-⚖️20✅ / 🚀20 ниже остаются в силе, кроме мест, где рядом стоит 🛒23+.
+**Актуально по состоянию на коммит: `f739382` (`develop` = `origin/develop`, итог цикла 24 «Заказы», цикл 2), дата: 2026-09-30.**
+Прошлая отметка — `8d4e98d` (🛒23+). Эта правка описывает `git diff 8d4e98d..f739382` — только цикл 24
+(22 коммита, 283 файла, +29 361 / −1 140), сверено по коду. **Следующий diff отсчитывайте от `f739382`.**
+Метка блоков этой правки — ⏰24. Предыдущие метки 🛒23+ / 🛒23 / 🧮19 / ⚖️20✅ / 🚀20 ниже остаются в силе,
+кроме мест, где рядом стоит ⏰24. Остальные разделы заново не сканировались.
+
+### ⏰24 Итог цикла 24 «Заказы», цикл 2 «Время, приём, уведомления, тарифы магазинов» (goods.ezbook.ru) — `8d4e98d..f739382`
+
+Источники: корневой `SPEC.md` (теперь спека **цикла 24**, 636 строк; ответы заказчика Q-24-1…8 в §0; спека
+цикла 23 заархивирована как `SPEC_CYCLE23_GOODS_ORDERS_CORE.md`), `ARCHITECTURE_CYCLE24.md` (§446–§469),
+`API_CONTRACT_CYCLE24.md` (§470–§488), `contracts/cycle24/` и сам код. Ветка `cycle/024-goods-orders-time-notify`
+влита в `develop` (HEAD `f739382`). **Объём по решению заказчика (Q-24-1):** всё, включая блок F (тарифы
+магазинов), **кроме US-24-17** (служебные сообщения сотрудникам в MAX через бот платформы) — она перенесена в
+цикл 25. **На бой цикл 24 не выкачен** (`origin/master` по-прежнему `263c661`, 2026-07-28); деплой `f739382`
+на staging запущен, его результат в репозитории не зафиксирован.
+
+**А. Модель данных — одна миграция `20260929224531_Cycle24OrdersTimeNotifyTariffs`** (всего Designer-файлов
+миграций теперь 77). Новых таблиц 7:
+- `OrdersSubscriptions` — подписка линейки «Заказы», 1:1 с `BillingAccount` (уникальный индекс по
+  `BillingAccountId`), поля `PlanConfigId?`, `PaidUntil?`, `IsActive`. Намеренно отдельна от `AccountSubscription`,
+  которая остаётся подпиской линейки «Записи». Нет строки — действует бесплатный уровень линейки.
+- `OrderMonthlyUsages` (PK `BillingAccountId`+`Month`, `Count`, `Warned80AtUtc`, `Warned100AtUtc`) — жёсткий
+  месячный счётчик заказов на аккаунт. Месяц считается в поясе магазина. Инкремент — upsert внутри транзакции
+  создания заказа.
+- `ShopSpecialDays` (особые дни), `ShopDailyMenus` (уникальный индекс `CompanyId`+`Date`) + `ShopDailyMenuItems`
+  (меню на дату).
+- `OrderPushSubscriptions` (web-push покупателя, привязанный к заказу; уникальный индекс `OrderId`+`Endpoint`) и
+  `CustomerOrderPushNotifications` (очередь этих push; уникальный `IdempotencyKey`, фильтрованный индекс
+  `Status = 0`).
+- Новые колонки. `ShopSettings`: `WorkingHoursJson`, `AsapEnabled` (true), `ScheduledEnabled` (false),
+  `SlotStepMinutes` (15), `PreorderDays` (0), `MinPrepMinutes` (15), `OrdersStopped`, `PausedUntilUtc`,
+  `AcceptanceChanged{AtUtc,ByUserId,ByName}`, `CustomerWebPushEnabled` (true), `CustomerMessengerEnabled` (false).
+  `Orders`: `PickupKind` (`Asap = 0`/`Slot = 1`, новый enum `PickupKind`), `PickupDate`, `PickupStartUtc`,
+  `PickupEndUtc?`, `NotifyByMessenger`, `MessengerConsentAtUtc`, `MessengerConsentVersion`; бэкфилл старых
+  заказов: `PickupDate = BusinessDate`, `PickupStartUtc = CreatedAtUtc`. `Products`: `AvailableWeekdaysMask`
+  (127, CHECK-ограничение диапазона; бит 0 = пн), `SoldOutForDate?`. `SubscriptionPlanConfigs`: `Line`
+  (`CompanyKind`, 0 = «Записи»), `MaxProductsPerShop?`, `MaxOrdersPerMonth?`, `AllowOrders` (true). Для
+  `Line = Orders` существующие `MaxCompanies`/`MaxEmployees` читаются как «макс. магазинов»/«макс. участников».
+  `BillingAccounts.RequestedLine?` (null = «Записи»), `SubscriptionChangeLogs.Line`,
+  `PushSubscriptions.Site` (`CompanyKind`, индекс `UserId`+`Site`), `StaffPushNotifications.OrderId?` и
+  `OutboundNotifications.OrderId?` (FK на `Orders`, `SET NULL`).
+- **Номер заказа уникален в пределах ДНЯ ВЫДАЧИ.** `OrderDailyCounters.BusinessDate` переименован в
+  `PickupDate`. Уникальный индекс `(CompanyId, BusinessDate, Number)` заменён на `(CompanyId, PickupDate, Number)`
+  (`OrderNumberAllocator`). Добавлены индексы `(CompanyId, BusinessDate)` и `(CompanyId, PickupDate, PickupStartUtc)`.
+- Уникальный индекс системного бесплатного тарифа заменён на `IX_SubscriptionPlanConfigs_Line_SystemFree`
+  (по `Line`, с фильтром `IsSystemFree`). Миграция SQL-ом сидит тариф **«Заказы · Бесплатно»** с фиксированным id
+  `OrdersFreePlan.SeedId` (`0c24f0e5-…9b01`): `Line = 1`, 1 магазин, 2 участника, 50 товаров, 150 заказов в
+  месяц, `AllowOrders = true`. Если в БД есть опция `notifications.whatsapp`, сидится и `PlanOptionRule` к ней.
+  Числа правятся администратором без деплоя.
+- ⚠️ `Down` удаляет сид и пытается вернуть старый уникальный индекс. Если уже есть предзаказы с совпадающими
+  номерами в один `BusinessDate`, откат упадёт (комментарий в миграции, `DEPLOY.md` §22.5) — §9 C24-10.
+- Новые значения enum (append-only): `OrderAction.ChangePickup`, `OrderEventKind.PickupChanged = 9`,
+  `OrderProblemReason.NotAvailableOnDate`, `NotificationType` 7–15 (`StaffOrderCreated`,
+  `StaffOrderCancelledByCustomer`, `OrderAccepted`, `OrderReady`, `OrderRejected`, `OrderCancelledByShop`,
+  `OrderEditedByShop`, `OrderPickupChanged`, `OwnerOrderLimitWarning`), `NotificationReason` (+10 строк),
+  `LegalTextKey.OrderMessengerConsent` и `OrderPreorderNotice`. Оба ключа, как и `OrderCheckoutNotice`, **вне
+  `All`**, текстов в `legal.json` нет, фронт показывает fallback.
+
+**Б. Время магазина и правило приёма** (`Services/Shops/`: `PickupSchedule` — 299 строк, чистые функции,
+`ShopScheduleRules`, `ShopScheduleModels`, `ShopAcceptanceRules`, `ShopOrderingGate` v2, `ShopGateLoader`,
+`WeekdayMask`, `ShopTimeTexts`, `ShopEnums`, `OrderLimitRules`).
+- Часы работы (`WorkingHoursJson`, допускаются интервалы через полночь), особые дни (горизонт
+  `Orders:SpecialDaysHorizonDays` = 90), настройки получения (ASAP / ко времени, шаг слота, дни предзаказа,
+  минуты подготовки). Пауза (15 мин / 30 мин / 1 ч / до конца дня) и выключатель «Не принимаем». **Фоновой
+  задачи окончания паузы нет**: `PausedUntilUtc ≤ now` просто читается как «паузы нет».
+- **Единое правило приёма `ShopOrderingGate.Evaluate`** — первая сработавшая проверка даёт код
+  `ShopNotAcceptingCode`, порядок сверен по коду: `Blocked → NoWorkingHours → Stopped → Paused →
+  NotAllowedByPlan → MonthlyLimitReached → NoPickupTimeAvailable`, иначе принимает. «Закрыто сейчас»
+  блокирует только ASAP (Q-24-4): закрытый магазин с предзаказами заказы принимает. Покупатель видит
+  `ReasonText`, персонал — точную причину `OwnerText`. Входные данные собирает только `ShopGateLoader`.
+  Эталонные векторы — `contracts/cycle24/pickup-schedule-vectors.json` (юнит `PickupScheduleVectorsTests`).
+- ASAP: время получения — это оценка «создание + минуты подготовки»; принимается, только если магазин открыт
+  и успевает до закрытия. Слоты берутся только внутри часов работы, в том числе на будущие дни (предзаказ, до
+  `PreorderDays`). Сотрудник меняет время заказа через `PUT …/orders/{id}/pickup` (статусы New/Accepted).
+  Если меняется дата выдачи, меняется и номер; в журнал пишется событие `PickupChanged`.
+- **`OrderPickupContext` (в `OrderDtoMapper.cs`) несёт РАБОЧИЙ день магазина** (исправление CY24-35 в `f739382`):
+  в хвосте ночного интервала после полуночи рабочий день — вчерашняя дата. `ShopGateLoader.PickupContextAsync`
+  подаёт его в публичный заказ, ответ создания, карточку сотрудника и экран заказов. ⚠️ Списки заказов многих
+  магазинов («Мои заказы», `OrderPickupContext.For`) и тексты уведомлений
+  (`OrderNotificationPlanner.BuildFacts`) по-прежнему считают «сегодня» по **календарной** дате — §9 C24-9.
+
+**В. Доступность товаров на дату** (`CatalogAvailability`, `DailyMenuService`, `ShopMenuController`).
+Порядок такой: товар продаётся по дням недели (`AvailableWeekdaysMask`; маска 0 = только через меню); если на
+дату есть меню, продаётся **только** его состав (пустое меню = в этот день ничего). `GET daily-menus/{date}`
+без сохранённого меню отдаёт состав, **предзаполненный** по правилу дня недели (`Exists = false`, Q-24-6).
+«Закончилось» со сроком (Q-24-5): `SoldOutScope.Today` ставит `SoldOutForDate` = текущий день магазина,
+`UntilCancelled` оставляет `SoldOutForDate = null`. Старые отметки цикла 23 читаются как `UntilCancelled`.
+Отметка с прошедшей датой просто не действует, фоновой задачи нет. `PUT categories/{id}/weekdays` переписывает
+маску у всех товаров категории: отдельной колонки у категории нет. Лимит товаров по тарифу —
+`MaxProductsPerShop` (технический потолок `Orders:MaxProductsPerShop` = 1000 остаётся).
+
+**Г. Новые и изменённые эндпоинты** (сверено по `Cycle22RouteTable.golden.txt`; полная форма —
+`contracts/cycle24/openapi.yaml`, сводка — `API_CONTRACT_CYCLE24.md` §471).
+- `ShopScheduleController` (`api/shops/{shopId}`): `GET/PUT working-hours`, `GET special-days?from=&to=`,
+  `PUT/DELETE special-days/{date}`, `PUT pickup-settings`, `PUT acceptance`, `GET ordering-status` (политика
+  `order-board`), `GET pickup-slots?date=`. PUT-маршруты владельца (кроме `acceptance`) — с `[RequiresOwnerTerms]`.
+- `ShopMenuController`: `GET daily-menus?from=&to=`, `GET/PUT/DELETE daily-menus/{date}`,
+  `POST daily-menus/{date}/copy`.
+- `ShopNotificationsController`: `GET/PUT notification-settings` (web-push покупателю, мессенджер покупателю,
+  push персоналу, приоритетный транспорт; включить мессенджер без оплаченного канала → 409 `MessengerUnavailable`).
+- `ShopCatalogController`: `PUT categories/{id}/weekdays`; товар принимает `availableWeekdays`; `sold-out` принимает
+  `scope`.
+- `ShopOrdersController`: `PUT orders/{orderId}/pickup`; `order-board` получил поля времени получения и
+  состояния приёма.
+- `StorefrontController`: `GET {slug}?date=`, `GET {slug}/pickup-slots?date=`; `quote`/`orders` принимают выбор
+  времени получения (`PickupSelectionInput`) и галочку мессенджера. Порядок проверок при оформлении —
+  `API_CONTRACT_CYCLE24.md` §478.1.
+- `PublicOrdersController`: `POST public/{token}/push-subscription` и `…/push-subscription/remove` (анонимно,
+  новая политика `order-push` 20/ч по IP; не более `Orders:MaxPushSubscriptionsPerOrder` = 5 на заказ).
+- `PushController`: `GET config` и `GET subscriptions` получили `?site=` (подписки ezbook и goods раздельны
+  по `PushSubscription.Site`).
+- `BillingController`: `GET subscription?line=` (без `line` — «Записи», ответ цикла 23 плюс три новых поля).
+  В заявке есть `Line`. На аккаунт — **одна** ожидающая заявка на обе линейки, заявка другой линейки → 409.
+  `AdminBillingController`/`AdminPlansController`: назначение и тарифы с `line`; тариф «Заказы» назначается
+  только с `line = Orders`.
+
+**Д. Уведомления** (`Services/Orders/Notifications/`, единая точка «что произошло» — `OrderNotificationPlanner`).
+- **Push персоналу** — `OrderStaffPushQueue` пишет в существующую `StaffPushNotifications` для устройств,
+  подписанных с goods (`Site = Orders`). Отправляет существующая задача `staff-push-dispatch`. Предупреждения
+  лимита заказов 80 % / 100 % (`OrderLimitWarner`, один раз за месяц на порог) уходят push владельцу.
+- **Web-push покупателю по ссылке заказа, без аккаунта** — `OrderPushSubscription` +
+  `CustomerOrderPushQueue`, новая задача `customer-order-push-dispatch`. Ключи шифруются тем же `SecretProtector`.
+  Обе задачи отправляют через общий `IWebPushSender`. Какой отправитель используется, решает
+  `Notifications:StaffPush:Provider`: в `appsettings.json` стоит `logging` (только пишет в лог), реальная отправка
+  — при `web-push` и заданных VAPID-ключах (`DEPLOY.md` §22.3). По репозиторию не видно, что стоит на сервере.
+- **Мессенджер покупателю** — `OrderMessageScheduler` через общий конвейер `OutboundNotifications` (появился
+  `OrderId`), только при галочке покупателя (`NotifyByMessenger`, по умолчанию выключена) и оплаченном канале
+  аккаунта. TTL сообщения — `Orders:CustomerMessageTtlMinutes` = 120. Гость получает те же каналы без
+  подтверждения номера (Q-24-3). `ChannelEligibility`/`SubscriptionResolver`: номер WhatsApp/MAX оплачен,
+  если оплачена опция аккаунта **и** её разрешает тариф любой линейки («Заказы» — только при наличии магазина).
+- Тексты — `OrderNotificationTexts` (без имени и телефона покупателя, legal L10/L11).
+- **Планировщик:** `ScheduledTasks:TickSeconds` **60 → 10**; `staff-push-dispatch` и
+  `customer-order-push-dispatch` — `PeriodSeconds: 10`. Остальные задачи со своим периодом. `ScheduledTaskRunner`
+  по-прежнему выполняет задачи последовательно (§9 C24-8).
+- **SSRF-защита push** (`Services/Notifications/WebPush/`): `PushEndpointValidator` (только https на 443, без
+  userinfo, без IP-литералов, без `localhost`/одноуровневых/внутренних суффиксов, не длиннее 500) — при подписке
+  персонала и покупателя. `PushAddressGuard.ConnectAsync` — `ConnectCallback` HTTP-клиента web-push:
+  соединяется только с публичными адресами, `AllowAutoRedirect = false` (`NotificationServicesExtensions`).
+- Ретенция: новые правила `order-push-subscriptions` (`Retention:OrderPushSubscriptionDays` = 7, legal L16) и
+  `customer-order-push-notifications` (90). Выгрузка субъекта и удаление аккаунта учитывают новые поля заказов
+  и подписки.
+
+**Е. Тарифная линейка «Заказы»** (`OrdersPlanResolver`, `OrderMonthlyCounter`, `OwnerSubscriptionService`,
+`BillingTexts`). У аккаунта две независимые подписки (Q-24-7). **Лимиты считаются внутри линейки — это меняет
+Q5 цикла 23**: `CompanyCreationService` сверяет магазин с тарифом «Заказы» и числом магазинов аккаунта, салон —
+с тарифом «Записи» и числом салонов (раньше магазины и салоны считались вместе). `CompanyMembersController`
+считает места магазина по тарифу «Заказы» (владелец тоже считается), при превышении — 402. Месячный лимит
+заказов жёсткий (Q-24-8): при достижении правило приёма даёт `MonthlyLimitReached`.
+
+**Ж. Фронтенд.**
+- goods — приложение для экрана «Домой»: `goods/public/manifest.webmanifest` (standalone), `goods/public/sw.js`
+  (push, без fetch/Cache API; `safeUrl` пропускает только адреса своего origin), иконки 192/512, ссылки в
+  `goods/index.html`. В ezbook `public/sw.js` тоже появился `safeUrl`. `useWebPush` получил параметры
+  `site`/`keepBrowserSubscription`.
+- Новые страницы goods: `/cabinet/:shopId/hours` (часы, особые дни, настройки получения, чек-лист),
+  `/cabinet/:shopId/menu`, `/cabinet/:shopId/notifications`, `/cabinet/devices`, `/cabinet/subscription`
+  (переиспользует ezbook `BillingPage` с пропом `line`). Маршруты добавлены в `contracts/cycle23/goods-routes.json`.
+  На витрине — `PickupPicker`/`SlotList`/`usePickupChoice`, на экране заказов — `AcceptancePanel`,
+  `OrderingBanner`, `ChangePickupModal`, в каталоге — `WeekdayPicker`, `SoldOutDialog`, `CategoryWeekdaysModal`,
+  на странице заказа — `OrderPushCard` (`useOrderPush`, ключи в localStorage с отметкой времени, устаревшие
+  чистятся).
+- eslint разрешает goods импортировать из ezbook ещё `BillingPage` и `owner/NotificationsSection`.
+- ezbook: админка тарифов (`PlansTab`, `planForm`) и аккаунтов (`BillingAccountsAdminTab`) с линейкой,
+  `billingError` получил тексты линейки. Генерат — `src/types/api-cycle24.generated.ts` (`npm run types:api:cycle24`).
+
+**З. CI и деплой.**
+- `ci.yml`: redocly-линт добавил `contracts/cycle24/openapi.yaml`; проверка генератов — `types:api:cycle24`;
+  запрет fetch-обработчика и Cache API проверяется в обоих `sw.js` (`public/` и `goods/public/`).
+- `smoke-frontend.sh`, профиль goods: **теперь требует** `manifest.webmanifest` (200, JSON, `display` =
+  standalone/fullscreen, `start_url`, `scope`, `icons`), ссылки на manifest и apple-touch-icon в `index.html`,
+  `GET /sw.js` = 200. На `8d4e98d` смоук требовал отсутствия manifest — 🛒23+ в этой части устарел.
+- `deploy/nginx/goods.ezbook.conf`: `location = /sw.js` (`Cache-Control: no-cache`) и
+  `location = /manifest.webmanifest` (`application/manifest+json`, no-cache). ⚠️ **На сервере не применено** —
+  нужен ручной шаг с sudo (`DEPLOY.md` §22.2).
+- `deploy-remote.sh`: деплой **падает** (с подсказкой отката), если `https://$GOODS_HOST/sw.js` не 200 или в
+  теле SPA-оболочка, а также если manifest не 200 или не standalone. Если у `/sw.js` нет `Cache-Control:
+  no-cache`, выводится **только WARNING**.
+- `DEPLOY.md` §22 «goods как приложение»: §22.1 изменения релиза, §22.2 ручной шаг vhost, §22.3 push и VAPID,
+  §22.4 тик планировщика, §22.5 миграция. `.gitignore`: `frontend/goods/node_modules/`.
+
+**И. Тесты на `f739382`** (со слов вызывающего агента, локальный прогон; CI зелёный). Юнит бэкенда
+**2166/2166**, функциональные **1030/1030**, vitest **1050/1050**, eslint и tsc (оба приложения) чистые.
+Новые функциональные файлы: `ServiceBooking.Tests/Tests/Cycle24{HoursAcceptance,Pickup,Availability,
+Notifications,Tariff,PersonalData}Tests.cs` (82 теста `CY24-`, база — `Infrastructure/Cycle24TestBase.cs`) и
+`PushAddressGuardTests.cs`. Новые юнит-тесты: `PickupScheduleTests`, `PickupScheduleVectorsTests`,
+`ShopScheduleRulesTests`, `ShopAcceptanceRulesTests`, `ShopOrderingGateV2Tests`, `CatalogAvailabilityDateTests`,
+`OrderLimitRulesTests`, `OrdersPlanResolverTests`, `OrderNotificationPlanTests`, `OrderNotificationTextsTests`,
+`NotificationTypeCatalogTests`, `PushEndpointValidatorTests`, `ShopTimeTextsTests`, `WeekdayMaskTests`. Во фронте
+— тесты страниц и утилит goods (`HoursPage`, `MenuPage`, `DevicesPage`, `ShopNotificationsPage`, `OrderPushCard`,
+`utils/{pickup,hours,menu,weekdays,acceptance,goodsPush,goodsPushStorage}` и др.), ezbook — `PlansTabLine`,
+`BillingAccountsAdminTab`, `planForm`, `push`, `billingError`. Существующие регрессионные тесты (`AdminTests`,
+`Cycle15PlansTests`, `Cycle18Trial*`, `Cycle20PlatformNotices`, `Cycle23*`) подогнаны под новое поведение
+(`7d1320a`). `Cycle22RouteTable.golden.txt` обновлён намеренно. **Команды запуска не изменились (§7).**
+Тест-кейсы — `TEST_CATALOG.md`, раздел «Цикл 24» (стр. ~5984). Сквозного браузерного (e2e) набора по-прежнему нет.
+
+**К. Документация.** `API_DOCUMENTATION.md`: анонс цикла 24 в шапке (стр. ~23), подраздел «Дополнение цикла
+24…» внутри §4.20 (стр. ~4093, «НЕ ВЫПУЩЕНО») и «Cycle 24 addendum: push endpoint validation» (стр. ~4432).
+`CHANGELOG.md`: новый верхний раздел «Не выпущено — «Заказы» на goods.ezbook.ru, цикл 2…». Нумерация §
+цикла 24 (§446–§488) с прежними циклами не пересекается. Руководств по goods в `docs/` по-прежнему нет.
+`docs/history/` по-прежнему нет, документы цикла лежат в корне с суффиксом `_CYCLE24`.
+
+**Л. Что заведомо не сделано.** US-24-17 (служебные сообщения персоналу в MAX) — цикл 25. Юрист по L9–L16
+(`ARCHITECTURE_CYCLE24.md` §461) и по L1–L8 цикла 23 не запускался: тексты галочки мессенджера, строки про
+предзаказ и под «Заказать» — fallback, ключи вне `LegalTextKey.All`. Ручная проверка push на реальных
+устройствах (DO-6) не проводилась. Риски — §9 «⏰ Цикл 24».
 
 ### 🛒23+ Что изменилось в `9a0ee29..8d4e98d` (24 файла, +970 / −155), сверено по коду
 
@@ -47,7 +245,9 @@
   не переименована); корневые `ARCHITECTURE.md` и `API_CONTRACT.md` — по-прежнему **цикла 3**; документы
   цикла 23 лежат в `ARCHITECTURE_CYCLE23.md` / `API_CONTRACT_CYCLE23.md`. Каталога `docs/history/` нет; в
   проекте принято переименование в корне по шаблону `SPEC_CYCLE<N>_<ТЕМА>.md` / `*_CYCLE<N>.md`.
-  Документов цикла 24 (`SPEC`/`ARCHITECTURE`/`API_CONTRACT`) в репозитории пока нет.
+  Документов цикла 24 (`SPEC`/`ARCHITECTURE`/`API_CONTRACT`) в репозитории пока нет. ⏰24 Устарело: корневой
+  `SPEC.md` теперь спека цикла 24, спека цикла 23 — `SPEC_CYCLE23_GOODS_ORDERS_CORE.md`, документы цикла 24 —
+  `ARCHITECTURE_CYCLE24.md`/`API_CONTRACT_CYCLE24.md`. Смоук goods теперь, наоборот, требует manifest (⏰24 З).
 - **Не менялось:** бэкенд (кроме строки `LegalTextKey`), модель данных, эндпоинты, фронт ezbook,
   команды запуска тестов.
 
@@ -83,7 +283,8 @@ fast-forward. **На бой цикл 23 НЕ выкачен.** Циклы 19 и 
   и SuperAdmin.
 - `Services/Companies/CompanyCreationService.cs` — сюда вынесен `Create` из `CompaniesController`.
   Сервис общий для `POST /api/companies` (салон) и `POST /api/shops` (магазин): соглашение, город, адрес,
-  общий лимит компаний аккаунта.
+  общий лимит компаний аккаунта. ⏰24 С цикла 24 лимиты считаются внутри линейки (Q-24-7): магазины — по тарифу
+  «Заказы», салоны — по тарифу «Записи» (⏰24 Е).
 - Конфиг `PublicSites` (`ServicesBaseUrl` = `https://ezbook.ru`, `OrdersBaseUrl` = `https://goods.ezbook.ru`).
   Fail-fast — `DeploymentSafetyChecks.ValidatePublicSites`: вне Development/Testing значение должно быть
   `https://`-origin без пути и без `/` в конце. Пустое или отсутствующее значение означает встроенные
@@ -213,7 +414,8 @@ goods.ezbook.ru…». 🛒23+ Числа тестов в нём исправле
 `ARCHITECTURE_CYCLE20.md` §400–§419, а `API_CONTRACT_CYCLE23.md` §406–§425 перекрывает контракты циклов
 19–20. Ссылку вида «§401» без имени файла однозначно прочитать нельзя.
 
-**З. Что заведомо не сделано (стенд, а не запуск).** Выключателя приёма, часов работы и паузы нет, магазин
+**З. Что заведомо не сделано (стенд, а не запуск).** ⏰24 Часы, пауза, выключатель, уведомления и тарифы
+магазинов сделаны в цикле 24 (блок ⏰24); ниже — состояние на `9a0ee29`. Выключателя приёма, часов работы и паузы нет, магазин
 принимает заказы круглосуточно. Уведомлений о заказах нет ни в одну сторону. Тарифов магазинов и
 экрана подписки на goods нет: всё это цикл 2 направления. Юрист по §8 L1–L8 (`ARCHITECTURE_CYCLE23.md`
 §404) **не запускался**, поэтому: строка под «Заказать» — fallback; реквизиты продавца необязательны
@@ -9914,7 +10116,8 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
 - **C23-5. ✅ ЗАКРЫТО (`cycle/023-goods-deploy`: шаг «Type-check goods», генерат `api-cycle23` и redocly-линт
   `contracts/cycle23` в CI).** Было: **`frontend/goods/` не проверяется по типам в CI** (🛒23 Д). Ошибка типов в goods пройдёт CI
   и всплывёт только на `npm run build:goods`.
-- **C23-6. goods — стенд.** Выключателя приёма, часов работы и паузы нет, заказы принимаются
+- **C23-6. ⏰24 ✅ ЗАКРЫТО циклом 24** (часы, пауза, выключатель, push/мессенджер, линейка тарифов «Заказы»;
+  не сделана только US-24-17 — сообщения персоналу в MAX, цикл 25). Было: **goods — стенд.** Выключателя приёма, часов работы и паузы нет, заказы принимаются
   круглосуточно, остановить приём можно только блокировкой магазина. Уведомлений о заказах нет.
   Тарифов магазинов нет, лимиты компаний и сотрудников общие с салонами.
 - **C23-7. ✅ ЗАКРЫТО (`fix/cycle23-debts`):** это был `LegalConsentVersionChangeTests.DeleteAccount_IsAllowed_EvenWhileBlockedByAPendingMaterialRedaction` — генератор телефона из цифр GUID с добивкой нулями давал совпадения и 409 на регистрации (1 падение на 3 полных прогона); тот же шаблон исправлен в `RateLimitingTests` и `UploadsStaticFilesTests`. Было: **Нестабильный функциональный тест.** Один раз в локальном прогоне упал неопознанный
@@ -9928,6 +10131,49 @@ IP/телефона; у правил `GuestDataGateEventRule`/`PlatformNoticeRul
   новая позиция теперь добавляется через `db.OrderItems.Add`, без `order.Items.Add`. Код
   `OrderEditService` опирается на отслеживание EF и `Order.Version`; при правках там снова легко
   получить двойное добавление.
+
+### ⏰ Цикл 24 — C24-1…C24-11 (открыто на `f739382`)
+
+- **C24-1. 🟠 vhost goods на сервере не обновлён.** `deploy/nginx/goods.ezbook.conf` в репозитории содержит
+  `location = /sw.js` (no-cache) и `location = /manifest.webmanifest`, но на боевой машине это не применено:
+  нужен ручной шаг с sudo (`DEPLOY.md` §22.2). До этого `deploy-remote.sh` выводит только WARNING на
+  `Cache-Control` у `/sw.js`, и браузеры могут держать старый обработчик push. Если файла `sw.js` нет или на его
+  месте SPA-оболочка, деплой падает.
+- **C24-2. Push на реальных устройствах не проверен вручную** (DO-6): iOS «На экран Домой», Android, десктоп,
+  для персонала (goods) и покупателя по ссылке заказа. Автотесты проверяют очередь и отправку до
+  HTTP-клиента, но не доставку.
+- **C24-3. 🟠 Юрист по L9–L16 (`ARCHITECTURE_CYCLE24.md` §461) не запускался**, по L1–L8 цикла 23 тоже (C23-2).
+  `OrderMessengerConsent`, `OrderPreorderNotice` и `OrderCheckoutNotice` — вне `LegalTextKey.All`, текстов в
+  `legal.json` нет, фронт показывает fallback. Срок `Retention:OrderPushSubscriptionDays` = 7 — техническое
+  значение до ответа по L16. Галочка мессенджера у гостя работает без подтверждения номера (Q-24-3): при опечатке
+  сообщение получит чужой человек.
+- **C24-4. Низкие находки проверки контракта не закрыты:** у дней недели категории
+  (`CategoryWeekdaysInput.weekdays`) в `openapi.yaml` нет `uniqueItems`; часть ответов 400 в контракте не
+  описана.
+- **C24-5. `PushAddressGuard`: IPv4, вложенный в IPv6, не разворачивается**, кроме IPv4-mapped. Адреса NAT64
+  (`64:ff9b::/96`) и 6to4 (`2002::/16`) с внутренним IPv4 внутри считаются публичными. Находка ревью, не блокирующая.
+- **C24-6. HTTP-клиент web-push: `SocketsHttpHandler.UseProxy` не выставлен в `false`**
+  (`NotificationServicesExtensions`). Если на машине задан системный прокси, соединение пойдёт через него, и
+  `ConnectCallback`, по всей видимости, будет проверять адрес прокси, а не конечной точки push. Находка ревью, не блокирующая.
+- **C24-7. Лимиты в пределах линейки меняют решение Q5 цикла 23.** Магазины больше не занимают место салона, и
+  наоборот. Тесты цикла 23, которые проверяли общий счёт, переписаны (`7d1320a`), поэтому старое поведение
+  тестами больше не подтверждается.
+- **C24-8. `ScheduledTaskRunner` выполняет задачи последовательно.** Тик теперь 10 с, но долгий проход
+  мессенджера (`notification-dispatch`, GREEN-API/MAX) или ретенции задерживает `staff-push-dispatch` и
+  `customer-order-push-dispatch` дольше 10 с. Тик 10 с означает и в 6 раз больше пробуждений всех задач
+  (каждая сверяет свой период).
+- **C24-9. «Сегодня» в хвосте ночного интервала считается двумя способами.** После CY24-35 карточки и экран
+  заказов одного магазина считают от рабочего дня (`OrderPickupContext.WorkingDay`). Списки многих магазинов
+  («Мои заказы», `OrderPickupContext.For`) и тексты уведомлений (`OrderNotificationPlanner.BuildFacts` —
+  `DateTime.UtcNow` в поясе магазина) считают от календарной даты. После полуночи в ночном интервале push или
+  сообщение может назвать слот «завтра», хотя на экране у магазина он «сегодня».
+- **C24-10. `Down` миграции `Cycle24OrdersTimeNotifyTariffs` может упасть.** Если есть предзаказы с одинаковыми
+  номерами в один `BusinessDate` (нумерация теперь по `PickupDate`), старый уникальный индекс не создастся.
+  Перед откатом дубли надо проверять вручную (`DEPLOY.md` §22.5).
+- **C24-11. Номер заказа меняется при переносе на другую дату выдачи** (`PUT …/orders/{id}/pickup`).
+  Покупатель, запомнивший номер, увидит новый. Уведомление о смене времени передаёт прежний номер
+  (`previousNumber`). Это поведение задумано, но на нём держатся уникальный индекс и счётчик
+  `OrderDailyCounters`.
 
 ## 10. Что уже существует в документации и тест-кейсах
 
@@ -10625,6 +10871,20 @@ e2e/браузерных автотестов (Playwright, Cypress и т.п.) в
 пакета в `frontend/package.json` и каталога с такими тестами не найдено.
 
 ### 10.5 Документы цикла работ
+
+⏰24 **Документы цикла 24 (в корне; `docs/history/` по-прежнему нет):** корневой `SPEC.md` (636 строк) — **спека
+цикла 24** («Заказы», цикл 2; ответы заказчика Q-24-1…8 — §0; перечень правовых вопросов L9–L16). Спека цикла
+23 заархивирована первым коммитом цикла как `SPEC_CYCLE23_GOODS_ORDERS_CORE.md` (600 строк), поэтому строка
+🛒23 ниже «корневой `SPEC.md` — спека цикла 23» устарела. `ARCHITECTURE_CYCLE24.md` (1 192 строки, §446–§469:
+§448 модель, §449 время магазина, §450 правило приёма, §451 время получения и номер, §452 доступность,
+§454 goods как приложение, §455–§458 уведомления, §459 тарифы, §461 места под юриста, §463 инфраструктура,
+§467 риски, §468 отклонения от SPEC, §469 задел под цикл 25). `API_CONTRACT_CYCLE24.md` (768 строк, §470–§488;
+§471 сводка маршрутов, §473.5 коды отказа приёма, §478.1 порядок проверок оформления, §487 закрытые таблицы
+кодов). `contracts/cycle24/`: `openapi.yaml` (2 440 строк, генерат — `frontend/src/types/api-cycle24.generated.ts`)
+и `pickup-schedule-vectors.json` (239 строк, эталонные векторы расписания для юнит-тестов). Справочник для
+внешних потребителей — `API_DOCUMENTATION.md`, дополнение цикла 24 внутри §4.20. Выкат — `DEPLOY.md` §22.
+Тест-кейсы — `TEST_CATALOG.md`, раздел «Цикл 24» (CY24-*, 82 теста). Продуктовое описание — верхний раздел
+`CHANGELOG.md`. Пользовательских руководств по goods в `docs/` нет.
 
 🛒23 **Документы цикла 23 (в корне; `docs/history/` по-прежнему нет, архивировать нечего и некуда):**
 корневой `SPEC.md` (600 строк) — это **спека цикла 23**, а не цикла 20. Спека цикла 20 — в
