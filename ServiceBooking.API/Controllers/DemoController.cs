@@ -39,7 +39,7 @@ public class DemoController(
             ResetLocalTime: settings.ResetLocalTime,
             TimeZoneId: settings.TimeZoneId,
             LastResetAtUtc: lastReset,
-            Roles: ShowcaseDemoRoles.All.Select(r => new DemoRoleDto(r.Role, r.Label)).ToList()));
+            Roles: ShowcaseDemoRoles.ForProduct(DemoProduct.Services).Select(r => new DemoRoleDto(r.Role, r.Label)).ToList()));
     }
 
     /// <summary>Signs in as a ready demo role without a password. 400 for an unknown role, 409 while the demo data has not been created yet.</summary>

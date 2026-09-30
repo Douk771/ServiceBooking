@@ -64,9 +64,9 @@ public class ShowcaseDemoProfileTests
     // ── the three roles ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Roles_AreKnown_AndOnlyTheseThree()
+    public void Roles_AreKnown_AndOnlyTheseSix()
     {
-        ShowcaseDemoRoles.All.Select(r => r.Role).Should().Equal("owner", "master", "client");
+        ShowcaseDemoRoles.All.Select(r => r.Role).Should().Equal("owner", "master", "client", "shop-owner", "shop-staff", "shop-customer");
         ShowcaseDemoRoles.IsKnown("owner").Should().BeTrue();
         ShowcaseDemoRoles.IsKnown("superadmin").Should().BeFalse();
         ShowcaseDemoRoles.IsKnown(null).Should().BeFalse();
