@@ -59,4 +59,20 @@ public static class TrialTermsRegistry
     /// (cycle 28, Q28-4: mailings are not part of the trial).</summary>
     public static string RenderCurrent(string planName, int durationDays, DateTime endsAtUtc) =>
         string.Format(TextsByVersion[CurrentVersion], planName, durationDays, endsAtUtc.ToString("dd.MM.yyyy"));
+
+    /// <summary>Renders ANY known edition with ITS OWN substitutions: {0}-{2} as in <see cref="RenderCurrent"/>, and {3} (mailing-window days) for the legacy
+    /// edition 2026-09-26, which has a fourth one. An account that was granted the trial under a released edition must see that edition's text, filled in —
+    /// never the raw template. Null when the version is unknown.</summary>
+    public static string? Render(string version, string planName, int durationDays, DateTime endsAtUtc, int? mailingWindowDays)
+    {
+        var template = TryGetTemplate(version);
+        return template is null
+            ? null
+            : string.Format(template, planName, durationDays, endsAtUtc.ToString("dd.MM.yyyy"), mailingWindowDays ?? 0);
+    }
+
+    /// <summary>Whether an owner may acknowledge <paramref name="requestedVersion"/>: the current edition, or the edition actually recorded in the account
+    /// (a trial granted before an edition change is shown, and must be acknowledgeable, under the edition it was granted with).</summary>
+    public static bool IsAcknowledgeable(string requestedVersion, string? accountVersion) =>
+        requestedVersion == CurrentVersion || (accountVersion is not null && requestedVersion == accountVersion && TryGetTemplate(requestedVersion) is not null);
 }

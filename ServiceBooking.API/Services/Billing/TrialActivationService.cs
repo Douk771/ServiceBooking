@@ -381,10 +381,13 @@ public class TrialActivationService(
         if (string.IsNullOrWhiteSpace(termsVersion))
             return new TrialGrantResult(false, "TrialTermsVersionRequired", "Не указана версия условий.");
 
-        if (termsVersion != TrialTermsRegistry.CurrentVersion)
+        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId, ct);
+
+        // The edition shown to the owner is the one recorded in the account (GET /api/billing/trial), which for a trial granted before an edition change is
+        // not the current one — that edition must be acknowledgeable too, or the owner could never confirm the terms.
+        if (!TrialTermsRegistry.IsAcknowledgeable(termsVersion, account?.TrialTermsVersion))
             return new TrialGrantResult(false, "TrialTermsVersionMismatch", TrialLegalNotices.TrialTermsVersionMismatchNotice);
 
-        var account = await db.BillingAccounts.FirstOrDefaultAsync(a => a.OwnerUserId == ownerUserId, ct);
         // §363.1: 404 (empty body) — "у аккаунта нет ни одной выдачи триала, подтверждать нечего". No
         // billing account at all, or a billing account that has never had a trial granted, are both
         // that case — this must not silently stamp AcknowledgedAtUtc on an account with nothing to
