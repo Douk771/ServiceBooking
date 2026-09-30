@@ -224,6 +224,10 @@ public sealed class CompanyCreationService(
             case SlugCheck.Reserved:
                 return new CatalogConflictDto(CatalogConflictCode.SlugReserved, ShopTexts.SlugReserved);
         }
+        // The showcase prefix is reserved for shops too: a slug is unique across ALL companies, so a shop holding "primer-…" would make
+        // `ops showcase create/recreate` (and the weekly re-seed) fail on the unique index.
+        if (ShowcaseMixingGuard.IsReservedSlug(normalizedSlug))
+            return new CatalogConflictDto(CatalogConflictCode.SlugReserved, ShopTexts.SlugReserved);
         var taken = await db.Companies.AsNoTracking()
             .AnyAsync(c => c.Slug.ToLower() == normalizedSlug && (exceptCompanyId == null || c.Id != exceptCompanyId));
         return taken ? new CatalogConflictDto(CatalogConflictCode.SlugTaken, ShopTexts.SlugTaken) : null;
