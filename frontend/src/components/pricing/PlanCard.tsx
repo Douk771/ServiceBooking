@@ -1,5 +1,5 @@
 import { Icon } from '../ui/Icon'
-import { formatIncludedLimit, formatMonthlyPrice } from '../../utils/pricingFormat'
+import { formatIncludedLimitLine, formatMonthlyPrice } from '../../utils/pricingFormat'
 import type { PricingPlanDto } from '../../types/pricing'
 
 interface Props {
@@ -13,7 +13,7 @@ interface Props {
 export function PlanCard({ plan, featured = false }: Props) {
   return (
     <div
-      className={`flex flex-col rounded-[22px] p-8 border transition-shadow ${
+      className={`flex flex-col min-w-0 rounded-[22px] p-7 xl:p-6 border transition-shadow ${
         featured ? 'bg-ink text-cream border-ink shadow-card' : 'bg-white text-ink border-line'
       }`}
     >
@@ -27,23 +27,23 @@ export function PlanCard({ plan, featured = false }: Props) {
           Пробный период
         </span>
       )}
-      <h3 className="font-serif text-[22px] font-medium mb-1.5">{plan.name}</h3>
+      <h3 className="font-serif text-[22px] font-medium mb-1.5 break-words">{plan.name}</h3>
       <p className={`text-sm leading-[1.55] mb-6 ${featured ? 'text-cream/75' : 'text-ink-soft'}`}>
         {plan.description}
       </p>
 
       <div className="mb-6">
-        <span className="font-serif text-[34px] font-medium">{formatMonthlyPrice(plan.pricePerMonth)}</span>
+        <span className="font-serif text-[32px] xl:text-[26px] font-medium whitespace-nowrap">{formatMonthlyPrice(plan.pricePerMonth)}</span>
       </div>
 
       <ul className="flex flex-col gap-2.5 mb-7">
         <li className={`flex items-start gap-2 text-sm ${featured ? 'text-cream/90' : 'text-ink-soft'}`}>
           <Icon name="check" size={15} strokeWidth={2} className={`shrink-0 mt-0.5 ${featured ? 'text-gold' : 'text-gold-dark'}`} />
-          {formatIncludedLimit(plan.includedCompanies, 'компании', 'компаний')}
+          {formatIncludedLimitLine(plan.includedCompanies, 'компании', 'компании', 'компаний')}
         </li>
         <li className={`flex items-start gap-2 text-sm ${featured ? 'text-cream/90' : 'text-ink-soft'}`}>
           <Icon name="check" size={15} strokeWidth={2} className={`shrink-0 mt-0.5 ${featured ? 'text-gold' : 'text-gold-dark'}`} />
-          {formatIncludedLimit(plan.includedEmployees, 'сотрудника', 'сотрудников')}
+          {formatIncludedLimitLine(plan.includedEmployees, 'сотрудники', 'сотрудника', 'сотрудников')}
         </li>
         {plan.highlights.map((h, i) => (
           <li key={`${i}-${h}`} className={`flex items-start gap-2 text-sm ${featured ? 'text-cream/90' : 'text-ink-soft'}`}>

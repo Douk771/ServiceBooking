@@ -7,6 +7,13 @@ import { OptionRow } from '../components/pricing/OptionRow'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
+import { pickFeaturedPlanId } from '../utils/pricingFormat'
+
+// Cycle 28 (FE-4, ARCHITECTURE_CYCLE28.md §582.3): the catalog is five plans since «Записи» got its grid (free, trial,
+// Студия, Салон, Сеть). Two columns from `md`, three from `lg`, all five in a row from `xl`, where the container is
+// widened so a card keeps ~195px of text width instead of being squeezed by the old 1180px cap.
+const PRICING_CONTAINER = 'max-w-[1180px] xl:max-w-[1360px] mx-auto px-8 pt-16 pb-24'
+const PRICING_GRID = 'grid gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
 
 /**
  * Public route `/pricing` (ARCHITECTURE_CYCLE7.md §56.1) — reachable without auth, and outside the
@@ -26,15 +33,15 @@ export function PricingPage() {
   })
 
   useEffect(() => {
-    document.title = 'Тарифы и цены — ServiceBooking'
+    document.title = 'Тарифы и цены — EZBOOK'
   }, [])
 
   if (isLoading) {
     return (
-      <div className="max-w-[1180px] mx-auto px-8 pt-16 pb-24">
+      <div className={PRICING_CONTAINER}>
         <div className="h-9 w-1/3 bg-cream-deep rounded-xl animate-pulse mb-10" />
-        <div className="grid gap-6 md:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
+        <div className={PRICING_GRID}>
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="h-72 bg-cream-deep rounded-[22px] animate-pulse" />
           ))}
         </div>
@@ -71,19 +78,19 @@ export function PricingPage() {
 
   const sortedPlans = [...data.plans].sort((a, b) => a.sortOrder - b.sortOrder || a.pricePerMonth - b.pricePerMonth)
   const sortedOptions = [...data.options].sort((a, b) => a.sortOrder - b.sortOrder || a.pricePerMonth - b.pricePerMonth)
-  // The paid plan right after the free one gets the visual accent — a stand-in for "recommended"
+  // The first PAID plan (not the free one, not the trial) gets the visual accent — a stand-in for "recommended"
   // without inventing a field the contract doesn't have.
-  const featuredPlanId = sortedPlans.find((p) => !p.isFree)?.id
+  const featuredPlanId = pickFeaturedPlanId(sortedPlans)
 
   return (
-    <div className="max-w-[1180px] mx-auto px-8 pt-16 pb-24">
+    <div className={PRICING_CONTAINER}>
       <header className="max-w-[620px] mb-12">
         <h1 className="font-serif text-[36px] md:text-[44px] font-medium text-ink mb-3">Тарифы и цены</h1>
         <p className="text-[15px] leading-[1.6] text-ink-soft">{data.notice}</p>
         {data.legalNotice && <p className="text-xs leading-[1.6] text-muted mt-3">{data.legalNotice}</p>}
       </header>
 
-      <div className="grid gap-6 md:grid-cols-3 mb-16">
+      <div className={`${PRICING_GRID} mb-16`}>
         {sortedPlans.map((plan) => (
           <PlanCard key={plan.id} plan={plan} featured={plan.id === featuredPlanId} />
         ))}
