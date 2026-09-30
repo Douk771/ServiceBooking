@@ -98,7 +98,7 @@ public class Cycle28ShowcaseContentTests(TestDatabaseFixture fixture) : Cycle28S
         });
     }
 
-    [Fact(Skip = "Known gap C28-4/CT-1: ShowcaseAssets/manifest.json is empty, so no logos, photos or service pictures are created. US-28-03 «логотип, 3–6 фото, услуги с картинками» is not met until the content task CT-1 delivers the pictures."), TestCase("CY28-19")]
+    [Fact, TestCase("CY28-19")]
     public async Task EveryCompany_HasLogo_ThreeToSixPhotos_AndServicePictures()
     {
         await EnsureCreatedAsync();

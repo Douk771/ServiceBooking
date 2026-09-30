@@ -32,7 +32,10 @@ public sealed class ShowcaseAssetStore(FileStorage storage, IWebHostEnvironment 
     /// <summary>Whether the asset is in the manifest AND its file exists on disk.</summary>
     public bool IsAvailable(string key) => Manifest.TryGetValue(key, out var asset) && ResolveFile(asset.File) is { } path && File.Exists(path);
 
-    /// <summary>How many files the given keys would put into <c>uploads/showcase/</c> (a picture and its thumbnail count separately, distinct files once).</summary>
+    /// <summary>
+    /// How many files the given keys would put into <c>uploads/showcase/</c>. Publishing names files by the hash of their content, so two manifest entries with
+    /// identical bytes are one file: the plan counts distinct content (a picture and its thumbnail separately), exactly what <see cref="PublishAsync"/> writes.
+    /// </summary>
     public int CountFiles(IEnumerable<string> keys)
     {
         var files = new HashSet<string>(StringComparer.Ordinal);
@@ -40,11 +43,13 @@ public sealed class ShowcaseAssetStore(FileStorage storage, IWebHostEnvironment 
         {
             if (!IsAvailable(key)) continue;
             var asset = Manifest[key];
-            files.Add(asset.File);
-            if (asset.Thumbnail is not null && ResolveFile(asset.Thumbnail) is { } thumb && File.Exists(thumb)) files.Add(asset.Thumbnail);
+            files.Add(ContentHash(ResolveFile(asset.File)!));
+            if (asset.Thumbnail is not null && ResolveFile(asset.Thumbnail) is { } thumb && File.Exists(thumb)) files.Add(ContentHash(thumb));
         }
         return files.Count;
     }
+
+    private static string ContentHash(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
 
     /// <summary>File names (inside <c>uploads/showcase/</c>) of everything this store instance has published so far: the pictures the new rows point at.</summary>
     public IReadOnlySet<string> PublishedFileNames => _published.Values

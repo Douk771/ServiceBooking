@@ -1,4 +1,549 @@
 {
   "version": 1,
-  "assets": []
+  "assets": [
+    {
+      "key": "logo.beauty",
+      "role": "logo",
+      "file": "logos/beauty.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.beauty.1",
+      "role": "photo",
+      "file": "photos/beauty-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.beauty.2",
+      "role": "photo",
+      "file": "photos/beauty-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.beauty.3",
+      "role": "photo",
+      "file": "photos/beauty-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.beauty.4",
+      "role": "photo",
+      "file": "photos/beauty-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.beauty.5",
+      "role": "photo",
+      "file": "photos/beauty-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.beauty.6",
+      "role": "photo",
+      "file": "photos/beauty-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "logo.barber",
+      "role": "logo",
+      "file": "logos/barber.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.barber.1",
+      "role": "photo",
+      "file": "photos/barber-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.barber.2",
+      "role": "photo",
+      "file": "photos/barber-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.barber.3",
+      "role": "photo",
+      "file": "photos/barber-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.barber.4",
+      "role": "photo",
+      "file": "photos/barber-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.barber.5",
+      "role": "photo",
+      "file": "photos/barber-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.barber.6",
+      "role": "photo",
+      "file": "photos/barber-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "logo.nails",
+      "role": "logo",
+      "file": "logos/nails.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.nails.1",
+      "role": "photo",
+      "file": "photos/nails-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.nails.2",
+      "role": "photo",
+      "file": "photos/nails-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.nails.3",
+      "role": "photo",
+      "file": "photos/nails-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.nails.4",
+      "role": "photo",
+      "file": "photos/nails-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.nails.5",
+      "role": "photo",
+      "file": "photos/nails-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.nails.6",
+      "role": "photo",
+      "file": "photos/nails-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "logo.massage",
+      "role": "logo",
+      "file": "logos/massage.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.massage.1",
+      "role": "photo",
+      "file": "photos/massage-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.massage.2",
+      "role": "photo",
+      "file": "photos/massage-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.massage.3",
+      "role": "photo",
+      "file": "photos/massage-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.massage.4",
+      "role": "photo",
+      "file": "photos/massage-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.massage.5",
+      "role": "photo",
+      "file": "photos/massage-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.massage.6",
+      "role": "photo",
+      "file": "photos/massage-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "logo.cosmetology",
+      "role": "logo",
+      "file": "logos/cosmetology.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.cosmetology.1",
+      "role": "photo",
+      "file": "photos/cosmetology-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.cosmetology.2",
+      "role": "photo",
+      "file": "photos/cosmetology-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.cosmetology.3",
+      "role": "photo",
+      "file": "photos/cosmetology-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.cosmetology.4",
+      "role": "photo",
+      "file": "photos/cosmetology-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.cosmetology.5",
+      "role": "photo",
+      "file": "photos/cosmetology-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.cosmetology.6",
+      "role": "photo",
+      "file": "photos/cosmetology-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "logo.brows",
+      "role": "logo",
+      "file": "logos/brows.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.brows.1",
+      "role": "photo",
+      "file": "photos/brows-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.brows.2",
+      "role": "photo",
+      "file": "photos/brows-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.brows.3",
+      "role": "photo",
+      "file": "photos/brows-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.brows.4",
+      "role": "photo",
+      "file": "photos/brows-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.brows.5",
+      "role": "photo",
+      "file": "photos/brows-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.brows.6",
+      "role": "photo",
+      "file": "photos/brows-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "logo.home",
+      "role": "logo",
+      "file": "logos/home.jpg",
+      "thumbnail": null,
+      "width": 600,
+      "height": 600
+    },
+    {
+      "key": "photo.home.1",
+      "role": "photo",
+      "file": "photos/home-1.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.home.2",
+      "role": "photo",
+      "file": "photos/home-2.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.home.3",
+      "role": "photo",
+      "file": "photos/home-3.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.home.4",
+      "role": "photo",
+      "file": "photos/home-4.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.home.5",
+      "role": "photo",
+      "file": "photos/home-5.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "photo.home.6",
+      "role": "photo",
+      "file": "photos/home-6.jpg",
+      "thumbnail": null,
+      "width": 1200,
+      "height": 800
+    },
+    {
+      "key": "service.haircut",
+      "role": "service",
+      "file": "services/haircut.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.coloring",
+      "role": "service",
+      "file": "services/coloring.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.styling",
+      "role": "service",
+      "file": "services/styling.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.hair-care",
+      "role": "service",
+      "file": "services/hair-care.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.makeup",
+      "role": "service",
+      "file": "services/makeup.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.manicure",
+      "role": "service",
+      "file": "services/manicure.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.pedicure",
+      "role": "service",
+      "file": "services/pedicure.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.nails-design",
+      "role": "service",
+      "file": "services/nails-design.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.beard",
+      "role": "service",
+      "file": "services/beard.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.shave",
+      "role": "service",
+      "file": "services/shave.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.brows",
+      "role": "service",
+      "file": "services/brows.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.lashes",
+      "role": "service",
+      "file": "services/lashes.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.massage",
+      "role": "service",
+      "file": "services/massage.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.spa",
+      "role": "service",
+      "file": "services/spa.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.wrap",
+      "role": "service",
+      "file": "services/wrap.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.facial",
+      "role": "service",
+      "file": "services/facial.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.peeling",
+      "role": "service",
+      "file": "services/peeling.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.mesotherapy",
+      "role": "service",
+      "file": "services/mesotherapy.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    },
+    {
+      "key": "service.consult",
+      "role": "service",
+      "file": "services/consult.jpg",
+      "thumbnail": null,
+      "width": 800,
+      "height": 600
+    }
+  ]
 }
