@@ -60,9 +60,9 @@ public sealed class PushSubscriptionWriter(AppDbContext db, IOptions<WebPushOpti
         return (row, created);
     }
 
-    /// <summary>The caller's devices on ONE site (ARCHITECTURE_CYCLE24.md §454): ezbook and goods devices are listed apart.</summary>
-    public Task<List<PushSubscription>> ListAsync(string userId, CancellationToken ct, CompanyKind site = CompanyKind.Services) =>
-        db.PushSubscriptions.AsNoTracking().Where(s => s.UserId == userId && s.Site == site)
+    /// <summary>The caller's devices: on ONE site (ARCHITECTURE_CYCLE24.md §454), or — <paramref name="allSites"/> — on both (cycle 33, §33.22).</summary>
+    public Task<List<PushSubscription>> ListAsync(string userId, CancellationToken ct, CompanyKind site = CompanyKind.Services, bool allSites = false) =>
+        db.PushSubscriptions.AsNoTracking().Where(s => s.UserId == userId && (allSites || s.Site == site))
             .OrderByDescending(s => s.CreatedAtUtc).ToListAsync(ct);
 
     /// <summary>§105.5: chosen by id, scoped to the caller's own <c>UserId</c> — a chosen id that

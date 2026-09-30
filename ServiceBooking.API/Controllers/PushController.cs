@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using ServiceBooking.API.DTOs.Notifications;
 using ServiceBooking.API.Services;
 using ServiceBooking.API.Services.Notifications;
+using ServiceBooking.API.Services.PublicSites;
 using ServiceBooking.API.Services.Companies;
 using ServiceBooking.API.Services.Notifications.WebPush;
 using ServiceBooking.Core.Entities;
@@ -24,10 +25,10 @@ namespace ServiceBooking.API.Controllers;
 [Route("api/push")]
 [Authorize]
 public class PushController(
-    AppDbContext db, PushSubscriptionWriter writer, IOptions<WebPushOptions> webPushOptions) : ControllerBase
+    AppDbContext db, PushSubscriptionWriter writer, IOptions<WebPushOptions> webPushOptions, PublicSiteLinks siteLinks) : ControllerBase
 {
     [HttpGet("config")]
-    public async Task<ActionResult<PushConfigDto>> GetConfig([FromQuery] string? site, CancellationToken ct)
+    public async Task<ActionResult<PushConfigDto>> GetConfig([FromQuery] string? site, [FromQuery] bool allSites, CancellationToken ct)
     {
         if (!CompanyKindQuery.TryParse(site, out var siteKind)) return BadRequest(CompanyKindQuery.UnknownKindText);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -43,30 +44,35 @@ public class PushController(
 
         // ARCHITECTURE_CYCLE24.md §484: only the companies of THIS site — the shops that leaked into the ezbook list in cycle 23 are gone from it.
         var companies = await db.Companies.AsNoTracking()
-            .Where(c => memberships.Contains(c.Id) && c.Kind == siteKind).Select(c => new { c.Id, c.Name }).ToListAsync(ct);
+            .Where(c => memberships.Contains(c.Id) && (allSites || c.Kind == siteKind))
+            .Select(c => new { c.Id, c.Name, c.Kind }).ToListAsync(ct);
+        // §33.21: allSites — Services first, then Orders, inside by name (ordinal).
+        companies = companies.OrderBy(c => c.Kind).ThenBy(c => c.Name, StringComparer.Ordinal).ToList();
         var settingsByCompany = await db.CompanyNotificationSettings.AsNoTracking()
             .Where(s => memberships.Contains(s.CompanyId))
             .ToDictionaryAsync(s => s.CompanyId, s => s.StaffPushEnabled, ct);
 
         var companyDtos = companies.Select(c => new PushConfigCompanyDto(
-            c.Id, c.Name, settingsByCompany.TryGetValue(c.Id, out var v) ? v : new CompanyNotificationSettings().StaffPushEnabled)).ToList();
+            c.Id, c.Name, settingsByCompany.TryGetValue(c.Id, out var v) ? v : new CompanyNotificationSettings().StaffPushEnabled, c.Kind)).ToList();
 
-        return Ok(new PushConfigDto(enabled, enabled ? opts.VapidPublicKey : null, opts.MaxSubscriptionsPerUser, companyDtos, siteKind));
+        return Ok(new PushConfigDto(enabled, enabled ? opts.VapidPublicKey : null, opts.MaxSubscriptionsPerUser, companyDtos, siteKind,
+            new PushSiteUrlsDto(siteLinks.SiteBaseUrl(CompanyKind.Services), siteLinks.SiteBaseUrl(CompanyKind.Orders))));
     }
 
     [HttpGet("subscriptions")]
-    public async Task<ActionResult<PushSubscriptionListDto>> ListSubscriptions([FromQuery] string? currentEndpoint, [FromQuery] string? site)
+    public async Task<ActionResult<PushSubscriptionListDto>> ListSubscriptions([FromQuery] string? currentEndpoint, [FromQuery] string? site, [FromQuery] bool allSites)
     {
         if (!CompanyKindQuery.TryParse(site, out var siteKind)) return BadRequest(CompanyKindQuery.UnknownKindText);
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var rows = await writer.ListAsync(userId, HttpContext.RequestAborted, siteKind);
+        var rows = await writer.ListAsync(userId, HttpContext.RequestAborted, siteKind, allSites);
 
         var items = rows.Select(s => new PushSubscriptionDto(
             s.Id, s.DeviceLabel, s.CreatedAtUtc, s.LastSuccessAtUtc,
             // §105.5: isCurrent is computed by the SERVER, comparing against currentEndpoint from the
             // query — with no parameter, every row is isCurrent=false (never guessed).
-            !string.IsNullOrEmpty(currentEndpoint) && string.Equals(s.Endpoint, currentEndpoint, StringComparison.Ordinal)))
-            .ToList();
+            !string.IsNullOrEmpty(currentEndpoint) && string.Equals(s.Endpoint, currentEndpoint, StringComparison.Ordinal)
+            && s.Site == siteKind,
+            s.Site)).ToList();
 
         return Ok(new PushSubscriptionListDto(items));
     }
@@ -95,7 +101,7 @@ public class PushController(
             userId, dto.Endpoint, dto.Keys.P256dh, dto.Keys.Auth, dto.DeviceLabel, HttpContext.RequestAborted, dto.Site ?? CompanyKind.Services);
 
         var result = new PushSubscriptionDto(subscription.Id, subscription.DeviceLabel, subscription.CreatedAtUtc,
-            subscription.LastSuccessAtUtc, IsCurrent: true);
+            subscription.LastSuccessAtUtc, IsCurrent: true, subscription.Site);
         return created
             ? CreatedAtAction(nameof(ListSubscriptions), null, result)
             : Ok(result);
