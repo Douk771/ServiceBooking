@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -20,9 +20,11 @@ const setup = () => {
 }
 const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
-
-
 describe('CatalogHomePage blocks', () => {
+  beforeEach(() => {
+    list.mockReset()
+  })
+
   it('T30-18 order: shops section, buyers, business; how-to link before the search form', async () => {
     list.mockResolvedValue({ items: [], page: 1, pageSize: 20, totalCount: 0, city: null, emptyText: 'Пусто' } as never)
     const { container } = setup()
@@ -40,7 +42,7 @@ describe('CatalogHomePage blocks', () => {
   })
 
   it('T30-19 blocks stay when the catalog fails', async () => {
-    list.mockRejectedValue({ response: { status: 500, data: '' } })
+    list.mockRejectedValue(Object.assign(new Error('500'), { response: { status: 500, data: '' } }))
     setup()
     await screen.findByRole('button', { name: 'Повторить' })
     expect(screen.getByRole('region', { name: 'Соберите заказ с телефона и заберите, когда он готов' })).toBeTruthy()

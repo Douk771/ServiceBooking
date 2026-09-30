@@ -7,5 +7,6 @@
       "@goods/*": ["goods/src/*"]
     }
   },
-  "include": ["goods/src", "src"]
+  "include": ["goods/src", "src"],
+  "exclude": ["**/shots.test.ts"]
 }

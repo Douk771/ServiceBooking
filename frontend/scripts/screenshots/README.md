@@ -18,7 +18,7 @@
 
 - Docker (на macOS с colima `stack.sh` сам выставит `DOCKER_HOST`, если сокет `~/.colima/default/docker.sock` есть).
 - Node >= 20, `npm ci` в `frontend/`.
-- Установленный Google Chrome (или путь в `SHOTS_CHROME_PATH`). Без Chrome: `npx playwright-core install chromium` вручную, не в CI.
+- Установленный Google Chrome (или путь в `SHOTS_CHROME_PATH`). Без Chrome: `npx playwright-core install chromium` вручную (не в CI) и укажите путь к скачанному Chromium в `SHOTS_CHROME_PATH`: сам по себе он не подхватывается. Снимать при чистом дереве (`git status`), иначе `sourceCommit` получит суффикс `-dirty`.
 - Интернет: шрифты грузятся с Google Fonts.
 - Снимать днём по времени магазина (в окне 07:00-20:30) и не позже 55 минут после засева: сроки заказов на +60 минут.
 

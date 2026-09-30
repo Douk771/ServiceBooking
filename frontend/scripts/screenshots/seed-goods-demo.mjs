@@ -40,6 +40,19 @@ const out = (s) => process.stdout.write(`${s}\n`)
 
 // ---------- замки (до любого сетевого запроса) ----------
 
+export function normalizeHost(h) {
+  return String(h).trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '')
+}
+
+export function isSwaggerUiHtml(body) {
+  if (typeof body !== 'string') return false
+  return /swagger-ui|SwaggerUIBundle/i.test(body) && !/<div\s+id=["']root["']/i.test(body)
+}
+
+export function makePassword(bytes = randomBytes(18)) {
+  return `${bytes.toString('base64url')}Aa1`
+}
+
 export function checkApiUrl(rawUrl, allowHost = '') {
   let url
   try {
@@ -50,12 +63,12 @@ export function checkApiUrl(rawUrl, allowHost = '') {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new ExitError(3, `Неподдерживаемая схема адреса: ${url.protocol}`)
   }
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  const host = normalizeHost(url.hostname)
   if (host === 'ezbook.ru' || host.endsWith('.ezbook.ru')) {
     throw new ExitError(3, `Отказ: ${host} — боевой домен. Засев работает только с локальным стендом.`)
   }
   const local = ['localhost', '127.0.0.1', '::1']
-  const allowed = allowHost.trim().toLowerCase()
+  const allowed = normalizeHost(allowHost)
   if (!local.includes(host) && !(allowed && host === allowed)) {
     throw new ExitError(3, `Отказ: хост ${host} не в белом списке (localhost, 127.0.0.1, ::1 или SHOTS_ALLOW_HOST).`)
   }
@@ -145,10 +158,20 @@ export async function main(env = process.env) {
   // Swagger UI и swagger.json включаются одним условием IsDevelopment (ApiExtensions.UseServiceBookingSwagger).
   // Сам swagger.json проверять нельзя: в dev он отвечает 500 (коллизия schemaId WorkingHoursDto), поэтому берём UI.
   try {
-    await call('GET', '/swagger/index.html', { expected: [200] })
+    const html = await call('GET', '/swagger/index.html', { expected: [200] })
+    if (!isSwaggerUiHtml(html)) throw new ExitError(3, 'x')
   } catch (e) {
     if (e.code === 1) throw e
-    throw new ExitError(3, 'Это не стенд разработки: /swagger/index.html не отдаёт 200.')
+    throw new ExitError(3, 'Это не стенд разработки: /swagger/index.html не отдаёт Swagger UI (возможно, SPA-фолбэк боевого хоста).')
+  }
+
+  const cityName = env.SHOTS_CITY || 'Москва'
+  const cities = await call('GET', `/api/cities?search=${encodeURIComponent(cityName)}`)
+  const city = (cities.items ?? cities).find((c) => c.name === cityName)
+  if (!city) throw new ExitError(5, `Город «${cityName}» не найден в /api/cities`)
+
+  if (city.timeZoneId && !isWithinShootingWindow(new Date(), city.timeZoneId)) {
+    throw new ExitError(4, 'Слоты на +2 ч не поместятся в рабочие часы; запустите днём или задайте SHOTS_CITY с другим поясом.')
   }
 
   const legal = await call('GET', '/api/legal/documents')
@@ -161,7 +184,7 @@ export async function main(env = process.env) {
   const termsClient = version('TermsClient')
   const termsOwner = version('TermsOwner')
 
-  const password = randomBytes(18).toString('base64url')
+  const password = makePassword()
   let auth
   try {
     auth = await call('POST', '/api/auth/register', {
@@ -179,11 +202,6 @@ export async function main(env = process.env) {
   if (!auth?.token) auth = await call('POST', '/api/auth/login', { body: { phone: OWNER.phone, password } })
   let token = auth.token
 
-  const cityName = env.SHOTS_CITY || 'Москва'
-  const cities = await call('GET', `/api/cities?search=${encodeURIComponent(cityName)}`)
-  const city = (cities.items ?? cities).find((c) => c.name === cityName)
-  if (!city) throw new ExitError(5, `Город «${cityName}» не найден в /api/cities`)
-
   const created = await call('POST', '/api/shops', {
     token,
     body: {
@@ -194,6 +212,9 @@ export async function main(env = process.env) {
   if (created.token) token = created.token
   const shopId = created.shop.id
   const timeZoneId = created.shop.timeZoneId || city.timeZoneId
+  if (!isWithinShootingWindow(new Date(), timeZoneId)) {
+    throw new ExitError(4, 'Слоты на +2 ч не поместятся в рабочие часы; запустите днём или задайте SHOTS_CITY с другим поясом.')
+  }
   const shopPath = `/api/shops/${shopId}`
 
   await call('PUT', `${shopPath}/settings`, {
@@ -233,9 +254,6 @@ export async function main(env = process.env) {
   }
 
   const now = new Date()
-  if (!isWithinShootingWindow(now, timeZoneId)) {
-    throw new ExitError(4, 'Слоты на +2 ч не поместятся в рабочие часы; запустите днём или задайте SHOTS_CITY с другим поясом.')
-  }
 
   const storefront = await call('GET', `/api/storefront/${SHOP.slug}`)
   const today = dateInZone(now, timeZoneId)

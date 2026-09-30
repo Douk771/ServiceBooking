@@ -211,6 +211,8 @@ async function shootOrder(browser, state, webUrl, tmp) {
     height = Math.min((bottom ?? 0) + 20, 900)
     await checkForbidden(page, 'order-page', height)
     const statusText = state.orderPage.statusText
+    const bodyText = (await page.textContent('main')) ?? ''
+    if (!bodyText.includes(statusText)) throw new Exit(5, `Статус «${statusText}» не найден на странице заказа.`)
     const enc = await encode(page, { name: `order-page-${dpr}x`, width: 390, height, dpr, budget: 120 * KB })
     result[`${dpr}x`] = enc.buf
     meta = { statusText }
@@ -247,7 +249,7 @@ async function openBoard(page, webUrl, state) {
   const enable = page.getByRole('button', { name: /Включить звук/ })
   if ((await enable.count()) > 0) {
     await enable.first().click()
-    await page.waitForTimeout(500)
+    await enable.first().waitFor({ state: 'detached', timeout: 5000 }).catch(() => {})
   }
   await settle(page)
 }
