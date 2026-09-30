@@ -117,7 +117,7 @@ public sealed class SubjectDataExporter(
 
         // ARCHITECTURE_CYCLE23.md §398.1: orders of the account, and guest orders on the same number ONLY when the number is verified.
         var orderRows = await db.Orders.AsNoTracking().Include(o => o.Items).Include(o => o.Events).AsSplitQuery()
-            .Where(o => o.CustomerUserId == userId || (guestMatchPhone != null && o.CustomerKind == OrderActorKind.Guest && o.CustomerPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — cycle 23, orders follow the same gate as bookings (ARCHITECTURE_CYCLE23.md §398.1)
+            .Where(o => o.CustomerUserId == userId || (guestMatchPhone != null && o.CustomerKind == OrderActorKind.Guest && o.CustomerPhone == guestMatchPhone && !db.Companies.Any(c => c.Id == o.CompanyId && c.IsShowcase)))  // SUBJECT-PHONE-GATE: gated — cycle 23, orders follow the same gate as bookings, and never match a fictional showcase shop (ARCHITECTURE_CYCLE35.md §35.6.3; ARCHITECTURE_CYCLE23.md §398.1)
             .OrderByDescending(o => o.CreatedAtUtc)
             .ToListAsync(ct);
 

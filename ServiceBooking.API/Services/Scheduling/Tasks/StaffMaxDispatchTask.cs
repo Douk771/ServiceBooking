@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.PhoneVerification.Max;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.API.Services.StaffMax;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
@@ -26,6 +27,7 @@ public sealed class StaffMaxDispatchTask(
     IOptions<NotificationOptions> notificationOptions,
     StaffMaxAvailability availability,
     INotificationClock clock,
+    ShowcaseOutboundGuard showcaseGuard,
     ILogger<StaffMaxDispatchTask> logger) : IScheduledTask
 {
     public string Name => "staff-max-dispatch";
@@ -84,9 +86,22 @@ public sealed class StaffMaxDispatchTask(
             scanned = candidates.Count;
             if (scanned == 0) return await FinishAsync(scanned, results, expired, "queue empty");
 
+            // ARCHITECTURE_CYCLE35.md §35.6.2 — safety net of the demo, BEFORE the platform-switch check of ProcessRowAsync, so that the journal says ShowcaseSuppressed and
+            // not StaffMaxPlatformDisabled: a MAX row of a showcase shop (or any row on the demo stand) is never sent.
+            var showcaseCompanyIds = await showcaseGuard.SuppressedCompanyIdsAsync(
+                candidates.Select(m => m.CompanyId).Distinct().ToList(), linkedCt);
+
             var ready = new List<StaffMaxMessage>();
             foreach (var row in candidates)
             {
+                if (showcaseCompanyIds.Contains(row.CompanyId))
+                {
+                    row.Status = NotificationStatus.Skipped;
+                    row.Reason = NotificationReason.ShowcaseSuppressed;
+                    results.Add(Result.Skipped);
+                    continue;
+                }
+
                 if (row.ExpiresAtUtc >= now) { ready.Add(row); continue; }
                 row.Status = NotificationStatus.Expired;
                 row.Reason = NotificationReason.PushTtlExhausted;

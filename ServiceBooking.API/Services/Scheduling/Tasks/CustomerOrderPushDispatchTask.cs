@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ServiceBooking.API.Services.Notifications;
 using ServiceBooking.API.Services.Notifications.WebPush;
+using ServiceBooking.API.Services.Showcase;
 using ServiceBooking.Core.Entities;
 using ServiceBooking.Core.Enums;
 using ServiceBooking.Infrastructure.Data;
@@ -23,6 +24,7 @@ public sealed class CustomerOrderPushDispatchTask(
     IOptions<WebPushOptions> options,
     IOptions<NotificationOptions> notificationOptions,
     INotificationClock clock,
+    ShowcaseOutboundGuard showcaseGuard,
     ILogger<CustomerOrderPushDispatchTask> logger) : IScheduledTask
 {
     public string Name => "customer-order-push-dispatch";
@@ -58,9 +60,21 @@ public sealed class CustomerOrderPushDispatchTask(
             scanned = candidates.Count;
             if (scanned == 0) return await FinishAsync(0, 0, 0, 0, 0, "queue empty");
 
+            // ARCHITECTURE_CYCLE35.md §35.6.2 — safety net of the demo: a push row of a showcase shop (or any row on the demo stand) is never sent, whatever queued it.
+            var showcaseCompanyIds = await showcaseGuard.SuppressedCompanyIdsAsync(
+                candidates.Select(n => n.CompanyId).Distinct().ToList(), linkedCt);
+
             var readyToSend = new List<CustomerOrderPushNotification>();
             foreach (var row in candidates)
             {
+                if (showcaseCompanyIds.Contains(row.CompanyId))
+                {
+                    row.Status = NotificationStatus.Skipped;
+                    row.Reason = NotificationReason.ShowcaseSuppressed;
+                    results.Add((0, 0, 1));
+                    continue;
+                }
+
                 if (row.ExpiresAtUtc >= now) { readyToSend.Add(row); continue; }
                 row.Status = NotificationStatus.Expired;
                 row.Reason = NotificationReason.PushTtlExhausted;

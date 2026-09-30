@@ -167,7 +167,7 @@ public sealed class AccountDeletionService(
         // above: the account's own orders, plus guest orders on a number this account has PROVEN it owns. Active orders are NOT cancelled —
         // the shop still sees "данные покупателя удалены" and the order number and can finish or refuse it.
         var ordersToErase = await db.Orders.Include(o => o.Events)
-            .Where(o => o.CustomerUserId == userId || (guestMatchPhone != null && o.CustomerKind == OrderActorKind.Guest && o.CustomerPhone == guestMatchPhone))  // SUBJECT-PHONE-GATE: gated — cycle 23, orders follow the same gate as bookings (ARCHITECTURE_CYCLE23.md §398.2)
+            .Where(o => o.CustomerUserId == userId || (guestMatchPhone != null && o.CustomerKind == OrderActorKind.Guest && o.CustomerPhone == guestMatchPhone && !db.Companies.Any(c => c.Id == o.CompanyId && c.IsShowcase)))  // SUBJECT-PHONE-GATE: gated — cycle 23, orders follow the same gate as bookings, and never match a fictional showcase shop (ARCHITECTURE_CYCLE35.md §35.6.3; ARCHITECTURE_CYCLE23.md §398.2)
             .ToListAsync();
         foreach (var order in ordersToErase)
         {
