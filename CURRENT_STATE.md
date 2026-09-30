@@ -1,10 +1,66 @@
 # CURRENT_STATE — фактическое состояние кодовой базы ServiceBooking
 
-**Актуально по состоянию на коммит: `4739e0b` (`develop` = `origin/develop`, итог цикла 25 «Заказы», цикл 3), дата: 2026-09-30.**
-Прошлая отметка — `f739382` (⏰24). Эта правка описывает `git diff f739382..4739e0b`: цикл 25 и коммит состояния
-цикла 24 `066ad91`. Всего 38 коммитов, 191 файл, +20 879 / −862. Сверено по коду. **Следующий diff отсчитывайте от `4739e0b`.**
-Метка блоков этой правки — 📊25. Предыдущие метки ⏰24 / 🛒23+ / 🛒23 / 🧮19 / ⚖️20✅ / 🚀20 ниже остаются в силе,
-кроме мест, где рядом стоит 📊25. Остальные разделы заново не сканировались.
+**Актуально по состоянию на коммит: `0d41df4` (`develop` = `origin/develop`; ветка `cycle/027-goods-business-block` стоит на нём же), дата: 2026-09-30.**
+Прошлая отметка — `4739e0b` (📊25). Правка 🏪27 описывает `git diff 4739e0b..0d41df4`: 4 коммита, 4 файла. Сверено по коду.
+**Следующий diff отсчитывайте от `0d41df4`.** Блок 📊25 ниже описывает `f739382..4739e0b` и остаётся в силе, кроме мест,
+где рядом стоит 🏪27. Предыдущие метки ⏰24 / 🛒23+ / 🛒23 / 🧮19 / ⚖️20✅ / 🚀20 тоже в силе. Остальные разделы заново
+не сканировались.
+
+### 🏪27 Что изменилось в `4739e0b..0d41df4` и блок «Для бизнеса» на входе в цикл 27
+
+**Коммиты диапазона.**
+- `fb75c69` — запись цикла 25 в этот документ.
+- `99d8823` — `DEPLOY.md` §23.4: полоса `realtime` тикает раз в 1 с, период задач 5 с. Код не менялся, `appsettings.json`
+  уже был таким (📊25 Г).
+- `aae5b44` + merge `0d41df4` — ветка `fix/goods-catalog-cards-sound`, влита в `develop` напрямую. Это правка
+  **вне цикла агентов**: SPEC/ARCHITECTURE/тестов под неё нет. Меняет 2 файла фронта goods, бэкенд и контракты не тронуты.
+
+**`frontend/goods/src/pages/CatalogHomePage.tsx`.** Список магазинов теперь сетка карточек:
+`grid`, `repeat(auto-fill, minmax(320px, 1fr))`. Карточка `ShopRow` скопирована по разметке с `CompanyCard` из
+`frontend/src/pages/HomePage.tsx`: иконка `store`, имя, `openState.text`, внизу `map-pin` с адресом и бейдж приёма
+`ACCEPT_STYLE`. Лого магазина нет. `data-testid` `catalog-list`/`catalog-shop` сохранены, но **тестов на страницу нет**:
+ни vitest, ни функциональных.
+
+**`frontend/goods/src/hooks/useNewOrderSound.ts`.** `AudioContext` и флаг «звук включён» вынесены с уровня хука на уровень
+модуля (`sharedCtx`, `sharedEnabled`). Благодаря этому звук на экране заказов остаётся включённым, когда владелец
+переходит по вкладкам кабинета (SPA). При размонтировании контекст больше не закрывается, снимается только
+`onstatechange`. Живёт до перезагрузки страницы. Отдельного теста на хук нет. Косвенно его покрывают тесты
+`OrdersScreenPage.test.tsx`.
+
+**Блок «Для бизнеса» — фактическое состояние (предмет цикла 27).**
+- Код: `frontend/goods/src/components/BusinessBlock.tsx`, один компонент. Рендерится последним внутри `CatalogHomePage`
+  (`<BusinessBlock />`, стр. 138), под каталогом на `/` и `/city/:cityId`. Появился в `e26183c` (цикл 25, FE-6),
+  после этого не менялся. Происхождение — ARCHITECTURE_CYCLE25.md §505.4: «краткий текст бывшей» `LandingPage`.
+- Состав:
+  - надзаголовок `Для бизнеса`;
+  - `h2#biz-title` «Магазин и столовая принимают заказы без звонков»;
+  - абзац про ссылку/QR/каталог, планшет у кассы и точную сумму;
+  - две кнопки: «Открыть магазин на goods» (`/cabinet/new`, анониму — `/register?returnTo=%2Fcabinet%2Fnew`) и «Кабинет»
+    (`/cabinet`).
+- Шаги — массив `steps` из трёх пунктов `01/02/03`: «Соберите каталог», «Дайте ссылку или QR», «Собирайте и
+  выдавайте». Вёрстка — `<ol>`: крупный номер серифом `text-gold`, лесенка отступов `md:ml-10`/`md:ml-20`, без иконок.
+- Весь текст зашит в JSX. i18n/CMS нет, с бэкенда ничего не приходит. Тестов (vitest/функциональных) на блок нет.
+  В `TEST_CATALOG.md` отдельного кейса на него не найдено.
+- Образец «шагов, как в услугах» — `frontend/src/pages/HomePage.tsx`:
+  - массив `howItWorks` (стр. 78–94) — `{ icon, title, text }` `as const`;
+  - секция `#how` (стр. 176–188): `bg-cream-deep py-[72px] px-8`, `grid md:grid-cols-3 gap-10`;
+  - у каждого шага: круг 46×46 `rounded-full bg-cream border border-line-strong` с `Icon` `text-gold-dark`, заголовок
+    `font-serif text-[21px] font-medium`, текст `text-[15px] leading-[1.6] text-ink-soft`;
+  - номеров нет.
+  Goods импортирует тот же `@/components/ui/Icon`. Палитра и тени общие (`tailwind.goods.config.js`).
+- Доступные имена `Icon` — других нет, новые добавляются в `frontend/src/components/ui/Icon.tsx`: calendar, clock,
+  map-pin, phone, mail, star, star-outline, check, check-circle, chevron-*, search, user, users, scissors, store,
+  bar-chart, megaphone, settings, log-out, menu, plus, arrow-right, x, credit-card, alert-circle, trash, image, copy,
+  external-link, shopping-bag, minus, volume, volume-off, pencil, arrow-up, arrow-down, download, qr-code, bell,
+  eye-off, printer.
+- Вход для бизнеса дублирует `GoodsNavbar`: «Открыть магазин» → `/register?returnTo=%2Fcabinet%2Fnew`, «Кабинет».
+  Там же SPEC цикла 25 §341. Якоря на блок из шапки нет.
+- «Столовая» встречается и в текстах вне блока. `README.md` стр. 7 и 18: «магазинов, кафе и столовых», «магазин,
+  шаурмечная, кафе или столовая». `CHANGELOG.md` стр. ~224 и ~404–406. Во фронте (`frontend/goods/src`, `frontend/src`) grep по «столов» находит
+  только `BusinessBlock.tsx`.
+- Корневые `SPEC.md` — это по-прежнему спека **цикла 25**, а `ARCHITECTURE.md`/`API_CONTRACT.md` — документы **цикла 3**.
+  Архивных копий `SPEC_CYCLE25_*.md` нет, есть только `ARCHITECTURE_CYCLE25.md` и `API_CONTRACT_CYCLE25.md`. Копий
+  цикла 26 в репозитории нет вообще. `docs/history/` нет.
 
 ### 📊25 Итог цикла 25 «Заказы», цикл 3 «Аналитика, каталог по городу и MAX для персонала» (goods.ezbook.ru) — `f739382..4739e0b`
 
