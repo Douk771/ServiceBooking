@@ -18,6 +18,7 @@ import { SubjectRequestPage } from './pages/SubjectRequestPage'
 import { AdminPage } from './pages/AdminPage'
 import { LegalDocumentPage } from './pages/LegalDocumentPage'
 import { PricingPage } from './pages/PricingPage'
+import { NotFoundPage } from './pages/NotFoundPage'
 import { BillingPage } from './pages/BillingPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
 import { DeleteAccountPage } from './pages/DeleteAccountPage'
@@ -212,6 +213,8 @@ export default function App() {
                       {/* Legacy redirects */}
                       <Route path="/dashboard" element={<Navigate to="/cabinet" replace />} />
                       <Route path="/owner" element={<Navigate to="/cabinet" replace />} />
+                      {/* US-28-08 — an unknown address gets a real 404 page instead of an empty gap. */}
+                      <Route path="*" element={<NotFoundPage />} />
                     </Routes>
                   </RouteErrorBoundary>
                   <Footer />
