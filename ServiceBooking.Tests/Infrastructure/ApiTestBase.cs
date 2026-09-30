@@ -37,7 +37,7 @@ public abstract class ApiTestBase : IClassFixture<TestDatabaseFixture>
         ConnectionString = fixture.ConnectionString;
         // T9 M3: records the slot↔class pairing this fixture's own doc comment promised — see
         // TestDatabaseFixture.RecordTestClass.
-        fixture.RecordTestClass(GetType().Name);
+        fixture.RecordTestClass(GetType());
     }
 
     /// <summary>This class' database connection string — for the rare subclass that needs to build a

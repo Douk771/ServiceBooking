@@ -63,7 +63,7 @@ public class Cycle18TrialMailingWindowHookTests : IClassFixture<TestDatabaseFixt
         _fixture = fixture;
         _factory = new ChannelHookFactory(fixture.ConnectionString);
         _ = _factory.Services; // boot eagerly so Identity is populated before LoginAsSuperAdminAsync
-        fixture.RecordTestClass(GetType().Name);
+        fixture.RecordTestClass(GetType());
     }
 
     public async ValueTask DisposeAsync() => await _factory.DisposeAsync();

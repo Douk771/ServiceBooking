@@ -54,14 +54,15 @@ public sealed class TestDatabaseFixture : IAsyncLifetime
     /// still be traced back) only once per fixture, guarded here rather than relying on every call site
     /// to dedupe — xUnit constructs a fresh test-class instance per <c>[Fact]</c>, so this runs once per
     /// TEST, not once per CLASS, without this guard.</summary>
-    public void RecordTestClass(string testClassName)
+    public void RecordTestClass(Type testClass)
     {
+        var testClassName = testClass.Name;
         Console.WriteLine($"[sb-test] class={testClassName} slot={ClassSlot} db={Identity.DatabaseName}");
 
         if (Interlocked.Exchange(ref _testClassRecorded, 1) == 1)
             return;
 
-        TestRunMetrics.ClassRecorded(ClassSlot, TestRunMetrics.ResolveFullClassName(testClassName));
+        TestRunMetrics.ClassRecorded(ClassSlot, testClass.FullName ?? testClassName);
 
         // Fire-and-forget: this is diagnostics, not part of the test's own behaviour, and every test
         // constructor is synchronous — nothing here may block or fail the test.

@@ -21,9 +21,9 @@ namespace ServiceBooking.Tests.Tests;
 public class LegalConsentVersionChangeTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>, IAsyncLifetime
 {
     // T9 review (M3): records the slot↔class pairing (see TestDatabaseFixture.RecordTestClass) — this class declares IClassFixture<TestDatabaseFixture> directly (not via ApiTestBase/NotificationTestBase), so it must call this itself.
-    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, nameof(LegalConsentVersionChangeTests));
+    private readonly int _testClassRecorded = RecordTestClassOnConstruction(fixture, typeof(LegalConsentVersionChangeTests));
 
-    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, Type className)
     {
         fixture.RecordTestClass(className);
         return 0;

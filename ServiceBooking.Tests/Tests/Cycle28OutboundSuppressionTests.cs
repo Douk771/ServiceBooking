@@ -142,7 +142,7 @@ public class Cycle28DispatchSafetyNetTests(TestDatabaseFixture fixture) : IClass
 
     private static int Record(TestDatabaseFixture f)
     {
-        f.RecordTestClass(nameof(Cycle28DispatchSafetyNetTests));
+        f.RecordTestClass(typeof(Cycle28DispatchSafetyNetTests));
         return 0;
     }
 

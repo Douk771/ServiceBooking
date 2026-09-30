@@ -94,23 +94,6 @@ public static class TestRunMetrics
         });
     }
 
-    /// <summary>Полное имя тест-класса по короткому, если оно однозначно в сборке тестов; иначе как есть.</summary>
-    public static string ResolveFullClassName(string name)
-    {
-        if (name.Contains('.'))
-            return name;
-
-        try
-        {
-            var matches = typeof(TestRunMetrics).Assembly.GetTypes().Where(t => t.Name == name).ToList();
-            return matches.Count == 1 ? matches[0].FullName ?? name : name;
-        }
-        catch (Exception)
-        {
-            return name;
-        }
-    }
-
     /// <summary>Регистрирует наблюдение за запуском хоста и (по флагу) журнал маршрутов. Не меняет конвейер продукта.</summary>
     internal static void Instrument(IWebHostBuilder builder, string slot, string factoryTag, string factoryType)
     {
@@ -138,7 +121,7 @@ public static class TestRunMetrics
             w.WriteNumber("v", 1);
             w.WriteString("event", eventName);
             w.WriteString("runKey", TestRunKey.Current);
-            w.WriteString("utc", DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"));
+            w.WriteString("utc", DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture));
             extra(w);
         });
     }

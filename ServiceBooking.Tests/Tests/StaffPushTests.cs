@@ -239,9 +239,9 @@ public class StaffPushSubscriptionAndQueueingTests(TestDatabaseFixture fixture) 
 /// </summary>
 public class StaffPushDispatchTests(TestDatabaseFixture fixture) : IClassFixture<TestDatabaseFixture>
 {
-    private readonly int _recorded = RecordTestClassOnConstruction(fixture, nameof(StaffPushDispatchTests));
+    private readonly int _recorded = RecordTestClassOnConstruction(fixture, typeof(StaffPushDispatchTests));
 
-    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, string className)
+    private static int RecordTestClassOnConstruction(TestDatabaseFixture fixture, Type className)
     {
         fixture.RecordTestClass(className);
         return 0;

@@ -42,7 +42,7 @@ public abstract class NotificationTestBase : IClassFixture<TestDatabaseFixture>,
         Factory = Boot(new NotificationTestFactory(fixture.ConnectionString));
         // T9 M3: records the slot↔class pairing this fixture's own doc comment promised — see
         // TestDatabaseFixture.RecordTestClass.
-        fixture.RecordTestClass(GetType().Name);
+        fixture.RecordTestClass(GetType());
     }
 
     /// <summary>Boots the host eagerly (rather than lazily on first <see cref="WebApplicationFactory{TEntryPoint}.CreateClient"/>)
