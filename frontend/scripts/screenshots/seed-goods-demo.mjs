@@ -21,7 +21,8 @@ const HELP = `Засев демо-данных goods для съёмки скр�
   SHOTS_CITY         город магазина (по умолчанию Москва)
 
 Хост должен быть localhost/127.0.0.1/::1 или совпадать с SHOTS_ALLOW_HOST; *.ezbook.ru отклоняется всегда.
-Перед записью проверяется GET /swagger/v1/swagger.json = 200 (только Development).
+Перед записью проверяется GET /swagger/index.html = 200 (Swagger UI включён только в Development;
+swagger.json не годится: в Development он отдаёт 500 из-за двух WorkingHoursDto).
 Сначала поднимите стек: frontend/scripts/screenshots/stack.sh reset
 
 Коды выхода: 0 ок; 1 непредвиденное; 2 база уже засеяна (stack.sh reset); 3 адрес не локальный или не
@@ -140,13 +141,15 @@ export async function main(env = process.env) {
   const base = checkApiUrl(env.SHOTS_API_URL || 'http://localhost:55000', env.SHOTS_ALLOW_HOST || '')
   const call = makeClient(base)
 
+  await waitReady(call)
+  // Swagger UI и swagger.json включаются одним условием IsDevelopment (ApiExtensions.UseServiceBookingSwagger).
+  // Сам swagger.json проверять нельзя: в dev он отвечает 500 (коллизия schemaId WorkingHoursDto), поэтому берём UI.
   try {
-    await call('GET', '/swagger/v1/swagger.json', { expected: [200] })
+    await call('GET', '/swagger/index.html', { expected: [200] })
   } catch (e) {
     if (e.code === 1) throw e
-    throw new ExitError(3, 'Это не стенд разработки: /swagger/v1/swagger.json не отдаёт 200.')
+    throw new ExitError(3, 'Это не стенд разработки: /swagger/index.html не отдаёт 200.')
   }
-  await waitReady(call)
 
   const legal = await call('GET', '/api/legal/documents')
   const version = (type) => {
@@ -177,7 +180,7 @@ export async function main(env = process.env) {
   let token = auth.token
 
   const cityName = env.SHOTS_CITY || 'Москва'
-  const cities = await call('GET', '/api/cities')
+  const cities = await call('GET', `/api/cities?search=${encodeURIComponent(cityName)}`)
   const city = (cities.items ?? cities).find((c) => c.name === cityName)
   if (!city) throw new ExitError(5, `Город «${cityName}» не найден в /api/cities`)
 
