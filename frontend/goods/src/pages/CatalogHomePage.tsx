@@ -9,6 +9,7 @@ import type { City } from '@/types'
 import { goodsCatalogApi } from '../api/goodsCatalog'
 import { BusinessBlock } from '../components/BusinessBlock'
 import { EmptyState, ErrorState, LoadingList } from '../components/StatePanels'
+import { publicAddress } from '@/utils/publicAddress'
 import { getGoodsErrorMessage } from '../utils/orderError'
 import { readStoredCity, writeStoredCity, parseCityId } from '../utils/homeCity'
 import type { CatalogAcceptance, GoodsCatalogShopDto } from '../types'
@@ -141,7 +142,7 @@ export function CatalogHomePage() {
 }
 
 function ShopRow({ shop, showCity }: { shop: GoodsCatalogShopDto; showCity: boolean }) {
-  const place = [showCity ? shop.cityName : null, shop.address].filter(Boolean).join(', ')
+  const place = publicAddress(showCity ? shop.cityName : null, shop.address)
   return (
     <li>
       <Link
