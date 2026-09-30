@@ -339,7 +339,7 @@ components:
         days:
           type: array
           maxItems: 7
-          description: Не переданный день — выходной.
+          description: 'Не переданный день — выходной. Каждый dayOfWeek — не более одного раза (схемой не выражается): повтор даёт 400 «День недели указан дважды».'
           items: { $ref: '#/components/schemas/WorkingDayInput' }
     WorkingDayDto:
       type: object
@@ -590,6 +590,7 @@ components:
           type: array
           nullable: true
           maxItems: 7
+          uniqueItems: true
           description: 'Не передан/null — все 7 дней (как в цикле 23). Пустой массив — только по меню на дату.'
           items: { $ref: '#/components/schemas/DayOfWeek' }
     SoldOutInput:
@@ -608,6 +609,7 @@ components:
         weekdays:
           type: array
           maxItems: 7
+          uniqueItems: true
           items: { $ref: '#/components/schemas/DayOfWeek' }
     DailyMenuDayDto:
       type: object
@@ -1807,6 +1809,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ProductDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1955,6 +1958,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OrderBoardDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -2023,6 +2027,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/StorefrontDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
   /api/storefront/{slug}/pickup-slots:
@@ -2223,6 +2228,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PushSubscriptionListDto' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [push]
@@ -2269,6 +2275,7 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -2290,6 +2297,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OwnerSubscriptionDtoCycle24' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /api/billing/subscription/request:
@@ -2436,5 +2444,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AdminSubscriptionRequestPageCycle24' }
+        '400': { $ref: '#/components/responses/PlainTextError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }

@@ -184,7 +184,7 @@ public class ShopCatalogController(
             return BadRequest(error);
         if (input.CategoryId is { } categoryId && !await db.ProductCategories.AnyAsync(c => c.Id == categoryId && c.CompanyId == shopId, ct))
             return BadRequest(ShopTexts.CategoryNotFound);
-        if (!TryWeekdayMask(input.AvailableWeekdays, out var weekdayMask)) return BadRequest(ShopTexts.WeekdayUnknown);
+        if (!TryWeekdayMask(input.AvailableWeekdays, out var weekdayMask, out var weekdayError)) return BadRequest(weekdayError);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await AdvisoryLock.AcquireAsync(db, $"shop-catalog:{shopId}");
@@ -229,7 +229,7 @@ public class ShopCatalogController(
         if (input.CategoryId is { } categoryId && !await db.ProductCategories.AnyAsync(c => c.Id == categoryId && c.CompanyId == shopId, ct))
             return BadRequest(ShopTexts.CategoryNotFound);
         // A PUT replaces the whole product: no weekdays in the body means every day (cycle-23 behavior).
-        if (!TryWeekdayMask(input.AvailableWeekdays, out var weekdayMask)) return BadRequest(ShopTexts.WeekdayUnknown);
+        if (!TryWeekdayMask(input.AvailableWeekdays, out var weekdayMask, out var weekdayError)) return BadRequest(weekdayError);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await AdvisoryLock.AcquireAsync(db, $"shop-catalog:{shopId}");
@@ -383,7 +383,7 @@ public class ShopCatalogController(
         var result = await access.ResolveAsync(shopId, User, ShopPermission.ManageShop, asNoTracking: true, ct: ct);
         if (!result.Ok) return result.Error!;
         if (!await db.ProductCategories.AnyAsync(c => c.Id == categoryId && c.CompanyId == shopId, ct)) return NotFound();
-        if (!TryWeekdayMask(input.Weekdays ?? [], out var mask)) return BadRequest(ShopTexts.WeekdayUnknown);
+        if (!TryWeekdayMask(input.Weekdays ?? [], out var mask, out var weekdayError)) return BadRequest(weekdayError);
 
         var products = await db.Products.Where(p => p.CompanyId == shopId && p.CategoryId == categoryId && p.DeletedAtUtc == null).ToListAsync(ct);
         foreach (var p in products)
@@ -419,12 +419,15 @@ public class ShopCatalogController(
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Weekdays of the input as the stored mask. null = every day; a repeated or unknown day is refused (the caller answers 400).</summary>
-    private static bool TryWeekdayMask(IReadOnlyList<DayOfWeek>? days, out int mask)
+    /// <summary>Weekdays of the input as the stored mask. null = every day; an unknown day is refused as "Неизвестный день недели",
+    /// a repeated one as "День недели указан дважды" (T-25-03) — the caller answers 400 with <paramref name="error"/>.</summary>
+    private static bool TryWeekdayMask(IReadOnlyList<DayOfWeek>? days, out int mask, out string error)
     {
         mask = WeekdayMask.All;
+        error = string.Empty;
         if (days is null) return true;
-        if (days.Any(d => !Enum.IsDefined(d)) || days.Distinct().Count() != days.Count) return false;
+        if (days.Any(d => !Enum.IsDefined(d))) { error = ShopTexts.WeekdayUnknown; return false; }
+        if (days.Distinct().Count() != days.Count) { error = ShopScheduleRules.DayTwice; return false; }
         mask = WeekdayMask.FromDays(days);
         return true;
     }

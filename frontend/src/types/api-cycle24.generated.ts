@@ -863,7 +863,7 @@ export interface components {
             intervals: components["schemas"]["TimeIntervalInput"][];
         };
         WorkingHoursInput: {
-            /** @description Не переданный день — выходной. */
+            /** @description Не переданный день — выходной. Каждый dayOfWeek — не более одного раза (схемой не выражается): повтор даёт 400 «День недели указан дважды». */
             days: components["schemas"]["WorkingDayInput"][];
         };
         WorkingDayDto: {
@@ -2393,6 +2393,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProductDto"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -2601,6 +2602,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrderBoardDto"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -2690,6 +2692,7 @@ export interface operations {
                     "application/json": components["schemas"]["StorefrontDto"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
@@ -2975,6 +2978,7 @@ export interface operations {
                     "application/json": components["schemas"]["PushSubscriptionListDto"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             401: components["responses"]["Unauthorized"];
         };
     };
@@ -3041,6 +3045,7 @@ export interface operations {
                     };
                 };
             };
+            400: components["responses"]["PlainTextError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -3069,6 +3074,7 @@ export interface operations {
                     "application/json": components["schemas"]["OwnerSubscriptionDtoCycle24"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
@@ -3260,6 +3266,7 @@ export interface operations {
                     "application/json": components["schemas"]["AdminSubscriptionRequestPageCycle24"];
                 };
             };
+            400: components["responses"]["PlainTextError"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };
