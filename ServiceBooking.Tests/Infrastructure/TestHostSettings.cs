@@ -30,6 +30,8 @@ public static class TestHostSettings
             ["startup-qa9"] = ("+70000000006", "superadmin-startup-qa9@test.local"),
             // QA cycle 13, factory renamed in cycle 19 (ARCHITECTURE_CYCLE19.md §388.4) — CompanyAddressTestFactory.
             ["addr"] = ("+70000000007", "superadmin-addr@test.local"),
+            // QA cycle 28 (pass B) — the demo-mode host of Cycle28DemoContractTests (database slot "demo" => sbtest_<key>_demo).
+            ["demo"] = ("+70000000008", "superadmin-demo@test.local"),
         };
 
     /// <param name="builder">the host being configured</param>

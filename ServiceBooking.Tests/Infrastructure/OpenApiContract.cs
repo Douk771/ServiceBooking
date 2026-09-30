@@ -17,7 +17,7 @@ public sealed class OpenApiContract
     private static readonly HashSet<string> Supported =
     [
         "$ref", "type", "nullable", "required", "properties", "additionalProperties", "items", "minItems", "maxItems",
-        "enum", "allOf", "format", "minimum", "maximum", "maxLength", "minLength",
+        "enum", "allOf", "format", "minimum", "maximum", "maxLength", "minLength", "pattern",
     ];
 
     private readonly JsonElement _root;
@@ -188,6 +188,8 @@ public sealed class OpenApiContract
             errors.Add($"{path}: string shorter than {min.GetInt32()}");
         if (schema.TryGetProperty("maxLength", out var max) && s.Length > max.GetInt32())
             errors.Add($"{path}: string longer than {max.GetInt32()}");
+        if (schema.TryGetProperty("pattern", out var pattern) && !System.Text.RegularExpressions.Regex.IsMatch(s, pattern.GetString()!))
+            errors.Add($"{path}: string does not match pattern {pattern.GetString()}");
         if (!schema.TryGetProperty("format", out var f)) return;
         var ok = f.GetString() switch
         {

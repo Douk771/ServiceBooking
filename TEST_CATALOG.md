@@ -6467,6 +6467,17 @@ Vitest разработчика (не пересобиралось QA): `Catalog
 9. **Данные демо:** ~650 отзывов, у каждой компании есть рейтинг 3,9–4,4; ~290 заметок, ни одного `ClientHealthNote`, `ClientNotePhoto`, `ConsentRecord` от генератора; у записей с переносами журнал согласован; `ShowcaseOwnership`-таблицы `NeverWritten` пусты.
 10. **Контракт:** schemathesis/prism по `contracts/cycle28/openapi.yaml` теперь включает `/api/demo/*` (на демо-фабрике).
 
+### Цикл 28, проход B — контрактная проверка QA (`Cycle28DemoContractTests.cs`)
+
+Форма `/api/demo/*` и демо-ответов сверена с `contracts/cycle28/openapi.json` (бандл `redocly bundle`, закоммичен рядом с yaml) на реальном хосте в демо-режиме со своей БД `sbtest_<ключ>_demo` (замки 1 и 2 проходят при старте). Только форма, поведение — в сценариях выше.
+
+| Кейс | Шаги | Ожидаемо |
+|---|---|---|
+| `CY28-38` | демо-хост: статус до сброса; вход до сброса; `ops demo reset --yes`; вход тремя ролями; неизвестная роль; 7 запрещённых маршрутов с токеном владельца; флаг обслуживания | статус 200 = `DemoStatusDto`, `X-Robots-Tag: noindex`; вход до сброса — 409 text/plain; вход — 200 = `AuthResponseDto`; неизвестная роль — 400 text/plain; 403 с телом «В демо-версии это действие недоступно.» и `X-Demo-Restricted` (на двух админских маршрутах демо-роль останавливает авторизация — пустой 403); при флаге любой `/api/*` — 503 text/plain с `Retry-After` и `X-Demo-Resetting`, статус — 200 с `resetting: true` |
+| `CY28-39` | обычный хост: `GET /api/demo/status`, `POST /api/demo/login` | пустой 404, нет `X-Robots-Tag` |
+
+Валидатор `OpenApiContract` научен ключевому слову `pattern` (нужно `DemoStatusDto.resetLocalTime`), тест `Pattern_is_checked` в `OpenApiContractValidatorTests`; тест «неизвестное ключевое слово» теперь на `oneOf`. В `TestHostSettings` добавлен тег фабрики `demo`.
+
 ---
 
 ## Цикл 20 (`cycle/020-legal-closure`) — QA-написанные тест-кейсы (`CY20-`, 36 тестов + 4 в `Cycle17ClientCancelTests.cs`)
