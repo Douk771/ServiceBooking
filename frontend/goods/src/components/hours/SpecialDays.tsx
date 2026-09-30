@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { formatPhone } from '@/utils/phone'
+import { formatPhone, telHref } from '@/utils/phone'
 import { scheduleApi } from '../../api/schedule'
-import { dialHref } from '../../utils/dial'
 import { ErrorState, InlineError, LoadingList } from '../StatePanels'
 import { intervalFieldError, type EditableInterval } from '../../utils/hours'
 import { getGoodsErrorMessage, readConflict } from '../../utils/orderError'
@@ -150,7 +149,7 @@ export function SpecialDays({ shopId, onChanged }: { shopId: string; onChanged: 
                   {o.customerPhone && (
                     <>
                       {' · '}
-                      <a href={dialHref(o.customerPhone) || undefined} className="text-gold hover:text-gold-dark inline-flex items-center min-h-[44px]">
+                      <a href={telHref(o.customerPhone) || undefined} className="text-gold hover:text-gold-dark inline-flex items-center min-h-[44px]">
                         {formatPhone(o.customerPhone)}
                       </a>
                     </>
