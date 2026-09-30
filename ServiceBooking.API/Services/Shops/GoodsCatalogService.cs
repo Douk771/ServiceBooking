@@ -25,9 +25,10 @@ public sealed class GoodsCatalogService(
     public const string EmptyAllText = "Пока нет магазинов на goods";
     public const string NothingFoundText = "Ничего не найдено";
 
-    /// <summary>A shop as the cached list of a city holds it (no personal or commercial data).</summary>
+    /// <summary>A shop as the cached list of a city holds it (no personal or commercial data; the logo is public card data, shown as on the storefront).</summary>
     public sealed record CatalogEntry(
-        Guid Id, string Slug, string Name, string? Address, string CityName, ShopOpenStateDto OpenState, CatalogAcceptance Acceptance);
+        Guid Id, string Slug, string Name, string? Address, string CityName, ShopOpenStateDto OpenState, CatalogAcceptance Acceptance,
+        string? LogoUrl = null);
 
     public int PageSize => Math.Max(1, configuration.GetValue("Orders:CatalogPageSize", 20));
 
@@ -45,7 +46,7 @@ public sealed class GoodsCatalogService(
         var pageSize = PageSize;
         var items = matching.Skip((pageNumber - 1) * pageSize).Take(pageSize)
             .Select(e => new GoodsCatalogShopDto(
-                e.Slug, "/" + e.Slug, e.Name, e.Address, e.CityName, e.OpenState, e.Acceptance, GoodsCatalogOrdering.Text(e.Acceptance))).ToList();
+                e.Slug, "/" + e.Slug, e.Name, e.Address, e.CityName, e.OpenState, e.Acceptance, GoodsCatalogOrdering.Text(e.Acceptance), e.LogoUrl)).ToList();
 
         CatalogCityDto? city = null;
         if (cityId is { } id)
@@ -108,7 +109,8 @@ public sealed class GoodsCatalogService(
             return new CatalogEntry(
                 c.Id, c.Slug, c.Name, string.IsNullOrWhiteSpace(c.Address) ? null : c.Address, c.City?.Name ?? string.Empty,
                 new ShopOpenStateDto(open.IsOpen, open.Text, open.OpensAtUtc, open.ClosesAtUtc),
-                GoodsCatalogOrdering.Classify(gate.Accepting, gate.Asap.Available, gate.ScheduledAvailable));
+                GoodsCatalogOrdering.Classify(gate.Accepting, gate.Asap.Available, gate.ScheduledAvailable),
+                string.IsNullOrWhiteSpace(c.LogoUrl) ? null : c.LogoUrl);
         });
         return GoodsCatalogOrdering.Order(entries, e => e.Acceptance, e => e.Name, e => e.Id);
     }

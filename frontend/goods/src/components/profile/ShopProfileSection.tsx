@@ -109,6 +109,8 @@ export function ShopProfileSection({ shop }: { shop: ShopManageDto }) {
   })
 
   const cityChanged = city != null && city.id !== baseline.current.cityId
+  // API_CONTRACT_CYCLE29.md §29.24: compare offsets, never block on `timeZoneChangeAllowed` alone —
+  // `false` only forbids a city with a DIFFERENT UTC offset (same rule as ShopTimeZoneChangePolicy).
   const offsetChanged = cityChanged && city.utcOffsetMinutes !== shop.utcOffsetMinutes
   const addressChanged = values.address.trim() !== baseline.current.address.trim()
 

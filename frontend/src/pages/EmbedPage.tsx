@@ -6,6 +6,8 @@ import { servicesApi } from '../api/services'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Icon } from '../components/ui/Icon'
+import { CompanyPhotoGallery } from '../components/company/CompanyPhotoGallery'
+import { CompanyMapLinks } from '../components/company/CompanyMapLinks'
 import { BookingModal } from '../components/booking/BookingModal'
 import type { Service } from '../types'
 import { formatRub } from '../utils/money'
@@ -58,15 +60,22 @@ export function EmbedPage() {
             {company.name[0]}
           </div>
         )}
-        <div>
-          <h1 className="font-serif text-lg font-medium text-ink">{company.name}</h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="font-serif text-lg font-medium text-ink break-words">{company.name}</h1>
           {company.address && (
             <p className="text-sm text-muted flex items-center gap-1">
               <Icon name="map-pin" size={12} strokeWidth={1.8} /> {company.address}
             </p>
           )}
+          <CompanyMapLinks yandexUrl={company.yandexMapsUrl} twoGisUrl={company.twoGisUrl} />
         </div>
       </div>
+
+      {company.photos?.length ? (
+        <div className="mb-4">
+          <CompanyPhotoGallery photos={company.photos} companyName={company.name} />
+        </div>
+      ) : null}
 
       {/* Services */}
       {servicesLoading ? (

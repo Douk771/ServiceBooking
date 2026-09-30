@@ -1,0 +1,561 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ServiceBooking API — цикл 29 (доделки единой карточки компании)",
+    "version": "29.1.0",
+    "license": {
+      "name": "Proprietary"
+    },
+    "description": "Конвенции проекта без изменений: camelCase; enum — строкой; DateTime — ISO-8601 UTC; 400/402/429 — голая\nстрока по-русски (text/plain); 401/403 — пустое тело; 404 — пустое тело, не оракул. Текст, который видит\nчеловек, собирает сервер.\n\nГЛАВНЫЕ ПРАВИЛА ЦИКЛА, ЗАКРЕПЛЁННЫЕ ФОРМОЙ:\n  1. Карточка каталога goods несёт logoUrl — то же значение, что Company.LogoUrl и StorefrontDto.logoUrl;\n     null, если логотипа нет. Поле всегда присутствует в ответе (required + nullable).\n  2. Неразбираемое имя поля формы (multipart/form-data или x-www-form-urlencoded) → 400 text/plain с фиксированным текстом, а не 500. Проверка идёт ПОСЛЕ аутентификации\n     (аноним — 401), лимита частоты (429) и правового гейта (451), но ДО поиска компании и проверки прав:\n     400 не зависит от {id} и потому не является оракулом существования.\n"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "dev (dotnet run)"
+    },
+    {
+      "url": "http://localhost:4029",
+      "description": "prism mock по этой схеме"
+    }
+  ],
+  "tags": [
+    {
+      "name": "catalog",
+      "description": "Каталог магазинов на главной goods.ezbook.ru (анонимно)."
+    },
+    {
+      "name": "company-photos",
+      "description": "Галерея фото компании — салона и магазина."
+    },
+    {
+      "name": "company-profile",
+      "description": "Профиль компании — логотип."
+    }
+  ],
+  "paths": {
+    "/api/goods/catalog": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "operationId": "getGoodsCatalogCycle29",
+        "summary": "Каталог магазинов по городу (анонимно) — с логотипом магазина",
+        "description": "Форма цикла 25 + GoodsCatalogShopDto.logoUrl. Список города кешируется на Orders:CatalogCacheSeconds (30 с),\nпоэтому новый логотип появляется в каталоге не позже чем через 30 с. Дополнительных запросов к БД поле не\nдобавляет (колонка уже читается вместе с Company).\n",
+        "security": [],
+        "parameters": [
+          {
+            "name": "cityId",
+            "in": "query",
+            "required": false,
+            "description": "Id города из GET /api/cities. Не передан — все города. Неизвестный — пустая страница.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "openNow",
+            "in": "query",
+            "required": false,
+            "description": "true — только открытые сейчас.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Поиск по названию и адресу; длиннее 100 символов — обрезается.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Номер страницы, от 1; некорректное значение трактуется как 1.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Страница видимых магазинов (20).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoodsCatalogPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PlainTextError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/companies/{id}/photos": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanyId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "company-photos"
+        ],
+        "operationId": "uploadCompanyPhotoCycle29",
+        "summary": "Загрузить фото компании — битое имя поля формы даёт 400, а не 500",
+        "description": "Форма и поведение цикла 26 без изменений. Новое в цикле 29 — место отказа на битую форму (§29.23):\n401 (нет токена) → 429 (лимит uploads) → 451 (правовой гейт) → 400 «Не удалось прочитать данные формы.\nПроверьте имена полей запроса.» (неразбираемое имя любого поля формы; одинаково для любого {id}) →\n404 → 403 → 400 (файл) → 200 (дубль) → 400 (лимит 10) → 201.\nПри 400 за битую форму ничего не сохраняется: ни файла, ни строки в БД.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/MultipartImageUpload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Этот файл уже загружен — возвращается существующее фото.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyPhotoDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Фото загружено, добавлено в конец.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyPhotoDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/UploadBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "451": {
+            "$ref": "#/components/responses/LegalGate"
+          }
+        }
+      }
+    },
+    "/api/companies/{id}/logo": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CompanyId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "company-profile"
+        ],
+        "operationId": "uploadCompanyLogoCycle29",
+        "summary": "Загрузить логотип компании — битое имя поля формы даёт 400, а не 500",
+        "description": "Форма и поведение прежние (цикл 13). Новое в цикле 29 — тот же порядок, что у фото (§29.23):\n401 → 429 → 451 → 400 (битая форма, одинаково для любого {id}) → 404 → 403 → 400 (файл) → 200.\nПри 400 за битую форму Company.LogoUrl не меняется, файл не пишется.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/MultipartImageUpload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Логотип заменён; компания после сохранения (CompanyDto).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfileDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/UploadBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "451": {
+            "$ref": "#/components/responses/LegalGate"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "CompanyId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Id компании (салона или магазина).",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "responses": {
+      "PlainTextError": {
+        "description": "Осознанный отказ — голая строка по-русски.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UploadBadRequest": {
+        "description": "Осознанный отказ — голая строка по-русски. Кроме прежних текстов ImageUploadService и лимита галереи,\nс цикла 29 сюда входит отказ на неразбираемое имя поля формы (API_CONTRACT_CYCLE29.md §29.23):\n«Не удалось прочитать данные формы. Проверьте имена полей запроса.»\n",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string",
+              "example": "Не удалось прочитать данные формы. Проверьте имена полей запроса."
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Нет или недействителен токен. Тело пустое."
+      },
+      "Forbidden": {
+        "description": "Нет прав. Тело пустое."
+      },
+      "NotFound": {
+        "description": "Не найдено. Тело пустое."
+      },
+      "PayloadTooLarge": {
+        "description": "Тело больше RequestSizeLimit (5 МБ). Тело пустое."
+      },
+      "LegalGate": {
+        "description": "Требуется принять новую редакцию правовых документов (глобальный LegalConsentFilter, как раньше).",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          },
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Превышен лимит частоты — голая строка по-русски.",
+        "content": {
+          "text/plain": {
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "CatalogAcceptance": {
+        "type": "string",
+        "description": "AcceptingNow — «Принимает заказы»; PreorderOnly — «Можно заказать заранее»; NotAccepting — «Временно не принимает заказы».",
+        "enum": [
+          "AcceptingNow",
+          "PreorderOnly",
+          "NotAccepting"
+        ]
+      },
+      "ShopOpenStateDto": {
+        "type": "object",
+        "required": [
+          "isOpen",
+          "text"
+        ],
+        "properties": {
+          "isOpen": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string",
+            "example": "Открыто до 21:00"
+          },
+          "opensAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "closesAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "CatalogCityDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "region",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "example": "Пермь, Пермский край"
+          }
+        }
+      },
+      "GoodsCatalogShopDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "GoodsCatalogShopDto цикла 25 + logoUrl (цикл 29, API_CONTRACT_CYCLE29.md §29.22).",
+        "required": [
+          "slug",
+          "path",
+          "name",
+          "cityName",
+          "openState",
+          "acceptance",
+          "acceptanceText",
+          "logoUrl"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "example": "/shaurma-lenina",
+            "description": "Относительная ссылка на страницу магазина."
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true,
+            "description": "Как в профиле, без города. «Город, адрес» собирает фронт (publicAddress)."
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "openState": {
+            "$ref": "#/components/schemas/ShopOpenStateDto"
+          },
+          "acceptance": {
+            "$ref": "#/components/schemas/CatalogAcceptance"
+          },
+          "acceptanceText": {
+            "type": "string",
+            "example": "Принимает заказы"
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "Цикл 29. Company.LogoUrl магазина — относительный путь публичного хранилища (/uploads/companies/…),\nто же значение, что StorefrontDto.logoUrl. null — логотипа нет (пустая/пробельная строка в БД → null).\nСервер чужие адреса не проксирует и не переписывает.\n",
+            "example": "/uploads/companies/9f1c2b7e-0000-4000-8000-000000000001.jpg"
+          }
+        }
+      },
+      "GoodsCatalogPageDto": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "totalCount"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GoodsCatalogShopDto"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "example": 20
+          },
+          "totalCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Только видимые магазины."
+          },
+          "city": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CatalogCityDto"
+              }
+            ],
+            "nullable": true
+          },
+          "emptyText": {
+            "type": "string",
+            "nullable": true,
+            "example": "В этом городе пока нет магазинов на goods"
+          }
+        }
+      },
+      "CompanyPhotoDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "thumbnailUrl",
+          "width",
+          "height",
+          "position",
+          "isCover"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "example": "/uploads/companies/9f1c2b7e-0000-4000-8000-000000000001.jpg"
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "example": "/uploads/companies/3a7b1d40-0000-4000-8000-000000000002.jpg"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9,
+            "description": "0-based порядок показа; 0 — обложка."
+          },
+          "isCover": {
+            "type": "boolean",
+            "description": "position == 0."
+          }
+        }
+      },
+      "CompanyProfileDto": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Подмножество CompanyDto, которым отвечает POST /api/companies/{id}/logo (полная форма — API_DOCUMENTATION.md).\nКабинеты ответ не разбирают: после успеха перечитывают свои запросы (['my-companies'] / ['shop', id]).\n",
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MultipartImageUpload": {
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "JPEG / PNG / WEBP, не больше 5 МБ. Имя поля — ровно \"file\"."
+          }
+        }
+      }
+    }
+  }
+}

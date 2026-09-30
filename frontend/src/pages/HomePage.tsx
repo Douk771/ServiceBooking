@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { companiesApi } from '../api/companies'
 import { CityCombobox } from '../components/ui/CityCombobox'
 import { Icon } from '../components/ui/Icon'
+import { CompanyLogoMark } from '../components/company/CompanyLogoMark'
 import { Pagination } from '../components/ui/Pagination'
 import { PricingTeaser } from '../components/pricing/PricingTeaser'
 import type { City, Company } from '../types'
@@ -41,14 +42,8 @@ function CompanyCard({ company }: { company: Company }) {
       className="block bg-white border border-line rounded-[20px] p-[26px] transition-all duration-200 hover:shadow-card hover:-translate-y-[3px] hover:border-line-strong"
     >
       <div className="flex items-start gap-4 mb-4">
-        {company.logoUrl ? (
-          <img src={company.logoUrl} alt={company.name} className="w-14 h-14 rounded-2xl object-cover shrink-0" />
-        ) : (
-          <div className="w-14 h-14 rounded-2xl bg-cream-deep flex items-center justify-center shrink-0">
-            <Icon name="store" size={24} className="text-gold-dark" />
-          </div>
-        )}
-        <div className="min-w-0">
+        <CompanyLogoMark size="catalog" name={company.name} logoUrl={company.logoUrl} />
+        <div className="min-w-0 flex-1">
           <h3 className="font-serif text-[19px] font-medium text-ink truncate">{company.name}</h3>
         </div>
       </div>
