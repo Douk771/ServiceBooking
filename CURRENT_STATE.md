@@ -2,8 +2,16 @@
 
 > **Цикл 32 влит в `develop` после этого снимка** (общий `CompanyProfileCard`, `SalonProfileSection`, `BookingRulesSection`, новая раскладка `SettingsTab`, удалён `CompanyAddressField`; сервер не менялся). Описания настроек компании ниже — до цикла 32; полная синхронизация — при следующем обновлении файла.
 
-**Актуально по состоянию на коммит: `2834e00` (`develop` = `origin/develop`, мердж `cycle/033-unified-notifications-profile`; дата коммита — 2026-10-01), дата обновления: 2026-10-01.**
-**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`).
+**Актуально по состоянию на коммит: `a1e2259` (`develop` = `origin/develop` = начало ветки `cycle/035-goods-showcase-demo-stand`; дата коммита — 2026-10-01), дата обновления: 2026-10-01.**
+**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`, `2834e00`).
+**Обновление на `a1e2259`** (✔ `git diff 2834e00..HEAD`: 8 файлов, после `git fetch`; ничего не запускалось). В диапазоне два
+коммита: `d83cdc7` — документы цикла 33 (CHANGELOG, README, этот файл; `SPEC.md` восстановлен, спека цикла 28 в архиве
+`SPEC_CYCLE28_SHOWCASE_DEMO_STAND.md`) и `a1e2259` — фикс горизонта записи в календаре ezbook (§5.5). Бэкенд, API, БД,
+контракты, CI и пакеты не менялись. Перед циклом 35 («демо-стенд для товаров») **блоки цикла 28 перепроверены по коду** (раньше
+были ↪): статус в §5.5 исправлен (цикл 28 влит мерджем `99c56b0`), добавлен §5.11 — что из демо-механики цикла 28
+распространяется на goods, а что нет, и пункты C35-0-1…8 в §9.4. **Следующий diff отсчитывайте от `a1e2259`.**
+
+*Ниже — шапка прежнего обновления на `2834e00`, сохранена для истории.*
 **Обновление на `2834e00`** (✔ `git diff 050816f..2834e00`: 392 файла; ничего не запускалось). В диапазоне по первому
 родителю: цикл 32 (мердж `09344b1`, см. плашку выше — описан только ею), фикс `fix/goods-cartpanel-test-captcha-env`
 (`f981a62`, C34-1), фикс `fix/navbar-brand-unified` (`b5669c9`), **цикл 28** (мердж `99c56b0`; его блоки в этом файле —
@@ -50,6 +58,10 @@
 - ↪ — перенесено из прежней редакции, в этом сканировании **не перепроверялось**;
 - 🖥 — факт о боевой машине. В репозитории его нет, в этом сканировании он не проверялся (SSH не использовался).
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
+
+**Ветки на `a1e2259`** (✔ после `git fetch`, 2026-10-01): `develop` = `origin/develop` = `a1e2259`; от него создана
+локальная `cycle/035-goods-showcase-demo-stand` (на origin не публиковалась, в рабочем дереве один неотслеживаемый файл —
+`BRIEF_CYCLE35_GOODS_DEMO.md`). Ниже — состояние веток на `2834e00`, остальное с тех пор не менялось.
 
 **Ветки** (✔ по локальным ссылкам `origin/*` на 2026-10-01, `git fetch` в этом обновлении не делался):
 - `origin/develop` = `2834e00` (совпадает с локальным `develop`). В нём влиты **цикл 29** «Доделки цикла 26» (§5.5),
@@ -548,6 +560,12 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 
 ### 5.5 Что сделали последние циклы
 
+**Фикс ezbook мимо цикла — горизонт записи в календаре по UTC** (✔ `a1e2259`, коммит прямо в `develop`). В
+`frontend/src/utils/bookingHorizon.ts` добавлена `lastBookableDateUtc(now, horizonDays)`: последняя дата, которую примет
+сервер, считается от **UTC-даты** (как `BookingHorizon.LastBookableDate` на сервере), а не от местной. `BookingCalendar.tsx`
+при 400 «превышен горизонт» обрезает диапазон по ней (раньше — от местной полуночи, из-за чего с 00:00 до смещения UTC
+календарь оставался пустым). Тест — `bookingHorizon.test.ts` (+15 строк). Сервер не менялся.
+
 **Цикл 34 — плашка «Доступна новая версия» в goods** (✔ `git diff 364cc2b..050816f`, влит мерджем `050816f`). Только
 фронт goods и vhost nginx goods. API, БД, миграции, контракты, пакеты и CI не менялись. Подробно — §5.9.
 
@@ -601,7 +619,7 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 `b9c2a79` — в `CHANGELOG.md` добавлен раздел «Не выпущено — цикл 26: одна карточка компании…» (строка 34, под
 разделом цикла 27), в `README.md` цикл 26 описан в блоках goods и ezbook и в «Чего пока нет». Этим закрыт C26-6.
 
-**Цикл 28, проход A — тарифы «Записи», витринные данные (✔ backend; ветка `cycle/028-showcase-data-demo-stand`, в `develop` не влит, на бою нет).** Документы: `ARCHITECTURE_CYCLE28.md` §570–§583,
+**Цикл 28, проход A — тарифы «Записи», витринные данные (✔ backend; влит в `develop` мерджем `99c56b0`; состояние на бою — см. `DEPLOY.md` §26, здесь не проверялось 🖥).** *Сверено по коду на `a1e2259`: перечисленные ниже классы и точки вызова на месте; как это касается goods — §5.11.* Документы: `ARCHITECTURE_CYCLE28.md` §570–§583,
 `API_CONTRACT_CYCLE28.md` §590–§603, `contracts/cycle28/openapi.yaml`. Проход B (демо-стенд: `/api/demo/*`, `DemoMode`, сброс, `[DemoForbidden]`) — описан в следующем блоке («Цикл 28, проход B»).
 - **Одна миграция `Cycle28ShowcaseMarks`** (только добавления): `AspNetUsers.IsShowcase`, `BillingAccounts.IsShowcase`, `Companies.IsShowcase` и `ShowcaseBookingOpen`, `Bookings.ShowcaseKind`
   (`ShowcaseBookingKind`: 0 обычная, 1 генератор, 2 посетитель), CHECK `CK_Companies_ShowcaseBookingOpen`, четыре частичных индекса. Enum'ы только дописаны: `NotificationReason.ShowcaseSuppressed`,
@@ -622,7 +640,7 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
 - Тесты: unit +180 (`OpsCommandLineTests`, `ZapisTariffCatalogTests`, `Showcase*Tests`, `TrialMailingRulePolicyTests`, …); в функциональных обновлены 6 тестов под новый бесплатный тариф (`CompaniesTests`, `AdminTests`).
   Функциональных тестов цикла 28 backend не писал — их пишет QA (`CY28-*`).
 
-**Цикл 28, проход B — демо-стенд (✔ backend: код и прогон на локальной БД; ветка `cycle/028-showcase-data-demo-stand`, в `develop` не влит, на бою нет, выкат DO-2 не выполнялся).** Документы: `ARCHITECTURE_CYCLE28.md` §579–§581,
+**Цикл 28, проход B — демо-стенд (✔ backend; влит в `develop` мерджем `99c56b0`; развёрнут ли стенд на машине — 🖥, в репозитории не видно: `DEPLOY.md` §25 — инструкция, а не журнал выката).** *Сверено по коду на `a1e2259`; фронт демо — `frontend/src/components/demo/*` (`DemoBanner`, `DemoMaintenanceGate`, `DemoMaintenanceScreen`, `DemoRoleButtons`), `src/store/demoStore.ts`, `src/hooks/useDemoStatus.ts`, `src/api/demo.ts`, `src/utils/demo*.ts`; функциональные тесты `ServiceBooking.Tests/Tests/Cycle28*.cs` (6 файлов: `DemoContract`, `DemoScenario`, `OutboundSuppression`, `ShowcaseGenerator`, `ShowcaseGuards`, `Tariffs`).* Документы: `ARCHITECTURE_CYCLE28.md` §579–§581,
 `API_CONTRACT_CYCLE28.md` §597–§600a, `API_DOCUMENTATION.md` §4.21.8. Новых миграций и зависимостей нет. Всё ниже **инертно при `DemoMode:Enabled=false`** (по умолчанию): маршруты отвечают 404 без тела, middleware и фильтр проходят насквозь,
 сброс отказывает кодом 2, задача `demo-reset` не регистрируется.
 - **Настройки** `DemoMode` (`DemoModeOptions`): `Enabled`, `ResetLocalTime` (`04:00`), `TimeZoneId` (`Europe/Moscow`), `MaintenanceFlagPath` (`App_Data/state/demo-resetting`); лимит `RateLimits:demo-login` 30/мин на IP (вне демо лимитер «не включается», чтобы 404 не превращался в 429).
@@ -1143,6 +1161,94 @@ ordersExtra={<StaffMaxCard />}`). Поведение:
 - ручные M33-01…07 — вердикт «НЕ ВЫПОЛНЕНО QA» (нет реальных Android/iPhone и стенда с VAPID); это гейт выката.
 
 ---
+
+### 5.11 Витрина и демо-стенд цикла 28 применительно к goods («Заказы») — ✔ по коду на `a1e2259`, ничего не запускалось
+Раздел — фактическая опора для цикла 35. Итог одной строкой: **механика цикла 28 построена только для салонов (`Kind =
+Services`); goods в ней явно исключён, пометок демо у таблиц заказов нет.**
+
+**Пометка «витрина»** (миграция `Cycle28ShowcaseMarks`) есть только у четырёх сущностей: `Company.IsShowcase` (+
+`ShowcaseBookingOpen`), `AppUser.IsShowcase`, `BillingAccount.IsShowcase`, `Booking.ShowcaseKind`. У `ShopSettings`, `Product`,
+`ProductCategory`, `Order`, `OrderItem`, `OrderEvent`, `ShopDailyMenu(Item)`, `ShopSpecialDay`, `ShopCustomerNote`,
+`OrdersSubscription`, `OrderMonthlyUsage` своей пометки нет; аналога `ShowcaseKind` (генератор/посетитель) у `Order` нет.
+Магазин — это `Company` с `Kind = Orders`, так что флаг `Companies.IsShowcase` у магазина технически есть, но ни один код
+goods его не читает.
+
+**Генератор витрины** (`Services/Showcase/`): `ShowcaseGraph` содержит только салонные коллекции (пользователи, аккаунты,
+`AccountSubscription`, компании, участники, услуги, мастер-услуги, расписания, записи, события записей, отзывы, заметки,
+фото). `ShowcaseDataset` создаёт компании только с `Kind = CompanyKind.Services`. Профили — `ShowcaseProfile.Prod` и `.Demo`,
+оба салонные; `ShowcaseSpecs` — 9 салонов. `ShowcaseAssets/` — 68 картинок только салонных категорий (логотипы, фото,
+услуги; `LICENSES.md`, `manifest.json` с ролями `logo|photo|service`, картинок товаров нет).
+
+**Удаление витрины** (`ShowcaseOwnership`): таблицы goods перечислены в `NeverWritten` с пояснением «goods table, no shop in
+the showcase» — `ShopSettings`, `ProductCategories`, `Products`, `Orders`, `OrderDailyCounters`, `ShopSpecialDays`,
+`ShopDailyMenus`, `ShopCustomerNotes`, `StaffMaxMessages`, `CustomerOrderPushNotifications`. В `DeleteSteps` из «Заказов» есть
+только `OrdersSubscriptions` и `OrderMonthlyUsages` (по `BillingAccountId`). `OrderItems`, `OrderEvents`,
+`ShopDailyMenuItems`, `OrderPushSubscriptions` не упомянуты ни там, ни там (привязаны к компании не напрямую). Тест покрытия
+модели — `ServiceBooking.UnitTests/ShowcaseOwnershipCoverageTests.cs`.
+
+**Сброс демо** (`DemoResetTables`): список стираемых таблиц строится из модели EF «всё, кроме разрешённых» (`__EFMigrationsHistory`,
+`Cities`, `AspNetRoles`, `SubscriptionPlanConfigs`, `SubscriptionOptions`, `PlanOptionRules`, `PlatformSettings`,
+`ScheduledTaskStates`), поэтому **все таблицы заказов стираются сбросом автоматически**. Тарифы «Заказов» живут в той же
+`SubscriptionPlanConfigs` (`Line = Orders`, системный бесплатный — `OrdersFreePlan.SeedId`, сид миграции цикла 24) и
+сбросом **сохраняются**. После коммита `FileStorage.ClearAllFiles` чистит оба корня хранилища — картинки товаров
+(`Product.ImageUrl`/`ThumbnailUrl`, загружаются в общее хранилище) тоже; заново публикуются только `ShowcaseAssets/`.
+
+**Тарифы.** `TariffCatalogSeeder`/`ZapisTariffCatalog` (`ops tariffs plan|apply`, вызывается и из сброса) работают только
+с `Line == CompanyKind.Services`; публичного набора тарифов «Заказов» сид не создаёт.
+
+**Демо-роли и вход.** `ShowcaseDemoRoles` — три салонные роли (`owner` «Лаванды», `master`, `client`), подписи «Войти как
+владелец салона / мастер / клиент»; `POST /api/demo/login` принимает только их. Ролей «владелец магазина», «сотрудник
+магазина», «покупатель» нет.
+
+**Замки** (`DeploymentSafetyChecks.ValidateDemoMode`): проверяются `PublicSites:ServicesBaseUrl` (хост `demo.*`),
+`AllowedOrigins`, имя БД `*_demo`, `Jwt:Issuer` `*.Demo`, провайдеры `Notifications:Provider`, `Notifications:StaffPush:Provider`
+(= `logging`), `StaffMax:Enabled=false`, `PhoneVerification:Provider=stub`, `Showcase:Reseed:Enabled=false`.
+**`PublicSites:OrdersBaseUrl` не проверяется**, в `docker-compose.demo.yml` не задан → по умолчанию `https://goods.ezbook.ru`
+(`PublicSitesOptions`), то есть ссылки на магазины из демо-API ведут на боевой goods. `DemoInstanceGuard` при отсутствии метки
+смотрит только `Companies.IsShowcase = false` и `Bookings.ShowcaseKind = None` — магазин без пометки тоже считается
+«настоящими данными» (как и любая невитринная компания).
+
+**Исходящие goods** (`ShowcaseOutboundGuard` вызывается в `NotificationScheduler`, `StaffPushScheduler`, `MailingController` и
+как страховка в `NotificationDispatchTask`, `StaffPushDispatchTask`; в демо-режиме он глушит **все** компании):
+| Путь goods | Очередь | Страховка при отправке | На демо держится на |
+|---|---|---|---|
+| сообщения покупателю о заказе (`OrderMessageScheduler`) | `OutboundNotifications` | да (`NotificationDispatchTask`) | гвард + провайдер `logging` |
+| push персоналу о заказе, предупреждения о лимите (`OrderStaffPushQueue`, `OrderLimitWarner`) | `StaffPushNotifications` | да (`StaffPushDispatchTask`) | гвард + провайдер `logging` |
+| push покупателю (`CustomerOrderPushQueue`) | `CustomerOrderPushNotifications` | **нет** (`CustomerOrderPushDispatchTask` гвард не вызывает) | только `IWebPushSender` = `LoggingWebPushSender` (выбирается по `Notifications:StaffPush:Provider`) |
+| MAX персоналу о заказе (`OrderStaffMaxQueue`) | `StaffMaxMessages` | **нет** (`StaffMaxDispatchTask`) | только `StaffMax:Enabled=false` |
+Для витринного магазина **на бою** (без демо-режима) последние две строки ничем не глушатся.
+
+**Запреты в демо.** `[DemoForbidden]` стоит на 7 действиях: `POST /api/billing/trial`, `POST /api/billing/subscription/request`
+(общий для обеих линий — поле `Line`, так что запрос тарифа «Заказов» тоже запрещён), `change-password`, `change-phone`,
+`delete-account` (`ProfileController`), перенос компании (`CompanyTransferController`), смена владельца (`AdminController`). В
+контроллерах goods (`Shops*`, `ShopCatalog`, `ShopOrders`, `ShopMenu`, `ShopSchedule`, `ShopCustomers`, `ShopNotifications`,
+`ShopReports`, `Storefront`, `PublicOrders`, `GoodsCatalog`) атрибута нет, в том числе на `PUT /api/shops/{id}/seller`,
+`PUT …/slug`, `PUT …/catalog-listing`. `[DemoOnly]` — только `DemoController`.
+
+**Запрет смешивания.** Зарезервированный слаг `primer-` проверяется и для магазинов (`CompanyCreationService` ~стр. 229,
+общая проверка слага; для салонов — стр. 50). `ShowcaseMixingGuard.CheckMember` вызывается в `CompanyMembersController` и
+`AdminController`; сотрудник магазина добавляется тем же `CompanyMembersController` (ветка `companyKind == Orders`, стр. ~147),
+так что гвард на него распространяется.
+
+**Публичные выборки.** `GET /api/goods/catalog` (`GoodsCatalogService`) и витрина магазина `StorefrontDto` поле
+`isShowcase` не отдают и витрину не фильтруют; бейдж `ShowcaseBadge` есть только во фронте ezbook (`HomePage`, `CompanyPage`,
+`EmbedPage`, `ClientBookingsPage`). Оформление заказа гостем (`POST /api/storefront/{slug}/orders`, `OrderCreationService`) требует
+SmartCaptcha, как гостевая запись; закрыть «витринный» магазин для заказов (аналог `ShowcaseBookingClosed`) нечем. Правила
+retention для заказов посетителей витрины (аналог `ShowcaseVisitorBookingRule`) нет.
+
+**Фронт goods.** В `frontend/goods/src` нет ни одного демо-компонента (баннер, экран «Демо обновляется», кнопки ролей) и
+чтения `isShowcase`. При этом goods использует общий `@/api/client` (алиас `@` → `frontend/src` в `vite.goods.config.ts`),
+интерсептор которого на 503 + `X-Demo-Resetting` ставит `useDemoStore.setResetting(true)` — в goods этот стор никто не рендерит.
+
+**Инфраструктура.** `docker-compose.demo.yml` — один проект `ezbook-demo` (api-demo 400 МБ + postgres-demo 256 МБ, порт
+API 5001), образ общий с боем. `deploy/nginx/demo.visit.ezbook.conf` — единственный демо-vhost; в нём `location ^~ /__goods/ { return 404; }`,
+т. е. сборка goods на демо сейчас закрыта. Vhost-а `demo.goods`/`demo.zakaz` нет; строка `zakaz` в коде и конфигах не
+встречается (боевой goods — `goods.ezbook.ru`, `deploy/nginx/goods.ezbook.conf`, root `__goods`).
+
+**Уже существующие «демо-данные» goods — не витрина, а съёмка скриншотов цикла 30:** `frontend/scripts/screenshots/`
+(`demo-data.mjs` — один магазин, категории, заказы; `seed-goods-demo.mjs` — засев через HTTP API **только** на локальный
+стек `sb-shots`, отказывает `*.ezbook.ru`; `stack.sh`, `capture-goods-screenshots.mjs`, `README.md`), самотесты —
+`frontend/goods/src/assets/screenshots/seed-goods-demo.test.ts`. С `ShowcaseGenerator` не связаны.
 
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
 
@@ -1676,6 +1782,28 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - **C28-15.** Пробный запуск демо с `ASPNETCORE_ENVIRONMENT=Production` (проверено вручную) требует переменных, которых нет в перечне `.env.demo.example` из §581.1 архитектора: `Trial__PhoneKeyHmac` и `Trial__PhoneKeyId` (`ValidateTrialSecrets`, иначе старт падает), плюс `ForwardedHeaders__TrustedNetworks__0` и `SuperAdmin__Password` без заглушки (они в перечне есть). **Закрыто DO-4 (заготовка):** все четыре переменные есть в `.env.demo.example` и `docker-compose.demo.yml` (`DEMO_TRIAL_PHONEKEY_HMAC`/`_ID`, `DEMO_FORWARDEDHEADERS__TRUSTEDNETWORKS__0` с фиксированной подсетью проекта, `DEMO_SUPERADMIN_PASSWORD` — обязательные, без значений по умолчанию); проверено `docker compose config`, но на машине стенд ещё не запускался.
 - **C28-14.** Запись посетителей демо в открытые витринные компании по-прежнему ограничена капчей: хост `demo.visit.ezbook.ru` нужно добавить в консоль SmartCaptcha (ручной шаг `DEPLOY.md` §25.6, заказчик); без него гостевая запись на демо отвечает «Invalid captcha», запись под ролью клиента работает.
 
+**Хрупкие места демо-механики относительно goods (✔ по коду на `a1e2259`, найдено перед циклом 35; подробности — §5.11).**
+Номера `C35-0-*` — «до начала цикла 35», чтобы не пересекаться с долгом, который заведёт сам цикл.
+- **C35-0-1.** Push покупателю о заказе (`CustomerOrderPushDispatchTask`) и MAX персоналу о заказе (`StaffMaxDispatchTask`)
+  не проходят через `ShowcaseOutboundGuard`. На демо их глушат только настройки (`LoggingWebPushSender` при
+  `Notifications:StaffPush:Provider=logging`, `StaffMax:Enabled=false`) — второго, «данного» замка, как у записей, нет.
+- **C35-0-2.** `PublicSites:OrdersBaseUrl` не входит в замок `ValidateDemoMode` и не задан в `docker-compose.demo.yml`: ссылки
+  на магазины, собираемые демо-API (`PublicSiteLinks`), указывают на боевой `https://goods.ezbook.ru`.
+- **C35-0-3.** `ShowcaseOwnership.NeverWritten` утверждает «в витрине нет магазинов» для 10 таблиц goods; тест покрытия
+  модели держится на этом утверждении. Любой витринный магазин делает его ложным, и `ops showcase delete/recreate` оставит
+  его товары и заказы (поведение удаления самой компании при этом зависит от `OnDelete` у FK goods — не проверялось). `OrderItems`, `OrderEvents`, `ShopDailyMenuItems`,
+  `OrderPushSubscriptions` в обоих списках отсутствуют.
+- **C35-0-4.** Сброс демо стирает все таблицы goods и все загруженные файлы (в том числе картинки товаров) — это
+  предусмотрено, но для goods не проверялось ни одним тестом (тесты цикла 28 салонные).
+- **C35-0-5.** `DemoInstanceGuard` на пустой БД без метки пишет `instance.kind = demo`; «настоящими данными» считает любую
+  невитринную компанию и любую запись `ShowcaseKind = None`. Заказы в эту проверку не входят.
+- **C35-0-6.** Во фронте goods нет обработки демо (баннер, экран обслуживания, 403 `X-Demo-Restricted`), хотя общий
+  `api/client.ts` уже выставляет `demoStore.resetting` — в goods это состояние молча игнорируется.
+- **C35-0-7.** `TariffCatalogSeeder` (часть сброса) знает только линию «Записи»; тарифы «Заказов» на демо — то, что
+  оставили миграции (системный «Заказы · Бесплатно»), публичного набора нет.
+- **C35-0-8.** Отметка «`ShowcaseAssets/` пуст» в C28-9 устарела: после C28-4 там 68 файлов (1,2 МБ), замер сброса с
+  картинками по-прежнему не сделан.
+
 ---
 
 ## 10. Что уже существует в документации и тест-кейсах (дополнять существующее, параллельных версий не заводить)
@@ -1783,6 +1911,13 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 - Отдельного `TESTPLAN.md` или `docs/testing/` нет. Каталог сценариев — только `TEST_CATALOG.md`.
 
 ### 10.5 Документы циклов
+- **На `a1e2259`** (✔ `ls`, `head SPEC.md`): корневой `SPEC.md` (305 строк) — чистая спека **цикла 33** (C33-7 закрыт
+  коммитом `d83cdc7`); спека цикла 28 — `SPEC_CYCLE28_SHOWCASE_DEMO_STAND.md` (381 строка). `SPEC_CYCLE33_*.md` ещё нет — по
+  конвенции спеку 33 архивирует цикл 35. Корневые `ARCHITECTURE.md`/`API_CONTRACT.md` по-прежнему от цикла 3; документы
+  цикла 28 для образца — `ARCHITECTURE_CYCLE28.md` (§570–§583), `API_CONTRACT_CYCLE28.md` (§590–§603, демо — §597–§600a),
+  `contracts/cycle28/openapi.yaml`, `API_DOCUMENTATION.md` §4.21 (демо — §4.21.8), `DEPLOY.md` §25 (демо-стенд), §26 (тарифы
+  и витрина). Бриф цикла 35 — `BRIEF_CYCLE35_GOODS_DEMO.md` (не отслеживается git; по образцу `BRIEF_CYCLE28_SHOWCASE_AND_DEMO.md`,
+  `BRIEF_BRAND_AND_DOMAINS.md`). Описание ручных/автоматических кейсов цикла 28 — раздел в `TEST_CATALOG.md` (префикс `CY28-`).
 - **На `2834e00`** (✔ `git show 2834e00:SPEC.md`, `git ls-files`): корневой `SPEC.md` (675 строк) — ⚠️ **артефакт мерджа, две
   спеки вперемешку** (C33-7): заголовок и строки 1–45 — спека **цикла 33** («Устройства и уведомления» в профиле; дата
   2026-10-01, отправная точка `49f0d60`), со строки 46 — `# SPEC — цикл 28 …`, дальше разделы циклов 33 и 28 чередуются
