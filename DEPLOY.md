@@ -2184,6 +2184,136 @@ SELECT "ShopId", "Number", COUNT(*) FROM "Orders" GROUP BY "ShopId", "Number" HA
 
 Чек-лист «Цикл 25, ручные» ведёт QA в `TEST_CATALOG.md`; если рубильник не включён — записать «рубильник не включён».
 
+## 25. Демо-стенд demo.visit.ezbook.ru (цикл 28, проход B; ARCHITECTURE_CYCLE28.md §579, §581, SPEC US-28-12)
+
+Демо — это отдельный экземпляр API с **отдельной базой** и готовыми данными («Лаванда» и другие салоны, три кнопки входа:
+владелец, мастер, клиент). Он работает в отдельном compose-проекте `ezbook-demo` (`docker-compose.demo.yml`), на том же
+образе API, что и бой, но со своими контейнерами, томами, сетью, секретами и сертификатом. Ничего никому не отправляет
+(провайдеры `logging`/`stub`), закрыт от индексации, каждую ночь в 04:00 по Москве сбрасывается к исходным данным.
+Запуск, остановка и сброс демо боевой стек не задевают. **Агенты выкат демо на машину не выполняют — всё ниже делает человек.**
+
+**Замки от путаницы с боем.** Если в конфигурации что-то похоже на бой, демо не стартует (причина в `docker compose logs
+api-demo`): хост не `demo.*`, имя БД не на `_demo`, издатель токенов не на `.Demo`, провайдер не `logging`/`stub`. Вторая
+защита — метка `instance.kind=demo` в самой БД: демо откажется стартовать на базе с настоящими данными. Значения по
+умолчанию в `.env.demo.example` замки проходят, менять их не нужно.
+
+**Файлы.** `docker-compose.demo.yml`, `.env.demo.example`, `deploy/nginx/demo.visit.ezbook.conf`, `deploy/ci/demo-smoke.sh`,
+необязательный шаг в конце `deploy/deploy-remote.sh` (25.8). Все команды — из `/opt/ezbook/app`, от root (или пользователя с
+правом `docker`; `nginx` и `certbot` — через `sudo`).
+
+### 25.1 Память: можно ли поднимать стенд
+
+Машина небольшая (около 3,3 ГиБ), на ней же бой и GlitchTip. Потолок демо — 656 МБ (API 400 + Postgres 256), ожидаемо в
+покое 250–400 МБ.
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| `free -m` | в строке `Mem:` колонка `available` **не меньше 900**. Меньше — стенд не поднимаем и сообщаем разработчикам: демо переносится на отдельную VM (compose-файл переносится без правок) |
+
+### 25.2 DNS
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| `dig +short demo.visit.ezbook.ru` | адрес этого сервера (запись A заведена заказчиком 30.09). Пусто — подождать или проверить запись у регистратора; certbot без неё не выпустит сертификат |
+
+### 25.3 Секреты и каталоги
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| `cd /opt/ezbook/app && git pull` (или обычный боевой выкат) | `docker image inspect servicebooking-api:latest` отвечает без ошибки. Образа нет — сначала обычный боевой выкат: демо свою сборку не делает |
+| `cp .env.demo.example .env.demo && chmod 600 .env.demo` | файл создан (в `.gitignore` он есть) |
+| Заполнить в `.env.demo` все строки `CHANGE_ME`: `DEMO_POSTGRES_PASSWORD` (`openssl rand -hex 24`, только буквы и цифры), `DEMO_JWT_KEY` (`openssl rand -base64 48`), `DEMO_SUPERADMIN_PHONE`, `DEMO_SUPERADMIN_PASSWORD`, `DEMO_TRIAL_PHONEKEY_HMAC` (`openssl rand -base64 32`). `SMARTCAPTCHA_SECRET_KEY` — **тот же**, что в боевом `.env`. Остальное не трогать | Все секреты **свои, не боевые** (кроме ключа капчи). Заглушки `CHANGE_ME` API при старте не принимает |
+| `docker network ls -q \| xargs docker network inspect \| grep Subnet` | нет строки `172.30.77.0/24`. Если есть — выберите свободную подсеть и впишите **одно и то же** значение в `DEMO_NETWORK_SUBNET` и `DEMO_FORWARDEDHEADERS__TRUSTEDNETWORKS__0` |
+| `mkdir -p state-demo && chmod 0700 state-demo` | каталог создан (в нём отпечаток ключа и флаг «идёт сброс»; он в `.gitignore`). Как и в §3.0 — не пропускать: иначе Docker создаст его сам от имени root |
+| `docker compose -f docker-compose.demo.yml --env-file .env.demo config > /dev/null` | без ошибок и без строк `required variable ... is missing` (ошибка называет незаполненную переменную) |
+
+**Хранилище файлов.** Корни файлов демо (`/app/wwwroot/uploads`, `/app/private-uploads`) лежат в томах `demo_uploads` и
+`demo_private_uploads`. Правило: корень хранилища должен лежать **минимум на два сегмента ниже корня файловой системы**
+(`/app/private-uploads` подходит). Если когда-нибудь меняете `Storage__PrivateRoot`/`Storage__PublicRoot`, не выбирайте `/`
+или `/data`: сброс очищает эти каталоги. Тома демо **не общие** с боем (`api_uploads`, `api_private_uploads` боя демо не
+видит), путаницы файлов нет.
+
+### 25.4 Первый запуск: сначала API, потом сброс
+
+Порядок важен. **Сначала** API стартует на пустой базе и сам ставит метку `instance.kind=demo` (замок 2): без неё команда
+сброса откажет. Только **потом** создаём данные — ночная задача без метки последнего сброса сама ничего не делает (C28-11).
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| `docker compose -f docker-compose.demo.yml --env-file .env.demo up -d` | создаются `postgres-demo` и `api-demo`; миграции применяются при старте |
+| `curl -s http://127.0.0.1:5001/api/health/ready` (повторять до ответа, до ~1 мин) | `{"status":"Healthy"}`. Нет ответа дольше 2 минут — `docker compose -f docker-compose.demo.yml --env-file .env.demo logs --tail=80 api-demo`: в сообщении названа причина (замок, заглушка секрета, занятый порт) |
+| `docker compose -f docker-compose.demo.yml --env-file .env.demo exec -T api-demo dotnet ServiceBooking.API.dll ops demo reset --yes` | идёт до ~3 минут, заканчивается кодом 0 и сводкой. Отказ «не демо-БД» или «нет метки» — API не успел стартовать или база чужая: проверьте, что запущен именно `api-demo` (команда работает только против своей базы `servicebooking_demo`, замки боевую не пропустят) |
+| `BASE_URL=http://127.0.0.1:5001 bash deploy/ci/demo-smoke.sh` | `[demo-smoke] ALL OK`: статус демо, три входа (владелец, мастер, клиент) |
+
+Во время сброса (и ночью в 04:00) API отвечает 503 «Демо обновляется» — так и задумано, экран на сайте сам перезагрузится.
+
+### 25.5 nginx и сертификат
+
+Конвенция та же, что у `goods` (§21): конфиг кладётся **без TLS**, блок 443 дописывает certbot (HTTP-01, отдельный
+сертификат, wildcard не нужен).
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| `sudo cp /opt/ezbook/app/deploy/nginx/demo.visit.ezbook.conf /etc/nginx/sites-available/demo.visit.ezbook.conf` | файл скопирован |
+| `sudo ln -sf /etc/nginx/sites-available/demo.visit.ezbook.conf /etc/nginx/sites-enabled/demo.visit.ezbook.conf` | ссылка создана |
+| `sudo nginx -t && sudo systemctl reload nginx` | `syntax is ok`, `test is successful` |
+| `sudo certbot --nginx -d demo.visit.ezbook.ru` | сертификат выпущен, certbot дописал блок 443 и редирект. Ошибка проверки домена — DNS (25.2) или закрыт порт 80 |
+| `sudo certbot renew --dry-run` | `Congratulations, all simulated renewals succeeded` |
+
+Повторное копирование конфига из репозитория поверх установленного стирает блок 443 — сразу снова
+`sudo certbot --nginx -d demo.visit.ezbook.ru` (как для `ezbook.conf` и `goods.ezbook.conf`).
+
+### 25.6 SmartCaptcha
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| Консоль Yandex Cloud → SmartCaptcha → ключ, который используется на бою → список разрешённых хостов → добавить `demo.visit.ezbook.ru` → сохранить | Гостевая запись в открытые салоны демо принимает капчу. **Без этого шага** гостевая запись на демо отвечает «Invalid captcha» (долг C28-14); вход под ролью «клиент» и запись под ним работают и так |
+| В `.env.demo` тот же `SMARTCAPTCHA_SECRET_KEY`, что на бою; если меняли — `docker compose -f docker-compose.demo.yml --env-file .env.demo up -d` | контейнер пересоздан |
+
+### 25.7 Проверка снаружи
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| `bash deploy/ci/demo-smoke.sh https://demo.visit.ezbook.ru` | `ALL OK`, включая: главная отдаёт приложение, есть заголовок `X-Robots-Tag: noindex`, `/robots.txt` запрещает индексацию |
+| Открыть `https://demo.visit.ezbook.ru` в браузере | плашка «демо», три кнопки входа; «Войти как владелец салона» открывает кабинет |
+| `curl -s -o /dev/null -w '%{http_code}\n' https://demo.visit.ezbook.ru/api/phone-verification/max/webhook/x` | `404` (вебхуки на демо закрыты) |
+
+### 25.8 Обновление демо вместе с боевым выкатом (необязательно, выключено по умолчанию)
+
+Демо на новый код само не переходит. Чтобы оно обновлялось каждым боевым выкатом, добавьте в **боевой** `.env` строку
+`DEMO_ENABLED=true`. Тогда в конце `deploy-remote.sh` (после проверок боя) выполняется `docker compose -f
+docker-compose.demo.yml --env-file .env.demo up -d` (тот же новый образ, миграции на старте), ждётся готовность и
+запускается `demo-smoke.sh`. **Любой сбой демо на этом шаге — только предупреждение `WARNING` в логе; выкат боя из-за него не
+падает и откат не запускается.** Без строки (или при `DEMO_ENABLED=false`) шаг не выполняется вовсе, поведение боевого
+выката не меняется. Если после обновления смоук пишет 409 — данных ещё нет, сделайте первый сброс (25.4).
+
+### 25.9 Остановка, откат, удаление
+
+| Что нужно | Команда | Результат |
+|---|---|---|
+| Остановить стенд, данные оставить | `docker compose -f docker-compose.demo.yml --env-file .env.demo down` | контейнеры удалены, тома и `state-demo` на месте; бой не затронут. Поднять снова — `up -d` |
+| Сбросить данные вручную | `docker compose -f docker-compose.demo.yml --env-file .env.demo exec -T api-demo dotnet ServiceBooking.API.dll ops demo reset --yes` | данные демо пересозданы (до ~3 мин, в это время 503) |
+| Вернуть демо на предыдущий образ | `bash deploy/rollback.sh` (возвращает образ `servicebooking-api` боя), затем `docker compose -f docker-compose.demo.yml --env-file .env.demo up -d` | демо на том же коде, что и бой |
+| Удалить стенд полностью | `docker compose -f docker-compose.demo.yml --env-file .env.demo down -v`; `rm -rf state-demo .env.demo`; `sudo rm /etc/nginx/sites-enabled/demo.visit.ezbook.conf && sudo nginx -t && sudo systemctl reload nginx`; при желании `sudo certbot delete --cert-name demo.visit.ezbook.ru`; убрать `DEMO_ENABLED` из боевого `.env` | контейнеры, тома (вся демо-база и файлы) и vhost удалены. **Боевые данные не затронуты**: у боя другие тома (`postgres_data`, `api_*`) |
+
+**Бэкап демо не нужен:** `servicebooking-backup.timer` снимает только боевую базу, данные демо пересоздаются командой сброса.
+
+### 25.10 Замер памяти через сутки (долг C28-9)
+
+Оценка 250–400 МБ — **оценка, не измерение**. Через сутки после запуска (после ночного сброса в 04:00):
+
+| Шаг | Ожидаемый результат |
+|---|---|
+| `docker stats --no-stream` (строки `ezbook-demo-api-demo-1`, `ezbook-demo-postgres-demo-1`) | `api-demo` ниже 400 МБ, `postgres-demo` ниже 256 МБ; суммарно около 250–400 МБ в покое |
+| `free -m` | `available` не ниже ~500 МБ при работающих бое и GlitchTip |
+| `docker inspect -f '{{.RestartCount}} {{.State.OOMKilled}}' ezbook-demo-api-demo-1` | `0 false`. `true` — контейнер убит по памяти: сообщить разработчикам и остановить стенд (25.9) |
+
+Запишите цифры (пусто до замера): api-demo — ___ МБ, postgres-demo — ___ МБ, `available` — ___ МБ, дата — ___.
+
+### 25.11 Что этим разделом не закрывается
+
+Правовые тексты для демо (C28-3), картинки витрины (C28-4) и диапазон телефонов `+7 (200)` (C28-7) — отдельные долги.
+
 ## Почему так сделано
 
 ### Docker не из snap
