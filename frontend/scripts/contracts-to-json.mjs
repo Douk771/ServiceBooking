@@ -5,7 +5,7 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const cycles = ['cycle31', 'cycle32'];
+const cycles = ['cycle31', 'cycle32', 'cycle35'];
 for (const cycle of cycles) {
   const dir = path.join(root, 'contracts', cycle);
   const doc = yaml.load(readFileSync(path.join(dir, 'openapi.yaml'), 'utf8'));
