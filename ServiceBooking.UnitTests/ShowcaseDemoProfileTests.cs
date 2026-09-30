@@ -82,9 +82,12 @@ public class ShowcaseDemoProfileTests
     [Fact]
     public void Demo_SharesTheProductionCompaniesAndSlugs_ButNoId()
     {
-        Demo.Value.Companies.Select(c => c.Slug).Should().Equal(Prod.Value.Companies.Select(c => c.Slug));
+        // Since cycle 35 the demo also has the five shops of «Заказы» (Kind = Orders): the SALON part is what shares the production companies.
+        var salons = Demo.Value.Companies.Where(c => c.Kind == CompanyKind.Services).ToList();
+        salons.Select(c => c.Slug).Should().Equal(Prod.Value.Companies.Select(c => c.Slug));
         Demo.Value.Companies.Select(c => c.Id).Should().NotIntersectWith(Prod.Value.Companies.Select(c => c.Id), "the profile name is part of every id");
-        Demo.Value.Users.Count.Should().Be(Prod.Value.Users.Count + 1, "the only extra account is the demo client");
+        Demo.Value.Users.Take(SalonUserCount).Count().Should().Be(Prod.Value.Users.Count + 1, "the only extra salon account is the demo client");
+        Demo.Value.Companies.Count(c => c.Kind == CompanyKind.Orders).Should().Be(5);
     }
 
     // ── the three roles ─────────────────────────────────────────────────────────────────────────────
@@ -245,7 +248,7 @@ public class ShowcaseDemoProfileTests
         ((double)g.Reviews.Count / candidates).Should().BeInRange(0.2, 0.4);
         g.Reviews.Average(r => r.Rating).Should().BeInRange(4.0, 4.8);
         g.Reviews.Select(r => r.Rating).Distinct().Should().BeEquivalentTo(new[] { 1, 2, 3, 4, 5 }, "a real list has every grade");
-        foreach (var company in g.Companies)
+        foreach (var company in g.Companies.Where(c => c.Kind == CompanyKind.Services))
             g.Reviews.Count(r => r.CompanyId == company.Id).Should().BeGreaterThan(0, $"{company.Slug} shows a rating");
     }
 

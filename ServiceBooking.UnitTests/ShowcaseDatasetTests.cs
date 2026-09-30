@@ -307,8 +307,13 @@ public class ShowcaseDatasetTests
         // Reviews and client notes (pass B, US-28-13) exist for the DEMO profile only: the lists are there, and empty for the production showcase (D-4: no reviews on production).
         typeof(ShowcaseGraph).GetProperties().Select(p => p.Name).Should().NotContain(
             n => n.Contains("Health") || n.Contains("Consent") || n.Contains("Channel") || n.Contains("Outbound") || n.Contains("Push")
-                 || (n.Contains("Review") && n != nameof(ShowcaseGraph.Reviews)) || (n.Contains("Note") && n != nameof(ShowcaseGraph.ClientNotes)));
+                 || (n.Contains("Review") && n != nameof(ShowcaseGraph.Reviews))
+                 // Cycle 35 (ARCHITECTURE_CYCLE35.md §35.9.2): the shops of the demo keep neutral notes about regular customers (ShopCustomerNotes, demo profile only;
+                 // the list is empty for the production showcase, asserted below).
+                 || (n.Contains("Note") && n != nameof(ShowcaseGraph.ClientNotes) && n != nameof(ShowcaseGraph.ShopCustomerNotes)));
         g.Reviews.Should().BeEmpty();
+        g.ShopCustomerNotes.Should().BeEmpty();
+        g.Orders.Should().BeEmpty("the production showcase has no shops");
         g.ClientNotes.Should().BeEmpty();
         g.Users.Should().OnlyContain(u => u.AvatarUrl == null, "masters have no photo, the frontend draws initials");
     }

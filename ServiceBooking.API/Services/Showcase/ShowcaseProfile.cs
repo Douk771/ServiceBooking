@@ -25,6 +25,10 @@ public sealed record ShowcaseProfile(
     /// <summary>Neutral notes of masters about clients (never health data, never photos: US-28-04).</summary>
     public bool ClientNotes { get; init; }
 
+    /// <summary>ARCHITECTURE_CYCLE35.md §35.9 — the five demo shops of «Заказы» with their people, catalogs, ~5 thousand orders and the live board timeline. Built by
+    /// <c>ShowcaseShopsDataset</c> AFTER everything else, so the flag changes nothing in the salon part. Off for <see cref="Prod"/>.</summary>
+    public bool Shops { get; init; }
+
     /// <summary>A longer change history of bookings: more moves, some of them twice.</summary>
     public bool RichHistory { get; init; }
 
@@ -43,5 +47,6 @@ public sealed record ShowcaseProfile(
         ClientNotes = true,
         RichHistory = true,
         RescheduleChance = 0.18,
+        Shops = true,
     };
 }
