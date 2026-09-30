@@ -30,7 +30,9 @@ public sealed class DemoHostFactory(string connectionString, IReadOnlyDictionary
         builder.UseSetting("DemoMode:Enabled", "true");
         builder.UseSetting("DemoMode:MaintenanceFlagPath", Path.Combine(Identity.StateRoot, "demo-resetting"));
         builder.UseSetting("PublicSites:ServicesBaseUrl", "https://demo.visit.ezbook.ru");
-        builder.UseSetting("AllowedOrigins", "https://demo.visit.ezbook.ru");
+        // ARCHITECTURE_CYCLE35.md §35.5.1: the demo lock also demands an explicit demo address of "Orders" (empty = the production goods).
+        builder.UseSetting("PublicSites:OrdersBaseUrl", "https://demo.zakaz.ezbook.ru");
+        builder.UseSetting("AllowedOrigins", "https://demo.visit.ezbook.ru,https://demo.zakaz.ezbook.ru");
         builder.UseSetting("Jwt:Issuer", "ServiceBooking.Demo");
         builder.UseSetting("Notifications:Provider", "logging");
         builder.UseSetting("Notifications:StaffPush:Provider", "logging");
