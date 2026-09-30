@@ -169,7 +169,7 @@ public sealed class StaffPushScheduler(AppDbContext db, StaffPushLinks links)
     internal static string BookingPath(Guid bookingId) => $"/my-bookings?booking={bookingId}";
 
     /// <summary>§33.27: the salon name is at most 60 characters (longer: 59 + "…").</summary>
-    internal static string ShortSalonName(string name) => name.Length <= 60 ? name : name[..59] + "…";
+    internal static string ShortSalonName(string name) => name.Length <= 60 ? name : StaffPushPayloadJson.Prefix(name, 59) + "…";
 
     public static string BuildIdempotencyKey(Guid bookingId, string userId, Guid subscriptionId) =>
         $"{NotificationType.StaffBookingCreated}:{bookingId}:{userId}:{subscriptionId}";

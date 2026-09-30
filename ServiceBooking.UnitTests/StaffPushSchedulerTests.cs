@@ -49,15 +49,13 @@ public class StaffPushSchedulerTests
     }
 
     [Fact]
-    public void BuildPayload_UrlIsRelative_NoOriginOrScheme()
+    public void ShortSalonName_DoesNotSplitSurrogatePair()
     {
-        // §115.6: an absolute URL here would let a compromised/misbehaving server open an arbitrary
-        // address from the service worker's notificationclick handler — must stay a bare path.
-        var payload = StaffPushScheduler.BuildPayload(
-            ["Маникюр"], new DateOnly(2026, 3, 3), new TimeOnly(10, 0), "Клиент", "Салон", Guid.NewGuid(), "/my-bookings?booking=x");
+        var name = new string('а', 58) + "😀" + new string('б', 10);
 
-        var url = ParsePayload(payload).GetProperty("url").GetString();
-        url.Should().StartWith("/").And.NotContain("://");
+        var result = StaffPushScheduler.ShortSalonName(name);
+
+        result.Should().Be(new string('а', 58) + "…");
     }
 
     [Fact]

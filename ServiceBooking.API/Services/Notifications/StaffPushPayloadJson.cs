@@ -11,7 +11,7 @@ public static class StaffPushPayloadJson
 {
     public const int MaxLength = 1000;
 
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
+    internal static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
@@ -26,9 +26,17 @@ public static class StaffPushPayloadJson
         while (keep > 0 && json.Length > MaxLength)
         {
             keep = Math.Max(0, keep - Math.Max(1, json.Length - MaxLength));
-            json = Serialize(title, body[..keep] + "…", tag, url);
+            json = Serialize(title, Prefix(body, keep) + "…", tag, url);
         }
         return json;
+    }
+
+    /// <summary>First <paramref name="length"/> UTF-16 units of <paramref name="text"/>, without leaving a dangling high surrogate (an emoji is not split).</summary>
+    internal static string Prefix(string text, int length)
+    {
+        if (length >= text.Length) return text;
+        if (length > 0 && char.IsHighSurrogate(text[length - 1])) length--;
+        return text[..length];
     }
 
     private static string Serialize(string title, string body, string tag, string url) =>
