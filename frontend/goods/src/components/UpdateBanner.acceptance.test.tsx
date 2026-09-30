@@ -1,4 +1,4 @@
-// Цикл 31, приёмочные сценарии по SPEC_CYCLE31_GOODS_UPDATE_BANNER.md (CY31-01..CY31-12), написаны независимо от реализации.
+// �цикл 34, приёмочные сценарии по SPEC_CYCLE34_GOODS_UPDATE_BANNER.md (CY34-01..CY34-12), написаны независимо от реализации.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,7 +31,7 @@ async function fire() {
 }
 const BANNER = 'Доступна новая версия'
 
-describe('CY31 UpdateBanner acceptance', () => {
+describe('CY34 UpdateBanner acceptance', () => {
   let errSpy: ReturnType<typeof vi.spyOn>
   beforeEach(() => {
     setVisibility('visible')
@@ -44,7 +44,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     errSpy.mockRestore()
   })
 
-  it('CY31-01 return to app with newer build shows banner and button', async () => {
+  it('CY34-01 return to app with newer build shows banner and button', async () => {
     addBundle('index-OLD1')
     stubFetch(ok(html('index-NEW2')))
     render(<UpdateBanner />)
@@ -53,7 +53,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(screen.getByRole('button', { name: 'Обновить' })).toBeTruthy()
   })
 
-  it('CY31-02 fetches fresh /index.html bypassing cache', async () => {
+  it('CY34-02 fetches fresh /index.html bypassing cache', async () => {
     addBundle('index-OLD1')
     const f = stubFetch(ok(html('index-OLD1')))
     render(<UpdateBanner />)
@@ -64,7 +64,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(init.cache).toBe('no-store')
   })
 
-  it('CY31-03 button reloads the page; banner alone never reloads', async () => {
+  it('CY34-03 button reloads the page; banner alone never reloads', async () => {
     addBundle('index-OLD1')
     stubFetch(ok(html('index-NEW2')))
     const reload = vi.fn()
@@ -76,7 +76,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(reload).toHaveBeenCalledTimes(1)
   })
 
-  it('CY31-04 banner does not touch user input on the page', async () => {
+  it('CY34-04 banner does not touch user input on the page', async () => {
     addBundle('index-OLD1')
     stubFetch(ok(html('index-NEW2')))
     const input = document.createElement('input')
@@ -89,7 +89,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     input.remove()
   })
 
-  it('CY31-05 periodic check every 5 minutes', async () => {
+  it('CY34-05 periodic check every 5 minutes', async () => {
     vi.useFakeTimers()
     addBundle('index-OLD1')
     const f = stubFetch(ok(html('index-NEW2')))
@@ -101,7 +101,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(screen.getByText(BANNER)).toBeTruthy()
   })
 
-  it('CY31-06 hidden state does not trigger a check', async () => {
+  it('CY34-06 hidden state does not trigger a check', async () => {
     addBundle('index-OLD1')
     const f = stubFetch(ok(html('index-NEW2')))
     render(<UpdateBanner />)
@@ -111,7 +111,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(screen.queryByText(BANNER)).toBeNull()
   })
 
-  it('CY31-07 same build: no banner, no console errors', async () => {
+  it('CY34-07 same build: no banner, no console errors', async () => {
     addBundle('index-SAME')
     stubFetch(ok(html('index-SAME')))
     render(<UpdateBanner />)
@@ -120,7 +120,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(errSpy).not.toHaveBeenCalled()
   })
 
-  it('CY31-08 network error and non-OK response: no banner, no console errors, next check works', async () => {
+  it('CY34-08 network error and non-OK response: no banner, no console errors, next check works', async () => {
     addBundle('index-OLD1')
     const f = stubFetch(() => Promise.reject(new TypeError('Failed to fetch')))
     render(<UpdateBanner />)
@@ -135,7 +135,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(errSpy).not.toHaveBeenCalled()
   })
 
-  it('CY31-09 dev mode (no hashed bundle): no requests, no banner', async () => {
+  it('CY34-09 dev mode (no hashed bundle): no requests, no banner', async () => {
     addBundle(null)
     const s = document.createElement('script')
     s.type = 'module'
@@ -150,7 +150,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(screen.queryByText(BANNER)).toBeNull()
   })
 
-  it('CY31-10 garbage index.html (no bundle, e.g. captive portal page): no banner', async () => {
+  it('CY34-10 garbage index.html (no bundle, e.g. captive portal page): no banner', async () => {
     addBundle('index-OLD1')
     stubFetch(ok('<html>Wi-Fi login</html>'))
     render(<UpdateBanner />)
@@ -158,7 +158,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(screen.queryByText(BANNER)).toBeNull()
   })
 
-  it('CY31-11 banner respects iPhone safe-area and stops polling once shown', async () => {
+  it('CY34-11 banner respects iPhone safe-area and stops polling once shown', async () => {
     addBundle('index-OLD1')
     const f = stubFetch(ok(html('index-NEW2')))
     render(<UpdateBanner />)
@@ -171,7 +171,7 @@ describe('CY31 UpdateBanner acceptance', () => {
     expect(f).toHaveBeenCalledTimes(1)
   })
 
-  it('CY31-12 unmount removes listeners and timer', async () => {
+  it('CY34-12 unmount removes listeners and timer', async () => {
     vi.useFakeTimers()
     addBundle('index-OLD1')
     const f = stubFetch(ok(html('index-NEW2')))
@@ -183,7 +183,7 @@ describe('CY31 UpdateBanner acceptance', () => {
   })
 })
 
-describe('CY31 nginx config (US-31-02)', () => {
+describe('CY34 nginx config (US-34-02)', () => {
   const conf = readFileSync(resolve(__dirname, '../../../../deploy/nginx/goods.ezbook.conf'), 'utf8')
   const block = (start: string) => {
     const i = conf.indexOf(start)
@@ -196,15 +196,15 @@ describe('CY31 nginx config (US-31-02)', () => {
     throw new Error('unbalanced')
   }
 
-  it('CY31-13 /assets/ is immutable for a year', () => {
+  it('CY34-13 /assets/ is immutable for a year', () => {
     expect(block('location /assets/')).toMatch(/Cache-Control "public, max-age=31536000, immutable" always/)
   })
-  it('CY31-14 SPA fallback location / (index.html and everything else) is no-cache', () => {
+  it('CY34-14 SPA fallback location / (index.html and everything else) is no-cache', () => {
     const b = block('location / ')
     expect(b).toMatch(/Cache-Control "no-cache" always/)
     expect(b).not.toMatch(/immutable/)
   })
-  it('CY31-15 /assets/ keeps security headers (add_header is not inherited)', () => {
+  it('CY34-15 /assets/ keeps security headers (add_header is not inherited)', () => {
     const b = block('location /assets/')
     expect(b).toMatch(/Strict-Transport-Security/)
     expect(b).toMatch(/X-Content-Type-Options/)

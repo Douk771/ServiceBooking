@@ -2192,7 +2192,7 @@ SELECT "ShopId", "Number", COUNT(*) FROM "Orders" GROUP BY "ShopId", "Number" HA
 
 Чек-лист «Цикл 25, ручные» ведёт QA в `TEST_CATALOG.md`; если рубильник не включён — записать «рубильник не включён».
 
-## 24. goods: плашка обновления и кеширование (цикл 31, ARCHITECTURE_CYCLE31.md)
+## 24. goods: плашка обновления и кеширование (�цикл 34, ARCHITECTURE_CYCLE34.md)
 
 `deploy/nginx/goods.ezbook.conf` получил `location /assets/` (`Cache-Control: public, max-age=31536000, immutable`
 плюс security-заголовки, так как `add_header` не наследуется) и `Cache-Control: no-cache` на `location /`
