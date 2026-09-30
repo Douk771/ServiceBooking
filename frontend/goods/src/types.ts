@@ -1,5 +1,6 @@
 import type { components } from '@/types/api-cycle23.generated'
 import type { components as C24 } from '@/types/api-cycle24.generated'
+import type { components as C25 } from '@/types/api-cycle25.generated'
 
 /**
  * goods types are read straight off the generated cycle-23 schema (ARCHITECTURE_CYCLE23.md §399.2) —
@@ -8,6 +9,8 @@ import type { components as C24 } from '@/types/api-cycle24.generated'
 type S = components['schemas']
 /** Cycle 24 (ARCHITECTURE_CYCLE24.md §462.1): DTOs the cycle changed come from the cycle-24 schema; the rest stay on cycle 23. */
 type N = C24['schemas']
+/** Cycle 25 (ARCHITECTURE_CYCLE25.md §509.1): DTOs of the cycle and the ones it changed come from the cycle-25 schema. */
+type M = C25['schemas']
 
 export type CompanyKind = N['CompanyKind']
 export type ShopRole = N['ShopRole']
@@ -21,9 +24,9 @@ export type OrderActorKind = N['OrderActorKind']
 export type OrderProblemReason = N['OrderProblemReason']
 export type OrderRefusalCode = N['OrderRefusalCode']
 export type OrderConflictCode = N['OrderConflictCode']
-export type CatalogConflictCode = N['CatalogConflictCode']
+export type CatalogConflictCode = M['CatalogConflictCode']
 
-export type CatalogConflictDto = N['CatalogConflictDto']
+export type CatalogConflictDto = M['CatalogConflictDto']
 export type CompanyKindsSummaryDto = S['CompanyKindsSummaryDto']
 export type CreateShopInput = S['CreateShopInput']
 export type CreateShopResponse = S['CreateShopResponse']
@@ -112,8 +115,8 @@ export type DailyMenuDayDto = N['DailyMenuDayDto']
 export type DailyMenuDto = N['DailyMenuDto']
 export type DailyMenuProductDto = N['DailyMenuProductDto']
 export type DailyMenuInput = N['DailyMenuInput']
-export type ShopNotificationSettingsDto = N['ShopNotificationSettingsDto']
-export type ShopNotificationSettingsInput = N['ShopNotificationSettingsInput']
+export type ShopNotificationSettingsDto = M['ShopNotificationSettingsDto']
+export type ShopNotificationSettingsInput = M['ShopNotificationSettingsInput']
 export type ShopChannelStatusDto = N['ShopChannelStatusDto']
 export type ScheduleConflictOrderDto = N['ScheduleConflictOrderDto']
 export type PreorderGroupDto = N['PreorderGroupDto']
@@ -128,3 +131,35 @@ export type PushSubscriptionDto = N['PushSubscriptionDto']
 export type AssignChannelCompanyInput = N['AssignChannelCompanyInput']
 export type OrderWebPushInfoDto = N['OrderWebPushInfoDto']
 export type OrderCustomerNotificationsDto = N['OrderCustomerNotificationsDto']
+
+// ── Cycle 25 (API_CONTRACT_CYCLE25.md) — history, summary, pick list, buyer card, catalog, MAX for staff.
+export type ReportPeriodPreset = M['ReportPeriodPreset']
+export type OrderHistorySort = M['OrderHistorySort']
+export type SummaryTopSort = M['SummaryTopSort']
+export type StaffMaxStatus = M['StaffMaxStatus']
+export type CatalogAcceptance = M['CatalogAcceptance']
+export type CatalogListingCheckCode = M['CatalogListingCheckCode']
+
+export type ReportPeriodDto = M['ReportPeriodDto']
+export type StaffMaxStatusDto = M['StaffMaxStatusDto']
+export type StaffMaxLinkSessionDto = M['StaffMaxLinkSessionDto']
+export type OrderHistoryQuery = M['OrderHistoryQuery']
+export type OrderHistoryRowDto = M['OrderHistoryRowDto']
+export type OrderHistoryPageDto = M['OrderHistoryPageDto']
+export type ShopSummaryDto = M['ShopSummaryDto']
+export type SummaryShareDto = M['SummaryShareDto']
+export type SummaryTopItemDto = M['SummaryTopItemDto']
+export type SummaryDayDto = M['SummaryDayDto']
+export type SummaryComparisonDto = M['SummaryComparisonDto']
+export type PickListDto = M['PickListDto']
+export type PickListSlotOptionDto = M['PickListSlotOptionDto']
+export type PickListProductDto = M['PickListProductDto']
+export type PickListOrderDto = M['PickListOrderDto']
+export type PickListTimeGroupDto = M['PickListTimeGroupDto']
+export type ShopCustomerCardDto = M['ShopCustomerCardDto']
+export type ShopCustomerNoteDto = M['ShopCustomerNoteDto']
+export type ShopCustomerNoteStateDto = M['ShopCustomerNoteStateDto']
+export type GoodsCatalogPageDto = M['GoodsCatalogPageDto']
+export type GoodsCatalogShopDto = M['GoodsCatalogShopDto']
+export type CatalogCityDto = M['CatalogCityDto']
+export type CatalogListingDto = M['CatalogListingDto']

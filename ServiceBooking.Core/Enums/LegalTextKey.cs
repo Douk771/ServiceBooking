@@ -46,6 +46,10 @@ public static class LegalTextKey
     public const string OrderMessengerConsent = "OrderMessengerConsent";
     public const string OrderPreorderNotice = "OrderPreorderNotice";
 
+    // ARCHITECTURE_CYCLE25.md §497.3, §508 [legal L17] — the line under the customer-note field. DELIBERATELY NOT in All
+    // (same reason as OrderCheckoutNotice): the deploy must not wait for legal-counsel; the frontend shows its fallback on 404.
+    public const string ShopCustomerNoteNotice = "ShopCustomerNoteNotice";
+
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         BookingNotice, TemplateAdWarning, UnsubscribePage, PhotoConsent, HealthDataConsent, GuardianConfirmation,

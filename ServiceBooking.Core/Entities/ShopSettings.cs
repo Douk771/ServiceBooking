@@ -55,6 +55,11 @@ public class ShopSettings
     public bool CustomerWebPushEnabled { get; set; } = true;
     public bool CustomerMessengerEnabled { get; set; }
 
+    // ── Cycle 25 (ARCHITECTURE_CYCLE25.md §497.1). DB default true is mandatory (OrderEventLog's upsert). ──
+
+    /// <summary>"Сообщения сотрудникам в MAX" — independent of the push flag.</summary>
+    public bool StaffMaxEnabled { get; set; } = true;
+
     // [legal L2] seller details — all optional in cycle 1; obligation is switched on in code
     // (SellerInfoRequirements) after legal-counsel's conclusion.
     public LegalEntityForm? SellerLegalForm { get; set; }

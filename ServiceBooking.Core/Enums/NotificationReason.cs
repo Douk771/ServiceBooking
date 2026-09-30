@@ -108,4 +108,18 @@ public enum NotificationReason
 
     /// <summary>§457.3 — the shop switched off messenger messages to customers after the row was queued.</summary>
     MessengerDisabledByShop,
+    /// <summary>ARCHITECTURE_CYCLE25.md §497.3 — the shop switched off MAX messages to staff after the row was queued.</summary>
+    StaffMaxDisabledByShop,
+
+    /// <summary>§499.4 — MAX answered 403/404: the bot was stopped or blocked, the chat is gone.</summary>
+    StaffMaxChatUnavailable,
+
+    /// <summary>§499.4 — no active link with this chat belongs to a current recipient any more.</summary>
+    StaffMaxNoRecipient,
+
+    /// <summary>§498.1 — <c>Notifications:StaffMax:Enabled</c> is off on the platform.</summary>
+    StaffMaxPlatformDisabled,
+
+    /// <summary>§499.4 — MAX rate limit; the row stays pending and is retried shortly.</summary>
+    StaffMaxRateLimited,
 }

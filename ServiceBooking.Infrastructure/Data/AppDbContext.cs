@@ -77,6 +77,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<StaffPushNotification> StaffPushNotifications => Set<StaffPushNotification>();
 
+    // Cycle 25 (ARCHITECTURE_CYCLE25.md §497.2).
+    public DbSet<StaffMaxLink> StaffMaxLinks => Set<StaffMaxLink>();
+    public DbSet<StaffMaxLinkSession> StaffMaxLinkSessions => Set<StaffMaxLinkSession>();
+    public DbSet<StaffMaxMessage> StaffMaxMessages => Set<StaffMaxMessage>();
+    public DbSet<ShopCustomerNote> ShopCustomerNotes => Set<ShopCustomerNote>();
+
     // Cycle 7, stage 3 (ARCHITECTURE_CYCLE7.md §43.3): what's paid for on an account's subscription —
     // today, only read for the "notifications.whatsapp" option's Quantity (§47.1's N).
     public DbSet<AccountSubscriptionOption> AccountSubscriptionOptions => Set<AccountSubscriptionOption>();
@@ -183,6 +189,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(s => s.AsapEnabled).HasDefaultValue(true);
             e.Property(s => s.ScheduledEnabled).HasDefaultValue(false);
             e.Property(s => s.SlotStepMinutes).HasDefaultValue(15);
+            // Cycle 25 (§497.1): DB default true — OrderEventLog's upsert does not list this column.
+            e.Property(s => s.StaffMaxEnabled).HasDefaultValue(true);
             e.Property(s => s.PreorderDays).HasDefaultValue(0);
             e.Property(s => s.MinPrepMinutes).HasDefaultValue(15).HasSentinel(-1); // 0 minutes is a real value
             e.Property(s => s.CustomerWebPushEnabled).HasDefaultValue(true);
@@ -310,6 +318,14 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(o => new { o.CustomerUserId, o.CreatedAtUtc });
             // Phone throttle and the subject export (§395.2 step 6, §398.1).
             e.HasIndex(o => new { o.CustomerPhone, o.CreatedAtUtc }).HasFilter("\"CustomerPhone\" IS NOT NULL");
+            // Cycle 25 (§497.1): the customer card and the notes retention rule.
+            e.HasIndex(o => new { o.CompanyId, o.CustomerPhone })
+                .HasDatabaseName("IX_Orders_CompanyId_CustomerPhone")
+                .HasFilter("\"CustomerPhone\" IS NOT NULL");
+            // Cycle 25 (§497.1): index-only totals for history and summary.
+            e.HasIndex(o => new { o.CompanyId, o.PickupDate })
+                .HasDatabaseName("IX_Orders_Report")
+                .IncludeProperties(o => new { o.Status, o.EstimatedTotal, o.FinalTotal });
         });
 
         builder.Entity<OrderItem>(e =>
@@ -843,6 +859,50 @@ public class AppDbContext : IdentityDbContext<AppUser>
                 .HasDatabaseName("IX_StaffPushNotifications_Dispatch")
                 .HasFilter("\"Status\" = 0")
                 .IncludeProperties(n => new { n.UserId, n.CompanyId, n.SubscriptionId });
+        });
+
+        // Cycle 25 (ARCHITECTURE_CYCLE25.md §497.2).
+        builder.Entity<StaffMaxLink>(e =>
+        {
+            e.HasOne(l => l.User).WithMany().HasForeignKey(l => l.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(l => l.UserId).IsUnique();
+            e.Property(l => l.ChatKey).HasMaxLength(64);
+            e.HasIndex(l => l.ChatKey);
+            e.Property(l => l.KeyId).HasMaxLength(16);
+        });
+
+        builder.Entity<StaffMaxLinkSession>(e =>
+        {
+            e.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => s.UserId);
+            e.Property(s => s.PayloadHash).HasMaxLength(64);
+            e.HasIndex(s => s.PayloadHash).IsUnique();
+        });
+
+        builder.Entity<StaffMaxMessage>(e =>
+        {
+            e.HasOne(m => m.Company).WithMany().HasForeignKey(m => m.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(m => m.Order).WithMany().HasForeignKey(m => m.OrderId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(m => m.OrderId);
+            e.Property(m => m.ChatKey).HasMaxLength(64);
+            e.Property(m => m.Text).HasMaxLength(2000);
+            e.Property(m => m.ReasonDetail).HasMaxLength(300);
+            e.Property(m => m.IdempotencyKey).HasMaxLength(200);
+            e.HasIndex(m => m.IdempotencyKey).IsUnique();
+            e.HasIndex(m => new { m.ExpiresAtUtc, m.CreatedAt })
+                .HasDatabaseName("IX_StaffMaxMessages_Dispatch")
+                .HasFilter("\"Status\" = 0")
+                .IncludeProperties(m => new { m.CompanyId, m.ChatKey });
+        });
+
+        builder.Entity<ShopCustomerNote>(e =>
+        {
+            e.HasOne(n => n.Company).WithMany().HasForeignKey(n => n.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(n => n.Phone).HasMaxLength(20);
+            e.Property(n => n.Text).HasMaxLength(1000);
+            e.Property(n => n.UpdatedByUserId).HasMaxLength(450);
+            e.Property(n => n.UpdatedByName).HasMaxLength(200);
+            e.HasIndex(n => new { n.CompanyId, n.Phone }).IsUnique();
         });
 
         builder.Entity<NotificationTemplateHistory>(e =>
