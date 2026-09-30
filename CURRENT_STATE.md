@@ -2,14 +2,23 @@
 
 > **Цикл 32 влит в `develop` после этого снимка** (общий `CompanyProfileCard`, `SalonProfileSection`, `BookingRulesSection`, новая раскладка `SettingsTab`, удалён `CompanyAddressField`; сервер не менялся). Описания настроек компании ниже — до цикла 32; полная синхронизация — при следующем обновлении файла.
 
-**Актуально по состоянию на коммит: `050816f` (`develop` = `origin/develop`, мердж `cycle/034-goods-update-banner`; циклы 29, 30, 31 и 34 влиты; дата коммита — 2026-10-01), дата обновления: 2026-10-01.**
-**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`).
+**Актуально по состоянию на коммит: `2834e00` (`develop` = `origin/develop`, мердж `cycle/033-unified-notifications-profile`; дата коммита — 2026-10-01), дата обновления: 2026-10-01.**
+**Режим: обновление поверх полного сканирования на `1837373`** (прежние точечные обновления — на `b9c2a79`, `aeed251`, `364cc2b`, `050816f`).
+**Обновление на `2834e00`** (✔ `git diff 050816f..2834e00`: 392 файла; ничего не запускалось). В диапазоне по первому
+родителю: цикл 32 (мердж `09344b1`, см. плашку выше — описан только ею), фикс `fix/goods-cartpanel-test-captcha-env`
+(`f981a62`, C34-1), фикс `fix/navbar-brand-unified` (`b5669c9`), **цикл 28** (мердж `99c56b0`; его блоки в этом файле —
+§5.5, §5.6, §9.3, §9.4 — написаны самой веткой цикла 28 и в этом обновлении **не перепроверялись**, ↪), `8d1765d`
+(`DEPLOY.md` §26) и **цикл 33** «Устройства и уведомления в профиле, push сотрудникам на все устройства» — `1c75b37`…`f555caa`,
+мердж `2834e00` (✔ по коду `git diff 8d1765d..2834e00`, 63 файла; описан в §5.10). По циклу 33 обновлены: шапка, §0
+(ветки), §1 (Web Push), §2, §3, §4, §5.2, §5.4, §5.10 (новый), §6.2, §7.1, §7.2, §7.3, §9.1 (C33-1…7), §10. **Следующий diff отсчитывайте от `2834e00`.**
+
+*Ниже — шапка прежнего обновления на `050816f`, сохранена для истории.*
 **Обновление на `050816f`** (✔ `git diff 364cc2b..050816f`, 14 файлов). В диапазоне три вещи: `6a71f50` — документы цикла 31
 (CHANGELOG, README и прежняя правка этого файла; закрыт C31-8), `c7a4ace` — фикс `fix/goods-sound-remember` (мердж
 `49f0d60`, §5.5), и **цикл 34** «Плашка „Доступна новая версия“ в goods» — `9c0afb7`…`aabb693`, мердж `050816f` (§5.9).
 Цикл 34 изначально шёл под номером 31 и переименован коммитом `dbe476f`. Бэкенд, API, БД, контракты, CI и зависимости в
 диапазоне не менялись. Обновлены шапка, §0 (ветки), §5.5, §5.7 (строка про звук), §5.9 (новый), §7.1, §7.2, §7.4, §9.1,
-§9.2 (C24-1), §10. Остальные разделы описывают `364cc2b` и в этом диапазоне не затронуты. **Следующий diff отсчитывайте от `050816f`.**
+§9.2 (C24-1), §10. Остальные разделы описывают `364cc2b` и в этом диапазоне не затронуты.
 
 *Ниже — шапка прежнего обновления на `364cc2b`, сохранена для истории.*
 Сверено по git (✔): `git diff c19a83c..364cc2b` (99 файлов). В нём цикл 30 (уже был описан в этом файле на `aeed251`,
@@ -43,31 +52,23 @@
   Источник — прежняя редакция, блок «🚀20», проверено по SSH 30.09.2026.
 
 **Ветки** (✔ по локальным ссылкам `origin/*` на 2026-10-01, `git fetch` в этом обновлении не делался):
-- `origin/develop` = `050816f` (совпадает с локальным `develop`). В нём влиты **цикл 29** «Доделки цикла 26» (§5.5),
+- `origin/develop` = `2834e00` (совпадает с локальным `develop`). В нём влиты **цикл 29** «Доделки цикла 26» (§5.5),
   **цикл 30** «Для покупателей» и скриншоты на главной goods (мердж `e1d7cdb`, §5.7), **цикл 31** «Общий блок фото,
-  мультизагрузка, блок „Каталог“ салона, компактная шапка карточки» (мердж `364cc2b`, §5.8) и **цикл 34** «Плашка
-  „Доступна новая версия“ в goods» (мердж `050816f`, §5.9). Мимо циклов влиты фиксы goods `fix/goods-storefront-mobile-width`
-  (`53def4f`), `fix/goods-pickup-chips-narrow` (`9659742`), `fix/goods-cabinet-tabs-scroll` (`474f8be`) и
-  `fix/goods-sound-remember` (`c7a4ace`, мердж `49f0d60`) — §5.5.
-- `origin/cycle/031-shared-photo-uploader`, `origin/cycle/030-user-section-screenshots`, `origin/cycle/029-cycle26-followups`,
-  `origin/fix/goods-sound-remember` влиты в `develop`. Ветка `cycle/034-goods-update-banner` есть **только локально**
-  (на origin её нет), влита в `develop`.
-- **Номера 32 и 33 заняты открытыми ветками:** `origin/cycle/032-salon-settings-compact-layout` и
-  `origin/cycle/033-unified-notifications-profile` обе стоят на `49f0d60` (0 своих коммитов, на 8 позади `develop`) —
-  только что заведены, кода в них ещё нет. Поэтому цикл «плашка обновления» получил номер 34, а не 32.
-- `origin/cycle/028-showcase-data-demo-stand` = `673473c` — на 37 коммитов впереди и на 26 позади `origin/develop` (✔
-  `rev-list` на `050816f`). `develop` до цикла 30 включительно (`e1d7cdb`) в неё уже влит, циклов 31 и 34 в ней нет. **Это уже
-  не только документы.** Diff от общей базы — 151 файл, около 18 тыс. строк: демо-режим и витрина (`Services/Demo/`,
-  `ShowcaseReseedTask`, правило retention `ShowcaseVisitorBookingRule`, `Services/Ops/OpsCommand*`), правки биллинга,
-  триала, админки, одна новая миграция, генерат `api-cycle28.generated.ts`, свои `SPEC.md` и `CURRENT_STATE.md`. В этом
-  обновлении ветка не сканировалась, только diff по именам файлов. С файлами цикла 31 пересекается только
-  `frontend/package.json`. Когда ветка будет вливаться, её `SPEC.md` (спека 28) столкнётся с корневым `SPEC.md` (сейчас
-  это спека цикла 31, §10.5). Конфликт в CURRENT_STATE.md разрешает codebase-analyst: сводит обе версии по смыслу,
-  выбирать файл целиком нельзя.
+  мультизагрузка, блок „Каталог“ салона, компактная шапка карточки» (мердж `364cc2b`, §5.8), **цикл 34** «Плашка
+  „Доступна новая версия“ в goods» (мердж `050816f`, §5.9), **цикл 32** «Компактные настройки салона» (мердж `09344b1`,
+  плашка в начале файла), **цикл 28** «Витрина, сетка тарифов „Записи“, демо-стенд» (мердж `99c56b0`, ↪ §5.5, §9.3, §9.4) и
+  **цикл 33** «Устройства и уведомления в профиле» (мердж `2834e00`, §5.10). Мимо циклов влиты фиксы goods
+  `fix/goods-storefront-mobile-width` (`53def4f`), `fix/goods-pickup-chips-narrow` (`9659742`), `fix/goods-cabinet-tabs-scroll`
+  (`474f8be`), `fix/goods-sound-remember` (`c7a4ace`, мердж `49f0d60`) — §5.5, а также `fix/goods-cartpanel-test-captcha-env`
+  (`f981a62`) и `fix/navbar-brand-unified` (`b5669c9`, единый бренд в шапке goods и ezbook; не описан отдельно).
+- Ветки циклов 28–34 влиты в `develop`. `origin/cycle/033-unified-notifications-profile` = `fda3141` (второй родитель
+  мерджа `2834e00`); `origin/cycle/028-showcase-data-demo-stand` = `36e64c3`; `origin/cycle/032-salon-settings-compact-layout`
+  по локальной ссылке так и стоит на `49f0d60` (код цикла 32 на origin в эту ветку не публиковался). Ветка `cycle/034-goods-update-banner` на origin не
+  публиковалась. Открытых веток с невлитым кодом циклов по локальным ссылкам нет (`git fetch` не делался).
 - `origin/cycle/027-goods-business-block` влита в `develop` целиком (0 впереди, 0 позади).
 
 **Ориентиры.** На `491406c` было 1 058 коммитов и 1 783 отслеживаемых файла; цикл 27 добавил 7 коммитов. На `050816f` —
-1 128 коммитов и 1 868 отслеживаемых файлов.
+1 128 коммитов и 1 868 отслеживаемых файлов. На `2834e00` — 1 220 коммитов и 2 097 отслеживаемых файлов.
 `origin/master` — `263c661` (2026-07-28), тегов нет, ветки `release-candidate` на origin нет.
 
 ---
@@ -123,7 +124,7 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | GREEN-API MAX, второй транспорт уведомлений | то же значение (`green-api`) | заглушка | заглушка |
 | Бот MAX (`platform-api.max.ru`) для подтверждения телефона | `PhoneVerification:Provider` → `PHONEVERIFY_PROVIDER` (`stub`\|`max-bot`) | `stub` | `max-bot` (включено 24.09.2026) |
 | Бот MAX для сообщений персоналу goods о заказах | `Notifications:StaffMax:Enabled` → `STAFFMAX_ENABLED`; требует `max-bot` | `false` | `false` (C25-1) |
-| Web Push персоналу (ezbook и goods) и покупателям goods — один провайдер | `Notifications:StaffPush:Provider` → `WEBPUSH_STAFFPUSH_PROVIDER` (`logging`\|`web-push`) | `logging` | не задан → `logging` |
+| Web Push персоналу (ezbook и goods) и покупателям goods — один провайдер. С цикла 33 push сотрудникам идёт на **все** их устройства независимо от сайта подписки; абсолютные адреса «чужого» сайта берутся из существующих `PublicSites:ServicesBaseUrl`/`OrdersBaseUrl` (новых ключей нет) | `Notifications:StaffPush:Provider` → `WEBPUSH_STAFFPUSH_PROVIDER` (`logging`\|`web-push`) | `logging` | не задан → `logging` |
 | Яндекс SmartCaptcha | `SmartCaptcha:SecretKey` на сервере; site-key — сборочная переменная `VITE_SMARTCAPTCHA_SITEKEY` (GitHub Variables) | пусто → проверка пропускается | ↪ задан |
 | GlitchTip (Sentry-совместимый), сбор ошибок и «сигналы оператору» | `Sentry:Dsn`; своя установка — `docker-compose.glitchtip.yml`, `deploy/nginx/errors.ezbook.conf` | пусто → выключено | ↪ развёрнут |
 | Ссылки на Яндекс Карты и 2ГИС | только строки, которые ввёл владелец (`MapLinkValidation`); API карт не вызывается | — | — |
@@ -156,12 +157,12 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 | `frontend/src/` | Приложение **ezbook.ru** (запись на услуги). Точка входа — `main.tsx` → `App.tsx` |
 | `frontend/goods/` | Приложение **goods.ezbook.ru** (заказы на самовывоз). Точка входа — `goods/src/main.tsx` → `GoodsApp.tsx`; `goods/index.html`, `goods/public/` (свой `sw.js`, манифест) |
 | `frontend/scripts/merge-goods-dist.mjs` | Кладёт сборку goods в `dist/__goods/`, чтобы оба сайта уезжали одним релизом |
-| `frontend/scripts/contracts-to-json.mjs` | Цикл 31: `npm run contracts:json` — `contracts/<цикл>/openapi.yaml` → `openapi.json` через `js-yaml`. Список циклов в скрипте — **только `cycle31`** (§5.8, §9.1) |
+| `frontend/scripts/contracts-to-json.mjs` | Цикл 31: `npm run contracts:json` — `contracts/<цикл>/openapi.yaml` → `openapi.json` через `js-yaml`. Список циклов в скрипте на `2834e00` — `['cycle31', 'cycle32']`; **`cycle33` в нём нет** (§5.10, §9.1 C33-1) |
 | `frontend/goods-shared-sources.js` (+ `.d.ts`) | Цикл 31: **единый список** ezbook-исходников, которые можно импортировать из goods. Из него строятся `content` в `tailwind.goods.config.js` и регэксп ESLint; полноту списка проверяет guard-тест `goods/src/sharedSources.guard.test.ts` (§5.8, §6.2) |
 | `frontend/src/components/company/` | Общие компоненты карточки и кабинета компании для обоих сайтов: `CompanyCard`, `CompanyMapLinks`, `CompanyLogoMark`, `CompanyPhotoGallery`; с цикла 31 ещё `CompanyPhotosSection` (переехал из `src/pages/owner/`), `usePhotoBatchUpload`, `CatalogListingCard`, `companyActionLink.ts` |
 | `frontend/scripts/screenshots/` | Цикл 30: локальный стенд `sb-shots` (`stack.sh`), засев демо-данных goods через HTTP API (`seed-goods-demo.mjs`, `demo-data.mjs`), съёмка кадров (`capture-goods-screenshots.mjs`), `README.md` пересъёмки. В сборку и CI не входят (§5.7) |
 | `frontend/goods/src/assets/screenshots/` | Цикл 30: 5 WebP-кадров главной goods, манифест `screenshots.json`, модуль подключения `shots.ts` |
-| `contracts/` | Машиночитаемые контракты по циклам (`cycleN/openapi.yaml`, JSON-схемы и векторы), `redocly.yaml`. Цикл 30 — только JSON-схемы `cycle30/screenshots-manifest.schema.json` и `seed-state.schema.json`, OpenAPI нет. Цикл 31 — `cycle31/openapi.yaml` + `openapi.json` |
+| `contracts/` | Машиночитаемые контракты по циклам (`cycleN/openapi.yaml`, JSON-схемы и векторы), `redocly.yaml`. Цикл 30 — только JSON-схемы `cycle30/screenshots-manifest.schema.json` и `seed-state.schema.json`, OpenAPI нет. Цикл 31 — `cycle31/openapi.yaml` + `openapi.json`. Цикл 33 — **только** `cycle33/openapi.yaml` (дельта `/api/push/*` + схема тела push `StaffPushPayload`), `openapi.json` не сгенерирован (§9.1 C33-1) |
 | `legal-drafts/` | **Исходники** правовых текстов (HTML + `legal.json`), правятся только здесь |
 | `legal-internal/` | Внутренние правовые документы (markdown), в сборку не входят |
 | `deploy/` | `deploy.sh`, `deploy-remote.sh`, `rollback.sh`, `ssh-deploy-wrapper.sh`, `nginx/` (3 vhost), `backup/` (systemd-таймер `pg_dump`), `monitor/` (health-alert), `checks/` (SQL-гейты выката), `ci/` (смоуки, сверка пинов образов, дрейф снапшота миграций) |
@@ -271,7 +272,9 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 - `OutboundNotification` — очередь сообщений по записям и заказам.
 - `CompanyNotificationSettings`, `NotificationTemplate` + `History`, `NotificationOptOut`.
 - `PlatformSetting` + `ChangeLog` — настройки платформы, которые правит суперадмин.
-- Push персоналу: `PushSubscription`, `StaffPushNotification`.
+- Push персоналу: `PushSubscription`, `StaffPushNotification`. Колонка `PushSubscription.Site` (`CompanyKind`, с цикла 24)
+  с цикла 33 означает только «на каком сайте включено устройство» и границу лимита (пользователь × сайт); при постановке
+  push в очередь по ней больше **не фильтруют** (§5.10). Цикл 33 схему не менял, миграций нет.
 
 **Права и правовое.**
 - `ConsentRecord` — журнал согласий.
@@ -301,7 +304,8 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 ## 4. Реальные API-эндпоинты (✔ по атрибутам контроллеров)
 
 **266 маршрутов в контроллерах плюс 2 health (`/api/health/live`, `/api/health/ready`) — итого 268** (✔ на `364cc2b`;
-цикл 31 добавил 2). Эталон со всеми атрибутами — `ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt` (268 строк: авторизация, rate limit, фильтры
+цикл 31 добавил 2). **На `2834e00` в эталоне 270 строк** (✔ `wc -l`): цикл 28 добавил `GET /api/demo/status` и
+`POST /api/demo/login` (§5.5), цикл 33 маршрутов не добавлял — поменял две строки (`allSites`). Эталон со всеми атрибутами — `ServiceBooking.Tests/Tests/Cycle22RouteTable.golden.txt` (авторизация, rate limit, фильтры
 вроде `RequiresOwnerTerms`, параметры). Его сверяет тест `Cycle22RouteTableTests`: новый маршрут без правки эталона
 роняет тест. Эталон — первоисточник, список ниже — его человекочитаемая сводка.
 
@@ -368,6 +372,14 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 - `GET|PUT /api/notifications/preferences` — auth. `GET|POST /api/notifications/unsubscribe/{token}`,
   `POST /api/notifications/provider-webhook/{token}`, `POST /api/notifications/provider-webhook/{transport}/{token}` — anon.
 - Web Push — auth: `GET /api/push/config`, `GET|POST /api/push/subscriptions`, `DELETE /api/push/subscriptions/{current|{id}}`.
+  С цикла 33 (✔ `PushController`, `PushDtos.cs`): у `GET config` и `GET subscriptions` новый query `allSites` (bool, по
+  умолчанию `false` — поведение как до цикла; непарсибельное значение → 400 problem+json автовалидации). В ответе config —
+  `companies[].kind` и `siteUrls {services, orders}` (из `PublicSiteLinks`, есть в обоих режимах); при `allSites=true`
+  компании обоих видов, порядок `Services` → `Orders`, внутри по имени (ordinal). В `items[]` списка устройств и в ответе
+  `POST` — поле `site`; `isCurrent` = совпал endpoint **и** `row.Site == site` запроса. `DELETE …/{id}` и `…/current` не
+  менялись (удаляют строку вызывающего любого сайта). Лимит `maxSubscriptionsPerUser` — по-прежнему на пару
+  (пользователь, сайт). Новых маршрутов нет; в эталоне поменялись две строки (параметр `allSites`). Контракт —
+  `API_CONTRACT_CYCLE33.md` §33.20–§33.29, форма — `contracts/cycle33/openapi.yaml`.
 
 **Магазин (goods) — кабинет, всё `auth`, права внутри через `ShopAccess`**
 - `POST /api/shops`, `GET /api/shops/my`, `GET /api/shops/slug-check`, `GET /api/shops/{shopId}`,
@@ -457,7 +469,8 @@ Node: в CI — 20 (`actions/setup-node`), на машине сканирова�
 - goods:
   - `/`, `/city/:cityId` (каталог), `/:slug` (витрина), `/o/:token` (заказ), `/orders`, `/login`, `/register`,
     `/profile[/consents]`, `/notices`, те же правовые алиасы;
-  - кабинет: `/cabinet`, `/cabinet/new`, `/cabinet/devices`, `/cabinet/subscription`,
+  - кабинет: `/cabinet`, `/cabinet/new`, `/cabinet/devices` (с цикла 33 — только `<Navigate to="/profile#devices" replace />`
+    из `goods/src/cabinetDevicesRoute.tsx`; страницы нет, маршрут и запись в `goods-routes.json` оставлены), `/cabinet/subscription`,
     `/cabinet/:shopId/{orders,catalog,menu,hours,settings,notifications,staff,link,history,summary,picklist}`,
     `/cabinet/:shopId/customers/:customerRef`.
 - Карта маршрутов goods и зарезервированные слаги — единый источник `contracts/cycle23/goods-routes.json`. Его читают и
@@ -492,7 +505,8 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
   (C-13, C20-3).
 - **Web Push** персоналу ezbook/goods и покупателям goods. Есть VAPID, service worker'ы `frontend/public/sw.js` и
   `frontend/goods/public/sw.js`, диспетчеры на полосе `realtime`. На бою `logging`. Проверки на реальных устройствах не
-  было (C24-2).
+  было (C24-2). С цикла 33 одно включение на любом из двух сайтов даёт сотруднику push и о записях, и о заказах
+  (§5.10); ручные кейсы M33-01…07 на реальных устройствах не выполнены.
 - **MAX персоналу goods** — `STAFFMAX_ENABLED=false`, живого смоука не было (C25-1).
 - **Пробный тариф («Триал»).** Код активации, фоновая задача `trial-lifecycle` и снапшоты есть, но тарифа в каталоге нет:
   его надо создать руками (C18-1).
@@ -518,7 +532,15 @@ Ezbook.ru выкачен вручную кнопкой `deploy-staging.yml` из
   и их правила остаются в БД. Ограждение — `RetiredLimitOptions`/`.WhereNotRetired()`.
 - `frontend/src/types/api-cycle*.generated.ts` для циклов 7, 9, 14, 18, 19, 20, 23, 24, 25, 26, 29, 31 — сверочные генераты
   контрактов. Часть из них ни один модуль не импортирует, их держит только CI-сверка. Прикладные типы — рукописные
-  `src/types/index.ts` и `goods/src/types.ts`.
+  `src/types/index.ts` и `goods/src/types.ts`. С цикла 33 `PushConfig`, `PushConfigCompany`, `PushSiteUrls`,
+  `PushSubscriptionDevice` в `index.ts` — реэкспорт из `api-cycle33.generated.ts` (раньше `PushConfig`/`PushSubscriptionDevice`
+  брались из генерата цикла 9); этот генерат CI **не** сверяет (C33-1). Генераты циклов 28 и 32 появились в тех же мерджах (↪).
+- **Удалено циклом 33** (✔, ссылок в `frontend/src` и `frontend/goods/src` не осталось): `goods/src/pages/cabinet/DevicesPage.tsx`
+  (+ тест), `src/components/push/MyDevicesCard.tsx`, `goods/src/components/push/GoodsIosSteps.tsx` (папки
+  `goods/src/components/push/` больше нет), константа `PUSH_UNAVAILABLE_MESSAGES` из `src/utils/pushAvailability.ts`
+  (тексты переехали в `src/utils/staffPushTexts.ts`; сам `pushAvailability.ts` с `getPushUnavailableReason` остался), ветка
+  `'staff'` в `goods/src/utils/goodsPush.ts`. В `OrderStaffPushQueue` удалено поле `PayloadOptions` (единые опции —
+  `StaffPushPayloadJson.Options`, им пользуется и `CustomerOrderPushQueue`).
 - `openapi-cycle6.yaml` в корне и `contracts/cycle{10,11,15,17}/openapi.yaml` — исторические контракты, в CI не линтуются.
 - Корневые `ARCHITECTURE.md` и `API_CONTRACT.md` — это документы **цикла 3** (последняя правка — 2026-09-17), а не текущая
   архитектура.
@@ -1017,6 +1039,109 @@ node-типы: `shots.test.ts`, `seed-goods-demo.test.ts`, `BuyersBlock.qa.test.
 - ручной кейс из архитектуры («на iPhone из иконки после деплоя двух разных сборок») в `TEST_CATALOG.md` как ручной кейс не
   заведён, вердикта нет.
 
+### 5.10 «Устройства и уведомления» в профиле, push сотрудникам на все устройства — цикл 33 (✔ по коду на `2834e00`, ничего не запускалось)
+Документы: корневой `SPEC.md` (спека цикла 33, ещё не архивирована; в коммите перемешана со спекой 28 — C33-7), `ARCHITECTURE_CYCLE33.md` §33.0–§33.17,
+`API_CONTRACT_CYCLE33.md` §33.20–§33.29, `contracts/cycle33/openapi.yaml`. Миграций, новых зависимостей (NuGet/npm) и
+новых конфигурационных ключей нет. Фактическая реализация от архитектуры отличается в местах, отмеченных «**отличие**».
+На боевой адрес цикл не выкачен (CHANGELOG о нём молчит, см. C33-4); push на бою выключен (`logging`, C24-2).
+
+**Бэкенд — кто получает push сотрудникам.**
+- Фильтр по сайту подписки снят в двух местах постановки в очередь: `StaffPushScheduler.OnBookingCreatedAsync` и
+  `OnBookingRescheduledAsync` берут **все** `PushSubscriptions` мастера; `OrderStaffPushQueue.QueueAsync` (новый заказ,
+  отмена покупателем, предупреждение о лимите 80/100 % владельцу) — все подписки получателей. Диспетчер
+  `staff-push-dispatch` не менялся: на момент отправки он по-прежнему проверяет членство (`MasterNoLongerInCompany`),
+  флаг компании (`StaffPushDisabledByCompany`, кроме лимита) и владельца подписки (`PushSubscriptionReassigned`). Кто о чём
+  получает, определяется членством, а не сайтом подписки. Push покупателям (`OrderPushSubscription`,
+  `customer-order-push-dispatch`) не менялся.
+- `url` в теле: новый DI-singleton `Services/Notifications/StaffPushLinks.ResolveUrl(subscriptionSite, eventSite, path)` —
+  относительный путь, если сайт подписки совпадает с сайтом события, иначе `PublicSiteLinks.SiteBaseUrl(eventSite) + path`.
+  (**Отличие:** в архитектуре — статический `StaffPushLinks.For(...)`; в коде — sealed-класс с primary constructor,
+  зарегистрирован в `NotificationServicesExtensions`.) Тело собирается отдельно для каждой подписки в цикле.
+- Сериализация: новый `Services/Notifications/StaffPushPayloadJson.Build(title, body, tag, url)` — кириллица без `\uXXXX`
+  (`UnsafeRelaxedJsonEscaping`), весь JSON ≤ `MaxLength = 1000` (размер колонки `Payload`); при превышении `body`
+  укорачивается с «…» по измеренному превышению; `Prefix()` не режет суррогатную пару. Им пользуются `StaffPushScheduler`
+  (оба метода) и `OrderStaffPushQueue`; `CustomerOrderPushQueue` берёт только его `Options`.
+- Текст push о записи (новая и перенесённая): в конец `body` добавлено « · {название салона}» через
+  `StaffPushScheduler.ShortSalonName` (≤ 60 символов, иначе 59 + «…», суррогатные пары не режет). **Отличие:** в
+  архитектуре — `OrderNotificationTexts.ShortName`; он в коде остался только для названия магазина и суррогатные пары режет
+  (C33-2). Телефонов в теле нет (юнит-тест `BuildPayload_NeverContainsAPhoneLikePattern` на месте).
+- Маршруты `/api/push/*` — §4. `PushSubscriptionWriter.ListAsync(userId, ct, site, allSites = false)`.
+
+**Service worker'ы** (`frontend/public/sw.js`, `frontend/goods/public/sw.js`, одинаковый блок, отличаются страницей по
+умолчанию: ezbook `/my-bookings`, goods `/cabinet`):
+- `PEER_ORIGIN` вычисляется один раз при старте из `?peer=` адреса регистрации. Принимается только точный origin (без пути,
+  запроса, фрагмента, завершающего `/`), не равный своему, по `https:` (или `http:`, если сам воркер на `http:`). Иначе `null`.
+- `resolveTarget(url, fallback)` вместо прежнего `safeUrl`: свой origin → `{same, path+search+hash}`; origin ==
+  `PEER_ORIGIN` → `{peer, href}`; всё остальное и битый URL → страница по умолчанию своего сайта.
+- `push` кладёт результат в `notification.data.url`; `notificationclick` вызывает `resolveTarget` повторно. Для `peer` —
+  **только** `clients.openWindow(href)`, своя вкладка не фокусируется; для `same` — прежняя логика (фокус + `navigate`, иначе
+  `openWindow`). Сетевых запросов и Cache API воркеры по-прежнему не делают (CI-греп).
+- Страница регистрирует воркер только через `frontend/src/utils/pushWorker.ts`: `pushWorkerScriptUrl(peer)` →
+  `/sw.js` или `/sw.js?peer=<encoded origin>`; `registerPushWorker(peer?)` — без аргумента сохраняет `scriptURL` уже активного
+  воркера (путь покупателя `/o/:token` в `goods/src/hooks/useOrderPush.ts` не стирает соседа); `refreshPushWorkerPeer(peer)` —
+  перерегистрирует только при уже существующей регистрации с другим адресом, иначе ничего не делает.
+- Известная деградация (осознанная, §33.5.3): устройство, включённое до цикла, пока на нём не открыт профиль/кабинет,
+  по нажатию на push «чужого» сайта откроет страницу по умолчанию своего сайта.
+
+**Фронт — общий блок.** `frontend/src/components/push/DevicesAndNotificationsSection.tsx` — один компонент для обоих
+сайтов (пропсы `site`, `appName: 'Запись' | 'Заказы'`, `keepBrowserSubscription`, `ordersExtra`, `className`). Подключён:
+ezbook `ProfilePage.tsx` после `NotificationPreferencesCard` (`site="Services" appName="Запись"`); goods
+`GoodsProfilePage.tsx` после карточки телефона (`site="Orders" appName="Заказы" keepBrowserSubscription
+ordersExtra={<StaffMaxCard />}`). Поведение:
+- ничего не рисует, пока конфигурация грузится, и если `companies` пуст (не сотрудник/владелец ни в одной компании);
+- ⚠️ **ничего не рисует и при ошибке `GET /api/push/config`**: `isStaff` в `useWebPush` = `configQuery.data ? … : undefined`,
+  отдельного состояния ошибки нет (C33-3);
+- заголовок `h2#devices` (`tabIndex=-1`); при `location.hash === '#devices'` — один раз `scrollIntoView` + `focus`;
+- переключатель `role="switch"` или `PushUnavailableNotice` с причиной (`reason`); подсказка о дублях (`likelySameBrowserOnOtherSite`
+  по совпадению `deviceLabel` устройства другого сайта + `duplicateHint`); ошибка действия — `role="alert"`;
+- список устройств обоих сайтов с подписью «через ezbook.ru» / «через goods.ezbook.ru», скрыт при `platform-disabled`; у
+  списка **есть** своё состояние ошибки («Не удалось загрузить список устройств…»);
+- `ordersExtra` рисуется только если среди компаний есть магазин.
+
+**Фронт — хук, тексты, страницы.**
+- `src/hooks/useWebPush.ts`: `site` обязателен; config — `pushApi.getConfig(site, {allSites: true})`, ключ
+  `['push-config', site, 'all']`, больше не зависит от поддержки service worker; устройства — ключ
+  `['push-devices', site, 'all', currentEndpoint]`, запрос при `enabled && companies.length > 0`; новые поля результата
+  `companies`, `hasServices`, `hasOrders`, `isStaff`, `siteUrls`, `devicesError`; после загрузки config — молчаливый
+  `refreshPushWorkerPeer(peer)` (peer: ezbook — `siteUrls.orders`, goods — `siteUrls.services`).
+  `unsubscribeCurrentDeviceOnLogout({keepBrowserSubscription})` при `true` удаляет только серверную строку.
+- `src/api/push.ts`: `allSites=true` уходит в query только при `true`.
+- `src/utils/staffPushTexts.ts` (новый): `staffPushIntro`, `staffPushSwitchLabel`, `ONE_DEVICE_ENOUGH_TEXT`,
+  `ONE_SITE_ENOUGH_TEXT`, `deviceSiteLabel`, `staffPushUnavailableMessage(reason, appName)`, `likelySameBrowserOnOtherSite`,
+  `duplicateHint`. `PushUnavailableNotice` переписан на пропсы `{reason, appName, showOneSiteHint}` с шагами для iPhone.
+- `frontend/public/manifest.webmanifest`: `short_name` ezbook сменён с «EZBOOK» на «Запись» (имя приложения на экране «Домой»
+  и в настройках уведомлений iOS).
+- **Выход на goods теперь отписывает push сотрудника** (исправление дефекта О-33-5): `GoodsNavbar.handleLogout` и кнопка
+  «Выйти» в `GoodsProfilePage` сначала `await unsubscribeCurrentDeviceOnLogout({ keepBrowserSubscription: true })` (ошибка
+  глотается, выход не блокируется), затем `logout()`, `qc.clear()`, `navigate('/')`. Подписка браузера остаётся (её делит
+  покупатель); `DELETE /api/push/subscriptions/current` не трогает `OrderPushSubscription`. На ezbook выход (`Navbar`) делал
+  это и раньше.
+- goods `CabinetHomePage`: кнопка «Устройства и уведомления» удалена; `nav` рисуется только при роли не-`Staff` хотя бы в
+  одном магазине (кнопка «Подписка»); добавлена строка-подсказка `data-testid="push-nudge"` со ссылкой на `/profile#devices`
+  (сотрудник магазина, причины нет, на этом устройстве не включено, нет вероятного дубля). Страница тоже вызывает
+  `useWebPush` — значит, и она перерегистрирует воркер с `peer`.
+- goods `ShopNotificationsPage` и ezbook `StaffPushSettingsCard`: подсказки ведут в профиль («Устройства и уведомления»).
+- ezbook `MyBookingsPage`: вместо `MyDevicesCard` — строка-ссылка «Уведомления на устройства — в профиле» на `/profile#devices`.
+
+**Тесты цикла 33** (описание — `TEST_CATALOG.md`, раздел «Цикл 33»; ⚠️ раздел стоит **перед** разделом цикла 32, а не в конце
+файла — так легло при мердже):
+- функциональные `ServiceBooking.Tests/Tests/Cycle33UnifiedPushTests.cs` — 18 `[Fact]`: CY33-01…12, 12b, 14…18 (хост
+  `PushDispatchTestFactory` без автотика). **Нет** CY33-13 (лимит заказов на ezbook-устройство владельца с абсолютным `url`,
+  был в §33.13.1) и контрактных CY33-20…23 (сверка с `OpenApiContract.Load("cycle33")`) — C33-1. Переписан CY24-66
+  (`NewOrder_QueuesStaffPushToAllDevices_…`, в `Cycle24NotificationsTests.cs`), эталон маршрутов — 2 строки;
+- юнит: новый `ServiceBooking.UnitTests/StaffPushLinksTests.cs` (6 тестов: 3 на `ResolveUrl`, 2 на `StaffPushPayloadJson`,
+  1 на длинное название салона; отдельного `StaffPushPayloadJsonTests.cs` нет), в `StaffPushSchedulerTests.cs` тест
+  `BuildPayload_UrlIsRelative_NoOriginOrScheme` заменён на `ShortSalonName_DoesNotSplitSurrogatePair`;
+- vitest: `src/components/push/DevicesAndNotificationsSection.test.tsx`, `PushUnavailableNotice.test.tsx` (переписан),
+  `src/utils/staffPushTexts.test.ts`, `src/utils/pushWorker.test.ts`, `src/utils/serviceWorkerRouting.test.ts` и
+  `goods/src/utils/serviceWorkerRouting.test.ts` (оба гоняют общую таблицу `src/test/workerRouting.ts` над исходником
+  `sw.js?raw` в песочнице; goods-вариант отдельно, потому что ESLint запрещает `src` импортировать `goods`),
+  `goods/src/cabinetDevicesRedirect.test.tsx`, `goods/src/components/GoodsNavbar.test.tsx`,
+  `goods/src/pages/GoodsProfilePage.test.tsx`, `goods/src/pages/cabinet/CabinetHomePage.test.tsx`, дополнены
+  `src/pages/ProfilePage.test.tsx`, `src/pages/MyBookingsPage.test.tsx`, `goods/src/utils/goodsPush.test.ts`; удалён
+  `DevicesPage.test.tsx`;
+- ручные M33-01…07 — вердикт «НЕ ВЫПОЛНЕНО QA» (нет реальных Android/iPhone и стенда с VAPID); это гейт выката.
+
 ---
 
 ## 6. Конвенции проекта (✔ выборочно по коду; им следовать, а не вводить рядом свои)
@@ -1101,7 +1226,11 @@ node-типы: `shots.test.ts`, `seed-goods-demo.test.ts`, `BuyersBlock.qa.test.
   вписывается в `include` `tsconfig.node.json` (проверка — `npm run typecheck:node`). Node-типы в браузерный код не тянуть.
 - **Картинки goods** — в `frontend/goods/src/assets/…`, импортом из исходников (хеш от Vite), WebP; скриншоты — только
   через `ScreenshotFigure` и манифест `screenshots.json`, размеры и alt не хардкодятся в JSX.
-- Service worker'ы не должны ловить `fetch` и трогать Cache API — это проверяет CI.
+- Service worker'ы не должны ловить `fetch` и трогать Cache API — это проверяет CI. С цикла 33 воркер регистрируется
+  **только** через `src/utils/pushWorker.ts` (`registerPushWorker`/`refreshPushWorkerPeer`), а не прямым
+  `navigator.serviceWorker.register('/sw.js')`; правка маршрутизации нажатия вносится в **оба** `sw.js` одинаково и в общую
+  таблицу `src/test/workerRouting.ts`. Тексты push сотрудникам для обоих сайтов — `src/utils/staffPushTexts.ts`; блок
+  «Устройства и уведомления» — один, `src/components/push/DevicesAndNotificationsSection.tsx` (§5.10).
 - Язык интерфейса — русский. Даты — `date-fns` с локалью `ru` и общие утилиты `utils/dateFormat.ts`, деньги — `utils/money.ts`.
 - Prettier: без `;`, одинарные кавычки, ширина 120, trailing comma `all`.
 
@@ -1143,6 +1272,11 @@ node-типы: `shots.test.ts`, `seed-goods-demo.test.ts`, `BuyersBlock.qa.test.
 | Юнит бэкенда `ServiceBooking.UnitTests` | xUnit 2.5.3 + FluentAssertions 6.12; без БД и без Docker | 179 файлов, 1 596 `[Fact]/[Theory]` | **2 421** (цикл 30: 2 407) |
 | Функциональные API `ServiceBooking.Tests` | xUnit 2.5.3 + `Microsoft.AspNetCore.Mvc.Testing` (`WebApplicationFactory<Program>`) + **реальный PostgreSQL 16** через Testcontainers 3.10 (или внешний сервер) | 85 файлов тестов, 1 103 `[Fact]/[Theory]` | **1 175** (цикл 30: 1 153) |
 | Фронтенд (оба сайта) | Vitest 3.2 + jsdom + Testing Library | 170 файлов `*.test.ts(x)` на `050816f` (цикл 34 добавил 2 файла: 3 + 15 тестов, §5.9) | **1 255** (цикл 30: 1 194) — это прогон цикла 31. Числа прогона цикла 34 при постановке задачи не передавались. Известно только, что 8 тестов `CartPanel` падают (§7.2) |
+
+**На `2834e00`** (✔ подсчёт файлов, атрибуты не пересчитывались): `ServiceBooking.Tests/Tests/` — 92 файла `.cs` (циклы 28 и
+33 добавили, в том числе `Cycle33UnifiedPushTests.cs` — 18 `[Fact]`); фронт — 203 файла `*.test.ts(x)` (циклы 28, 32, 33;
+цикл 33 добавил 9 и удалил 1, §5.10); в `ServiceBooking.UnitTests` цикл 33 добавил `StaffPushLinksTests.cs` (6). Числа
+прогонов циклов 28, 32 и 33 при постановке задачи не передавались.
 
 Прогоны различаются по объёму: в прогоне считаются и наборы `[Theory]`, поэтому число прогонов больше числа атрибутов.
 Были ли в отчёте цикла 31 зелёные `tsc`, `lint`, `typecheck:node`, `build:release` и сколько тестов упало, в этом
@@ -1201,9 +1335,13 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
     зелёный при любом `.env`; ✔ 16/16 при заполненном ключе.
 - Подмножество: `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle26CompanyCardTests"`; цикл 31 —
   `--filter "FullyQualifiedName~Cycle31"` (`Cycle31CatalogListingTests`, `Cycle31GalleryRateLimitTests`; второй поднимает
-  отдельный хост с продовыми лимитами).
-- `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json`. В базовый прогон не
-  входит, в CI запускается как сверка (§7.3).
+  отдельный хост с продовыми лимитами). Цикл 33 — `dotnet test ServiceBooking.Tests --filter "FullyQualifiedName~Cycle33UnifiedPushTests"`
+  (плюс переписанный CY24-66: `--filter "FullyQualifiedName~Cycle24NotificationsTests"`); юнит —
+  `dotnet test ServiceBooking.UnitTests --filter "FullyQualifiedName~StaffPush"`; vitest —
+  `cd frontend && npx vitest run src/components/push src/utils/staffPushTexts src/utils/pushWorker src/utils/serviceWorkerRouting goods/src/utils/serviceWorkerRouting goods/src/cabinetDevicesRedirect goods/src/pages/GoodsProfilePage goods/src/components/GoodsNavbar goods/src/pages/cabinet/CabinetHomePage src/pages/ProfilePage src/pages/MyBookingsPage`.
+  Реальной отправки push тесты не делают: `PushDispatchTestFactory` подменяет `IWebPushSender` записывающим фейком (↪ §7.2 выше).
+- `npm run contracts:json` — не тест: скрипт **перезаписывает** `contracts/cycle31/openapi.json` и `contracts/cycle32/openapi.json`.
+  В базовый прогон не входит, в CI запускается как сверка (§7.3). JSON цикла 33 он не создаёт (C33-1).
 
 ### 7.3 CI — `.github/workflows/ci.yml` (push в `master`, `release-candidate`, `develop`, `cycle/**`, `fix/**` и любой PR)
 - **backend**:
@@ -1215,11 +1353,14 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - `LegalKit check`.
 - **frontend** (Node 20):
   - `npm ci`;
-  - сверка генератов циклов 7, 9, 14 и отдельным шагом 18, 19, 20, 23, 24, 25, 26, 29, 31 (26 и 29 — с цикла 29, 31 — с
-    цикла 31);
-  - `redocly lint` контрактов 8-invariant, 13, 14, 16, 18, 19, 20, 23, 24, 25, 26, 29, 31;
-  - шаг «Contract JSON must match cycle31 yaml» (цикл 31): `npm run contracts:json && git diff --exit-code --
-    ../contracts/cycle31/openapi.json`. Сверяется **только** JSON цикла 31, JSON циклов 26 и 29 шаг не трогает (§9.1, C29-1);
+  - сверка генератов циклов 7, 9, 14 и отдельным шагом 18, 19, 20, 23, 24, 25, 26, 29, 31, 32 (26 и 29 — с цикла 29, 31 — с
+    цикла 31, 32 — с цикла 32). ✔ на `2834e00`: **генерата цикла 33 (`types:api:cycle33`) в шаге нет**, хотя
+    `api-cycle33.generated.ts` импортируется прикладными типами (C33-1);
+  - `redocly lint` контрактов 8-invariant, 13, 14, 16, 18, 19, 20, 23, 24, 25, 26, 29, 31, 32 — **`cycle33/openapi.yaml` не
+    линтуется** (C33-1);
+  - шаг «Contract JSON must match cycle31 and cycle32 yaml»: `npm run contracts:json && git diff --exit-code --
+    ../contracts/cycle31/openapi.json ../contracts/cycle32/openapi.json`. JSON циклов 26 и 29 шаг не трогает (§9.1, C29-1),
+    JSON цикла 33 не существует (C33-1);
   - `npm audit --omit=dev --audit-level=high`;
   - `lint`, `tsc` для ezbook и для goods, `npm run typecheck:node` (шаг «Type-check node (shots)», цикл 30);
   - греп на заглушку правового текста и на `fetch`/Cache в `sw.js`;
@@ -1229,7 +1370,9 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - артефакт `frontend-dist-<sha>` для `master`/`release-candidate`/`develop`.
 - **docker-build** — сборка образа API и запуск в режиме `Production` с Postgres. Это заодно доказывает полноту
   обязательных env-переменных. Затем `smoke.sh`.
-- Контракты 26 и 29 в CI охвачены с цикла 29 (C26-1 закрыт), контракт 31 — с цикла 31 (lint, генерат, JSON).
+- Контракты 26 и 29 в CI охвачены с цикла 29 (C26-1 закрыт), контракт 31 — с цикла 31 (lint, генерат, JSON), контракт 32 —
+  с цикла 32. Контракт 33 в CI **не охвачен ничем** (C33-1); тело push и адрес воркера (§33.27–§33.28) держат только
+  функциональные CY33-01/02/12 и vitest `serviceWorkerRouting.test.ts` в `test:run`.
   Guard-тест общих исходников goods (§5.8) отдельного шага не имеет: он часть `test:run`. JSON-схемы `contracts/cycle30/*.schema.json` в CI **не**
   проверяются: сверку манифеста скриншотов со схемой делает человек при пересъёмке (`ajv-cli`), а форму манифеста в
   каждом прогоне держит vitest T30-15. Скрипты засева и съёмки CI не запускает.
@@ -1259,6 +1402,38 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
 ## 9. Рискованные и хрупкие места
 
 ### 9.1 Найдено или подтверждено в этом сканировании (✔)
+**Цикл 33 (✔ по коду и git на `2834e00`, ничего не запускалось).**
+- **C33-1. Контракт цикла 33 ничем не закреплён автоматически (технический долг).** Из обещанного `ARCHITECTURE_CYCLE33.md`
+  §33.12 сделано только `contracts/cycle33/openapi.yaml`, скрипт `types:api:cycle33` в `frontend/package.json` и генерат
+  `src/types/api-cycle33.generated.ts`. **Нет:** `contracts/cycle33/openapi.json`; `cycle33` в списке
+  `frontend/scripts/contracts-to-json.mjs` (там `cycle31`, `cycle32`); шага redocly lint для `cycle33`; `types:api:cycle33` в
+  CI-сверке генератов; `[InlineData("cycle33")]` в `OpenApiContractValidatorTests` (там `cycle26`, `cycle29`); постоянного
+  функционального теста контракта CY33-20…23 (`OpenApiContract.Load("cycle33")`); строки про `cycle33` в
+  `contracts/redocly.yaml`. Следствие: yaml, генерат и `PushController`/`PushDtos` могут разойтись молча, а на генерат цикла 33
+  опираются прикладные типы `PushConfig`/`PushSubscriptionDevice`. Форму ответов `/api/push/*` частично проверяют CY33-07/08
+  через поля, но не по схеме.
+- **C33-2. `OrderNotificationTexts.ShortName` режет суррогатные пары.** `ServiceBooking.API/Services/Orders/Notifications/OrderNotificationTexts.cs:49`:
+  `name.Length <= 60 ? name : name[..59] + "…"` — если 59-я UTF-16-единица — старшая половина суррогатной пары (эмодзи в
+  названии магазина), в тело push о заказе уходит одинокий суррогат. Используется в `StaffOrderCreated` и
+  `StaffOrderCancelledByCustomer`. Для названия салона цикл 33 сделал отдельный безопасный `StaffPushScheduler.ShortSalonName`
+  (через `StaffPushPayloadJson.Prefix`), а `ShortName` оставил как был — две разные реализации одного правила «≤ 60, 59 + …».
+  Отмечено ревью цикла 33, не исправлено; юнит-теста на суррогат для `ShortName` нет.
+- **C33-3. Нет отдельного состояния ошибки при падении `GET /api/push/config`.** В `useWebPush` `isStaff` = `undefined`, пока
+  нет `configQuery.data`, в том числе при ошибке запроса; `DevicesAndNotificationsSection` в этом случае молча ничего не рисует
+  (как у клиента без роли), а подсказка `push-nudge` в `CabinetHomePage` не появляется. Сотрудник при сбое API не видит
+  раздела и не узнаёт о сбое. У списка устройств своё состояние ошибки есть. Отмечено ревью, не исправлено.
+- ~~**C33-4.**~~ **Закрыт после мержа:** CHANGELOG (раздел цикла 33) и README обновлены; `API_DOCUMENTATION.md` и `docs/master.md` по-прежнему не описывают цикл 33 (переключатель там всё ещё «на странице Мои записи»).
+- **C33-5. Поведение push сотрудникам развёрнуто без проверки на устройствах.** M33-01…07 не выполнены; перерегистрация
+  воркера со сменой `scriptURL` (`?peer=`) с сохранением подписки `PushManager` опирается на спецификацию Service Workers
+  (M33-07), на iPhone переход на соседний сайт уходит в Safari. Нет функционального CY33-13 (предупреждение о лимите заказов
+  на ezbook-устройство владельца с абсолютным `url`): `OwnerOrderLimitWarning` упоминается в `Cycle24NotificationsTests.cs`,
+  но сценарий «ezbook-устройство владельца + абсолютный `/cabinet/subscription`» отдельным тестом не проверен. Вероятные дубли (одно устройство на обоих сайтах) сервер не режет — только подсказка
+  «Похоже…» по совпадению `deviceLabel` (осознанное решение О-33-2).
+- **C33-6. Два почти одинаковых `sw.js`.** Блок `PEER_ORIGIN`/`resolveTarget` скопирован в `frontend/public/sw.js` и
+  `frontend/goods/public/sw.js` (общего модуля у воркеров нет: файлы отдаются как есть из `public/`). Одинаковость держит
+  только общая таблица `src/test/workerRouting.ts`, которую гоняют оба `serviceWorkerRouting.test.ts`.
+- ~~**C33-7.**~~ **Закрыт после мержа:** корневой `SPEC.md` восстановлен (чистая спека цикла 33), спека цикла 28 лежит в `SPEC_CYCLE28_SHOWCASE_DEMO_STAND.md`.
+
 **Цикл 34 и фикс звука (✔ по коду и git на `050816f`, ничего не запускалось).**
 - ~~**C34-1.** 8 тестов `CartPanel.test.tsx` падают~~ **Закрыто** (ветка `fix/goods-cartpanel-test-captcha-env`). Причина: в
   `frontend/.env` разработчика задан `VITE_SMARTCAPTCHA_SITEKEY`, виджет капчи требовал токен, которого тесты не создают; в CI
@@ -1522,7 +1697,8 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   Порядок верхних разделов на `050816f`: цикл 34 (строка 19, короткий: абзац для пользователей и абзац «На боевой адрес
   не выкачено…» с ручным шагом nginx), цикл 31 (32), цикл 30 (170), цикл 29 (291), цикл 27 (319), цикл 26 (333), далее
   старые. Всего разделов «Не выпущено» — 28, а во вступлении написано «двадцать семь» (C34-7). Фикс звука
-  (`fix/goods-sound-remember`) в CHANGELOG не записан. Внутри крупных разделов сложились подзаголовки `###`: «Что стоит прочитать до
+  (`fix/goods-sound-remember`) в CHANGELOG не записан. **На `2834e00`** (4 435 строк, ✔ `grep -n '^## '`) сверху идут цикл 32
+  (строка 19), 34 (29), 31 (42), 30 (180), 29 (301), 28 (329), 27 (394), 26 (408); **раздела цикла 33 нет** (C33-4). Внутри крупных разделов сложились подзаголовки `###`: «Что стоит прочитать до
   выката», тематические блоки, «Чего этот цикл не даёт», «Для команды» (итоги тестов и документы цикла). Даты разделов
   «Не выпущено» при выкате не проставлялись.
 - Releases на GitHub и wiki не используются: тегов нет, ссылок на wiki в репозитории нет.
@@ -1537,6 +1713,9 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
   - `faq.md` — частые вопросы и честный список ограничений.
 - Для команды в той же папке: `testing-isolation.md` (запуск тестов, colima, уборка) и `incident-runbook.md` (утечка ПДн).
 - **Руководства по goods.ezbook.ru нет.** Магазины упоминаются только в `docs/personal-data.md`.
+- ⚠️ `docs/master.md`, раздел «Уведомления о новых записях на телефон или компьютер» (строка ~270) описывает состояние
+  **до** цикла 33: карточка на странице «Мои записи». С цикла 33 это раздел «Устройства и уведомления» в профиле, одно
+  включение на оба сайта (C33-4). Инструкции по push сотрудникам магазина в `docs/` нет вовсе.
 - Справки внутри приложения: правовые документы и тексты интерфейса отдаются из `/api/legal/*` (исходники —
   `legal-drafts/`) и показываются на `/privacy`, `/terms` и т.д. Отдельной базы знаний или сайта документации нет.
 - Эксплуатация: `DEPLOY.md` (2 481 строка на `050816f`, §0–§24, выкат, переменные, ручные шаги по циклам; §24 — цикл 34,
@@ -1553,11 +1732,15 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
     лимиты галереи, строка для CHANGELOG об ослаблении лимита. **В двух местах текст расходится с кодом** (C31-7, §9.1);
   - §5 «Сквозные сценарии», §6 «Справочник кодов ответа», §7 «Известные ограничения».
   - ↪ C23-8: в §4 есть повторяющиеся номера подразделов.
+  - Цикл 33 сюда **не вписан** (✔ grep: нет `allSites`, `siteUrls`, «Цикл 33»); изменения `/api/push/*` описаны только в
+    `API_CONTRACT_CYCLE33.md` и `contracts/cycle33/openapi.yaml` (C33-4).
 - **OpenAPI по циклам** — `contracts/cycleN/openapi.yaml` для циклов 7, 9, 10, 11, 13–20, 23–26, 29, 31. У 26, 29 и 31
   есть ещё `openapi.json`. JSON 26 и 29 читает валидатор функциональных тестов `OpenApiContract.cs`, JSON 31 генерирует
   `npm run contracts:json` и сверяет CI, но тесты его не читают (C29-1, C31-6). Кроме того, есть
   `contracts/cycle8/servicebooking-invariant.openapi.yaml`. Каждый файл описывает **дельту своего цикла, а не весь API
-  целиком**. Сводного OpenAPI нет.
+  целиком**. Сводного OpenAPI нет. С мерджами на `2834e00` добавились `contracts/cycle28/openapi.yaml` + `openapi.json` (↪),
+  `cycle32/openapi.yaml` + `openapi.json` и `cycle33/openapi.yaml` (без JSON; дельта `/api/push/*` и схема тела push
+  `StaffPushPayload`, которая в пути не входит; C33-1).
 - Прочие контракты: `contracts/cycle23/goods-routes.json`, `order-money-vectors.json`, `cycle24/pickup-schedule-vectors.json`,
   `cycle11/*.schema.json`, `legal-routes.json`, `contracts/legal/runtime-value-forms.json`, `cycle30/screenshots-manifest.schema.json`
   и `cycle30/seed-state.schema.json` (JSON Schema файлов съёмки, не API). Линт — `contracts/redocly.yaml`.
@@ -1587,12 +1770,27 @@ cd frontend && npm ci && npm run lint && npx tsc --noEmit && npx tsc --noEmit -p
     - vitest разработчиков одной строкой;
     - «Ручные кейсы (T-31-04, Q-31-10)» — таблица M31-01…10 с колонками `Кейс | Шаги | Ожидаемый результат | Критерий |
       Вердикт`, у всех вердикт «не выполнен».
+  - **На `2834e00`** (6 756 строк, ✔ `grep -n '^## Цикл'`) после цикла 26 идут цикл 28 проход A (~6327) и проход B (~6435,
+    ↪), цикл 20 (~6508), цикл 34 (~6598), цикл 31 (~6620), **цикл 33 (~6669)** и последним — цикл 32 (~6709). Раздел цикла
+    33: абзац-вводная (хост `PushDispatchTestFactory`, почему нет CY33-20…23), таблица CY33-01…12, 12b, 14…18 с колонками
+    `Кейс | Критерий | Шаги / ожидание | Тест` (имя метода), строка про vitest разработчиков, «Ручные кейсы (T-33-04, гейт
+    выката, не мержа)» — вердикт «НЕ ВЫПОЛНЕНО QA» и таблица M33-01…07 (`Кейс | Шаги | Ожидаемый результат | Критерий |
+    Вердикт`, все «не выполнен»). Номера M33 в каталоге не совпадают по смыслу с `ARCHITECTURE_CYCLE33.md` §33.13.3 (например,
+    выход на goods — M33-07 в каталоге и M33-05 в архитектуре); первоисточник для QA — каталог. CY33-13 в каталоге нет.
   - ↪ TD16-7: вердикты раздела «Цикл 16» устарели.
 - ID кейсов продублированы в коде атрибутом `[TestCase("CY26-01")]` на тестах `ServiceBooking.Tests`.
 - Ручные живые проверки выката — чек-листы в `DEPLOY.md` (§16 и шаги циклов).
 - Отдельного `TESTPLAN.md` или `docs/testing/` нет. Каталог сценариев — только `TEST_CATALOG.md`.
 
 ### 10.5 Документы циклов
+- **На `2834e00`** (✔ `git show 2834e00:SPEC.md`, `git ls-files`): корневой `SPEC.md` (675 строк) — ⚠️ **артефакт мерджа, две
+  спеки вперемешку** (C33-7): заголовок и строки 1–45 — спека **цикла 33** («Устройства и уведомления» в профиле; дата
+  2026-10-01, отправная точка `49f0d60`), со строки 46 — `# SPEC — цикл 28 …`, дальше разделы циклов 33 и 28 чередуются
+  (два «§0», два «§7» и т.д.). Спеки цикла 28 отдельным файлом в коммите нет (`SPEC_CYCLE28_*.md` не отслеживается git);
+  спека 32 в архиве — `SPEC_CYCLE32_SALON_SETTINGS_COMPACT_LAYOUT.md`. Спеку 33 по конвенции архивирует следующий цикл
+  (`SPEC_CYCLE33_*.md`). Добавились `ARCHITECTURE_CYCLE{28,32,33}.md` и
+  `API_CONTRACT_CYCLE{28,32,33}.md`; у цикла 33 § нумеруются по номеру цикла (§33.0–§33.17 архитектура, §33.20–§33.29
+  контракт). Абзацы ниже — состояние на `050816f`, сохранены для истории.
 - Корень:
   - `SPEC.md` — спека **цикла 31** («Общий блок фото, мультизагрузка, блок „Каталог“ у салона, компактная шапка
     карточки компании»). Следующий цикл заменит её своей, а эту заархивирует как `SPEC_CYCLE31_*.md`. В этом обновлении
