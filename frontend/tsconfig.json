@@ -22,5 +22,5 @@
     }
   },
   "include": ["src"],
-  "exclude": ["**/shots.test.ts", "**/seed-goods-demo.test.ts", "**/BuyersBlock.qa.test.tsx"]
+  "exclude": ["**/shots.test.ts", "**/seed-goods-demo.test.ts", "**/BuyersBlock.qa.test.tsx", "**/UpdateBanner.acceptance.test.tsx"]
 }
